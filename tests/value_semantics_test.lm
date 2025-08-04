@@ -1,0 +1,49 @@
+// Test value semantics for structs
+import std::io::{printf, print, println};
+
+struct Point2D {
+    x -> f64;
+    y -> f64;
+}
+
+struct Color {
+    red -> i8;
+    green -> i8;
+    blue -> i8;
+    alpha -> i8;
+}
+
+// Test struct instantiation
+var origin -> Point2D = Point2D { x: 0.0, y: 0.0 };
+var white -> Color = Color { red: 127, green: 127, blue: 127, alpha: 127 };
+
+// Test value semantics - structs should be copied by value
+var point1 -> Point2D = Point2D { x: 10.0, y: 20.0 };
+var point2 -> Point2D = point1; // This should create a COPY, not a reference
+
+// Test that modifying point2 doesn't affect point1
+point2.x = 30.0;
+point2.y = 40.0;
+
+print("Point1: (" + point1.x + ", " + point1.y + ")"); // Should still be (10.0, 20.0)
+print("Point2: (" + point2.x + ", " + point2.y + ")"); // Should be (30.0, 40.0)
+
+// Test struct assignment
+var color1 -> Color = Color { red: 100, green: 127, blue: 127, alpha: 127 };
+var color2 -> Color = color1; // Copy by value
+
+color2.red = 50;
+color2.green = 75;
+color2.blue = 100;
+
+print("Color1: RGB(" + color1.red + ", " + color1.green + ", " + color1.blue + ")"); // Should be original
+print("Color2: RGB(" + color2.red + ", " + color2.green + ", " + color2.blue + ")"); // Should be modified
+
+// Test struct as function parameter (when functions are implemented)
+// func modifyPoint(p: Point2D) {
+//     p.x = 999.0; // This should NOT affect the original
+// }
+// 
+// var testPoint -> Point2D = Point2D { x: 1.0, y: 2.0 };
+// modifyPoint(testPoint);
+// print("TestPoint after function: (" + testPoint.x + ", " + testPoint.y + ")"); // Should still be (1.0, 2.0) 

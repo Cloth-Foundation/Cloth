@@ -1,0 +1,12 @@
+// Simple test for two-pass compilation
+
+pub func main() -> i64 {
+    // Call function defined later
+    var result -> i64 = add(5, 3);
+    return result;
+}
+
+// Function defined after it's used
+pub func add(a: i64, b: i64) -> i64 {
+    return a + b;
+} 

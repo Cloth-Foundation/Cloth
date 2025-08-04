@@ -1,0 +1,17 @@
+// Debug test to see what symbols are stored
+
+pub class ClassA -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    pub func getValue() -> i64 {
+        return self.value;
+    }
+}
+
+pub func main() -> i64 {
+    return 0;
+} 

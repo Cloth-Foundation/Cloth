@@ -1,0 +1,12 @@
+// Test method resolution
+
+pub class TestClass -> Object {
+    pub func getValue() -> i64 {
+        return 42;
+    }
+}
+
+pub func main() -> i64 {
+    var obj -> TestClass = new TestClass();
+    return obj.getValue();
+} 

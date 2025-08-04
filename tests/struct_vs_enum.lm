@@ -1,0 +1,112 @@
+// Example demonstrating the difference between structs and enums
+
+// ENUM: Fixed set of variants with specific values
+pub enum Direction {
+    NORTH,
+    SOUTH, 
+    EAST,
+    WEST
+}
+
+// ENUM: With parameters and methods
+pub enum HttpStatus {
+    OK(200, "OK"),
+    NOT_FOUND(404, "Not Found"),
+    INTERNAL_ERROR(500, "Internal Server Error");
+
+    pub fin var code -> i32;
+    pub fin var message -> string;
+
+    constructor(code: i32, message: string) {
+        self.code = code;
+        self.message = message;
+    }
+
+    pub func isSuccess() -> bool {
+        return self.code >= 200 && self.code < 300;
+    }
+}
+
+// STRUCT: Simple data container (value type)
+pub struct Point {
+    pub var x -> i64;
+    pub var y -> i64;
+}
+
+// STRUCT: Configuration data
+pub struct Config {
+    pub var host -> string;
+    pub var port -> i32;
+    pub var timeout -> i64;
+    pub var debug -> bool;
+}
+
+// STRUCT: Mathematical type
+pub struct Rectangle {
+    pub var x -> i64;
+    pub var y -> i64;
+    pub var width -> i64;
+    pub var height -> i64;
+}
+
+pub func main() -> i64 {
+    // ENUM usage: Fixed set of values
+    var direction -> Direction = Direction.NORTH;
+    var status -> HttpStatus = HttpStatus.OK;
+    
+    // ENUM with projection syntax
+    var statusCode -> i32 = status.(code as c);
+    printf("Status code: %d\n", statusCode);
+    
+    // STRUCT usage: Create unlimited instances
+    var point1 -> Point = Point { x: 10, y: 20 };
+    var point2 -> Point = Point { x: 30, y: 40 };
+    
+    // STRUCT field access
+    var x -> i64 = point1.x;
+    var y -> i64 = point1.y;
+    printf("Point1: (%d, %d)\n", x, y);
+    
+    // STRUCT for configuration
+    var config -> Config = Config {
+        host: "localhost",
+        port: 8080,
+        timeout: 5000,
+        debug: true
+    };
+    
+    printf("Host: %s, Port: %d\n", config.host, config.port);
+    
+    // STRUCT for mathematical operations
+    var rect -> Rectangle = Rectangle {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 50
+    };
+    
+    var area -> i64 = rect.width * rect.height;
+    printf("Rectangle area: %d\n", area);
+    
+    return 0;
+}
+
+// Function that works with structs (value types)
+pub func createPoint(x: i64, y: i64) -> Point {
+    return Point { x: x, y: y };
+}
+
+pub func distance(p1: Point, p2: Point) -> f64 {
+    var dx -> i64 = p2.x - p1.x;
+    var dy -> i64 = p2.y - p1.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+// Function that works with enums (reference types)
+pub func getDirectionName(dir: Direction) -> string {
+    if (dir == Direction.NORTH) return "North";
+    if (dir == Direction.SOUTH) return "South";
+    if (dir == Direction.EAST) return "East";
+    if (dir == Direction.WEST) return "West";
+    return "Unknown";
+} 

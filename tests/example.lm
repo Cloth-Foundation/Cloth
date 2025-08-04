@@ -1,0 +1,113 @@
+import std::Object::{Object};
+import std::io::{printf, print};
+import std::math::{PI, sqrt};
+import std::strings::{concat};
+
+pub struct Color {
+    red -> i32;
+    green -> i32;
+    blue -> i32;
+}
+
+// Public enum
+pub enum Direction {
+    NORTH,
+    SOUTH,
+    EAST,
+    WEST
+}
+
+// Private enum with complex arguments
+priv enum HttpStatus {
+    OK(200, "OK"),
+    NOT_FOUND(404, "Not Found"),
+    INTERNAL_ERROR(500, "Internal Server Error");
+
+    pub fin var code -> i32;
+    pub fin var message -> string;
+
+    constructor(code: i32, message: string) {
+        self.code = code;
+        self.message = message;
+    }
+
+}
+
+pub func main (argc: []i64, argv: []string) -> i64 {
+    var obj -> MyObject = new MyObject("My Object");
+    var number -> i64 = 42 + 8;
+
+    if (number <= 50) {
+        printf("Number is less than or equal to 50: %d\n", number);
+        var str -> string = "Hello, World!";
+        printf("String: %s\n", str);
+        print("%o\n", obj.asString());
+    } else {
+        printf("Number is greater than 50: %d\n", number);
+    }
+    printf("%o\n", obj.asString());
+    return 0;
+}
+
+pub class MyObject -> Object {
+    pub var name -> string;
+
+    constructor(name: string) {
+        self.name = name;
+    }
+
+    pub func asString() -> string {
+        print(PI);
+        return name;
+    }
+
+    pub class AnotherObject -> Object {
+        pub var value -> i64;
+
+        constructor(value: i64) {
+            self.value = value;
+        }
+
+        pub func asString() -> string {
+            return "AnotherObject with value: " + concat("Value: ", value.toString());
+        }
+    }
+}
+
+pub func test() -> (void) {
+    var obj -> MyObject = new MyObject("Test Object");
+    var brokenString -> string = "This is a broken string";
+    print("%o\n", obj.asString());
+}
+
+// No return definition implies void return type
+pub func noReturn() {
+    var str -> string = "This function does not return a value";
+    for (var i -> i32 = 0; i < 10; i++) {
+        for (var j -> i32 = 0; j < 5; j++) {
+            str = concat(str, "!");
+        }
+    }
+    sqrt(144);
+    printf("%s\n", str);
+
+    var status = HttpStatus.OK.(code as c);
+    printf("HTTP Status: %d\n", status.c);
+}
+
+// Enum with mixed argument types
+enum Config {
+    DEBUG(true, "debug", 1),
+    RELEASE(false, "release", 0),
+    TEST(true, "test", 2);
+
+    priv var enabled -> bool;
+    priv var name -> string;
+    priv var level -> i32;
+
+    constructor(enabled: bool, name: string, level: i32) {
+        self.enabled = enabled;
+        self.name = name;
+        self.level = level;
+    }
+}

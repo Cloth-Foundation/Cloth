@@ -1,0 +1,34 @@
+// Test multiple classes with same member names
+
+pub func main() -> i64 {
+    var obj1 -> ClassA = new ClassA(10);
+    var obj2 -> ClassB = new ClassB(20);
+    
+    return obj1.getValue() + obj2.getValue();
+}
+
+// First class with 'value' member
+pub class ClassA -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    pub func getValue() -> i64 {
+        return self.value;
+    }
+}
+
+// Second class with 'value' member (should not conflict)
+pub class ClassB -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    pub func getValue() -> i64 {
+        return self.value;
+    }
+} 

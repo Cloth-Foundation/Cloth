@@ -1,0 +1,52 @@
+// Test struct field assignment
+import std::io::{printf, print, println};
+
+struct Point2D {
+    x -> f64;
+    y -> f64;
+}
+
+struct Color {
+    red -> i8;
+    green -> i8;
+    blue -> i8;
+    alpha -> i8;
+}
+
+struct Person {
+    name -> string;
+    age -> i32;
+    email -> string?;
+}
+
+// Test struct instantiation
+var origin -> Point2D = Point2D { x: 0.0, y: 0.0 };
+var white -> Color = Color { red: 127, green: 127, blue: 127, alpha: 127 };
+var alice -> Person = Person { name: "Alice", age: 25, email: "alice@example.com" };
+
+// Test field assignment
+origin.x = 10.5;
+origin.y = 20.3;
+
+white.red = 100;
+white.green = 150;
+white.blue = 200;
+white.alpha = 255;
+
+alice.name = "Alice Smith";
+alice.age = 26;
+alice.email = "alice.smith@example.com";
+
+// Test field access after assignment
+print("Updated Point: (" + origin.x + ", " + origin.y + ")");
+print("Updated Color: RGB(" + white.red + ", " + white.green + ", " + white.blue + ")");
+print("Updated Person: " + alice.name + " (" + alice.age + ")");
+
+// Test assignment in expressions
+var newX -> f64 = origin.x + 5.0;
+var newY -> f64 = origin.y * 2.0;
+var newAge -> i32 = alice.age + 1;
+
+print("New X: " + newX);
+print("New Y: " + newY);
+print("New Age: " + newAge); 

@@ -1,0 +1,73 @@
+// Test protected access with inheritance
+import std::io::{printf, print, println};
+
+// Base class with protected members
+class Animal -> Object {
+    prot var name -> string;
+    prot var age -> i32;
+    
+    constructor(name: string, age: i32) {
+        self.name = name;
+        self.age = age;
+    }
+    
+    prot func getInfo() -> string {
+        return "Animal: " + self.name + ", age: " + self.age;
+    }
+    
+    prot func setAge(newAge: i32) {
+        self.age = newAge;
+    }
+}
+
+// Derived class that can access protected members
+class Dog -> Animal {
+    priv var breed -> string;
+    
+    constructor(name: string, age: i32, breed: string) {
+        // Access protected members from parent
+        self.name = name;  // This should work
+        self.age = age;    // This should work
+        self.breed = breed;
+    }
+    
+    func getDogInfo() -> string {
+        // Access protected method and fields from parent
+        var info -> string = self.getInfo();  // This should work
+        return info + ", breed: " + self.breed;
+    }
+    
+    func updateAge(newAge: i32) {
+        // Access protected method from parent
+        self.setAge(newAge);  // This should work
+    }
+}
+
+// Another derived class
+class Cat -> Animal {
+    priv var color -> string;
+    
+    constructor(name: string, age: i32, color: string) {
+        self.name = name;  // This should work
+        self.age = age;    // This should work
+        self.color = color;
+    }
+    
+    func getCatInfo() -> string {
+        // Access protected method and fields from parent
+        return self.getInfo() + ", color: " + self.color;
+    }
+}
+
+// Test the inheritance and protected access
+func main() {
+    var dog -> Dog = new Dog("Buddy", 5, "Golden Retriever");
+    var cat -> Cat = new Cat("Whiskers", 3, "Orange");
+    
+    print(dog.getDogInfo());
+    print(cat.getCatInfo());
+    
+    // Test protected method access
+    dog.updateAge(6);
+    print("After update: " + dog.getDogInfo());
+} 

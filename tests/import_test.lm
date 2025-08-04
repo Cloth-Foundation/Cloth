@@ -1,0 +1,9 @@
+// Test import resolution
+import std::io::{printf, print, println};
+import std::strings::{length, substring};
+
+// Test that imported symbols are available
+var message -> string = "Hello, World!";
+print(message);
+printf("Formatted: %s", [message]);
+println("Length: " + length(message)); 

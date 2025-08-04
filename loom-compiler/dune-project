@@ -1,0 +1,44 @@
+(lang dune 3.19)
+
+(name loom-compiler)
+
+(generate_opam_files true)
+
+(source
+ (github username/reponame))
+
+(authors "Loom Language Team")
+
+(maintainers "Loom Language Team")
+
+(license MIT)
+
+(documentation https://github.com/username/loom)
+
+(package
+ (name loom-compiler)
+ (synopsis "Loom Programming Language Compiler")
+ (description "A statically-typed programming language compiler with two-pass compilation, value semantics, and LLVM code generation")
+ (depends 
+  (ocaml (>= 5.0))
+  (dune (>= 3.0))
+  (menhir (>= 20231218))
+  (ppx_deriving (>= 5.2))
+  (ppx_deriving_show (>= 1.9))
+  (ppx_deriving_ord (>= 1.0))
+  (ppx_deriving_eq (>= 1.0))
+  (ppx_deriving_hash (>= 1.0))
+  (ppx_deriving_yojson (>= 1.9))
+  (yojson (>= 1.7))
+  (cmdliner (>= 1.1))
+  (fmt (>= 0.9))
+  (logs (>= 0.7))
+  (result (>= 1.5))
+  (base (>= v0.17))
+  (stdio (>= v0.17))
+  (ppx_deriving_show (>= 1.9)))
+ (tags
+  ("programming-language" "compiler" "static-typing" "llvm" "ocaml"))
+ (allow_empty))
+
+; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html

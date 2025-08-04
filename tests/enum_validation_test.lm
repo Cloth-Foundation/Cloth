@@ -1,0 +1,18 @@
+// Test enum validation with mixed argument types
+import std::io::{printf, print, println};
+
+priv enum HttpStatus {
+    OK("200", "OK"),
+    NOT_FOUND(404, "Not Found"),
+    INTERNAL_ERROR(500, "Internal Server Error");
+
+    pub fin var code -> i32;
+    pub fin var message -> string;
+
+    constructor(code: i32, message: string) {
+        self.code = code;
+        self.message = message;
+    }
+}
+
+print("This should fail validation due to mixed argument types"); 

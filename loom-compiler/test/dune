@@ -1,0 +1,9 @@
+(test
+ (name test_loom_compiler)
+ (libraries 
+  loom_compiler
+  base
+  stdio
+  ounit2
+  ppx_deriving.runtime)
+ (preprocess (pps ppx_deriving.show)))

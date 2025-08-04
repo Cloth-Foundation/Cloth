@@ -1,0 +1,5 @@
+// Simple import test
+import std::io::{printf, print, println};
+
+var message -> string = "Hello, World!";
+print(message); 

@@ -1,0 +1,13 @@
+// Test complex import scenarios
+import std::io::{printf, print, println};
+import std::strings::{length, substring, concat};
+import std::math::{add, subtract};
+
+// Test that imported symbols are available and work correctly
+var message -> string = "Hello, World!";
+var num1 -> i32 = 10;
+var num2 -> i32 = 5;
+
+print(message);
+println("Length: " + length(message));
+printf("Numbers: %d + %d = %d", [num1, num2, add(num1, num2)]); 

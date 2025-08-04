@@ -1,0 +1,90 @@
+import std::io::{printf, print};
+import std::math::{PI, sqrt};
+
+// Test forward references - functions can be called before they're defined
+
+pub func main(argc: i64, argv: []string) -> i64 {
+    // Call functions that are defined later in the file
+    var result1 -> i64 = calculateSum(10, 20);
+    var result2 -> string = formatMessage("Hello", "World");
+    
+    printf("Sum: %d\n", result1);
+    printf("Message: %s\n", result2);
+    
+    // Use classes that are defined later
+    var obj1 -> MyClass = new MyClass("Test Object");
+    var obj2 -> AnotherClass = new AnotherClass(42);
+    
+    printf("Object 1: %s\n", obj1.getName());
+    printf("Object 2: %d\n", obj2.getValue());
+    
+    // Test enum usage before definition
+    var direction -> Direction = Direction.NORTH;
+    printf("Direction: %s\n", direction.toString());
+    
+    return 0;
+}
+
+// Functions defined after they're used
+pub func calculateSum(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+pub func formatMessage(prefix: string, suffix: string) -> string {
+    return prefix + " " + suffix + "!";
+}
+
+// Classes defined after they're used
+pub class MyClass -> Object {
+    pub var name -> string;
+    
+    constructor(name: string) {
+        self.name = name;
+    }
+    
+    pub func getName() -> string {
+        return name;
+    }
+}
+
+pub class AnotherClass -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    pub func getValue() -> i64 {
+        return value;
+    }
+}
+
+// Enum defined after it's used
+pub enum Direction {
+    NORTH,
+    SOUTH,
+    EAST,
+    WEST
+}
+
+// Test nested class definitions
+pub class OuterClass -> Object {
+    pub var outerValue -> i64;
+    
+    constructor(value: i64) {
+        self.outerValue = value;
+    }
+    
+    // Inner class can reference outer class
+    pub class InnerClass -> Object {
+        pub var innerValue -> i64;
+        
+        constructor(value: i64) {
+            self.innerValue = value;
+        }
+        
+        pub func getCombinedValue(outer: OuterClass) -> i64 {
+            return outer.outerValue + self.innerValue;
+        }
+    }
+} 

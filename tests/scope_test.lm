@@ -1,0 +1,13 @@
+// Scope test for debugging
+
+pub class TestClass -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    pub func test() -> i64 {
+        return 42;
+    }
+} 

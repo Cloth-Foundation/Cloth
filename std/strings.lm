@@ -1,0 +1,27 @@
+// Standard library String module
+
+// Public string functions
+pub func length(str: string) -> i32 {
+    // Implementation would go here
+    return 0;
+}
+
+pub func concat(str1: string, str2: string) -> string {
+    // Implementation would go here
+    return str1;
+}
+
+pub func substring(str: string, start: i32, end: i32) -> string {
+    // Implementation would go here
+    return str;
+}
+
+pub func toUpperCase(str: string) -> string {
+    // Implementation would go here
+    return str;
+}
+
+// Private utility function (not importable)
+priv func internalTrim(str: string) -> string {
+    return str;
+} 

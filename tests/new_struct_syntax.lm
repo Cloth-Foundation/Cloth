@@ -1,0 +1,35 @@
+// Test new struct syntax without 'var' keyword
+import std::io::{printf, print, println};
+
+struct Point2D {
+    x -> f64;
+    y -> f64;
+}
+
+struct Color {
+    red -> i8;
+    green -> i8;
+    blue -> i8;
+    alpha -> i8;
+}
+
+struct Person {
+    name -> string;
+    age -> i32;
+    email -> string?;
+}
+
+// Test struct instantiation
+var origin -> Point2D = Point2D { x: 0.0, y: 0.0 };
+var point -> Point2D = Point2D { x: 10.5, y: 20.3 };
+
+var white -> Color = Color { red: 127, green: 127, blue: 127, alpha: 127 };
+var black -> Color = Color { red: 0, green: 0, blue: 0, alpha: 127 };
+
+var alice -> Person = Person { name: "Alice", age: 250000, email: "alice@example.com" };
+var bob -> Person = Person { name: "Bob", age: 300000, email: "bob@example.com" };
+
+// Test field access
+print("Point: (" + origin.x + ", " + origin.y + ")");
+print("Color: RGB(" + white.red + ", " + white.green + ", " + white.blue + ")");
+print("Person: " + alice.name + " (" + alice.age + ")"); 

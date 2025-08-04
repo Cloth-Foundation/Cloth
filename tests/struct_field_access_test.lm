@@ -1,0 +1,67 @@
+// Comprehensive test for struct field access
+import std::io::{printf, print, println};
+
+struct Point2D {
+    x -> f64;
+    y -> f64;
+}
+
+struct Color {
+    red -> i8;
+    green -> i8;
+    blue -> i8;
+    alpha -> i8;
+}
+
+struct Person {
+    name -> string;
+    age -> i32;
+    email -> string?;
+}
+
+struct Rectangle {
+    topLeft -> Point2D;
+    bottomRight -> Point2D;
+    color -> Color;
+}
+
+// Test basic field access
+var origin -> Point2D = Point2D { x: 0.0, y: 0.0 };
+var point -> Point2D = Point2D { x: 10.5, y: 20.3 };
+
+var white -> Color = Color { red: 127, green: 127, blue: 127, alpha: 127 };
+var black -> Color = Color { red: 0, green: 0, blue: 0, alpha: 127 };
+
+var alice -> Person = Person { name: "Alice", age: 25, email: "alice@example.com" };
+var bob -> Person = Person { name: "Bob", age: 30, email: "bob@example.com" };
+
+// Test nested struct field access
+var rect -> Rectangle = Rectangle { 
+    topLeft: Point2D { x: 0.0, y: 0.0 }, 
+    bottomRight: Point2D { x: 100.0, y: 100.0 },
+    color: Color { red: 64, green: 64, blue: 64, alpha: 127 }
+};
+
+// Test field access and assignment
+print("Point: (" + origin.x + ", " + origin.y + ")");
+print("Color: RGB(" + white.red + ", " + white.green + ", " + white.blue + ")");
+print("Person: " + alice.name + " (" + alice.age + ")");
+
+// Test nested field access
+print("Rectangle top-left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
+print("Rectangle color: RGB(" + rect.color.red + ", " + rect.color.green + ", " + rect.color.blue + ")");
+
+// Test field assignment (when implemented)
+// origin.x = 5.0;
+// origin.y = 10.0;
+// white.red = 200;
+// alice.age = 26;
+
+// Test field access in expressions
+var distance -> f64 = point.x * point.x + point.y * point.y;
+var brightness -> i32 = white.red + white.green + white.blue;
+var fullName -> string = alice.name + " (" + alice.age + ")";
+
+print("Distance: " + distance);
+print("Brightness: " + brightness);
+print("Full name: " + fullName); 

@@ -1,0 +1,7 @@
+// Debug test for symbol table issues
+
+pub func main() -> i64 {
+    var x -> i64 = 5;
+    var y -> i64 = 10;
+    return x + y;
+} 

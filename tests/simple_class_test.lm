@@ -1,0 +1,24 @@
+// Simple class test for forward references
+
+pub class TestClass -> Object {
+    pub var value -> i64;
+    
+    constructor(value: i64) {
+        self.value = value;
+    }
+    
+    // Method calls another method defined later
+    pub func process() -> i64 {
+        return self.value + self.getMultiplier();
+    }
+    
+    // Method defined after it's used
+    pub func getMultiplier() -> i64 {
+        return 2;
+    }
+}
+
+pub func main() -> i64 {
+    var obj -> TestClass = new TestClass(10);
+    return obj.process();
+} 

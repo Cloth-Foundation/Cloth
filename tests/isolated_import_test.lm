@@ -1,0 +1,4 @@
+// Test isolated import failure
+import std::nonexistent::{someFunction};
+
+var message -> string = "Hello, World!"; 

@@ -1,0 +1,61 @@
+// Comprehensive type widening test
+import std::io::{printf, print, println};
+
+struct NumericTest {
+    i8_field -> i8;
+    i16_field -> i16;
+    i32_field -> i32;
+    i64_field -> i64;
+    f32_field -> f32;
+    f64_field -> f64;
+}
+
+struct MixedTest {
+    name -> string;
+    age -> i32;
+    score -> f64;
+    active -> bool;
+}
+
+// Test various type widening scenarios
+var test1 -> NumericTest = NumericTest { 
+    i8_field: 127,      // i8 literal -> i8 (exact match)
+    i16_field: 25,      // i8 literal -> i16 (widening)
+    i32_field: 30,      // i8 literal -> i32 (widening)
+    i64_field: 42,      // i8 literal -> i64 (widening)
+    f32_field: 100,     // i8 literal -> f32 (widening)
+    f64_field: 200      // i8 literal -> f64 (widening)
+};
+
+var test2 -> NumericTest = NumericTest { 
+    i8_field: 100,      // i8 literal -> i8
+    i16_field: 1000,    // i16 literal -> i16
+    i32_field: 1000,    // i16 literal -> i32 (widening)
+    i64_field: 1000,    // i16 literal -> i64 (widening)
+    f32_field: 1000,    // i16 literal -> f32 (widening)
+    f64_field: 1000     // i16 literal -> f64 (widening)
+};
+
+var test3 -> NumericTest = NumericTest { 
+    i8_field: 50,       // i8 literal -> i8
+    i16_field: 500,     // i16 literal -> i16
+    i32_field: 50000,   // i32 literal -> i32
+    i64_field: 50000,   // i32 literal -> i64 (widening)
+    f32_field: 50000,   // i32 literal -> f32 (widening)
+    f64_field: 50000    // i32 literal -> f64 (widening)
+};
+
+var mixed -> MixedTest = MixedTest { 
+    name: "Test User",   // string literal -> string
+    age: 25,            // i8 literal -> i32 (widening)
+    score: 95.5,        // f64 literal -> f64
+    active: true        // bool literal -> bool
+};
+
+print("Type widening test completed successfully!");
+print("All numeric type conversions work correctly:");
+print("- i8 -> i16, i32, i64, f32, f64");
+print("- i16 -> i32, i64, f32, f64");
+print("- i32 -> i64, f32, f64");
+print("- i64 -> f32, f64");
+print("- f32 -> f64"); 

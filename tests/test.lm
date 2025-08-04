@@ -1,0 +1,10 @@
+pub func main() -> void {
+    var thisIsAnError -> string? = "This is an error";
+    anotherFunction();
+
+    var err -> string? = null;
+}
+
+pub func anotherFunction() -> void {
+    var thisIsAlsoAnError -> string? = null;
+}
