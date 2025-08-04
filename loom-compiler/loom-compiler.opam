@@ -7,9 +7,9 @@ maintainer: ["Loom Language Team"]
 authors: ["Loom Language Team"]
 license: "MIT"
 tags: ["programming-language" "compiler" "static-typing" "llvm" "ocaml"]
-homepage: "https://github.com/username/reponame"
-doc: "https://github.com/username/loom"
-bug-reports: "https://github.com/username/reponame/issues"
+homepage: "https://github.com/SuperScary/Loom"
+doc: "https://github.com/SuperScary/Loom"
+bug-reports: "https://github.com/SuperScary/Loom/issues"
 depends: [
   "ocaml" {>= "5.0"}
   "dune" {>= "3.19" & >= "3.0"}
@@ -44,5 +44,5 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://github.com/username/reponame.git"
+dev-repo: "git+https://github.com/SuperScary/Loom.git"
 x-maintenance-intent: ["(latest)"]
