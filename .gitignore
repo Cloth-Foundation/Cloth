@@ -34,6 +34,9 @@ build/
 .gradletasknamecache
 gradle-app.setting
 !gradle-wrapper.jar
+gradle/
+gradlew
+gradlew.bat
 
 ##############################
 ## IntelliJ
@@ -90,34 +93,26 @@ nb-configuration.xml
 *.log
 
 ##############################
-## OCaml
+## LLVM
 ##############################
-_opam
-_build
-_boot
-_test_boot
-_perf
-_coverage
-__pycache__
-*.install
+*.ll
+*.bc
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.obj
+*.lib
 
-# vim swap files
-*.swp
-*.swo
+##############################
+## GCC
+##############################
+*.s
 
-# emacs lock files
-.#*
-
-# vscode settings
-.vscode
-
-# git-ps hooks
-.git-ps
-
-.duneboot.*
-Makefile.dev
-src/dune_rules/setup.ml
-result
-
+##############################
+## Rust
+##############################
+target/
 .DS_Store
-nix/profiles/
+Thumbs.db
