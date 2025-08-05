@@ -1,4 +1,8 @@
 (library
  (name loomc)
  (public_name loomc)
- (libraries))
+ (modules token_types keywords token_span token lexer
+          ast_node ast_expressions ast_statements ast_declarations
+          parser_core))
+
+(env (dev (flags (:standard -warn-error -27-32))))
