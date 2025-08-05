@@ -38,8 +38,4 @@ pub func multiply(a: i32, b: i32) -> i32 {
 pub func divide(a: i32, b: i32) -> i32 {
     return a / b;
 }
-
-// Private utility function (not importable)
-priv func internalRound(x: f64) -> f64 {
-    return x;
-} 
+ 

@@ -1,0 +1,4 @@
+(library
+ (name loomc)
+ (public_name loomc)
+ (libraries))

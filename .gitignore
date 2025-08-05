@@ -116,3 +116,41 @@ nb-configuration.xml
 target/
 .DS_Store
 Thumbs.db
+
+##############################
+## OCaml
+##############################
+# Dune build artifacts
+_build/
+*.install
+*.merlin
+.merlin
+
+# OCaml compiler artifacts
+*.cmi
+*.cmo
+*.cmx
+*.cmxa
+*.cma
+*.o
+*.a
+*.so
+*.dll
+*.exe
+*.byte
+*.opt
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.swp
+*~
+.#*
+
+# System-specific files
+.DS_Store
+Thumbs.db
+
+# Other common ignored files
+*.log
+*.bak
