@@ -141,7 +141,12 @@ public class Lexer {
 					case '{' -> addToken(TokenType.LBRACE, "{", startLine, startColumn);
 					case '}' -> addToken(TokenType.RBRACE, "}", startLine, startColumn);
 					case ',' -> addToken(TokenType.COMMA, ",", startLine, startColumn);
-					case '.' -> addToken(TokenType.DOT, ".", startLine, startColumn);
+					case '.' -> {
+                        if (match('.')) {
+                            if (match('=')) addToken(TokenType.RANGE_EQ, "..=", startLine, startColumn);
+                            else addToken(TokenType.RANGE, "..", startLine, startColumn);
+                        } else addToken(TokenType.DOT, ".", startLine, startColumn);
+                    }
 					case '[' -> addToken(TokenType.LBRACKET, "[", startLine, startColumn);
 					case ']' -> addToken(TokenType.RBRACKET, "]", startLine, startColumn);
 					case '|' -> {

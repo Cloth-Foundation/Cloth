@@ -46,8 +46,8 @@ public class StatementParser {
 				return parser.getWhileStatementParser().parseWhileStatement();
 			}
 
-			if (parser.match(TokenType.KEYWORD, Keywords.Keyword.FOR)) {
-				return parser.getForStatementParser().parseForStatement();
+			if (parser.match(TokenType.KEYWORD, Keywords.Keyword.LOOP)) {
+				return parser.getLoopStatementParser().parseLoopStatement();
 			}
 
 			if (parser.match(TokenType.KEYWORD, Keywords.Keyword.DO)) {

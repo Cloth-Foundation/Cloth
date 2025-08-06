@@ -1,3 +1,0 @@
-struct Point {
-    var x -> i32;
-} 

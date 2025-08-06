@@ -50,6 +50,9 @@ public enum TokenType {
 	SLASHEQ,    // /=
 	MODULOEQ,   // %=
 
+    RANGE, // ..
+    RANGE_EQ, // ..=
+
 	BITWISE_AND, // &
 	BITWISE_OR,  // |
 	BITWISE_XOR, // ^
@@ -111,6 +114,9 @@ public enum TokenType {
 			case STAREQ -> "*=";
 			case SLASHEQ -> "/=";
 			case MODULOEQ -> "%=";
+
+            case RANGE -> "..";
+            case RANGE_EQ -> "..=";
 
 			case BITWISE_AND -> "&";
 			case BITWISE_OR -> "|";

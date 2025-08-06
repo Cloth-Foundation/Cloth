@@ -16,19 +16,19 @@ import loom.compiler.token.TokenType;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ForStatementParser {
+public class LoopStatementParser {
 	
 	private final Parser parser;
 	
-	public ForStatementParser(Parser parser) {
+	public LoopStatementParser(Parser parser) {
 		this.parser = parser;
 	}
 	
-	public ForStmt parseForStatement() {
+	public ForStmt parseLoopStatement() {
 		Token start = parser.peek();
 		
-		// 'for' keyword already consumed by the parser
-		//parser.consume(TokenType.KEYWORD, "Expected 'for' keyword");
+		// 'loop' keyword already consumed by the parser
+		//parser.consume(TokenType.KEYWORD, "Expected 'loop' keyword");
 		
 		// Parse opening parenthesis
 		parser.consume(TokenType.LPAREN, "Expected '(' after 'for'");

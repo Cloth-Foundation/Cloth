@@ -1,9 +1,0 @@
-// Test import error handling
-import std::io::{printf, print, println};
-import std::nonexistent::{someFunction}; // This should fail gracefully
-import std::strings::{length, substring};
-
-// Test that valid imports still work even if some fail
-var message -> string = "Hello, World!";
-print(message);
-println("Length: " + length(message)); 
