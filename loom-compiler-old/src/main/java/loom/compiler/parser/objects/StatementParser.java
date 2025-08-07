@@ -47,7 +47,7 @@ public class StatementParser {
 			}
 
 			if (parser.match(TokenType.KEYWORD, Keywords.Keyword.LOOP)) {
-				return parser.getLoopStatementParser().parseLoopStatement();
+				return parser.getLoopStatementParser().parseForStatement();
 			}
 
 			if (parser.match(TokenType.KEYWORD, Keywords.Keyword.DO)) {

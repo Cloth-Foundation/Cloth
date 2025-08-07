@@ -1,0 +1,240 @@
+# Modules must be defined on the first line of a file (comments are ignored, so this is technically not a line, although
+# it will still lex as a line, if an error is thrown in mod syntax, it would be on line number: 5.
+# The mod verifies the the location of the file based on a root directory set by the lexer from the main function,
+# so that we can change what folder is the main folder. SyntaxDefinitions.lm is in the examples folder, so the mod would be examples.
+mod example;
+
+# We use a double colon followed by braces when importing multiple items from a module
+# Imports will always be at the top of a file, under the mod declaration.
+# Could also do:
+# import std.system.io::{print as p, printf as pf}
+# then we could call p() and pf()
+import std.system.io::{print, printf}
+
+# Note that this syntax test is calling objects that have not been declared yet.
+# Loom has a 2-stage parser, meaning we parse through everything first, creating a symbol table of all top
+# level declarations before actually parsing their bodies. Such that when parsing 'main' in the second stage,
+# we can call on Printer because it was initially parsed in stage 1. The only exception to this rule is classes,
+# where all classes (and nested classes, etc) are fully parsed since they can own functions and other classes.
+# Any program must have a main function. Loom looks for this and this will always be the entry point.
+pub func main(argc: []i32, argv: []string): void {
+    var str: string? = "Hello World!" # Can be set to null since str is not final and there is a question mark.
+    str = str! # This would make str no longer able to be nulled. An error would be thrown if it is null.
+    str = str! # Marking is non-nullable again has no effect. This would throw a Note error (not fatal).
+    str = str? # It can now be null again.
+
+    fin var cantBeNull: string? = "Im an error :(" # This would throw an error, final variables cannot be made to be null since their value cannot change.
+
+    # Let statements are not top level declarations, meaning they must have a parent, unlike var statements.
+    # The parent of this let statement is the function 'main'
+    # Declaring a let without an owner would throw an error.
+    let myVariable = 10; # We didn't set the type for this let statement. It would be inferred to be an i8
+    myVariable = 10 as i32 # myVariable is now explicitly an i32 with the same value as 10, this can be done on non-final vars.
+    myVariable = myVariable?
+
+    # Everything in Loom reduces down to an array of bits. A `bit` can only ever be 0 or 1.
+    # Because `null` occupies a full byte (8 bits), assigning it to a `bit` causes an overload error.
+    # var error: bit = null # OverloadError: value of 'error' cannot be set to 8 (expected 1 or 0).
+    var f: bit = 0
+    var t: bit = 1
+    # A `bool` is a semantic shortcut over a `bit`. By convention, Loom uses:
+    # - 0 = false
+    # - 1 = true
+
+    # myVariable is 10, and 0xA is the hexadecimal representation of 10, so this comparison is true.
+    # Purposely verbose to show assignment of bits.
+    let equal: bool = myVariable == 0xA ? t : f
+
+    # Since `equal` is true (1), this assigns 0xA to myVariable again; otherwise, it would assign null.
+    myVariable = equal ? 0xA : null
+
+    # All primitive types in Loom can have at minimum two states: a concrete value or null, excluding bits.
+
+    # Range-based loops default to stepping by 1, but this can be explicitly declared.
+    # Output: 0 to 10 (inclusive), stepping by 1.
+
+    # `i` is inferred as i32 since the upper bound, `myVariable`, is an i32.
+    loop (i: 0..=myVariable step 1) {
+        # Casting i32 to f32 produces floating point output like 3.0 instead of 3.
+        std.system.io.printl(i as f32)
+    }
+
+    # We can also do a reverse loop
+    # Expected output: 10, 8, 6, 4, 2, 0
+    rev loop (i: 10..=0 step 2) {
+        # We can call on a method in a different module without importing with this syntax:
+        std.system.io.printl(i) # this is essentially the same as calling std.system.io::print("\n")
+    }
+
+    # While loops are also supported
+    while (true) {
+        # This is essentially an infinite loop. Great for game loops, etc.
+    }
+
+    # Do-While loops
+    var a: i32 = 10;
+    do {
+        a -= 2 # This would assign a to itself minus 2
+    } while (a >= 0)
+
+    #|
+     | This instantiates a new Printer class which lets
+     | us use our own custom implementation of the print functions!
+     | This is also a multi-line comment!!!
+     | The bars between the prefix and postfix are not required, just a stylistic choice.
+     | prefix and postfix: # followed by a |
+    #|
+    let printer: Printer = new Printer()
+
+    printer.log(Severity.INFO, str, null)
+}
+
+# This is only available within the scope of this file.
+priv class Printer: NamedObject {
+
+    # Although this is public, it is only accessible in this file, even if Printer is private.
+    pub builder() {
+        # Calls an overload builder (if it exists) and passes in a name to be used in the parent class.
+        self("Printer class")
+    }
+
+    #|
+     | This is only exposed in the Printer class, nothing outside of the Printer class can call this builder.
+     | This builder is overloaded, allowing us to construct a Printer with no name, then passed to this builder
+     | so it can construct the parent / superclass.
+    #|
+    priv builder(name: string) {
+        # Calls to parent class to construct the name
+        super(name)
+    }
+
+    # An enum, string (nullable), and an array of Objects (nullable) as parameters.
+    pub fin func log(level: Severity, message: string?, args: []Object?): void {
+        log_internal(level, message, args)
+    }
+
+    # This function is private, so it can only be called within the Printer class.
+    priv fin func log_internal(level: Severity, message: string?, args: []Object): void {
+
+        # if-else block, elif is if else
+        # Loom allows grouped equality checks using logical OR:
+        # `level == (Severity.INFO || Severity.NONE)` is equivalent to:
+        # `level == Severity.INFO || level == Severity.NONE`
+        # This removes the need to repeat the left-hand side in chained compar
+        if (level == (Severity.INFO || Severity.NONE) && message != null) {
+            printf("[INFO]" + message, args)
+        } elif (level == Severity.ERROR) {
+            printf("[ERROR]" + message, args)
+        } elif (level == Severity.SEVERE) {
+            printf("[SEVERE]" + message, args)
+        } else {
+            # This should infer a warning as all types are covered in our if statements.
+            printf(message, args)
+        }
+
+        # We can call on a method in a different module without importing with this syntax:
+        std.system.io.printl() # this is essentially the same as calling std.system.io::print("\n")
+
+        # Explicitly stating a return is not needed, but it is not an error if we do.
+        # Would most likely throw a Note as it is not needed.
+        # Since log_internal is a 'void' type, we cannot return an expression.
+        ret
+    }
+
+    # Enumerator with 4 values, since they do hold data, there is a need for a builder.
+    # This is similar to Java's enums.
+    pub enum Severity {
+        INFO(Color{255, 255, 255, 1.0}),
+        ERROR(Color{255, 0, 0, 1.0}),
+        SEVERE(Color{255, 0, 0, 1.0}),
+        NONE(Color{255, 255, 255, 1.0})
+
+        priv fin color: Color
+
+        # Compound instantiation, we state that r g and b all exist with the type of i32,
+        # We do not need to set their value yet (although they are final) since it is done
+        # in the builder. A builder is called every time a new object is made.
+        priv fin r, g, b: i32
+        priv fin a: f32
+
+        # Take in a color struct as a parameter.
+        pub builder(color: Color) {
+            self.color = color
+            self.r = color.red
+            self.g = color.green
+            self.b = color.blue
+            self.a = color.alpha
+        }
+    }
+
+}
+
+pub class NamedObject {
+    # 'name' can be null since the type declaration has a question mark
+    priv fin var name: string?
+
+    pub builder() {
+        self(null)
+    }
+
+    pub builder(name: string?) {
+        self.name = name
+    }
+
+    pub func getName(): string? {
+        ret name
+    }
+}
+
+# The `Color` struct defines four components: red, green, blue, and alpha.
+# Each component is typed as a 32-bit integer, except for `alpha`, which is a 16-bit float (`f16`).
+#
+# The `alpha` field demonstrates Loom’s field modifier system. It uses the `clamp` modifier to
+# define an allowed range of values from 0 to 1 (inclusive). This acts as a hard constraint.
+#
+# Any value assigned to `alpha` that falls outside this range will result in a runtime error.
+# This ensures strict control over field validity and prevents silent failures or unexpected behavior.
+#
+# Numeric literals in the modifier range (0 and 1) are automatically promoted to match the field’s type (`f16`).
+#
+# For example:
+#   color.alpha = 0.8   # Valid
+#   color.alpha = 1.5   # Error: value exceeds clamped range
+#   color.alpha = -0.1  # Error: value below clamped range
+#
+# Loom will eventually support additional modifiers like `default`, `length`, or `wrap`,
+# but all constraint violations will throw errors by default.
+pub struct Color {
+    red: i32,
+    green: i32,
+    blue: i32,
+    alpha: f16(clamp: 0..=1)
+}
+
+# Another example using the field modifier system.
+# Generates and returns an array containing the first `n` Fibonacci numbers.
+# Example: fib(5) => [0, 1, 1, 2, 3]
+pub func fib(n: i32): []i32 {
+    # Return empty array for invalid input
+    if (n <= 0) {
+        ret []
+    }
+
+    # Create an array to hold the result
+    let result = []i32(capacity: n)
+
+    # Initialize the first two numbers
+    var a: i32 = 0
+    var b: i32 = 1
+
+    loop (i: 0..<n) {
+        result.append(a)
+
+        # Tuple-style update to avoid needing a temp variable
+        let next = a + b
+        a = b
+        b = next
+    }
+
+    ret result
+}

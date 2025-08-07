@@ -28,7 +28,7 @@ public class Parser {
 	private final ParameterParser parameterParser;
 	private final IfStatementParser ifStatementParser;
 	private final WhileStatementParser whileStatementParser;
-	private final LoopStatementParser loopStatementParser;
+	private final ForStatementParser forStatementParser;
 	private final DoWhileStatementParser doWhileStatementParser;
 	private final BreakContinueParser breakContinueParser;
 	private final EnumParser enumParser;
@@ -52,7 +52,7 @@ public class Parser {
 		this.parameterParser = new ParameterParser(this);
 		this.ifStatementParser = new IfStatementParser(this);
 		this.whileStatementParser = new WhileStatementParser(this);
-		this.loopStatementParser = new LoopStatementParser(this);
+		this.forStatementParser = new ForStatementParser(this);
 		this.doWhileStatementParser = new DoWhileStatementParser(this);
 		this.breakContinueParser = new BreakContinueParser(this);
 		this.enumParser = new EnumParser(this);
@@ -169,8 +169,8 @@ public class Parser {
 		return whileStatementParser;
 	}
 
-	public LoopStatementParser getLoopStatementParser() {
-		return loopStatementParser;
+	public ForStatementParser getLoopStatementParser() {
+		return forStatementParser;
 	}
 
 	public DoWhileStatementParser getDoWhileStatementParser () {
