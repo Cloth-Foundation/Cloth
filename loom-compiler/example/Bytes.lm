@@ -1,0 +1,76 @@
+mod example
+
+# This file demonstrates how Loom treats `byte` as a first-class primitive type.
+# A `byte` is exactly 8 bits, and can store an unsigned integer value from 0 to 255.
+#
+# Unlike `bit`, which is binary-only, `byte` is the fundamental building block
+# for memory buffers, I/O streams, and raw binary data handling.
+#
+# Notes:
+# - `byte` is unsigned
+# - Assigning values outside 0–255 will result in an OverloadError
+# - `byte` supports arithmetic, but wraps or errors depending on context
+# - `byte` is not nullable (like `bit`)
+#
+# This file also demonstrates basic usage of `byte` arrays and bitwise operations.
+
+import std.system.io.printl
+
+pub func main(argc: []i32, argv: []string): void {
+
+    # Valid byte declarations
+    let b1: byte = 0
+    let b2: byte = 255
+    let b3: byte = 0xFF   # Hex literal (255)
+    let b4: byte = 0b10101010 # Binary literal (170)
+
+    printl("b1 = " + b1)
+    printl("b2 = " + b2)
+    printl("b3 = " + b3)
+    printl("b4 = " + b4)
+
+    # Invalid declarations (will throw OverloadError)
+    # let bad: byte = 256    # Too large
+    # let nullByte: byte = null  # Bytes cannot be null
+
+    # Arithmetic with bytes
+    let sum: byte = b1 + 10     # 0 + 10 = 10
+    let diff: byte = b2 - 1     # 255 - 1 = 254
+    let wrap: byte = b2 + 1     # Error OR wraps to 0 depending on compiler settings
+
+    printl("sum  = " + sum)
+    printl("diff = " + diff)
+    printl("wrap = " + wrap)
+
+    # Bitwise operations on bytes
+    let and: byte = b3 & b4   # 0xFF & 0b10101010 = 0b10101010
+    let or:  byte = b1 | b4   # 0 | 0b10101010 = 0b10101010
+    let xor: byte = b3 ^ b4   # 0xFF ^ 0b10101010 = 0b01010101
+    let not: byte = ~b4       # ~0b10101010 = 0b01010101
+
+    printl("AND = " + and)
+    printl("OR  = " + or)
+    printl("XOR = " + xor)
+    printl("NOT = " + not)
+
+    # Shifting
+    let shl: byte = b4 << 1   # 0b10101010 << 1 = 0b01010100 (wraps to 8 bits)
+    let shr: byte = b4 >> 2   # 0b10101010 >> 2 = 0b00101010
+
+    printl("Shift Left  = " + shl)
+    printl("Shift Right = " + shr)
+
+    # Byte arrays (useful for raw memory, buffers, I/O)
+    let buffer: []byte = [0x00, 0xFF, 0x41, 0x42]
+
+    printl("buffer length = " + buffer.length())
+    loop (i: 0..<buffer.length()) {
+        printl("buffer[" + i + "] = " + buffer[i])
+    }
+
+    # You can interpret byte values as ASCII if needed
+    let A: byte = 0x41  # 'A'
+    let B: byte = 0x42  # 'B'
+
+    printl("A = " + A + ", B = " + B)
+}

@@ -1,0 +1,74 @@
+mod example
+
+# This file demonstrates how to use binary literals (`0b`) in Loom.
+# Binary literals are base-2 values using only digits `0` and `1`.
+# They are often used for:
+# - Bitmasking
+# - Flags and permissions
+# - Low-level hardware interfacing
+# - Compact bitwise logic
+
+import std.system.io.printl
+
+pub func main(argc: []i32, argv: []string): void {
+
+    # Basic binary literals
+    let a = 0b0001  # Decimal: 1
+    let b = 0b0010  # Decimal: 2
+    let c = 0b0100  # Decimal: 4
+    let d = 0b1000  # Decimal: 8
+
+    # Binary literals can be combined using bitwise OR to form composite values
+    let ab = a | b  # 0b0001 | 0b0010 = 0b0011 (3)
+    let cd = c | d  # 0b0100 | 0b1000 = 0b1100 (12)
+
+    printl("a  = " + a)   # 1
+    printl("b  = " + b)   # 2
+    printl("ab = " + ab)  # 3
+
+    printl("c  = " + c)   # 4
+    printl("d  = " + d)   # 8
+    printl("cd = " + cd)  # 12
+
+    # Bitwise AND can be used to test individual bits (flag checking)
+    let flag = 0b1010  # A flag value with bits 1 and 3 set (value = 10)
+
+    if (flag & b != 0) {
+        printl("Bit 1 is set")
+    }
+
+    if (flag & d != 0) {
+        printl("Bit 3 is set")
+    }
+
+    if (flag & a == 0) {
+        printl("Bit 0 is NOT set")
+    }
+
+    # Bitwise XOR (exclusive OR)
+    let x = 0b1100
+    let y = 0b1010
+    let result = x ^ y  # 0b0110 = 6
+
+    printl("x ^ y = " + result)
+
+    # Bitwise NOT flips all bits (within the inferred type's width)
+    # Note: Loom may define NOT behavior based on fixed-width or full-size integer types.
+    let n = ~0b0000_1111  # Flips lower 4 bits; actual result depends on bit width (e.g., i8, i32)
+    printl("~0b00001111 = " + n)
+
+    # Binary literals can use underscores (_) for readability
+    let readable = 0b1010_1100  # Equals 172
+    printl("readable = " + readable)
+
+    # They are also type-inferred based on context:
+    let bitFlag: i8 = 0b1111_0000  # Explicitly typed
+    printl("bitFlag = " + bitFlag)
+
+    # Shifting binary literals
+    let shiftLeft = 0b0001 << 2   # 0b0100 = 4
+    let shiftRight = 0b1000 >> 2  # 0b0010 = 2
+
+    printl("Shift Left:  " + shiftLeft)
+    printl("Shift Right: " + shiftRight)
+}
