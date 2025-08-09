@@ -3,4 +3,10 @@ let b = 0xFF
 let c = 1i8
 let d = 10_000
 
+# Comment test
+#| multi
+   line
+   test
+#|
+
 var π: f32 = 3.14159265359

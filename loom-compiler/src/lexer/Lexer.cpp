@@ -78,6 +78,8 @@ namespace {
     }
 
     inline bool isBinDigit(int ch) { return ch == '0' || ch == '1'; }
+
+    inline bool isOctDigit(int ch) { return ch >= '0' && ch <= '7'; }
 }
 
 Lexer::Lexer(std::string source, std::string fileName)
@@ -157,20 +159,22 @@ void Lexer::skipWhitespaceAndComments() {
             case ' ': case '\r': case '\t': case '\n':
                 advance();
                 break;
-            case '/':
-                if (lookahead() == '/') {
-                    // line comment
-                    while (!isAtEnd() && current() != '\n') advance();
-                } else if (lookahead() == '*') {
-                    // block comment
-                    advance(); // /
-                    advance(); // *
+            case '#':
+                if (lookahead() == '|') {
+                    // multi-line comment starting with #|
+                    advance(); // '#'
+                    advance(); // '|'
                     while (!isAtEnd()) {
-                        if (current() == '*' && lookahead() == '/') { advance(); advance(); break; }
+                        if (current() == '#' && lookahead() == '|') {
+                            advance(); // '#'
+                            advance(); // '|'
+                            break;
+                        }
                         advance();
                     }
                 } else {
-                    return;
+                    // single-line comment starting with #
+                    while (!isAtEnd() && current() != '\n') advance();
                 }
                 break;
             default:
@@ -276,16 +280,18 @@ Token Lexer::scanNumber() {
         return out;
     };
 
-    // Check for base prefixes 0x / 0b
-    if (current() == '0' && (lookahead() == 'x' || lookahead() == 'X' || lookahead() == 'b' || lookahead() == 'B')) {
+    // Check for base prefixes 0x / 0b / 0o
+    if (current() == '0' && (lookahead() == 'x' || lookahead() == 'X' || lookahead() == 'b' || lookahead() == 'B' || lookahead() == 'o' || lookahead() == 'O')) {
         char baseCh = lookahead();
         advance(); // '0'
         advance(); // base char
         const std::size_t digitsStart = pos_;
         if (baseCh == 'x' || baseCh == 'X') {
             consumeUnderscoredDigits([](char ch){ return isHexDigit(ch); });
-        } else {
+        } else if (baseCh == 'b' || baseCh == 'B') {
             consumeUnderscoredDigits([](char ch){ return isBinDigit(ch); });
+        } else { // 'o' or 'O'
+            consumeUnderscoredDigits([](char ch){ return isOctDigit(ch); });
         }
         const std::size_t digitsEnd = pos_;
         // optional type suffix (letters/digits)
@@ -296,7 +302,7 @@ Token Lexer::scanNumber() {
 
         // Parse value manually to avoid non-portable bases
         uint64_t acc = 0;
-        int base = (baseCh == 'x' || baseCh == 'X') ? 16 : 2;
+        int base = (baseCh == 'x' || baseCh == 'X') ? 16 : (baseCh == 'b' || baseCh == 'B') ? 2 : 8;
         for (char ch : digitsClean) {
             int dv = digitValue(ch);
             if (dv < 0 || dv >= base) break;
