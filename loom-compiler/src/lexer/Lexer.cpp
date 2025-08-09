@@ -187,7 +187,7 @@ Token Lexer::scanToken() {
     skipWhitespaceAndComments();
     if (isAtEnd()) {
         TokenSpan span{fileName_, line_, column_, line_, column_};
-        return Token(TokenType::EndOfFile, "", span, TokenValue{}, TokenCategory::Eof);
+        return Token(TokenType::EndOfFile, std::string_view{}, span, TokenValue{}, TokenCategory::Eof);
     }
 
     const std::size_t startPos = pos_;
@@ -210,9 +210,9 @@ Token Lexer::scanToken() {
             }
             std::string_view text(&source_[startPos], pos_ - startPos);
             if (auto kw = lookupKeyword(text)) {
-                return makeToken(*kw, text);
+                return makeTokenFromRange(*kw, startPos, startLine, startCol);
             }
-            return makeToken(TokenType::Identifier, text, std::string(text));
+            return makeTokenFromRange(TokenType::Identifier, startPos, startLine, startCol, std::string(text));
         }
     }
 
@@ -310,7 +310,7 @@ Token Lexer::scanNumber() {
         }
         // Preserve structured literal (suffix retained in lexeme)
         NumericLiteral lit{digitsClean, base, false, std::string(slice(digitsEnd, pos_))};
-        return makeToken(TokenType::Number, fullLexeme, std::move(lit));
+        return makeTokenFromRange(TokenType::Number, startPos, startLine, startCol, std::move(lit));
     }
 
     // Decimal or float with underscores
@@ -332,10 +332,10 @@ Token Lexer::scanNumber() {
 
     if (isFloat) {
         NumericLiteral lit{numericClean, 10, true, std::string(slice(numericEnd, pos_))};
-        return makeToken(TokenType::Number, fullLexeme, std::move(lit));
+        return makeTokenFromRange(TokenType::Number, startPos, startLine, startCol, std::move(lit));
     }
     NumericLiteral lit{numericClean, 10, false, std::string(slice(numericEnd, pos_))};
-    return makeToken(TokenType::Number, fullLexeme, std::move(lit));
+    return makeTokenFromRange(TokenType::Number, startPos, startLine, startCol, std::move(lit));
 }
 
 Token Lexer::scanString() {
@@ -360,8 +360,7 @@ Token Lexer::scanString() {
             value.push_back(c);
         }
     }
-    std::string_view lexeme(&source_[startPos], pos_ - startPos);
-    return makeToken(TokenType::String, lexeme, std::string(value));
+    return makeTokenFromRange(TokenType::String, startPos, startLine, startCol, std::string(value));
 }
 
 Token Lexer::scanCharLiteral() {
@@ -382,11 +381,10 @@ Token Lexer::scanCharLiteral() {
     }
     if (current() != '\'') {
         // unterminated or too long char literal
-        return makeInvalidToken("unterminated char");
+        return makeInvalidToken("unterminated char", startPos, startLine, startCol);
     }
     advance(); // closing quote
-    std::string_view lexeme(&source_[startPos], pos_ - startPos);
-    return makeToken(TokenType::Char, lexeme, std::string(1, c));
+    return makeTokenFromRange(TokenType::Char, startPos, startLine, startCol, std::string(1, c));
 }
 
 Token Lexer::scanOperatorOrPunctuation() {
@@ -398,70 +396,80 @@ Token Lexer::scanOperatorOrPunctuation() {
     auto two = [&](char next, TokenType twoType, TokenType oneType) -> Token {
         if (current() == next) {
             advance();
-            std::string_view text(&source_[startPos], 2);
-            return makeToken(twoType, text);
+            return makeTokenFromRange(twoType, startPos, startLine, startCol);
         }
-        std::string_view text(&source_[startPos], 1);
-        return makeToken(oneType, text);
+        return makeTokenFromRange(oneType, startPos, startLine, startCol);
     };
 
     switch (c) {
-        case '+': return makeToken(TokenType::Plus, std::string_view(&source_[startPos], 1));
+        case '+': return makeTokenFromRange(TokenType::Plus, startPos, startLine, startCol);
         case '-':
-            if (current() == '>') { advance(); return makeToken(TokenType::Arrow, std::string_view(&source_[startPos], 2)); }
-            return makeToken(TokenType::Minus, std::string_view(&source_[startPos], 1));
-        case '*': return makeToken(TokenType::Star, std::string_view(&source_[startPos], 1));
-        case '/': return makeToken(TokenType::Slash, std::string_view(&source_[startPos], 1));
-        case '%': return makeToken(TokenType::Percent, std::string_view(&source_[startPos], 1));
+            if (current() == '>') { advance(); return makeTokenFromRange(TokenType::Arrow, startPos, startLine, startCol); }
+            return makeTokenFromRange(TokenType::Minus, startPos, startLine, startCol);
+        case '*': return makeTokenFromRange(TokenType::Star, startPos, startLine, startCol);
+        case '/': return makeTokenFromRange(TokenType::Slash, startPos, startLine, startCol);
+        case '%': return makeTokenFromRange(TokenType::Percent, startPos, startLine, startCol);
         case '!': return two('=', TokenType::NotEqual, TokenType::Not);
         case '=': return two('=', TokenType::DoubleEqual, TokenType::Equal);
-        case '<': return (current() == '=') ? (advance(), makeToken(TokenType::LessEqual, std::string_view(&source_[startPos], 2)))
-                                            : makeToken(TokenType::Less, std::string_view(&source_[startPos], 1));
-        case '>': return (current() == '=') ? (advance(), makeToken(TokenType::GreaterEqual, std::string_view(&source_[startPos], 2)))
-                                            : makeToken(TokenType::Greater, std::string_view(&source_[startPos], 1));
+        case '<': return (current() == '=') ? (advance(), makeTokenFromRange(TokenType::LessEqual, startPos, startLine, startCol))
+                                            : makeTokenFromRange(TokenType::Less, startPos, startLine, startCol);
+        case '>': return (current() == '=') ? (advance(), makeTokenFromRange(TokenType::GreaterEqual, startPos, startLine, startCol))
+                                            : makeTokenFromRange(TokenType::Greater, startPos, startLine, startCol);
         case '&':
-            if (current() == '&') { advance(); return makeToken(TokenType::And, std::string_view(&source_[startPos], 2)); }
+            if (current() == '&') { advance(); return makeTokenFromRange(TokenType::And, startPos, startLine, startCol); }
             break;
         case '|':
-            if (current() == '|') { advance(); return makeToken(TokenType::Or, std::string_view(&source_[startPos], 2)); }
+            if (current() == '|') { advance(); return makeTokenFromRange(TokenType::Or, startPos, startLine, startCol); }
             break;
         case '.':
             if (current() == '.') {
                 advance();
-                if (current() == '=') { advance(); return makeToken(TokenType::Range_Inclusive, std::string_view(&source_[startPos], 3)); }
-                return makeToken(TokenType::Range, std::string_view(&source_[startPos], 2));
+                if (current() == '=') { advance(); return makeTokenFromRange(TokenType::Range_Inclusive, startPos, startLine, startCol); }
+                return makeTokenFromRange(TokenType::Range, startPos, startLine, startCol);
             }
-            return makeToken(TokenType::Dot, std::string_view(&source_[startPos], 1));
+            return makeTokenFromRange(TokenType::Dot, startPos, startLine, startCol);
         case ':':
-            if (current() == ':') { advance(); return makeToken(TokenType::DoubleColon, std::string_view(&source_[startPos], 2)); }
-            return makeToken(TokenType::Colon, std::string_view(&source_[startPos], 1));
-        case ';': return makeToken(TokenType::Semicolon, std::string_view(&source_[startPos], 1));
-        case ',': return makeToken(TokenType::Comma, std::string_view(&source_[startPos], 1));
-        case '?': return makeToken(TokenType::Question, std::string_view(&source_[startPos], 1));
-        case '(': return makeToken(TokenType::LParen, std::string_view(&source_[startPos], 1));
-        case ')': return makeToken(TokenType::RParen, std::string_view(&source_[startPos], 1));
-        case '[': return makeToken(TokenType::LBracket, std::string_view(&source_[startPos], 1));
-        case ']': return makeToken(TokenType::RBracket, std::string_view(&source_[startPos], 1));
-        case '{': return makeToken(TokenType::LBrace, std::string_view(&source_[startPos], 1));
-        case '}': return makeToken(TokenType::RBrace, std::string_view(&source_[startPos], 1));
+            if (current() == ':') { advance(); return makeTokenFromRange(TokenType::DoubleColon, startPos, startLine, startCol); }
+            return makeTokenFromRange(TokenType::Colon, startPos, startLine, startCol);
+        case ';': return makeTokenFromRange(TokenType::Semicolon, startPos, startLine, startCol);
+        case ',': return makeTokenFromRange(TokenType::Comma, startPos, startLine, startCol);
+        case '?': return makeTokenFromRange(TokenType::Question, startPos, startLine, startCol);
+        case '(': return makeTokenFromRange(TokenType::LParen, startPos, startLine, startCol);
+        case ')': return makeTokenFromRange(TokenType::RParen, startPos, startLine, startCol);
+        case '[': return makeTokenFromRange(TokenType::LBracket, startPos, startLine, startCol);
+        case ']': return makeTokenFromRange(TokenType::RBracket, startPos, startLine, startCol);
+        case '{': return makeTokenFromRange(TokenType::LBrace, startPos, startLine, startCol);
+        case '}': return makeTokenFromRange(TokenType::RBrace, startPos, startLine, startCol);
         default:
             break;
     }
 
     // unknown byte
-    return makeInvalidToken("unexpected character");
+    return makeInvalidToken("unexpected character", startPos, startLine, startCol);
 }
 
 Token Lexer::makeToken(TokenType type, std::string_view lexeme, TokenValue value) {
     TokenSpan span{fileName_, line_, column_, line_, column_};
-    // Correct the span to the start of lexeme: current line_/column_ already advanced.
-    // For a production impl you'd track start positions explicitly; here we approximate.
     return Token(type, lexeme, span, std::move(value));
 }
 
-Token Lexer::makeInvalidToken(std::string_view message) {
-    TokenSpan span{fileName_, line_, column_, line_, column_};
-    return Token(TokenType::Invalid, message, span, std::string(message), TokenCategory::Error);
+Token Lexer::makeTokenFromRange(TokenType type,
+                               std::size_t startPos,
+                               std::size_t startLine,
+                               std::size_t startCol,
+                               TokenValue value) {
+    std::string_view lexeme(&source_[startPos], pos_ - startPos);
+    TokenSpan span{fileName_, startLine, startCol, line_, column_};
+    return Token(type, lexeme, span, std::move(value));
+}
+
+Token Lexer::makeInvalidToken(std::string_view message,
+                              std::size_t startPos,
+                              std::size_t startLine,
+                              std::size_t startCol) {
+    std::string_view lexeme(&source_[startPos], pos_ - startPos);
+    TokenSpan span{fileName_, startLine, startCol, line_, column_};
+    return Token(TokenType::Invalid, lexeme, span, std::string(message), TokenCategory::Error);
 }
 
 std::optional<TokenType> Lexer::lookupKeyword(std::string_view text) noexcept {

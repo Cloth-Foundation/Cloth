@@ -49,7 +49,15 @@ private:
 
     // Builders
     Token makeToken(TokenType type, std::string_view lexeme, TokenValue value = {});
-    Token makeInvalidToken(std::string_view message);
+    Token makeTokenFromRange(TokenType type,
+                             std::size_t startPos,
+                             std::size_t startLine,
+                             std::size_t startCol,
+                             TokenValue value = {});
+    Token makeInvalidToken(std::string_view message,
+                           std::size_t startPos,
+                           std::size_t startLine,
+                           std::size_t startCol);
 
     // Keyword recognition
     static std::optional<TokenType> lookupKeyword(std::string_view text) noexcept;
