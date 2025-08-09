@@ -13,6 +13,8 @@
 #include <optional>
 #include <memory>
 #include <functional>
+#include <cstdint>
+#include "TokenSpan.hpp"
 
 // Forward declarations for interop
 namespace ast {
@@ -20,7 +22,7 @@ namespace ast {
 }
 
 namespace lang {
-    enum class TokenType {
+    enum class TokenType : std::uint16_t {
         // Literals
         Char,
         False,
@@ -133,7 +135,7 @@ namespace lang {
     };
 
     /// Category of a token
-    enum class TokenCategory {
+    enum class TokenCategory : std::uint8_t {
         Literal,
         Keyword,
         Operator,
@@ -145,26 +147,26 @@ namespace lang {
         Eof
     };
 
-    /// Location and range of a token in source
-    struct TokenSpan {
-        std::string file;
-        std::size_t startLine;
-        std::size_t startColumn;
-        std::size_t endLine;
-        std::size_t endColumn;
+    // TokenSpan moved to its own header
 
-        bool operator==(const TokenSpan &other) const;
+    // Structured numeric literal metadata preserved from lexing
+    struct NumericLiteral {
+        std::string digits;   // underscores removed; for floats contains '.'
+        int base;             // 2, 10, 16
+        bool isFloat;         // true if contains a fractional part/exponent
+        std::string suffix;   // e.g., i32, f64, ""
 
-        [[nodiscard]] std::string to_string() const;
+        bool operator==(const NumericLiteral& other) const = default;
     };
 
     /// Token value types
     using TokenValue = std::variant<
         std::monostate, // for tokens with no value (punctuation, keywords, etc.)
         std::string, // identifiers, strings, chars
-        int64_t, // integer literals
-        double, // float literals
-        bool // true/false
+        int64_t, // integer literals (direct)
+        double, // float literals (direct)
+        bool, // true/false
+        NumericLiteral // structured literal (preferred for numerics)
     >;
 
     /// Token object
@@ -177,27 +179,29 @@ namespace lang {
               TokenCategory category = TokenCategory::Error);
 
         // Accessors
-        [[nodiscard]] TokenType type() const;
+        [[nodiscard]] TokenType type() const noexcept;
 
-        [[nodiscard]] const std::string &text() const;
+        [[nodiscard]] const std::string &text() const noexcept;
 
-        [[nodiscard]] const TokenSpan &span() const;
+        [[nodiscard]] const TokenSpan &span() const noexcept;
 
-        [[nodiscard]] TokenCategory category() const;
+        [[nodiscard]] TokenCategory category() const noexcept;
 
-        [[nodiscard]] const TokenValue &value() const;
+        [[nodiscard]] const TokenValue &value() const noexcept;
+
+        [[nodiscard]] bool hasValue() const noexcept; // value is not monostate
 
         // Utility
-        [[nodiscard]] bool is(TokenType t) const;
+        [[nodiscard]] bool is(TokenType t) const noexcept;
 
-        [[nodiscard]] bool isCategory(TokenCategory c) const;
+        [[nodiscard]] bool isCategory(TokenCategory c) const noexcept;
 
         [[nodiscard]] std::string to_string() const;
 
         // Comparisons
-        bool operator==(const Token &other) const;
+        bool operator==(const Token &other) const noexcept;
 
-        bool operator!=(const Token &other) const;
+        bool operator!=(const Token &other) const noexcept;
 
     private:
         TokenType type_;
@@ -206,6 +210,11 @@ namespace lang {
         TokenValue value_;
         TokenCategory category_;
     };
+
+    // Classification helpers and names
+    [[nodiscard]] TokenCategory classifyTokenType(TokenType type) noexcept;
+    [[nodiscard]] std::string_view tokenTypeName(TokenType type) noexcept;
+    [[nodiscard]] std::string_view tokenCategoryName(TokenCategory category) noexcept;
 } // namespace lang
 
 namespace std {
