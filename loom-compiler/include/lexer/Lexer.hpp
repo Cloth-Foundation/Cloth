@@ -10,71 +10,76 @@
 
 #include "Token.hpp"
 
-namespace lang {
+namespace loom {
+    class Lexer {
+    public:
+        explicit Lexer(std::string source, std::string fileName = "<memory>");
 
-class Lexer {
-public:
-    explicit Lexer(std::string source, std::string fileName = "<memory>");
+        [[nodiscard]] bool eof() const noexcept;
 
-    [[nodiscard]] bool eof() const noexcept;
+        // Returns the next token without consuming it
+        [[nodiscard]] const Token &peek();
 
-    // Returns the next token without consuming it
-    [[nodiscard]] const Token &peek();
+        // Consumes and returns the next token
+        Token next();
 
-    // Consumes and returns the next token
-    Token next();
+        // Tokenize the entire input
+        [[nodiscard]] std::vector<Token> tokenizeAll();
 
-    // Tokenize the entire input
-    [[nodiscard]] std::vector<Token> tokenizeAll();
+    private:
+        // Core scanning
+        Token scanToken();
 
-private:
-    // Core scanning
-    Token scanToken();
+        // Helpers
+        [[nodiscard]] bool isAtEnd() const noexcept;
 
-    // Helpers
-    [[nodiscard]] bool isAtEnd() const noexcept;
-    [[nodiscard]] char current() const noexcept;
-    [[nodiscard]] char lookahead(std::size_t n = 1) const noexcept;
-    char advance();
-    bool match(char expected);
+        [[nodiscard]] char current() const noexcept;
 
-    void skipWhitespaceAndComments();
+        [[nodiscard]] char lookahead(std::size_t n = 1) const noexcept;
 
-    // Scanners
-    Token scanIdentifierOrKeyword();
-    Token scanNumber();
-    Token scanString();
-    Token scanCharLiteral();
-    Token scanOperatorOrPunctuation();
+        char advance();
 
-    // Builders
-    Token makeToken(TokenType type, std::string_view lexeme, TokenValue value = {});
-    Token makeTokenFromRange(TokenType type,
-                             std::size_t startPos,
-                             std::size_t startLine,
-                             std::size_t startCol,
-                             TokenValue value = {});
-    Token makeInvalidToken(std::string_view message,
-                           std::size_t startPos,
-                           std::size_t startLine,
-                           std::size_t startCol);
+        bool match(char expected);
 
-    // Keyword recognition
-    static std::optional<TokenType> lookupKeyword(std::string_view text) noexcept;
+        void skipWhitespaceAndComments();
 
-private:
-    std::string source_;
-    std::string fileName_;
-    std::size_t pos_ {0};
-    std::size_t line_ {1};
-    std::size_t column_ {1};
+        // Scanners
+        Token scanIdentifierOrKeyword();
 
-    // single-token lookahead cache
-    std::optional<Token> lookaheadToken_;
-};
+        Token scanNumber();
 
+        Token scanString();
+
+        Token scanCharLiteral();
+
+        Token scanOperatorOrPunctuation();
+
+        // Builders
+        Token makeToken(TokenType type, std::string_view lexeme, TokenValue value = {});
+
+        Token makeTokenFromRange(TokenType type,
+                                 std::size_t startPos,
+                                 std::size_t startLine,
+                                 std::size_t startCol,
+                                 TokenValue value = {});
+
+        Token makeInvalidToken(std::string_view message,
+                               std::size_t startPos,
+                               std::size_t startLine,
+                               std::size_t startCol);
+
+        // Keyword recognition
+        static std::optional<TokenType> lookupKeyword(std::string_view text) noexcept;
+
+        std::string source_;
+        std::string fileName_;
+        std::size_t pos_{0};
+        std::size_t line_{1};
+        std::size_t column_{1};
+
+        // single-token lookahead cache
+        std::optional<Token> lookaheadToken_;
+    };
 } // namespace lang
 
 #endif // LEXER_HPP
-
-

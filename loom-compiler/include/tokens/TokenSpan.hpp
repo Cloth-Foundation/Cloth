@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace lang {
+namespace loom {
 
 // Location and range of a token in source
 struct TokenSpan {

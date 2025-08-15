@@ -8,7 +8,7 @@
 #include <utility>
 #include <type_traits>
 
-namespace lang {
+namespace loom {
     // --- Token ---
 
     Token::Token(const TokenType type,
@@ -101,12 +101,12 @@ namespace lang {
     bool Token::operator!=(const Token &other) const noexcept {
         return !(*this == other);
     }
-} // namespace lang
+} // namespace loom
 
 // --- Hash support for unordered_map / unordered_set ---
 
 namespace std {
-    std::size_t hash<lang::Token>::operator()(const lang::Token &tok) const noexcept {
+    std::size_t hash<loom::Token>::operator()(const loom::Token &tok) const noexcept {
         // 64-bit FNV-1a for stable ordering across runs; fold to size_t
         constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
         constexpr uint64_t FNV_PRIME = 1099511628211ull;
@@ -154,7 +154,7 @@ namespace std {
 
 // --- Token names and classification ---
 
-namespace lang {
+namespace loom {
     TokenCategory classifyTokenType(TokenType type) noexcept {
         using TT = TokenType;
         switch (type) {
@@ -379,4 +379,4 @@ namespace lang {
         }
         return "Unknown";
     }
-} // namespace lang
+} // namespace loom

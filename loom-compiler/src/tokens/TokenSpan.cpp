@@ -1,7 +1,7 @@
 #include "TokenSpan.hpp"
 #include <sstream>
 
-namespace lang {
+namespace loom {
 
 bool TokenSpan::operator==(const TokenSpan &other) const noexcept {
     return file == other.file &&

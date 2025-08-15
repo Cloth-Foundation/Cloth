@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace lang {
+namespace loom {
 
 namespace {
     // UTF-8 decoding with minimal validation; errors yield U+FFFD and consume 1 byte

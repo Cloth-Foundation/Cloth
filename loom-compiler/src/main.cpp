@@ -6,17 +6,35 @@
 #include <sstream>
 #include <clocale>
 #if defined(_WIN32)
-#  include <windows.h>
+  #include <windows.h>
 #endif
 
-int main(int argc, char** argv) {
-    using namespace lang;
-
+void checkEnvironment() {
 #if defined(_WIN32)
-    // Ensure Windows console uses UTF-8 for correct display of Unicode identifiers like π
+    // Windows: switch console I/O to UTF-8 and enable ANSI escapes
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD mode = 0;
+        if (GetConsoleMode(hOut, &mode)) {
+            mode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, mode);
+        }
+    }
+#else
+    // macOS/Linux: honor user's locale; if unset, fall back to UTF-8
+    if (!std::setlocale(LC_ALL, "")) {
+        std::setlocale(LC_ALL, "en_US.UTF-8");
+    }
 #endif
+}
+
+int main(int argc, char** argv) {
+    using namespace loom;
+    checkEnvironment();
+
     std::setlocale(LC_ALL, ".UTF-8");
 
     std::string filePath;

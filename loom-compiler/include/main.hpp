@@ -5,4 +5,6 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+void checkEnvironment();
+
 #endif //MAIN_H

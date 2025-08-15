@@ -21,7 +21,7 @@ namespace ast {
     class Node; // if needed
 }
 
-namespace lang {
+namespace loom {
     enum class TokenType : std::uint16_t {
         // Literals
         Char,
@@ -215,12 +215,12 @@ namespace lang {
     [[nodiscard]] TokenCategory classifyTokenType(TokenType type) noexcept;
     [[nodiscard]] std::string_view tokenTypeName(TokenType type) noexcept;
     [[nodiscard]] std::string_view tokenCategoryName(TokenCategory category) noexcept;
-} // namespace lang
+} // namespace loom
 
 namespace std {
     template<>
-    struct hash<lang::Token> {
-        std::size_t operator()(const lang::Token &tok) const noexcept;
+    struct hash<loom::Token> {
+        std::size_t operator()(const loom::Token &tok) const noexcept;
     };
 }
 
