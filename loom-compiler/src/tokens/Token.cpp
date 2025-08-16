@@ -167,6 +167,7 @@ namespace loom {
             case TT::True:
                 return TokenCategory::Literal;
             // Keywords
+            case TT::Alias:
             case TT::As:
             case TT::Atomic:
             case TT::Bit:
@@ -277,6 +278,7 @@ namespace loom {
             CASE_NAME(Number)
             CASE_NAME(String)
             CASE_NAME(True)
+            CASE_NAME(Alias)
             CASE_NAME(As)
             CASE_NAME(Atomic)
             CASE_NAME(Bit)

@@ -33,6 +33,7 @@ namespace loom {
         True,
 
         // Keywords
+        Alias,
         As,
         Atomic, // for atomic references
         Bit, // for booleans and bitsets (or as a bitfield)
@@ -146,8 +147,6 @@ namespace loom {
         Error,
         Eof
     };
-
-    // TokenSpan moved to its own header
 
     // Structured numeric literal metadata preserved from lexing
     struct NumericLiteral {

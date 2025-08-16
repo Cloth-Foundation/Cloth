@@ -475,6 +475,7 @@ Token Lexer::makeInvalidToken(std::string_view message,
 std::optional<TokenType> Lexer::lookupKeyword(std::string_view text) noexcept {
     // Map selected keywords and builtins from TokenType
     static const std::unordered_map<std::string_view, TokenType> k = {
+        {"alias", TokenType::Alias},
         {"as", TokenType::As},
         {"atomic", TokenType::Atomic},
         {"bit", TokenType::Bit},
