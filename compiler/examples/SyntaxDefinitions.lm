@@ -2,7 +2,7 @@
 # it will still lex as a line, if an error is thrown in mod syntax, it would be on line number: 5.
 # The mod verifies the the location of the file based on a root directory set by the lexer from the main function,
 # so that we can change what folder is the main folder. SyntaxDefinitions.lm is in the examples folder, so the mod would be examples.
-mod example;
+mod examples
 
 # We use a double colon followed by braces when importing multiple items from a module
 # Imports will always be at the top of a file, under the mod declaration.

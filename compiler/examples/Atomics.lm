@@ -1,0 +1,49 @@
+mod example
+
+pub func main(argc: []i32, argv: []string): void {
+
+    # Integer atomic
+    let a: atomic<i32> = 0
+
+    a.store(5)                      # Atomically set value to 5
+    let current = a.load()          # Read current value (5)
+    let old = a.swap(10)            # Atomically replace with 10, old = 5
+
+    # Compare-and-swap: if current == 10, set to 20
+    if (a.cas(10, 20)) {
+        std.system.io.printl("CAS succeeded")  # This should print
+    }
+
+    a.add(3)                        # Atomically add 3 → now 23
+    a.sub(2)                        # Atomically subtract 2 → now 21
+    a.inc()                         # Equivalent to add(1) → now 22
+    a.dec()                         # Equivalent to sub(1) → now 21
+
+    # Bitwise operations (useful for flags/masks)
+    a.or(0b0010)                    # Bitwise OR with 0b0010
+    a.and(0b1110)                   # Bitwise AND with 0b1110
+    a.xor(0b1001)                   # Bitwise XOR with 0b1001
+
+    # Float atomic
+    let b: atomic<f16> = 0.0
+
+    b.store(1.5)
+    let bf = b.load()
+    let bold = b.swap(2.5)
+
+    # No CAS for floats unless you support bitwise comparison
+    # But basic add/sub still make sense
+    b.add(0.3)
+    b.sub(0.1)
+
+    # Boolean atomic
+    let c: atomic<bool> = true
+
+    c.store(false)
+    let cv = c.load()
+    let cold = c.swap(true)
+
+    if (c.compareAndSwap(true, false)) {
+        std.system.io.printl("Boolean CAS succeeded")
+    }
+}

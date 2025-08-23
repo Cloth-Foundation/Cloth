@@ -1,0 +1,96 @@
+mod example
+
+# This file demonstrates Loom's `char` type and character literals.
+#
+# Overview:
+# - `char` represents a single Unicode scalar value (e.g., 'A', 'é', '中', '😀').
+# - Char literals use single quotes: 'A'
+# - Common escapes are supported: '\n', '\r', '\t', '\\', '\'', '\"'
+# - Unicode escapes use brace form: '\u{XXXX}' or '\u{1F600}' for code points
+# - `char` is a value type (non-null). Use `char?` if you need an optional.
+# - Strings are sequences of UTF-8 code units; iterating a string yields `char`s.
+#
+# Notes:
+# - Invalid or unassigned code points will raise a CompileError.
+# - Surrogate halves (U+D800..U+DFFF) are not valid `char` values.
+# - Numeric-to-char casts clamp/validate according to Unicode scalar rules.
+
+pub func main(argc: []i32, argv: []string): void {
+
+    # --- Basic ASCII chars ---
+    let a: char = 'A'
+    let z: char = 'z'
+    let quote: char = '\''      # single quote
+    let dbl: char = '\"'        # double quote
+    let slash: char = '\\'      # backslash
+
+    std.system.io.printl("ASCII: " + a + ", " + z + ", " + quote + ", " + dbl + ", " + slash)
+
+    # --- Control chars (escapes) ---
+    let nl: char = '\n'         # newline
+    let tab: char = '\t'        # tab
+    let cr: char = '\r'         # carriage return
+    std.system.io.printl("Escapes -> NL:" + nl + " TAB:" + tab + " CR:" + cr)
+
+    # --- Latin-1 and beyond ---
+    let e_acute: char = 'é'               # direct literal
+    let yen: char = '\u{00A5}'            # Unicode escape (YEN SIGN)
+    let snowman: char = '\u{2603}'        # Unicode escape (SNOWMAN)
+    let han: char = '中'                  # CJK
+    let rocket: char = '\u{1F680}'        # ROCKET (astral plane)
+
+    std.system.io.printl("Unicode: " + e_acute + ", " + yen + ", " + snowman + ", " + han + ", " + rocket)
+
+    # --- Invalid examples (compile-time errors) ---
+    # let bad: char = ''                  # Error: empty char literal
+    # let tooMany: char = 'AB'            # Error: multiple code points
+    # let surrogate: char = '\u{D800}'    # Error: surrogate half not allowed
+
+    # --- Casting and code points ---
+    # Assume `codePoint()` returns the Unicode scalar as i32, and `char.of(i32)` constructs a char from a valid scalar.
+    let cp: i32 = rocket.codePoint()      # cp = 0x1F680
+    std.system.io.printl("Rocket code point: " + cp)
+
+    let check: char = char.of(0x1F600)    # 😀
+    std.system.io.printl("Constructed char: " + check)
+
+    # --- Char arrays and simple string building ---
+    let letters: []char = ['L', 'o', 'o', 'm', ' ', '🚀']  # mixing BMP and astral chars
+    std.system.io.printl("letters length = " + letters.length())
+
+    # Join chars into a string (assumes std has a helper)
+    let msg: string = std.str.fromChars(letters)
+    std.system.io.printl("fromChars: " + msg)
+
+    # --- Iterating a string as chars ---
+    let greeting: string = "Hello, 世界!"
+    std.system.io.printl("Greeting: " + greeting)
+
+    loop (i: 0..<greeting.charLength()) {
+        # `charAt(i)` returns the i-th Unicode scalar (not a byte index)
+        let ch: char = greeting.charAt(i)
+        std.system.io.printl("ch[" + i + "] = " + ch + " (U+" + ch.codePoint() + ")")
+    }
+
+    # --- Comparisons and classification helpers (illustrative) ---
+    # Assume standard library provides basic char classification utilities:
+    #   ch.isAscii(), ch.isDigit(), ch.isAlpha(), ch.isAlphaNum(), ch.isWhitespace()
+    if ('9'.isDigit() && 'A'.isAlpha() && ' ' .isWhitespace()) {
+        std.system.io.printl("Classification checks passed.")
+    }
+
+    # --- Building strings with interpolation/concat ---
+    let c: char = 'X'
+    let combined: string = "Char = " + c + ", code = U+" + c.codePoint()
+    std.system.io.printl(combined)
+
+    # --- Optional char (nullable) ---
+    let maybe: char? = null
+    # Set later:
+    # maybe = 'Q'
+    if (maybe == null) {
+        std.system.io.printl("maybe is null")
+    } else {
+        std.system.io.printl("maybe = " + maybe!)
+    }
+}

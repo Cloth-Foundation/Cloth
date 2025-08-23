@@ -1,0 +1,62 @@
+mod example
+
+# This file demonstrates how Loom treats `bit` as a first-class primitive type.
+# A `bit` can only hold two possible values: 0 or 1.
+#
+# Unlike `bool`, which is a semantic abstraction, `bit` is a true 1-bit value,
+# designed for low-level binary logic and bit manipulation.
+#
+# Notes:
+# - `bit` cannot be null
+# - Attempting to assign a value other than 0 or 1 will throw an OverloadError
+# - `bit` is not implicitly castable to or from other numeric types
+
+import std.system.io.printl
+
+pub func main(argc: []i32, argv: []string): void {
+
+    # Valid bit declarations
+    let on: bit = 1
+    let off: bit = 0
+
+    printl("on  = " + on)   # 1
+    printl("off = " + off)  # 0
+
+    # Invalid examples (would throw OverloadError)
+    # let invalid: bit = 2       # Error: 2 is not a valid bit value
+    # let nullBit: bit = null    # Error: bit cannot be null
+
+    # Bitwise logic with `bit` values
+    let andResult: bit = on & off  # 1 & 0 = 0
+    let orResult: bit  = on | off  # 1 | 0 = 1
+    let xorResult: bit = on ^ off  # 1 ^ 0 = 1
+    let notResult: bit = ~on       # ~1 = 0
+
+    printl("AND Result: " + andResult)
+    printl("OR  Result: " + orResult)
+    printl("XOR Result: " + xorResult)
+    printl("NOT Result: " + notResult)
+
+    # Using `bit` in ternary expressions
+    let flag: bit = 1
+    let status: string = flag == 1 ? "Enabled" : "Disabled"
+
+    printl("Status: " + status)
+
+    # `bool` and `bit` are distinct, but related
+    # A `bool` represents logical truth (true/false) and is stored as a bit under the hood,
+    # but can be nullable and is used in conditionals.
+
+    let condition: bool = true
+    let raw: bit = condition ? 1 : 0  # Convert bool to bit manually
+
+    printl("Condition as bit: " + raw)
+
+    # Bit arrays (useful for flags, masks, low-level buffers)
+    let bits: []bit = [1, 0, 1, 1, 0]
+    printl("Bit array length: " + bits.length())
+
+    loop (i: 0..<bits.length()) {
+        printl("bits[" + i + "] = " + bits[i])
+    }
+}

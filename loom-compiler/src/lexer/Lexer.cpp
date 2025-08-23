@@ -9,7 +9,7 @@ namespace loom {
 
 namespace {
     // UTF-8 decoding with minimal validation; errors yield U+FFFD and consume 1 byte
-    inline bool isContinuation(unsigned char b) { return (b & 0xC0u) == 0x80u; }
+    bool isContinuation(unsigned char b) { return (b & 0xC0u) == 0x80u; }
 
     struct DecodedCp {
         char32_t codepoint;
@@ -18,11 +18,11 @@ namespace {
 
     DecodedCp decodeUtf8At(std::string_view s, std::size_t i) {
         if (i >= s.size()) return {U'\0', 0};
-        const unsigned char b0 = static_cast<unsigned char>(s[i]);
+        const auto b0 = static_cast<unsigned char>(s[i]);
         if (b0 < 0x80u) return {static_cast<char32_t>(b0), 1};
         if ((b0 & 0xE0u) == 0xC0u) {
             if (i + 1 >= s.size()) return {static_cast<char32_t>(0xFFFD), 1};
-            const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
+            const auto b1 = static_cast<unsigned char>(s[i + 1]);
             if (!isContinuation(b1)) return {static_cast<char32_t>(0xFFFD), 1};
             const char32_t cp = ((b0 & 0x1Fu) << 6) | (b1 & 0x3Fu);
             if (cp < 0x80) return {static_cast<char32_t>(0xFFFD), 1}; // overlong
@@ -30,8 +30,8 @@ namespace {
         }
         if ((b0 & 0xF0u) == 0xE0u) {
             if (i + 2 >= s.size()) return {static_cast<char32_t>(0xFFFD), 1};
-            const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
-            const unsigned char b2 = static_cast<unsigned char>(s[i + 2]);
+            const auto b1 = static_cast<unsigned char>(s[i + 1]);
+            const auto b2 = static_cast<unsigned char>(s[i + 2]);
             if (!isContinuation(b1) || !isContinuation(b2)) return {static_cast<char32_t>(0xFFFD), 1};
             const char32_t cp = ((b0 & 0x0Fu) << 12) | ((b1 & 0x3Fu) << 6) | (b2 & 0x3Fu);
             if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF)) return {static_cast<char32_t>(0xFFFD), 1}; // overlong or surrogate
@@ -39,9 +39,9 @@ namespace {
         }
         if ((b0 & 0xF8u) == 0xF0u) {
             if (i + 3 >= s.size()) return {static_cast<char32_t>(0xFFFD), 1};
-            const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
-            const unsigned char b2 = static_cast<unsigned char>(s[i + 2]);
-            const unsigned char b3 = static_cast<unsigned char>(s[i + 3]);
+            const auto b1 = static_cast<unsigned char>(s[i + 1]);
+            const auto b2 = static_cast<unsigned char>(s[i + 2]);
+            const auto b3 = static_cast<unsigned char>(s[i + 3]);
             if (!isContinuation(b1) || !isContinuation(b2) || !isContinuation(b3)) return {static_cast<char32_t>(0xFFFD), 1};
             const char32_t cp = ((b0 & 0x07u) << 18) | ((b1 & 0x3Fu) << 12) | ((b2 & 0x3Fu) << 6) | (b3 & 0x3Fu);
             if (cp < 0x10000 || cp > 0x10FFFF) return {static_cast<char32_t>(0xFFFD), 1}; // overlong or out of range
@@ -50,36 +50,36 @@ namespace {
         return {static_cast<char32_t>(0xFFFD), 1};
     }
 
-    inline bool isAsciiLetter(char c) {
+    bool isAsciiLetter(char c) {
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
     }
 
-    inline bool isIdentifierStartCp(char32_t cp) {
+    bool isIdentifierStartCp(char32_t cp) {
         if (cp < 0x80) return isAsciiLetter(static_cast<char>(cp)) || cp == U'_' || cp == U'$';
         // Allow any non-ASCII code point as a start for now to support symbols like π.
         return true;
     }
 
-    inline bool isIdentifierPartCp(char32_t cp) {
+    bool isIdentifierPartCp(char32_t cp) {
         if (cp < 0x80) return std::isalnum(static_cast<unsigned char>(cp)) || cp == U'_' || cp == U'$';
         // Allow any non-ASCII code point as a continue
         return true;
     }
 
-    inline int digitValue(int ch) {
+    int digitValue(int ch) {
         if (ch >= '0' && ch <= '9') return ch - '0';
         if (ch >= 'a' && ch <= 'f') return 10 + (ch - 'a');
         if (ch >= 'A' && ch <= 'F') return 10 + (ch - 'A');
         return -1;
     }
 
-    inline bool isHexDigit(int ch) {
+    bool isHexDigit(int ch) {
         return std::isxdigit(static_cast<unsigned char>(ch)) != 0;
     }
 
-    inline bool isBinDigit(int ch) { return ch == '0' || ch == '1'; }
+    bool isBinDigit(int ch) { return ch == '0' || ch == '1'; }
 
-    inline bool isOctDigit(int ch) { return ch >= '0' && ch <= '7'; }
+    bool isOctDigit(int ch) { return ch >= '0' && ch <= '7'; }
 }
 
 Lexer::Lexer(std::string source, std::string fileName)
@@ -135,7 +135,7 @@ char Lexer::lookahead(std::size_t n) const noexcept {
 }
 
 char Lexer::advance() {
-    char c = current();
+    const char c = current();
     if (c == '\n') {
         ++line_;
         column_ = 1;
@@ -154,8 +154,7 @@ bool Lexer::match(char expected) {
 
 void Lexer::skipWhitespaceAndComments() {
     for (;;) {
-        char c = current();
-        switch (c) {
+        switch (char c = current()) {
             case ' ': case '\r': case '\t': case '\n':
                 advance();
                 break;
@@ -187,7 +186,7 @@ Token Lexer::scanToken() {
     skipWhitespaceAndComments();
     if (isAtEnd()) {
         TokenSpan span{fileName_, line_, column_, line_, column_};
-        return Token(TokenType::EndOfFile, std::string_view{}, span, TokenValue{}, TokenCategory::Eof);
+        return {TokenType::EndOfFile, std::string_view{}, span, TokenValue{}, TokenCategory::Eof};
     }
 
     const std::size_t startPos = pos_;
@@ -269,8 +268,8 @@ Token Lexer::scanNumber() {
         }
     };
 
-    auto slice = [&](std::size_t from, std::size_t to) -> std::string_view {
-        return std::string_view(&source_[from], to - from);
+    auto slice = [&](std::size_t from, const std::size_t to) -> std::string_view {
+        return {&source_[from], to - from};
     };
 
     auto stripUnderscores = [&](std::string_view sv) -> std::string {
@@ -450,29 +449,29 @@ Token Lexer::scanOperatorOrPunctuation() {
 
 Token Lexer::makeToken(TokenType type, std::string_view lexeme, TokenValue value) {
     TokenSpan span{fileName_, line_, column_, line_, column_};
-    return Token(type, lexeme, span, std::move(value));
+    return {type, lexeme, span, std::move(value)};
 }
 
 Token Lexer::makeTokenFromRange(TokenType type,
                                std::size_t startPos,
                                std::size_t startLine,
                                std::size_t startCol,
-                               TokenValue value) {
+                               TokenValue value) const {
     std::string_view lexeme(&source_[startPos], pos_ - startPos);
     TokenSpan span{fileName_, startLine, startCol, line_, column_};
-    return Token(type, lexeme, span, std::move(value));
+    return {type, lexeme, span, std::move(value)};
 }
 
 Token Lexer::makeInvalidToken(std::string_view message,
                               std::size_t startPos,
                               std::size_t startLine,
-                              std::size_t startCol) {
+                              std::size_t startCol) const {
     std::string_view lexeme(&source_[startPos], pos_ - startPos);
     TokenSpan span{fileName_, startLine, startCol, line_, column_};
-    return Token(TokenType::Invalid, lexeme, span, std::string(message), TokenCategory::Error);
+    return {TokenType::Invalid, lexeme, span, std::string(message), TokenCategory::Error};
 }
 
-std::optional<TokenType> Lexer::lookupKeyword(std::string_view text) noexcept {
+std::optional<TokenType> Lexer::lookupKeyword(const std::string_view text) noexcept {
     // Map selected keywords and builtins from TokenType
     static const std::unordered_map<std::string_view, TokenType> k = {
         {"alias", TokenType::Alias},

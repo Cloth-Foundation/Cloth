@@ -1,0 +1,5 @@
+mod example.project
+
+pub func main(argc: []int, argv: []string): void {
+    ret
+}

@@ -1,0 +1,9 @@
+[Project]
+name = "Demo Project"
+version = "0.0.1a"
+author = "Wylan"
+description = "Test Loom Project"
+entry = "example.project::Main"
+
+[Alias]
+i32 as int

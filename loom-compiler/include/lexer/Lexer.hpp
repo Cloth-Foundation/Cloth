@@ -61,12 +61,12 @@ namespace loom {
                                  std::size_t startPos,
                                  std::size_t startLine,
                                  std::size_t startCol,
-                                 TokenValue value = {});
+                                 TokenValue value = {}) const;
 
         Token makeInvalidToken(std::string_view message,
                                std::size_t startPos,
                                std::size_t startLine,
-                               std::size_t startCol);
+                               std::size_t startCol) const;
 
         // Keyword recognition
         static std::optional<TokenType> lookupKeyword(std::string_view text) noexcept;
