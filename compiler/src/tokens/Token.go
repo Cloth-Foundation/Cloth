@@ -263,13 +263,13 @@ func TokenTypeName(t TokenType) string {
 	case TokenElse:
 		return "Else"
 	case TokenEnum:
-		return "Enum"
+		return "Enumerator"
 	case TokenFin:
-		return "Fin"
+		return "Final"
 	case TokenFor:
 		return "For"
 	case TokenFunc:
-		return "Func"
+		return "Function"
 	case TokenIf:
 		return "If"
 	case TokenImport:
@@ -283,25 +283,25 @@ func TokenTypeName(t TokenType) string {
 	case TokenLoop:
 		return "Loop"
 	case TokenMod:
-		return "Mod"
+		return "Module"
 	case TokenNew:
 		return "New"
 	case TokenPriv:
-		return "Priv"
+		return "Private"
 	case TokenProt:
-		return "Prot"
+		return "Protected"
 	case TokenPub:
-		return "Pub"
+		return "Public"
 	case TokenRet:
-		return "Ret"
+		return "Return"
 	case TokenRev:
-		return "Rev"
+		return "Reverse"
 	case TokenSelf:
 		return "Self"
 	case TokenStep:
 		return "Step"
 	case TokenStruct:
-		return "Struct"
+		return "Structure"
 	case TokenSuper:
 		return "Super"
 	case TokenSwitch:
@@ -309,7 +309,7 @@ func TokenTypeName(t TokenType) string {
 	case TokenThis:
 		return "This"
 	case TokenVar:
-		return "Var"
+		return "Variable"
 	case TokenWhile:
 		return "While"
 	case TokenByte:
@@ -367,7 +367,7 @@ func TokenTypeName(t TokenType) string {
 	case TokenRange:
 		return "Range"
 	case TokenRangeInclusive:
-		return "Range_Inclusive"
+		return "Range Inclusive"
 	case TokenSlash:
 		return "Slash"
 	case TokenStar:
@@ -381,23 +381,23 @@ func TokenTypeName(t TokenType) string {
 	case TokenDot:
 		return "Dot"
 	case TokenLBrace:
-		return "LBrace"
+		return "Left Brace"
 	case TokenLBracket:
-		return "LBracket"
+		return "Left Bracket"
 	case TokenLParen:
-		return "LParen"
+		return "Left Paren"
 	case TokenQuestion:
 		return "Question"
 	case TokenRBrace:
-		return "RBrace"
+		return "Right Brace"
 	case TokenRBracket:
-		return "RBracket"
+		return "Right Bracket"
 	case TokenRParen:
-		return "RParen"
+		return "Right Paren"
 	case TokenSemicolon:
 		return "Semicolon"
 	case TokenEndOfFile:
-		return "EndOfFile"
+		return "End Of File"
 	case TokenInvalid:
 		return "Invalid"
 	}

@@ -1,0 +1,51 @@
+mod examples
+
+# A constant, or keyword const, can also be used to define a value to be owned by a module or file.
+# This would allow us to use a constant across multiple files.
+const var module_constant = 10
+
+# const does not mean that the variable is constant.
+# we use fin (short for final) for that.
+# This would throw an error.
+const foo = bar
+
+# This would be valid
+const var foo = 10
+
+# Syntax hierarchy:
+const var module_constant = 10
+const var another_constant = 20
+# We can also define functions
+const func add(x, y) {
+    return x + y
+}
+# We can also define structs
+const struct Point {
+    x: i32,
+    y: i32
+}
+# We can also define enums
+const enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+# Scoping:
+pub const var public_constant = 30
+# We can use constants in functions
+func use_constants() {
+    println(module_constant)
+    println(public_constant)
+    println(add(10, 20))
+    let point = Point { x: 10, y: 20 }
+    println(point.x)
+    println(point.y)
+    println(Color::Red)
+}
+
+priv const var private_constant = 40
+prot const var protected_constant = 50
+
+# public final constant variable
+pub fin const var public_final_constant: i32 = 60i32
