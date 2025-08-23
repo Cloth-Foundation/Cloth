@@ -2,6 +2,7 @@ package tokens
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -18,10 +19,21 @@ type TokenSpan struct {
 func (s TokenSpan) String() string {
 	base := filepath.Base(s.File)
 	name := strings.TrimSuffix(base, filepath.Ext(base))
-	dirBase := filepath.Base(filepath.Dir(s.File))
-	scope := name
-	if dirBase != "." && dirBase != "" {
-		scope = dirBase + "::" + name
+	dir := filepath.Dir(s.File)
+	if dir == "." || dir == "" {
+		return fmt.Sprintf("{\n\t\tscope: %s\n\t\tstart: [%d:%d]\n\t\tend: [%d:%d]\n\t}", name, s.StartLine, s.StartColumn, s.EndLine, s.EndColumn)
 	}
+	// Prefer path relative to current working directory when possible
+	if filepath.IsAbs(dir) {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, dir); err == nil {
+				dir = rel
+			}
+		}
+	}
+	dir = filepath.ToSlash(filepath.Clean(dir))
+	dir = strings.TrimPrefix(dir, "./")
+	dirDots := strings.ReplaceAll(dir, "/", ".")
+	scope := dirDots + "::" + name
 	return fmt.Sprintf("{\n\t\tscope: %s\n\t\tstart: [%d:%d]\n\t\tend: [%d:%d]\n\t}", scope, s.StartLine, s.StartColumn, s.EndLine, s.EndColumn)
 }

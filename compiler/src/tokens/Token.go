@@ -40,7 +40,6 @@ const (
 	TokenIf
 	TokenImport
 	TokenIn
-	TokenInternal
 	TokenLet
 	TokenLoop
 	TokenMod
@@ -55,7 +54,6 @@ const (
 	TokenStruct
 	TokenSuper
 	TokenSwitch
-	TokenThis
 	TokenVar
 	TokenWhile
 
@@ -83,15 +81,22 @@ const (
 	TokenLess
 	TokenLessEqual
 	TokenMinus
+	TokenMinusMinus
+	TokenMinusEqual
 	TokenNot
 	TokenNotEqual
 	TokenOr
 	TokenPercent
+	TokenPercentEqual
 	TokenPlus
+	TokenPlusPlus
+	TokenPlusEqual
 	TokenRange
 	TokenRangeInclusive
 	TokenSlash
+	TokenSlashEqual
 	TokenStar
+	TokenStarEqual
 
 	// Symbols
 	TokenColon
@@ -194,13 +199,13 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	case TokenChar, TokenFalse, TokenNull, TokenNumber, TokenString, TokenTrue:
 		return CategoryLiteral
 	// Keywords
-	case TokenAlias, TokenAs, TokenAtomic, TokenBit, TokenBool, TokenBreak, TokenBuilder, TokenCase, TokenClass, TokenConst, TokenContinue, TokenDefault, TokenDo, TokenElif, TokenElse, TokenEnum, TokenFin, TokenFor, TokenFunc, TokenIf, TokenImport, TokenIn, TokenInternal, TokenLet, TokenLoop, TokenMod, TokenNew, TokenPriv, TokenProt, TokenPub, TokenRet, TokenRev, TokenSelf, TokenStep, TokenStruct, TokenSuper, TokenSwitch, TokenThis, TokenVar, TokenWhile:
+	case TokenAlias, TokenAs, TokenAtomic, TokenBit, TokenBool, TokenBreak, TokenBuilder, TokenCase, TokenClass, TokenConst, TokenContinue, TokenDefault, TokenDo, TokenElif, TokenElse, TokenEnum, TokenFin, TokenFor, TokenFunc, TokenIf, TokenImport, TokenIn, TokenLet, TokenLoop, TokenMod, TokenNew, TokenPriv, TokenProt, TokenPub, TokenRet, TokenRev, TokenSelf, TokenStep, TokenStruct, TokenSuper, TokenSwitch, TokenVar, TokenWhile:
 		return CategoryKeyword
 	// Built-in types -> treat as keywords
 	case TokenByte, TokenF16, TokenF32, TokenF64, TokenI8, TokenI16, TokenI32, TokenI64, TokenU8, TokenU16, TokenU32, TokenU64:
 		return CategoryKeyword
 	// Operators
-	case TokenAnd, TokenArrow, TokenDoubleEqual, TokenEqual, TokenGreater, TokenGreaterEqual, TokenLess, TokenLessEqual, TokenMinus, TokenNot, TokenNotEqual, TokenOr, TokenPercent, TokenPlus, TokenRange, TokenRangeInclusive, TokenSlash, TokenStar:
+	case TokenAnd, TokenArrow, TokenDoubleEqual, TokenEqual, TokenGreater, TokenGreaterEqual, TokenLess, TokenLessEqual, TokenMinus, TokenMinusMinus, TokenMinusEqual, TokenNot, TokenNotEqual, TokenOr, TokenPercent, TokenPercentEqual, TokenPlus, TokenPlusPlus, TokenPlusEqual, TokenRange, TokenRangeInclusive, TokenSlash, TokenSlashEqual, TokenStar, TokenStarEqual:
 		return CategoryOperator
 	// Punctuation
 	case TokenColon, TokenComma, TokenDoubleColon, TokenDot, TokenLBrace, TokenLBracket, TokenLParen, TokenQuestion, TokenRBrace, TokenRBracket, TokenRParen, TokenSemicolon:
@@ -219,7 +224,7 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 func TokenTypeName(t TokenType) string {
 	switch t {
 	case TokenChar:
-		return "Char"
+		return "Character"
 	case TokenFalse:
 		return "False"
 	case TokenIdentifier:
@@ -241,7 +246,7 @@ func TokenTypeName(t TokenType) string {
 	case TokenBit:
 		return "Bit"
 	case TokenBool:
-		return "Bool"
+		return "Boolean"
 	case TokenBreak:
 		return "Break"
 	case TokenBuilder:
@@ -251,7 +256,7 @@ func TokenTypeName(t TokenType) string {
 	case TokenClass:
 		return "Class"
 	case TokenConst:
-		return "Const"
+		return "Constant"
 	case TokenContinue:
 		return "Continue"
 	case TokenDefault:
@@ -276,8 +281,6 @@ func TokenTypeName(t TokenType) string {
 		return "Import"
 	case TokenIn:
 		return "In"
-	case TokenInternal:
-		return "Internal"
 	case TokenLet:
 		return "Let"
 	case TokenLoop:
@@ -306,8 +309,6 @@ func TokenTypeName(t TokenType) string {
 		return "Super"
 	case TokenSwitch:
 		return "Switch"
-	case TokenThis:
-		return "This"
 	case TokenVar:
 		return "Variable"
 	case TokenWhile:
@@ -354,6 +355,10 @@ func TokenTypeName(t TokenType) string {
 		return "LessEqual"
 	case TokenMinus:
 		return "Minus"
+	case TokenMinusMinus:
+		return "Minus Minus"
+	case TokenMinusEqual:
+		return "Minus Equal"
 	case TokenNot:
 		return "Not"
 	case TokenNotEqual:
@@ -362,16 +367,26 @@ func TokenTypeName(t TokenType) string {
 		return "Or"
 	case TokenPercent:
 		return "Percent"
+	case TokenPercentEqual:
+		return "Percent Equal"
 	case TokenPlus:
 		return "Plus"
+	case TokenPlusPlus:
+		return "Plus Plus"
+	case TokenPlusEqual:
+		return "Plus Equal"
 	case TokenRange:
 		return "Range"
 	case TokenRangeInclusive:
 		return "Range Inclusive"
 	case TokenSlash:
 		return "Slash"
+	case TokenSlashEqual:
+		return "Slash Equal"
 	case TokenStar:
 		return "Star"
+	case TokenStarEqual:
+		return "Star Equal"
 	case TokenColon:
 		return "Colon"
 	case TokenComma:

@@ -357,18 +357,58 @@ func (l *Lexer) scanOperatorOrPunctuation() tokens.Token {
 
 	switch c {
 	case '+':
+		if l.current() == '+' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenPlusPlus, startPos, startLine, startCol, nil)
+		}
+
+		if l.current() == '=' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenPlusEqual, startPos, startLine, startCol, nil)
+		}
+
 		return l.makeTokenFromRange(tokens.TokenPlus, startPos, startLine, startCol, nil)
 	case '-':
 		if l.current() == '>' {
 			l.advance()
 			return l.makeTokenFromRange(tokens.TokenArrow, startPos, startLine, startCol, nil)
 		}
+
+		if l.current() == '-' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenMinusMinus, startPos, startLine, startCol, nil)
+
+		}
+
+		if l.current() == '=' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenMinusEqual, startPos, startLine, startCol, nil)
+		}
+
 		return l.makeTokenFromRange(tokens.TokenMinus, startPos, startLine, startCol, nil)
 	case '*':
+
+		if l.current() == '=' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenStarEqual, startPos, startLine, startCol, nil)
+		}
+
 		return l.makeTokenFromRange(tokens.TokenStar, startPos, startLine, startCol, nil)
 	case '/':
+
+		if l.current() == '=' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenSlashEqual, startPos, startLine, startCol, nil)
+		}
+
 		return l.makeTokenFromRange(tokens.TokenSlash, startPos, startLine, startCol, nil)
 	case '%':
+
+		if l.current() == '=' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenPercentEqual, startPos, startLine, startCol, nil)
+		}
+
 		return l.makeTokenFromRange(tokens.TokenPercent, startPos, startLine, startCol, nil)
 	case '!':
 		return two('=', tokens.TokenNotEqual, tokens.TokenNot)
@@ -501,8 +541,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenImport, true
 	case "in":
 		return tokens.TokenIn, true
-	case "internal":
-		return tokens.TokenInternal, true
 	case "let":
 		return tokens.TokenLet, true
 	case "loop":
@@ -531,8 +569,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenSuper, true
 	case "switch":
 		return tokens.TokenSwitch, true
-	case "this":
-		return tokens.TokenThis, true
 	case "var":
 		return tokens.TokenVar, true
 	case "while":
@@ -581,7 +617,7 @@ func decodeUtf8At(s string, i int) (rune, int) {
 	}
 	r, size := utf8.DecodeRuneInString(s[i:])
 	if r == utf8.RuneError && size == 1 {
-		return '', 1 // sentinel; still consume 1 byte
+		return '\u007f', 1 // sentinel; still consume 1 byte
 	}
 	return r, size
 }

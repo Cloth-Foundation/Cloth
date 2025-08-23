@@ -1,0 +1,10 @@
+mod tests.first
+
+pub func main(): i32 {
+    var x: i32 = 5;
+    x++
+    x += 10
+
+    # 16
+    ret 0
+}
