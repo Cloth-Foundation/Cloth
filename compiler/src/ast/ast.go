@@ -98,6 +98,9 @@ type ClassDecl struct {
 	HeaderTok   tokens.Token
 	BodySpan    tokens.TokenSpan
 	BodySkipped bool
+	Fields      []FieldDecl
+	Methods     []MethodDecl
+	Builders    []MethodDecl
 }
 
 func (d *ClassDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
@@ -110,6 +113,9 @@ type StructDecl struct {
 	HeaderTok   tokens.Token
 	BodySpan    tokens.TokenSpan
 	BodySkipped bool
+	Fields      []FieldDecl
+	Methods     []MethodDecl
+	Builders    []MethodDecl
 }
 
 func (d *StructDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
@@ -122,6 +128,10 @@ type EnumDecl struct {
 	HeaderTok   tokens.Token
 	BodySpan    tokens.TokenSpan
 	BodySkipped bool
+	Cases       []EnumCase
+	Fields      []FieldDecl
+	Methods     []MethodDecl
+	Builders    []MethodDecl
 }
 
 func (d *EnumDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
@@ -208,6 +218,73 @@ type AssignExpr struct {
 
 func (e *AssignExpr) Span() tokens.TokenSpan { return mergeSpans(e.Target.Span(), e.Value.Span()) }
 func (e *AssignExpr) isExpr()                {}
+
+// Indexing: base[index]
+type IndexExpr struct {
+	Base   Expr
+	Index  Expr
+	LBrack tokens.Token
+	RBrack tokens.Token
+}
+
+func (e *IndexExpr) Span() tokens.TokenSpan { return mergeSpans(e.Base.Span(), e.RBrack.Span) }
+func (e *IndexExpr) isExpr()                {}
+
+// Array literal: [a, b, c]
+type ArrayLiteralExpr struct {
+	Elements []Expr
+	LBrack   tokens.Token
+	RBrack   tokens.Token
+}
+
+func (e *ArrayLiteralExpr) Span() tokens.TokenSpan { return mergeSpans(e.LBrack.Span, e.RBrack.Span) }
+func (e *ArrayLiteralExpr) isExpr()                {}
+
+// Function or method call
+type CallExpr struct {
+	Callee Expr
+	Args   []Expr
+	LParen tokens.Token
+	RParen tokens.Token
+}
+
+func (e *CallExpr) Span() tokens.TokenSpan { return mergeSpans(e.Callee.Span(), e.RParen.Span) }
+func (e *CallExpr) isExpr()                {}
+
+// Member access: obj.member
+type MemberAccessExpr struct {
+	Object    Expr
+	Member    string
+	DotTok    tokens.Token
+	MemberTok tokens.Token
+}
+
+func (e *MemberAccessExpr) Span() tokens.TokenSpan {
+	return mergeSpans(e.Object.Span(), e.MemberTok.Span)
+}
+func (e *MemberAccessExpr) isExpr() {}
+
+// Cast using 'as'
+type CastExpr struct {
+	Expr       Expr
+	TargetType string
+	AsTok      tokens.Token
+}
+
+func (e *CastExpr) Span() tokens.TokenSpan { return mergeSpans(e.Expr.Span(), e.AsTok.Span) }
+func (e *CastExpr) isExpr()                {}
+
+// Ternary conditional: cond ? thenExpr : elseExpr
+type TernaryExpr struct {
+	Cond     Expr
+	ThenExpr Expr
+	ElseExpr Expr
+	QTok     tokens.Token
+	CTok     tokens.Token
+}
+
+func (e *TernaryExpr) Span() tokens.TokenSpan { return mergeSpans(e.Cond.Span(), e.ElseExpr.Span()) }
+func (e *TernaryExpr) isExpr()                {}
 
 // ---------------- Statements ----------------
 

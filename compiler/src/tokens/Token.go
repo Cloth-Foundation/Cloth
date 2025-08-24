@@ -97,6 +97,12 @@ const (
 	TokenSlashEqual
 	TokenStar
 	TokenStarEqual
+	TokenBitAnd
+	TokenBitOr
+	TokenBitXor
+	TokenBitNot
+	TokenShiftLeft
+	TokenShiftRight
 
 	// Symbols
 	TokenColon
@@ -205,7 +211,7 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	case TokenByte, TokenF16, TokenF32, TokenF64, TokenI8, TokenI16, TokenI32, TokenI64, TokenU8, TokenU16, TokenU32, TokenU64:
 		return CategoryKeyword
 	// Operators
-	case TokenAnd, TokenArrow, TokenDoubleEqual, TokenEqual, TokenGreater, TokenGreaterEqual, TokenLess, TokenLessEqual, TokenMinus, TokenMinusMinus, TokenMinusEqual, TokenNot, TokenNotEqual, TokenOr, TokenPercent, TokenPercentEqual, TokenPlus, TokenPlusPlus, TokenPlusEqual, TokenRange, TokenRangeInclusive, TokenSlash, TokenSlashEqual, TokenStar, TokenStarEqual:
+	case TokenAnd, TokenArrow, TokenDoubleEqual, TokenEqual, TokenGreater, TokenGreaterEqual, TokenLess, TokenLessEqual, TokenMinus, TokenMinusMinus, TokenMinusEqual, TokenNot, TokenNotEqual, TokenOr, TokenPercent, TokenPercentEqual, TokenPlus, TokenPlusPlus, TokenPlusEqual, TokenRange, TokenRangeInclusive, TokenSlash, TokenSlashEqual, TokenStar, TokenStarEqual, TokenBitAnd, TokenBitOr, TokenBitXor, TokenBitNot, TokenShiftLeft, TokenShiftRight:
 		return CategoryOperator
 	// Punctuation
 	case TokenColon, TokenComma, TokenDoubleColon, TokenDot, TokenLBrace, TokenLBracket, TokenLParen, TokenQuestion, TokenRBrace, TokenRBracket, TokenRParen, TokenSemicolon:
@@ -387,6 +393,18 @@ func TokenTypeName(t TokenType) string {
 		return "Star"
 	case TokenStarEqual:
 		return "Star Equal"
+	case TokenBitAnd:
+		return "BitAnd"
+	case TokenBitOr:
+		return "BitOr"
+	case TokenBitXor:
+		return "BitXor"
+	case TokenBitNot:
+		return "BitNot"
+	case TokenShiftLeft:
+		return "ShiftLeft"
+	case TokenShiftRight:
+		return "ShiftRight"
 	case TokenColon:
 		return "Colon"
 	case TokenComma:

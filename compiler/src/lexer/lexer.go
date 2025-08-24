@@ -266,6 +266,16 @@ func (l *Lexer) scanNumber() tokens.Token {
 		consumeUnderscoredDigits(func(ch byte) bool { return isDecimalDigit(ch) })
 		numericEnd = l.pos
 	}
+	// Optional scientific exponent (e.g., 1e10, 1.2E-3). Only for decimal numbers
+	if l.current() == 'e' || l.current() == 'E' {
+		isFloat = true
+		l.advance() // 'e' or 'E'
+		if l.current() == '+' || l.current() == '-' {
+			l.advance()
+		}
+		consumeUnderscoredDigits(func(ch byte) bool { return isDecimalDigit(ch) })
+		numericEnd = l.pos
+	}
 	for isAlphaNum(l.current()) {
 		l.advance()
 	}
@@ -415,12 +425,20 @@ func (l *Lexer) scanOperatorOrPunctuation() tokens.Token {
 	case '=':
 		return two('=', tokens.TokenDoubleEqual, tokens.TokenEqual)
 	case '<':
+		if l.current() == '<' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenShiftLeft, startPos, startLine, startCol, nil)
+		}
 		if l.current() == '=' {
 			l.advance()
 			return l.makeTokenFromRange(tokens.TokenLessEqual, startPos, startLine, startCol, nil)
 		}
 		return l.makeTokenFromRange(tokens.TokenLess, startPos, startLine, startCol, nil)
 	case '>':
+		if l.current() == '>' {
+			l.advance()
+			return l.makeTokenFromRange(tokens.TokenShiftRight, startPos, startLine, startCol, nil)
+		}
 		if l.current() == '=' {
 			l.advance()
 			return l.makeTokenFromRange(tokens.TokenGreaterEqual, startPos, startLine, startCol, nil)
@@ -431,11 +449,17 @@ func (l *Lexer) scanOperatorOrPunctuation() tokens.Token {
 			l.advance()
 			return l.makeTokenFromRange(tokens.TokenAnd, startPos, startLine, startCol, nil)
 		}
+		return l.makeTokenFromRange(tokens.TokenBitAnd, startPos, startLine, startCol, nil)
 	case '|':
 		if l.current() == '|' {
 			l.advance()
 			return l.makeTokenFromRange(tokens.TokenOr, startPos, startLine, startCol, nil)
 		}
+		return l.makeTokenFromRange(tokens.TokenBitOr, startPos, startLine, startCol, nil)
+	case '^':
+		return l.makeTokenFromRange(tokens.TokenBitXor, startPos, startLine, startCol, nil)
+	case '~':
+		return l.makeTokenFromRange(tokens.TokenBitNot, startPos, startLine, startCol, nil)
 	case '.':
 		if l.current() == '.' {
 			l.advance()

@@ -4,10 +4,31 @@ import (
 	"compiler/src/ast"
 	"compiler/src/lexer"
 	"compiler/src/parser"
+	"compiler/src/semantic"
 	"compiler/src/tokens"
 	"fmt"
 	"os"
+	"path/filepath"
 )
+
+func tokenOpString(tt tokens.TokenType) string {
+	switch tt {
+	case tokens.TokenBitAnd:
+		return "&"
+	case tokens.TokenBitOr:
+		return "|"
+	case tokens.TokenBitXor:
+		return "^"
+	case tokens.TokenBitNot:
+		return "~"
+	case tokens.TokenShiftLeft:
+		return "<<"
+	case tokens.TokenShiftRight:
+		return ">>"
+	default:
+		return tokens.TokenTypeName(tt)
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -33,11 +54,53 @@ func main() {
 		if file.Module != nil {
 			fmt.Println("module:", file.Module.Name)
 		}
+		// Semantic: collect and resolve imports
+		scope, semErrs := semantic.CollectTopLevel(file)
+		for _, e := range semErrs {
+			fmt.Println(" -", e)
+		}
+		root := filepath.Dir(filepath.Dir(path)) // project root above src/tests, adjust if needed
+		loader := &semantic.FSLoader{Root: root}
+		impErrs := semantic.ResolveImports(file, loader, scope)
+		for _, e := range impErrs {
+			fmt.Println(" -", e)
+		}
+		// Bind names in bodies
+		bindDiags := semantic.Bind(file, scope)
+		for _, d := range bindDiags {
+			fmt.Println(" -", d.Message)
+		}
+		// Type resolution
+		env := semantic.NewTypeEnv()
+		ttab := semantic.NewTypeTable()
+		tdiags := semantic.ResolveTypes(file, env, ttab)
+		for _, td := range tdiags {
+			fmt.Println(" -", td.Message)
+		}
+		// Type checking (stub for now)
+		cdiags := semantic.CheckExpressions(file, ttab)
+		for _, cd := range cdiags {
+			fmt.Println(" -", cd.Message)
+		}
 		for _, im := range file.Imports {
 			fmt.Println("import:", im.PathSegments)
 		}
 		for _, d := range file.Decls {
 			switch dd := d.(type) {
+			case *ast.GlobalVarDecl:
+				kind := "var"
+				if dd.IsLet {
+					kind = "let"
+				}
+				if dd.Type != "" && dd.Value != nil {
+					fmt.Println(kind, dd.Name+":"+dd.Type, "=", exprString(dd.Value))
+				} else if dd.Type != "" {
+					fmt.Println(kind, dd.Name+":"+dd.Type)
+				} else if dd.Value != nil {
+					fmt.Println(kind, dd.Name, "=", exprString(dd.Value))
+				} else {
+					fmt.Println(kind, dd.Name)
+				}
 			case *ast.FuncDecl:
 				fmt.Println("func:", dd.Name)
 				printParams(dd.Params)
@@ -50,10 +113,57 @@ func main() {
 				}
 			case *ast.ClassDecl:
 				fmt.Println("class:", dd.Name)
+				if len(dd.Fields) > 0 {
+					fmt.Println("  fields:")
+					for _, f := range dd.Fields {
+						fmt.Printf("    - %s: %s\n", f.Name, f.Type)
+					}
+				}
+				if len(dd.Builders) > 0 {
+					fmt.Println("  builders:")
+					for _, m := range dd.Builders {
+						printMethod("    ", m)
+					}
+				}
+				if len(dd.Methods) > 0 {
+					fmt.Println("  methods:")
+					for _, m := range dd.Methods {
+						printMethod("    ", m)
+					}
+				}
 			case *ast.StructDecl:
 				fmt.Println("struct:", dd.Name)
+				if len(dd.Fields) > 0 {
+					fmt.Println("  fields:")
+					for _, f := range dd.Fields {
+						fmt.Printf("    - %s: %s\n", f.Name, f.Type)
+					}
+				}
+				if len(dd.Methods) > 0 {
+					fmt.Println("  methods:")
+					for _, m := range dd.Methods {
+						printMethod("    ", m)
+					}
+				}
 			case *ast.EnumDecl:
 				fmt.Println("enum:", dd.Name)
+				if len(dd.Cases) > 0 {
+					fmt.Println("  cases:")
+					for _, c := range dd.Cases {
+						args := ""
+						for i, a := range c.Params {
+							if i > 0 {
+								args += ", "
+							}
+							args += exprString(a)
+						}
+						if args != "" {
+							fmt.Printf("    - %s(%s)\n", c.Name, args)
+						} else {
+							fmt.Printf("    - %s\n", c.Name)
+						}
+					}
+				}
 			default:
 				fmt.Printf("decl: %T\n", dd)
 			}
@@ -70,6 +180,27 @@ func printParams(params []ast.Parameter) {
 	fmt.Println("  params:")
 	for _, p := range params {
 		fmt.Printf("    - %s: %s\n", p.Name, p.Type)
+	}
+}
+
+func printMethod(indent string, m ast.MethodDecl) {
+	fmt.Printf(indent+"%s(", m.Name)
+	for i, p := range m.Params {
+		if i > 0 {
+			fmt.Print(", ")
+		}
+		fmt.Printf("%s: %s", p.Name, p.Type)
+	}
+	fmt.Print(")")
+	if m.ReturnType != "" && m.ReturnType != "void" {
+		fmt.Printf(": %s", m.ReturnType)
+	}
+	fmt.Println()
+	if len(m.Body) > 0 {
+		fmt.Println(indent + "  body:")
+		for _, st := range m.Body {
+			printStmt(indent+"    ", st)
+		}
 	}
 }
 
@@ -187,13 +318,39 @@ func exprString(e ast.Expr) string {
 		return "null"
 	case *ast.UnaryExpr:
 		if x.IsPostfix {
-			return fmt.Sprintf("%s%s", exprString(x.Operand), tokens.TokenTypeName(x.Operator))
+			return fmt.Sprintf("%s%s", exprString(x.Operand), tokenOpString(x.Operator))
 		}
-		return fmt.Sprintf("%s%s", tokens.TokenTypeName(x.Operator), exprString(x.Operand))
+		return fmt.Sprintf("%s%s", tokenOpString(x.Operator), exprString(x.Operand))
 	case *ast.BinaryExpr:
-		return fmt.Sprintf("(%s %s %s)", exprString(x.Left), tokens.TokenTypeName(x.Operator), exprString(x.Right))
+		return fmt.Sprintf("(%s %s %s)", exprString(x.Left), tokenOpString(x.Operator), exprString(x.Right))
 	case *ast.AssignExpr:
-		return fmt.Sprintf("%s %s %s", exprString(x.Target), tokens.TokenTypeName(x.Operator), exprString(x.Value))
+		return fmt.Sprintf("%s %s %s", exprString(x.Target), tokenOpString(x.Operator), exprString(x.Value))
+	case *ast.CallExpr:
+		args := ""
+		for i, a := range x.Args {
+			if i > 0 {
+				args += ", "
+			}
+			args += exprString(a)
+		}
+		return fmt.Sprintf("%s(%s)", exprString(x.Callee), args)
+	case *ast.MemberAccessExpr:
+		return fmt.Sprintf("%s.%s", exprString(x.Object), x.Member)
+	case *ast.CastExpr:
+		return fmt.Sprintf("(%s as %s)", exprString(x.Expr), x.TargetType)
+	case *ast.TernaryExpr:
+		return fmt.Sprintf("(%s ? %s : %s)", exprString(x.Cond), exprString(x.ThenExpr), exprString(x.ElseExpr))
+	case *ast.IndexExpr:
+		return fmt.Sprintf("%s[%s]", exprString(x.Base), exprString(x.Index))
+	case *ast.ArrayLiteralExpr:
+		parts := ""
+		for i, el := range x.Elements {
+			if i > 0 {
+				parts += ", "
+			}
+			parts += exprString(el)
+		}
+		return fmt.Sprintf("[%s]", parts)
 	default:
 		return fmt.Sprintf("<expr %T>", x)
 	}
