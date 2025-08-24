@@ -1,4 +1,4 @@
-<img src="/Logos/SVG/logo-color.svg" />
+![Logo](/Logos/PNG/logo-color.png)
 
 # **Loom**
 
