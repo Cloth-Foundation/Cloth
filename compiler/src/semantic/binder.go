@@ -2,11 +2,14 @@ package semantic
 
 import (
 	"compiler/src/ast"
+	"compiler/src/tokens"
 	"fmt"
 )
 
 type Diagnostic struct {
 	Message string
+	Span    tokens.TokenSpan
+	Hint    string
 }
 
 // Bind walks a file and binds names in function bodies.
@@ -19,7 +22,7 @@ func Bind(file *ast.File, module *Scope) []Diagnostic {
 			fnScope := NewScope(module)
 			for _, p := range n.Params {
 				if err := fnScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
-					diags = append(diags, Diagnostic{Message: err.Error()})
+					diags = append(diags, Diagnostic{Message: err.Error(), Span: p.Tok.Span, Hint: "parameter name already defined in this scope"})
 				}
 			}
 			bindStmts(n.Body, fnScope, &diags)
@@ -46,7 +49,7 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 		mScope := NewScope(tScope)
 		for _, p := range b.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
-				*diags = append(*diags, Diagnostic{Message: err.Error()})
+				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: p.Tok.Span})
 			}
 		}
 		bindStmts(b.Body, mScope, diags)
@@ -58,7 +61,7 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 		mScope := NewScope(tScope)
 		for _, p := range m.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
-				*diags = append(*diags, Diagnostic{Message: err.Error()})
+				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: p.Tok.Span})
 			}
 		}
 		bindStmts(m.Body, mScope, diags)
@@ -76,14 +79,14 @@ func bindStmts(stmts []ast.Stmt, scope *Scope, diags *[]Diagnostic) {
 				bindExpr(n.Value, scope, diags)
 			}
 			if err := scope.Define(Symbol{Name: n.Name, Kind: SymVar, Node: n}); err != nil {
-				*diags = append(*diags, Diagnostic{Message: err.Error()})
+				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: n.NameTok.Span})
 			}
 		case *ast.VarStmt:
 			if n.Value != nil {
 				bindExpr(n.Value, scope, diags)
 			}
 			if err := scope.Define(Symbol{Name: n.Name, Kind: SymVar, Node: n}); err != nil {
-				*diags = append(*diags, Diagnostic{Message: err.Error()})
+				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: n.NameTok.Span})
 			}
 		case *ast.ExpressionStmt:
 			bindExpr(n.E, scope, diags)
@@ -126,7 +129,7 @@ func bindExpr(e ast.Expr, scope *Scope, diags *[]Diagnostic) {
 	switch x := e.(type) {
 	case *ast.IdentifierExpr:
 		if sym, ok := scope.Resolve(x.Name); !ok {
-			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name)})
+			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
 		} else if sym.Kind == SymModule {
 			// ok: allow module namespace symbol to be the left of member access; deeper resolution happens later
 		}
@@ -144,14 +147,12 @@ func bindExpr(e ast.Expr, scope *Scope, diags *[]Diagnostic) {
 			bindExpr(a, scope, diags)
 		}
 	case *ast.MemberAccessExpr:
-		// First bind the object
 		bindExpr(x.Object, scope, diags)
-		// If the object is a module identifier, resolve member in that module scope
 		if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
 			if sym, ok2 := scope.Resolve(objId.Name); ok2 && sym.Kind == SymModule {
 				if modScope, ok3 := sym.Node.(*Scope); ok3 {
 					if _, ok4 := modScope.Resolve(x.Member); !ok4 {
-						*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined member '%s' in module '%s'", x.Member, objId.Name)})
+						*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined member '%s' in module '%s'", x.Member, objId.Name), Span: x.MemberTok.Span, Hint: "did you mean to import or alias a different symbol?"})
 					}
 				}
 			}
