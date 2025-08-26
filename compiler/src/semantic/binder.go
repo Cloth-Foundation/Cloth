@@ -27,15 +27,19 @@ func Bind(file *ast.File, module *Scope) []Diagnostic {
 			}
 			bindStmts(n.Body, fnScope, &diags)
 		case *ast.ClassDecl:
-			bindTypeDecl(n.Name, n.Fields, n.Methods, n.Builders, module, &diags)
+			bindTypeDecl(n.Name, n.Fields, n.Methods, n.Builders, module, &diags, true)
 		case *ast.StructDecl:
-			bindTypeDecl(n.Name, n.Fields, n.Methods, n.Builders, module, &diags)
+			bindTypeDecl(n.Name, n.Fields, n.Methods, n.Builders, module, &diags, false)
+		case *ast.EnumDecl:
+			bindTypeDecl(n.Name, n.Fields, n.Methods, n.Builders, module, &diags, true)
 		}
 	}
 	return diags
 }
 
-func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl, builders []ast.MethodDecl, module *Scope, diags *[]Diagnostic) {
+type selfSymbol struct{ isConst bool }
+
+func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl, builders []ast.MethodDecl, module *Scope, diags *[]Diagnostic, allowSelf bool) {
 	tScope := NewScope(module)
 	for _, f := range fields {
 		if err := tScope.Define(Symbol{Name: f.Name, Kind: SymField, Node: f}); err != nil {
@@ -47,6 +51,9 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("%s.builder: %v", name, err)})
 		}
 		mScope := NewScope(tScope)
+		if allowSelf {
+			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: selfSymbol{isConst: b.IsConst}})
+		}
 		for _, p := range b.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
 				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: p.Tok.Span})
@@ -59,6 +66,9 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("%s.%s: %v", name, m.Name, err)})
 		}
 		mScope := NewScope(tScope)
+		if allowSelf {
+			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: selfSymbol{isConst: m.IsConst}})
+		}
 		for _, p := range m.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
 				*diags = append(*diags, Diagnostic{Message: err.Error(), Span: p.Tok.Span})
@@ -129,7 +139,16 @@ func bindExpr(e ast.Expr, scope *Scope, diags *[]Diagnostic) {
 	switch x := e.(type) {
 	case *ast.IdentifierExpr:
 		if sym, ok := scope.Resolve(x.Name); !ok {
-			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
+			if x.Name == "self" {
+				*diags = append(*diags, Diagnostic{Message: "'self' is only valid inside class/enum instance methods", Span: x.Tok.Span, Hint: "use the type name for static access, or pass the instance explicitly"})
+			} else {
+				*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
+			}
+		} else if x.Name == "self" {
+			// Disallow self inside const methods/builders
+			if meta, ok2 := sym.Node.(selfSymbol); ok2 && meta.isConst {
+				*diags = append(*diags, Diagnostic{Message: "'self' cannot be used in const methods", Span: x.Tok.Span, Hint: "use the type name for static members"})
+			}
 		} else if sym.Kind == SymModule {
 			// ok: allow module namespace symbol to be the left of member access; deeper resolution happens later
 		}

@@ -55,7 +55,7 @@ func main() {
 	bindDiags := semantic.Bind(file, scope)
 	env := semantic.NewTypeEnv()
 	ttab := semantic.NewTypeTable()
-	typeDiags := semantic.ResolveTypes(file, env, ttab)
+	typeDiags := semantic.ResolveTypes(file, env, ttab, scope)
 	checkDiags := semantic.CheckExpressions(file, ttab, scope)
 	// Render
 	if len(semErrs) > 0 {

@@ -1,4 +1,4 @@
-mod tests.first
+mod first
 
 pub fin var π: f32 = 3.14159265359f32
 

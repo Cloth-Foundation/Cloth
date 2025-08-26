@@ -3,8 +3,10 @@ package ast
 import "compiler/src/tokens"
 
 type FieldDecl struct {
-	Name string
-	Type string
+	Name    string
+	Type    string
+	IsConst bool
+	IsFinal bool
 }
 
 type MethodDecl struct {
@@ -13,6 +15,7 @@ type MethodDecl struct {
 	Params     []Parameter
 	ReturnType string
 	Body       []Stmt
+	IsConst    bool
 }
 
 type EnumCase struct {

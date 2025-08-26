@@ -1,1 +1,0 @@
-The original Loom compiler, written in Java
