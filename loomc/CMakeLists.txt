@@ -13,4 +13,6 @@ add_executable(loomc
         include/debug/debug.h
         src/debug/debug.cpp
         include/value/value.h
-        src/value/value.cpp)
+        src/value/value.cpp
+        include/vm/vm.h
+        src/vm/vm.cpp)
