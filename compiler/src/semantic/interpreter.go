@@ -7,7 +7,7 @@ import (
 )
 
 // Execute runs a compiled file by finding main() and interpreting its body.
-// Supports: literals, identifiers (locals), binary +,-,*,/,%, assignment, calls, member access via simple self with fields map.
+// Supports: literals, identifiers (locals and globals), binary +,-,*,/,%, assignment, calls.
 // For now, only builtin print is supported for side effects.
 func Execute(file *ast.File, module *Scope) error {
 	var mainFn *ast.FuncDecl
@@ -20,25 +20,40 @@ func Execute(file *ast.File, module *Scope) error {
 	if mainFn == nil {
 		return fmt.Errorf("no main() function found")
 	}
+	// Initialize globals
+	globals := map[string]any{}
+	for _, d := range file.Decls {
+		if g, ok := d.(*ast.GlobalVarDecl); ok {
+			var val any
+			if g.Value != nil {
+				v, err := evalExpr(g.Value, nil, globals, module)
+				if err != nil {
+					return err
+				}
+				val = v
+			}
+			globals[g.Name] = val
+		}
+	}
 	// simple env for locals
-	env := map[string]any{}
-	_, err := execBlock(mainFn.Body, env, module)
+	locals := map[string]any{}
+	_, err := execBlock(mainFn.Body, locals, globals, module)
 	return err
 }
 
 type returnValue struct{ v any }
 
-func execBlock(stmts []ast.Stmt, env map[string]any, module *Scope) (any, error) {
+func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, module *Scope) (any, error) {
 	for _, s := range stmts {
 		switch n := s.(type) {
 		case *ast.BlockStmt:
-			if v, err := execBlock(n.Stmts, env, module); err != nil || v != nil {
+			if v, err := execBlock(n.Stmts, env, globals, module); err != nil || v != nil {
 				return v, err
 			}
 		case *ast.LetStmt:
 			var val any
 			if n.Value != nil {
-				v, err := evalExpr(n.Value, env, module)
+				v, err := evalExpr(n.Value, env, globals, module)
 				if err != nil {
 					return nil, err
 				}
@@ -48,7 +63,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, module *Scope) (any, error)
 		case *ast.VarStmt:
 			var val any
 			if n.Value != nil {
-				v, err := evalExpr(n.Value, env, module)
+				v, err := evalExpr(n.Value, env, globals, module)
 				if err != nil {
 					return nil, err
 				}
@@ -56,14 +71,14 @@ func execBlock(stmts []ast.Stmt, env map[string]any, module *Scope) (any, error)
 			}
 			env[n.Name] = val
 		case *ast.ExpressionStmt:
-			if _, err := evalExpr(n.E, env, module); err != nil {
+			if _, err := evalExpr(n.E, env, globals, module); err != nil {
 				return nil, err
 			}
 		case *ast.ReturnStmt:
 			if n.Value == nil {
 				return returnValue{v: nil}, nil
 			}
-			v, err := evalExpr(n.Value, env, module)
+			v, err := evalExpr(n.Value, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -73,7 +88,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, module *Scope) (any, error)
 	return nil, nil
 }
 
-func evalExpr(e ast.Expr, env map[string]any, module *Scope) (any, error) {
+func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
 	switch x := e.(type) {
 	case *ast.NumberLiteralExpr:
 		// parse to float64 or int based on isFloat
@@ -97,12 +112,19 @@ func evalExpr(e ast.Expr, env map[string]any, module *Scope) (any, error) {
 	case *ast.NullLiteralExpr:
 		return nil, nil
 	case *ast.IdentifierExpr:
-		if v, ok := env[x.Name]; ok {
-			return v, nil
+		if env != nil {
+			if v, ok := env[x.Name]; ok {
+				return v, nil
+			}
+		}
+		if globals != nil {
+			if v, ok := globals[x.Name]; ok {
+				return v, nil
+			}
 		}
 		return nil, fmt.Errorf("undefined variable %s", x.Name)
 	case *ast.UnaryExpr:
-		v, err := evalExpr(x.Operand, env, module)
+		v, err := evalExpr(x.Operand, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -117,11 +139,11 @@ func evalExpr(e ast.Expr, env map[string]any, module *Scope) (any, error) {
 		}
 		return v, nil
 	case *ast.BinaryExpr:
-		l, err := evalExpr(x.Left, env, module)
+		l, err := evalExpr(x.Left, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
-		r, err := evalExpr(x.Right, env, module)
+		r, err := evalExpr(x.Right, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -146,27 +168,50 @@ func evalExpr(e ast.Expr, env map[string]any, module *Scope) (any, error) {
 		}
 		return nil, fmt.Errorf("unsupported binary op")
 	case *ast.AssignExpr:
-		v, err := evalExpr(x.Value, env, module)
+		v, err := evalExpr(x.Value, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
 		if id, ok := x.Target.(*ast.IdentifierExpr); ok {
 			switch x.Operator {
 			case tokens.TokenEqual:
-				env[id.Name] = v
-				return v, nil
+				// prefer local assignment if variable exists, else global
+				if env != nil {
+					if _, exists := env[id.Name]; exists {
+						env[id.Name] = v
+						return v, nil
+					}
+				}
+				if globals != nil {
+					if _, exists := globals[id.Name]; exists {
+						globals[id.Name] = v
+						return v, nil
+					}
+				}
+				return nil, fmt.Errorf("assignment to undefined variable %s", id.Name)
 			case tokens.TokenPlusEqual:
-				res, err := evalExpr(&ast.BinaryExpr{Left: &ast.IdentifierExpr{Name: id.Name, Tok: id.Tok}, Operator: tokens.TokenPlus, Right: x.Value, OpTok: x.OpTok}, env, module)
+				res, err := evalExpr(&ast.BinaryExpr{Left: &ast.IdentifierExpr{Name: id.Name, Tok: id.Tok}, Operator: tokens.TokenPlus, Right: x.Value, OpTok: x.OpTok}, env, globals, module)
 				if err != nil {
 					return nil, err
 				}
-				env[id.Name] = res
-				return res, nil
+				if env != nil {
+					if _, exists := env[id.Name]; exists {
+						env[id.Name] = res
+						return res, nil
+					}
+				}
+				if globals != nil {
+					if _, exists := globals[id.Name]; exists {
+						globals[id.Name] = res
+						return res, nil
+					}
+				}
+				return nil, fmt.Errorf("assignment to undefined variable %s", id.Name)
 			}
 		}
 		return nil, fmt.Errorf("unsupported assignment target")
 	case *ast.CastExpr:
-		v, err := evalExpr(x.Expr, env, module)
+		v, err := evalExpr(x.Expr, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -198,13 +243,39 @@ func evalExpr(e ast.Expr, env map[string]any, module *Scope) (any, error) {
 		// Builtin print
 		if id, ok := x.Callee.(*ast.IdentifierExpr); ok && id.Name == "print" {
 			for _, a := range x.Args {
-				v, err := evalExpr(a, env, module)
+				v, err := evalExpr(a, env, globals, module)
 				if err != nil {
 					return nil, err
 				}
 				fmt.Println(toString(v))
 			}
 			return nil, nil
+		}
+		// Top-level function calls
+		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
+			if sym, ok2 := module.Resolve(id.Name); ok2 {
+				if fn, ok3 := sym.Node.(*ast.FuncDecl); ok3 {
+					// bind parameters
+					newEnv := map[string]any{}
+					for i, p := range fn.Params {
+						if i < len(x.Args) {
+							v, err := evalExpr(x.Args[i], env, globals, module)
+							if err != nil {
+								return nil, err
+							}
+							newEnv[p.Name] = v
+						}
+					}
+					ret, err := execBlock(fn.Body, newEnv, globals, module)
+					if err != nil {
+						return nil, err
+					}
+					if rv, ok := ret.(returnValue); ok {
+						return rv.v, nil
+					}
+					return nil, nil
+				}
+			}
 		}
 		return nil, fmt.Errorf("unknown function call")
 	default:

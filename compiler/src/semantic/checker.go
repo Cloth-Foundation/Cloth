@@ -240,13 +240,26 @@ func checkCallAgainst(sigParams []ast.Parameter, ret string, callName string, ar
 func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, diags *[]CheckDiag) string {
 	switch x := e.(type) {
 	case *ast.IdentifierExpr:
-		if x.Name == "self" && ts.selfType != "" {
-			table.NodeToType[e] = ts.selfType
-			return ts.selfType
-		}
+		// local scope first
 		if t, ok := ts.resolve(x.Name); ok {
 			table.NodeToType[e] = t
 			return t
+		}
+		// then module-level globals
+		if sym, ok := module.Resolve(x.Name); ok {
+			if sym.Kind == SymVar {
+				if gv, ok2 := sym.Node.(*ast.GlobalVarDecl); ok2 {
+					if gv.Type != "" {
+						table.NodeToType[e] = gv.Type
+						return gv.Type
+					}
+					if gv.Value != nil {
+						vt := inferExprType(gv.Value, ts, table, module, diags)
+						table.NodeToType[e] = vt
+						return vt
+					}
+				}
+			}
 		}
 		return ""
 	case *ast.NumberLiteralExpr:
@@ -359,22 +372,10 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		if id, ok := x.Target.(*ast.IdentifierExpr); ok {
 			if t, ok2 := ts.resolve(id.Name); ok2 {
 				tt = t
-			}
-		}
-		// self.field assignment: treat lhs type from field if known
-		if macc, ok := x.Target.(*ast.MemberAccessExpr); ok && ts.selfType != "" {
-			if _, isSelf := macc.Object.(*ast.IdentifierExpr); isSelf {
-				if ts.selfType != "" {
-					// best-effort: lookup field type on the class
-					if sym, ok := module.Resolve(ts.selfType); ok {
-						if cd, ok2 := sym.Node.(*ast.ClassDecl); ok2 {
-							for _, f := range cd.Fields {
-								if f.Name == macc.Member {
-									tt = f.Type
-									break
-								}
-							}
-						}
+			} else if sym, ok3 := module.Resolve(id.Name); ok3 {
+				if sym.Kind == SymVar {
+					if gv, ok4 := sym.Node.(*ast.GlobalVarDecl); ok4 {
+						tt = gv.Type
 					}
 				}
 			}
