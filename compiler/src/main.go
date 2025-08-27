@@ -49,6 +49,8 @@ func main() {
 	}
 	// Semantic pipeline
 	scope, semErrs := semantic.CollectTopLevel(file)
+	// Inject builtins (e.g., print)
+	semantic.InjectBuiltins(scope)
 	root := filepath.Dir(filepath.Dir(path))
 	loader := &semantic.FSLoader{Root: root}
 	impErrs := semantic.ResolveImports(file, loader, scope)
@@ -76,6 +78,11 @@ func main() {
 	diagnostics.RenderTypeResolveDiagnostics(typeDiags)
 	diagnostics.RenderTypeCheckDiagnostics(checkDiags)
 	if len(semErrs) > 0 || len(impErrs) > 0 || len(bindDiags) > 0 || len(typeDiags) > 0 || len(checkDiags) > 0 {
+		os.Exit(1)
+	}
+	// Execute main() with interpreter
+	if err := semantic.Execute(file, scope); err != nil {
+		fmt.Printf("runtime error: %v\n", err)
 		os.Exit(1)
 	}
 }

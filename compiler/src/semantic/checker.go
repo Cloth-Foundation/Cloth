@@ -9,12 +9,17 @@ import (
 type CheckDiag struct{ Message string }
 
 type typeScope struct {
-	parent *typeScope
-	types  map[string]string
+	parent   *typeScope
+	types    map[string]string
+	selfType string
 }
 
 func newTypeScope(parent *typeScope) *typeScope {
-	return &typeScope{parent: parent, types: map[string]string{}}
+	ts := &typeScope{parent: parent, types: map[string]string{}}
+	if parent != nil {
+		ts.selfType = parent.selfType
+	}
+	return ts
 }
 func (s *typeScope) define(name, t string) { s.types[name] = t }
 func (s *typeScope) resolve(name string) (string, bool) {
@@ -48,6 +53,7 @@ func CheckExpressions(file *ast.File, types *TypeTable, module *Scope) []CheckDi
 		case *ast.ClassDecl:
 			for _, m := range n.Methods {
 				ts := newTypeScope(nil)
+				ts.selfType = n.Name
 				for _, p := range m.Params {
 					ts.define(p.Name, p.Type)
 				}
@@ -55,6 +61,7 @@ func CheckExpressions(file *ast.File, types *TypeTable, module *Scope) []CheckDi
 			}
 			for _, b := range n.Builders {
 				ts := newTypeScope(nil)
+				ts.selfType = n.Name
 				for _, p := range b.Params {
 					ts.define(p.Name, p.Type)
 				}
@@ -233,6 +240,10 @@ func checkCallAgainst(sigParams []ast.Parameter, ret string, callName string, ar
 func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, diags *[]CheckDiag) string {
 	switch x := e.(type) {
 	case *ast.IdentifierExpr:
+		if x.Name == "self" && ts.selfType != "" {
+			table.NodeToType[e] = ts.selfType
+			return ts.selfType
+		}
 		if t, ok := ts.resolve(x.Name); ok {
 			table.NodeToType[e] = t
 			return t
@@ -327,6 +338,13 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = lt
 			return lt
 		}
+		// Allow string concatenation
+		if op == "+" {
+			if (lt == "string" && rt == "string") || (lt == "string" && IsNumericType(rt)) || (rt == "string" && IsNumericType(lt)) {
+				table.NodeToType[e] = "string"
+				return "string"
+			}
+		}
 		if IsNumericType(lt) && IsNumericType(rt) {
 			if IsFloatType(lt) || IsFloatType(rt) {
 				table.NodeToType[e] = "f64"
@@ -343,6 +361,24 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 				tt = t
 			}
 		}
+		// self.field assignment: treat lhs type from field if known
+		if macc, ok := x.Target.(*ast.MemberAccessExpr); ok && ts.selfType != "" {
+			if _, isSelf := macc.Object.(*ast.IdentifierExpr); isSelf {
+				if ts.selfType != "" {
+					// best-effort: lookup field type on the class
+					if sym, ok := module.Resolve(ts.selfType); ok {
+						if cd, ok2 := sym.Node.(*ast.ClassDecl); ok2 {
+							for _, f := range cd.Fields {
+								if f.Name == macc.Member {
+									tt = f.Type
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		vt := inferExprType(x.Value, ts, table, module, diags)
 		switch x.Operator {
 		case tokens.TokenEqual:
@@ -350,7 +386,14 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 				*diags = append(*diags, CheckDiag{Message: formatAssign(tt, vt)})
 			}
 		case tokens.TokenPlusEqual, tokens.TokenMinusEqual, tokens.TokenStarEqual, tokens.TokenSlashEqual:
-			if !(IsNumericType(tt) && IsNumericType(vt)) {
+			if x.Operator == tokens.TokenPlusEqual {
+				// allow string concatenation with +=
+				if !(tt == "string" && (vt == "string" || IsNumericType(vt))) {
+					if !(IsNumericType(tt) && IsNumericType(vt)) {
+						*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types"})
+					}
+				}
+			} else if !(IsNumericType(tt) && IsNumericType(vt)) {
 				*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types"})
 			}
 		case tokens.TokenPercentEqual:
@@ -407,7 +450,20 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		}
 		return ""
 	case *ast.MemberAccessExpr:
-		_ = inferExprType(x.Object, ts, table, module, diags)
+		ot := inferExprType(x.Object, ts, table, module, diags)
+		// self.field resolution for known class fields
+		if ot != "" {
+			if sym, ok := module.Resolve(ot); ok {
+				if cd, ok2 := sym.Node.(*ast.ClassDecl); ok2 {
+					for _, f := range cd.Fields {
+						if f.Name == x.Member {
+							table.NodeToType[e] = f.Type
+							return f.Type
+						}
+					}
+				}
+			}
+		}
 		return ""
 	case *ast.TernaryExpr:
 		ct := inferExprType(x.Cond, ts, table, module, diags)

@@ -159,6 +159,11 @@ func (p *Parser) parsePrefix() ast.Expr {
 		}
 		rbr := p.expect(tokens.TokenRBracket, "expected ']' in array literal")
 		return &ast.ArrayLiteralExpr{Elements: elems, LBrack: lbr, RBrack: rbr}
+	case tokens.TokenSelf:
+		// Treat 'self' keyword like an identifier in expressions
+		tok := p.curr
+		p.advance()
+		return &ast.IdentifierExpr{Name: "self", Tok: tok}
 	case tokens.TokenIdentifier:
 		tok := p.curr
 		p.advance()

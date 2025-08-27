@@ -3,25 +3,6 @@ mod first
 pub fin var π: f32 = 3.14159265359f32
 
 pub func main(): i32 {
-    var x: i8 = 10E-2;
-    var y: string = "Hello, World!"
-    var z: char = 'c'
-
-    ret x as i32
-}
-
-pub class Person {
-    priv fin name: string
-
-    pub builder(name: string) {
-        self.name = name
-    }
-
-    pub func get_name(): string {
-        ret self.name
-    }
-
-    pub func append(s: string): string {
-        ret self.name += s
-    }
+    print(π)
+    ret 0
 }
