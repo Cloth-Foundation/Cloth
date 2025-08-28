@@ -53,7 +53,7 @@ This policy applies to:
 - Loom compiler and runtime
 - Standard library modules
 - Official language tools and formatters
-- Any critical infrastructure in the [Loom Foundation GitHub organization](https://github.com/LoomLang)
+- Any critical infrastructure in the [Loom Foundation GitHub organization](https://github.com/LoomFoundation)
 
 **This policy does not cover:**
 - Third-party tools or libraries
