@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"bufio"
 	"compiler/src/ast"
 	"fmt"
 	"os"
@@ -46,6 +47,16 @@ func InjectBuiltins(scope *Scope) {
 		Node: &ast.FuncDecl{
 			Name:   "exit",
 			Params: []ast.Parameter{{Name: "code", Type: "i32"}},
+		},
+	})
+
+	_ = scope.Define(Symbol{
+		Name: "input",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "input",
+			Params:     []ast.Parameter{{Name: "prompt", Type: "string"}},
+			ReturnType: "string",
 		},
 	})
 }
@@ -166,6 +177,23 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 		}
 		fmt.Print(string(out))
 		return true, nil, nil
+	case "input":
+		// optional prompt already type-checked as string; print if provided
+		if len(args) >= 1 {
+			v, err := evalExpr(args[0], env, globals, module)
+			if err != nil {
+				return true, nil, err
+			}
+			fmt.Print(toString(v))
+		}
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			return true, scanner.Text(), nil
+		}
+		if err := scanner.Err(); err != nil {
+			return true, nil, err
+		}
+		return true, "", nil
 	case "exit":
 		if len(args) == 0 {
 			os.Exit(0)

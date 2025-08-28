@@ -1,6 +1,7 @@
 mod first
 
 pub func main(): i32 {
-    printf("{} {}!\n", "Hello", "World");
+    let name: string = input("Name: ")
+    printf("Hello, {}", name)
     ret 0
 }
