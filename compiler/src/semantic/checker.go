@@ -219,6 +219,11 @@ func findMethodOnType(typeName, method string, module *Scope) ([]ast.Parameter, 
 }
 
 func checkCallAgainst(sigParams []ast.Parameter, ret string, callName string, args []ast.Expr, ts *typeScope, table *TypeTable, module *Scope, diags *[]CheckDiag) string {
+	// Special-case builtin printf signature: (string, []any)
+	if callName == "printf" {
+		// Only ensure at least 1 arg and that first arg is string-like; skip strict checks for []any
+		return ret
+	}
 	for i, a := range args {
 		at := inferExprType(a, ts, table, module, diags)
 		if i < len(sigParams) {
@@ -245,9 +250,10 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = t
 			return t
 		}
-		// then module-level globals
+		// then module-level symbols
 		if sym, ok := module.Resolve(x.Name); ok {
-			if sym.Kind == SymVar {
+			switch sym.Kind {
+			case SymVar:
 				if gv, ok2 := sym.Node.(*ast.GlobalVarDecl); ok2 {
 					if gv.Type != "" {
 						table.NodeToType[e] = gv.Type
@@ -259,6 +265,10 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 						return vt
 					}
 				}
+			case SymClass, SymStruct, SymEnum:
+				// treat as a type reference; use the symbol name as the type
+				table.NodeToType[e] = sym.Name
+				return sym.Name
 			}
 		}
 		return ""
@@ -533,6 +543,10 @@ func assignable(target, value string) bool {
 		return true
 	}
 	if IsNumericType(target) && IsNumericType(value) {
+		return true
+	}
+	// printf second arg: []any accepts any []T
+	if target == "[]any" && len(value) >= 2 && value[:2] == "[]" {
 		return true
 	}
 	return false

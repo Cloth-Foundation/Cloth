@@ -240,16 +240,43 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			return v, nil
 		}
 	case *ast.CallExpr:
-		// Builtin print
-		if id, ok := x.Callee.(*ast.IdentifierExpr); ok && id.Name == "print" {
-			for _, a := range x.Args {
-				v, err := evalExpr(a, env, globals, module)
-				if err != nil {
-					return nil, err
-				}
-				fmt.Println(toString(v))
+		// delegate to builtin dispatcher first
+		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
+			if handled, ret, err := CallBuiltin(id.Name, x.Args, env, globals, module); handled {
+				return ret, err
 			}
-			return nil, nil
+		}
+		// Static method call: Type.method(...)
+		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
+			if objId, ok2 := macc.Object.(*ast.IdentifierExpr); ok2 {
+				if sym, ok3 := module.Resolve(objId.Name); ok3 {
+					switch n := sym.Node.(type) {
+					case *ast.ClassDecl:
+						for _, m := range n.Methods {
+							if m.Name == macc.Member {
+								newEnv := map[string]any{}
+								for i, p := range m.Params {
+									if i < len(x.Args) {
+										v, err := evalExpr(x.Args[i], env, globals, module)
+										if err != nil {
+											return nil, err
+										}
+										newEnv[p.Name] = v
+									}
+								}
+								ret, err := execBlock(m.Body, newEnv, globals, module)
+								if err != nil {
+									return nil, err
+								}
+								if rv, ok := ret.(returnValue); ok {
+									return rv.v, nil
+								}
+								return nil, nil
+							}
+						}
+					}
+				}
+			}
 		}
 		// Top-level function calls
 		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {

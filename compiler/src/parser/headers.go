@@ -220,10 +220,10 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.report(p.curr, "'let' is only allowed inside functions; use 'var' for fields")
 					return nil
 				}
-				// Optional field modifiers (fin/const)
+				// Field modifiers: allow multiple fin/const
 				isConst := false
 				isFinal := false
-				if p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
+				for p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
 					if p.curr.Type == tokens.TokenConst {
 						isConst = true
 					} else {
@@ -231,7 +231,9 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					}
 					p.advance()
 				}
-				// field: name : Type
+				// Optional 'var'
+				_ = p.match(tokens.TokenVar)
+				// field: name : Type [= initializer]
 				if isConst || isFinal || p.curr.Type == tokens.TokenIdentifier {
 					fname := p.expect(tokens.TokenIdentifier, "expected field name")
 					if p.fatal {
@@ -244,6 +246,14 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					ft := p.parseTypeName()
 					if p.fatal {
 						return nil
+					}
+					// optional initializer (ignored for now)
+					if p.curr.Type == tokens.TokenEqual {
+						p.advance()
+						_ = p.parseExpression(precLowest)
+						if p.fatal {
+							return nil
+						}
 					}
 					cd.Fields = append(cd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsConst: isConst, IsFinal: isFinal})
 					_ = p.match(tokens.TokenSemicolon)
@@ -281,10 +291,10 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.report(p.curr, "'let' is only allowed inside functions; use 'var' for fields")
 					return nil
 				}
-				// optional field modifier
+				// field modifiers
 				isConst := false
 				isFinal := false
-				if p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
+				for p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
 					if p.curr.Type == tokens.TokenConst {
 						isConst = true
 					} else {
@@ -293,7 +303,8 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.advance()
 				}
 				// fields or methods similar to class
-				if isConst || isFinal || p.curr.Type == tokens.TokenIdentifier {
+				if isConst || isFinal || p.curr.Type == tokens.TokenIdentifier || p.curr.Type == tokens.TokenVar {
+					_ = p.match(tokens.TokenVar)
 					fname := p.expect(tokens.TokenIdentifier, "expected field name")
 					if p.fatal {
 						return nil
@@ -305,6 +316,13 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					ft := p.parseTypeName()
 					if p.fatal {
 						return nil
+					}
+					if p.curr.Type == tokens.TokenEqual {
+						p.advance()
+						_ = p.parseExpression(precLowest)
+						if p.fatal {
+							return nil
+						}
 					}
 					sd.Fields = append(sd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsConst: isConst, IsFinal: isFinal})
 					_ = p.match(tokens.TokenSemicolon)

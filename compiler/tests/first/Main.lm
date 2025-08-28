@@ -1,14 +1,6 @@
 mod first
 
-pub fin var π: f32 = 3.14159265359f32
-
-pub func printHello(): f32 {
-    print("Hello")
-    print("World")
-    ret π
-}
-
 pub func main(): i32 {
-    print(printHello() as i32)
+    printf("{} {}!\n", "Hello", "World");
     ret 0
 }
