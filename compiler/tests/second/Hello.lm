@@ -1,0 +1,5 @@
+mod second
+
+pub func printHello(): void {
+    println("Hello, world!");
+}

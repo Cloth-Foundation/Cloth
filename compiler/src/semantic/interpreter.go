@@ -83,6 +83,36 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				return nil, err
 			}
 			return returnValue{v: v}, nil
+		case *ast.IfStmt:
+			cond, err := evalExpr(n.Cond, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			if b, ok := cond.(bool); ok && b {
+				if v, err := execBlock(n.Then.Stmts, env, globals, module); err != nil || v != nil {
+					return v, err
+				}
+				break
+			}
+			handled := false
+			for _, ei := range n.Elifs {
+				c2, err := evalExpr(ei.Cond, env, globals, module)
+				if err != nil {
+					return nil, err
+				}
+				if b2, ok := c2.(bool); ok && b2 {
+					if v, err := execBlock(ei.Then.Stmts, env, globals, module); err != nil || v != nil {
+						return v, err
+					}
+					handled = true
+					break
+				}
+			}
+			if !handled && n.Else != nil {
+				if v, err := execBlock(n.Else.Stmts, env, globals, module); err != nil || v != nil {
+					return v, err
+				}
+			}
 		}
 	}
 	return nil, nil
@@ -136,6 +166,10 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			case float64:
 				return -n, nil
 			}
+		case tokens.TokenNot:
+			if b, ok := v.(bool); ok {
+				return !b, nil
+			}
 		}
 		return v, nil
 	case *ast.BinaryExpr:
@@ -165,6 +199,52 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			return divNums(l, r)
 		case tokens.TokenPercent:
 			return modNums(l, r)
+		case tokens.TokenLess, tokens.TokenLessEqual, tokens.TokenGreater, tokens.TokenGreaterEqual:
+			lf, lok := toFloat(l)
+			rf, rok := toFloat(r)
+			if !(lok && rok) {
+				return nil, fmt.Errorf("non-numeric comparison")
+			}
+			switch x.Operator {
+			case tokens.TokenLess:
+				return lf < rf, nil
+			case tokens.TokenLessEqual:
+				return lf <= rf, nil
+			case tokens.TokenGreater:
+				return lf > rf, nil
+			case tokens.TokenGreaterEqual:
+				return lf >= rf, nil
+			}
+		case tokens.TokenDoubleEqual, tokens.TokenNotEqual:
+			// numeric equality if both numeric, else stringified equality
+			if lf, lok := toFloat(l); lok {
+				if rf, rok := toFloat(r); rok {
+					if x.Operator == tokens.TokenDoubleEqual {
+						return lf == rf, nil
+					}
+					return lf != rf, nil
+				}
+			}
+			le := toString(l)
+			re := toString(r)
+			if x.Operator == tokens.TokenDoubleEqual {
+				return le == re, nil
+			}
+			return le != re, nil
+		case tokens.TokenAnd:
+			lb, lok := l.(bool)
+			rb, rok := r.(bool)
+			if !(lok && rok) {
+				return nil, fmt.Errorf("logical && requires bools")
+			}
+			return lb && rb, nil
+		case tokens.TokenOr:
+			lb, lok := l.(bool)
+			rb, rok := r.(bool)
+			if !(lok && rok) {
+				return nil, fmt.Errorf("logical || requires bools")
+			}
+			return lb || rb, nil
 		}
 		return nil, fmt.Errorf("unsupported binary op")
 	case *ast.AssignExpr:
@@ -413,4 +493,15 @@ func modNums(a, b any) (any, error) {
 		return xi % yi, nil
 	}
 	return nil, fmt.Errorf("non-integer modulus")
+}
+
+func toFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	default:
+		return 0, false
+	}
 }

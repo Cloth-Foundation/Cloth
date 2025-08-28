@@ -597,6 +597,11 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenVar, true
 	case "while":
 		return tokens.TokenWhile, true
+	// logical keywords
+	case "and":
+		return tokens.TokenAnd, true
+	case "or":
+		return tokens.TokenOr, true
 	// builtins
 	case "byte":
 		return tokens.TokenByte, true
