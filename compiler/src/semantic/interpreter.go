@@ -392,7 +392,7 @@ func divNums(a, b any) (any, error) {
 	case int64:
 		switch y := b.(type) {
 		case int64:
-			return x / y, nil
+			return float64(x) / float64(y), nil
 		case float64:
 			return float64(x) / y, nil
 		}

@@ -368,6 +368,11 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 				return "string"
 			}
 		}
+		// Division always yields floating point in Loom TODO: probably shouldn't do this
+		if op == "/" {
+			table.NodeToType[e] = "f64"
+			return "f64"
+		}
 		if IsNumericType(lt) && IsNumericType(rt) {
 			if IsFloatType(lt) || IsFloatType(rt) {
 				table.NodeToType[e] = "f64"

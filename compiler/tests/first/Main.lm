@@ -1,7 +1,24 @@
 mod first
 
+import first.Add::{ add }
+
 pub func main(): i32 {
-    let name: string = input("Name: ")
-    printf("Hello, {}", name)
+    let hex = -(7 * 4 + 25 / 5 - 18 % 5 + 12 - 3) + 0.1 # -38.9
+    printf("{}\n", hex)
+
+    hex = ((50 % 7) * 3) - (20 / 4) + 0.25 # -1.75
+    printf("{}\n", hex)
+
+    hex = -(8 * 3 - 14 / 2 + 5 % 3) - 0.6 # -19.6
+    printf("{}\n", hex)
+
+    hex = (100 / 8) - (3 * 7) + (45 % 6) - 2.2 # -7.7
+    printf("{}\n", hex)
+
+    hex = -((30 % 4) + (9 * 2) - (40 / 5)) + 1.1 # -10.9
+    printf("{}\n", hex)
+
+    printf(add(1, 2 * 6))
+
     ret 0
 }

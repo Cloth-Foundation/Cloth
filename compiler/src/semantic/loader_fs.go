@@ -11,7 +11,7 @@ import (
 )
 
 // FSLoader loads modules from the filesystem based on a root directory.
-// A module path like ["tests","first"] resolves to <root>/tests/first/Main.lm by convention.
+// A module path like ["tests","first"] resolves to a module by trying, in order
 type FSLoader struct {
 	Root     string
 	cache    map[string]*ast.File
@@ -37,23 +37,31 @@ func (l *FSLoader) Load(modulePath []string) (*ast.File, error) {
 	l.visiting[k] = true
 	defer delete(l.visiting, k)
 
-	// Convention: module path maps to directory; load 'Main.lm'
+	// Build candidate paths
 	dir := filepath.Join(append([]string{l.Root}, modulePath...)...)
-	entry := filepath.Join(dir, "Main.lm")
-	data, err := os.ReadFile(entry)
-	if err != nil {
-		// fallback: try a file named by last segment + .lm
-		if len(modulePath) > 0 {
-			alt := filepath.Join(dir, fmt.Sprintf("%s.lm", modulePath[len(modulePath)-1]))
-			if b, e2 := os.ReadFile(alt); e2 == nil {
-				data = b
-				entry = alt
-			} else {
-				return nil, fmt.Errorf("load module %s: %w", strings.Join(modulePath, "."), err)
-			}
+	candidates := []string{
+		filepath.Join(dir, "Main.lm"),
+	}
+	if len(modulePath) > 0 {
+		candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.lm", modulePath[len(modulePath)-1])))
+		candidates = append(candidates, filepath.Join(append([]string{l.Root}, append(modulePath[:len(modulePath)-1], modulePath[len(modulePath)-1]+".lm")...)...))
+	}
+
+	var data []byte
+	var entry string
+	var readErr error
+	for _, path := range candidates {
+		if b, err := os.ReadFile(path); err == nil {
+			data = b
+			entry = path
+			readErr = nil
+			break
 		} else {
-			return nil, fmt.Errorf("load module %v: %w", modulePath, err)
+			readErr = err
 		}
+	}
+	if data == nil {
+		return nil, fmt.Errorf("load module %s: %v (tried: %s)", strings.Join(modulePath, "."), readErr, strings.Join(candidates, ", "))
 	}
 	lx := lexer.New(string(data), entry)
 	p := parser.New(lx)
