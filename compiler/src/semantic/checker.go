@@ -6,7 +6,11 @@ import (
 	"fmt"
 )
 
-type CheckDiag struct{ Message string }
+type CheckDiag struct {
+	Message string
+	Span    tokens.TokenSpan
+	Hint    string
+}
 
 type typeScope struct {
 	parent   *typeScope
@@ -84,7 +88,7 @@ func checkGlobal(g *ast.GlobalVarDecl, ts *typeScope, table *TypeTable, module *
 	if g.Value != nil {
 		vt := inferExprType(g.Value, ts, table, module, diags)
 		if g.Type != "" && !assignable(g.Type, vt) {
-			*diags = append(*diags, CheckDiag{Message: formatAssign(g.Type, vt)})
+			*diags = append(*diags, CheckDiag{Message: formatAssign(g.Type, vt), Span: g.Tok.Span})
 		}
 		if g.Type == "" {
 			ts.define(g.Name, vt)
@@ -105,7 +109,7 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 			if n.Value != nil {
 				vt := inferExprType(n.Value, ts, table, module, diags)
 				if n.Type != "" && !assignable(n.Type, vt) {
-					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt)})
+					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt), Span: n.NameTok.Span})
 				}
 				if n.Type == "" {
 					ts.define(n.Name, vt)
@@ -119,7 +123,7 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 			if n.Value != nil {
 				vt := inferExprType(n.Value, ts, table, module, diags)
 				if n.Type != "" && !assignable(n.Type, vt) {
-					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt)})
+					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt), Span: n.NameTok.Span})
 				}
 				if n.Type == "" {
 					ts.define(n.Name, vt)
@@ -134,22 +138,22 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 		case *ast.ReturnStmt:
 			if n.Value != nil {
 				vt := inferExprType(n.Value, ts, table, module, diags)
-				if retType != "" && retType != "void" && !assignable(retType, vt) {
-					*diags = append(*diags, CheckDiag{Message: formatAssign(retType, vt)})
+				if retType != "" && retType != TokenTypeName(tokens.TokenVoid) && !assignable(retType, vt) {
+					*diags = append(*diags, CheckDiag{Message: formatAssign(retType, vt), Span: n.Tok.Span})
 				}
-			} else if retType != "" && retType != "void" {
-				*diags = append(*diags, CheckDiag{Message: "missing return value"})
+			} else if retType != "" && retType != TokenTypeName(tokens.TokenVoid) {
+				*diags = append(*diags, CheckDiag{Message: "missing return value", Span: n.Tok.Span})
 			}
 		case *ast.IfStmt:
 			ct := inferExprType(n.Cond, ts, table, module, diags)
-			if ct != "bool" {
-				*diags = append(*diags, CheckDiag{Message: "if condition must be bool"})
+			if ct != TokenTypeName(tokens.TokenBool) {
+				*diags = append(*diags, CheckDiag{Message: "if condition must be bool", Span: n.Cond.Span()})
 			}
 			checkBlock(n.Then.Stmts, newTypeScope(ts), retType, table, module, diags)
 			for _, ei := range n.Elifs {
 				ct2 := inferExprType(ei.Cond, ts, table, module, diags)
-				if ct2 != "bool" {
-					*diags = append(*diags, CheckDiag{Message: "elif condition must be bool"})
+				if ct2 != TokenTypeName(tokens.TokenBool) {
+					*diags = append(*diags, CheckDiag{Message: "elif condition must be bool", Span: ei.Cond.Span()})
 				}
 				checkBlock(ei.Then.Stmts, newTypeScope(ts), retType, table, module, diags)
 			}
@@ -158,15 +162,15 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 			}
 		case *ast.WhileStmt:
 			ct := inferExprType(n.Cond, ts, table, module, diags)
-			if ct != "bool" {
-				*diags = append(*diags, CheckDiag{Message: "while condition must be bool"})
+			if ct != TokenTypeName(tokens.TokenBool) {
+				*diags = append(*diags, CheckDiag{Message: "while condition must be bool", Span: n.Cond.Span()})
 			}
 			checkBlock(n.Body.Stmts, newTypeScope(ts), retType, table, module, diags)
 		case *ast.DoWhileStmt:
 			checkBlock(n.Body.Stmts, newTypeScope(ts), retType, table, module, diags)
 			ct := inferExprType(n.Cond, ts, table, module, diags)
-			if ct != "bool" {
-				*diags = append(*diags, CheckDiag{Message: "do-while condition must be bool"})
+			if ct != TokenTypeName(tokens.TokenBool) {
+				*diags = append(*diags, CheckDiag{Message: "do-while condition must be bool", Span: n.Cond.Span()})
 			}
 		case *ast.LoopStmt:
 			ft := inferExprType(n.From, ts, table, module, diags)
@@ -176,7 +180,7 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 			}
 			ls := newTypeScope(ts)
 			if ft == "" {
-				ft = "i32"
+				ft = TokenTypeName(tokens.TokenI32)
 			}
 			ls.define(n.VarName, ft)
 			checkBlock(n.Body.Stmts, ls, retType, table, module, diags)
@@ -229,7 +233,7 @@ func checkCallAgainst(sigParams []ast.Parameter, ret string, callName string, ar
 		if i < len(sigParams) {
 			pt := sigParams[i].Type
 			if pt != "" && !assignable(pt, at) {
-				*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("argument %d to %s: %s", i+1, callName, formatAssign(pt, at))})
+				*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("argument %d to %s: %s", i+1, callName, formatAssign(pt, at)), Span: a.Span()})
 			}
 		}
 	}
@@ -278,20 +282,25 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			return x.Value.Suffix
 		}
 		if x.Value.IsFloat {
-			table.NodeToType[e] = "f64"
-			return "f64"
+			t := TokenTypeName(tokens.TokenF64)
+			table.NodeToType[e] = t
+			return t
 		}
-		table.NodeToType[e] = "i32"
-		return "i32"
+		t := TokenTypeName(tokens.TokenI32)
+		table.NodeToType[e] = t
+		return t
 	case *ast.StringLiteralExpr:
-		table.NodeToType[e] = "string"
-		return "string"
+		t := TokenTypeName(tokens.TokenString)
+		table.NodeToType[e] = t
+		return t
 	case *ast.CharLiteralExpr:
-		table.NodeToType[e] = "char"
-		return "char"
+		t := TokenTypeName(tokens.TokenChar)
+		table.NodeToType[e] = t
+		return t
 	case *ast.BoolLiteralExpr:
-		table.NodeToType[e] = "bool"
-		return "bool"
+		t := TokenTypeName(tokens.TokenBool)
+		table.NodeToType[e] = t
+		return t
 	case *ast.NullLiteralExpr:
 		table.NodeToType[e] = "null"
 		return "null"
@@ -323,15 +332,15 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		switch x.Operator {
 		case tokens.TokenPlusPlus, tokens.TokenMinusMinus:
 			if !IsNumericType(ot) {
-				*diags = append(*diags, CheckDiag{Message: "++/-- require numeric operand"})
+				*diags = append(*diags, CheckDiag{Message: "++/-- require numeric operand", Span: x.OpTok.Span})
 			}
 		case tokens.TokenNot:
-			if ot != "bool" {
-				*diags = append(*diags, CheckDiag{Message: "! operand must be bool"})
+			if ot != TokenTypeName(tokens.TokenBool) {
+				*diags = append(*diags, CheckDiag{Message: "! operand must be bool", Span: x.OpTok.Span})
 			}
 		case tokens.TokenBitNot:
 			if !IsIntegerType(ot) {
-				*diags = append(*diags, CheckDiag{Message: "~ operand must be integer"})
+				*diags = append(*diags, CheckDiag{Message: "~ operand must be integer", Span: x.OpTok.Span})
 			}
 		}
 		table.NodeToType[e] = ot
@@ -341,42 +350,47 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		rt := inferExprType(x.Right, ts, table, module, diags)
 		op := tokensToSymbol(x.Operator)
 		if op == "&&" || op == "||" {
-			if lt != "bool" || rt != "bool" {
-				*diags = append(*diags, CheckDiag{Message: "logical operands must be bool"})
+			if lt != TokenTypeName(tokens.TokenBool) || rt != TokenTypeName(tokens.TokenBool) {
+				*diags = append(*diags, CheckDiag{Message: "logical operands must be bool", Span: x.OpTok.Span})
 			}
-			table.NodeToType[e] = "bool"
-			return "bool"
+			t := TokenTypeName(tokens.TokenBool)
+			table.NodeToType[e] = t
+			return t
 		}
 		if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" {
 			if !(IsNumericType(lt) && IsNumericType(rt)) {
-				*diags = append(*diags, CheckDiag{Message: "comparison operands must be numeric"})
+				*diags = append(*diags, CheckDiag{Message: "comparison operands must be numeric", Span: x.OpTok.Span})
 			}
-			table.NodeToType[e] = "bool"
-			return "bool"
+			t := TokenTypeName(tokens.TokenBool)
+			table.NodeToType[e] = t
+			return t
 		}
 		if op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" {
 			if !(IsIntegerType(lt) && IsIntegerType(rt)) {
-				*diags = append(*diags, CheckDiag{Message: "bitwise operands must be integers"})
+				*diags = append(*diags, CheckDiag{Message: "bitwise operands must be integers", Span: x.OpTok.Span})
 			}
 			table.NodeToType[e] = lt
 			return lt
 		}
 		// Allow string concatenation
 		if op == "+" {
-			if (lt == "string" && rt == "string") || (lt == "string" && IsNumericType(rt)) || (rt == "string" && IsNumericType(lt)) {
-				table.NodeToType[e] = "string"
-				return "string"
+			if (lt == TokenTypeName(tokens.TokenString) && rt == TokenTypeName(tokens.TokenString)) || (lt == TokenTypeName(tokens.TokenString) && IsNumericType(rt)) || (rt == TokenTypeName(tokens.TokenString) && IsNumericType(lt)) {
+				t := TokenTypeName(tokens.TokenString)
+				table.NodeToType[e] = t
+				return t
 			}
 		}
-		// Division always yields floating point in Loom TODO: probably shouldn't do this
+		// Division always yields floating point in Loom
 		if op == "/" {
-			table.NodeToType[e] = "f64"
-			return "f64"
+			t := TokenTypeName(tokens.TokenF64)
+			table.NodeToType[e] = t
+			return t
 		}
 		if IsNumericType(lt) && IsNumericType(rt) {
 			if IsFloatType(lt) || IsFloatType(rt) {
-				table.NodeToType[e] = "f64"
-				return "f64"
+				t := TokenTypeName(tokens.TokenF64)
+				table.NodeToType[e] = t
+				return t
 			}
 			table.NodeToType[e] = lt
 			return lt
@@ -399,26 +413,26 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		switch x.Operator {
 		case tokens.TokenEqual:
 			if tt != "" && !assignable(tt, vt) {
-				*diags = append(*diags, CheckDiag{Message: formatAssign(tt, vt)})
+				*diags = append(*diags, CheckDiag{Message: formatAssign(tt, vt), Span: x.OpTok.Span})
 			}
 		case tokens.TokenPlusEqual, tokens.TokenMinusEqual, tokens.TokenStarEqual, tokens.TokenSlashEqual:
 			if x.Operator == tokens.TokenPlusEqual {
 				// allow string concatenation with +=
-				if !(tt == "string" && (vt == "string" || IsNumericType(vt))) {
+				if !(tt == TokenTypeName(tokens.TokenString) && (vt == TokenTypeName(tokens.TokenString) || IsNumericType(vt))) {
 					if !(IsNumericType(tt) && IsNumericType(vt)) {
-						*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types"})
+						*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types", Span: x.OpTok.Span})
 					}
 				}
 			} else if !(IsNumericType(tt) && IsNumericType(vt)) {
-				*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types"})
+				*diags = append(*diags, CheckDiag{Message: "compound arithmetic assignment requires numeric types", Span: x.OpTok.Span})
 			}
 		case tokens.TokenPercentEqual:
 			if !(IsIntegerType(tt) && IsIntegerType(vt)) {
-				*diags = append(*diags, CheckDiag{Message: "compound modulus assignment requires integer types"})
+				*diags = append(*diags, CheckDiag{Message: "compound modulus assignment requires integer types", Span: x.OpTok.Span})
 			}
 		default:
 			if tt != "" && !assignable(tt, vt) {
-				*diags = append(*diags, CheckDiag{Message: formatAssign(tt, vt)})
+				*diags = append(*diags, CheckDiag{Message: formatAssign(tt, vt), Span: x.OpTok.Span})
 			}
 		}
 		table.NodeToType[e] = tt
@@ -483,8 +497,8 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		return ""
 	case *ast.TernaryExpr:
 		ct := inferExprType(x.Cond, ts, table, module, diags)
-		if ct != "bool" {
-			*diags = append(*diags, CheckDiag{Message: "ternary condition must be bool"})
+		if ct != TokenTypeName(tokens.TokenBool) {
+			*diags = append(*diags, CheckDiag{Message: "ternary condition must be bool", Span: x.CTok.Span})
 		}
 		lt := inferExprType(x.ThenExpr, ts, table, module, diags)
 		rt := inferExprType(x.ElseExpr, ts, table, module, diags)

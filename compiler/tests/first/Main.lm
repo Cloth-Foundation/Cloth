@@ -25,7 +25,7 @@ pub func main(): i32 {
     let a: i32 = fib(10)
     printf("fib(10) = {}\n", a)
 
-    if (a >= 10 and a <= 55){
+    if (a >= 10 && a <= 55) {
         printf("a is between 10 and 55\n")
     } else {
         printf("a is not between 10 and 55\n")

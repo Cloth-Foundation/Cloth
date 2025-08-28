@@ -451,10 +451,6 @@ func (l *Lexer) scanOperatorOrPunctuation() tokens.Token {
 		}
 		return l.makeTokenFromRange(tokens.TokenBitAnd, startPos, startLine, startCol, nil)
 	case '|':
-		if l.current() == '|' {
-			l.advance()
-			return l.makeTokenFromRange(tokens.TokenOr, startPos, startLine, startCol, nil)
-		}
 		return l.makeTokenFromRange(tokens.TokenBitOr, startPos, startLine, startCol, nil)
 	case '^':
 		return l.makeTokenFromRange(tokens.TokenBitXor, startPos, startLine, startCol, nil)
