@@ -37,8 +37,6 @@ func Bind(file *ast.File, module *Scope) []Diagnostic {
 	return diags
 }
 
-type selfSymbol struct{ isConst bool }
-
 func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl, builders []ast.MethodDecl, module *Scope, diags *[]Diagnostic, allowSelf bool) {
 	tScope := NewScope(module)
 	for _, f := range fields {
@@ -52,7 +50,7 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 		}
 		mScope := NewScope(tScope)
 		if allowSelf {
-			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: selfSymbol{isConst: b.IsConst}})
+			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: b})
 		}
 		for _, p := range b.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
@@ -67,7 +65,7 @@ func bindTypeDecl(name string, fields []ast.FieldDecl, methods []ast.MethodDecl,
 		}
 		mScope := NewScope(tScope)
 		if allowSelf {
-			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: selfSymbol{isConst: m.IsConst}})
+			_ = mScope.Define(Symbol{Name: "self", Kind: SymVar, Node: m})
 		}
 		for _, p := range m.Params {
 			if err := mScope.Define(Symbol{Name: p.Name, Kind: SymVar, Node: p}); err != nil {
@@ -138,18 +136,20 @@ func bindStmts(stmts []ast.Stmt, scope *Scope, diags *[]Diagnostic) {
 func bindExpr(e ast.Expr, scope *Scope, diags *[]Diagnostic) {
 	switch x := e.(type) {
 	case *ast.IdentifierExpr:
-		if sym, ok := scope.Resolve(x.Name); !ok {
+		if _, ok := scope.Resolve(x.Name); !ok {
+			// Allow builtin type names to appear in expression position (e.g., to_float(f32))
+			if NameToTokenType(x.Name) != tokens.TokenInvalid {
+				return
+			}
 			if x.Name == "self" {
 				*diags = append(*diags, Diagnostic{Message: "'self' is only valid inside class/enum instance methods", Span: x.Tok.Span, Hint: "use the type name for static access, or pass the instance explicitly"})
 			} else {
 				*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
 			}
 		} else if x.Name == "self" {
-			// Disallow self inside const methods/builders
-			if meta, ok2 := sym.Node.(selfSymbol); ok2 && meta.isConst {
-				*diags = append(*diags, Diagnostic{Message: "'self' cannot be used in const methods", Span: x.Tok.Span, Hint: "use the type name for static members"})
-			}
-		} else if sym.Kind == SymModule {
+			// 'self' is permitted in class/enum methods; it's not defined in structs or at top-level
+			// No extra const/static restrictions
+		} else if sym, ok := scope.Resolve(x.Name); ok && sym.Kind == SymModule {
 			// ok: allow module namespace symbol to be the left of member access; deeper resolution happens later
 		}
 	case *ast.UnaryExpr:

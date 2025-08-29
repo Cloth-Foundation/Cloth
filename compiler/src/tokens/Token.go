@@ -27,7 +27,6 @@ const (
 	TokenBuilder
 	TokenCase
 	TokenClass
-	TokenConst
 	TokenContinue
 	TokenDefault
 	TokenDo
@@ -206,7 +205,7 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	case TokenChar, TokenFalse, TokenNull, TokenNumber, TokenString, TokenTrue:
 		return CategoryLiteral
 	// Keywords
-	case TokenAlias, TokenAs, TokenAtomic, TokenBit, TokenBool, TokenBreak, TokenBuilder, TokenCase, TokenClass, TokenConst, TokenContinue, TokenDefault, TokenDo, TokenElif, TokenElse, TokenEnum, TokenFin, TokenFor, TokenFunc, TokenIf, TokenImport, TokenIn, TokenLet, TokenLoop, TokenMod, TokenNew, TokenPriv, TokenProt, TokenPub, TokenRet, TokenRev, TokenSelf, TokenStep, TokenStruct, TokenSuper, TokenSwitch, TokenVar, TokenWhile, TokenVoid:
+	case TokenAlias, TokenAs, TokenAtomic, TokenBit, TokenBool, TokenBreak, TokenBuilder, TokenCase, TokenClass, TokenContinue, TokenDefault, TokenDo, TokenElif, TokenElse, TokenEnum, TokenFin, TokenFor, TokenFunc, TokenIf, TokenImport, TokenIn, TokenLet, TokenLoop, TokenMod, TokenNew, TokenPriv, TokenProt, TokenPub, TokenRet, TokenRev, TokenSelf, TokenStep, TokenStruct, TokenSuper, TokenSwitch, TokenVar, TokenWhile, TokenVoid:
 		return CategoryKeyword
 	// Built-in types -> treat as keywords
 	case TokenByte, TokenF16, TokenF32, TokenF64, TokenI8, TokenI16, TokenI32, TokenI64, TokenU8, TokenU16, TokenU32, TokenU64:
@@ -262,8 +261,6 @@ func TokenTypeName(t TokenType) string {
 		return "Case"
 	case TokenClass:
 		return "Class"
-	case TokenConst:
-		return "Constant"
 	case TokenContinue:
 		return "Continue"
 	case TokenDefault:

@@ -1,0 +1,14 @@
+mod first
+
+pub fin var x: i32 = 10
+
+pub func main(): i32 {
+
+    let x = 12i32
+    let y = 32i32
+    println(x.type() == y.type())
+    println(255.to_base(36))
+    let a = 42
+    println(a.to_float(f32))
+    ret 0
+}

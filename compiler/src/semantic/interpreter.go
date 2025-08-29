@@ -4,12 +4,17 @@ import (
 	"compiler/src/ast"
 	"compiler/src/tokens"
 	"fmt"
+	"strconv"
 )
+
+var currentTypes *TypeTable
 
 // Execute runs a compiled file by finding main() and interpreting its body.
 // Supports: literals, identifiers (locals and globals), binary +,-,*,/,%, assignment, calls.
 // For now, only builtin print is supported for side effects.
-func Execute(file *ast.File, module *Scope) error {
+func Execute(file *ast.File, module *Scope, types *TypeTable) error {
+	currentTypes = types
+	defer func() { currentTypes = nil }()
 	var mainFn *ast.FuncDecl
 	for _, d := range file.Decls {
 		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name == "main" {
@@ -121,15 +126,19 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
 	switch x := e.(type) {
 	case *ast.NumberLiteralExpr:
-		// parse to float64 or int based on isFloat
+		// parse to float64 or int based on IsFloat and numeric base
 		if x.Value.IsFloat {
-			var f float64
-			fmt.Sscanf(x.Value.Digits, "%f", &f)
+			f, err := strconv.ParseFloat(x.Value.Digits, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float literal")
+			}
 			return f, nil
 		}
-		var n int64
-		fmt.Sscanf(x.Value.Digits, "%d", &n)
-		return n, nil
+		iv, err := strconv.ParseInt(x.Value.Digits, x.Value.Base, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer literal")
+		}
+		return int64(iv), nil
 	case *ast.StringLiteralExpr:
 		return x.Value, nil
 	case *ast.CharLiteralExpr:
@@ -235,14 +244,14 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			lb, lok := l.(bool)
 			rb, rok := r.(bool)
 			if !(lok && rok) {
-				return nil, fmt.Errorf("logical && requires bools")
+				return nil, fmt.Errorf("logical 'and' requires booleans")
 			}
 			return lb && rb, nil
 		case tokens.TokenOr:
 			lb, lok := l.(bool)
 			rb, rok := r.(bool)
 			if !(lok && rok) {
-				return nil, fmt.Errorf("logical || requires bools")
+				return nil, fmt.Errorf("logical 'or requires booleans")
 			}
 			return lb || rb, nil
 		}
@@ -323,6 +332,25 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		// delegate to builtin dispatcher first
 		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
 			if handled, ret, err := CallBuiltin(id.Name, x.Args, env, globals, module); handled {
+				return ret, err
+			}
+		}
+		// Instance builtins: universal first (e.g., type()), then numeric
+		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
+			recv, err := evalExpr(macc.Object, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			// Special-case type(): prefer static type table if available
+			if macc.Member == "type" && len(x.Args) == 0 && currentTypes != nil {
+				if t, ok := currentTypes.NodeToType[macc.Object]; ok && t != "" {
+					return t, nil
+				}
+			}
+			if handled, ret, err := CallUniversalMethod(macc.Member, recv, x.Args, env, globals, module); handled {
+				return ret, err
+			}
+			if handled, ret, err := CallNumericMethod(macc.Member, recv, x.Args, env, globals, module); handled {
 				return ret, err
 			}
 		}
@@ -505,3 +533,5 @@ func toFloat(v any) (float64, bool) {
 		return 0, false
 	}
 }
+
+// Removed local numeric formatting helpers; moved to builtins.

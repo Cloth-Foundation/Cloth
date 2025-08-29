@@ -80,8 +80,8 @@ func main() {
 	if len(semErrs) > 0 || len(impErrs) > 0 || len(bindDiags) > 0 || len(typeDiags) > 0 || len(checkDiags) > 0 {
 		os.Exit(1)
 	}
-	// Execute main() with interpreter
-	if err := semantic.Execute(file, scope); err != nil {
+	// Execute main() with interpreter (pass types for accurate type())
+	if err := semantic.Execute(file, scope, ttab); err != nil {
 		fmt.Printf("runtime error: %v\n", err)
 		os.Exit(1)
 	}

@@ -168,6 +168,11 @@ func (p *Parser) parsePrefix() ast.Expr {
 		tok := p.curr
 		p.advance()
 		return &ast.IdentifierExpr{Name: tok.Text, Tok: tok}
+	case tokens.TokenF16, tokens.TokenF32, tokens.TokenF64:
+		// Allow builtin float type tokens to appear as identifiers in expressions (e.g., to_float(f32))
+		tok := p.curr
+		p.advance()
+		return &ast.IdentifierExpr{Name: tok.Text, Tok: tok}
 	case tokens.TokenNumber:
 		tok := p.curr
 		p.advance()

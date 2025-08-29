@@ -1,0 +1,44 @@
+mod first
+
+import first.Add::{ add }
+import second.Hello::{ printHello }
+
+pub func main(): i32 {
+    let hex = -(7 * 4 + 25 / 5 - 18 % 5 + 12 - 3) + 0.1 # -38.9
+    printf("{}\n", hex)
+
+    hex = ((50 % 7) * 3) - (20 / 4) + 0.25 # -1.75
+    printf("{}\n", hex)
+
+    hex = -(8 * 3 - 14 / 2 + 5 % 3) - 0.6 # -19.6
+    printf("{}\n", hex)
+
+    hex = (100 / 8) - (3 * 7) + (45 % 6) - 2.2 # -7.7
+    printf("{}\n", hex)
+
+    hex = -((30 % 4) + (9 * 2) - (40 / 5)) + 1.1 # -10.9
+    printf("{}\n", hex)
+
+    printf("{} \n", add(1, 2 * 6))
+    printHello()
+
+    let a: i32 = fib(10)
+    printf("fib(10) = {}\n", a)
+
+    printf("{}\n", true)
+
+    if (!(a >= 10 or a <= 55)) {
+        printf("a is between 10 and 55\n")
+    } else {
+        printf("a is not between 10 and 55\n")
+    }
+
+    ret 0
+}
+
+pub func fib(n: i32): i32 {
+    if (n <= 1) {
+        ret n
+    }
+    ret fib(n - 1) + fib(n - 2)
+}

@@ -535,8 +535,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenCase, true
 	case "class":
 		return tokens.TokenClass, true
-	case "const":
-		return tokens.TokenConst, true
 	case "continue":
 		return tokens.TokenContinue, true
 	case "default":

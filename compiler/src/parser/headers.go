@@ -146,12 +146,6 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					innerVis = ast.VisProtected
 					p.advance()
 				}
-				// Optional 'const' before methods
-				isConstMethod := false
-				if p.curr.Type == tokens.TokenConst {
-					isConstMethod = true
-					p.advance()
-				}
 				// Methods
 				if p.curr.Type == tokens.TokenFunc || p.curr.Type == tokens.TokenBuilder {
 					isBuilder := p.curr.Type == tokens.TokenBuilder
@@ -211,7 +205,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 						}
 						body = blk.Stmts
 					}
-					md := ast.MethodDecl{Visibility: innerVis, Name: name, Params: params, ReturnType: retType, Body: body, IsConst: isConstMethod}
+					md := ast.MethodDecl{Visibility: innerVis, Name: name, Params: params, ReturnType: retType, Body: body}
 					cd.Methods = append(cd.Methods, md)
 					continue
 				}
@@ -220,21 +214,16 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.report(p.curr, "'let' is only allowed inside functions; use 'var' for fields")
 					return nil
 				}
-				// Field modifiers: allow multiple fin/const
-				isConst := false
+				// Field modifiers: allow fin only
 				isFinal := false
-				for p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
-					if p.curr.Type == tokens.TokenConst {
-						isConst = true
-					} else {
-						isFinal = true
-					}
+				for p.curr.Type == tokens.TokenFin {
+					isFinal = true
 					p.advance()
 				}
 				// Optional 'var'
 				_ = p.match(tokens.TokenVar)
 				// field: name : Type [= initializer]
-				if isConst || isFinal || p.curr.Type == tokens.TokenIdentifier {
+				if isFinal || p.curr.Type == tokens.TokenIdentifier {
 					fname := p.expect(tokens.TokenIdentifier, "expected field name")
 					if p.fatal {
 						return nil
@@ -255,7 +244,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 							return nil
 						}
 					}
-					cd.Fields = append(cd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsConst: isConst, IsFinal: isFinal})
+					cd.Fields = append(cd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsFinal: isFinal})
 					_ = p.match(tokens.TokenSemicolon)
 					continue
 				}
@@ -280,30 +269,19 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 		if p.curr.Type == tokens.TokenLBrace {
 			p.advance()
 			for p.curr.Type != tokens.TokenRBrace && p.curr.Type != tokens.TokenEndOfFile {
-				// Optional 'const' before methods
-				isConstMethod := false
-				if p.curr.Type == tokens.TokenConst {
-					isConstMethod = true
-					p.advance()
-				}
 				// Forbid let at type body level
 				if p.curr.Type == tokens.TokenLet {
 					p.report(p.curr, "'let' is only allowed inside functions; use 'var' for fields")
 					return nil
 				}
-				// field modifiers
-				isConst := false
+				// field modifiers: allow fin only
 				isFinal := false
-				for p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
-					if p.curr.Type == tokens.TokenConst {
-						isConst = true
-					} else {
-						isFinal = true
-					}
+				for p.curr.Type == tokens.TokenFin {
+					isFinal = true
 					p.advance()
 				}
-				// fields or methods similar to class
-				if isConst || isFinal || p.curr.Type == tokens.TokenIdentifier || p.curr.Type == tokens.TokenVar {
+				// fields
+				if isFinal || p.curr.Type == tokens.TokenIdentifier || p.curr.Type == tokens.TokenVar {
 					_ = p.match(tokens.TokenVar)
 					fname := p.expect(tokens.TokenIdentifier, "expected field name")
 					if p.fatal {
@@ -324,11 +302,11 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 							return nil
 						}
 					}
-					sd.Fields = append(sd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsConst: isConst, IsFinal: isFinal})
+					sd.Fields = append(sd.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsFinal: isFinal})
 					_ = p.match(tokens.TokenSemicolon)
 					continue
 				}
-				// simple method header (optional)
+				// simple method header
 				if p.curr.Type == tokens.TokenFunc {
 					p.advance()
 					mname := p.expect(tokens.TokenIdentifier, "expected method name")
@@ -382,7 +360,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 						}
 						body = blk.Stmts
 					}
-					sd.Methods = append(sd.Methods, ast.MethodDecl{Name: mname.Text, Params: params, ReturnType: retType, Body: body, IsConst: isConstMethod})
+					sd.Methods = append(sd.Methods, ast.MethodDecl{Name: mname.Text, Params: params, ReturnType: retType, Body: body})
 					continue
 				}
 				// unknown
@@ -467,7 +445,7 @@ func (p *Parser) parseGlobalVarDecl() ast.Decl {
 		vis = ast.VisProtected
 		p.advance()
 	}
-	if p.curr.Type == tokens.TokenFin || p.curr.Type == tokens.TokenConst {
+	if p.curr.Type == tokens.TokenFin {
 		p.advance()
 	}
 	if p.curr.Type == tokens.TokenLet {

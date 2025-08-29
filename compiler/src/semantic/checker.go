@@ -357,7 +357,20 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = t
 			return t
 		}
-		if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" {
+		// Equality comparisons: allow numeric, string, and bool comparisons
+		if op == "==" || op == "!=" {
+			isNum := IsNumericType(lt) && IsNumericType(rt)
+			isStr := lt == TokenTypeName(tokens.TokenString) && rt == TokenTypeName(tokens.TokenString)
+			isBool := lt == TokenTypeName(tokens.TokenBool) && rt == TokenTypeName(tokens.TokenBool)
+			if !(isNum || isStr || isBool) {
+				*diags = append(*diags, CheckDiag{Message: "equality operands must be comparable (numeric, string, or bool)", Span: x.OpTok.Span})
+			}
+			t := TokenTypeName(tokens.TokenBool)
+			table.NodeToType[e] = t
+			return t
+		}
+		// Relational comparisons: numeric only
+		if op == "<" || op == "<=" || op == ">" || op == ">=" {
 			if !(IsNumericType(lt) && IsNumericType(rt)) {
 				*diags = append(*diags, CheckDiag{Message: "comparison operands must be numeric", Span: x.OpTok.Span})
 			}
@@ -444,6 +457,55 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		// Instance method call: obj.method(args)
 		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
 			objType := inferExprType(macc.Object, ts, table, module, diags)
+			// Universal type(): returns string
+			if macc.Member == "type" && len(x.Args) == 0 {
+				t := TokenTypeName(tokens.TokenString)
+				table.NodeToType[e] = t
+				return t
+			}
+			// Numeric intrinsic methods
+			if objType != "" && IsNumericType(objType) {
+				name := macc.Member
+				switch name {
+				case "to_dec", "to_hex", "to_bin", "to_oct", "to_base", "to_sci":
+					// Return string
+					// Validate simple arities
+					if name == "to_base" {
+						if len(x.Args) < 1 {
+							*diags = append(*diags, CheckDiag{Message: "to_base expects 1 argument: base", Span: macc.MemberTok.Span, Hint: "usage: x.to_base(36)"})
+						}
+					} else if name == "to_sci" {
+						if len(x.Args) > 1 {
+							*diags = append(*diags, CheckDiag{Message: "to_sci takes at most 1 argument: precision", Span: macc.MemberTok.Span})
+						}
+					}
+					t := TokenTypeName(tokens.TokenString)
+					table.NodeToType[e] = t
+					return t
+				case "to_float":
+					// 0 or 1 arg; if 1 arg must be float type token identifier
+					if len(x.Args) == 0 {
+						// default target based on source integer width
+						ret := defaultFloatForInt(objType)
+						table.NodeToType[e] = ret
+						return ret
+					}
+					if len(x.Args) == 1 {
+						if id, ok := x.Args[0].(*ast.IdentifierExpr); ok {
+							if id.Name == TokenTypeName(tokens.TokenF16) || id.Name == TokenTypeName(tokens.TokenF32) || id.Name == TokenTypeName(tokens.TokenF64) {
+								table.NodeToType[e] = id.Name
+								return id.Name
+							}
+							*diags = append(*diags, CheckDiag{Message: "to_float expects a float type (f16|f32|f64)", Span: id.Tok.Span})
+							return ""
+						}
+						*diags = append(*diags, CheckDiag{Message: "to_float expects a type identifier (f16|f32|f64)", Span: macc.MemberTok.Span})
+						return ""
+					}
+					*diags = append(*diags, CheckDiag{Message: "to_float takes 0 or 1 arguments", Span: macc.MemberTok.Span})
+					return ""
+				}
+			}
 			if params, ret, ok2 := findMethodOnType(objType, macc.Member, module); ok2 {
 				retType := checkCallAgainst(params, ret, objType+"."+macc.Member, x.Args, ts, table, module, diags)
 				table.NodeToType[e] = retType

@@ -5,6 +5,8 @@ import (
 	"compiler/src/ast"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // InjectBuiltins adds core builtin symbols to the provided scope so that
@@ -84,116 +86,9 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 		}
 		return true, nil, nil
 	case "printf":
-		if len(args) == 0 {
-			return true, nil, nil
-		}
-		// first arg is the format string
-		fmtVal, err := evalExpr(args[0], env, globals, module)
-		if err != nil {
-			return true, nil, err
-		}
-		fmtStr := toString(fmtVal)
-		// collect values from second argument if provided
-		var values []any
-		if len(args) >= 2 {
-			// If second arg is an array literal, evaluate its elements individually
-			if arrLit, ok := args[1].(*ast.ArrayLiteralExpr); ok {
-				for _, el := range arrLit.Elements {
-					v, err := evalExpr(el, env, globals, module)
-					if err != nil {
-						return true, nil, err
-					}
-					values = append(values, v)
-				}
-			} else {
-				// Otherwise evaluate the second arg; if it's a slice, spread it; else use single value fallback
-				v, err := evalExpr(args[1], env, globals, module)
-				if err != nil {
-					return true, nil, err
-				}
-				if vs, ok := v.([]any); ok {
-					values = append(values, vs...)
-				} else if vsi, ok := v.([]interface{}); ok {
-					for _, it := range vsi {
-						values = append(values, it)
-					}
-				} else {
-					values = append(values, v)
-				}
-			}
-		}
-		// also collect any additional args after the second parameter (variadic style)
-		if len(args) > 2 {
-			for _, a := range args[2:] {
-				v, err := evalExpr(a, env, globals, module)
-				if err != nil {
-					return true, nil, err
-				}
-				// spread if evaluated to a slice
-				if vs, ok := v.([]any); ok {
-					values = append(values, vs...)
-				} else if vsi, ok := v.([]interface{}); ok {
-					for _, it := range vsi {
-						values = append(values, it)
-					}
-				} else {
-					values = append(values, v)
-				}
-			}
-		}
-		// Replace occurrences of {} or %s (and allow %% to escape) with successive values
-		out := make([]rune, 0, len(fmtStr)+len(values)*4)
-		runes := []rune(fmtStr)
-		vi := 0
-		for i := 0; i < len(runes); i++ {
-			// {} placeholder
-			if runes[i] == '{' && i+1 < len(runes) && runes[i+1] == '}' {
-				if vi < len(values) {
-					out = append(out, []rune(toString(values[vi]))...)
-					vi++
-					i++
-					continue
-				}
-				// no value left: leave {}
-			}
-			// % sequence
-			if runes[i] == '%' && i+1 < len(runes) {
-				if runes[i+1] == '%' {
-					out = append(out, '%')
-					i++
-					continue
-				}
-				if runes[i+1] == 's' {
-					if vi < len(values) {
-						out = append(out, []rune(toString(values[vi]))...)
-						vi++
-						i++
-						continue
-					}
-					// no value left: leave %s
-				}
-			}
-			out = append(out, runes[i])
-		}
-		fmt.Print(string(out))
-		return true, nil, nil
+		return callPrintf(args, env, globals, module)
 	case "input":
-		// optional prompt already type-checked as string; print if provided
-		if len(args) >= 1 {
-			v, err := evalExpr(args[0], env, globals, module)
-			if err != nil {
-				return true, nil, err
-			}
-			fmt.Print(toString(v))
-		}
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			return true, scanner.Text(), nil
-		}
-		if err := scanner.Err(); err != nil {
-			return true, nil, err
-		}
-		return true, "", nil
+		return callInput(args, env, globals, module)
 	case "exit":
 		if len(args) == 0 {
 			os.Exit(0)
@@ -211,4 +106,331 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 	default:
 		return false, nil, nil
 	}
+}
+
+// Universal instance builtins (apply to any value), e.g., x.type()
+func CallUniversalMethod(name string, recv any, args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	switch name {
+	case "type":
+		if len(args) != 0 {
+			return true, nil, fmt.Errorf("type() takes no arguments")
+		}
+		return true, runtimeTypeName(recv), nil
+	default:
+		return false, nil, nil
+	}
+}
+
+func runtimeTypeName(v any) string {
+	switch v.(type) {
+	case int64:
+		return "i32" // default logical int width
+	case float64:
+		return "f64"
+	case string:
+		return "string"
+	case bool:
+		return "bool"
+	case nil:
+		return "null"
+	default:
+		return "object"
+	}
+}
+
+func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) == 0 {
+		return true, nil, nil
+	}
+	fmtVal, err := evalExpr(args[0], env, globals, module)
+	if err != nil {
+		return true, nil, err
+	}
+	fmtStr := toString(fmtVal)
+	var values []any
+	if len(args) >= 2 {
+		if arrLit, ok := args[1].(*ast.ArrayLiteralExpr); ok {
+			for _, el := range arrLit.Elements {
+				v, err := evalExpr(el, env, globals, module)
+				if err != nil {
+					return true, nil, err
+				}
+				values = append(values, v)
+			}
+		} else {
+			v, err := evalExpr(args[1], env, globals, module)
+			if err != nil {
+				return true, nil, err
+			}
+			if vs, ok := v.([]any); ok {
+				values = append(values, vs...)
+			} else if vsi, ok := v.([]interface{}); ok {
+				for _, it := range vsi {
+					values = append(values, it)
+				}
+			} else {
+				values = append(values, v)
+			}
+		}
+	}
+	if len(args) > 2 {
+		for _, a := range args[2:] {
+			v, err := evalExpr(a, env, globals, module)
+			if err != nil {
+				return true, nil, err
+			}
+			if vs, ok := v.([]any); ok {
+				values = append(values, vs...)
+			} else if vsi, ok := v.([]interface{}); ok {
+				for _, it := range vsi {
+					values = append(values, it)
+				}
+			} else {
+				values = append(values, v)
+			}
+		}
+	}
+	// Format placeholders
+	out := make([]rune, 0, len(fmtStr)+len(values)*4)
+	runes := []rune(fmtStr)
+	vi := 0
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '{' && i+1 < len(runes) && runes[i+1] == '}' {
+			if vi < len(values) {
+				out = append(out, []rune(toString(values[vi]))...)
+				vi++
+				i++
+				continue
+			}
+		}
+		if runes[i] == '%' && i+1 < len(runes) {
+			if runes[i+1] == '%' {
+				out = append(out, '%')
+				i++
+				continue
+			}
+			if runes[i+1] == 's' {
+				if vi < len(values) {
+					out = append(out, []rune(toString(values[vi]))...)
+					vi++
+					i++
+					continue
+				}
+			}
+		}
+		out = append(out, runes[i])
+	}
+	fmt.Print(string(out))
+	return true, nil, nil
+}
+
+func callInput(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) >= 1 {
+		v, err := evalExpr(args[0], env, globals, module)
+		if err != nil {
+			return true, nil, err
+		}
+		fmt.Print(toString(v))
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		return true, scanner.Text(), nil
+	}
+	if err := scanner.Err(); err != nil {
+		return true, nil, err
+	}
+	return true, "", nil
+}
+
+// -------- Numeric builtins dispatcher used by interpreter --------
+
+func CallNumericMethod(name string, recv any, args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	switch name {
+	case "to_dec", "to_hex", "to_bin", "to_oct", "to_base", "to_sci":
+		v, ok := numericFormat(name, recv, args, env, globals, module)
+		if !ok {
+			return true, nil, fmt.Errorf("invalid receiver for %s", name)
+		}
+		return true, v, nil
+	case "to_float":
+		v, ok := numericToFloat(recv, args, env, globals, module)
+		if !ok {
+			return true, nil, fmt.Errorf("invalid receiver/args for to_float")
+		}
+		return true, v, nil
+	default:
+		return false, nil, nil
+	}
+}
+
+func numericFormat(kind string, recv any, args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, bool) {
+	var u uint64
+	var f float64
+	switch n := recv.(type) {
+	case int64:
+		u = uint64(n)
+		f = float64(n)
+	case float64:
+		f = n
+	default:
+		return nil, false
+	}
+	group := "_"
+	uppercase := true
+	prefix := true
+	switch kind {
+	case "to_dec":
+		if _, ok := recv.(int64); ok {
+			return formatDec(u, group), true
+		}
+		return fmt.Sprintf("%g", f), true
+	case "to_hex":
+		if _, ok := recv.(int64); ok {
+			return groupHex(u, uppercase, group, prefix), true
+		}
+		return nil, false
+	case "to_bin":
+		if _, ok := recv.(int64); ok {
+			return groupBin(u, group, prefix), true
+		}
+		return nil, false
+	case "to_oct":
+		if _, ok := recv.(int64); ok {
+			return groupOct(u, group, prefix), true
+		}
+		return nil, false
+	case "to_base":
+		if _, ok := recv.(int64); !ok {
+			return nil, false
+		}
+		base := 10
+		if len(args) >= 1 {
+			v, err := evalExpr(args[0], env, globals, module)
+			if err == nil {
+				if b, ok := v.(int64); ok {
+					base = int(b)
+				}
+			}
+		}
+		return formatBase(u, base, uppercase), true
+	case "to_sci":
+		precision := 6
+		if len(args) >= 1 {
+			v, err := evalExpr(args[0], env, globals, module)
+			if err == nil {
+				if p, ok := v.(int64); ok {
+					precision = int(p)
+				}
+			}
+		}
+		return formatSci(f, precision, true), true
+	}
+	return nil, false
+}
+
+func numericToFloat(recv any, args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, bool) {
+	var f float64
+	switch n := recv.(type) {
+	case int64:
+		f = float64(n)
+	case float64:
+		f = n
+	default:
+		return nil, false
+	}
+	if len(args) == 0 {
+		return f, true
+	}
+	if len(args) == 1 {
+		if id, ok := args[0].(*ast.IdentifierExpr); ok {
+			if id.Name == "f16" || id.Name == "f32" || id.Name == "f64" {
+				if id.Name == "f64" {
+					return f, true
+				}
+				return float64(float32(f)), true
+			}
+		}
+	}
+	return nil, false
+}
+
+func formatDec(u uint64, group string) string {
+	s := strconv.FormatUint(u, 10)
+	return groupDigits(s, 3, group)
+}
+
+func groupHex(u uint64, upper bool, group string, prefix bool) string {
+	var s string
+	s = strconv.FormatUint(u, 16)
+	s = strings.ToUpper(s)
+	s = groupDigits(s, 2, group)
+	if prefix {
+		s = "0x" + s
+	}
+	return s
+}
+
+func groupBin(u uint64, group string, prefix bool) string {
+	s := strconv.FormatUint(u, 2)
+	s = groupDigits(s, 4, group)
+	if prefix {
+		s = "0b" + s
+	}
+	return s
+}
+
+func groupOct(u uint64, group string, prefix bool) string {
+	s := strconv.FormatUint(u, 8)
+	s = groupDigits(s, 3, group)
+	if prefix {
+		s = "0o" + s
+	}
+	return s
+}
+
+func formatBase(u uint64, base int, upper bool) string {
+	if base < 2 || base > 36 {
+		base = 10
+	}
+	s := strconv.FormatUint(u, base)
+	if upper {
+		s = strings.ToUpper(s)
+	}
+	return s
+}
+
+func formatSci(f float64, precision int, upper bool) string {
+	if precision < 0 {
+		precision = 0
+	}
+	fmtStr := "%.*E"
+	if !upper {
+		fmtStr = "%.*e"
+	}
+	return fmt.Sprintf(fmtStr, precision, f)
+}
+
+func groupDigits(s string, n int, sep string) string {
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	var out []byte
+	count := 0
+	for i := len(s) - 1; i >= 0; i-- {
+		ch := s[i]
+		out = append(out, ch)
+		count++
+		if i > 0 && count%n == 0 {
+			out = append(out, sep...)
+		}
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	res := string(out)
+	if neg {
+		res = "-" + res
+	}
+	return res
 }

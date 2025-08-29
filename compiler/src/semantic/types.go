@@ -130,6 +130,22 @@ func IsIntegerType(name string) bool { return IsIntegerToken(NameToTokenType(nam
 func IsFloatType(name string) bool   { return IsFloatToken(NameToTokenType(name)) }
 func IsNumericType(name string) bool { return IsNumericToken(NameToTokenType(name)) }
 
+// defaultFloatForInt returns the default float type name for a given integer type name.
+func defaultFloatForInt(intType string) string {
+	tt := NameToTokenType(intType)
+	switch tt {
+	case tokens.TokenI8, tokens.TokenU8, tokens.TokenI16, tokens.TokenU16:
+		return TokenTypeName(tokens.TokenF16)
+	case tokens.TokenI32, tokens.TokenU32:
+		return TokenTypeName(tokens.TokenF32)
+	case tokens.TokenI64, tokens.TokenU64:
+		return TokenTypeName(tokens.TokenF64)
+	default:
+		// already float or unknown -> choose f64 as safest default
+		return TokenTypeName(tokens.TokenF64)
+	}
+}
+
 // TypeTable maps AST nodes to resolved type names.
 type TypeTable struct {
 	NodeToType map[any]string
