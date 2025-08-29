@@ -118,6 +118,90 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					return v, err
 				}
 			}
+		case *ast.LoopStmt:
+			// Two forms: range-style (From/To) or iterable (Iter)
+			ls := env
+			if n.Iter != nil {
+				iterVal, err := evalExpr(n.Iter, env, globals, module)
+				if err != nil {
+					return nil, err
+				}
+				// Expect []any
+				if arr, ok := iterVal.([]any); ok {
+					for _, v := range arr {
+						ls[n.VarName] = v
+						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							return ret, err
+						}
+					}
+				} else {
+					return nil, fmt.Errorf("loop iterable is not a sequence")
+				}
+				break
+			}
+			// range-style
+			fromVal, err := evalExpr(n.From, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			toVal, err := evalExpr(n.To, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			fi, fok := fromVal.(int64)
+			ti, tok := toVal.(int64)
+			if !(fok && tok) {
+				return nil, fmt.Errorf("loop bounds must be integers")
+			}
+			step := int64(1)
+			if n.Step != nil {
+				st, err := evalExpr(n.Step, env, globals, module)
+				if err != nil {
+					return nil, err
+				}
+				if si, ok := st.(int64); ok {
+					step = si
+				} else {
+					return nil, fmt.Errorf("loop step must be integer")
+				}
+			}
+			if step == 0 {
+				return nil, fmt.Errorf("loop step cannot be 0")
+			}
+			if !n.Reverse {
+				if !n.Inclusive {
+					for i := fi; i < ti; i += step {
+						ls[n.VarName] = int64(i)
+						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							return ret, err
+						}
+					}
+				} else {
+					for i := fi; i <= ti; i += step {
+						ls[n.VarName] = int64(i)
+						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							return ret, err
+						}
+					}
+				}
+			} else {
+				if !n.Inclusive {
+					for i := fi; i > ti; i += -step {
+						ls[n.VarName] = int64(i)
+						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							return ret, err
+						}
+					}
+				} else {
+					for i := fi; i >= ti; i += -step {
+						ls[n.VarName] = int64(i)
+						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							return ret, err
+						}
+					}
+				}
+			}
+			break
 		}
 	}
 	return nil, nil

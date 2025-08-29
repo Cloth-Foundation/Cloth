@@ -384,6 +384,7 @@ type LoopStmt struct {
 	To        Expr
 	Inclusive bool
 	Step      Expr // optional (nil means default 1)
+	Iter      Expr // optional iterable expression (e.g., range(...))
 	Body      *BlockStmt
 	Tok       tokens.Token
 }

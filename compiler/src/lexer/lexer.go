@@ -549,8 +549,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenEnum, true
 	case "fin":
 		return tokens.TokenFin, true
-	case "for":
-		return tokens.TokenFor, true
 	case "func":
 		return tokens.TokenFunc, true
 	case "if":
@@ -579,8 +577,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenRev, true
 	case "self":
 		return tokens.TokenSelf, true
-	case "step":
-		return tokens.TokenStep, true
 	case "struct":
 		return tokens.TokenStruct, true
 	case "super":

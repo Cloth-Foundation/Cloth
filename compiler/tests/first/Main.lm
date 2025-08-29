@@ -1,5 +1,11 @@
 mod first
 
 pub func main(): i32 {
+    loop i in range(1, 11) {
+        printf("Step: {}\n", i)
+        loop j in range(1, 10) {
+            println(i * j)
+        }
+    }
     ret 0
 }

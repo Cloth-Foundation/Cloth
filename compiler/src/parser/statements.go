@@ -229,46 +229,57 @@ func (p *Parser) parseLoop() ast.Stmt {
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
-	p.expect(tokens.TokenLParen, "expected '('")
-	if p.fatal {
-		return &ast.LoopStmt{}
+	// Two forms:
+	// loop (i: a..b [step s]) { ... }
+	// loop i in expr { ... }
+	if p.curr.Type == tokens.TokenLParen {
+		p.advance()
+		name := p.expect(tokens.TokenIdentifier, "expected loop variable")
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		p.expect(tokens.TokenColon, "expected ':' after loop variable")
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		from := p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		if p.curr.Type != tokens.TokenRange && p.curr.Type != tokens.TokenRangeInclusive {
+			p.report(p.curr, "expected range operator '..' or '..='")
+			return &ast.LoopStmt{}
+		}
+		inclusive := p.curr.Type == tokens.TokenRangeInclusive
+		p.advance()
+		to := p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		var step ast.Expr
+		// 'step' removed; default only
+		p.expect(tokens.TokenRParen, "expected ')'")
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		body := p.parseBlock()
+		return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, From: from, To: to, Inclusive: inclusive, Step: step, Body: body, Tok: name}
 	}
+	// loop i in expr { ... }
 	name := p.expect(tokens.TokenIdentifier, "expected loop variable")
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
-	p.expect(tokens.TokenColon, "expected ':' after loop variable")
+	p.expect(tokens.TokenIn, "expected 'in' after loop variable")
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
-	from := p.parseExpression(precLowest)
-	if p.fatal {
-		return &ast.LoopStmt{}
-	}
-	if p.curr.Type != tokens.TokenRange && p.curr.Type != tokens.TokenRangeInclusive {
-		p.report(p.curr, "expected range operator '..' or '..='")
-		return &ast.LoopStmt{}
-	}
-	inclusive := p.curr.Type == tokens.TokenRangeInclusive
-	p.advance()
-	to := p.parseExpression(precLowest)
-	if p.fatal {
-		return &ast.LoopStmt{}
-	}
-	var step ast.Expr
-	if p.curr.Type == tokens.TokenStep {
-		p.advance()
-		step = p.parseExpression(precLowest)
-		if p.fatal {
-			return &ast.LoopStmt{}
-		}
-	}
-	p.expect(tokens.TokenRParen, "expected ')'")
+	iter := p.parseExpression(precLowest)
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
 	body := p.parseBlock()
-	return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, From: from, To: to, Inclusive: inclusive, Step: step, Body: body, Tok: name}
+	return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, Iter: iter, Body: body, Tok: name}
 }
 
 func (p *Parser) parseReturn() ast.Stmt {

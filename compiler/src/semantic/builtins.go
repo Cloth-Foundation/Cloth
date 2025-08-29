@@ -61,6 +61,17 @@ func InjectBuiltins(scope *Scope) {
 			ReturnType: "string",
 		},
 	})
+
+	// range built-in: range(n) or range(start, end[, step]) -> []i32 (for interpreter MVP)
+	_ = scope.Define(Symbol{
+		Name: "range",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "range",
+			Params:     []ast.Parameter{{Name: "a", Type: "i32"}, {Name: "b", Type: "i32"}, {Name: "c", Type: "i32"}},
+			ReturnType: "[]i32",
+		},
+	})
 }
 
 // CallBuiltin executes a builtin if name matches, returning whether it handled the call.
@@ -89,6 +100,8 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 		return callPrintf(args, env, globals, module)
 	case "input":
 		return callInput(args, env, globals, module)
+	case "range":
+		return callRange(args, env, globals, module)
 	case "exit":
 		if len(args) == 0 {
 			os.Exit(0)
@@ -433,4 +446,60 @@ func groupDigits(s string, n int, sep string) string {
 		res = "-" + res
 	}
 	return res
+}
+
+func callRange(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	// range(n) or range(start, end[, step])
+	getInt := func(e ast.Expr) (int64, error) {
+		v, err := evalExpr(e, env, globals, module)
+		if err != nil {
+			return 0, err
+		}
+		i, ok := v.(int64)
+		if !ok {
+			return 0, fmt.Errorf("range expects integer arguments")
+		}
+		return i, nil
+	}
+	var start, end, step int64
+	if len(args) == 1 {
+		s, err := getInt(args[0])
+		if err != nil {
+			return true, nil, err
+		}
+		start, end, step = 0, s, 1
+	} else if len(args) >= 2 {
+		s0, err := getInt(args[0])
+		if err != nil {
+			return true, nil, err
+		}
+		s1, err := getInt(args[1])
+		if err != nil {
+			return true, nil, err
+		}
+		start, end, step = s0, s1, 1
+		if len(args) >= 3 {
+			s2, err := getInt(args[2])
+			if err != nil {
+				return true, nil, err
+			}
+			step = s2
+		}
+	} else {
+		return true, nil, fmt.Errorf("range requires 1 to 3 integer arguments")
+	}
+	if step == 0 {
+		return true, nil, fmt.Errorf("range step cannot be 0")
+	}
+	var out []any
+	if step > 0 {
+		for i := start; i < end; i += step {
+			out = append(out, int64(i))
+		}
+	} else {
+		for i := start; i > end; i += step {
+			out = append(out, int64(i))
+		}
+	}
+	return true, out, nil
 }
