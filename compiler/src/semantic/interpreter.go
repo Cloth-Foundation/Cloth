@@ -273,6 +273,58 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			}
 		}
 		return nil, fmt.Errorf("undefined variable %s", x.Name)
+	case *ast.MemberAccessExpr:
+		// Enum case materialization: Type.CASE
+		if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
+			if sym, ok2 := module.Resolve(objId.Name); ok2 {
+				switch d := sym.Node.(type) {
+				case *ast.EnumDecl:
+					for _, c := range d.Cases {
+						if c.Name == x.Member {
+							// Evaluate payload args stored in case and run matching constructor
+							args := make([]any, 0, len(c.Params))
+							for _, a := range c.Params {
+								v, err := evalExpr(a, env, globals, module)
+								if err != nil {
+									return nil, err
+								}
+								args = append(args, v)
+							}
+							inst := map[string]any{"__type": d.Name}
+							for _, f := range d.Fields {
+								inst[f.Name] = nil
+							}
+							// pick constructor by arity
+							for _, b := range d.Builders {
+								if len(b.Params) == len(args) {
+									newEnv := map[string]any{"self": inst}
+									for i, p := range b.Params {
+										newEnv[p.Name] = args[i]
+									}
+									if _, err := execBlock(b.Body, newEnv, globals, module); err != nil {
+										return nil, err
+									}
+									break
+								}
+							}
+							return inst, nil
+						}
+					}
+				}
+			}
+		}
+		// Otherwise evaluate object and try field access
+		obj, err := evalExpr(x.Object, env, globals, module)
+		if err != nil {
+			return nil, err
+		}
+		if m, ok := obj.(map[string]any); ok {
+			if v, ok2 := m[x.Member]; ok2 {
+				return v, nil
+			}
+			return nil, fmt.Errorf("unknown field %s", x.Member)
+		}
+		return nil, fmt.Errorf("member access on non-object")
 	case *ast.UnaryExpr:
 		v, err := evalExpr(x.Operand, env, globals, module)
 		if err != nil {
@@ -405,6 +457,18 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if err != nil {
 			return nil, err
 		}
+		// Assignment to object field: self.name = v
+		if macc, ok := x.Target.(*ast.MemberAccessExpr); ok {
+			obj, err := evalExpr(macc.Object, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			if m, ok := obj.(map[string]any); ok {
+				m[macc.Member] = v
+				return v, nil
+			}
+			return nil, fmt.Errorf("assignment to non-object member")
+		}
 		if ix, ok := x.Target.(*ast.IndexExpr); ok {
 			base, err := evalExpr(ix.Base, env, globals, module)
 			if err != nil {
@@ -519,6 +583,61 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			if handled, ret, err := CallNumericMethod(macc.Member, recv, x.Args, env, globals, module); handled {
 				return ret, err
 			}
+			// Instance method on class/enum
+			if obj, ok := recv.(map[string]any); ok {
+				if typeName, ok2 := obj["__type"].(string); ok2 {
+					if sym, ok3 := module.Resolve(typeName); ok3 {
+						switch d := sym.Node.(type) {
+						case *ast.ClassDecl:
+							for _, m := range d.Methods {
+								if m.Name == macc.Member {
+									newEnv := map[string]any{"self": obj}
+									for i, p := range m.Params {
+										if i < len(x.Args) {
+											v, err := evalExpr(x.Args[i], env, globals, module)
+											if err != nil {
+												return nil, err
+											}
+											newEnv[p.Name] = v
+										}
+									}
+									ret, err := execBlock(m.Body, newEnv, globals, module)
+									if err != nil {
+										return nil, err
+									}
+									if rv, ok := ret.(returnValue); ok {
+										return rv.v, nil
+									}
+									return nil, nil
+								}
+							}
+						case *ast.EnumDecl:
+							for _, m := range d.Methods {
+								if m.Name == macc.Member {
+									newEnv := map[string]any{"self": obj}
+									for i, p := range m.Params {
+										if i < len(x.Args) {
+											v, err := evalExpr(x.Args[i], env, globals, module)
+											if err != nil {
+												return nil, err
+											}
+											newEnv[p.Name] = v
+										}
+									}
+									ret, err := execBlock(m.Body, newEnv, globals, module)
+									if err != nil {
+										return nil, err
+									}
+									if rv, ok := ret.(returnValue); ok {
+										return rv.v, nil
+									}
+									return nil, nil
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 		// Static method call: Type.method(...)
 		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
@@ -549,6 +668,50 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 							}
 						}
 					}
+				}
+			}
+		}
+		// Constructor calls: Type(...)
+		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
+			if sym, ok2 := module.Resolve(id.Name); ok2 {
+				switch d := sym.Node.(type) {
+				case *ast.ClassDecl:
+					for _, b := range d.Builders {
+						if len(b.Params) == len(x.Args) {
+							newEnv := map[string]any{}
+							inst := map[string]any{"__type": d.Name}
+							for _, f := range d.Fields {
+								inst[f.Name] = nil
+							}
+							for i, p := range b.Params {
+								v, err := evalExpr(x.Args[i], env, globals, module)
+								if err != nil {
+									return nil, err
+								}
+								newEnv[p.Name] = v
+							}
+							newEnv["self"] = inst
+							if _, err := execBlock(b.Body, newEnv, globals, module); err != nil {
+								return nil, err
+							}
+							return inst, nil
+						}
+					}
+					inst := map[string]any{"__type": d.Name}
+					for _, f := range d.Fields {
+						inst[f.Name] = nil
+					}
+					return inst, nil
+				case *ast.EnumDecl:
+					vals := make([]any, 0, len(x.Args))
+					for _, a := range x.Args {
+						v, err := evalExpr(a, env, globals, module)
+						if err != nil {
+							return nil, err
+						}
+						vals = append(vals, v)
+					}
+					return map[string]any{"__type": d.Name, "__payload": vals}, nil
 				}
 			}
 		}

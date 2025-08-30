@@ -123,6 +123,44 @@ func (p *Parser) parseExpression(rbp int) ast.Expr {
 
 func (p *Parser) parsePrefix() ast.Expr {
 	switch p.curr.Type {
+	case tokens.TokenNew:
+		// new Type(args...): parse a qualified type reference then arguments
+		p.advance()
+		first := p.expect(tokens.TokenIdentifier, "expected type name after 'new'")
+		if p.fatal {
+			return &ast.IdentifierExpr{Name: first.Text, Tok: first}
+		}
+		var callee ast.Expr = &ast.IdentifierExpr{Name: first.Text, Tok: first}
+		for p.curr.Type == tokens.TokenDot {
+			dot := p.curr
+			p.advance()
+			name := p.expect(tokens.TokenIdentifier, "expected member after '.'")
+			if p.fatal {
+				return callee
+			}
+			callee = &ast.MemberAccessExpr{Object: callee, Member: name.Text, DotTok: dot, MemberTok: name}
+		}
+		lpar := p.expect(tokens.TokenLParen, "expected '(' after type in 'new' expression")
+		if p.fatal {
+			return callee
+		}
+		var args []ast.Expr
+		if p.curr.Type != tokens.TokenRParen {
+			for {
+				arg := p.parseExpression(precLowest)
+				if p.fatal {
+					return &ast.CallExpr{Callee: callee, Args: args, LParen: lpar}
+				}
+				args = append(args, arg)
+				if p.curr.Type == tokens.TokenComma {
+					p.advance()
+					continue
+				}
+				break
+			}
+		}
+		rpar := p.expect(tokens.TokenRParen, "expected ')' to close 'new' arguments")
+		return &ast.CallExpr{Callee: callee, Args: args, LParen: lpar, RParen: rpar}
 	case tokens.TokenPlusPlus, tokens.TokenMinusMinus, tokens.TokenNot, tokens.TokenMinus, tokens.TokenBitNot:
 		opTok := p.curr
 		op := p.curr.Type

@@ -254,6 +254,11 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = t
 			return t
 		}
+		// special-case 'self' to current receiver type
+		if x.Name == "self" && ts.selfType != "" {
+			table.NodeToType[e] = ts.selfType
+			return ts.selfType
+		}
 		// then module-level symbols
 		if sym, ok := module.Resolve(x.Name); ok {
 			switch sym.Kind {
@@ -468,6 +473,32 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		_ = inferExprType(x.Expr, ts, table, module, diags)
 		return x.TargetType
 	case *ast.CallExpr:
+		// Constructor or type-call: ClassName(args) or EnumName(args)
+		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
+			if sym, ok2 := module.Resolve(id.Name); ok2 {
+				switch n := sym.Node.(type) {
+				case *ast.ClassDecl:
+					// select builder by arity, validate args
+					for _, b := range n.Builders {
+						if len(b.Params) == len(x.Args) {
+							_ = checkCallAgainst(b.Params, id.Name, id.Name, x.Args, ts, table, module, diags)
+							table.NodeToType[e] = id.Name
+							return id.Name
+						}
+					}
+					// fallback: still mark as this class type
+					table.NodeToType[e] = id.Name
+					return id.Name
+				case *ast.EnumDecl:
+					// constructing enum value; type is enum name
+					for _, a := range x.Args {
+						_ = inferExprType(a, ts, table, module, diags)
+					}
+					table.NodeToType[e] = id.Name
+					return id.Name
+				}
+			}
+		}
 		// Instance method call: obj.method(args)
 		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
 			objType := inferExprType(macc.Object, ts, table, module, diags)
@@ -565,6 +596,14 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 						if f.Name == x.Member {
 							table.NodeToType[e] = f.Type
 							return f.Type
+						}
+					}
+				} else if ed, ok2 := sym.Node.(*ast.EnumDecl); ok2 {
+					// Enum case reference has type of the enum
+					for _, c := range ed.Cases {
+						if c.Name == x.Member {
+							table.NodeToType[e] = ot
+							return ot
 						}
 					}
 				}

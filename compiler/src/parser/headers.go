@@ -146,17 +146,105 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					innerVis = ast.VisProtected
 					p.advance()
 				}
-				// Methods
-				if p.curr.Type == tokens.TokenFunc || p.curr.Type == tokens.TokenBuilder {
-					isBuilder := p.curr.Type == tokens.TokenBuilder
+				// Constructors (builders) and methods
+				// 1) 'builder(...) { ... }'
+				if p.curr.Type == tokens.TokenBuilder {
 					p.advance()
-					name := "builder"
-					if !isBuilder {
-						nameTok2 := p.expect(tokens.TokenIdentifier, "expected method name")
+					// constructor has same name as class
+					ctorName := cd.Name
+					p.expect(tokens.TokenLParen, "expected '('")
+					if p.fatal {
+						return nil
+					}
+					var params []ast.Parameter
+					if p.curr.Type != tokens.TokenRParen {
+						for {
+							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
+							if p.fatal {
+								return nil
+							}
+							p.expect(tokens.TokenColon, "expected ':'")
+							if p.fatal {
+								return nil
+							}
+							typStr := p.parseTypeName()
+							if p.fatal {
+								return nil
+							}
+							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
+							if p.curr.Type == tokens.TokenComma {
+								p.advance()
+								continue
+							}
+							break
+						}
+					}
+					p.expect(tokens.TokenRParen, "expected ')'")
+					if p.fatal {
+						return nil
+					}
+					var body []ast.Stmt
+					if p.curr.Type == tokens.TokenLBrace {
+						blk := p.parseBlock()
 						if p.fatal {
 							return nil
 						}
-						name = nameTok2.Text
+						body = blk.Stmts
+					}
+					cd.Builders = append(cd.Builders, ast.MethodDecl{Visibility: innerVis, Name: ctorName, Params: params, ReturnType: "", Body: body})
+					continue
+				}
+				// 2) Same-name identifier as constructor: ClassName(...)
+				if p.curr.Type == tokens.TokenIdentifier && p.curr.Text == cd.Name && p.peek.Type == tokens.TokenLParen {
+					_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
+					p.expect(tokens.TokenLParen, "expected '('")
+					if p.fatal {
+						return nil
+					}
+					var params []ast.Parameter
+					if p.curr.Type != tokens.TokenRParen {
+						for {
+							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
+							if p.fatal {
+								return nil
+							}
+							p.expect(tokens.TokenColon, "expected ':'")
+							if p.fatal {
+								return nil
+							}
+							typStr := p.parseTypeName()
+							if p.fatal {
+								return nil
+							}
+							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
+							if p.curr.Type == tokens.TokenComma {
+								p.advance()
+								continue
+							}
+							break
+						}
+					}
+					p.expect(tokens.TokenRParen, "expected ')'")
+					if p.fatal {
+						return nil
+					}
+					var body []ast.Stmt
+					if p.curr.Type == tokens.TokenLBrace {
+						blk := p.parseBlock()
+						if p.fatal {
+							return nil
+						}
+						body = blk.Stmts
+					}
+					cd.Builders = append(cd.Builders, ast.MethodDecl{Visibility: innerVis, Name: cd.Name, Params: params, ReturnType: "", Body: body})
+					continue
+				}
+				// 3) Regular methods: 'func name(...) [: Type] { ... }'
+				if p.curr.Type == tokens.TokenFunc {
+					p.advance()
+					nameTok2 := p.expect(tokens.TokenIdentifier, "expected method name")
+					if p.fatal {
+						return nil
 					}
 					p.expect(tokens.TokenLParen, "expected '('")
 					if p.fatal {
@@ -190,7 +278,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 						return nil
 					}
 					retType := "void"
-					if !isBuilder && p.curr.Type == tokens.TokenColon {
+					if p.curr.Type == tokens.TokenColon {
 						p.advance()
 						retType = p.parseTypeName()
 						if p.fatal {
@@ -205,8 +293,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 						}
 						body = blk.Stmts
 					}
-					md := ast.MethodDecl{Visibility: innerVis, Name: name, Params: params, ReturnType: retType, Body: body}
-					cd.Methods = append(cd.Methods, md)
+					cd.Methods = append(cd.Methods, ast.MethodDecl{Visibility: innerVis, Name: nameTok2.Text, Params: params, ReturnType: retType, Body: body})
 					continue
 				}
 				// Forbid let at type body level
@@ -279,6 +366,56 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 				for p.curr.Type == tokens.TokenFin {
 					isFinal = true
 					p.advance()
+				}
+				// constructors for struct
+				if p.curr.Type == tokens.TokenBuilder || (p.curr.Type == tokens.TokenIdentifier && p.curr.Text == sd.Name && p.peek.Type == tokens.TokenLParen) {
+					// consume 'builder' or the name
+					if p.curr.Type == tokens.TokenBuilder {
+						p.advance()
+					} else {
+						_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
+					}
+					p.expect(tokens.TokenLParen, "expected '('")
+					if p.fatal {
+						return nil
+					}
+					var params []ast.Parameter
+					if p.curr.Type != tokens.TokenRParen {
+						for {
+							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
+							if p.fatal {
+								return nil
+							}
+							p.expect(tokens.TokenColon, "expected ':'")
+							if p.fatal {
+								return nil
+							}
+							typStr := p.parseTypeName()
+							if p.fatal {
+								return nil
+							}
+							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
+							if p.curr.Type == tokens.TokenComma {
+								p.advance()
+								continue
+							}
+							break
+						}
+					}
+					p.expect(tokens.TokenRParen, "expected ')'")
+					if p.fatal {
+						return nil
+					}
+					var body []ast.Stmt
+					if p.curr.Type == tokens.TokenLBrace {
+						blk := p.parseBlock()
+						if p.fatal {
+							return nil
+						}
+						body = blk.Stmts
+					}
+					sd.Builders = append(sd.Builders, ast.MethodDecl{Name: sd.Name, Params: params, ReturnType: "", Body: body})
+					continue
 				}
 				// fields
 				if isFinal || p.curr.Type == tokens.TokenIdentifier || p.curr.Type == tokens.TokenVar {
@@ -383,12 +520,168 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 		ed := &ast.EnumDecl{Visibility: vis, Name: nameTok.Text, HeaderTok: enumTok}
 		if p.curr.Type == tokens.TokenLBrace {
 			p.advance()
+			parsingCases := true
 			for p.curr.Type != tokens.TokenRBrace && p.curr.Type != tokens.TokenEndOfFile {
-				if p.curr.Type == tokens.TokenLet {
-					p.report(p.curr, "'let' is only allowed inside functions; use 'var' or case payloads in enums")
-					return nil
+				// allow fields/methods after case list
+				innerVis := ast.VisDefault
+				switch p.curr.Type {
+				case tokens.TokenPub:
+					innerVis = ast.VisPublic
+					p.advance()
+					parsingCases = false
+				case tokens.TokenPriv:
+					innerVis = ast.VisPrivate
+					p.advance()
+					parsingCases = false
+				case tokens.TokenProt:
+					innerVis = ast.VisProtected
+					p.advance()
+					parsingCases = false
 				}
-				if p.curr.Type == tokens.TokenIdentifier {
+				// constructors in enum body (after case list)
+				if !parsingCases && (p.curr.Type == tokens.TokenBuilder || (p.curr.Type == tokens.TokenIdentifier && p.curr.Text == ed.Name && p.peek.Type == tokens.TokenLParen)) {
+					if p.curr.Type == tokens.TokenBuilder {
+						p.advance()
+					} else {
+						_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
+					}
+					p.expect(tokens.TokenLParen, "expected '('")
+					if p.fatal {
+						return nil
+					}
+					var params []ast.Parameter
+					if p.curr.Type != tokens.TokenRParen {
+						for {
+							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
+							if p.fatal {
+								return nil
+							}
+							p.expect(tokens.TokenColon, "expected ':'")
+							if p.fatal {
+								return nil
+							}
+							typStr := p.parseTypeName()
+							if p.fatal {
+								return nil
+							}
+							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
+							if p.curr.Type == tokens.TokenComma {
+								p.advance()
+								continue
+							}
+							break
+						}
+					}
+					p.expect(tokens.TokenRParen, "expected ')'")
+					if p.fatal {
+						return nil
+					}
+					var body []ast.Stmt
+					if p.curr.Type == tokens.TokenLBrace {
+						blk := p.parseBlock()
+						if p.fatal {
+							return nil
+						}
+						body = blk.Stmts
+					}
+					ed.Builders = append(ed.Builders, ast.MethodDecl{Visibility: innerVis, Name: ed.Name, Params: params, ReturnType: "", Body: body})
+					continue
+				}
+				// methods
+				if p.curr.Type == tokens.TokenFunc {
+					parsingCases = false
+					p.advance()
+					mname := p.expect(tokens.TokenIdentifier, "expected method name")
+					if p.fatal {
+						return nil
+					}
+					p.expect(tokens.TokenLParen, "expected '('")
+					if p.fatal {
+						return nil
+					}
+					var params []ast.Parameter
+					if p.curr.Type != tokens.TokenRParen {
+						for {
+							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
+							if p.fatal {
+								return nil
+							}
+							p.expect(tokens.TokenColon, "expected ':'")
+							if p.fatal {
+								return nil
+							}
+							typStr := p.parseTypeName()
+							if p.fatal {
+								return nil
+							}
+							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
+							if p.curr.Type == tokens.TokenComma {
+								p.advance()
+								continue
+							}
+							break
+						}
+					}
+					p.expect(tokens.TokenRParen, "expected ')'")
+					if p.fatal {
+						return nil
+					}
+					retType := "void"
+					if p.curr.Type == tokens.TokenColon {
+						p.advance()
+						retType = p.parseTypeName()
+						if p.fatal {
+							return nil
+						}
+					}
+					var body []ast.Stmt
+					if p.curr.Type == tokens.TokenLBrace {
+						blk := p.parseBlock()
+						if p.fatal {
+							return nil
+						}
+						body = blk.Stmts
+					}
+					ed.Methods = append(ed.Methods, ast.MethodDecl{Visibility: innerVis, Name: mname.Text, Params: params, ReturnType: retType, Body: body})
+					continue
+				}
+				// fields: optional 'var' and/or 'fin'
+				isFinal := false
+				for p.curr.Type == tokens.TokenFin {
+					isFinal = true
+					p.advance()
+					parsingCases = false
+				}
+				if p.curr.Type == tokens.TokenVar {
+					p.advance()
+					parsingCases = false
+				}
+				if p.curr.Type == tokens.TokenIdentifier && !parsingCases {
+					fname := p.expect(tokens.TokenIdentifier, "expected field name")
+					if p.fatal {
+						return nil
+					}
+					p.expect(tokens.TokenColon, "expected ':' after field name")
+					if p.fatal {
+						return nil
+					}
+					ft := p.parseTypeName()
+					if p.fatal {
+						return nil
+					}
+					if p.curr.Type == tokens.TokenEqual {
+						p.advance()
+						_ = p.parseExpression(precLowest)
+						if p.fatal {
+							return nil
+						}
+					}
+					ed.Fields = append(ed.Fields, ast.FieldDecl{Name: fname.Text, Type: ft, IsFinal: isFinal})
+					_ = p.match(tokens.TokenSemicolon)
+					continue
+				}
+				// Cases (only if still parsing case list)
+				if parsingCases && p.curr.Type == tokens.TokenIdentifier {
 					cname := p.expect(tokens.TokenIdentifier, "expected case name")
 					if p.fatal {
 						return nil
@@ -415,9 +708,15 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 						}
 					}
 					ed.Cases = append(ed.Cases, ast.EnumCase{Name: cname.Text, Params: args})
-					_ = p.match(tokens.TokenComma)
+					if p.curr.Type == tokens.TokenComma {
+						p.advance()
+						continue
+					}
+					// once a non-comma token appears after a case, switch to members
+					parsingCases = false
 					continue
 				}
+				// unknown token in enum body
 				p.report(p.curr, fmt.Sprintf("unexpected token %s in enum body", tokens.TokenTypeName(p.curr.Type)))
 				return nil
 			}
