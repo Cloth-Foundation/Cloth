@@ -405,6 +405,28 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if err != nil {
 			return nil, err
 		}
+		if ix, ok := x.Target.(*ast.IndexExpr); ok {
+			base, err := evalExpr(ix.Base, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			idxVal, err := evalExpr(ix.Index, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			i, ok := idxVal.(int64)
+			if !ok {
+				return nil, fmt.Errorf("index must be integer")
+			}
+			if arr, ok := base.([]any); ok {
+				if i < 0 || int(i) >= len(arr) {
+					return nil, fmt.Errorf("index out of bounds")
+				}
+				arr[i] = v
+				return v, nil
+			}
+			return nil, fmt.Errorf("indexing non-array")
+		}
 		if id, ok := x.Target.(*ast.IdentifierExpr); ok {
 			switch x.Operator {
 			case tokens.TokenEqual:
@@ -557,6 +579,36 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			}
 		}
 		return nil, fmt.Errorf("unknown function call")
+	case *ast.ArrayLiteralExpr:
+		vals := make([]any, 0, len(x.Elements))
+		for _, el := range x.Elements {
+			v, err := evalExpr(el, env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			vals = append(vals, v)
+		}
+		return vals, nil
+	case *ast.IndexExpr:
+		base, err := evalExpr(x.Base, env, globals, module)
+		if err != nil {
+			return nil, err
+		}
+		idxVal, err := evalExpr(x.Index, env, globals, module)
+		if err != nil {
+			return nil, err
+		}
+		i, ok := idxVal.(int64)
+		if !ok {
+			return nil, fmt.Errorf("index must be integer")
+		}
+		if arr, ok := base.([]any); ok {
+			if i < 0 || int(i) >= len(arr) {
+				return nil, fmt.Errorf("index out of bounds")
+			}
+			return arr[i], nil
+		}
+		return nil, fmt.Errorf("indexing non-array")
 	default:
 		return nil, fmt.Errorf("unsupported expression kind")
 	}

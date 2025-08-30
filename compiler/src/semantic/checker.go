@@ -411,6 +411,20 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		return ""
 	case *ast.AssignExpr:
 		var tt string
+		// Handle assignment to array element: arr[idx] = value
+		if ix, ok := x.Target.(*ast.IndexExpr); ok {
+			bt := inferExprType(ix.Base, ts, table, module, diags)
+			vt := inferExprType(x.Value, ts, table, module, diags)
+			el := ""
+			if len(bt) >= 2 && bt[:2] == "[]" {
+				el = bt[2:]
+			}
+			if el != "" && !assignable(el, vt) {
+				*diags = append(*diags, CheckDiag{Message: formatAssign(el, vt), Span: x.OpTok.Span})
+			}
+			table.NodeToType[e] = el
+			return el
+		}
 		if id, ok := x.Target.(*ast.IdentifierExpr); ok {
 			if t, ok2 := ts.resolve(id.Name); ok2 {
 				tt = t
@@ -626,9 +640,13 @@ func assignable(target, value string) bool {
 	if IsNumericType(target) && IsNumericType(value) {
 		return true
 	}
-	// printf second arg: []any accepts any []T
+	// arrays: []any accepts any []T
 	if target == "[]any" && len(value) >= 2 && value[:2] == "[]" {
 		return true
+	}
+	// identical array types must match exactly
+	if len(target) >= 2 && target[:2] == "[]" && len(value) >= 2 && value[:2] == "[]" {
+		return target == value
 	}
 	return false
 }

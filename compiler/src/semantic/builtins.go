@@ -62,7 +62,7 @@ func InjectBuiltins(scope *Scope) {
 		},
 	})
 
-	// range built-in: range(n) or range(start, end[, step]) -> []i32 (for interpreter MVP)
+	// range built-in
 	_ = scope.Define(Symbol{
 		Name: "range",
 		Kind: SymFunc,
@@ -70,6 +70,17 @@ func InjectBuiltins(scope *Scope) {
 			Name:       "range",
 			Params:     []ast.Parameter{{Name: "a", Type: "i32"}, {Name: "b", Type: "i32"}, {Name: "c", Type: "i32"}},
 			ReturnType: "[]i32",
+		},
+	})
+
+	// array constructor: array(type, size[, init]) -> []type (runtime uses []any)
+	_ = scope.Define(Symbol{
+		Name: "array",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "array",
+			Params:     []ast.Parameter{{Name: "type", Type: ""}, {Name: "size", Type: "i32"}, {Name: "init", Type: ""}},
+			ReturnType: "[]any",
 		},
 	})
 }
@@ -102,6 +113,8 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 		return callInput(args, env, globals, module)
 	case "range":
 		return callRange(args, env, globals, module)
+	case "array":
+		return callArray(args, env, globals, module)
 	case "exit":
 		if len(args) == 0 {
 			os.Exit(0)
@@ -502,4 +515,33 @@ func callRange(args []ast.Expr, env map[string]any, globals map[string]any, modu
 		}
 	}
 	return true, out, nil
+}
+
+func callArray(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) < 2 {
+		return true, nil, fmt.Errorf("array requires at least type and size")
+	}
+	// type arg is ignored at runtime (dynamic), but kept for checker
+	// evaluate size
+	szv, err := evalExpr(args[1], env, globals, module)
+	if err != nil {
+		return true, nil, err
+	}
+	sz, ok := szv.(int64)
+	if !ok || sz < 0 {
+		return true, nil, fmt.Errorf("array size must be non-negative integer")
+	}
+	var init any
+	if len(args) >= 3 {
+		v, err := evalExpr(args[2], env, globals, module)
+		if err != nil {
+			return true, nil, err
+		}
+		init = v
+	}
+	arr := make([]any, int(sz))
+	for i := 0; i < int(sz); i++ {
+		arr[i] = init
+	}
+	return true, arr, nil
 }
