@@ -125,17 +125,22 @@ func (p *Parser) parseIf() ast.Stmt {
 	if p.fatal {
 		return &ast.IfStmt{Tok: t}
 	}
-	p.expect(tokens.TokenLParen, "expected '('")
-	if p.fatal {
-		return &ast.IfStmt{Tok: t}
-	}
-	cond := p.parseExpression(precLowest)
-	if p.fatal {
-		return &ast.IfStmt{Tok: t}
-	}
-	p.expect(tokens.TokenRParen, "expected ')'")
-	if p.fatal {
-		return &ast.IfStmt{Tok: t}
+	var cond ast.Expr
+	if p.curr.Type == tokens.TokenLParen {
+		p.advance()
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.IfStmt{Tok: t}
+		}
+		p.expect(tokens.TokenRParen, "expected ')'")
+		if p.fatal {
+			return &ast.IfStmt{Tok: t}
+		}
+	} else {
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.IfStmt{Tok: t}
+		}
 	}
 	thenBlk := p.parseBlock()
 	if p.fatal {
@@ -144,23 +149,28 @@ func (p *Parser) parseIf() ast.Stmt {
 	var elifs []ast.ElseIf
 	for p.curr.Type == tokens.TokenElif {
 		p.advance()
-		p.expect(tokens.TokenLParen, "expected '('")
-		if p.fatal {
-			return &ast.IfStmt{Tok: t}
-		}
-		c := p.parseExpression(precLowest)
-		if p.fatal {
-			return &ast.IfStmt{Tok: t}
-		}
-		p.expect(tokens.TokenRParen, "expected ')'")
-		if p.fatal {
-			return &ast.IfStmt{Tok: t}
+		var ec ast.Expr
+		if p.curr.Type == tokens.TokenLParen {
+			p.advance()
+			ec = p.parseExpression(precLowest)
+			if p.fatal {
+				return &ast.IfStmt{Tok: t}
+			}
+			p.expect(tokens.TokenRParen, "expected ')'")
+			if p.fatal {
+				return &ast.IfStmt{Tok: t}
+			}
+		} else {
+			ec = p.parseExpression(precLowest)
+			if p.fatal {
+				return &ast.IfStmt{Tok: t}
+			}
 		}
 		b := p.parseBlock()
 		if p.fatal {
 			return &ast.IfStmt{Tok: t}
 		}
-		elifs = append(elifs, ast.ElseIf{Cond: c, Then: b})
+		elifs = append(elifs, ast.ElseIf{Cond: ec, Then: b})
 	}
 	var elseBlk *ast.BlockStmt
 	if p.curr.Type == tokens.TokenElse {
@@ -178,17 +188,22 @@ func (p *Parser) parseWhile() ast.Stmt {
 	if p.fatal {
 		return &ast.WhileStmt{Tok: t}
 	}
-	p.expect(tokens.TokenLParen, "expected '('")
-	if p.fatal {
-		return &ast.WhileStmt{Tok: t}
-	}
-	cond := p.parseExpression(precLowest)
-	if p.fatal {
-		return &ast.WhileStmt{Tok: t}
-	}
-	p.expect(tokens.TokenRParen, "expected ')'")
-	if p.fatal {
-		return &ast.WhileStmt{Tok: t}
+	var cond ast.Expr
+	if p.curr.Type == tokens.TokenLParen {
+		p.advance()
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.WhileStmt{Tok: t}
+		}
+		p.expect(tokens.TokenRParen, "expected ')'")
+		if p.fatal {
+			return &ast.WhileStmt{Tok: t}
+		}
+	} else {
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.WhileStmt{Tok: t}
+		}
 	}
 	body := p.parseBlock()
 	return &ast.WhileStmt{Cond: cond, Body: body, Tok: t}
@@ -207,15 +222,23 @@ func (p *Parser) parseDoWhile() ast.Stmt {
 	if p.fatal {
 		return &ast.DoWhileStmt{Tok: t}
 	}
-	p.expect(tokens.TokenLParen, "expected '('")
-	if p.fatal {
-		return &ast.DoWhileStmt{Tok: t}
+	var cond ast.Expr
+	if p.curr.Type == tokens.TokenLParen {
+		p.advance()
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.DoWhileStmt{Tok: t}
+		}
+		p.expect(tokens.TokenRParen, "expected ')'")
+		if p.fatal {
+			return &ast.DoWhileStmt{Tok: t}
+		}
+	} else {
+		cond = p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.DoWhileStmt{Tok: t}
+		}
 	}
-	cond := p.parseExpression(precLowest)
-	if p.fatal {
-		return &ast.DoWhileStmt{Tok: t}
-	}
-	p.expect(tokens.TokenRParen, "expected ')'")
 	return &ast.DoWhileStmt{Body: body, Cond: cond, Tok: t}
 }
 
@@ -230,7 +253,7 @@ func (p *Parser) parseLoop() ast.Stmt {
 		return &ast.LoopStmt{}
 	}
 	// Two forms:
-	// loop (i: a..b [step s]) { ... }
+	// loop (i: a..b [..=b]) { ... } or loop i: a..b { ... }
 	// loop i in expr { ... }
 	if p.curr.Type == tokens.TokenLParen {
 		p.advance()
@@ -256,8 +279,7 @@ func (p *Parser) parseLoop() ast.Stmt {
 		if p.fatal {
 			return &ast.LoopStmt{}
 		}
-		var step ast.Expr
-		// 'step' removed; default only
+		var step ast.Expr // optional, removed explicit 'step' keyword; default only
 		p.expect(tokens.TokenRParen, "expected ')'")
 		if p.fatal {
 			return &ast.LoopStmt{}
@@ -265,21 +287,41 @@ func (p *Parser) parseLoop() ast.Stmt {
 		body := p.parseBlock()
 		return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, From: from, To: to, Inclusive: inclusive, Step: step, Body: body, Tok: name}
 	}
-	// loop i in expr { ... }
+	// loop i in expr { ... } or loop i: a..b { ... }
 	name := p.expect(tokens.TokenIdentifier, "expected loop variable")
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
-	p.expect(tokens.TokenIn, "expected 'in' after loop variable")
+	if p.curr.Type == tokens.TokenIn {
+		p.advance()
+		iter := p.parseExpression(precLowest)
+		if p.fatal {
+			return &ast.LoopStmt{}
+		}
+		body := p.parseBlock()
+		return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, Iter: iter, Body: body, Tok: name}
+	}
+	// range-style without parentheses: i: a..b
+	p.expect(tokens.TokenColon, "expected ':' after loop variable")
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
-	iter := p.parseExpression(precLowest)
+	from := p.parseExpression(precLowest)
+	if p.fatal {
+		return &ast.LoopStmt{}
+	}
+	if p.curr.Type != tokens.TokenRange && p.curr.Type != tokens.TokenRangeInclusive {
+		p.report(p.curr, "expected range operator '..' or '..='")
+		return &ast.LoopStmt{}
+	}
+	inclusive := p.curr.Type == tokens.TokenRangeInclusive
+	p.advance()
+	to := p.parseExpression(precLowest)
 	if p.fatal {
 		return &ast.LoopStmt{}
 	}
 	body := p.parseBlock()
-	return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, Iter: iter, Body: body, Tok: name}
+	return &ast.LoopStmt{Reverse: reverse, VarName: name.Text, From: from, To: to, Inclusive: inclusive, Body: body, Tok: name}
 }
 
 func (p *Parser) parseReturn() ast.Stmt {

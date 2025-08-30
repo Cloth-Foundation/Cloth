@@ -118,6 +118,34 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					return v, err
 				}
 			}
+		case *ast.WhileStmt:
+			for {
+				c, err := evalExpr(n.Cond, env, globals, module)
+				if err != nil {
+					return nil, err
+				}
+				b, ok := c.(bool)
+				if !ok || !b {
+					break
+				}
+				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
+					return v, err
+				}
+			}
+		case *ast.DoWhileStmt:
+			for {
+				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
+					return v, err
+				}
+				c, err := evalExpr(n.Cond, env, globals, module)
+				if err != nil {
+					return nil, err
+				}
+				b, ok := c.(bool)
+				if !ok || !b {
+					break
+				}
+			}
 		case *ast.LoopStmt:
 			// Two forms: range-style (From/To) or iterable (Iter)
 			ls := env
@@ -201,7 +229,6 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					}
 				}
 			}
-			break
 		}
 	}
 	return nil, nil
@@ -263,6 +290,39 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			if b, ok := v.(bool); ok {
 				return !b, nil
 			}
+		case tokens.TokenPlusPlus, tokens.TokenMinusMinus:
+			// handle ++/-- for identifiers; mutate env/globals; prefix/postfix semantics
+			delta := int64(1)
+			if x.Operator == tokens.TokenMinusMinus {
+				delta = -1
+			}
+			// Only assignable for identifiers; otherwise just return adjusted value
+			if id, ok := x.Operand.(*ast.IdentifierExpr); ok {
+				// locate storage
+				if env != nil {
+					if cur, ok := env[id.Name]; ok {
+						old := cur
+						env[id.Name] = addOne(old, delta)
+						if x.IsPostfix {
+							return old, nil
+						}
+						return env[id.Name], nil
+					}
+				}
+				if globals != nil {
+					if cur, ok := globals[id.Name]; ok {
+						old := cur
+						globals[id.Name] = addOne(old, delta)
+						if x.IsPostfix {
+							return old, nil
+						}
+						return globals[id.Name], nil
+					}
+				}
+				return nil, fmt.Errorf("assignment to undefined variable %s", id.Name)
+			}
+			// Non-identifier: compute adjusted value without storing
+			return addOne(v, delta), nil
 		}
 		return v, nil
 	case *ast.BinaryExpr:
@@ -519,6 +579,17 @@ func toString(v any) string {
 		return "false"
 	default:
 		return fmt.Sprintf("%v", t)
+	}
+}
+
+func addOne(v any, delta int64) any {
+	switch n := v.(type) {
+	case int64:
+		return n + delta
+	case float64:
+		return n + float64(delta)
+	default:
+		return v
 	}
 }
 

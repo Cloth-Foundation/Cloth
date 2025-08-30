@@ -1,11 +1,19 @@
 mod first
 
 pub func main(): i32 {
-    loop i in range(1, 11) {
-        printf("Step: {}\n", i)
-        loop j in range(1, 10) {
-            println(i * j)
-        }
+    var count = 0
+
+    do {
+        printf("Count is: %s\n", count)
+        count++
+    } while count < 10
+
+    printf("Loop finished. Final count: %s\n", count)
+
+    while count < 20 {
+        printf("Count is: %s\n", count)
+        count++
     }
+
     ret 0
 }
