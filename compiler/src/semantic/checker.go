@@ -138,8 +138,12 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 		case *ast.ReturnStmt:
 			if n.Value != nil {
 				vt := inferExprType(n.Value, ts, table, module, diags)
-				if retType != "" && retType != TokenTypeName(tokens.TokenVoid) && !assignable(retType, vt) {
-					*diags = append(*diags, CheckDiag{Message: formatAssign(retType, vt), Span: n.Tok.Span})
+				if retType != "" && retType != TokenTypeName(tokens.TokenVoid) {
+					if retType == TokenTypeName(tokens.TokenBit) && vt == "null" {
+						*diags = append(*diags, CheckDiag{Message: "bit cannot be null", Span: n.Tok.Span, Hint: "return 0 or 1 instead of null"})
+					} else if !assignable(retType, vt) {
+						*diags = append(*diags, CheckDiag{Message: formatAssign(retType, vt), Span: n.Tok.Span})
+					}
 				}
 			} else if retType != "" && retType != TokenTypeName(tokens.TokenVoid) {
 				*diags = append(*diags, CheckDiag{Message: "missing return value", Span: n.Tok.Span})
@@ -232,8 +236,13 @@ func checkCallAgainst(sigParams []ast.Parameter, ret string, callName string, ar
 		at := inferExprType(a, ts, table, module, diags)
 		if i < len(sigParams) {
 			pt := sigParams[i].Type
-			if pt != "" && !assignable(pt, at) {
-				*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("argument %d to %s: %s", i+1, callName, formatAssign(pt, at)), Span: a.Span()})
+			if pt != "" {
+				// Forbid null to bit parameters with a clearer message
+				if pt == TokenTypeName(tokens.TokenBit) && at == "null" {
+					*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("argument %d to %s: bit cannot be null", i+1, callName), Span: a.Span(), Hint: "pass 0 or 1 instead of null"})
+				} else if !assignable(pt, at) {
+					*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("argument %d to %s: %s", i+1, callName, formatAssign(pt, at)), Span: a.Span()})
+				}
 			}
 		}
 	}
@@ -680,6 +689,13 @@ func tokensToSymbol(t tokens.TokenType) string {
 }
 
 func assignable(target, value string) bool {
+	// Allow assigning null to any type except bit
+	if value == "null" {
+		if target == TokenTypeName(tokens.TokenBit) {
+			return false
+		}
+		return true
+	}
 	if target == value {
 		return true
 	}
