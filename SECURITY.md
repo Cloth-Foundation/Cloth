@@ -1,4 +1,6 @@
-# Loom — Security Policy
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Security.png?raw=true)
+
+# Security Policy
 
 ## Supported Versions
 

@@ -1,4 +1,4 @@
-# Loom Language Team — Code of Conduct
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Code%20of%20Conduct.png?raw=true)
 
 ## Purpose
 

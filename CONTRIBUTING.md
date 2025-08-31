@@ -1,4 +1,4 @@
-# Contributing to Loom
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Contributing.png?raw=true)
 
 Thank you for your interest in contributing to **Loom**, a statically typed systems language with value semantics, forward declarations, and a modern standard library. Whether you're fixing a typo, proposing a new language feature, or optimizing the compiler, your contribution matters!
 

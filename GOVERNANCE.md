@@ -1,4 +1,4 @@
-# Loom Language Project — Governance
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Governance.png?raw=true)
 
 ## Overview
 

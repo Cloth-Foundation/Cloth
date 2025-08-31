@@ -1,6 +1,8 @@
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/License.png?raw=true)
+
 MIT License
 
-Copyright (c) [2025] [Loom Language Team]
+Copyright (c) 2025 Loom Foundation
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
