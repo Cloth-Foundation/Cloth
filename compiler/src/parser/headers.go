@@ -192,7 +192,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					cd.Builders = append(cd.Builders, ast.MethodDecl{Visibility: innerVis, Name: cd.Name, Params: params, ReturnType: "", Body: body})
 					continue
 				}
-				// 3) Regular methods: 'func name(...) [: Type] { ... }'
+				// Regular methods: 'func name(...) [: Type] { ... }'
 				if p.curr.Type == tokens.TokenFunc {
 					p.advance()
 					nameTok2 := p.expect(tokens.TokenIdentifier, "expected method name")
