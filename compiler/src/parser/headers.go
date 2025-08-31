@@ -147,54 +147,7 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.advance()
 				}
 				// Constructors (builders) and methods
-				// 1) 'builder(...) { ... }'
-				if p.curr.Type == tokens.TokenBuilder {
-					p.advance()
-					// constructor has same name as class
-					ctorName := cd.Name
-					p.expect(tokens.TokenLParen, "expected '('")
-					if p.fatal {
-						return nil
-					}
-					var params []ast.Parameter
-					if p.curr.Type != tokens.TokenRParen {
-						for {
-							paramName := p.expect(tokens.TokenIdentifier, "expected parameter name")
-							if p.fatal {
-								return nil
-							}
-							p.expect(tokens.TokenColon, "expected ':'")
-							if p.fatal {
-								return nil
-							}
-							typStr := p.parseTypeName()
-							if p.fatal {
-								return nil
-							}
-							params = append(params, ast.Parameter{Name: paramName.Text, Type: typStr, Tok: paramName})
-							if p.curr.Type == tokens.TokenComma {
-								p.advance()
-								continue
-							}
-							break
-						}
-					}
-					p.expect(tokens.TokenRParen, "expected ')'")
-					if p.fatal {
-						return nil
-					}
-					var body []ast.Stmt
-					if p.curr.Type == tokens.TokenLBrace {
-						blk := p.parseBlock()
-						if p.fatal {
-							return nil
-						}
-						body = blk.Stmts
-					}
-					cd.Builders = append(cd.Builders, ast.MethodDecl{Visibility: innerVis, Name: ctorName, Params: params, ReturnType: "", Body: body})
-					continue
-				}
-				// 2) Same-name identifier as constructor: ClassName(...)
+				// Same-name identifier as constructor: ClassName(...)
 				if p.curr.Type == tokens.TokenIdentifier && p.curr.Text == cd.Name && p.peek.Type == tokens.TokenLParen {
 					_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
 					p.expect(tokens.TokenLParen, "expected '('")
@@ -368,13 +321,10 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					p.advance()
 				}
 				// constructors for struct
-				if p.curr.Type == tokens.TokenBuilder || (p.curr.Type == tokens.TokenIdentifier && p.curr.Text == sd.Name && p.peek.Type == tokens.TokenLParen) {
+				if p.curr.Type == tokens.TokenIdentifier && p.curr.Text == sd.Name && p.peek.Type == tokens.TokenLParen {
 					// consume 'builder' or the name
-					if p.curr.Type == tokens.TokenBuilder {
-						p.advance()
-					} else {
-						_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
-					}
+					_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
+
 					p.expect(tokens.TokenLParen, "expected '('")
 					if p.fatal {
 						return nil
@@ -539,12 +489,9 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					parsingCases = false
 				}
 				// constructors in enum body (after case list)
-				if !parsingCases && (p.curr.Type == tokens.TokenBuilder || (p.curr.Type == tokens.TokenIdentifier && p.curr.Text == ed.Name && p.peek.Type == tokens.TokenLParen)) {
-					if p.curr.Type == tokens.TokenBuilder {
-						p.advance()
-					} else {
-						_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
-					}
+				if p.curr.Type == tokens.TokenIdentifier && p.curr.Text == ed.Name && p.peek.Type == tokens.TokenLParen {
+					_ = p.expect(tokens.TokenIdentifier, "expected constructor name")
+
 					p.expect(tokens.TokenLParen, "expected '('")
 					if p.fatal {
 						return nil

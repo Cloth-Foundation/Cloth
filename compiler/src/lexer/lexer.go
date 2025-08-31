@@ -529,8 +529,6 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenBool, true
 	case "break":
 		return tokens.TokenBreak, true
-	case "builder":
-		return tokens.TokenBuilder, true
 	case "case":
 		return tokens.TokenCase, true
 	case "class":

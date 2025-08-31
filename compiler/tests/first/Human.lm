@@ -1,0 +1,47 @@
+mod first
+
+pub class Human {
+
+    priv var attributes: Person
+    priv fin var favoriteColor: Color
+
+    pub Human(name: string, age: i32, favoriteColor: Color) {
+        attributes.name = name
+        attributes.age = age
+        self.favoriteColor = favoriteColor
+    }
+
+    pub func getName(): string {
+        ret self.attributes.name
+    }
+
+    pub func getAge(): i32 {
+        ret self.attributes.age
+    }
+
+    pub func getFavoriteColor(): Color {
+        ret self.favoriteColor
+    }
+
+}
+
+pub struct Person {
+    name: string
+    age: i32
+}
+
+pub enum Color {
+    RED("red"),
+    GREEN("green"),
+    BLUE("blue")
+
+    priv fin var name: string
+
+    pub Color(name: string) {
+        self.name = name
+    }
+
+    pub func toString(): string {
+        ret self.name
+    }
+}

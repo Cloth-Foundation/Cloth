@@ -598,6 +598,13 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 							return f.Type
 						}
 					}
+				} else if sd, ok2 := sym.Node.(*ast.StructDecl); ok2 {
+					for _, f := range sd.Fields {
+						if f.Name == x.Member {
+							table.NodeToType[e] = f.Type
+							return f.Type
+						}
+					}
 				} else if ed, ok2 := sym.Node.(*ast.EnumDecl); ok2 {
 					// Enum case reference has type of the enum
 					for _, c := range ed.Cases {

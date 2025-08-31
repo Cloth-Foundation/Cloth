@@ -11,7 +11,6 @@ var currentTypes *TypeTable
 
 // Execute runs a compiled file by finding main() and interpreting its body.
 // Supports: literals, identifiers (locals and globals), binary +,-,*,/,%, assignment, calls.
-// For now, only builtin print is supported for side effects.
 func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 	currentTypes = types
 	defer func() { currentTypes = nil }()
@@ -47,6 +46,31 @@ func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 }
 
 type returnValue struct{ v any }
+
+// makeInstance creates a map object for a class or struct type, initializing nested struct fields.
+func makeInstance(typeName string, module *Scope) map[string]any {
+	inst := map[string]any{"__type": typeName}
+	if sym, ok := module.Resolve(typeName); ok {
+		switch n := sym.Node.(type) {
+		case *ast.ClassDecl:
+			for _, f := range n.Fields {
+				// Initialize struct-typed fields to empty struct instance; otherwise nil
+				if fsym, ok2 := module.Resolve(f.Type); ok2 {
+					if _, isStruct := fsym.Node.(*ast.StructDecl); isStruct {
+						inst[f.Name] = makeInstance(f.Type, module)
+						continue
+					}
+				}
+				inst[f.Name] = nil
+			}
+		case *ast.StructDecl:
+			for _, f := range n.Fields {
+				inst[f.Name] = nil
+			}
+		}
+	}
+	return inst
+}
 
 func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, module *Scope) (any, error) {
 	for _, s := range stmts {
@@ -266,6 +290,29 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			if v, ok := env[x.Name]; ok {
 				return v, nil
 			}
+			// fallback to self field
+			if self, ok := env["self"]; ok {
+				if obj, ok2 := self.(map[string]any); ok2 {
+					if typeName, ok3 := obj["__type"].(string); ok3 {
+						if sym, ok4 := module.Resolve(typeName); ok4 {
+							switch d := sym.Node.(type) {
+							case *ast.ClassDecl:
+								for _, f := range d.Fields {
+									if f.Name == x.Name {
+										return obj[x.Name], nil
+									}
+								}
+							case *ast.StructDecl:
+								for _, f := range d.Fields {
+									if f.Name == x.Name {
+										return obj[x.Name], nil
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 		if globals != nil {
 			if v, ok := globals[x.Name]; ok {
@@ -290,10 +337,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 								}
 								args = append(args, v)
 							}
-							inst := map[string]any{"__type": d.Name}
-							for _, f := range d.Fields {
-								inst[f.Name] = nil
-							}
+							inst := makeInstance(d.Name, module)
 							// pick constructor by arity
 							for _, b := range d.Builders {
 								if len(b.Params) == len(args) {
@@ -359,6 +403,19 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 							return old, nil
 						}
 						return env[id.Name], nil
+					}
+					// self field fallback
+					if self, ok := env["self"]; ok {
+						if obj, ok2 := self.(map[string]any); ok2 {
+							if cur, exists := obj[id.Name]; exists {
+								old := cur
+								obj[id.Name] = addOne(old, delta)
+								if x.IsPostfix {
+									return old, nil
+								}
+								return obj[id.Name], nil
+							}
+						}
 					}
 				}
 				if globals != nil {
@@ -459,9 +516,32 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		// Assignment to object field: self.name = v
 		if macc, ok := x.Target.(*ast.MemberAccessExpr); ok {
-			obj, err := evalExpr(macc.Object, env, globals, module)
+			baseVal, err := evalExpr(macc.Object, env, globals, module)
 			if err != nil {
 				return nil, err
+			}
+			obj := baseVal
+			// Auto-initialize nil self fields when their declared type is struct/class
+			if obj == nil {
+				if id, ok := macc.Object.(*ast.IdentifierExpr); ok {
+					if self, ok2 := env["self"]; ok2 {
+						if sobj, ok3 := self.(map[string]any); ok3 {
+							if typeName, ok4 := sobj["__type"].(string); ok4 {
+								if sym, ok5 := module.Resolve(typeName); ok5 {
+									if cd, isClass := sym.Node.(*ast.ClassDecl); isClass {
+										for _, f := range cd.Fields {
+											if f.Name == id.Name {
+												sobj[id.Name] = makeInstance(f.Type, module)
+												obj = sobj[id.Name]
+												break
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 			if m, ok := obj.(map[string]any); ok {
 				m[macc.Member] = v
@@ -500,6 +580,13 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 						env[id.Name] = v
 						return v, nil
 					}
+					// self field fallback: assign to self.<field>
+					if self, ok := env["self"]; ok {
+						if obj, ok2 := self.(map[string]any); ok2 {
+							obj[id.Name] = v
+							return v, nil
+						}
+					}
 				}
 				if globals != nil {
 					if _, exists := globals[id.Name]; exists {
@@ -517,6 +604,12 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					if _, exists := env[id.Name]; exists {
 						env[id.Name] = res
 						return res, nil
+					}
+					if self, ok := env["self"]; ok {
+						if obj, ok2 := self.(map[string]any); ok2 {
+							obj[id.Name] = res
+							return res, nil
+						}
 					}
 				}
 				if globals != nil {
@@ -679,10 +772,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					for _, b := range d.Builders {
 						if len(b.Params) == len(x.Args) {
 							newEnv := map[string]any{}
-							inst := map[string]any{"__type": d.Name}
-							for _, f := range d.Fields {
-								inst[f.Name] = nil
-							}
+							inst := makeInstance(d.Name, module)
 							for i, p := range b.Params {
 								v, err := evalExpr(x.Args[i], env, globals, module)
 								if err != nil {
@@ -697,10 +787,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 							return inst, nil
 						}
 					}
-					inst := map[string]any{"__type": d.Name}
-					for _, f := range d.Fields {
-						inst[f.Name] = nil
-					}
+					inst := makeInstance(d.Name, module)
 					return inst, nil
 				case *ast.EnumDecl:
 					vals := make([]any, 0, len(x.Args))

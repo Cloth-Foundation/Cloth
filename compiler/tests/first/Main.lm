@@ -1,56 +1,17 @@
 mod first
 
-pub func main(): i32 {
-    println(Color.GREEN.toString())
-    println(Color.RED.toString())
-    println(Color.BLUE.toString())
+import first.Human::{ Human, Color }
 
-    var human: Person = new Person("John", 20, Color.BLUE)
-    println(human.getName())
-    println(human.getAge())
-    println(human.getFavoriteColor().toString())
+pub func main(): i32 {
+    var john: Human = new Human("John", 20, Color.BLUE)
+    println(john.getName())
+    println(john.getAge())
+    println(john.getFavoriteColor().toString())
+
+    var mike: Human = new Human("Mike", 25, Color.GREEN)
+    println(mike.getName())
+    println(mike.getAge())
+    println(mike.getFavoriteColor().toString())
 
     ret 0
-}
-
-pub enum Color {
-    RED("red"),
-    GREEN("green"),
-    BLUE("blue")
-
-    priv fin var name: string
-
-    pub Color(name: string) {
-        self.name = name
-    }
-
-    pub func toString(): string {
-        ret self.name
-    }
-}
-
-pub class Person {
-
-    priv fin var name: string
-    priv fin var age: i32
-    priv fin var favoriteColor: Color
-
-    pub Person(name: string, age: i32, favoriteColor: Color) {
-        self.name = name
-        self.age = age
-        self.favoriteColor = favoriteColor
-    }
-
-    pub func getName(): string {
-        ret self.name
-    }
-
-    pub func getAge(): i32 {
-        ret self.age
-    }
-
-    pub func getFavoriteColor(): Color {
-        ret self.favoriteColor
-    }
-
 }
