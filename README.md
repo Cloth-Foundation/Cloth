@@ -1,6 +1,4 @@
-![Logo](/Logos/PNG/logo-color.png)
-
-# **Loom**
+![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/Header%20-%20NO%20BG.png?raw=true)
 
 **Loom** is a modern, statically typed, object-oriented programming language built for clarity, speed, and scientific precision. It is designed to make complex ideas—mathematical synthesis, equations, scientific formulas, and simulations—both approachable and expressive, while retaining the rigor and safety of a strongly typed system.
 
