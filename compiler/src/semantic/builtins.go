@@ -3,6 +3,7 @@ package semantic
 import (
 	"bufio"
 	"compiler/src/ast"
+	"compiler/src/runtime/arc"
 	"fmt"
 	"os"
 	"strconv"
@@ -83,6 +84,35 @@ func InjectBuiltins(scope *Scope) {
 			ReturnType: "[]any",
 		},
 	})
+
+	// ARC helpers: weak, upgrade, refcount
+	_ = scope.Define(Symbol{
+		Name: "weak",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "weak",
+			Params:     []ast.Parameter{{Name: "x", Type: ""}},
+			ReturnType: "any",
+		},
+	})
+	_ = scope.Define(Symbol{
+		Name: "upgrade",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "upgrade",
+			Params:     []ast.Parameter{{Name: "w", Type: ""}},
+			ReturnType: "any",
+		},
+	})
+	_ = scope.Define(Symbol{
+		Name: "refcount",
+		Kind: SymFunc,
+		Node: &ast.FuncDecl{
+			Name:       "refcount",
+			Params:     []ast.Parameter{{Name: "x", Type: ""}},
+			ReturnType: "i32",
+		},
+	})
 }
 
 // CallBuiltin executes a builtin if name matches, returning whether it handled the call.
@@ -115,6 +145,12 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 		return callRange(args, env, globals, module)
 	case "array":
 		return callArray(args, env, globals, module)
+	case "weak":
+		return callWeak(args, env, globals, module)
+	case "upgrade":
+		return callUpgrade(args, env, globals, module)
+	case "refcount":
+		return callRefcount(args, env, globals, module)
 	case "exit":
 		if len(args) == 0 {
 			os.Exit(0)
@@ -544,4 +580,55 @@ func callArray(args []ast.Expr, env map[string]any, globals map[string]any, modu
 		arr[i] = init
 	}
 	return true, arr, nil
+}
+
+// ARC builtins
+func callWeak(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) != 1 {
+		return true, nil, fmt.Errorf("weak(x) takes 1 argument")
+	}
+	v, err := evalExpr(args[0], env, globals, module)
+	if err != nil {
+		return true, nil, err
+	}
+	if sp, ok := v.(arc.StrongPtr); ok {
+		return true, sp.Downgrade(), nil
+	}
+	return true, nil, fmt.Errorf("weak() expects a strong pointer")
+}
+
+func callUpgrade(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) != 1 {
+		return true, nil, fmt.Errorf("upgrade(w) takes 1 argument")
+	}
+	v, err := evalExpr(args[0], env, globals, module)
+	if err != nil {
+		return true, nil, err
+	}
+	if w, ok := v.(arc.WeakPtr); ok {
+		if sp, ok2 := w.Upgrade(); ok2 {
+			// Immediately release the temporary strong ref and return the underlying value.
+			val := sp.Get()
+			sp.Release()
+			return true, val, nil
+		}
+		return true, nil, nil
+	}
+	return true, nil, fmt.Errorf("upgrade() expects a weak pointer")
+}
+
+func callRefcount(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
+	if len(args) != 1 {
+		return true, nil, fmt.Errorf("refcount(x) takes 1 argument")
+	}
+	v, err := evalExpr(args[0], env, globals, module)
+	if err != nil {
+		return true, nil, err
+	}
+	if sp, ok := v.(arc.StrongPtr); ok {
+		sp2 := sp.Clone()
+		sp2.Release()
+		return true, int64(0), nil
+	}
+	return true, int64(0), nil
 }

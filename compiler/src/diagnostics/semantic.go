@@ -36,6 +36,26 @@ func RenderTypeCheckDiagnostics(diags []semantic.CheckDiag) {
 	}
 }
 
+func RenderRuntimeError(err error, path string, source string) {
+	if err == nil {
+		return
+	}
+	lines := splitLines(source)
+	if re, ok := err.(semantic.RuntimeError); ok {
+		sp := re.Span()
+		fmt.Printf("%s%sx%s %s\n", vRed, vBold, vReset, re.Error())
+		link := fmt.Sprintf("[%s:%d:%d]", sp.File, sp.StartLine, sp.StartColumn)
+		fmt.Printf("  %s%s%s%s\n", vBlue, vUnder, link, vReset)
+		printSpanStyled(lines, sp, re.Error())
+		if re.HintText() != "" {
+			fmt.Printf("\n%shelp:%s %s\n\n", vBlue, vReset, re.HintText())
+		}
+		return
+	}
+	// Fallback plain error
+	fmt.Printf("runtime error: %v\n", err)
+}
+
 func printSemantic(level string, message string, sp tokens.TokenSpan, hint string) {
 	// If no file info, print simple message
 	if sp.File == "" {

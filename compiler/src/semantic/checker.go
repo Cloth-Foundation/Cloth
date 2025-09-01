@@ -4,6 +4,8 @@ import (
 	"compiler/src/ast"
 	"compiler/src/tokens"
 	"fmt"
+	"math"
+	"strconv"
 )
 
 type CheckDiag struct {
@@ -90,6 +92,11 @@ func checkGlobal(g *ast.GlobalVarDecl, ts *typeScope, table *TypeTable, module *
 		if g.Type != "" && !assignable(g.Type, vt) {
 			*diags = append(*diags, CheckDiag{Message: formatAssign(g.Type, vt), Span: g.Tok.Span})
 		}
+		if g.Type != "" && (IsIntegerType(g.Type) || IsFloatType(g.Type) || g.Type == TokenTypeName(tokens.TokenBit)) {
+			if ok, msg := literalFitsType(g.Type, g.Value); !ok {
+				*diags = append(*diags, CheckDiag{Message: msg, Span: g.Value.Span()})
+			}
+		}
 		if g.Type == "" {
 			ts.define(g.Name, vt)
 		} else {
@@ -111,6 +118,11 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 				if n.Type != "" && !assignable(n.Type, vt) {
 					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt), Span: n.NameTok.Span})
 				}
+				if n.Type != "" && (IsIntegerType(n.Type) || IsFloatType(n.Type) || n.Type == TokenTypeName(tokens.TokenBit)) {
+					if ok, msg := literalFitsType(n.Type, n.Value); !ok {
+						*diags = append(*diags, CheckDiag{Message: msg, Span: n.Value.Span()})
+					}
+				}
 				if n.Type == "" {
 					ts.define(n.Name, vt)
 				} else {
@@ -124,6 +136,11 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 				vt := inferExprType(n.Value, ts, table, module, diags)
 				if n.Type != "" && !assignable(n.Type, vt) {
 					*diags = append(*diags, CheckDiag{Message: formatAssign(n.Type, vt), Span: n.NameTok.Span})
+				}
+				if n.Type != "" && (IsIntegerType(n.Type) || IsFloatType(n.Type) || n.Type == TokenTypeName(tokens.TokenBit)) {
+					if ok, msg := literalFitsType(n.Type, n.Value); !ok {
+						*diags = append(*diags, CheckDiag{Message: msg, Span: n.Value.Span()})
+					}
 				}
 				if n.Type == "" {
 					ts.define(n.Name, vt)
@@ -371,8 +388,13 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = t
 			return t
 		}
-		// Equality comparisons: allow numeric, string, and bool comparisons
+		// Equality comparisons: allow numeric, string, bool, and any vs null
 		if op == "==" || op == "!=" {
+			if lt == "null" || rt == "null" {
+				t := TokenTypeName(tokens.TokenBool)
+				table.NodeToType[e] = t
+				return t
+			}
 			isNum := IsNumericType(lt) && IsNumericType(rt)
 			isStr := lt == TokenTypeName(tokens.TokenString) && rt == TokenTypeName(tokens.TokenString)
 			isBool := lt == TokenTypeName(tokens.TokenBool) && rt == TokenTypeName(tokens.TokenBool)
@@ -696,6 +718,10 @@ func assignable(target, value string) bool {
 		}
 		return true
 	}
+	// bit is very strict: only assignable from bit
+	if target == TokenTypeName(tokens.TokenBit) {
+		return value == TokenTypeName(tokens.TokenBit)
+	}
 	if target == value {
 		return true
 	}
@@ -711,4 +737,146 @@ func assignable(target, value string) bool {
 		return target == value
 	}
 	return false
+}
+
+// ----- Numeric literal range checks -----
+
+func literalArgFits(target string, e ast.Expr) bool {
+	ok, _ := literalFitsType(target, e)
+	return ok
+}
+
+func literalFitsType(target string, e ast.Expr) (bool, string) {
+	isNum, isInt, signed, i64, u64, isFloat, f64 := evalNumericLiteral(e)
+	if !isNum {
+		return true, ""
+	}
+	if target == TokenTypeName(tokens.TokenBit) {
+		if !isInt {
+			return false, "literal out of range for bit"
+		}
+		if signed {
+			if i64 == 0 || i64 == 1 {
+				return true, ""
+			}
+			return false, "literal out of range for bit"
+		}
+		if u64 == 0 || u64 == 1 {
+			return true, ""
+		}
+		return false, "literal out of range for bit"
+	}
+	if IsIntegerType(target) {
+		min, maxSigned, umax, isUnsigned, have := intLimits(target)
+		if !have {
+			return true, ""
+		}
+		if isUnsigned {
+			if !isInt {
+				return true, ""
+			}
+			if signed {
+				return false, fmt.Sprintf("negative literal not allowed for %s", target)
+			}
+			if u64 <= umax {
+				return true, ""
+			}
+			return false, fmt.Sprintf("literal exceeds max of %s", target)
+		}
+		if !isInt {
+			return true, ""
+		}
+		if i64 >= min && i64 <= maxSigned {
+			return true, ""
+		}
+		return false, fmt.Sprintf("literal out of range for %s", target)
+	}
+	if IsFloatType(target) {
+		val := 0.0
+		if isFloat {
+			val = f64
+		} else if isInt {
+			if signed {
+				val = float64(i64)
+			} else {
+				val = float64(u64)
+			}
+		}
+		switch target {
+		case TokenTypeName(tokens.TokenF16):
+			if math.Abs(val) <= 65504.0 {
+				return true, ""
+			}
+			return false, "literal out of range for f16"
+		case TokenTypeName(tokens.TokenF32):
+			if math.Abs(val) <= math.MaxFloat32 {
+				return true, ""
+			}
+			return false, "literal out of range for f32"
+		case TokenTypeName(tokens.TokenF64):
+			return true, ""
+		}
+	}
+	return true, ""
+}
+
+func evalNumericLiteral(e ast.Expr) (isNum bool, isInt bool, signed bool, i64 int64, u64 uint64, isFloat bool, f64 float64) {
+	switch x := e.(type) {
+	case *ast.NumberLiteralExpr:
+		if x.Value.IsFloat {
+			v, err := strconv.ParseFloat(x.Value.Digits, 64)
+			if err == nil {
+				return true, false, false, 0, 0, true, v
+			}
+			return false, false, false, 0, 0, false, 0
+		}
+		v, err := strconv.ParseInt(x.Value.Digits, x.Value.Base, 64)
+		if err == nil {
+			return true, true, v < 0, v, uint64(v), false, 0
+		}
+		uv, err2 := strconv.ParseUint(x.Value.Digits, x.Value.Base, 64)
+		if err2 == nil {
+			return true, true, false, int64(uv), uv, false, 0
+		}
+		return false, false, false, 0, 0, false, 0
+	case *ast.UnaryExpr:
+		if x.Operator == tokens.TokenMinus {
+			isNum2, isInt2, _, i642, _, isFloat2, f642 := evalNumericLiteral(x.Operand)
+			if !isNum2 {
+				return false, false, false, 0, 0, false, 0
+			}
+			if isFloat2 {
+				return true, false, true, 0, 0, true, -f642
+			}
+			if isInt2 {
+				return true, true, true, -i642, uint64(-i642), false, 0
+			}
+		}
+		return false, false, false, 0, 0, false, 0
+	default:
+		return false, false, false, 0, 0, false, 0
+	}
+}
+
+func intLimits(target string) (min int64, maxSigned int64, umax uint64, isUnsigned bool, ok bool) {
+	switch target {
+	case TokenTypeName(tokens.TokenI8):
+		return -128, 127, 0, false, true
+	case TokenTypeName(tokens.TokenI16):
+		return -32768, 32767, 0, false, true
+	case TokenTypeName(tokens.TokenI32):
+		return -2147483648, 2147483647, 0, false, true
+	case TokenTypeName(tokens.TokenI64):
+		return -9223372036854775808, 9223372036854775807, 0, false, true
+	case TokenTypeName(tokens.TokenU8):
+		return 0, 0, 255, true, true
+	case TokenTypeName(tokens.TokenU16):
+		return 0, 0, 65535, true, true
+	case TokenTypeName(tokens.TokenU32):
+		return 0, 0, 4294967295, true, true
+	case TokenTypeName(tokens.TokenU64):
+		return 0, 0, 18446744073709551615, true, true
+	default:
+		return 0, 0, 0, false, false
+	}
 }

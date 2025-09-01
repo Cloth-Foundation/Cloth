@@ -2,12 +2,26 @@ package semantic
 
 import (
 	"compiler/src/ast"
+	"compiler/src/runtime/arc"
 	"compiler/src/tokens"
 	"fmt"
 	"strconv"
 )
 
 var currentTypes *TypeTable
+
+type RuntimeError struct {
+	Msg  string
+	Loc  tokens.TokenSpan
+	Hint string
+}
+
+func (e RuntimeError) Error() string          { return e.Msg }
+func (e RuntimeError) Span() tokens.TokenSpan { return e.Loc }
+func (e RuntimeError) HintText() string       { return e.Hint }
+func rt(loc tokens.TokenSpan, msg, hint string) error {
+	return RuntimeError{Msg: msg, Loc: loc, Hint: hint}
+}
 
 // Execute runs a compiled file by finding main() and interpreting its body.
 // Supports: literals, identifiers (locals and globals), binary +,-,*,/,%, assignment, calls.
@@ -28,15 +42,15 @@ func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 	globals := map[string]any{}
 	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GlobalVarDecl); ok {
-			var val any
 			if g.Value != nil {
 				v, err := evalExpr(g.Value, nil, globals, module)
 				if err != nil {
 					return err
 				}
-				val = v
+				globals[g.Name] = retainWrapIfObject(v)
+			} else {
+				globals[g.Name] = nil
 			}
-			globals[g.Name] = val
 		}
 	}
 	// simple env for locals
@@ -57,7 +71,8 @@ func makeInstance(typeName string, module *Scope) map[string]any {
 				// Initialize struct-typed fields to empty struct instance; otherwise nil
 				if fsym, ok2 := module.Resolve(f.Type); ok2 {
 					if _, isStruct := fsym.Node.(*ast.StructDecl); isStruct {
-						inst[f.Name] = makeInstance(f.Type, module)
+						// Wrap nested struct instance in a StrongPtr
+						inst[f.Name] = arc.NewObject(makeInstance(f.Type, module))
 						continue
 					}
 				}
@@ -72,53 +87,125 @@ func makeInstance(typeName string, module *Scope) map[string]any {
 	return inst
 }
 
+func getObjectMap(obj any) (map[string]any, bool) {
+	if m, ok := obj.(map[string]any); ok {
+		return m, true
+	}
+	if sp, ok := obj.(arc.StrongPtr); ok {
+		if v := sp.Get(); v != nil {
+			if m, ok2 := v.(map[string]any); ok2 {
+				return m, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func derefIfPtr(v any) any {
+	if sp, ok := v.(arc.StrongPtr); ok {
+		return sp.Get()
+	}
+	return v
+}
+
+func wrapIfObject(v any) any {
+	switch v.(type) {
+	case map[string]any, []any:
+		return arc.NewObject(v)
+	default:
+		return v
+	}
+}
+
+func retainIfPtr(v any) any {
+	if sp, ok := v.(arc.StrongPtr); ok {
+		return sp.Clone()
+	}
+	return v
+}
+
+func retainWrapIfObject(v any) any {
+	// If it's already a StrongPtr, clone. If it's an object/array, wrap into StrongPtr.
+	if sp, ok := v.(arc.StrongPtr); ok {
+		return sp.Clone()
+	}
+	return wrapIfObject(v)
+}
+
+func releaseIfPtr(v any) {
+	if sp, ok := v.(arc.StrongPtr); ok {
+		sp2 := sp
+		sp2.Release()
+	}
+}
+
 func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, module *Scope) (any, error) {
+	// Track locals introduced in this block for release on exit
+	var blockLocals []string
+	releaseBlockLocals := func() {
+		for _, name := range blockLocals {
+			if val, ok := env[name]; ok {
+				releaseIfPtr(val)
+			}
+		}
+	}
 	for _, s := range stmts {
 		switch n := s.(type) {
 		case *ast.BlockStmt:
 			if v, err := execBlock(n.Stmts, env, globals, module); err != nil || v != nil {
+				releaseBlockLocals()
 				return v, err
 			}
 		case *ast.LetStmt:
-			var val any
 			if n.Value != nil {
 				v, err := evalExpr(n.Value, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
-				val = v
+				env[n.Name] = retainWrapIfObject(v)
+			} else {
+				env[n.Name] = nil
 			}
-			env[n.Name] = val
+			blockLocals = append(blockLocals, n.Name)
 		case *ast.VarStmt:
-			var val any
 			if n.Value != nil {
 				v, err := evalExpr(n.Value, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
-				val = v
+				env[n.Name] = retainWrapIfObject(v)
+			} else {
+				env[n.Name] = nil
 			}
-			env[n.Name] = val
+			blockLocals = append(blockLocals, n.Name)
 		case *ast.ExpressionStmt:
 			if _, err := evalExpr(n.E, env, globals, module); err != nil {
+				releaseBlockLocals()
 				return nil, err
 			}
 		case *ast.ReturnStmt:
 			if n.Value == nil {
+				releaseBlockLocals()
 				return returnValue{v: nil}, nil
 			}
 			v, err := evalExpr(n.Value, env, globals, module)
 			if err != nil {
+				releaseBlockLocals()
 				return nil, err
 			}
+			releaseBlockLocals()
 			return returnValue{v: v}, nil
 		case *ast.IfStmt:
 			cond, err := evalExpr(n.Cond, env, globals, module)
 			if err != nil {
+				releaseBlockLocals()
 				return nil, err
 			}
 			if b, ok := cond.(bool); ok && b {
 				if v, err := execBlock(n.Then.Stmts, env, globals, module); err != nil || v != nil {
+					releaseBlockLocals()
 					return v, err
 				}
 				break
@@ -127,10 +214,12 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			for _, ei := range n.Elifs {
 				c2, err := evalExpr(ei.Cond, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
 				if b2, ok := c2.(bool); ok && b2 {
 					if v, err := execBlock(ei.Then.Stmts, env, globals, module); err != nil || v != nil {
+						releaseBlockLocals()
 						return v, err
 					}
 					handled = true
@@ -139,6 +228,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 			if !handled && n.Else != nil {
 				if v, err := execBlock(n.Else.Stmts, env, globals, module); err != nil || v != nil {
+					releaseBlockLocals()
 					return v, err
 				}
 			}
@@ -146,6 +236,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			for {
 				c, err := evalExpr(n.Cond, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
 				b, ok := c.(bool)
@@ -153,16 +244,19 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					break
 				}
 				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
+					releaseBlockLocals()
 					return v, err
 				}
 			}
 		case *ast.DoWhileStmt:
 			for {
 				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
+					releaseBlockLocals()
 					return v, err
 				}
 				c, err := evalExpr(n.Cond, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
 				b, ok := c.(bool)
@@ -176,17 +270,20 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			if n.Iter != nil {
 				iterVal, err := evalExpr(n.Iter, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
 				// Expect []any
-				if arr, ok := iterVal.([]any); ok {
+				if arr, ok := derefIfPtr(iterVal).([]any); ok {
 					for _, v := range arr {
 						ls[n.VarName] = v
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							releaseBlockLocals()
 							return ret, err
 						}
 					}
 				} else {
+					releaseBlockLocals()
 					return nil, fmt.Errorf("loop iterable is not a sequence")
 				}
 				break
@@ -194,30 +291,36 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			// range-style
 			fromVal, err := evalExpr(n.From, env, globals, module)
 			if err != nil {
+				releaseBlockLocals()
 				return nil, err
 			}
 			toVal, err := evalExpr(n.To, env, globals, module)
 			if err != nil {
+				releaseBlockLocals()
 				return nil, err
 			}
 			fi, fok := fromVal.(int64)
 			ti, tok := toVal.(int64)
 			if !(fok && tok) {
+				releaseBlockLocals()
 				return nil, fmt.Errorf("loop bounds must be integers")
 			}
 			step := int64(1)
 			if n.Step != nil {
 				st, err := evalExpr(n.Step, env, globals, module)
 				if err != nil {
+					releaseBlockLocals()
 					return nil, err
 				}
 				if si, ok := st.(int64); ok {
 					step = si
 				} else {
+					releaseBlockLocals()
 					return nil, fmt.Errorf("loop step must be integer")
 				}
 			}
 			if step == 0 {
+				releaseBlockLocals()
 				return nil, fmt.Errorf("loop step cannot be 0")
 			}
 			if !n.Reverse {
@@ -225,6 +328,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					for i := fi; i < ti; i += step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							releaseBlockLocals()
 							return ret, err
 						}
 					}
@@ -232,6 +336,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					for i := fi; i <= ti; i += step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							releaseBlockLocals()
 							return ret, err
 						}
 					}
@@ -241,6 +346,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					for i := fi; i > ti; i += -step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							releaseBlockLocals()
 							return ret, err
 						}
 					}
@@ -248,6 +354,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					for i := fi; i >= ti; i += -step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
+							releaseBlockLocals()
 							return ret, err
 						}
 					}
@@ -255,6 +362,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 		}
 	}
+	releaseBlockLocals()
 	return nil, nil
 }
 
@@ -362,7 +470,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if err != nil {
 			return nil, err
 		}
-		if m, ok := obj.(map[string]any); ok {
+		if m, ok := getObjectMap(obj); ok {
 			if v, ok2 := m[x.Member]; ok2 {
 				return v, nil
 			}
@@ -531,7 +639,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 									if cd, isClass := sym.Node.(*ast.ClassDecl); isClass {
 										for _, f := range cd.Fields {
 											if f.Name == id.Name {
-												sobj[id.Name] = makeInstance(f.Type, module)
+												sobj[id.Name] = arc.NewObject(makeInstance(f.Type, module))
 												obj = sobj[id.Name]
 												break
 											}
@@ -543,8 +651,12 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					}
 				}
 			}
-			if m, ok := obj.(map[string]any); ok {
-				m[macc.Member] = v
+			if m, ok := getObjectMap(obj); ok {
+				// release old field if it was a ptr
+				if old, exists := m[macc.Member]; exists {
+					releaseIfPtr(old)
+				}
+				m[macc.Member] = retainWrapIfObject(v)
 				return v, nil
 			}
 			return nil, fmt.Errorf("assignment to non-object member")
@@ -562,11 +674,13 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			if !ok {
 				return nil, fmt.Errorf("index must be integer")
 			}
-			if arr, ok := base.([]any); ok {
+			if arr, ok := derefIfPtr(base).([]any); ok {
 				if i < 0 || int(i) >= len(arr) {
 					return nil, fmt.Errorf("index out of bounds")
 				}
-				arr[i] = v
+				// release old element if StrongPtr
+				releaseIfPtr(arr[i])
+				arr[i] = retainWrapIfObject(v)
 				return v, nil
 			}
 			return nil, fmt.Errorf("indexing non-array")
@@ -576,21 +690,26 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			case tokens.TokenEqual:
 				// prefer local assignment if variable exists, else global
 				if env != nil {
-					if _, exists := env[id.Name]; exists {
-						env[id.Name] = v
+					if old, exists := env[id.Name]; exists {
+						releaseIfPtr(old)
+						env[id.Name] = retainWrapIfObject(v)
 						return v, nil
 					}
 					// self field fallback: assign to self.<field>
 					if self, ok := env["self"]; ok {
 						if obj, ok2 := self.(map[string]any); ok2 {
-							obj[id.Name] = v
+							if old, ex := obj[id.Name]; ex {
+								releaseIfPtr(old)
+							}
+							obj[id.Name] = retainWrapIfObject(v)
 							return v, nil
 						}
 					}
 				}
 				if globals != nil {
-					if _, exists := globals[id.Name]; exists {
-						globals[id.Name] = v
+					if old, exists := globals[id.Name]; exists {
+						releaseIfPtr(old)
+						globals[id.Name] = retainWrapIfObject(v)
 						return v, nil
 					}
 				}
@@ -601,20 +720,25 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					return nil, err
 				}
 				if env != nil {
-					if _, exists := env[id.Name]; exists {
-						env[id.Name] = res
+					if old, exists := env[id.Name]; exists {
+						releaseIfPtr(old)
+						env[id.Name] = retainWrapIfObject(res)
 						return res, nil
 					}
 					if self, ok := env["self"]; ok {
 						if obj, ok2 := self.(map[string]any); ok2 {
-							obj[id.Name] = res
+							if old, ex := obj[id.Name]; ex {
+								releaseIfPtr(old)
+							}
+							obj[id.Name] = retainWrapIfObject(res)
 							return res, nil
 						}
 					}
 				}
 				if globals != nil {
-					if _, exists := globals[id.Name]; exists {
-						globals[id.Name] = res
+					if old, exists := globals[id.Name]; exists {
+						releaseIfPtr(old)
+						globals[id.Name] = retainWrapIfObject(res)
 						return res, nil
 					}
 				}
@@ -677,7 +801,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				return ret, err
 			}
 			// Instance method on class/enum
-			if obj, ok := recv.(map[string]any); ok {
+			if obj, ok := getObjectMap(recv); ok {
 				if typeName, ok2 := obj["__type"].(string); ok2 {
 					if sym, ok3 := module.Resolve(typeName); ok3 {
 						switch d := sym.Node.(type) {
@@ -772,7 +896,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					for _, b := range d.Builders {
 						if len(b.Params) == len(x.Args) {
 							newEnv := map[string]any{}
-							inst := makeInstance(d.Name, module)
+							instMap := makeInstance(d.Name, module)
 							for i, p := range b.Params {
 								v, err := evalExpr(x.Args[i], env, globals, module)
 								if err != nil {
@@ -780,15 +904,15 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 								}
 								newEnv[p.Name] = v
 							}
-							newEnv["self"] = inst
+							newEnv["self"] = instMap
 							if _, err := execBlock(b.Body, newEnv, globals, module); err != nil {
 								return nil, err
 							}
-							return inst, nil
+							return instMap, nil
 						}
 					}
-					inst := makeInstance(d.Name, module)
-					return inst, nil
+					instMap := makeInstance(d.Name, module)
+					return instMap, nil
 				case *ast.EnumDecl:
 					vals := make([]any, 0, len(x.Args))
 					for _, a := range x.Args {
@@ -828,7 +952,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				}
 			}
 		}
-		return nil, fmt.Errorf("unknown function call")
+		return nil, rt(x.Callee.Span(), "unknown function call", "define it earlier, import it, or check for typos")
 	case *ast.ArrayLiteralExpr:
 		vals := make([]any, 0, len(x.Elements))
 		for _, el := range x.Elements {
@@ -852,19 +976,36 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if !ok {
 			return nil, fmt.Errorf("index must be integer")
 		}
-		if arr, ok := base.([]any); ok {
+		if arr, ok := derefIfPtr(base).([]any); ok {
 			if i < 0 || int(i) >= len(arr) {
 				return nil, fmt.Errorf("index out of bounds")
 			}
 			return arr[i], nil
 		}
 		return nil, fmt.Errorf("indexing non-array")
+	case *ast.TernaryExpr:
+		cv, err := evalExpr(x.Cond, env, globals, module)
+		if err != nil {
+			return nil, err
+		}
+		b, ok := cv.(bool)
+		if !ok {
+			return nil, rt(x.Cond.Span(), "ternary condition must be bool", "use a boolean expression before '?' ")
+		}
+		if b {
+			return evalExpr(x.ThenExpr, env, globals, module)
+		}
+		return evalExpr(x.ElseExpr, env, globals, module)
 	default:
-		return nil, fmt.Errorf("unsupported expression kind")
+		return nil, rt(e.Span(), "unsupported expression kind", "this expression form is not yet supported")
 	}
 }
 
 func toString(v any) string {
+	// Deref smart pointers for display
+	if sp, ok := v.(arc.StrongPtr); ok {
+		return toString(sp.Get())
+	}
 	switch t := v.(type) {
 	case nil:
 		return "null"

@@ -82,7 +82,7 @@ func main() {
 	}
 	// Execute main() with interpreter (pass types for accurate type())
 	if err := semantic.Execute(file, scope, ttab); err != nil {
-		fmt.Printf("runtime error: %v\n", err)
+		diagnostics.RenderRuntimeError(err, path, string(data))
 		os.Exit(1)
 	}
 }

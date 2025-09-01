@@ -1,17 +1,48 @@
 mod first
 
-import first.Human::{ Human, Color }
+class Person {
+    priv var name: string
 
-pub func main(): i32 {
-    var john: Human = new Human("John", 20, Color.BLUE)
-    println(john.getName())
-    println(john.getAge())
-    println(john.getFavoriteColor().toString())
+    pub Person(n: string) {
+        self.name = n
+    }
 
-    var mike: Human = new Human("Mike", 25, Color.GREEN)
-    println(mike.getName())
-    println(mike.getAge())
-    println(mike.getFavoriteColor().toString())
+    pub func greet(): void {
+        println("hi, I am " + self.name)
+    }
+}
 
-    ret 0
+pub func main(): void {
+    let p = Person("Ada")
+    p.greet()
+
+    let w = weak(p)
+    let s = upgrade(w)
+    println(s == null ? "weak: expired" : "weak: alive")
+
+    let p2 = p
+    p = null
+    println(upgrade(w) == null ? "after p=null: expired" : "after p=null: alive")
+
+    p2 = null
+    println(upgrade(w) == null ? "after p2=null: expired" : "after p2=null: alive")
+
+    {
+        let t = new Person("Blocky")
+        let out_w = weak(t)
+        t.greet()
+        println(upgrade(out_w) == null ? "block object expired" : "block object survived")
+    }
+
+    let arr = array(i32, 3, 42)  # ok now
+    let warr = weak(arr)
+    let arr2 = arr
+    arr = null
+    println(upgrade(warr) == null ? "array expired (unexpected)" : "array alive via arr2")
+    arr2 = null
+    println(upgrade(warr) == null ? "array expired after arr2=null" : "array still alive (unexpected)")
+
+    let p3 = Person("Bob")
+    p3.name = "Robert"
+    printf("p3.name = {}\n", [p3.name])
 }
