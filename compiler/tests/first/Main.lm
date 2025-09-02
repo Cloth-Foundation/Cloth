@@ -20,7 +20,7 @@ pub template class Animal {
 
     }
 
-    pub template var getType(): Type;
+    pub template var getType(): Type
 
 }
 
