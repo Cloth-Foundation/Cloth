@@ -24,8 +24,9 @@ func rt(loc tokens.TokenSpan, msg, hint string) error {
 }
 
 // Execute runs a compiled file by finding main() and interpreting its body.
-// Supports: literals, identifiers (locals and globals), binary +,-,*,/,%, assignment, calls.
-func Execute(file *ast.File, module *Scope, types *TypeTable) error {
+// Validates main signature: main(argc: []i32, argv: []string): i32
+// Returns the exit code from main's return value (default 0 if no explicit return).
+func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string) (int, error) {
 	currentTypes = types
 	defer func() { currentTypes = nil }()
 	var mainFn *ast.FuncDecl
@@ -36,7 +37,15 @@ func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 		}
 	}
 	if mainFn == nil {
-		return fmt.Errorf("no main() function found")
+		return 1, fmt.Errorf("no main() function found")
+	}
+	// Enforce signature
+	if len(mainFn.Params) != 2 {
+		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
+	}
+	// Types are stored as strings in Params.Type
+	if mainFn.Params[0].Type != "[]i32" || mainFn.Params[1].Type != "[]string" || mainFn.ReturnType != "i32" {
+		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
 	}
 	// Initialize globals
 	globals := map[string]any{}
@@ -45,7 +54,7 @@ func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 			if g.Value != nil {
 				v, err := evalExpr(g.Value, nil, globals, module)
 				if err != nil {
-					return err
+					return 1, err
 				}
 				globals[g.Name] = retainWrapIfObject(v)
 			} else {
@@ -55,8 +64,34 @@ func Execute(file *ast.File, module *Scope, types *TypeTable) error {
 	}
 	// simple env for locals
 	locals := map[string]any{}
-	_, err := execBlock(mainFn.Body, locals, globals, module)
-	return err
+	// Build argc and argv values
+	argcVals := []any{int64(len(progArgs))}
+	argvVals := make([]any, 0, len(progArgs))
+	for _, a := range progArgs {
+		argvVals = append(argvVals, a)
+	}
+	// Bind using the actual parameter names (names can vary)
+	locals[mainFn.Params[0].Name] = argcVals
+	locals[mainFn.Params[1].Name] = argvVals
+	ret, err := execBlock(mainFn.Body, locals, globals, module)
+	if err != nil {
+		return 1, err
+	}
+	if rv, ok := ret.(returnValue); ok {
+		if rv.v == nil {
+			return 0, nil
+		}
+		if n, ok2 := rv.v.(int64); ok2 {
+			return int(n), nil
+		}
+		// Attempt float to int conversion if a float sneaks through
+		if f, ok2 := rv.v.(float64); ok2 {
+			return int(int64(f)), nil
+		}
+		return 1, rt(mainFn.Span(), "main must return i32", "change return type/value to i32")
+	}
+	// No explicit return -> 0
+	return 0, nil
 }
 
 type returnValue struct{ v any }

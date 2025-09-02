@@ -26,7 +26,7 @@ func (p *Parser) parseTypeName() string {
 		prefix += "[]"
 	}
 	// base name
-	if p.curr.Type == tokens.TokenIdentifier || p.isBuiltinTypeToken(p.curr.Type) {
+	if p.curr.Type == tokens.TokenIdentifier || p.isBuiltinTypeToken(p.curr.Type) || p.curr.Type == tokens.TokenSelf {
 		name := p.curr.Text
 		p.advance()
 		// nullable suffix

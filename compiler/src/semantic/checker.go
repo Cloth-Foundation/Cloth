@@ -155,11 +155,16 @@ func checkBlock(stmts []ast.Stmt, ts *typeScope, retType string, table *TypeTabl
 		case *ast.ReturnStmt:
 			if n.Value != nil {
 				vt := inferExprType(n.Value, ts, table, module, diags)
-				if retType != "" && retType != TokenTypeName(tokens.TokenVoid) {
-					if retType == TokenTypeName(tokens.TokenBit) && vt == "null" {
+				// Normalize 'self' in return type context
+				normRet := retType
+				if normRet == "self" && ts.selfType != "" {
+					normRet = ts.selfType
+				}
+				if normRet != "" && normRet != TokenTypeName(tokens.TokenVoid) {
+					if normRet == TokenTypeName(tokens.TokenBit) && vt == "null" {
 						*diags = append(*diags, CheckDiag{Message: "bit cannot be null", Span: n.Tok.Span, Hint: "return 0 or 1 instead of null"})
-					} else if !assignable(retType, vt) {
-						*diags = append(*diags, CheckDiag{Message: formatAssign(retType, vt), Span: n.Tok.Span})
+					} else if !assignable(normRet, vt) {
+						*diags = append(*diags, CheckDiag{Message: formatAssign(normRet, vt), Span: n.Tok.Span})
 					}
 				}
 			} else if retType != "" && retType != TokenTypeName(tokens.TokenVoid) {
@@ -584,6 +589,9 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			}
 			if params, ret, ok2 := findMethodOnType(objType, macc.Member, module); ok2 {
 				retType := checkCallAgainst(params, ret, objType+"."+macc.Member, x.Args, ts, table, module, diags)
+				if retType == "self" && objType != "" {
+					retType = objType
+				}
 				table.NodeToType[e] = retType
 				return retType
 			}

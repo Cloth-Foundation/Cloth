@@ -18,6 +18,7 @@ func main() {
 	// Parse flags
 	noColor := false
 	var path string
+	var progArgs []string
 	for _, a := range os.Args[1:] {
 		if a == "--no-color" {
 			noColor = true
@@ -25,9 +26,11 @@ func main() {
 		}
 		if path == "" {
 			path = a
-		} else {
-			// ignore extra args for now
+			// argv[0] is the program path
+			progArgs = append(progArgs, path)
+			continue
 		}
+		progArgs = append(progArgs, a)
 	}
 	if path == "" {
 		fmt.Println("Usage: loom [--no-color] <file>")
@@ -80,9 +83,11 @@ func main() {
 	if len(semErrs) > 0 || len(impErrs) > 0 || len(bindDiags) > 0 || len(typeDiags) > 0 || len(checkDiags) > 0 {
 		os.Exit(1)
 	}
-	// Execute main() with interpreter (pass types for accurate type())
-	if err := semantic.Execute(file, scope, ttab); err != nil {
+	// Execute main() with interpreter; exit with main's return code
+	if code, err := semantic.Execute(file, scope, ttab, progArgs); err != nil {
 		diagnostics.RenderRuntimeError(err, path, string(data))
 		os.Exit(1)
+	} else {
+		os.Exit(code)
 	}
 }

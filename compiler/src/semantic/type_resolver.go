@@ -15,9 +15,12 @@ type TypeDiag struct {
 // ResolveTypes validates type names on declarations (params, returns, fields, globals).
 func ResolveTypes(file *ast.File, env *TypeEnv, types *TypeTable, module *Scope) []TypeDiag {
 	var diags []TypeDiag
-	isKnown := func(name string) bool {
+	isKnown := func(name string, enclosing string) bool {
 		base := stripArrayNullable(name)
 		if base == "" {
+			return true
+		}
+		if base == "self" && enclosing != "" {
 			return true
 		}
 		if env.IsBuiltin(base) {
@@ -31,46 +34,46 @@ func ResolveTypes(file *ast.File, env *TypeEnv, types *TypeTable, module *Scope)
 	for _, d := range file.Decls {
 		switch n := d.(type) {
 		case *ast.GlobalVarDecl:
-			if n.Type != "" && !isKnown(n.Type) {
+			if n.Type != "" && !isKnown(n.Type, "") {
 				diags = append(diags, TypeDiag{Message: "unknown type: " + n.Type, Span: n.Tok.Span, Hint: fmt.Sprintf("did you mean a built-in or a declared type? '%s'", n.Type)})
 			}
 		case *ast.FuncDecl:
-			if n.ReturnType != "" && !isKnown(n.ReturnType) {
+			if n.ReturnType != "" && !isKnown(n.ReturnType, "") {
 				diags = append(diags, TypeDiag{Message: "unknown return type: " + n.ReturnType, Span: n.HeaderTok.Span})
 			}
 			for _, p := range n.Params {
-				if p.Type != "" && !isKnown(p.Type) {
+				if p.Type != "" && !isKnown(p.Type, "") {
 					diags = append(diags, TypeDiag{Message: "unknown param type: " + p.Type, Span: p.Tok.Span})
 				}
 			}
 		case *ast.ClassDecl:
 			for _, f := range n.Fields {
-				if f.Type != "" && !isKnown(f.Type) {
+				if f.Type != "" && !isKnown(f.Type, n.Name) {
 					diags = append(diags, TypeDiag{Message: "unknown field type: " + f.Type, Span: n.HeaderTok.Span})
 				}
 			}
 			for _, m := range n.Methods {
-				if m.ReturnType != "" && !isKnown(m.ReturnType) {
+				if m.ReturnType != "" && !isKnown(m.ReturnType, n.Name) {
 					diags = append(diags, TypeDiag{Message: "unknown return type: " + m.ReturnType})
 				}
 				for _, p := range m.Params {
-					if p.Type != "" && !isKnown(p.Type) {
+					if p.Type != "" && !isKnown(p.Type, n.Name) {
 						diags = append(diags, TypeDiag{Message: "unknown param type: " + p.Type, Span: p.Tok.Span})
 					}
 				}
 			}
 		case *ast.StructDecl:
 			for _, f := range n.Fields {
-				if f.Type != "" && !isKnown(f.Type) {
+				if f.Type != "" && !isKnown(f.Type, n.Name) {
 					diags = append(diags, TypeDiag{Message: "unknown field type: " + f.Type, Span: n.HeaderTok.Span})
 				}
 			}
 			for _, m := range n.Methods {
-				if m.ReturnType != "" && !isKnown(m.ReturnType) {
+				if m.ReturnType != "" && !isKnown(m.ReturnType, n.Name) {
 					diags = append(diags, TypeDiag{Message: "unknown return type: " + m.ReturnType})
 				}
 				for _, p := range m.Params {
-					if p.Type != "" && !isKnown(p.Type) {
+					if p.Type != "" && !isKnown(p.Type, n.Name) {
 						diags = append(diags, TypeDiag{Message: "unknown param type: " + p.Type, Span: p.Tok.Span})
 					}
 				}
