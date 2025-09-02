@@ -73,6 +73,7 @@ func CheckExpressions(file *ast.File, types *TypeTable, module *Scope) []CheckDi
 				}
 				checkBlock(b.Body, ts, "void", types, module, &diags)
 			}
+			// Note: instantiation of abstract classes is prevented at constructor-call time
 		case *ast.StructDecl:
 			for _, m := range n.Methods {
 				ts := newTypeScope(nil)

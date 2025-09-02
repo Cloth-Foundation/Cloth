@@ -99,20 +99,34 @@ type returnValue struct{ v any }
 // makeInstance creates a map object for a class or struct type, initializing nested struct fields.
 func makeInstance(typeName string, module *Scope) map[string]any {
 	inst := map[string]any{"__type": typeName}
+	// helper to populate fields from a class and its base chain
+	var populateClassFields func(cd *ast.ClassDecl)
+	populateClassFields = func(cd *ast.ClassDecl) {
+		// populate base first
+		if len(cd.SuperTypes) > 0 {
+			if sym, ok := module.Resolve(cd.SuperTypes[0]); ok {
+				if bcd, ok2 := sym.Node.(*ast.ClassDecl); ok2 {
+					populateClassFields(bcd)
+				}
+			}
+		}
+		for _, f := range cd.Fields {
+			// Initialize struct-typed fields to empty struct instance; otherwise nil
+			if fsym, ok2 := module.Resolve(f.Type); ok2 {
+				if _, isStruct := fsym.Node.(*ast.StructDecl); isStruct {
+					inst[f.Name] = arc.NewObject(makeInstance(f.Type, module))
+					continue
+				}
+			}
+			if _, exists := inst[f.Name]; !exists {
+				inst[f.Name] = nil
+			}
+		}
+	}
 	if sym, ok := module.Resolve(typeName); ok {
 		switch n := sym.Node.(type) {
 		case *ast.ClassDecl:
-			for _, f := range n.Fields {
-				// Initialize struct-typed fields to empty struct instance; otherwise nil
-				if fsym, ok2 := module.Resolve(f.Type); ok2 {
-					if _, isStruct := fsym.Node.(*ast.StructDecl); isStruct {
-						// Wrap nested struct instance in a StrongPtr
-						inst[f.Name] = arc.NewObject(makeInstance(f.Type, module))
-						continue
-					}
-				}
-				inst[f.Name] = nil
-			}
+			populateClassFields(n)
 		case *ast.StructDecl:
 			for _, f := range n.Fields {
 				inst[f.Name] = nil
@@ -841,6 +855,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					if sym, ok3 := module.Resolve(typeName); ok3 {
 						switch d := sym.Node.(type) {
 						case *ast.ClassDecl:
+							// search in class methods first
 							for _, m := range d.Methods {
 								if m.Name == macc.Member {
 									newEnv := map[string]any{"self": obj}
@@ -862,6 +877,44 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 									}
 									return nil, nil
 								}
+							}
+							// fallback to base class chain
+							base := d
+							for {
+								if len(base.SuperTypes) == 0 {
+									break
+								}
+								bsym, ok := module.Resolve(base.SuperTypes[0])
+								if !ok {
+									break
+								}
+								bcd, ok := bsym.Node.(*ast.ClassDecl)
+								if !ok {
+									break
+								}
+								for _, m := range bcd.Methods {
+									if m.Name == macc.Member {
+										newEnv := map[string]any{"self": obj}
+										for i, p := range m.Params {
+											if i < len(x.Args) {
+												v, err := evalExpr(x.Args[i], env, globals, module)
+												if err != nil {
+													return nil, err
+												}
+												newEnv[p.Name] = v
+											}
+										}
+										ret, err := execBlock(m.Body, newEnv, globals, module)
+										if err != nil {
+											return nil, err
+										}
+										if rv, ok := ret.(returnValue); ok {
+											return rv.v, nil
+										}
+										return nil, nil
+									}
+								}
+								base = bcd
 							}
 						case *ast.EnumDecl:
 							for _, m := range d.Methods {
@@ -925,9 +978,62 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		// Constructor calls: Type(...)
 		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
+			// super(...) inside a constructor: call base-class builder on same self
+			if id.Name == "super" {
+				if env == nil {
+					return nil, fmt.Errorf("super() outside of constructor")
+				}
+				self, ok := env["self"].(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("super() requires 'self' in scope")
+				}
+				typeName, ok := self["__type"].(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid receiver for super()")
+				}
+				sym, ok := module.Resolve(typeName)
+				if !ok {
+					return nil, fmt.Errorf("unknown type %s", typeName)
+				}
+				cd, ok := sym.Node.(*ast.ClassDecl)
+				if !ok {
+					return nil, fmt.Errorf("super() only valid in classes")
+				}
+				if len(cd.SuperTypes) == 0 {
+					return nil, fmt.Errorf("class %s has no base to call super()", typeName)
+				}
+				bsym, ok := module.Resolve(cd.SuperTypes[0])
+				if !ok {
+					return nil, fmt.Errorf("unknown base class %s", cd.SuperTypes[0])
+				}
+				bcd, ok := bsym.Node.(*ast.ClassDecl)
+				if !ok {
+					return nil, fmt.Errorf("super target is not a class")
+				}
+				// choose builder by arity
+				for _, b := range bcd.Builders {
+					if len(b.Params) == len(x.Args) {
+						newEnv := map[string]any{"self": self}
+						for i, p := range b.Params {
+							v, err := evalExpr(x.Args[i], env, globals, module)
+							if err != nil {
+								return nil, err
+							}
+							newEnv[p.Name] = v
+						}
+						_, err := execBlock(b.Body, newEnv, globals, module)
+						return nil, err
+					}
+				}
+				return nil, fmt.Errorf("no matching super constructor")
+			}
 			if sym, ok2 := module.Resolve(id.Name); ok2 {
 				switch d := sym.Node.(type) {
 				case *ast.ClassDecl:
+					// Disallow instantiation of abstract/template classes
+					if d.IsTemplate {
+						return nil, fmt.Errorf("cannot instantiate abstract class %s", d.Name)
+					}
 					for _, b := range d.Builders {
 						if len(b.Params) == len(x.Args) {
 							newEnv := map[string]any{}
@@ -1036,6 +1142,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 	}
 }
 
+// toString converts a value of any type into its string representation, handling various types including nil and smart pointers.
 func toString(v any) string {
 	// Deref smart pointers for display
 	if sp, ok := v.(arc.StrongPtr); ok {
@@ -1060,6 +1167,7 @@ func toString(v any) string {
 	}
 }
 
+// addOne increments the input value by the specified delta if it's of type int64 or float64; returns unchanged value otherwise.
 func addOne(v any, delta int64) any {
 	switch n := v.(type) {
 	case int64:
@@ -1071,6 +1179,7 @@ func addOne(v any, delta int64) any {
 	}
 }
 
+// addNums adds two numeric values of type int64 or float64 and returns the result. Returns an error if types are unsupported.
 func addNums(a, b any) (any, error) {
 	switch x := a.(type) {
 	case int64:
@@ -1090,6 +1199,9 @@ func addNums(a, b any) (any, error) {
 	}
 	return nil, fmt.Errorf("non-numeric addition")
 }
+
+// subNums subtracts two values of type int64 or float64 and returns the result.
+// If the types are incompatible or unsupported, it returns an error.
 func subNums(a, b any) (any, error) {
 	switch x := a.(type) {
 	case int64:
@@ -1109,6 +1221,9 @@ func subNums(a, b any) (any, error) {
 	}
 	return nil, fmt.Errorf("non-numeric subtraction")
 }
+
+// mulNums multiplies two values of type int64 or float64 and returns the result.
+// If the types are incompatible or unsupported, it returns an error.
 func mulNums(a, b any) (any, error) {
 	switch x := a.(type) {
 	case int64:
@@ -1128,6 +1243,8 @@ func mulNums(a, b any) (any, error) {
 	}
 	return nil, fmt.Errorf("non-numeric multiplication")
 }
+
+// divNums performs a division operation on two values if both are int64, returning the result or an error
 func divNums(a, b any) (any, error) {
 	switch x := a.(type) {
 	case int64:
@@ -1147,6 +1264,8 @@ func divNums(a, b any) (any, error) {
 	}
 	return nil, fmt.Errorf("non-numeric division")
 }
+
+// modNums performs a modulus operation on two values if both are int64, returning the result or an error otherwise.
 func modNums(a, b any) (any, error) {
 	xi, aok := a.(int64)
 	yi, bok := b.(int64)
@@ -1156,6 +1275,7 @@ func modNums(a, b any) (any, error) {
 	return nil, fmt.Errorf("non-integer modulus")
 }
 
+// toFloat converts an input of type `any` to a `float64`. Returns a boolean indicating success or failure.
 func toFloat(v any) (float64, bool) {
 	switch n := v.(type) {
 	case int64:
@@ -1166,5 +1286,3 @@ func toFloat(v any) (float64, bool) {
 		return 0, false
 	}
 }
-
-// Removed local numeric formatting helpers; moved to builtins.

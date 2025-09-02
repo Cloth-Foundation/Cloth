@@ -573,8 +573,12 @@ func lookupKeyword(text string) (tokens.TokenType, bool) {
 		return tokens.TokenRet, true
 	case "rev":
 		return tokens.TokenRev, true
+	case "template":
+		return tokens.TokenTemplate, true
 	case "self":
 		return tokens.TokenSelf, true
+	case "override":
+		return tokens.TokenOverride, true
 	case "struct":
 		return tokens.TokenStruct, true
 	case "super":

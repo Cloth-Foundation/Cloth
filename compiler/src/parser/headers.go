@@ -73,6 +73,12 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 		vis = ast.VisProtected
 		p.advance()
 	}
+	// Optional 'template' modifier before class at top-level
+	topIsTemplate := false
+	if p.curr.Type == tokens.TokenTemplate {
+		topIsTemplate = true
+		p.advance()
+	}
 	switch p.curr.Type {
 	case tokens.TokenFunc:
 		funcTok := p.curr
@@ -128,7 +134,16 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 		if p.fatal {
 			return nil
 		}
-		cd := &ast.ClassDecl{Visibility: vis, Name: nameTok.Text, HeaderTok: classTok}
+		cd := &ast.ClassDecl{Visibility: vis, Name: nameTok.Text, HeaderTok: classTok, IsTemplate: topIsTemplate}
+		// Optional single inheritance via ':' Base
+		if p.curr.Type == tokens.TokenColon {
+			p.advance()
+			baseTok := p.expect(tokens.TokenIdentifier, "expected base class name after ':'")
+			if p.fatal {
+				return nil
+			}
+			cd.SuperTypes = append(cd.SuperTypes, baseTok.Text)
+		}
 		// Optional class body
 		if p.curr.Type == tokens.TokenLBrace {
 			p.advance()
@@ -192,9 +207,23 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 					cd.Builders = append(cd.Builders, ast.MethodDecl{Visibility: innerVis, Name: cd.Name, Params: params, ReturnType: "", Body: body})
 					continue
 				}
-				// Regular methods: 'func name(...) [: Type] { ... }'
+				// Regular methods: optional 'template'/'override' modifiers then optional 'var' then method signature
+				isTemplate := false
+				isOverride := false
+				for p.curr.Type == tokens.TokenTemplate || p.curr.Type == tokens.TokenOverride {
+					if p.curr.Type == tokens.TokenTemplate {
+						isTemplate = true
+					}
+					if p.curr.Type == tokens.TokenOverride {
+						isOverride = true
+					}
+					p.advance()
+				}
+				_ = p.match(tokens.TokenVar) // allow stray 'var' before method signature
 				if p.curr.Type == tokens.TokenFunc {
 					p.advance()
+				}
+				if p.curr.Type == tokens.TokenIdentifier && p.peek.Type == tokens.TokenLParen {
 					nameTok2 := p.expect(tokens.TokenIdentifier, "expected method name")
 					if p.fatal {
 						return nil
@@ -245,8 +274,10 @@ func (p *Parser) parseTopLevelDeclHeader() ast.Decl {
 							return nil
 						}
 						body = blk.Stmts
+					} else {
+						_ = p.match(tokens.TokenSemicolon)
 					}
-					cd.Methods = append(cd.Methods, ast.MethodDecl{Visibility: innerVis, Name: nameTok2.Text, Params: params, ReturnType: retType, Body: body})
+					cd.Methods = append(cd.Methods, ast.MethodDecl{Visibility: innerVis, Name: nameTok2.Text, Params: params, ReturnType: retType, Body: body, IsTemplate: isTemplate, IsOverride: isOverride})
 					continue
 				}
 				// Forbid let at type body level

@@ -62,6 +62,41 @@ func ResolveTypes(file *ast.File, env *TypeEnv, types *TypeTable, module *Scope)
 					}
 				}
 			}
+			// Inheritance checks: validate overrides against base template methods
+			if len(n.SuperTypes) > 0 {
+				if sym, ok := module.Resolve(n.SuperTypes[0]); ok {
+					if base, ok2 := sym.Node.(*ast.ClassDecl); ok2 {
+						// collect base template methods
+						baseTemplates := map[string]*ast.MethodDecl{}
+						for i := range base.Methods {
+							bm := &base.Methods[i]
+							if bm.IsTemplate {
+								baseTemplates[bm.Name] = bm
+							}
+						}
+						// ensure overrides match and clear from required set
+						for i := range n.Methods {
+							m := &n.Methods[i]
+							if m.IsOverride {
+								bm, ok := baseTemplates[m.Name]
+								if !ok {
+									diags = append(diags, TypeDiag{Message: fmt.Sprintf("override '%s' has no matching template in base '%s'", m.Name, base.Name), Span: n.HeaderTok.Span})
+									continue
+								}
+								// simple signature check: arity and return type string match
+								if len(m.Params) != len(bm.Params) || m.ReturnType != bm.ReturnType {
+									diags = append(diags, TypeDiag{Message: fmt.Sprintf("override '%s' signature mismatch base template", m.Name), Span: n.HeaderTok.Span})
+								}
+								delete(baseTemplates, m.Name)
+							}
+						}
+						// any remaining base templates mean class is abstract
+						if len(baseTemplates) > 0 {
+							n.IsTemplate = true
+						}
+					}
+				}
+			}
 		case *ast.StructDecl:
 			for _, f := range n.Fields {
 				if f.Type != "" && !isKnown(f.Type, n.Name) {

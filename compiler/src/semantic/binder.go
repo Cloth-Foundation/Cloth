@@ -141,13 +141,22 @@ func bindExpr(e ast.Expr, scope *Scope, diags *[]Diagnostic) {
 			if NameToTokenType(x.Name) != tokens.TokenInvalid {
 				return
 			}
+			// allow 'self' in class/enum methods
 			if x.Name == "self" {
 				*diags = append(*diags, Diagnostic{Message: "'self' is only valid inside class/enum instance methods", Span: x.Tok.Span, Hint: "use the type name for static access, or pass the instance explicitly"})
-			} else {
-				*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
+				return
 			}
+			// allow 'super' identifier where 'self' is available (class scopes)
+			if x.Name == "super" {
+				if _, ok2 := scope.Resolve("self"); ok2 {
+					return
+				}
+				*diags = append(*diags, Diagnostic{Message: "'super' is only valid inside class constructors", Span: x.Tok.Span, Hint: "use inside a class constructor to call the base"})
+				return
+			}
+			*diags = append(*diags, Diagnostic{Message: fmt.Sprintf("undefined identifier '%s'", x.Name), Span: x.Tok.Span, Hint: "define it earlier, import it, or check for typos"})
 		} else if x.Name == "self" {
-			// 'self' is permitted in class/enum methods; it's not defined in structs or at top-level
+			// 'self' is permitted in class/enum methods
 			// No extra const/static restrictions
 		} else if sym, ok := scope.Resolve(x.Name); ok && sym.Kind == SymModule {
 			// ok: allow module namespace symbol to be the left of member access; deeper resolution happens later

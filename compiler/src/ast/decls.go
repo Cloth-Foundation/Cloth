@@ -14,6 +14,8 @@ type MethodDecl struct {
 	Params     []Parameter
 	ReturnType string
 	Body       []Stmt
+	IsTemplate bool
+	IsOverride bool
 }
 
 type EnumCase struct {

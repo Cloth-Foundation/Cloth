@@ -206,6 +206,11 @@ func (p *Parser) parsePrefix() ast.Expr {
 		tok := p.curr
 		p.advance()
 		return &ast.IdentifierExpr{Name: tok.Text, Tok: tok}
+	case tokens.TokenSuper:
+		// 'super' as an identifier-like for constructor/method dispatch
+		tok := p.curr
+		p.advance()
+		return &ast.IdentifierExpr{Name: "super", Tok: tok}
 	case tokens.TokenF16, tokens.TokenF32, tokens.TokenF64,
 		tokens.TokenI8, tokens.TokenI16, tokens.TokenI32, tokens.TokenI64,
 		tokens.TokenU8, tokens.TokenU16, tokens.TokenU32, tokens.TokenU64,

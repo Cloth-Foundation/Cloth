@@ -95,6 +95,7 @@ type ClassDecl struct {
 	Visibility  Visibility
 	Name        string
 	SuperTypes  []string // optional extends list (parsed as simple path segments)
+	IsTemplate  bool
 	HeaderTok   tokens.Token
 	BodySpan    tokens.TokenSpan
 	BodySkipped bool
