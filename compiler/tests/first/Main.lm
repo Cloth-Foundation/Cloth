@@ -1,5 +1,7 @@
 mod first
 
+import first.Human::{ Human, Color }
+
 enum Type {
     HUMAN("Human"),
     DOG("Dog"),
@@ -24,45 +26,36 @@ pub template class Animal {
 
 }
 
-class Human: Animal {
-
-    var type: Type
-
-    pub Human(type: Type) {
-        self.type = type
-    }
-
-    pub override var getType(): Type {
-        ret self.type
-    }
-
-}
-
-pub class Person: Human {
-    priv var name: string
-
-    pub Person(n: string, type: Type) {
-        super(type)
-        self.name = n
-    }
-
-    pub func greet(): void {
-        println("hi, I am " + self.name)
-    }
-
-    pub func get(): self {
-        ret self
-    }
-}
-
 pub func main(argc: []i32, argv: []string): i32 {
     ret Main()
 }
 
 pub func Main(): i32 {
-    var one: Person = new Person("onetwo", Type.HUMAN)
-    var two: Person = one.get()
-    two.greet()
-    println(one.getType().toString())
-    ret 0x0
+    var alice: Human = new Human("Alice", 21, Color.BLUE)
+    var bob: Human = new Human("Bob", 23, Color.RED)
+    alice.greet()
+    bob.greet()
+
+    if alice.type() == bob.type() {
+        println("Alice and Bob are of the same type.")
+    } else {
+        println("Alice and Bob are of different types.")
+    }
+
+    if alice.getAge() > bob.getAge() {
+        println("Alice is older than Bob.")
+    } elif alice.getAge() < bob.getAge() {
+        println("Bob is older than Alice.")
+    } else {
+        println("Alice and Bob are the same age.")
+    }
+
+    # Flip alice and bob values
+    let temp = alice
+    alice = bob
+    bob = temp
+    alice.greet()
+    bob.greet()
+
+    ret 0
 }

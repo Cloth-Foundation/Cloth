@@ -1,6 +1,8 @@
 mod first
 
-pub class Human {
+import first.Main::{ Animal, Type }
+
+pub class Human: Animal {
 
     priv var attributes: Person
     priv fin var favoriteColor: Color
@@ -21,6 +23,18 @@ pub class Human {
 
     pub func getFavoriteColor(): Color {
         ret self.favoriteColor
+    }
+
+    pub override var getType(): Type {
+        ret Type.HUMAN
+    }
+
+    pub var get(): self {
+        ret self
+    }
+
+    pub func greet(): void {
+        printf("Hello, my name is {}. I am a {}! My favorite color is {}!\n", self.attributes.name, self.getType().toString(), self.getFavoriteColor().toString())
     }
 
 }
