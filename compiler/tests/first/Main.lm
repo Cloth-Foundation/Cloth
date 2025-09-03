@@ -7,7 +7,7 @@ enum Type {
     DOG("Dog"),
     CAT("Cat")
 
-    priv fin     val: string
+    priv fin val: string
     pub Type(val: string) {
         self.val = val
     }
@@ -27,35 +27,29 @@ pub template class Animal {
 }
 
 pub func main(argc: []i32, argv: []string): i32 {
-    ret Main()
+    let returnCode = Main()
+
+    ret returnCode
 }
 
-pub func Main(): i32 {
+pub func Main(): i8 {
     var alice: Human = new Human("Alice", 21, Color.BLUE)
     var bob: Human = new Human("Bob", 23, Color.RED)
     alice.greet()
     bob.greet()
 
-    if alice.type() == bob.type() {
-        println("Alice and Bob are of the same type.")
-    } else {
-        println("Alice and Bob are of different types.")
-    }
+    println(alice.type() == bob.type() ? "Alice and Bob are of the same type." : null)
 
-    if alice.getAge() > bob.getAge() {
-        println("Alice is older than Bob.")
-    } elif alice.getAge() < bob.getAge() {
-        println("Bob is older than Alice.")
-    } else {
-        println("Alice and Bob are the same age.")
-    }
+    println(alice.getAge() > bob.getAge() ? "Alice is older than Bob." : alice.getAge() < bob.getAge() ? "Bob is older than Alice." : "Alice and Bob are the same age.")
 
     # Flip alice and bob values
     let temp = alice
     alice = bob
     bob = temp
-    alice.greet()
-    bob.greet()
+
+    loop x in range(10, -1, -1) {
+        println(x)
+    }
 
     ret 0
 }

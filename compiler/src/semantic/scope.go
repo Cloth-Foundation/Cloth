@@ -46,3 +46,12 @@ func (s *Scope) Resolve(name string) (Symbol, bool) {
 	}
 	return Symbol{}, false
 }
+
+// Symbols returns a snapshot of all symbols defined directly in this scope.
+func (s *Scope) Symbols() []Symbol {
+	out := make([]Symbol, 0, len(s.table))
+	for _, sym := range s.table {
+		out = append(out, sym)
+	}
+	return out
+}

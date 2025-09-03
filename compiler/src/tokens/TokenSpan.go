@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// TokenSpan mirrors loom::TokenSpan
+// TokenSpan use to print out the location of a token in a file for error messages.
 type TokenSpan struct {
 	File        string
 	StartLine   uint64

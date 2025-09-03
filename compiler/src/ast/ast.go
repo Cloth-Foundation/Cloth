@@ -44,7 +44,7 @@ type File struct {
 	Decls   []Decl
 }
 
-// Module declaration: mod example;
+// ModDecl Module declaration: mod example;
 type ModDecl struct {
 	Name string
 	Tok  tokens.Token
@@ -53,7 +53,7 @@ type ModDecl struct {
 func (d *ModDecl) Span() tokens.TokenSpan { return d.Tok.Span }
 func (d *ModDecl) isDecl()                {}
 
-// Import declaration: import std.system.io::{print as p, printf}
+// ImportItem Import declaration: import std.system.io::{print as p, printf}
 type ImportItem struct {
 	Name  string
 	Alias string // optional
@@ -69,7 +69,7 @@ type ImportDecl struct {
 func (d *ImportDecl) Span() tokens.TokenSpan { return d.Tok.Span }
 func (d *ImportDecl) isDecl()                {}
 
-// Function declaration header (phase-1). Body is skipped span.
+// Parameter Function declaration header (phase-1). Body is skipped span.
 type Parameter struct {
 	Name string
 	Type string
@@ -90,7 +90,7 @@ type FuncDecl struct {
 func (d *FuncDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
 func (d *FuncDecl) isDecl()                {}
 
-// Class declaration header (phase-1)
+// ClassDecl Class declaration header (phase-1)
 type ClassDecl struct {
 	Visibility  Visibility
 	Name        string
@@ -107,7 +107,7 @@ type ClassDecl struct {
 func (d *ClassDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
 func (d *ClassDecl) isDecl()                {}
 
-// Struct declaration header (phase-1)
+// StructDecl Struct declaration header (phase-1)
 type StructDecl struct {
 	Visibility  Visibility
 	Name        string
@@ -122,7 +122,7 @@ type StructDecl struct {
 func (d *StructDecl) Span() tokens.TokenSpan { return d.HeaderTok.Span }
 func (d *StructDecl) isDecl()                {}
 
-// Enum declaration header (phase-1)
+// EnumDecl Enum declaration header (phase-1)
 type EnumDecl struct {
 	Visibility  Visibility
 	Name        string
@@ -220,7 +220,7 @@ type AssignExpr struct {
 func (e *AssignExpr) Span() tokens.TokenSpan { return mergeSpans(e.Target.Span(), e.Value.Span()) }
 func (e *AssignExpr) isExpr()                {}
 
-// Indexing: base[index]
+// IndexExpr Indexing: base[index]
 type IndexExpr struct {
 	Base   Expr
 	Index  Expr
@@ -231,7 +231,7 @@ type IndexExpr struct {
 func (e *IndexExpr) Span() tokens.TokenSpan { return mergeSpans(e.Base.Span(), e.RBrack.Span) }
 func (e *IndexExpr) isExpr()                {}
 
-// Array literal: [a, b, c]
+// ArrayLiteralExpr Array literal: [a, b, c]
 type ArrayLiteralExpr struct {
 	Elements []Expr
 	LBrack   tokens.Token
@@ -241,7 +241,7 @@ type ArrayLiteralExpr struct {
 func (e *ArrayLiteralExpr) Span() tokens.TokenSpan { return mergeSpans(e.LBrack.Span, e.RBrack.Span) }
 func (e *ArrayLiteralExpr) isExpr()                {}
 
-// Function or method call
+// CallExpr Function or method call
 type CallExpr struct {
 	Callee Expr
 	Args   []Expr
@@ -252,7 +252,7 @@ type CallExpr struct {
 func (e *CallExpr) Span() tokens.TokenSpan { return mergeSpans(e.Callee.Span(), e.RParen.Span) }
 func (e *CallExpr) isExpr()                {}
 
-// Member access: obj.member
+// MemberAccessExpr Member access: obj.member
 type MemberAccessExpr struct {
 	Object    Expr
 	Member    string
@@ -265,7 +265,7 @@ func (e *MemberAccessExpr) Span() tokens.TokenSpan {
 }
 func (e *MemberAccessExpr) isExpr() {}
 
-// Cast using 'as'
+// CastExpr Cast using 'as'
 type CastExpr struct {
 	Expr       Expr
 	TargetType string
@@ -275,7 +275,7 @@ type CastExpr struct {
 func (e *CastExpr) Span() tokens.TokenSpan { return mergeSpans(e.Expr.Span(), e.AsTok.Span) }
 func (e *CastExpr) isExpr()                {}
 
-// Ternary conditional: cond ? thenExpr : elseExpr
+// TernaryExpr Ternary conditional: cond ? thenExpr : elseExpr
 type TernaryExpr struct {
 	Cond     Expr
 	ThenExpr Expr

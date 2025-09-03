@@ -23,6 +23,93 @@ func rt(loc tokens.TokenSpan, msg, hint string) error {
 	return RuntimeError{Msg: msg, Loc: loc, Hint: hint}
 }
 
+// helpers (new)
+func selectBuilderByArity(builders []ast.MethodDecl, argc int) *ast.MethodDecl {
+	for i := range builders {
+		b := &builders[i]
+		if len(b.Params) == argc {
+			return b
+		}
+	}
+	return nil
+}
+
+func bindArgs(params []ast.Parameter, args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (map[string]any, error) {
+	bound := map[string]any{}
+	for i, p := range params {
+		if i < len(args) {
+			v, err := evalExpr(args[i], env, globals, module)
+			if err != nil {
+				return nil, err
+			}
+			bound[p.Name] = v
+		}
+	}
+	return bound, nil
+}
+
+func callMethodBody(m *ast.MethodDecl, recv map[string]any, callArgs []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
+	argEnv, err := bindArgs(m.Params, callArgs, env, globals, module)
+	if err != nil {
+		return nil, err
+	}
+	newEnv := map[string]any{"self": recv}
+	for k, v := range argEnv {
+		newEnv[k] = v
+	}
+	ret, err := execBlock(m.Body, newEnv, globals, module)
+	if err != nil {
+		return nil, err
+	}
+	if rv, ok := ret.(returnValue); ok {
+		return rv.v, nil
+	}
+	return nil, nil
+}
+
+func callStaticMethod(m *ast.MethodDecl, callArgs []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
+	newEnv, err := bindArgs(m.Params, callArgs, env, globals, module)
+	if err != nil {
+		return nil, err
+	}
+	ret, err := execBlock(m.Body, newEnv, globals, module)
+	if err != nil {
+		return nil, err
+	}
+	if rv, ok := ret.(returnValue); ok {
+		return rv.v, nil
+	}
+	return nil, nil
+}
+
+func findMethodInClassChain(classDecl *ast.ClassDecl, name string, module *Scope) *ast.MethodDecl {
+	for i := range classDecl.Methods {
+		if classDecl.Methods[i].Name == name {
+			return &classDecl.Methods[i]
+		}
+	}
+	base := classDecl
+	for {
+		if len(base.SuperTypes) == 0 {
+			return nil
+		}
+		bsym, ok := module.Resolve(base.SuperTypes[0])
+		if !ok {
+			return nil
+		}
+		bcd, ok := bsym.Node.(*ast.ClassDecl)
+		if !ok {
+			return nil
+		}
+		for i := range bcd.Methods {
+			if bcd.Methods[i].Name == name {
+				return &bcd.Methods[i]
+			}
+		}
+		base = bcd
+	}
+}
+
 // Execute runs a compiled file by finding main() and interpreting its body.
 // Validates main signature: main(argc: []i32, argv: []string): i32
 // Returns the exit code from main's return value (default 0 if no explicit return).
@@ -39,15 +126,12 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 	if mainFn == nil {
 		return 1, fmt.Errorf("no main() function found")
 	}
-	// Enforce signature
 	if len(mainFn.Params) != 2 {
 		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
 	}
-	// Types are stored as strings in Params.Type
 	if mainFn.Params[0].Type != "[]i32" || mainFn.Params[1].Type != "[]string" || mainFn.ReturnType != "i32" {
 		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
 	}
-	// Initialize globals
 	globals := map[string]any{}
 	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GlobalVarDecl); ok {
@@ -62,15 +146,12 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 			}
 		}
 	}
-	// simple env for locals
 	locals := map[string]any{}
-	// Build argc and argv values
 	argcVals := []any{int64(len(progArgs))}
 	argvVals := make([]any, 0, len(progArgs))
 	for _, a := range progArgs {
 		argvVals = append(argvVals, a)
 	}
-	// Bind using the actual parameter names (names can vary)
 	locals[mainFn.Params[0].Name] = argcVals
 	locals[mainFn.Params[1].Name] = argvVals
 	ret, err := execBlock(mainFn.Body, locals, globals, module)
@@ -84,13 +165,11 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 		if n, ok2 := rv.v.(int64); ok2 {
 			return int(n), nil
 		}
-		// Attempt float to int conversion if a float sneaks through
 		if f, ok2 := rv.v.(float64); ok2 {
 			return int(int64(f)), nil
 		}
 		return 1, rt(mainFn.Span(), "main must return i32", "change return type/value to i32")
 	}
-	// No explicit return -> 0
 	return 0, nil
 }
 
@@ -855,88 +934,13 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					if sym, ok3 := module.Resolve(typeName); ok3 {
 						switch d := sym.Node.(type) {
 						case *ast.ClassDecl:
-							// search in class methods first
-							for _, m := range d.Methods {
-								if m.Name == macc.Member {
-									newEnv := map[string]any{"self": obj}
-									for i, p := range m.Params {
-										if i < len(x.Args) {
-											v, err := evalExpr(x.Args[i], env, globals, module)
-											if err != nil {
-												return nil, err
-											}
-											newEnv[p.Name] = v
-										}
-									}
-									ret, err := execBlock(m.Body, newEnv, globals, module)
-									if err != nil {
-										return nil, err
-									}
-									if rv, ok := ret.(returnValue); ok {
-										return rv.v, nil
-									}
-									return nil, nil
-								}
-							}
-							// fallback to base class chain
-							base := d
-							for {
-								if len(base.SuperTypes) == 0 {
-									break
-								}
-								bsym, ok := module.Resolve(base.SuperTypes[0])
-								if !ok {
-									break
-								}
-								bcd, ok := bsym.Node.(*ast.ClassDecl)
-								if !ok {
-									break
-								}
-								for _, m := range bcd.Methods {
-									if m.Name == macc.Member {
-										newEnv := map[string]any{"self": obj}
-										for i, p := range m.Params {
-											if i < len(x.Args) {
-												v, err := evalExpr(x.Args[i], env, globals, module)
-												if err != nil {
-													return nil, err
-												}
-												newEnv[p.Name] = v
-											}
-										}
-										ret, err := execBlock(m.Body, newEnv, globals, module)
-										if err != nil {
-											return nil, err
-										}
-										if rv, ok := ret.(returnValue); ok {
-											return rv.v, nil
-										}
-										return nil, nil
-									}
-								}
-								base = bcd
+							if m := findMethodInClassChain(d, macc.Member, module); m != nil {
+								return callMethodBody(m, obj, x.Args, env, globals, module)
 							}
 						case *ast.EnumDecl:
-							for _, m := range d.Methods {
-								if m.Name == macc.Member {
-									newEnv := map[string]any{"self": obj}
-									for i, p := range m.Params {
-										if i < len(x.Args) {
-											v, err := evalExpr(x.Args[i], env, globals, module)
-											if err != nil {
-												return nil, err
-											}
-											newEnv[p.Name] = v
-										}
-									}
-									ret, err := execBlock(m.Body, newEnv, globals, module)
-									if err != nil {
-										return nil, err
-									}
-									if rv, ok := ret.(returnValue); ok {
-										return rv.v, nil
-									}
-									return nil, nil
+							for i := range d.Methods {
+								if d.Methods[i].Name == macc.Member {
+									return callMethodBody(&d.Methods[i], obj, x.Args, env, globals, module)
 								}
 							}
 						}
@@ -950,26 +954,9 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				if sym, ok3 := module.Resolve(objId.Name); ok3 {
 					switch n := sym.Node.(type) {
 					case *ast.ClassDecl:
-						for _, m := range n.Methods {
-							if m.Name == macc.Member {
-								newEnv := map[string]any{}
-								for i, p := range m.Params {
-									if i < len(x.Args) {
-										v, err := evalExpr(x.Args[i], env, globals, module)
-										if err != nil {
-											return nil, err
-										}
-										newEnv[p.Name] = v
-									}
-								}
-								ret, err := execBlock(m.Body, newEnv, globals, module)
-								if err != nil {
-									return nil, err
-								}
-								if rv, ok := ret.(returnValue); ok {
-									return rv.v, nil
-								}
-								return nil, nil
+						for i := range n.Methods {
+							if n.Methods[i].Name == macc.Member {
+								return callStaticMethod(&n.Methods[i], x.Args, env, globals, module)
 							}
 						}
 					}
@@ -1010,10 +997,29 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				if !ok {
 					return nil, fmt.Errorf("super target is not a class")
 				}
-				// choose builder by arity
-				for _, b := range bcd.Builders {
-					if len(b.Params) == len(x.Args) {
-						newEnv := map[string]any{"self": self}
+				if b := selectBuilderByArity(bcd.Builders, len(x.Args)); b != nil {
+					newEnv := map[string]any{"self": self}
+					for i, p := range b.Params {
+						v, err := evalExpr(x.Args[i], env, globals, module)
+						if err != nil {
+							return nil, err
+						}
+						newEnv[p.Name] = v
+					}
+					_, err := execBlock(b.Body, newEnv, globals, module)
+					return nil, err
+				}
+				return nil, fmt.Errorf("no matching super constructor")
+			}
+			if sym, ok2 := module.Resolve(id.Name); ok2 {
+				switch d := sym.Node.(type) {
+				case *ast.ClassDecl:
+					if d.IsTemplate {
+						return nil, fmt.Errorf("cannot instantiate template class %s", d.Name)
+					}
+					if b := selectBuilderByArity(d.Builders, len(x.Args)); b != nil {
+						newEnv := map[string]any{}
+						instMap := makeInstance(d.Name, module)
 						for i, p := range b.Params {
 							v, err := evalExpr(x.Args[i], env, globals, module)
 							if err != nil {
@@ -1021,36 +1027,11 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 							}
 							newEnv[p.Name] = v
 						}
-						_, err := execBlock(b.Body, newEnv, globals, module)
-						return nil, err
-					}
-				}
-				return nil, fmt.Errorf("no matching super constructor")
-			}
-			if sym, ok2 := module.Resolve(id.Name); ok2 {
-				switch d := sym.Node.(type) {
-				case *ast.ClassDecl:
-					// Disallow instantiation of abstract/template classes
-					if d.IsTemplate {
-						return nil, fmt.Errorf("cannot instantiate abstract class %s", d.Name)
-					}
-					for _, b := range d.Builders {
-						if len(b.Params) == len(x.Args) {
-							newEnv := map[string]any{}
-							instMap := makeInstance(d.Name, module)
-							for i, p := range b.Params {
-								v, err := evalExpr(x.Args[i], env, globals, module)
-								if err != nil {
-									return nil, err
-								}
-								newEnv[p.Name] = v
-							}
-							newEnv["self"] = instMap
-							if _, err := execBlock(b.Body, newEnv, globals, module); err != nil {
-								return nil, err
-							}
-							return instMap, nil
+						newEnv["self"] = instMap
+						if _, err := execBlock(b.Body, newEnv, globals, module); err != nil {
+							return nil, err
 						}
+						return instMap, nil
 					}
 					instMap := makeInstance(d.Name, module)
 					return instMap, nil
@@ -1071,7 +1052,6 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if id, ok := x.Callee.(*ast.IdentifierExpr); ok {
 			if sym, ok2 := module.Resolve(id.Name); ok2 {
 				if fn, ok3 := sym.Node.(*ast.FuncDecl); ok3 {
-					// bind parameters
 					newEnv := map[string]any{}
 					for i, p := range fn.Params {
 						if i < len(x.Args) {

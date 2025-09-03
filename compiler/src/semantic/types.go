@@ -125,7 +125,7 @@ func IsFloatToken(tt tokens.TokenType) bool {
 
 func IsNumericToken(tt tokens.TokenType) bool { return IsIntegerToken(tt) || IsFloatToken(tt) }
 
-// Backwards-compat string helpers during migration
+// IsIntegerType Backwards-compat string helpers during migration
 func IsIntegerType(name string) bool { return IsIntegerToken(NameToTokenType(name)) }
 func IsFloatType(name string) bool   { return IsFloatToken(NameToTokenType(name)) }
 func IsNumericType(name string) bool { return IsNumericToken(NameToTokenType(name)) }

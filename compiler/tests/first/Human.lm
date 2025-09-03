@@ -2,7 +2,7 @@ mod first
 
 import first.Main::{ Animal, Type }
 
-pub class Human: Animal {
+class Human: Animal {
 
     priv var attributes: Person
     priv fin var favoriteColor: Color
@@ -58,4 +58,28 @@ pub enum Color {
     pub func toString(): string {
         ret self.name
     }
+}
+
+enum Type {
+    HUMAN("Human"),
+    DOG("Dog"),
+    CAT("Cat")
+
+    priv fin val: string
+    pub Type(val: string) {
+        self.val = val
+    }
+    pub func toString(): string {
+        ret self.val
+    }
+}
+
+pub template class Animal {
+
+    pub Animal() {
+
+    }
+
+    pub template var getType(): Type
+
 }
