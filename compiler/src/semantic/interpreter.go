@@ -560,8 +560,12 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		// Double-colon metadata access: Type::NAME
 		if x.DotTok.Type == tokens.TokenDoubleColon {
 			if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
-				if v, ok := evalTypeMetadata(objId.Name, x.Member); ok {
-					return v, nil
+				// Prefer token-based resolution when the identifier is a builtin type token
+				tt := NameToTokenType(objId.Name)
+				if tt != tokens.TokenInvalid {
+					if v, ok := evalTypeMetadataTok(tt, x.Member); ok {
+						return v, nil
+					}
 				}
 				return nil, fmt.Errorf("unknown metadata %s for type %s", x.Member, objId.Name)
 			}

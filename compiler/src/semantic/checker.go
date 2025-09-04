@@ -630,17 +630,30 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		// Double-colon metadata: Type::MIN/MAX/BITS/BYTES
 		if x.DotTok.Type == tokens.TokenDoubleColon {
 			if id, ok := x.Object.(*ast.IdentifierExpr); ok {
-				base := id.Name
-				switch x.Member {
-				case "MIN", "MAX":
-					// Result type is the base type
-					table.NodeToType[e] = base
-					return base
-				case "BITS", "BYTES":
-					// Smallest integer type possible: fits in i8 for our builtin sizes
-					ret := TokenTypeName(tokens.TokenI8)
-					table.NodeToType[e] = ret
-					return ret
+				// If left is a builtin type token, infer by token; otherwise string fallback
+				tt := NameToTokenType(id.Name)
+				if tt != tokens.TokenInvalid {
+					switch x.Member {
+					case "MIN", "MAX":
+						ret := TokenTypeName(tt)
+						table.NodeToType[e] = ret
+						return ret
+					case "BITS", "BYTES":
+						ret := TokenTypeName(tokens.TokenI8)
+						table.NodeToType[e] = ret
+						return ret
+					}
+				} else {
+					base := id.Name
+					switch x.Member {
+					case "MIN", "MAX":
+						table.NodeToType[e] = base
+						return base
+					case "BITS", "BYTES":
+						ret := TokenTypeName(tokens.TokenI8)
+						table.NodeToType[e] = ret
+						return ret
+					}
 				}
 			}
 			return ""
