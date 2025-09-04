@@ -627,6 +627,24 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		}
 		return ""
 	case *ast.MemberAccessExpr:
+		// Double-colon metadata: Type::MIN/MAX/BITS/BYTES
+		if x.DotTok.Type == tokens.TokenDoubleColon {
+			if id, ok := x.Object.(*ast.IdentifierExpr); ok {
+				base := id.Name
+				switch x.Member {
+				case "MIN", "MAX":
+					// Result type is the base type
+					table.NodeToType[e] = base
+					return base
+				case "BITS", "BYTES":
+					// Smallest integer type possible: fits in i8 for our builtin sizes
+					ret := TokenTypeName(tokens.TokenI8)
+					table.NodeToType[e] = ret
+					return ret
+				}
+			}
+			return ""
+		}
 		ot := inferExprType(x.Object, ts, table, module, diags)
 		// self.field resolution for known class fields
 		if ot != "" {

@@ -68,6 +68,17 @@ func (p *Parser) parseExpression(rbp int) ast.Expr {
 				left = &ast.MemberAccessExpr{Object: left, Member: name.Text, DotTok: dot, MemberTok: name}
 				continue
 			}
+			// Support double-colon metadata/static access: Type::NAME
+			if p.curr.Type == tokens.TokenDoubleColon {
+				cc := p.curr
+				p.advance()
+				name := p.expect(tokens.TokenIdentifier, "expected name after '::'")
+				if p.fatal {
+					return left
+				}
+				left = &ast.MemberAccessExpr{Object: left, Member: name.Text, DotTok: cc, MemberTok: name}
+				continue
+			}
 			if p.curr.Type == tokens.TokenLBracket {
 				lbr := p.curr
 				p.advance()

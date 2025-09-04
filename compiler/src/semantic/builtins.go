@@ -121,20 +121,20 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 	switch name {
 	case "print":
 		for _, a := range args {
-			v, err := evalExpr(a, env, globals, module)
+			v, err := EvalExpr(a, env, globals, module)
 			if err != nil {
 				return true, nil, err
 			}
-			fmt.Print(toString(v))
+			fmt.Print(ToString(v))
 		}
 		return true, nil, nil
 	case "println":
 		for _, a := range args {
-			v, err := evalExpr(a, env, globals, module)
+			v, err := EvalExpr(a, env, globals, module)
 			if err != nil {
 				return true, nil, err
 			}
-			fmt.Println(toString(v))
+			fmt.Println(ToString(v))
 		}
 		return true, nil, nil
 	case "printf":
@@ -156,7 +156,7 @@ func CallBuiltin(name string, args []ast.Expr, env map[string]any, globals map[s
 			os.Exit(0)
 		}
 		if len(args) == 1 {
-			v, err := evalExpr(args[0], env, globals, module)
+			v, err := EvalExpr(args[0], env, globals, module)
 			if err != nil {
 				return true, nil, err
 			}
@@ -204,23 +204,23 @@ func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, mod
 	if len(args) == 0 {
 		return true, nil, nil
 	}
-	fmtVal, err := evalExpr(args[0], env, globals, module)
+	fmtVal, err := EvalExpr(args[0], env, globals, module)
 	if err != nil {
 		return true, nil, err
 	}
-	fmtStr := toString(fmtVal)
+	fmtStr := ToString(fmtVal)
 	var values []any
 	if len(args) >= 2 {
 		if arrLit, ok := args[1].(*ast.ArrayLiteralExpr); ok {
 			for _, el := range arrLit.Elements {
-				v, err := evalExpr(el, env, globals, module)
+				v, err := EvalExpr(el, env, globals, module)
 				if err != nil {
 					return true, nil, err
 				}
 				values = append(values, v)
 			}
 		} else {
-			v, err := evalExpr(args[1], env, globals, module)
+			v, err := EvalExpr(args[1], env, globals, module)
 			if err != nil {
 				return true, nil, err
 			}
@@ -237,7 +237,7 @@ func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, mod
 	}
 	if len(args) > 2 {
 		for _, a := range args[2:] {
-			v, err := evalExpr(a, env, globals, module)
+			v, err := EvalExpr(a, env, globals, module)
 			if err != nil {
 				return true, nil, err
 			}
@@ -259,7 +259,7 @@ func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, mod
 	for i := 0; i < len(runes); i++ {
 		if runes[i] == '{' && i+1 < len(runes) && runes[i+1] == '}' {
 			if vi < len(values) {
-				out = append(out, []rune(toString(values[vi]))...)
+				out = append(out, []rune(ToString(values[vi]))...)
 				vi++
 				i++
 				continue
@@ -273,7 +273,7 @@ func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, mod
 			}
 			if runes[i+1] == 's' {
 				if vi < len(values) {
-					out = append(out, []rune(toString(values[vi]))...)
+					out = append(out, []rune(ToString(values[vi]))...)
 					vi++
 					i++
 					continue
@@ -288,11 +288,11 @@ func callPrintf(args []ast.Expr, env map[string]any, globals map[string]any, mod
 
 func callInput(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
 	if len(args) >= 1 {
-		v, err := evalExpr(args[0], env, globals, module)
+		v, err := EvalExpr(args[0], env, globals, module)
 		if err != nil {
 			return true, nil, err
 		}
-		fmt.Print(toString(v))
+		fmt.Print(ToString(v))
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
@@ -367,7 +367,7 @@ func numericFormat(kind string, recv any, args []ast.Expr, env map[string]any, g
 		}
 		base := 10
 		if len(args) >= 1 {
-			v, err := evalExpr(args[0], env, globals, module)
+			v, err := EvalExpr(args[0], env, globals, module)
 			if err == nil {
 				if b, ok := v.(int64); ok {
 					base = int(b)
@@ -378,7 +378,7 @@ func numericFormat(kind string, recv any, args []ast.Expr, env map[string]any, g
 	case "to_sci":
 		precision := 6
 		if len(args) >= 1 {
-			v, err := evalExpr(args[0], env, globals, module)
+			v, err := EvalExpr(args[0], env, globals, module)
 			if err == nil {
 				if p, ok := v.(int64); ok {
 					precision = int(p)
@@ -500,7 +500,7 @@ func groupDigits(s string, n int, sep string) string {
 func callRange(args []ast.Expr, env map[string]any, globals map[string]any, module *Scope) (bool, any, error) {
 	// range(n) or range(start, end[, step])
 	getInt := func(e ast.Expr) (int64, error) {
-		v, err := evalExpr(e, env, globals, module)
+		v, err := EvalExpr(e, env, globals, module)
 		if err != nil {
 			return 0, err
 		}
@@ -559,7 +559,7 @@ func callArray(args []ast.Expr, env map[string]any, globals map[string]any, modu
 	}
 	// type arg is ignored at runtime (dynamic), but kept for checker
 	// evaluate size
-	szv, err := evalExpr(args[1], env, globals, module)
+	szv, err := EvalExpr(args[1], env, globals, module)
 	if err != nil {
 		return true, nil, err
 	}
@@ -569,7 +569,7 @@ func callArray(args []ast.Expr, env map[string]any, globals map[string]any, modu
 	}
 	var init any
 	if len(args) >= 3 {
-		v, err := evalExpr(args[2], env, globals, module)
+		v, err := EvalExpr(args[2], env, globals, module)
 		if err != nil {
 			return true, nil, err
 		}
@@ -587,7 +587,7 @@ func callWeak(args []ast.Expr, env map[string]any, globals map[string]any, modul
 	if len(args) != 1 {
 		return true, nil, fmt.Errorf("weak(x) takes 1 argument")
 	}
-	v, err := evalExpr(args[0], env, globals, module)
+	v, err := EvalExpr(args[0], env, globals, module)
 	if err != nil {
 		return true, nil, err
 	}
@@ -601,7 +601,7 @@ func callUpgrade(args []ast.Expr, env map[string]any, globals map[string]any, mo
 	if len(args) != 1 {
 		return true, nil, fmt.Errorf("upgrade(w) takes 1 argument")
 	}
-	v, err := evalExpr(args[0], env, globals, module)
+	v, err := EvalExpr(args[0], env, globals, module)
 	if err != nil {
 		return true, nil, err
 	}
@@ -621,7 +621,7 @@ func callRefcount(args []ast.Expr, env map[string]any, globals map[string]any, m
 	if len(args) != 1 {
 		return true, nil, fmt.Errorf("refcount(x) takes 1 argument")
 	}
-	v, err := evalExpr(args[0], env, globals, module)
+	v, err := EvalExpr(args[0], env, globals, module)
 	if err != nil {
 		return true, nil, err
 	}

@@ -38,7 +38,7 @@ func bindArgs(params []ast.Parameter, args []ast.Expr, env map[string]any, globa
 	bound := map[string]any{}
 	for i, p := range params {
 		if i < len(args) {
-			v, err := evalExpr(args[i], env, globals, module)
+			v, err := EvalExpr(args[i], env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -136,7 +136,7 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GlobalVarDecl); ok {
 			if g.Value != nil {
-				v, err := evalExpr(g.Value, nil, globals, module)
+				v, err := EvalExpr(g.Value, nil, globals, module)
 				if err != nil {
 					return 1, err
 				}
@@ -286,7 +286,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 		case *ast.LetStmt:
 			if n.Value != nil {
-				v, err := evalExpr(n.Value, env, globals, module)
+				v, err := EvalExpr(n.Value, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -298,7 +298,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			blockLocals = append(blockLocals, n.Name)
 		case *ast.VarStmt:
 			if n.Value != nil {
-				v, err := evalExpr(n.Value, env, globals, module)
+				v, err := EvalExpr(n.Value, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -309,7 +309,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 			blockLocals = append(blockLocals, n.Name)
 		case *ast.ExpressionStmt:
-			if _, err := evalExpr(n.E, env, globals, module); err != nil {
+			if _, err := EvalExpr(n.E, env, globals, module); err != nil {
 				releaseBlockLocals()
 				return nil, err
 			}
@@ -318,7 +318,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				releaseBlockLocals()
 				return returnValue{v: nil}, nil
 			}
-			v, err := evalExpr(n.Value, env, globals, module)
+			v, err := EvalExpr(n.Value, env, globals, module)
 			if err != nil {
 				releaseBlockLocals()
 				return nil, err
@@ -326,7 +326,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			releaseBlockLocals()
 			return returnValue{v: v}, nil
 		case *ast.IfStmt:
-			cond, err := evalExpr(n.Cond, env, globals, module)
+			cond, err := EvalExpr(n.Cond, env, globals, module)
 			if err != nil {
 				releaseBlockLocals()
 				return nil, err
@@ -340,7 +340,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 			handled := false
 			for _, ei := range n.Elifs {
-				c2, err := evalExpr(ei.Cond, env, globals, module)
+				c2, err := EvalExpr(ei.Cond, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -362,7 +362,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 		case *ast.WhileStmt:
 			for {
-				c, err := evalExpr(n.Cond, env, globals, module)
+				c, err := EvalExpr(n.Cond, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -382,7 +382,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					releaseBlockLocals()
 					return v, err
 				}
-				c, err := evalExpr(n.Cond, env, globals, module)
+				c, err := EvalExpr(n.Cond, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -396,7 +396,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			// Two forms: range-style (From/To) or iterable (Iter)
 			ls := env
 			if n.Iter != nil {
-				iterVal, err := evalExpr(n.Iter, env, globals, module)
+				iterVal, err := EvalExpr(n.Iter, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -417,12 +417,12 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				break
 			}
 			// range-style
-			fromVal, err := evalExpr(n.From, env, globals, module)
+			fromVal, err := EvalExpr(n.From, env, globals, module)
 			if err != nil {
 				releaseBlockLocals()
 				return nil, err
 			}
-			toVal, err := evalExpr(n.To, env, globals, module)
+			toVal, err := EvalExpr(n.To, env, globals, module)
 			if err != nil {
 				releaseBlockLocals()
 				return nil, err
@@ -435,7 +435,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 			step := int64(1)
 			if n.Step != nil {
-				st, err := evalExpr(n.Step, env, globals, module)
+				st, err := EvalExpr(n.Step, env, globals, module)
 				if err != nil {
 					releaseBlockLocals()
 					return nil, err
@@ -494,7 +494,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 	return nil, nil
 }
 
-func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
+func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Scope) (any, error) {
 	switch x := e.(type) {
 	case *ast.NumberLiteralExpr:
 		// parse to float64 or int based on IsFloat and numeric base
@@ -557,6 +557,16 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("undefined variable %s", x.Name)
 	case *ast.MemberAccessExpr:
+		// Double-colon metadata access: Type::NAME
+		if x.DotTok.Type == tokens.TokenDoubleColon {
+			if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
+				if v, ok := evalTypeMetadata(objId.Name, x.Member); ok {
+					return v, nil
+				}
+				return nil, fmt.Errorf("unknown metadata %s for type %s", x.Member, objId.Name)
+			}
+			return nil, fmt.Errorf("left of '::' must be a type name")
+		}
 		// Enum case materialization: Type.CASE
 		if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
 			if sym, ok2 := module.Resolve(objId.Name); ok2 {
@@ -567,7 +577,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 							// Evaluate payload args stored in case and run matching constructor
 							args := make([]any, 0, len(c.Params))
 							for _, a := range c.Params {
-								v, err := evalExpr(a, env, globals, module)
+								v, err := EvalExpr(a, env, globals, module)
 								if err != nil {
 									return nil, err
 								}
@@ -594,7 +604,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			}
 		}
 		// Otherwise evaluate object and try field access
-		obj, err := evalExpr(x.Object, env, globals, module)
+		obj, err := EvalExpr(x.Object, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -606,7 +616,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("member access on non-object")
 	case *ast.UnaryExpr:
-		v, err := evalExpr(x.Operand, env, globals, module)
+		v, err := EvalExpr(x.Operand, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -671,11 +681,11 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return v, nil
 	case *ast.BinaryExpr:
-		l, err := evalExpr(x.Left, env, globals, module)
+		l, err := EvalExpr(x.Left, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
-		r, err := evalExpr(x.Right, env, globals, module)
+		r, err := EvalExpr(x.Right, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -683,10 +693,10 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		case tokens.TokenPlus:
 			// string concat or numeric add
 			if ls, ok := l.(string); ok {
-				return ls + toString(r), nil
+				return ls + ToString(r), nil
 			}
 			if rs, ok := r.(string); ok {
-				return toString(l) + rs, nil
+				return ToString(l) + rs, nil
 			}
 			return addNums(l, r)
 		case tokens.TokenMinus:
@@ -723,8 +733,8 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					return lf != rf, nil
 				}
 			}
-			le := toString(l)
-			re := toString(r)
+			le := ToString(l)
+			re := ToString(r)
 			if x.Operator == tokens.TokenDoubleEqual {
 				return le == re, nil
 			}
@@ -746,13 +756,13 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("unsupported binary op")
 	case *ast.AssignExpr:
-		v, err := evalExpr(x.Value, env, globals, module)
+		v, err := EvalExpr(x.Value, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
 		// Assignment to object field: self.name = v
 		if macc, ok := x.Target.(*ast.MemberAccessExpr); ok {
-			baseVal, err := evalExpr(macc.Object, env, globals, module)
+			baseVal, err := EvalExpr(macc.Object, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -790,11 +800,11 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			return nil, fmt.Errorf("assignment to non-object member")
 		}
 		if ix, ok := x.Target.(*ast.IndexExpr); ok {
-			base, err := evalExpr(ix.Base, env, globals, module)
+			base, err := EvalExpr(ix.Base, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
-			idxVal, err := evalExpr(ix.Index, env, globals, module)
+			idxVal, err := EvalExpr(ix.Index, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -843,7 +853,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				}
 				return nil, fmt.Errorf("assignment to undefined variable %s", id.Name)
 			case tokens.TokenPlusEqual:
-				res, err := evalExpr(&ast.BinaryExpr{Left: &ast.IdentifierExpr{Name: id.Name, Tok: id.Tok}, Operator: tokens.TokenPlus, Right: x.Value, OpTok: x.OpTok}, env, globals, module)
+				res, err := EvalExpr(&ast.BinaryExpr{Left: &ast.IdentifierExpr{Name: id.Name, Tok: id.Tok}, Operator: tokens.TokenPlus, Right: x.Value, OpTok: x.OpTok}, env, globals, module)
 				if err != nil {
 					return nil, err
 				}
@@ -875,7 +885,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("unsupported assignment target")
 	case *ast.CastExpr:
-		v, err := evalExpr(x.Expr, env, globals, module)
+		v, err := EvalExpr(x.Expr, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -898,7 +908,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			}
 			return nil, fmt.Errorf("cannot cast to float")
 		case "string":
-			return toString(v), nil
+			return ToString(v), nil
 		default:
 			// pass-through for unknown types
 			return v, nil
@@ -912,7 +922,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		// Instance builtins: universal first (e.g., type()), then numeric
 		if macc, ok := x.Callee.(*ast.MemberAccessExpr); ok {
-			recv, err := evalExpr(macc.Object, env, globals, module)
+			recv, err := EvalExpr(macc.Object, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -1000,7 +1010,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				if b := selectBuilderByArity(bcd.Builders, len(x.Args)); b != nil {
 					newEnv := map[string]any{"self": self}
 					for i, p := range b.Params {
-						v, err := evalExpr(x.Args[i], env, globals, module)
+						v, err := EvalExpr(x.Args[i], env, globals, module)
 						if err != nil {
 							return nil, err
 						}
@@ -1021,7 +1031,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 						newEnv := map[string]any{}
 						instMap := makeInstance(d.Name, module)
 						for i, p := range b.Params {
-							v, err := evalExpr(x.Args[i], env, globals, module)
+							v, err := EvalExpr(x.Args[i], env, globals, module)
 							if err != nil {
 								return nil, err
 							}
@@ -1038,7 +1048,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				case *ast.EnumDecl:
 					vals := make([]any, 0, len(x.Args))
 					for _, a := range x.Args {
-						v, err := evalExpr(a, env, globals, module)
+						v, err := EvalExpr(a, env, globals, module)
 						if err != nil {
 							return nil, err
 						}
@@ -1055,7 +1065,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 					newEnv := map[string]any{}
 					for i, p := range fn.Params {
 						if i < len(x.Args) {
-							v, err := evalExpr(x.Args[i], env, globals, module)
+							v, err := EvalExpr(x.Args[i], env, globals, module)
 							if err != nil {
 								return nil, err
 							}
@@ -1077,7 +1087,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 	case *ast.ArrayLiteralExpr:
 		vals := make([]any, 0, len(x.Elements))
 		for _, el := range x.Elements {
-			v, err := evalExpr(el, env, globals, module)
+			v, err := EvalExpr(el, env, globals, module)
 			if err != nil {
 				return nil, err
 			}
@@ -1085,11 +1095,11 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return vals, nil
 	case *ast.IndexExpr:
-		base, err := evalExpr(x.Base, env, globals, module)
+		base, err := EvalExpr(x.Base, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
-		idxVal, err := evalExpr(x.Index, env, globals, module)
+		idxVal, err := EvalExpr(x.Index, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -1105,7 +1115,7 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("indexing non-array")
 	case *ast.TernaryExpr:
-		cv, err := evalExpr(x.Cond, env, globals, module)
+		cv, err := EvalExpr(x.Cond, env, globals, module)
 		if err != nil {
 			return nil, err
 		}
@@ -1114,19 +1124,19 @@ func evalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 			return nil, rt(x.Cond.Span(), "ternary condition must be bool", "use a boolean expression before '?' ")
 		}
 		if b {
-			return evalExpr(x.ThenExpr, env, globals, module)
+			return EvalExpr(x.ThenExpr, env, globals, module)
 		}
-		return evalExpr(x.ElseExpr, env, globals, module)
+		return EvalExpr(x.ElseExpr, env, globals, module)
 	default:
 		return nil, rt(e.Span(), "unsupported expression kind", "this expression form is not yet supported")
 	}
 }
 
-// toString converts a value of any type into its string representation, handling various types including nil and smart pointers.
-func toString(v any) string {
+// ToString converts a value of any type into its string representation, handling various types including nil and smart pointers.
+func ToString(v any) string {
 	// Deref smart pointers for display
 	if sp, ok := v.(arc.StrongPtr); ok {
-		return toString(sp.Get())
+		return ToString(sp.Get())
 	}
 	switch t := v.(type) {
 	case nil:
