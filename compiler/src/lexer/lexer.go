@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 )
 
-// Lexer ports the C++ loom::Lexer to Go
 type Lexer struct {
 	source string
 	file   string

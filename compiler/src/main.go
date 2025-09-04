@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: loom [--no-color] <file>")
+		fmt.Println("Usage: cloth [flags] <file>")
 		return
 	}
 	// Parse flags
@@ -33,7 +33,7 @@ func main() {
 		progArgs = append(progArgs, a)
 	}
 	if path == "" {
-		fmt.Println("Usage: loom [--no-color] <file>")
+		fmt.Println("Usage: cloth [flags] <file>")
 		return
 	}
 	diagnostics.SetColorsEnabled(!noColor)

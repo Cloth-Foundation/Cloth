@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-// TokenType mirrors the C++ loom::TokenType
+// TokenType
 type TokenType uint16
 
 const (
@@ -125,7 +125,6 @@ const (
 	TokenInvalid
 )
 
-// TokenCategory mirrors loom::TokenCategory
 type TokenCategory uint8
 
 const (
@@ -151,7 +150,6 @@ type NumericLiteral struct {
 // TokenValue value uses a tagged union style via Go interface{} with helpers
 type TokenValue interface{}
 
-// Token mirrors loom::Token
 type Token struct {
 	Type     TokenType
 	Text     string

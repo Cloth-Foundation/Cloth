@@ -337,7 +337,7 @@ func (s *LetStmt) isStmt()                {}
 type VarStmt struct {
 	Name    string
 	Type    string // optional
-	Value   Expr   // required in loom examples, but allow optional for now
+	Value   Expr
 	NameTok tokens.Token
 }
 

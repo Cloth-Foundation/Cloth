@@ -441,7 +441,7 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 				return t
 			}
 		}
-		// Division always yields floating point in Loom
+		// Division always yields floating point
 		if op == "/" {
 			t := TokenTypeName(tokens.TokenF64)
 			table.NodeToType[e] = t
