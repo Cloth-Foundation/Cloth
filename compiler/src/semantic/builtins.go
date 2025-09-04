@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compiler/src/ast"
 	"compiler/src/runtime/arc"
+	"compiler/src/tokens"
 	"fmt"
 	"os"
 	"strconv"
@@ -405,10 +406,11 @@ func numericToFloat(recv any, args []ast.Expr, env map[string]any, globals map[s
 	}
 	if len(args) == 1 {
 		if id, ok := args[0].(*ast.IdentifierExpr); ok {
-			if id.Name == "f16" || id.Name == "f32" || id.Name == "f64" {
-				if id.Name == "f64" {
-					return f, true
-				}
+			tt := NameToTokenType(id.Name)
+			if tt == tokens.TokenF64 {
+				return f, true
+			}
+			if tt == tokens.TokenF32 || tt == tokens.TokenF16 {
 				return float64(float32(f)), true
 			}
 		}

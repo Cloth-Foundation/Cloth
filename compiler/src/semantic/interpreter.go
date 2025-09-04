@@ -129,7 +129,14 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 	if len(mainFn.Params) != 2 {
 		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
 	}
-	if mainFn.Params[0].Type != "[]i32" || mainFn.Params[1].Type != "[]string" || mainFn.ReturnType != "i32" {
+	// Token-based validation for main signature
+	if d0, t0, _ := ParseTypeString(mainFn.Params[0].Type); !(d0 == 1 && t0 == tokens.TokenI32) {
+		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
+	}
+	if d1, t1, _ := ParseTypeString(mainFn.Params[1].Type); !(d1 == 1 && t1 == tokens.TokenString) {
+		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
+	}
+	if _, rtok, _ := ParseTypeString(mainFn.ReturnType); rtok != tokens.TokenI32 {
 		return 1, rt(mainFn.Span(), "invalid main signature", "expected: pub func main(argc: []i32, argv: []string): i32")
 	}
 	globals := map[string]any{}
@@ -893,9 +900,12 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		if err != nil {
 			return nil, err
 		}
-		// Minimal casts: i32<->f64, and to string
-		switch x.TargetType {
-		case "i32", "i64":
+		// Token-based casts: int<->float, and to string
+		tt := NameToTokenType(x.TargetType)
+		switch tt {
+		case tokens.TokenI8, tokens.TokenI16, tokens.TokenI32, tokens.TokenI64,
+			tokens.TokenU8, tokens.TokenU16, tokens.TokenU32, tokens.TokenU64,
+			tokens.TokenByte, tokens.TokenBit:
 			switch n := v.(type) {
 			case int64:
 				return n, nil
@@ -903,7 +913,7 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				return int64(n), nil
 			}
 			return nil, fmt.Errorf("cannot cast to int")
-		case "f64", "f32":
+		case tokens.TokenF16, tokens.TokenF32, tokens.TokenF64:
 			switch n := v.(type) {
 			case int64:
 				return float64(n), nil
@@ -911,10 +921,10 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				return n, nil
 			}
 			return nil, fmt.Errorf("cannot cast to float")
-		case "string":
+		case tokens.TokenString:
 			return ToString(v), nil
 		default:
-			// pass-through for unknown types
+			// pass-through for unknown targets
 			return v, nil
 		}
 	case *ast.CallExpr:

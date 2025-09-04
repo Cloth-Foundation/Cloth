@@ -1,6 +1,9 @@
 package semantic
 
-import "compiler/src/tokens"
+import (
+	"compiler/src/tokens"
+	"strings"
+)
 
 // TypeEnv holds builtin types and user-defined type registry (future).
 type TypeEnv struct {
@@ -152,3 +155,22 @@ type TypeTable struct {
 }
 
 func NewTypeTable() *TypeTable { return &TypeTable{NodeToType: map[any]string{}} }
+
+// ParseTypeString parses a simple type string like "[]i32", "[]string", "i32?" into components.
+// Returns (arrayDepth, baseToken, isNullable).
+// If base is not a builtin token, returns TokenInvalid as base.
+func ParseTypeString(typeName string) (int, tokens.TokenType, bool) {
+	s := typeName
+	depth := 0
+	for strings.HasPrefix(s, "[]") {
+		depth++
+		s = s[2:]
+	}
+	nullable := false
+	if strings.HasSuffix(s, "?") {
+		nullable = true
+		s = strings.TrimSuffix(s, "?")
+	}
+	base := NameToTokenType(s)
+	return depth, base, nullable
+}
