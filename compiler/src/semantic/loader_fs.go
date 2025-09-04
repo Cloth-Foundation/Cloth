@@ -11,7 +11,6 @@ import (
 )
 
 // FSLoader loads modules from the filesystem based on a root directory.
-// A module path like ["tests","first"] resolves to a module by trying, in order
 type FSLoader struct {
 	Root     string
 	cache    map[string]*ast.File
@@ -40,11 +39,11 @@ func (l *FSLoader) Load(modulePath []string) (*ast.File, error) {
 	// Build candidate paths
 	dir := filepath.Join(append([]string{l.Root}, modulePath...)...)
 	candidates := []string{
-		filepath.Join(dir, "Main.lm"),
+		filepath.Join(dir, "Main.co"),
 	}
 	if len(modulePath) > 0 {
-		candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.lm", modulePath[len(modulePath)-1])))
-		candidates = append(candidates, filepath.Join(append([]string{l.Root}, append(modulePath[:len(modulePath)-1], modulePath[len(modulePath)-1]+".lm")...)...))
+		candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.co", modulePath[len(modulePath)-1])))
+		candidates = append(candidates, filepath.Join(append([]string{l.Root}, append(modulePath[:len(modulePath)-1], modulePath[len(modulePath)-1]+".co")...)...))
 	}
 
 	var data []byte

@@ -19,7 +19,7 @@ pub func main(argc: []i32, argv: []string): i32 {
         }
         printf("This is a do-while loop #{}\n", iter)
         iter++
-    } while (iter < 5)
+    } while iter < 5
 
     println(iter)
 
