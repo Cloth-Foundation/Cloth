@@ -182,6 +182,8 @@ func Execute(file *ast.File, module *Scope, types *TypeTable, progArgs []string)
 }
 
 type returnValue struct{ v any }
+type breakSignal struct{}
+type continueSignal struct{}
 
 // makeInstance creates a map object for a class or struct type, initializing nested struct fields.
 func makeInstance(typeName string, module *Scope) map[string]any {
@@ -292,6 +294,12 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				releaseBlockLocals()
 				return v, err
 			}
+		case *ast.BreakStmt:
+			releaseBlockLocals()
+			return breakSignal{}, nil
+		case *ast.ContinueStmt:
+			releaseBlockLocals()
+			return continueSignal{}, nil
 		case *ast.LetStmt:
 			if n.Value != nil {
 				v, err := EvalExpr(n.Value, env, globals, module)
@@ -369,6 +377,7 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				}
 			}
 		case *ast.WhileStmt:
+		WhileLoop:
 			for {
 				c, err := EvalExpr(n.Cond, env, globals, module)
 				if err != nil {
@@ -380,15 +389,38 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 					break
 				}
 				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
-					releaseBlockLocals()
-					return v, err
+					if err != nil {
+						releaseBlockLocals()
+						return nil, err
+					}
+					switch v.(type) {
+					case breakSignal:
+						break WhileLoop
+					case continueSignal:
+						continue WhileLoop
+					default:
+						releaseBlockLocals()
+						return v, nil
+					}
 				}
 			}
 		case *ast.DoWhileStmt:
+		DoWhileLoop:
 			for {
 				if v, err := execBlock(n.Body.Stmts, env, globals, module); err != nil || v != nil {
-					releaseBlockLocals()
-					return v, err
+					if err != nil {
+						releaseBlockLocals()
+						return nil, err
+					}
+					switch v.(type) {
+					case breakSignal:
+						break DoWhileLoop
+					case continueSignal:
+						// evaluate condition and continue
+					default:
+						releaseBlockLocals()
+						return v, nil
+					}
 				}
 				c, err := EvalExpr(n.Cond, env, globals, module)
 				if err != nil {
@@ -411,11 +443,23 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 				}
 				// Expect []any
 				if arr, ok := derefIfPtr(iterVal).([]any); ok {
+				IterLoop:
 					for _, v := range arr {
 						ls[n.VarName] = v
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
-							releaseBlockLocals()
-							return ret, err
+							if err != nil {
+								releaseBlockLocals()
+								return nil, err
+							}
+							switch ret.(type) {
+							case breakSignal:
+								break IterLoop
+							case continueSignal:
+								continue IterLoop
+							default:
+								releaseBlockLocals()
+								return ret, nil
+							}
 						}
 					}
 				} else {
@@ -461,37 +505,85 @@ func execBlock(stmts []ast.Stmt, env map[string]any, globals map[string]any, mod
 			}
 			if !n.Reverse {
 				if !n.Inclusive {
+				RangeFwd:
 					for i := fi; i < ti; i += step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
-							releaseBlockLocals()
-							return ret, err
+							if err != nil {
+								releaseBlockLocals()
+								return nil, err
+							}
+							switch ret.(type) {
+							case breakSignal:
+								break RangeFwd
+							case continueSignal:
+								continue RangeFwd
+							default:
+								releaseBlockLocals()
+								return ret, nil
+							}
 						}
 					}
 				} else {
+				RangeFwdInc:
 					for i := fi; i <= ti; i += step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
-							releaseBlockLocals()
-							return ret, err
+							if err != nil {
+								releaseBlockLocals()
+								return nil, err
+							}
+							switch ret.(type) {
+							case breakSignal:
+								break RangeFwdInc
+							case continueSignal:
+								continue RangeFwdInc
+							default:
+								releaseBlockLocals()
+								return ret, nil
+							}
 						}
 					}
 				}
 			} else {
 				if !n.Inclusive {
+				RangeRev:
 					for i := fi; i > ti; i += -step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
-							releaseBlockLocals()
-							return ret, err
+							if err != nil {
+								releaseBlockLocals()
+								return nil, err
+							}
+							switch ret.(type) {
+							case breakSignal:
+								break RangeRev
+							case continueSignal:
+								continue RangeRev
+							default:
+								releaseBlockLocals()
+								return ret, nil
+							}
 						}
 					}
 				} else {
+				RangeRevInc:
 					for i := fi; i >= ti; i += -step {
 						ls[n.VarName] = int64(i)
 						if ret, err := execBlock(n.Body.Stmts, ls, globals, module); err != nil || ret != nil {
-							releaseBlockLocals()
-							return ret, err
+							if err != nil {
+								releaseBlockLocals()
+								return nil, err
+							}
+							switch ret.(type) {
+							case breakSignal:
+								break RangeRevInc
+							case continueSignal:
+								continue RangeRevInc
+							default:
+								releaseBlockLocals()
+								return ret, nil
+							}
 						}
 					}
 				}
