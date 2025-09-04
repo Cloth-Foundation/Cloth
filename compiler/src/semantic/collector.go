@@ -4,7 +4,7 @@ import (
 	"compiler/src/ast"
 )
 
-// Collects top-level symbols into a module scope
+// CollectTopLevel Collects top-level symbols into a module scope
 func CollectTopLevel(file *ast.File) (*Scope, []error) {
 	scope := NewScope(nil)
 	var errs []error

@@ -5,6 +5,7 @@ import (
 	"compiler/src/runtime/arc"
 	"compiler/src/tokens"
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -562,6 +563,10 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				return v, nil
 			}
 		}
+		// Builtin NaN constant
+		if NameToTokenType(x.Name) == tokens.TokenNaN || x.Name == "NaN" {
+			return math.NaN(), nil
+		}
 		return nil, fmt.Errorf("undefined variable %s", x.Name)
 	case *ast.MemberAccessExpr:
 		// Double-colon metadata access: Type::NAME
@@ -715,6 +720,10 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		case tokens.TokenStar:
 			return mulNums(l, r)
 		case tokens.TokenSlash:
+			// division by zero -> NaN
+			if rf, rok := toFloat(r); rok && rf == 0 {
+				return math.NaN(), nil
+			}
 			return divNums(l, r)
 		case tokens.TokenPercent:
 			return modNums(l, r)
@@ -735,6 +744,31 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				return lf >= rf, nil
 			}
 		case tokens.TokenDoubleEqual, tokens.TokenNotEqual:
+			// Special-case NaN equality/inequality
+			if lf64, okL := l.(float64); okL && math.IsNaN(lf64) {
+				if rf64, okR := r.(float64); okR && math.IsNaN(rf64) {
+					if x.Operator == tokens.TokenDoubleEqual {
+						return true, nil
+					}
+					return false, nil
+				}
+				if x.Operator == tokens.TokenDoubleEqual {
+					return false, nil
+				}
+				return true, nil
+			}
+			if rf64, okR := r.(float64); okR && math.IsNaN(rf64) {
+				if lf64, okL := l.(float64); okL && math.IsNaN(lf64) {
+					if x.Operator == tokens.TokenDoubleEqual {
+						return true, nil
+					}
+					return false, nil
+				}
+				if x.Operator == tokens.TokenDoubleEqual {
+					return false, nil
+				}
+				return true, nil
+			}
 			// numeric equality if both numeric, else stringified equality
 			if lf, lok := toFloat(l); lok {
 				if rf, rok := toFloat(r); rok {
@@ -1274,6 +1308,9 @@ func modNums(a, b any) (any, error) {
 	xi, aok := a.(int64)
 	yi, bok := b.(int64)
 	if aok && bok {
+		if yi == 0 {
+			return math.NaN(), nil
+		}
 		return xi % yi, nil
 	}
 	return nil, fmt.Errorf("non-integer modulus")

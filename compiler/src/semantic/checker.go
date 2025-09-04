@@ -286,6 +286,12 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 			table.NodeToType[e] = t
 			return t
 		}
+		// Builtin NaN literal identifier: treat as f64 in type system
+		if NameToTokenType(x.Name) == tokens.TokenNaN {
+			t := TokenTypeName(tokens.TokenF64)
+			table.NodeToType[e] = t
+			return t
+		}
 		// special-case 'self' to current receiver type
 		if x.Name == "self" && ts.selfType != "" {
 			table.NodeToType[e] = ts.selfType

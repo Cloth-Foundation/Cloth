@@ -2,5 +2,6 @@ mod four
 
 pub func main(argc: []i32, argv: []string): i32 {
     printf("Size of bool: {}\n", bool::BITS)
+    printf("{}\n", 1 / 0 == NaN)
     ret 0
 }

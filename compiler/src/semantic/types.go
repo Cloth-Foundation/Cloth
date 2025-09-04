@@ -64,6 +64,8 @@ func NameToTokenType(name string) tokens.TokenType {
 		return tokens.TokenU32
 	case "u64":
 		return tokens.TokenU64
+	case "NaN":
+		return tokens.TokenNaN
 	default:
 		return tokens.TokenInvalid
 	}
@@ -106,6 +108,8 @@ func TokenTypeName(tt tokens.TokenType) string {
 		return "u32"
 	case tokens.TokenU64:
 		return "u64"
+	case tokens.TokenNaN:
+		return "NaN"
 	default:
 		return ""
 	}
@@ -123,7 +127,7 @@ func IsIntegerToken(tt tokens.TokenType) bool {
 }
 
 func IsFloatToken(tt tokens.TokenType) bool {
-	return tt == tokens.TokenF16 || tt == tokens.TokenF32 || tt == tokens.TokenF64
+	return tt == tokens.TokenF16 || tt == tokens.TokenF32 || tt == tokens.TokenF64 || tt == tokens.TokenNaN
 }
 
 func IsNumericToken(tt tokens.TokenType) bool { return IsIntegerToken(tt) || IsFloatToken(tt) }

@@ -71,6 +71,7 @@ const (
 	TokenU16
 	TokenU32
 	TokenU64
+	TokenNaN
 
 	// Operators
 	TokenAnd
@@ -209,7 +210,7 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	case TokenAlias, TokenAs, TokenAtomic, TokenBit, TokenBool, TokenBreak, TokenCase, TokenClass, TokenContinue, TokenDefault, TokenDo, TokenElif, TokenElse, TokenEnum, TokenFin, TokenFor, TokenFunc, TokenIf, TokenImport, TokenIn, TokenLet, TokenLoop, TokenMod, TokenNew, TokenPriv, TokenProt, TokenPub, TokenRet, TokenRev, TokenTemplate, TokenSelf, TokenOverride, TokenStep, TokenStruct, TokenSuper, TokenSwitch, TokenVar, TokenWhile, TokenVoid:
 		return CategoryKeyword
 	// Built-in types -> treat as keywords
-	case TokenByte, TokenF16, TokenF32, TokenF64, TokenI8, TokenI16, TokenI32, TokenI64, TokenU8, TokenU16, TokenU32, TokenU64:
+	case TokenByte, TokenF16, TokenF32, TokenF64, TokenI8, TokenI16, TokenI32, TokenI64, TokenU8, TokenU16, TokenU32, TokenU64, TokenNaN:
 		return CategoryKeyword
 	// Operators
 	case TokenAnd, TokenArrow, TokenDoubleEqual, TokenEqual, TokenGreater, TokenGreaterEqual, TokenLess, TokenLessEqual, TokenMinus, TokenMinusMinus, TokenMinusEqual, TokenNot, TokenNotEqual, TokenOr, TokenPercent, TokenPercentEqual, TokenPlus, TokenPlusPlus, TokenPlusEqual, TokenRange, TokenRangeInclusive, TokenSlash, TokenSlashEqual, TokenStar, TokenStarEqual, TokenBitAnd, TokenBitOr, TokenBitXor, TokenBitNot, TokenShiftLeft, TokenShiftRight:
@@ -344,6 +345,8 @@ func TokenTypeName(t TokenType) string {
 		return "u32"
 	case TokenU64:
 		return "u64"
+	case TokenNaN:
+		return "NaN"
 	case TokenAnd:
 		return "And"
 	case TokenArrow:

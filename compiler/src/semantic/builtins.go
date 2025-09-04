@@ -6,6 +6,7 @@ import (
 	"compiler/src/runtime/arc"
 	"compiler/src/tokens"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -185,10 +186,13 @@ func CallUniversalMethod(name string, recv any, args []ast.Expr, env map[string]
 }
 
 func runtimeTypeName(v any) string {
-	switch v.(type) {
+	switch val := v.(type) {
 	case int64:
 		return "i32" // default logical int width
 	case float64:
+		if math.IsNaN(val) {
+			return "NaN"
+		}
 		return "f64"
 	case string:
 		return "string"
