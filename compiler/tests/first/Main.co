@@ -51,5 +51,5 @@ pub func Main(): i8 {
         println(x)
     }
 
-    ret 0
+    ret 0xFFF
 }

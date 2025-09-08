@@ -1,7 +1,7 @@
 mod third
 
 pub func main(argc: []i32, argv: []string): i32 {
-    println(fib(25))
+    println(fib(30))
     ret 0
 }
 
