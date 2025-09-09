@@ -1,16 +1,6 @@
-![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Contributing.png?raw=true)
+![Logo](https://github.com/Cloth-Foundation/.github/blob/main/Logos/PNG/File%20Logos/Contributing.png?raw=true)
 
-Thank you for your interest in contributing to **Loom**, a statically typed systems language with value semantics, forward declarations, and a modern standard library. Whether you're fixing a typo, proposing a new language feature, or optimizing the compiler, your contribution matters!
-
----
-
-## Repository Overview
-
-Loom consists of two major components:
-
-- `loom-compiler/`: The Loom compiler, written in **OCaml**
-- `std/`: The standard library, written in **Loom**
-- `loomc-java`: The old implementation of the Loom Compiler, written in **Java**.
+Thank you for your interest in contributing to **Cloth**, a statically typed systems language with value semantics, forward declarations, and a modern standard library. Whether you're fixing a typo, proposing a new language feature, or optimizing the compiler, your contribution matters!
 
 ---
 
@@ -18,15 +8,14 @@ Loom consists of two major components:
 
 ### Prerequisites
 
-- **OCaml (5.x+)** — [Install with opam](https://ocaml.org/docs/up-and-running)
-- **Dune (>= 3.x)** — OCaml build system
+- **Go (1.25)** — [Install with Go](https://go.dev)
 - `git`, `make`, and a Unix-like environment
 
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/SuperScary/Loom.git
-cd loom
+git clone https://github.com/Cloth-Foundation/Cloth.git
+cd cloth
 ````
 
 ### Build the Compiler
@@ -35,7 +24,7 @@ cd loom
 make
 ```
 
-This will compile the OCaml source code in the `loom-compiler/` directory and place the `loomc` binary in `build/`.
+This will compile the Go source code in the `cloth/` directory.
 
 ### Run the Test Suite
 
@@ -47,19 +36,19 @@ make test
 
 ## Working on the Standard Library
 
-The standard library is written in Loom itself and located in the `std/` directory. After modifying any `.lm` files:
+The standard library is written in Cloth itself and located in the `std/` directory. After modifying any `.co` files:
 
 ```bash
 make std
 ```
 
-This will rebuild the library and run syntax validation. Contributions to the standard library **must** adhere to Loom style conventions (see below).
+This will rebuild the library and run syntax validation. Contributions to the standard library **must** adhere to Cloth style conventions (see below).
 
 ---
 
 ## Testing Your Changes
 
-You can test `.lm` code manually:
+You can test `.co` code manually:
 
 ```bash
 ./build/loomc examples/hello.lm
@@ -103,7 +92,7 @@ std: fix bug in strings.toLowerCase
 * Descriptive `let` bindings
 * Use modules to separate concerns (`Lexer`, `Parser`, `Typechecker`, etc.)
 
-#### Loom (Stdlib)
+#### Cloth (Stdlib)
 
 * Use `camelCase` for functions and variables
 * Avoid unnecessary `null`
@@ -120,7 +109,7 @@ All language-level or compiler-impacting changes must go through the **RFC proce
 2. Add your proposal to `rfcs/` using the template
 3. Submit a pull request and tag it `[RFC]`
 
-See `docs/RFC_PROCESS.md` for full details.
+See the [RFC PROCESS](https://www.cloth.dev/docs/help/RFC-Process) for full details.
 
 ---
 
@@ -133,7 +122,7 @@ By contributing, you agree to follow our [Code of Conduct](./CODE_OF_CONDUCT.md)
 ## Getting Help
 
 * Open a GitHub Issue or Discussion
-* Join the Loom Discord (coming soon)
-* Ping us on [GitHub Discussions](https://github.com/SuperScary/Loom/discussions)
+* Join the [Cloth Community](https://www.cloth.dev/community)
+* Ping us on [GitHub Discussions](https://github.com/Cloth-Foundation/Cloth/discussions)
 
 ---

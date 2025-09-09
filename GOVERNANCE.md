@@ -1,14 +1,14 @@
-![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Governance.png?raw=true)
+![Logo](https://github.com/Cloth-Foundation/.github/blob/main/Logos/PNG/File%20Logos/Governance.png?raw=true)
 
 ## Overview
 
-The Loom programming language is developed and maintained under the stewardship of the **Loom Foundation**, a nonprofit organization dedicated to the advancement of reliable, expressive, and modern programming tools. Loom's governance model is designed to encourage collaboration, transparency, and long-term stability.
+The Cloth programming language is developed and maintained under the stewardship of the **Cloth Foundation**, a nonprofit organization dedicated to the advancement of reliable, expressive, and modern programming tools. Cloth's governance model is designed to encourage collaboration, transparency, and long-term stability.
 
 ---
 
 ## 1. Ownership
 
-The Loom language and all official tools, documentation, and standards are owned by the **Loom Foundation**. The foundation is the ultimate legal entity responsible for:
+The Cloth language and all official tools, documentation, and standards are owned by the **Cloth Foundation**. The foundation is the ultimate legal entity responsible for:
 
 - Intellectual property and trademarks
 - Fiscal management (donations, sponsorships)
@@ -19,7 +19,7 @@ The Loom language and all official tools, documentation, and standards are owned
 
 ## 2. Governance Structure
 
-The Loom Project is governed by a **Steering Council** composed of experienced contributors and maintainers. This council is entrusted with technical decision-making and high-level direction of the language.
+The Cloth Project is governed by a **Steering Council** composed of experienced contributors and maintainers. This council is entrusted with technical decision-making and high-level direction of the language.
 
 ### 2.1 Steering Council Responsibilities
 
@@ -27,7 +27,7 @@ The Loom Project is governed by a **Steering Council** composed of experienced c
 - Establish and evolve the project's technical roadmap
 - Appoint or remove core maintainers and leads
 - Mediate disputes and resolve community escalations
-- Represent Loom in partnerships, conferences, and outreach
+- Represent Cloth in partnerships, conferences, and outreach
 
 ### 2.2 Council Composition
 
@@ -45,7 +45,7 @@ The Loom Project is governed by a **Steering Council** composed of experienced c
 
 ## 3. Core Contributors
 
-Core contributors are trusted developers with write access to the Loom repository. They are responsible for:
+Core contributors are trusted developers with write access to the Cloth repository. They are responsible for:
 
 - Reviewing and merging pull requests
 - Triaging bugs and feature requests
@@ -70,7 +70,7 @@ Maintain specialized components (e.g. lexer, parser, standard library). They hav
 
 ### 4.2 Proposal Authors
 
-Anyone can submit language enhancements via the **Loom RFC process**. Authors shepherd their proposals from drafting to approval.
+Anyone can submit language enhancements via the **Cloth RFC process**. Authors shepherd their proposals from drafting to approval.
 
 ---
 
@@ -88,9 +88,9 @@ More information is available in `docs/RFC_PROCESS.md`.
 
 ## 6. Transparency & Accountability
 
-- All decisions by the Steering Council are published publicly in the Loom GitHub discussions or dev blog.
+- All decisions by the Steering Council are published publicly in the Cloth GitHub discussions or dev blog.
 - Regular **quarterly updates** summarize progress and direction.
-- Loom adheres to a **meritocratic and respectful culture** of open development.
+- Cloth adheres to a **meritocratic and respectful culture** of open development.
 
 ---
 
@@ -101,5 +101,5 @@ This document may be amended by the Steering Council via majority vote. Proposed
 ---
 
 **Signed,**  
-The Loom Foundation  
-Steering Council of the Loom Programming Language
+The Cloth Foundation  
+Steering Council of the Cloth Programming Language

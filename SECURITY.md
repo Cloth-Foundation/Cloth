@@ -1,10 +1,10 @@
-![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Security.png?raw=true)
+![Logo](https://github.com/Cloth-Foundation/.github/blob/main/Logos/PNG/File%20Logos/Security.png?raw=true)
 
 # Security Policy
 
 ## Supported Versions
 
-The Loom team currently supports the latest stable release of the Loom compiler and standard library. Older versions may receive security patches at the discretion of the Loom Steering Council.
+The Cloth team currently supports the latest stable release of the Cloth compiler and standard library. Older versions may receive security patches at the discretion of the Cloth Steering Council.
 
 | Version | Status     |
 |---------|------------|
@@ -16,7 +16,7 @@ The Loom team currently supports the latest stable release of the Loom compiler 
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in the Loom language, compiler, or any official tool or repository, **please report it privately and responsibly.**
+If you discover a security vulnerability in the Cloth language, compiler, or any official tool or repository, **please report it privately and responsibly.**
 
 ### Contact Method
 
@@ -39,7 +39,7 @@ We aim to respond within **48 hours** and provide regular updates until the issu
 ## Disclosure Process
 
 1. **Initial Triage**: Confirm the report and evaluate its severity.
-2. **Private Fix Development**: The Loom core team develops and tests a fix.
+2. **Private Fix Development**: The Cloth core team develops and tests a fix.
 3. **Coordinated Disclosure**: If applicable, we work with downstream tools or users to patch affected systems.
 4. **Public Release**:
     - Release notes will acknowledge the issue (and credit the reporter unless anonymity is requested).
@@ -52,31 +52,31 @@ We aim to respond within **48 hours** and provide regular updates until the issu
 
 This policy applies to:
 
-- Loom compiler and runtime
+- Cloth compiler and runtime
 - Standard library modules
 - Official language tools and formatters
-- Any critical infrastructure in the [Loom Foundation GitHub organization](https://github.com/LoomFoundation)
+- Any critical infrastructure in the [Cloth Foundation GitHub organization](https://github.com/Cloth-Foundation)
 
 **This policy does not cover:**
 - Third-party tools or libraries
-- User-written Loom programs with poor practices
-- Outdated or forked versions not maintained by the Loom team
+- User-written Cloth programs with poor practices
+- Outdated or forked versions not maintained by the Cloth team
 
 ---
 
 ## Best Practices for Users
 
-- Always use the latest stable Loom release.
-- Avoid executing untrusted `.lm` or `.loom` code.
-- Consider sandboxing Loom applications if working with external input.
+- Always use the latest stable Cloth release.
+- Avoid executing untrusted `.co`, `.cloth`, or `.clib` code.
+- Consider sandboxing Cloth applications if working with external input.
 
 ---
 
 ## Recognition
 
-The Loom Language Team greatly appreciates the efforts of ethical hackers and security researchers. Responsible disclosures help keep our community safe.
+The Cloth Foundation greatly appreciates the efforts of ethical hackers and security researchers. Responsible disclosures help keep our community safe.
 
 ---
 
-**Thank you for helping keep Loom secure.**  
-— *The Loom Steering Council*
+**Thank you for helping keep Cloth secure.**  
+— *The Cloth Steering Council*

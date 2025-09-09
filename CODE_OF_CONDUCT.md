@@ -1,8 +1,8 @@
-![Logo](https://github.com/LoomFoundation/.github/blob/main/Logos/PNG/File%20Logos/Code%20of%20Conduct.png?raw=true)
+![Logo](https://github.com/Cloth-Foundation/.github/blob/main/Logos/PNG/File%20Logos/Code%20of%20Conduct.png?raw=true)
 
 ## Purpose
 
-The Loom Language Team is dedicated to building a powerful, elegant, and safe programming language. This Code of Conduct outlines expectations for behavior to ensure a respectful, inclusive, and productive environment for everyone involved—contributors, maintainers, and community members.
+The Cloth Foundation is dedicated to building a powerful, elegant, and safe programming language. This Code of Conduct outlines expectations for behavior to ensure a respectful, inclusive, and productive environment for everyone involved—contributors, maintainers, and community members.
 
 ## Guiding Principles
 
@@ -40,7 +40,7 @@ Examples of behavior that will not be tolerated:
 
 ## Decision Making
 
-- Major changes to Loom (grammar, semantics, features) require consensus or majority agreement in team discussions.
+- Major changes to Cloth (grammar, semantics, features) require consensus or majority agreement in team discussions.
 - Experimental proposals should go through an **RFC process**.
 - In case of stalemates, a designated **Lead Maintainer** may step in as tie-breaker.
 
@@ -50,7 +50,7 @@ Examples of behavior that will not be tolerated:
 
 If you witness or experience any behavior that violates this Code of Conduct:
 
-1. Please reach out to a Loom Team maintainer in private.
+1. Please reach out to a Cloth Team or Cloth Foundation in private.
 2. Reports will be handled **confidentially** and **respectfully**.
 3. Violators may receive a warning, temporary ban, or permanent removal depending on severity.
 
@@ -58,9 +58,9 @@ If you witness or experience any behavior that violates this Code of Conduct:
 
 ## Final Notes
 
-We are building something ambitious. The language is only as strong as the team behind it. Let’s work together in good faith to make Loom a language we’re proud of—and a team others aspire to join.
+We are building something ambitious. The language is only as strong as the team behind it. Let’s work together in good faith to make Cloth a language we’re proud of—and a team others aspire to join.
 
 ---
 
 **Signed,**  
-The Loom Language Team
+The Cloth Foundation
