@@ -359,6 +359,8 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		}
 		t := "[]" + et
 		table.NodeToType[e] = t
+		// Also store the parsed type info
+		table.NodeToTypeInfo[e] = ParseType(t)
 		return t
 	case *ast.IndexExpr:
 		bt := inferExprType(x.Base, ts, table, module, diags)
@@ -366,6 +368,8 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		if len(bt) >= 2 && bt[:2] == "[]" {
 			et := bt[2:]
 			table.NodeToType[e] = et
+			// Also store the parsed type info for the element type
+			table.NodeToTypeInfo[e] = ParseType(et)
 			return et
 		}
 		return ""
@@ -633,36 +637,9 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 		}
 		return ""
 	case *ast.MemberAccessExpr:
-		// Double-colon metadata: Type::MIN/MAX/BITS/BYTES
+		// Double-colon metadata: Type::MIN/MAX/BITS/BYTES or instance::LENGTH
 		if x.DotTok.Type == tokens.TokenDoubleColon {
-			if id, ok := x.Object.(*ast.IdentifierExpr); ok {
-				// If left is a builtin type token, infer by token; otherwise string fallback
-				tt := NameToTokenType(id.Name)
-				if tt != tokens.TokenInvalid {
-					switch x.Member {
-					case "MIN", "MAX":
-						ret := TokenTypeName(tt)
-						table.NodeToType[e] = ret
-						return ret
-					case "BITS", "BYTES":
-						ret := TokenTypeName(tokens.TokenI8)
-						table.NodeToType[e] = ret
-						return ret
-					}
-				} else {
-					base := id.Name
-					switch x.Member {
-					case "MIN", "MAX":
-						table.NodeToType[e] = base
-						return base
-					case "BITS", "BYTES":
-						ret := TokenTypeName(tokens.TokenI8)
-						table.NodeToType[e] = ret
-						return ret
-					}
-				}
-			}
-			return ""
+			return inferMetadataAccessType(x, ts, table, module, diags)
 		}
 		ot := inferExprType(x.Object, ts, table, module, diags)
 		// self.field resolution for known class fields
@@ -709,6 +686,80 @@ func inferExprType(e ast.Expr, ts *typeScope, table *TypeTable, module *Scope, d
 	default:
 		return ""
 	}
+}
+
+// inferMetadataAccessType handles type inference for metadata access (::)
+func inferMetadataAccessType(x *ast.MemberAccessExpr, ts *typeScope, table *TypeTable, module *Scope, diags *[]CheckDiag) string {
+	// Convert member name to metadata token
+	memberToken := tokens.NameToMetadataToken(x.Member)
+	if memberToken == tokens.TokenInvalid {
+		*diags = append(*diags, CheckDiag{Message: fmt.Sprintf("unknown metadata %s", x.Member), Span: x.MemberTok.Span})
+		return ""
+	}
+
+	// First try to infer the left side as an expression (for instance metadata)
+	objType := inferExprType(x.Object, ts, table, module, diags)
+	if objType != "" {
+		// Parse the type string into Type struct
+		typeInfo := ParseType(objType)
+		// Check if it's an array type
+		if typeInfo.IsArray() {
+			switch memberToken {
+			case tokens.TokenLength:
+				ret := TokenTypeName(tokens.TokenI64)
+				table.NodeToType[x] = ret
+				table.NodeToTypeInfo[x] = Type{Base: tokens.TokenI64, ArrayDepth: 0, Nullable: false}
+				return ret
+			}
+			return ""
+		}
+		// Check if it's a string type
+		if objType == "string" {
+			switch memberToken {
+			case tokens.TokenLength, tokens.TokenBits, tokens.TokenBytes:
+				ret := TokenTypeName(tokens.TokenI64)
+				table.NodeToType[x] = ret
+				table.NodeToTypeInfo[x] = Type{Base: tokens.TokenI64, ArrayDepth: 0, Nullable: false}
+				return ret
+			}
+			return ""
+		}
+	}
+
+	// Fallback to type metadata (for builtin types)
+	if id, ok := x.Object.(*ast.IdentifierExpr); ok {
+		// If left is a builtin type token, use token-based resolution
+		tt := NameToTokenType(id.Name)
+		if tt != tokens.TokenInvalid {
+			switch memberToken {
+			case tokens.TokenMin, tokens.TokenMax:
+				ret := TokenTypeName(tt)
+				table.NodeToType[x] = ret
+				table.NodeToTypeInfo[x] = Type{Base: tt, ArrayDepth: 0, Nullable: false}
+				return ret
+			case tokens.TokenBits, tokens.TokenBytes:
+				ret := TokenTypeName(tokens.TokenI64)
+				table.NodeToType[x] = ret
+				table.NodeToTypeInfo[x] = Type{Base: tokens.TokenI64, ArrayDepth: 0, Nullable: false}
+				return ret
+			}
+		} else {
+			// For non-builtin types, return the type name for MIN/MAX
+			base := id.Name
+			switch memberToken {
+			case tokens.TokenMin, tokens.TokenMax:
+				table.NodeToType[x] = base
+				table.NodeToTypeInfo[x] = Type{Base: tokens.TokenInvalid, ArrayDepth: 0, Nullable: false} // Custom type
+				return base
+			case tokens.TokenBits, tokens.TokenBytes:
+				ret := TokenTypeName(tokens.TokenI64)
+				table.NodeToType[x] = ret
+				table.NodeToTypeInfo[x] = Type{Base: tokens.TokenI64, ArrayDepth: 0, Nullable: false}
+				return ret
+			}
+		}
+	}
+	return ""
 }
 
 func tokensToSymbol(t tokens.TokenType) string {
@@ -759,10 +810,7 @@ func tokensToSymbol(t tokens.TokenType) string {
 func assignable(target, value string) bool {
 	// Allow assigning null to any type except bit
 	if value == "null" {
-		if target == TokenTypeName(tokens.TokenBit) {
-			return false
-		}
-		return true
+		return target != TokenTypeName(tokens.TokenBit)
 	}
 	// bit is very strict: only assignable from bit
 	if target == TokenTypeName(tokens.TokenBit) {

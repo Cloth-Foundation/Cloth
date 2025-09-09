@@ -1,15 +1,20 @@
 mod four
 
 pub func main(argc: []i32, argv: []string): i32 {
-    println(-1 % 256)
-    println(0xDEADBEEF)
-    println(0b11011110101011011011111011101111)
+    println("=== Array Metadata Demo ===")
+    let numbers: []i32 = [10, 20, 30, 40, 50]
+    printf("Array length: {}\n", numbers::LENGTH)
 
-    let a: []i32 = [ 10, 0xFFFF, 30 ]
-
-    loop x in range(0, 3) {
-        println(a[x])
+    let words: [][]string = [["hello"], ["world", "test"]]
+    loop x in words {
+        printf("Inner array length: {}\n", x::LENGTH)
+        loop i in range(0, x::LENGTH) {
+            printf("Word: {}\n", x[i])
+        }
     }
+
+    let r: string = "Hello World"
+    println(r::LENGTH)
 
     ret 0
 }

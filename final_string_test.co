@@ -1,0 +1,18 @@
+mod test
+
+pub func main(argc: []i32, argv: []string): i32 {
+    println("=== String Metadata Test ===")
+    
+    let text: string = "Hello, World!"
+    printf("String length: {}\n", text::LENGTH)
+    printf("String bits: {}\n", text::BITS)
+    printf("String bytes: {}\n", text::BYTES)
+    
+    let empty: string = ""
+    printf("Empty string length: {}\n", empty::LENGTH)
+    
+    printf("Literal string length: {}\n", "Test"::LENGTH)
+    printf("Unicode string length: {}\n", "🚀🌟"::LENGTH)
+    
+    ret 0
+}

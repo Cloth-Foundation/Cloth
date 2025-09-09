@@ -661,19 +661,9 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		return nil, fmt.Errorf("undefined variable %s", x.Name)
 	case *ast.MemberAccessExpr:
-		// Double-colon metadata access: Type::NAME
+		// Double-colon metadata access: Type::NAME or instance::NAME
 		if x.DotTok.Type == tokens.TokenDoubleColon {
-			if objId, ok := x.Object.(*ast.IdentifierExpr); ok {
-				// Prefer token-based resolution when the identifier is a builtin type token
-				tt := NameToTokenType(objId.Name)
-				if tt != tokens.TokenInvalid {
-					if v, ok := evalTypeMetadataTok(tt, x.Member); ok {
-						return v, nil
-					}
-				}
-				return nil, fmt.Errorf("unknown metadata %s for type %s", x.Member, objId.Name)
-			}
-			return nil, fmt.Errorf("left of '::' must be a type name")
+			return MetadataAccess(x.Object, x.Member, env, globals, module)
 		}
 		// Enum case materialization: Type.CASE
 		if objId, ok := x.Object.(*ast.IdentifierExpr); ok {

@@ -154,11 +154,65 @@ func defaultFloatForInt(intType string) string {
 }
 
 // TypeTable maps AST nodes to resolved type names.
-type TypeTable struct {
-	NodeToType map[any]string
+// Type represents a parsed type with metadata
+type Type struct {
+	Base       tokens.TokenType // Base token type (TokenI32, TokenString, etc.)
+	ArrayDepth int              // Number of [] prefixes (0 = not array, 1 = [], 2 = [][], etc.)
+	Nullable   bool             // Whether type is nullable (has ? suffix)
 }
 
-func NewTypeTable() *TypeTable { return &TypeTable{NodeToType: map[any]string{}} }
+// TypeTable maps AST nodes to their resolved types
+type TypeTable struct {
+	NodeToType     map[any]string // Keep for backward compatibility
+	NodeToTypeInfo map[any]Type   // New type info mapping
+}
+
+func NewTypeTable() *TypeTable {
+	return &TypeTable{
+		NodeToType:     map[any]string{},
+		NodeToTypeInfo: map[any]Type{},
+	}
+}
+
+// ParseType parses a type string into a Type struct
+func ParseType(typeName string) Type {
+	depth, base, nullable := ParseTypeString(typeName)
+	return Type{
+		Base:       base,
+		ArrayDepth: depth,
+		Nullable:   nullable,
+	}
+}
+
+// TypeToString converts a Type back to string representation
+func (t Type) String() string {
+	result := ""
+	for i := 0; i < t.ArrayDepth; i++ {
+		result += "[]"
+	}
+	result += TokenTypeName(t.Base)
+	if t.Nullable {
+		result += "?"
+	}
+	return result
+}
+
+// IsArray returns true if this type is an array type
+func (t Type) IsArray() bool {
+	return t.ArrayDepth > 0
+}
+
+// GetElementType returns the element type of an array (reduces array depth by 1)
+func (t Type) GetElementType() Type {
+	if t.ArrayDepth > 0 {
+		return Type{
+			Base:       t.Base,
+			ArrayDepth: t.ArrayDepth - 1,
+			Nullable:   t.Nullable,
+		}
+	}
+	return t
+}
 
 // ParseTypeString parses a simple type string like "[]i32", "[]string", "i32?" into components.
 // Returns (arrayDepth, baseToken, isNullable).

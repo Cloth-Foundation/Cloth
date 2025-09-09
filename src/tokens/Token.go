@@ -120,6 +120,13 @@ const (
 	TokenRParen
 	TokenSemicolon
 
+	// Metadata Access
+	TokenLength
+	TokenMin
+	TokenMax
+	TokenBits
+	TokenBytes
+
 	// Special
 	TokenEndOfFile
 	TokenInvalid
@@ -216,6 +223,9 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	// Punctuation
 	case TokenColon, TokenComma, TokenDoubleColon, TokenDot, TokenLBrace, TokenLBracket, TokenLParen, TokenQuestion, TokenRBrace, TokenRBracket, TokenRParen, TokenSemicolon:
 		return CategoryPunctuation
+	// Metadata Access
+	case TokenLength, TokenMin, TokenMax, TokenBits, TokenBytes:
+		return CategoryKeyword
 	case TokenIdentifier:
 		return CategoryIdentifier
 	case TokenEndOfFile:
@@ -431,6 +441,16 @@ func TokenTypeName(t TokenType) string {
 		return "Right Paren"
 	case TokenSemicolon:
 		return "Semicolon"
+	case TokenLength:
+		return "Length"
+	case TokenMin:
+		return "Min"
+	case TokenMax:
+		return "Max"
+	case TokenBits:
+		return "Bits"
+	case TokenBytes:
+		return "Bytes"
 	case TokenVoid:
 		return "Void"
 	case TokenEndOfFile:
@@ -464,4 +484,22 @@ func TokenCategoryName(c TokenCategory) string {
 		return "Eof"
 	}
 	return "Unknown"
+}
+
+// NameToMetadataToken converts a metadata name string to its corresponding token type
+func NameToMetadataToken(name string) TokenType {
+	switch name {
+	case "LENGTH":
+		return TokenLength
+	case "MIN":
+		return TokenMin
+	case "MAX":
+		return TokenMax
+	case "BITS":
+		return TokenBits
+	case "BYTES":
+		return TokenBytes
+	default:
+		return TokenInvalid
+	}
 }
