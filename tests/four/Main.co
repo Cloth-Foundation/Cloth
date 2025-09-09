@@ -2,5 +2,7 @@ mod four
 
 pub func main(argc: []i32, argv: []string): i32 {
     println(-1 % 256)
+    println(0xDEADBEEF)
+    println(0b11011110101011011011111011101111)
     ret 0
 }
