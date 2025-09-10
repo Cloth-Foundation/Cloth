@@ -126,6 +126,11 @@ const (
 	TokenMax
 	TokenBits
 	TokenBytes
+	TokenTypeOf
+	TokenKind
+	TokenNullable
+	TokenHashable
+	TokenComparable
 
 	// Special
 	TokenEndOfFile
@@ -224,7 +229,7 @@ func ClassifyTokenType(t TokenType) TokenCategory {
 	case TokenColon, TokenComma, TokenDoubleColon, TokenDot, TokenLBrace, TokenLBracket, TokenLParen, TokenQuestion, TokenRBrace, TokenRBracket, TokenRParen, TokenSemicolon:
 		return CategoryPunctuation
 	// Metadata Access
-	case TokenLength, TokenMin, TokenMax, TokenBits, TokenBytes:
+	case TokenLength, TokenMin, TokenMax, TokenBits, TokenBytes, TokenTypeOf, TokenKind, TokenNullable, TokenHashable, TokenComparable:
 		return CategoryKeyword
 	case TokenIdentifier:
 		return CategoryIdentifier
@@ -451,6 +456,16 @@ func TokenTypeName(t TokenType) string {
 		return "Bits"
 	case TokenBytes:
 		return "Bytes"
+	case TokenTypeOf:
+		return "Type"
+	case TokenKind:
+		return "Kind"
+	case TokenNullable:
+		return "Nullable"
+	case TokenHashable:
+		return "Hashable"
+	case TokenComparable:
+		return "Comparable"
 	case TokenVoid:
 		return "Void"
 	case TokenEndOfFile:
@@ -499,6 +514,16 @@ func NameToMetadataToken(name string) TokenType {
 		return TokenBits
 	case "BYTES":
 		return TokenBytes
+	case "TYPE":
+		return TokenTypeOf
+	case "KIND":
+		return TokenKind
+	case "NULLABLE":
+		return TokenNullable
+	case "HASHABLE":
+		return TokenHashable
+	case "COMPARABLE":
+		return TokenComparable
 	default:
 		return TokenInvalid
 	}
