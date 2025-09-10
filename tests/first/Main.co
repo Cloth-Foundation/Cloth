@@ -38,6 +38,8 @@ pub func Main(): i8 {
     alice.greet()
     bob.greet()
 
+    println(alice::HASHABLE)
+
     println(alice.type() == bob.type() ? "Alice and Bob are of the same type." : null)
 
     println(alice.getAge() > bob.getAge() ? "Alice is older than Bob." : alice.getAge() < bob.getAge() ? "Bob is older than Alice." : "Alice and Bob are the same age.")

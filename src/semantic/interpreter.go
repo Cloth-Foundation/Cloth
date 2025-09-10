@@ -917,7 +917,6 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 				}
 			}
 			if m, ok := getObjectMap(obj); ok {
-				// release old field if it was a ptr
 				if old, exists := m[macc.Member]; exists {
 					releaseIfPtr(old)
 				}
@@ -1235,15 +1234,15 @@ func EvalExpr(e ast.Expr, env map[string]any, globals map[string]any, module *Sc
 		}
 		i, ok := idxVal.(int64)
 		if !ok {
-			return nil, fmt.Errorf("index must be integer")
+			return nil, rt(x.Index.Span(), "index must be integer", "use a constant expression")
 		}
 		if arr, ok := derefIfPtr(base).([]any); ok {
 			if i < 0 || int(i) >= len(arr) {
-				return nil, fmt.Errorf("index out of bounds")
+				return nil, rt(x.Index.Span(), fmt.Sprintf("index out of bounds %d", i), "use a constant expression")
 			}
 			return arr[i], nil
 		}
-		return nil, fmt.Errorf("indexing non-array")
+		return nil, rt(x.Index.Span(), "indexing non-array", "use a constant expression")
 	case *ast.TernaryExpr:
 		cv, err := EvalExpr(x.Cond, env, globals, module)
 		if err != nil {

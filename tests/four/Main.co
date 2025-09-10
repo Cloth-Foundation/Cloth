@@ -5,16 +5,28 @@ pub func main(argc: []i32, argv: []string): i32 {
     let numbers: []i32 = [10, 20, 30, 40, 50]
     printf("Array length: {}\n", numbers::LENGTH)
 
+    loop i in numbers {
+        printf("Number: {}\n", i)
+        printf("Array element type: {}\n", i::TYPE)
+    }
+
     let words: [][]string = [["hello"], ["world", "test"]]
     loop x in words {
         printf("Inner array length: {}\n", x::LENGTH)
         loop i in range(0, x::LENGTH) {
             printf("Word: {}\n", x[i])
+            printf("Type: {}\n", x[i]::TYPE)
         }
     }
 
-    let r: string = "Hello World"
-    println(r::LENGTH)
+    let hello: string = "Hello World"
+    printf("String length: {}\n", hello::LENGTH)
+
+    println("\n=== TYPE Metadata ===")
+    printf("Variable hello TYPE: {}\n", hello::TYPE)
+    printf("Variable numbers TYPE: {}\n", numbers::TYPE)
+
+    println(i8::COMPARABLE)
 
     ret 0
 }
