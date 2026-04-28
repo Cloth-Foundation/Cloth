@@ -1,0 +1,22 @@
+﻿module test;
+
+import cloth.io.IO:: { println };
+
+public class HelloWorld() {
+
+    private string?! hello = null { public getter as get; public setter as set; };
+    private bool hasPrinted = false;
+
+    public HelloWorld {
+        var myString = "Hello World!";
+        println(myString);
+
+        set("Hello World!");
+        println(get());
+    }
+
+    public ~HelloWorld {
+        println("Goodbye World!");
+    }
+
+}
