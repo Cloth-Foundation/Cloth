@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/License-Apache%202.0-4CAF50?style=for-the-badge&logo=apache&logoColor=white"  alt="Apache License"/>
   <img src="https://img.shields.io/badge/License-MIT%202.0-4CAF50?style=for-the-badge&logo=apache&logoColor=white"  alt="MIT License"/>
   <a href="https://github.com/Cloth-Foundation/rCloth">
-    <img src="https://img.shields.io/github/stars/Cloth-Foundation/rCloth?style=for-the-badge"  alt="GitHub Stars"/>
+    <img src="https://img.shields.io/github/stars/Cloth-Foundation/Cloth?style=for-the-badge"  alt="GitHub Stars"/>
   </a>
 </p>
 </div>
