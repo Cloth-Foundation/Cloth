@@ -3,6 +3,7 @@
 open System
 open FrontEnd.File
 open FrontEnd.Lexer
+open Frontend.Utilities
 open Commands.DispatchResult
 open Commands.Flags
 
@@ -13,7 +14,7 @@ let runLexer (path: string, args: string[]) =
     let relevantFlags = getRelevantFlags (args, "lexer")
 
     if relevantFlags |> Array.contains "--dump" then
-        for i = 0 to tokens.Count - 1 do
-            printfn $"{(i + 1)}: {tokens[i]}"
+        printfn $"{JsonDump(tokens).ToJson()}"
+
 
     Success "Lexer completed."
