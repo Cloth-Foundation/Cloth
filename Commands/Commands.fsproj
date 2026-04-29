@@ -6,6 +6,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="Flags.fs" />
         <Compile Include="DispatchResult.fs" />
         <Compile Include="Executor\Lexer.fs" />
         <Compile Include="Executor\Help.fs" />

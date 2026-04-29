@@ -10,7 +10,7 @@ let dispatch (args: string[]) =
         Failure "Usage: cloth <command>"
 
     else
-        match args.[0] with
+        match args[0] with
         | "?"
         | "help" ->
             runHelp ()
@@ -28,7 +28,7 @@ let dispatch (args: string[]) =
             if args.Length < 2 then
                 Failure "Expected file path. Example: cloth lexer ./src/Main.co"
             else
-                runLexer args.[1]
+                runLexer (args[1], args)
 
         | "parser" ->
             Success "Parser Called"
