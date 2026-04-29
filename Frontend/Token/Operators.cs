@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026.The Cloth contributors.
+﻿// Copyright (c) 2026. The Cloth contributors.
 //
 // Operators.cs is part of the Cloth Frontend.
 //

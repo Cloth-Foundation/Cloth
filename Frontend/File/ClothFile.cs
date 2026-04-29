@@ -1,9 +1,11 @@
-﻿// Copyright (c) 2026.The Cloth contributors.
+﻿// Copyright (c) 2026. The Cloth contributors.
 //
 // ClothFile.cs is part of the Cloth Frontend.
 //
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
+
+using System.Text.Json.Serialization;
 
 namespace FrontEnd.File;
 
@@ -31,7 +33,7 @@ public sealed class ClothFile {
 
 	public string Name { get; }
 
-	public string Content { get; private set; }
+	[JsonIgnore] public string Content { get; private set; }
 
 	public bool IsValid { get; private set; }
 

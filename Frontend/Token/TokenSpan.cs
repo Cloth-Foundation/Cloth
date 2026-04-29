@@ -1,7 +1,7 @@
-﻿// Copyright (c) 2026.The Cloth contributors.
-//
+﻿// Copyright (c) 2026. The Cloth contributors.
+// 
 // TokenSpan.cs is part of the Cloth Frontend.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -24,17 +24,17 @@ public class TokenSpan {
 		File = file;
 	}
 
-	private int Start { get; }
+	public int Start { get; }
 
-	private int End { get; }
+	public int End { get; }
 
-	private int StartLine { get; }
+	public int StartLine { get; }
 
-	private int EndLine { get; }
+	public int EndLine { get; }
 
-	private int StartColumn { get; }
+	public int StartColumn { get; }
 
-	private int EndColumn { get; }
+	public int EndColumn { get; }
 
-	private ClothFile File { get; }
+	public ClothFile? File { get; }
 }
