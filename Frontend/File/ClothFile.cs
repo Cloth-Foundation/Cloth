@@ -19,7 +19,7 @@ public sealed class ClothFile {
 		if (!System.IO.File.Exists(path)) throw new FileNotFoundException("File not found", path);
 
 		var fileEnding = System.IO.Path.GetExtension(path);
-		if (!Utilities.VALID_ENDINGS.Contains(fileEnding)) throw new InvalidDataException($"Invalid file type: {fileEnding}");
+		if (!Utilities.ValidEndings.Contains(fileEnding)) throw new InvalidDataException($"Invalid file type: {fileEnding}");
 
 		Path = path;
 		Name = name;
@@ -55,7 +55,7 @@ public sealed class ClothFile {
 	}
 
 	public bool Validate() {
-		IsValid = System.IO.File.Exists(Path) && Utilities.VALID_ENDINGS.Contains(System.IO.Path.GetExtension(Path));
+		IsValid = System.IO.File.Exists(Path) && IsClothFile();
 		return IsValid;
 	}
 
@@ -78,7 +78,6 @@ public sealed class ClothFile {
 	public ClothFileType GetFileType() {
 		var ending = GetFileEnding();
 		if (ending == ".co") return ClothFileType.ClothObject;
-
 		if (ending == ".cl") return ClothFileType.ClothLibrary;
 
 		throw new InvalidDataException($"Unknown file type: {ending}");
@@ -91,7 +90,7 @@ public enum ClothFileType {
 }
 
 public static class Utilities {
-	public static string[] VALID_ENDINGS = [
+	public static readonly string[] ValidEndings = [
 		".co",
 		".cl"
 	];
