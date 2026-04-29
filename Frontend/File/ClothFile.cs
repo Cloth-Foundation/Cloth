@@ -1,4 +1,11 @@
-﻿namespace FrontEnd.File;
+﻿// Copyright (c) 2026.The Cloth contributors.
+//
+// ClothFile.cs is part of the Cloth Frontend.
+//
+// Use, modification, and distribution of this file are governed by the
+// license terms provided with the Cloth Compiler source distribution.
+
+namespace FrontEnd.File;
 
 public sealed class ClothFile {
 	public ClothFile(string path, string name, string content, bool isValid) {

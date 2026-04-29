@@ -2,18 +2,10 @@
 
 let FLAG_DELIMITER = "--"
 
-let MAIN_COMMANDS =
-    set [
-        "lexer"
-        "run"
-        "build"
-        "parse"
-    ]
+let MAIN_COMMANDS = set [ "lexer"; "run"; "build"; "parse" ]
 
-let getRelevantFlags(args: string[], command: string) : string[] =
-    let commandIndex =
-        args
-        |> Array.tryFindIndex (fun arg -> arg = command)
+let getRelevantFlags (args: string[], command: string) : string[] =
+    let commandIndex = args |> Array.tryFindIndex (fun arg -> arg = command)
 
     match commandIndex with
     | None -> [||]

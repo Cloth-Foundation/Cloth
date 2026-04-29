@@ -1,14 +1,18 @@
 # Contributing to Cloth
 
-Thank you for your interest in contributing to **Cloth**. Contributions of all kinds are welcome, including language design, compiler development, tooling, documentation, and ecosystem improvements.
+Thank you for your interest in contributing to **Cloth**. Contributions of all kinds are welcome, including language
+design, compiler development, tooling, documentation, and ecosystem improvements.
 
 ## Getting Started
 
 > Cloth is still in its early stages of development. It is not yet ready for production use.
-> Cloth is currently being bootstrapped in Rust and compiles to Cloth IR (Intermediate Representation), which is then compiled to LLVM IR.
+> Cloth is currently being bootstrapped in Rust and compiles to Cloth IR (Intermediate Representation), which is then
+> compiled to LLVM IR.
 
-If you're new to the project, the best place to begin is by reviewing the Cloth specification and understanding the language’s core principles.
-Before making changes, ensure you are familiar with the current design direction and terminology defined in the specification.
+If you're new to the project, the best place to begin is by reviewing the Cloth specification and understanding the
+language’s core principles.
+Before making changes, ensure you are familiar with the current design direction and terminology defined in the
+specification.
 
 ## Communication and Help
 
@@ -77,15 +81,15 @@ Cloth uses a structured compilation pipeline:
 
 1. **Pass 1 — Symbol Collection**
 
-   * All modules are merged
-   * Top-level declarations are registered
+    * All modules are merged
+    * Top-level declarations are registered
 
 2. **Pass 2 — Semantic Analysis and Code Generation**
 
-   * Type checking and validation
-   * Ownership and lifetime enforcement
-   * IR generation
-   * Backend emission (LLVM or target-specific)
+    * Type checking and validation
+    * Ownership and lifetime enforcement
+    * IR generation
+    * Backend emission (LLVM or target-specific)
 
 Contributions should respect this model and avoid introducing implicit or order-dependent behavior.
 

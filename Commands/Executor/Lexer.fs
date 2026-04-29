@@ -10,7 +10,7 @@ let runLexer (path: string, args: string[]) =
     let name = IO.Path.GetFileName(path)
     let file = ClothFile(path, name)
     let tokens = Lexer(file).LexAll()
-    let relevantFlags = getRelevantFlags(args, "lexer")
+    let relevantFlags = getRelevantFlags (args, "lexer")
 
     if relevantFlags |> Array.contains "--dump" then
         for i = 0 to tokens.Count - 1 do

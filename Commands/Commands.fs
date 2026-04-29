@@ -12,17 +12,13 @@ let dispatch (args: string[]) =
     else
         match args[0] with
         | "?"
-        | "help" ->
-            runHelp ()
+        | "help" -> runHelp ()
 
-        | "build" ->
-            Success "Build Called"
+        | "build" -> Success "Build Called"
 
-        | "run" ->
-            Success "Run Called"
+        | "run" -> Success "Run Called"
 
-        | "test" ->
-            Success "Test Called"
+        | "test" -> Success "Test Called"
 
         | "lexer" ->
             if args.Length < 2 then
@@ -30,11 +26,9 @@ let dispatch (args: string[]) =
             else
                 runLexer (args[1], args)
 
-        | "parser" ->
-            Success "Parser Called"
+        | "parser" -> Success "Parser Called"
 
-        | unknown ->
-            Failure $"Unknown command: {unknown}"
+        | unknown -> Failure $"Unknown command: {unknown}"
 
 [<EntryPoint>]
 let main (args: string[]) =
@@ -42,6 +36,7 @@ let main (args: string[]) =
     | Success message ->
         if not (String.IsNullOrWhiteSpace(message)) then
             printfn $"{message}"
+
         0
 
     | Failure error ->
