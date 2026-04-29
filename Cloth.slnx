@@ -1,5 +1,10 @@
 <Solution>
+    <Configurations>
+        <Platform Name="Any CPU" />
+        <Platform Name="x64" />
+        <Platform Name="x86" />
+    </Configurations>
     <Project Path="Commands/Commands.fsproj" />
-    <Project Path="Compiler/Compiler.vcxitems" Id="4b5c7477-a5b1-4fb2-996f-4e92a8b3b525" />
+    <Project Path="Compiler/Compiler.csproj" />
     <Project Path="Frontend/Frontend.csproj" />
 </Solution>
