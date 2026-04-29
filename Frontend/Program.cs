@@ -1,6 +1,5 @@
 ﻿using FrontEnd.File;
 using FrontEnd.Lexer;
-using Commands;
 
 var file = new ClothFile(@"F:/Cloth/Tests/Project/src/my/project/Main.co", "Main.co");
 var tokens = new Lexer(file).LexAll();

@@ -1,34 +1,47 @@
-﻿namespace Commands
+﻿module Commands.Entry
 
-type Command =
-    | Help
-    | Build
-    | Run
-    | Test
-    | Lexer
-    | Parser
-    | Unknown of string
+open System
+open Commands.DispatchResult
+open Commands.Executor.Lexer
 
-type DispatchResult =
-    | Success of Command
-    | Failure of string
+let dispatch (args: string[]) =
+    if args.Length = 0 then
+        Failure "Usage: cloth <command>"
 
-module entry =
+    else
+        match args.[0] with
+        | "help" ->
+            Success "Help Called"
 
-    let dispatch (args: string[]) : DispatchResult =
-        if args.Length = 0 then
-            Failure "Usage: cloth <command> <flags>"
-        elif args.[0] <> "cloth" then
-            Failure $"Expected 'cloth', got '{args.[0]}'"
-        elif args.Length < 2 then
-            Failure "Usage: cloth <command> <flags>"
-        else
-            match args.[1] with
-            | "help" -> Success Help
-            | "?" -> Success Help
-            | "build" -> Success Build
-            | "run" -> Success Run
-            | "test" -> Success Test
-            | "lexer" -> Success Lexer
-            | "parser" -> Success Parser
-            | _ -> Failure "Usage: cloth <command> <flags>"
+        | "build" ->
+            Success "Build Called"
+
+        | "run" ->
+            Success "Run Called"
+
+        | "test" ->
+            Success "Test Called"
+
+        | "lexer" ->
+            if args.Length < 2 then
+                Failure "Expected file path. Example: cloth lexer ./src/Main.co"
+            else
+                runLexer args.[1]
+
+        | "parser" ->
+            Success "Parser Called"
+
+        | unknown ->
+            Failure $"Unknown command: {unknown}"
+
+[<EntryPoint>]
+let main (args: string[]) =
+    match dispatch args with
+    | Success message ->
+        if not (String.IsNullOrWhiteSpace(message)) then
+            printfn $"{message}"
+        0
+
+    | Failure error ->
+        eprintfn $"Error {error}"
+        1

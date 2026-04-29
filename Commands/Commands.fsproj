@@ -6,8 +6,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Folder Include="executor\"/>
+        <Compile Include="DispatchResult.fs" />
+        <Compile Include="Executor\Lexer.fs" />
         <Compile Include="Commands.fs"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Frontend\Frontend.csproj" />
     </ItemGroup>
 
 </Project>
