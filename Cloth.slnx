@@ -1,6 +1,5 @@
 <Solution>
-    <Project Path="Build/Build.csproj" Id="2c8fe624-1220-4925-9334-1550040fc5f5"/>
-    <Project Path="Commands/Commands.fsproj"/>
-    <Project Path="Compiler/Compiler.csproj" Id="a27b5948-437f-4edd-ac51-20d0c2c6c0c1"/>
-    <Project Path="Frontend/Frontend.csproj"/>
+    <Project Path="Commands/Commands.fsproj" />
+    <Project Path="Compiler/Compiler.vcxitems" Id="4b5c7477-a5b1-4fb2-996f-4e92a8b3b525" />
+    <Project Path="Frontend/Frontend.csproj" />
 </Solution>
