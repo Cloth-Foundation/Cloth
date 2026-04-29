@@ -21,6 +21,10 @@ public class Lexer {
 	private int _line;
 
 	public Lexer(ClothFile sourceFile) {
+		if (!sourceFile.Validate()) {
+			Console.Error.WriteLine($"Invalid source file: {sourceFile}");
+			Environment.Exit(1);
+		}
 		sourceFile.Read();
 		var normalized = new StringBuilder(sourceFile.Content.Length);
 		for (var i = 0; i < sourceFile.Content.Length; i++) {
