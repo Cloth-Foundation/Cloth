@@ -1,4 +1,11 @@
-﻿namespace FrontEnd.Token;
+﻿// Copyright (c) 2026.The Cloth contributors.
+//
+// Token.cs is part of the Cloth Frontend.
+//
+// Use, modification, and distribution of this file are governed by the
+// license terms provided with the Cloth Compiler source distribution.
+
+namespace FrontEnd.Token;
 
 public class Token {
 	public Token(TokenType type, string literal, TokenSpan span, string lexeme, Keyword? keyword = null, MetaKeyword? metaKeyword = null, Operator? op = null) {

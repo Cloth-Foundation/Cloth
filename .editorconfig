@@ -1,0 +1,5 @@
+﻿[*.{fs,fsi,fsx}]
+file_header_template = Copyright (c) ${CurrentDate.Year}.The Cloth contributors.\n\n${File.FileName} is part of the ${File.SolutionName} ${File.ProjectName}.\n\nUse, modification, and distribution of this file are governed by the \nlicense terms provided with the Cloth Compiler source distribution.
+
+[*.cs]
+file_header_template = Copyright (c) ${CurrentDate.Year}.The Cloth contributors.\n\n${File.FileName} is part of the ${File.SolutionName} ${File.ProjectName}.\n\nUse, modification, and distribution of this file are governed by the \nlicense terms provided with the Cloth Compiler source distribution.

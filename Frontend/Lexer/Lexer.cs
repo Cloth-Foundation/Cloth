@@ -1,4 +1,11 @@
-﻿using System.Text;
+﻿// Copyright (c) 2026.The Cloth contributors.
+//
+// Lexer.cs is part of the Cloth Frontend.
+//
+// Use, modification, and distribution of this file are governed by the
+// license terms provided with the Cloth Compiler source distribution.
+
+using System.Text;
 using FrontEnd.File;
 using FrontEnd.Token;
 
@@ -62,14 +69,7 @@ public class Lexer {
 		SkipTrivia();
 
 		if (IsEof())
-			return MakeToken(
-				TokenType.Eof,
-				string.Empty,
-				string.Empty,
-				_index, _index,
-				_line, _column,
-				_line, _column
-			);
+			return MakeToken(TokenType.Eof, string.Empty, string.Empty, _index, _index, _line, _column, _line, _column);
 
 		var startIndex = _index;
 		var startLine = _line;
@@ -284,8 +284,7 @@ public class Lexer {
 			return MakeToken(TokenType.Literal, lexeme2, lexeme2, startIndex, endIndex2, startLine, startCol, endLine2, endCol2);
 		}
 
-		if (PeekChar() == 'b' || PeekChar() == 'B' || PeekChar() == 'i' || PeekChar() == 'I' ||
-		    PeekChar() == 'l' || PeekChar() == 'L' || PeekChar() == 'u' || PeekChar() == 'U')
+		if (PeekChar() == 'b' || PeekChar() == 'B' || PeekChar() == 'i' || PeekChar() == 'I' || PeekChar() == 'l' || PeekChar() == 'L' || PeekChar() == 'u' || PeekChar() == 'U')
 			BumpOne();
 
 		var endIndex3 = _index;
@@ -386,56 +385,23 @@ public class Lexer {
 		throw ErrorAtCurrent(LexErrorKind.IllegalCharacter);
 	}
 
-	private Token.Token MakeToken(
-		TokenType kind,
-		string literal,
-		string lexeme,
-		int start,
-		int end,
-		int startLine,
-		int startCol,
-		int endLine,
-		int endCol,
-		Keyword? keyword = null,
-		MetaKeyword? metaKeyword = null,
-		Operator? op = null
-	) {
-		var span = new TokenSpan(
-			start, end,
-			startLine, endLine,
-			startCol, endCol,
-			_sourceFile
-		);
+	private Token.Token MakeToken(TokenType kind, string literal, string lexeme, int start, int end, int startLine, int startCol, int endLine, int endCol, Keyword? keyword = null, MetaKeyword? metaKeyword = null, Operator? op = null) {
+		var span = new TokenSpan(start, end, startLine, endLine, startCol, endCol, _sourceFile);
 		return new Token.Token(kind, literal, span, lexeme, keyword, metaKeyword, op);
 	}
 
 	private LexError ErrorAtCurrent(LexErrorKind kind) {
-		var span = new TokenSpan(
-			_index, _index,
-			_line, _line,
-			_column, _column,
-			_sourceFile
-		);
+		var span = new TokenSpan(_index, _index, _line, _line, _column, _column, _sourceFile);
 		return new LexError(kind, span);
 	}
 
 	private LexError ErrorAtSpanStart(LexErrorKind kind, int start, int startLine, int startCol) {
-		var span = new TokenSpan(
-			start, _index,
-			startLine, _line,
-			startCol, _column,
-			_sourceFile
-		);
+		var span = new TokenSpan(start, _index, startLine, _line, startCol, _column, _sourceFile);
 		return new LexError(kind, span);
 	}
 
 	private LexError ErrorSpan(LexErrorKind kind, int start, int startLine, int startCol, int end, int endLine, int endCol) {
-		var span = new TokenSpan(
-			start, end,
-			startLine, endLine,
-			startCol, endCol,
-			_sourceFile
-		);
+		var span = new TokenSpan(start, end, startLine, endLine, startCol, endCol, _sourceFile);
 		return new LexError(kind, span);
 	}
 
@@ -510,7 +476,7 @@ public class Lexer {
 	}
 
 	private static bool IsIdentPart(char ch) {
-		return IsIdentStart(ch) || (ch is >= '0' and <= '9') || ch is '$';
+		return IsIdentStart(ch) || ch is >= '0' and <= '9' || ch is '$';
 	}
 
 	private static bool DigitInRadix(char ch, int radix) {
@@ -518,7 +484,7 @@ public class Lexer {
 			2 => ch is '0' or '1',
 			8 => ch is >= '0' and <= '7',
 			10 => ch is >= '0' and <= '9',
-			16 => (ch is >= '0' and <= '9') || (ch is >= 'a' and <= 'f') || (ch is >= 'A' and <= 'F'),
+			16 => ch is >= '0' and <= '9' || ch is >= 'a' and <= 'f' || ch is >= 'A' and <= 'F',
 			_ => false
 		};
 	}
@@ -530,14 +496,7 @@ public class Lexer {
 
 	private static bool IsForbiddenControl(char ch) {
 		int cp = ch;
-		return (cp < 0x20 && ch != '\t' && ch != '\n')
-		       || cp == 0x7F
-		       || cp == 0x00A0
-		       || cp == 0xFEFF
-		       || cp is >= 0x200B and <= 0x200F
-		       || cp is >= 0x202A and <= 0x202E
-		       || cp is >= 0x2060 and <= 0x2064
-		       || cp == 0x206F;
+		return (cp < 0x20 && ch != '\t' && ch != '\n') || cp == 0x7F || cp == 0x00A0 || cp == 0xFEFF || cp is >= 0x200B and <= 0x200F || cp is >= 0x202A and <= 0x202E || cp is >= 0x2060 and <= 0x2064 || cp == 0x206F;
 	}
 
 	private static bool IsValidEscape(char ch) {
