@@ -3,6 +3,7 @@
 open System
 open Commands.DispatchResult
 open Commands.Executor.Lexer
+open Commands.Executor.Help
 
 let dispatch (args: string[]) =
     if args.Length = 0 then
@@ -10,8 +11,9 @@ let dispatch (args: string[]) =
 
     else
         match args.[0] with
+        | "?"
         | "help" ->
-            Success "Help Called"
+            runHelp ()
 
         | "build" ->
             Success "Build Called"

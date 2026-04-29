@@ -8,6 +8,7 @@
     <ItemGroup>
         <Compile Include="DispatchResult.fs" />
         <Compile Include="Executor\Lexer.fs" />
+        <Compile Include="Executor\Help.fs" />
         <Compile Include="Commands.fs"/>
     </ItemGroup>
 
