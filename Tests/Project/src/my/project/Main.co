@@ -45,4 +45,9 @@ public class () extends MyObject is Serializable {
     private func canThrow1() :> string? maybe NPE {
         return null;
     }
+
+    private func messageLength() :> int {
+        return hello::LENGTH;
+    }
+
 }

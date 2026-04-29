@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026.The Cloth contributors.
+﻿// Copyright (c) 2026. The Cloth contributors.
 //
 // Lexer.cs is part of the Cloth Frontend.
 //
@@ -6,6 +6,7 @@
 // license terms provided with the Cloth Compiler source distribution.
 
 using System.Text;
+using FrontEnd.Error.Lexer;
 using FrontEnd.File;
 using FrontEnd.Token;
 
@@ -22,9 +23,9 @@ public class Lexer {
 
 	public Lexer(ClothFile sourceFile) {
 		if (!sourceFile.Validate()) {
-			Console.Error.WriteLine($"Invalid source file: {sourceFile}");
-			Environment.Exit(1);
+			LexerError.InvalidFile.WithMessage($"Invalid source file: {sourceFile.Path}").Render();
 		}
+
 		sourceFile.Read();
 		var normalized = new StringBuilder(sourceFile.Content.Length);
 		for (var i = 0; i < sourceFile.Content.Length; i++) {
@@ -48,8 +49,7 @@ public class Lexer {
 
 	public List<Token.Token> LexAll() {
 		if (!ClothFile.Exists(_sourceFile)) {
-			Console.Error.WriteLine($"File not found: {_sourceFile}");
-			Environment.Exit(1);
+			LexerError.FileNotFound.WithMessage($"File not found: {_sourceFile}").Render();
 		}
 
 		List<Token.Token> tokens = new();
@@ -61,9 +61,8 @@ public class Lexer {
 				tokens.Add(token);
 				if (isEof) break;
 			}
-			catch (LexError err) {
-				Console.Error.WriteLine($"Lexer error: {err.Kind} at line {err.Span}");
-				Environment.Exit(1);
+			catch (LexerError err) {
+				err.Render();
 			}
 
 		return tokens;
@@ -78,7 +77,7 @@ public class Lexer {
 		var startIndex = _index;
 		var startLine = _line;
 		var startCol = _column;
-		var ch = PeekChar() ?? throw ErrorAtCurrent(LexErrorKind.UnexpectedEof);
+		var ch = PeekChar() ?? throw ErrorAtCurrent(LexerError.UnexpectedEof);
 
 		if (IsIdentStart(ch)) {
 			var lexeme = LexIdentifier();
@@ -123,7 +122,7 @@ public class Lexer {
 			}
 
 			if (IsForbiddenControl(ch.Value)) {
-				var err = ErrorAtCurrent(LexErrorKind.IllegalControlChar);
+				var err = ErrorAtCurrent(LexerError.IllegalControlChar);
 				BumpOne();
 				throw err;
 			}
@@ -146,8 +145,8 @@ public class Lexer {
 				BumpN(2);
 				while (true) {
 					if (IsEof()) {
-						var span = new TokenSpan(blockStartIndex, _index, blockStartLine, blockStartCol, _line, _column, _sourceFile);
-						throw new LexError(LexErrorKind.UnterminatedBlockComment, span);
+						var span = new TokenSpan(blockStartIndex, _index, blockStartLine, _line, blockStartCol, _column, _sourceFile);
+						throw LexerError.UnterminatedBlockComment.WithSpan(span);
 					}
 
 					if (StartsWith("*/")) {
@@ -241,7 +240,7 @@ public class Lexer {
 			}
 		}
 
-		if (!sawDigits) throw ErrorSpan(LexErrorKind.RadixWithoutDigits, startIndex, startLine, startCol, _index, _line, _column);
+		if (!sawDigits) throw ErrorSpan(LexerError.RadixWithoutDigits, startIndex, startLine, startCol, _index, _line, _column);
 
 		if (PeekChar() == '.') {
 			if (StartsWith("..") || StartsWith("...")) {
@@ -276,7 +275,7 @@ public class Lexer {
 					}
 				}
 
-				if (expDigits == 0) throw ErrorAtCurrent(LexErrorKind.EmptyExponent);
+				if (expDigits == 0) throw ErrorAtCurrent(LexerError.EmptyExponent);
 			}
 
 			if (PeekChar() == 'f' || PeekChar() == 'F' || PeekChar() == 'd' || PeekChar() == 'D') BumpOne();
@@ -304,18 +303,18 @@ public class Lexer {
 		var startCol = _column;
 		BumpOne();
 
-		if (IsEof() || PeekChar() == '\n') throw ErrorAtSpanStart(LexErrorKind.UnterminatedCharLiteral, startIndex, startLine, startCol);
+		if (IsEof() || PeekChar() == '\n') throw ErrorAtSpanStart(LexerError.UnterminatedCharLiteral, startIndex, startLine, startCol);
 
 		if (PeekChar() == '\\') {
 			BumpOne();
-			if (IsEof()) throw ErrorAtSpanStart(LexErrorKind.UnterminatedCharLiteral, startIndex, startLine, startCol);
-			var escapeCh = PeekChar() ?? throw ErrorAtSpanStart(LexErrorKind.UnterminatedCharLiteral, startIndex, startLine, startCol);
-			if (!IsValidEscape(escapeCh)) throw ErrorAtCurrent(LexErrorKind.UnknownEscapeInChar);
+			if (IsEof()) throw ErrorAtSpanStart(LexerError.UnterminatedCharLiteral, startIndex, startLine, startCol);
+			var escapeCh = PeekChar() ?? throw ErrorAtSpanStart(LexerError.UnterminatedCharLiteral, startIndex, startLine, startCol);
+			if (!IsValidEscape(escapeCh)) throw ErrorAtCurrent(LexerError.UnknownEscapeInChar);
 		}
 
 		BumpOne();
 
-		if (PeekChar() != '\'') throw ErrorAtCurrent(LexErrorKind.CharLiteralMultipleScalars);
+		if (PeekChar() != '\'') throw ErrorAtCurrent(LexerError.CharLiteralMultipleScalars);
 		BumpOne();
 
 		var endIndex = _index;
@@ -332,9 +331,9 @@ public class Lexer {
 		BumpOne();
 
 		while (true) {
-			if (IsEof()) throw ErrorAtSpanStart(LexErrorKind.UnterminatedString, startIndex, startLine, startCol);
-			var ch = PeekChar() ?? throw ErrorAtSpanStart(LexErrorKind.UnterminatedString, startIndex, startLine, startCol);
-			if (ch == '\n') throw ErrorAtSpanStart(LexErrorKind.UnterminatedString, startIndex, startLine, startCol);
+			if (IsEof()) throw ErrorAtSpanStart(LexerError.UnterminatedString, startIndex, startLine, startCol);
+			var ch = PeekChar() ?? throw ErrorAtSpanStart(LexerError.UnterminatedString, startIndex, startLine, startCol);
+			if (ch == '\n') throw ErrorAtSpanStart(LexerError.UnterminatedString, startIndex, startLine, startCol);
 			if (ch == '"') {
 				BumpOne();
 				break;
@@ -342,9 +341,9 @@ public class Lexer {
 
 			if (ch == '\\') {
 				BumpOne();
-				if (IsEof()) throw ErrorAtSpanStart(LexErrorKind.UnterminatedString, startIndex, startLine, startCol);
-				var escapeCh = PeekChar() ?? throw ErrorAtSpanStart(LexErrorKind.UnterminatedString, startIndex, startLine, startCol);
-				if (!IsValidEscape(escapeCh)) throw ErrorAtCurrent(LexErrorKind.UnknownEscapeInString);
+				if (IsEof()) throw ErrorAtSpanStart(LexerError.UnterminatedString, startIndex, startLine, startCol);
+				var escapeCh = PeekChar() ?? throw ErrorAtSpanStart(LexerError.UnterminatedString, startIndex, startLine, startCol);
+				if (!IsValidEscape(escapeCh)) throw ErrorAtCurrent(LexerError.UnknownEscapeInString);
 			}
 
 			BumpOne();
@@ -386,7 +385,7 @@ public class Lexer {
 			return MakeToken(TokenType.Operator, lexeme, lexeme, startIndex, endIndex, startLine, startCol, endLine, endCol, op: opKind);
 		}
 
-		throw ErrorAtCurrent(LexErrorKind.IllegalCharacter);
+		throw ErrorAtCurrent(LexerError.IllegalCharacter);
 	}
 
 	private Token.Token MakeToken(TokenType kind, string literal, string lexeme, int start, int end, int startLine, int startCol, int endLine, int endCol, Keyword? keyword = null, MetaKeyword? metaKeyword = null, Operator? op = null) {
@@ -394,19 +393,19 @@ public class Lexer {
 		return new Token.Token(kind, literal, span, lexeme, keyword, metaKeyword, op);
 	}
 
-	private LexError ErrorAtCurrent(LexErrorKind kind) {
+	private LexerError ErrorAtCurrent(LexerError error) {
 		var span = new TokenSpan(_index, _index, _line, _line, _column, _column, _sourceFile);
-		return new LexError(kind, span);
+		return error.WithSpan(span);
 	}
 
-	private LexError ErrorAtSpanStart(LexErrorKind kind, int start, int startLine, int startCol) {
+	private LexerError ErrorAtSpanStart(LexerError error, int start, int startLine, int startCol) {
 		var span = new TokenSpan(start, _index, startLine, _line, startCol, _column, _sourceFile);
-		return new LexError(kind, span);
+		return error.WithSpan(span);
 	}
 
-	private LexError ErrorSpan(LexErrorKind kind, int start, int startLine, int startCol, int end, int endLine, int endCol) {
+	private LexerError ErrorSpan(LexerError error, int start, int startLine, int startCol, int end, int endLine, int endCol) {
 		var span = new TokenSpan(start, end, startLine, endLine, startCol, endCol, _sourceFile);
-		return new LexError(kind, span);
+		return error.WithSpan(span);
 	}
 
 	private bool IsEof() {

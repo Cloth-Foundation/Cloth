@@ -6,7 +6,9 @@ design, compiler development, tooling, documentation, and ecosystem improvements
 ## Getting Started
 
 > Cloth is still in its early stages of development. It is not yet ready for production use.
-> Cloth is currently being bootstrapped in [C#](https://learn.microsoft.com/en-us/dotnet/csharp/) and [F#](https://learn.microsoft.com/en-us/dotnet/fsharp/) and compiles to Cloth IR (Intermediate Representation), which is then
+> Cloth is currently being bootstrapped in [C#](https://learn.microsoft.com/en-us/dotnet/csharp/)
+> and [F#](https://learn.microsoft.com/en-us/dotnet/fsharp/) and compiles to Cloth IR (Intermediate Representation), which
+> is then
 > compiled to LLVM IR.
 
 If you're new to the project, the best place to begin is by reviewing the Cloth specification and understanding the
@@ -14,7 +16,8 @@ language’s core principles.
 Before making changes, ensure you are familiar with the current design direction and terminology defined in the
 specification.
 
-> It is recommended to use [JetBrains Rider](https://www.jetbrains.com/rider/) or [Visual Studio](https://visualstudio.microsoft.com/) as Cloth is a .NET project, currently written in C# and F#.
+> It is recommended to use [JetBrains Rider](https://www.jetbrains.com/rider/)
+> or [Visual Studio](https://visualstudio.microsoft.com/) as Cloth is a .NET project, currently written in C# and F#.
 
 ## Communication and Help
 
@@ -49,7 +52,8 @@ You can contribute to Cloth in several areas:
 
 * Build system and package tooling
 * Formatting and linting tools
-* Language server (LSP) support for [VSCode](https://github.com/Cloth-Foundation/Cloth-VSCode-Language-Support) or [JetBrains](https://github.com/Cloth-Foundation/Cloth-Jetbrains-Language-Support).
+* Language server (LSP) support for [VSCode](https://github.com/Cloth-Foundation/Cloth-VSCode-Language-Support)
+  or [JetBrains](https://github.com/Cloth-Foundation/Cloth-Jetbrains-Language-Support).
 * Debugging and profiling tools
 
 ### Standard Library
