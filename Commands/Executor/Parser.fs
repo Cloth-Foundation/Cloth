@@ -4,7 +4,7 @@ open System
 open FrontEnd.File
 open FrontEnd.Lexer
 open FrontEnd.Parser
-open Frontend.Utilities
+open FrontEnd.Utilities
 open Commands.DispatchResult
 open Commands.Flags
 
@@ -14,7 +14,7 @@ let runParser (path: string, args: string[]) =
     let _compilationUnit = Parser(Lexer(file)).Parse()
     let relevantFlags = getRelevantFlags (args, "parser")
 
-    (*if relevantFlags |> Array.contains "--dump" then
-        printfn $"{JsonDump(parser.).ToJson()}"*)
+    if relevantFlags |> Array.contains "--dump" then
+        printfn $"{JsonDump(_compilationUnit).ToJson()}"
 
     Success "Parser completed."
