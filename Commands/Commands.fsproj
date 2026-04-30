@@ -10,6 +10,7 @@
         <Compile Include="DispatchResult.fs"/>
         <Compile Include="Executor\Lexer.fs"/>
         <Compile Include="Executor\Help.fs"/>
+        <Compile Include="Executor\Parser.fs" />
         <Compile Include="Commands.fs"/>
     </ItemGroup>
 

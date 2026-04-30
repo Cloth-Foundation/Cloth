@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026. The Cloth contributors.
+﻿// Copyright (c) 2026.The Cloth contributors.
 // 
 // Program.cs is part of the Cloth Frontend.
 // 
@@ -7,8 +7,9 @@
 
 using FrontEnd.File;
 using FrontEnd.Lexer;
+using FrontEnd.Parser;
 
 var file = new ClothFile(@"F:/Cloth/Tests/Project/src/my/project/Main.co", "Main.co");
-var tokens = new Lexer(file).LexAll();
-
-for (var i = 0; i < tokens.Count; i++) Console.WriteLine(i + 1 + ": " + tokens[i]);
+var lexer = new Lexer(file);
+var parser = new Parser(lexer);
+parser.Parse();

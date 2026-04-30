@@ -7,7 +7,8 @@ design, compiler development, tooling, documentation, and ecosystem improvements
 
 > Cloth is still in its early stages of development. It is not yet ready for production use.
 > Cloth is currently being bootstrapped in [C#](https://learn.microsoft.com/en-us/dotnet/csharp/)
-> and [F#](https://learn.microsoft.com/en-us/dotnet/fsharp/) and compiles to Cloth IR (Intermediate Representation), which
+> and [F#](https://learn.microsoft.com/en-us/dotnet/fsharp/) and compiles to Cloth IR (Intermediate Representation),
+> which
 > is then
 > compiled to LLVM IR.
 

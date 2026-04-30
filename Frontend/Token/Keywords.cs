@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026. The Cloth contributors.
+﻿// Copyright (c) 2026.The Cloth contributors.
 //
 // Keywords.cs is part of the Cloth Frontend.
 //
@@ -42,7 +42,7 @@ public enum Keyword {
 	Internal,
 	Static,
 	Const,
-	Var,
+	Let,
 	Getter,
 	Setter,
 	Atomic,
@@ -117,7 +117,11 @@ public static class Keywords {
 
 	public static readonly string[] TraitKeywordStrings = Enum.GetNames(typeof(TraitKeyword));
 
-	public static string GetKeywordString(Keyword keyword) {
+	public static string GetKeywordString(Keyword? keyword) {
+		if (keyword == null) {
+			return "[UNKNOWN]";
+		}
+
 		return keyword switch {
 			Keyword.True => "true",
 			Keyword.False => "false",
@@ -150,7 +154,7 @@ public static class Keywords {
 			Keyword.Internal => "internal",
 			Keyword.Static => "static",
 			Keyword.Const => "const",
-			Keyword.Var => "var",
+			Keyword.Let => "let",
 			Keyword.Getter => "getter",
 			Keyword.Setter => "setter",
 			Keyword.Atomic => "atomic",
@@ -256,7 +260,7 @@ public static class Keywords {
 			"internal" => Keyword.Internal,
 			"static" => Keyword.Static,
 			"const" => Keyword.Const,
-			"var" => Keyword.Var,
+			"let" => Keyword.Let,
 			"getter" => Keyword.Getter,
 			"setter" => Keyword.Setter,
 			"atomic" => Keyword.Atomic,
