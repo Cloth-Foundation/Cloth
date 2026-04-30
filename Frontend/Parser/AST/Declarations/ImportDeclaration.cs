@@ -10,18 +10,7 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct ImportDeclaration {
-	public readonly List<string> Path;
-
-	public readonly ImportItems Items;
-
-	public readonly TokenSpan Span;
-
-	public ImportDeclaration(List<string> path, ImportItems items, TokenSpan span) {
-		Path = path;
-		Items = items;
-		Span = span;
-	}
+public readonly record struct ImportDeclaration(List<string> Path, ImportDeclaration.ImportItems Items, TokenSpan Span) {
 
 	public abstract record ImportItems {
 		public sealed record Module : ImportItems;

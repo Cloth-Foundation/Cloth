@@ -35,7 +35,11 @@ public sealed class ClothFile {
 
 	[JsonIgnore] public string Content { get; private set; }
 
-	public bool IsValid { get; private set; }
+	[JsonIgnore] public bool IsValid { get; private set; }
+
+	[JsonIgnore] public ClothFileType Type => GetFileType();
+
+	[JsonInclude] public string FileType => GetFileType().ToString();
 
 	public static ClothFile FromPath(string path) {
 		var name = System.IO.Path.GetFileName(path);
@@ -87,8 +91,8 @@ public sealed class ClothFile {
 }
 
 public enum ClothFileType {
-	ClothObject = 0,
-	ClothLibrary = 1
+	ClothObject,
+	ClothLibrary
 }
 
 public static class Utilities {

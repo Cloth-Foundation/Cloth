@@ -9,6 +9,7 @@ using FrontEnd.Error.Parser;
 using FrontEnd.Parser.AST;
 using FrontEnd.Parser.AST.Declarations;
 using FrontEnd.Parser.AST.Entries;
+using FrontEnd.Utilities;
 
 namespace FrontEnd.Parser;
 
