@@ -8,16 +8,14 @@
 namespace FrontEnd.Utilities;
 
 using System.Text.Json;
-using System.Collections.Generic;
 
 public class JsonDump<T>(T data) {
-	public string ToJson(bool indented = true) {
-		return JsonSerializer.Serialize(data, new JsonSerializerOptions {
-			WriteIndented = indented
-		});
-	}
 
-	public static JsonDump<T> Create<T>(T data) {
-		return new JsonDump<T>(data);
+	private readonly JsonSerializerOptions _options = new() {
+		WriteIndented = true
+	};
+
+	public string ToJson() {
+		return JsonSerializer.Serialize(data, _options);
 	}
 }
