@@ -1,0 +1,13 @@
+﻿module hello.world;
+
+import cloth.io.IO::{ println };
+
+public class () {
+
+    public Main {
+        println("Hello, World!");
+    }
+
+    public ~Main() {
+    }
+}
