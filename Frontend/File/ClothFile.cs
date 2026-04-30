@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026. The Cloth contributors.
+﻿// Copyright (c) 2026.The Cloth contributors.
 //
 // ClothFile.cs is part of the Cloth Frontend.
 //

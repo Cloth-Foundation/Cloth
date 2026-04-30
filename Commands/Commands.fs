@@ -4,6 +4,7 @@ open System
 open Commands.DispatchResult
 open Commands.Executor.Lexer
 open Commands.Executor.Help
+open Commands.Executor.Parser
 
 let dispatch (args: string[]) =
     if args.Length = 0 then
@@ -26,7 +27,11 @@ let dispatch (args: string[]) =
             else
                 runLexer (args[1], args)
 
-        | "parser" -> Success "Parser Called"
+        | "parser" ->
+            if args.Length < 2 then
+                Failure "Expected file path. Example: cloth parser ./src/Main.co"
+            else
+                runParser (args[1], args)
 
         | unknown -> Failure $"Unknown command: {unknown}"
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026. The Cloth contributors.
+﻿// Copyright (c) 2026.The Cloth contributors.
 //
 // Lexer.cs is part of the Cloth Frontend.
 //
@@ -45,6 +45,10 @@ public class Lexer {
 		_line = 1;
 		_column = 1;
 		_afterColonColon = false;
+	}
+
+	public ClothFile GetSourceFile() {
+		return _sourceFile;
 	}
 
 	public List<Token.Token> LexAll() {
