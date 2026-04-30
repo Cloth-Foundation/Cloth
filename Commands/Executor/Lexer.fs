@@ -3,7 +3,7 @@
 open System
 open FrontEnd.File
 open FrontEnd.Lexer
-open Frontend.Utilities
+open FrontEnd.Utilities
 open Commands.DispatchResult
 open Commands.Flags
 

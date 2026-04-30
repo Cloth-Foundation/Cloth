@@ -5,19 +5,19 @@
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
-namespace Frontend.Utilities;
+namespace FrontEnd.Utilities;
 
 using System.Text.Json;
 using System.Collections.Generic;
 
-public class JsonDump<T>(List<T> data) {
+public class JsonDump<T>(T data) {
 	public string ToJson(bool indented = true) {
 		return JsonSerializer.Serialize(data, new JsonSerializerOptions {
 			WriteIndented = indented
 		});
 	}
 
-	public static JsonDump<T> Create<T>(List<T> data) {
+	public static JsonDump<T> Create<T>(T data) {
 		return new JsonDump<T>(data);
 	}
 }
