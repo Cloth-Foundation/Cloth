@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  - Copyright (c) ${CurrentDate.Year}. The Cloth contributors.
+  -
+  - ${File.FileName} is part of the ${File.SolutionName} ${File.ProjectName}.
+  -
+  - Use, modification, and distribution of this file are governed by the
+  - license terms provided with the Cloth Compiler source distribution.
+  -->
+
+<!DOCTYPE instance-profile
+        SYSTEM "https://resources.jetbrains.com/writerside/1.0/product-profile.dtd">
+
+<instance-profile id="c"
+                 name="Cloth"
+                 start-page="Home.md">
+
+    <toc-element topic="Home.md"/>
+    <toc-element toc-title="Getting Started">
+        <toc-element topic="Hello-World.md"/>
+    </toc-element>
+    <toc-element toc-title="File Structure">
+        <toc-element topic="Modules.md"/>
+    </toc-element>
+    <toc-element toc-title="Errors">
+        <toc-element topic="Parser-Errors.md"/>
+        <toc-element topic="Lexer-Errors.md"/>
+    </toc-element>
+</instance-profile>

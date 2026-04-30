@@ -50,12 +50,13 @@ public class Parser {
 	/// only a single module declaration is allowed per file.
 	/// <returns>A ModuleDeclaration object representing the parsed module.</returns>
 	private ModuleDeclaration ParseModuleDecl() {
-		if (_moduleDeclared) throw ParserError.ModuleAlreadyDefined.Render();
+		if (_moduleDeclared) throw ParserError.ModuleAlreadyDefined.WithSpan(_current.Span).Render();
 		if (_current.Type != TokenType.Keyword || _current.Keyword != Keyword.Module) throw ParserError.ModuleExpected.WithMessage($"expected 'module', got {_current.Type.ToString().ToLower()} '{_current.Lexeme}'").Render();
 
 		var startSpan = _current.Span;
 		Advance(); // eat "module"
 		var path = ParseModulePath();
+		if (path.Count == 0) throw ParserError.ModulePathNotDefined.WithMessage("module path not defined").Render();
 		var endSpan = ExpectSemiColon();
 
 		_moduleDeclared = true;
@@ -74,6 +75,14 @@ public class Parser {
 
 		ExpectIdentifier();
 		path.Add(_current.Literal);
+
+		// Allow _src to be used as a module path, but only if it's not followed by a dot
+		// This will be checked by the semantic analyzer later to ensure the file location
+		// is in the source (default "src") folder.
+		if (path[0].ToLower().Equals("_src")) {
+			if (Peek().Operator == Operator.Dot) throw ParserError.ModuleSrcInvalid.WithMessage("'_src' is only valid as its own identifier").WithSpan(_current.Span).Render();
+			return path;
+		}
 
 		while (Peek().Operator == Operator.Dot) {
 			Advance(); // consume the dot
@@ -171,7 +180,7 @@ public class Parser {
 	/// is thrown. This method is used to enforce that a semicolon is required at the
 	/// current position during parsing to maintain syntax correctness.
 	private TokenSpan ExpectSemiColon() {
-		if (Advance().Operator != Operator.Semicolon) throw ParserError.ExpectedSemiColon.Render();
+		if (Advance().Operator != Operator.Semicolon) throw ParserError.ExpectedSemiColon.WithSpan(_current.Span).Render();
 		var span = _current.Span;
 		Advance(); // move past ';' so _current points at the next statement
 		return span;
