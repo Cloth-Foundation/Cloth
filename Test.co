@@ -1,3 +1,16 @@
 ﻿module _src;
 
 import cloth.io.IO::{ println };
+import cloth.lang.Nullable;
+import cloth.lang.Serializable;
+import cloth.lang.Object;
+
+public class (): Object -> Serializable, Nullable {
+
+    public Test {
+    }
+
+    public Test(string s) {
+    }
+
+}

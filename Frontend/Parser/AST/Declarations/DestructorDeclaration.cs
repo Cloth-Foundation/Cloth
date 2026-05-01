@@ -11,8 +11,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct DestructorDeclaration {
-	public readonly Visibility Visibility;
-	public readonly Block Body;
-	public readonly TokenSpan Span;
-}
+public readonly record struct DestructorDeclaration(Visibility Visibility, Block Body, TokenSpan Span);

@@ -33,6 +33,8 @@ public sealed class ClothFile {
 
 	public string Name { get; }
 
+	[JsonIgnore] public string NameWithoutExtension => System.IO.Path.GetFileNameWithoutExtension(Name);
+
 	[JsonIgnore] public string Content { get; private set; }
 
 	[JsonIgnore] public bool IsValid { get; private set; }

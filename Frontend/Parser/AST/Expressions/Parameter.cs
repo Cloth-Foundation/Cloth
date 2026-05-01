@@ -10,9 +10,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Expressions;
 
-public readonly record struct Parameter {
-	public readonly TypeExpression Type;
-	public readonly string Name;
-	public readonly Expression? Default;
-	public readonly TokenSpan Span;
-}
+public readonly record struct Parameter(TypeExpression Type, string Name, Expression? Default, TokenSpan Span);

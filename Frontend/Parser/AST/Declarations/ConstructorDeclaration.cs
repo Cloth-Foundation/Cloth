@@ -12,10 +12,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct ConstructorDeclaration {
-	public readonly List<TraitAnnotation> Annotations;
-	public readonly Visibility Visibility;
-	public readonly List<Parameter> Parameters;
-	public readonly Block Body;
-	public readonly TokenSpan Span;
-}
+public readonly record struct ConstructorDeclaration(List<TraitAnnotation> Annotations, Visibility Visibility, List<Parameter> Parameters, Block Body, TokenSpan Span);

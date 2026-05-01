@@ -10,9 +10,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct StructDeclaration {
-	public readonly Visibility Visibility;
-	public readonly string Name;
-	public readonly List<MemberDeclaration> Members;
-	public readonly TokenSpan Span;
-}
+public readonly record struct StructDeclaration(Visibility Visibility, string Name, List<MemberDeclaration> Members, TokenSpan Span);

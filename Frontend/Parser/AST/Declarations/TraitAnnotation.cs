@@ -10,8 +10,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct TraitAnnotation {
-	public readonly string Name;
-	public readonly List<(String, Expression)> Args;
-	public readonly TokenSpan Span;
-}
+public readonly record struct TraitAnnotation(string Name, List<(string Key, Expression Value)> Args, TokenSpan Span);
