@@ -5,7 +5,6 @@
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
-using FrontEnd.Parser.AST;
 using FrontEnd.Parser.AST.Expressions;
 using FrontEnd.Parser.AST.Statements;
 using FrontEnd.Parser.AST.Type;

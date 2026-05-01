@@ -9,16 +9,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Entries;
 
-public readonly record struct ImportEntry {
-	public readonly string Name;
-
-	public readonly string? Alias;
-
-	public readonly TokenSpan Span;
-
-	public ImportEntry(string name, string? alias, TokenSpan span) {
-		Name = name;
-		Alias = alias;
-		Span = span;
-	}
-}
+public readonly record struct ImportEntry(string Name, string? Alias, TokenSpan Span);

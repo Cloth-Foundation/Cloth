@@ -60,7 +60,7 @@ public enum Operator {
 
 public static class Operators {
 	public static readonly string[] MultiCharOperators = new[] {
-		"...", "..", "::", "->", "=>", "??",
+		"...", "..", "::", ":>", "->", "=>", "??",
 		"++", "--", "+=", "-=", "*=", "/=", "%=",
 		"&=", "|=", "^=", "==", "!=", "<=", ">="
 	};
