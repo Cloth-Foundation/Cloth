@@ -47,6 +47,7 @@ public enum Keyword {
 	Setter,
 	Atomic,
 	Abstract,
+	Prototype,
 
 	Module,
 	Import,
@@ -106,7 +107,6 @@ public enum MetaKeyword {
 public enum TraitKeyword {
 	Override,
 	Implementation,
-	Prototype,
 	Deprecated
 }
 
@@ -159,6 +159,7 @@ public static class Keywords {
 			Keyword.Setter => "setter",
 			Keyword.Atomic => "atomic",
 			Keyword.Abstract => "abstract",
+			Keyword.Prototype => "prototype",
 			Keyword.Module => "module",
 			Keyword.Import => "import",
 			Keyword.Class => "class",
@@ -221,7 +222,6 @@ public static class Keywords {
 		return traitKeyword switch {
 			TraitKeyword.Override => "Override",
 			TraitKeyword.Implementation => "Implementation",
-			TraitKeyword.Prototype => "Prototype",
 			TraitKeyword.Deprecated => "Deprecated",
 			_ => throw new NotImplementedException()
 		};
@@ -265,6 +265,7 @@ public static class Keywords {
 			"setter" => Keyword.Setter,
 			"atomic" => Keyword.Atomic,
 			"abstract" => Keyword.Abstract,
+			"prototype" => Keyword.Prototype,
 			"module" => Keyword.Module,
 			"import" => Keyword.Import,
 			"class" => Keyword.Class,

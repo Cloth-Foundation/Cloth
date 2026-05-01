@@ -13,4 +13,8 @@ public class (): Object -> Serializable, Nullable {
     public Test(string s) {
     }
 
+    public prototype func run (): void {
+
+    }
+
 }
