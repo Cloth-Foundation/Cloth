@@ -8,6 +8,18 @@ public class (): Object -> Serializable, Nullable {
     public Test {
         void frag = run();
         frag();
+
+        let x = 1;
+
+        if (true) {
+            println("Hello World");
+        } else {
+            println("I am Cloth!");
+        }
+    }
+
+    public ~Test () {
+        println("Goodbye World");
     }
 
     public Test(string s) {

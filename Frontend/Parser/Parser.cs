@@ -19,11 +19,15 @@ using Lexer;
 using Token;
 
 public class Parser {
+
 	private readonly List<Token> _tokens;
 	private Token _current;
 	private bool _moduleDeclared;
 	private int _cursor;
 	private readonly string _currentFileName;
+
+	internal StatementParser StatementParser;
+	internal ExpressionParser ExpressionParser;
 
 	public Parser(Lexer lexer) {
 		_tokens = lexer.LexAll();
@@ -31,6 +35,8 @@ public class Parser {
 		_moduleDeclared = false;
 		_cursor = 0;
 		_currentFileName = lexer.GetSourceFile().NameWithoutExtension;
+		StatementParser = new(this);
+		ExpressionParser = new(this);
 	}
 
 	public CompilationUnit Parse() {
@@ -200,9 +206,7 @@ public class Parser {
 
 	private ClassDeclaration ParseClassDeclaration(Visibility visibility, List<ClassModifiers> modifiers) {
 		var start = _current.Span;
-		ExpectKeyword(Keyword.Class); // consume 'class', _current = name
-
-		var name = _currentFileName; // We use the file name to declare declaration name.
+		ExpectKeyword(Keyword.Class); // consume 'class', _current = nam
 
 		var parameters = new List<Parameter>();
 		if (CheckOperator(Operator.LParen)) {
@@ -211,14 +215,14 @@ public class Parser {
 			ExpectOperator(Operator.RParen); // consume ')'
 		}
 
-		string? extends = CheckExtensions();
+		var extends = CheckExtensions();
 		var implementors = CheckImplementors();
 
 		ExpectOperator(Operator.LBrace); // consume '{', _current = first member
 		var members = ParseMembers();
 		ExpectOperator(Operator.RBrace); // consume '}'
 
-		return new ClassDeclaration(visibility, modifiers, name, parameters, extends, implementors, members, TokenSpan.Merge(start, Previous().Span));
+		return new ClassDeclaration(visibility, modifiers, _currentFileName, parameters, extends, implementors, members, TokenSpan.Merge(start, Previous().Span));
 	}
 
 	private StructDeclaration ParseStructDeclaration(Visibility visibility) {
@@ -529,7 +533,7 @@ public class Parser {
 
 		Block? body = null;
 		if (CheckOperator(Operator.LBrace)) {
-			body = ParseBlock(); // TODO: replace with ParseBlock() when statement parsing is implemented
+			body = ParseBlock();
 		}
 		else {
 			ExpectSemiColon(); // abstract / prototype method
@@ -538,6 +542,27 @@ public class Parser {
 		return new MethodDeclaration(annotations, visibility, modifiers, name, parameters, returnType, maybeClause, body, TokenSpan.Merge(start, Previous().Span));
 	}
 
+	/// <summary>
+	/// Parses a fragment declaration, including its annotations, visibility, modifiers, name, parameters, return type, optional "maybe" clause,
+	/// and body or prototype. Validates the fragment's structure and syntax within the current token stream.
+	/// </summary>
+	/// <param name="annotations">
+	/// The list of trait annotations associated with the fragment declaration.
+	/// </param>
+	/// <param name="visibility">
+	/// The visibility modifier of the fragment (e.g., public, private, or internal).
+	/// </param>
+	/// <param name="modifiers">
+	/// The list of additional function modifiers applied to the fragment, such as const or prototype.
+	/// </param>
+	/// <returns>
+	/// A <see cref="FragmentDeclaration"/> object representing the parsed fragment, containing all associated data including the name,
+	/// parameters, return type, optional clauses, body, and token span.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the fragment declaration contains invalid tokens, missing required components such as the identifier, or
+	/// if any syntax rules are violated during parsing.
+	/// </exception>
 	private FragmentDeclaration ParseFragmentDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers) {
 		var start = _current.Span;
 
@@ -631,24 +656,21 @@ public class Parser {
 	}
 
 	// TODO: We must parse blocks instead of skipping for now.
-	private Block ParseBlock() {
+	internal Block ParseBlock() {
 		var start = _current.Span;
 		ExpectOperator(Operator.LBrace); // consume '{', _current = first token inside
-		var depth = 1;
-		while (depth > 0 && !AtEof()) {
-			if (CheckOperator(Operator.LBrace)) depth++;
-			else if (CheckOperator(Operator.RBrace)) {
-				depth--;
-				if (depth == 0) break;
-			}
 
-			Advance();
+		var statements = new List<Stmt>();
+		while (!CheckOperator(Operator.RBrace) && !AtEof()) {
+			statements.Add(ParseStatement());
 		}
 
-		var end = _current.Span;
-		if (!AtEof()) Advance(); // consume final '}'
-		return new Block(new List<Stmt>(), TokenSpan.Merge(start, end));
+		ExpectOperator(Operator.RBrace);
+		var end = Previous().Span;
+		return new Block(statements, TokenSpan.Merge(start, end));
 	}
+
+	internal Stmt ParseStatement() => StatementParser.ParseStatement();
 
 	/// <summary>
 	/// Parses a list of parameters from the current token stream within a method, constructor,
@@ -658,7 +680,7 @@ public class Parser {
 	/// A list of <see cref="Parameter"/> objects, where each parameter encapsulates its type,
 	/// name, optional default expression, and token span in the source code.
 	/// </returns>
-	private List<Parameter> ParseParameters() {
+	internal List<Parameter> ParseParameters() {
 		// Called after '(' has been consumed; _current = first param type or ')'
 		var parameters = new List<Parameter>();
 		if (!CheckOperator(Operator.RParen)) {
@@ -681,7 +703,7 @@ public class Parser {
 	/// <exception cref="ParserError">
 	/// Thrown if the token stream does not contain a valid parameter declaration or an expected token is missing.
 	/// </exception>
-	private Parameter ParseParameter() {
+	internal Parameter ParseParameter() {
 		var start = _current.Span;
 		var type = ParseTypeExpression();
 		var name = ExpectIdentifier();
@@ -697,7 +719,7 @@ public class Parser {
 	/// <exception cref="ParserError">
 	/// Thrown when the token stream does not contain a valid type expression or an expected token is missing.
 	/// </exception>
-	private TypeExpression ParseTypeExpression() {
+	internal TypeExpression ParseTypeExpression() {
 		var start = _current.Span;
 
 		OwnershipModifier? ownership = null;
@@ -834,7 +856,7 @@ public class Parser {
 	/// </summary>
 	/// <returns>The span of the semicolon token if it is valid.</returns>
 	/// <exception cref="ParserError">Thrown when the current token is not a semicolon.</exception>
-	private TokenSpan ExpectSemiColon() {
+	internal TokenSpan ExpectSemiColon() {
 		if (_current.Operator != Operator.Semicolon)
 			throw ParserError.ExpectedSemiColon.WithSpan(_current.Span).Render();
 		var span = _current.Span;
@@ -847,7 +869,7 @@ public class Parser {
 	/// </summary>
 	/// <returns>The string value of the identifier if the current token is a valid identifier.</returns>
 	/// <exception cref="ParserError">Thrown when the current token is not an identifier.</exception>
-	private string ExpectIdentifier() {
+	internal string ExpectIdentifier() {
 		if (_current.Type != TokenType.Identifier)
 			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).WithMessage($"expected {nameof(TokenType.Identifier)}, got '{_current.Lexeme}'").Render();
 		var name = _current.Literal;
@@ -855,6 +877,17 @@ public class Parser {
 		return name;
 	}
 
+	/// <summary>
+	/// Validates and consumes the current token as an import identifier or wildcard.
+	/// Supports identifiers and the '*' operator commonly used in imports.
+	/// </summary>
+	/// <returns>
+	/// A string representing the literal value of the current token used as an import identifier.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown when the current token is not a valid identifier or the '*' operator,
+	/// providing detailed information about the error and its location within the token span.
+	/// </exception>
 	private string ExpectImportIdentifier() {
 		if (_current.Type != TokenType.Identifier && _current.Operator != Operator.Star)
 			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).WithMessage($"expected {nameof(TokenType.Identifier)}, got '{_current.Lexeme}'").Render();
@@ -869,7 +902,7 @@ public class Parser {
 	/// <param name="op">The expected operator to verify against the current token.</param>
 	/// <returns>True if the current token matches the specified operator and is successfully consumed.</returns>
 	/// <exception cref="ParserError">Thrown when the current token does not match the expected operator.</exception>
-	private bool ExpectOperator(Operator op, bool throwError = true) {
+	internal bool ExpectOperator(Operator op, bool throwError = true) {
 		if (_current.Operator != op) {
 			if (throwError) {
 				throw ParserError.ExpectedOperator.WithMessage($"expected '{Operators.GetLexemeFromOperator(op)}', got '{_current.Lexeme}'").WithSpan(_current.Span).Render();
@@ -886,7 +919,7 @@ public class Parser {
 	/// <param name="keyword">The expected keyword to verify against the current token.</param>
 	/// <returns>True if the current token matches and is successfully consumed.</returns>
 	/// <exception cref="ParserError">Thrown when the current token does not match the expected keyword.</exception>
-	private bool ExpectKeyword(Keyword keyword) {
+	internal bool ExpectKeyword(Keyword keyword) {
 		if (_current.Keyword != keyword)
 			throw ParserError.ExpectedKeyword.WithMessage($"expected '{Keywords.GetKeywordString(keyword)}', got {_current.Type.ToString().ToLower()} '{_current.Lexeme}'").Render();
 		Advance();
@@ -898,7 +931,7 @@ public class Parser {
 	/// </summary>
 	/// <param name="op">The operator to be consumed if it matches the current token.</param>
 	/// <returns>True if the specified operator was successfully consumed; otherwise, false.</returns>
-	private bool ConsumeOp(Operator op) {
+	internal bool ConsumeOp(Operator op) {
 		if (_current.Operator == op) {
 			Advance();
 			return true;
@@ -912,21 +945,21 @@ public class Parser {
 	/// </summary>
 	/// <param name="keyword">The keyword to be checked against the current token.</param>
 	/// <returns>True if the current token matches the specified keyword; otherwise, false.</returns>
-	private bool CheckKeyword(Keyword keyword) => _current.Keyword == keyword;
+	internal bool CheckKeyword(Keyword keyword) => _current.Keyword == keyword;
 
 	/// <summary>
 	/// Checks if the current token matches the specified operator.
 	/// </summary>
 	/// <param name="op">The operator to check against the current token.</param>
 	/// <returns>True if the current token matches the specified operator; otherwise, false.</returns>
-	private bool CheckOperator(Operator op) => _current.Operator == op;
+	internal bool CheckOperator(Operator op) => _current.Operator == op;
 
 	/// <summary>
 	/// Advances the parser's cursor to the next token in the token stream.
 	/// If the end of the stream is reached, the cursor remains at the last token.
 	/// </summary>
 	/// <returns>The token at the new cursor position after advancing.</returns>
-	private Token Advance() {
+	internal Token Advance() {
 		if (_cursor < _tokens.Count - 1) _cursor++;
 		return _current = _tokens[_cursor];
 	}
@@ -936,7 +969,7 @@ public class Parser {
 	/// If the cursor is at the beginning of the stream, returns the first token.
 	/// </summary>
 	/// <returns>The previous token in the token stream, or the first token if at the beginning of the stream.</returns>
-	private Token Previous() {
+	internal Token Previous() {
 		if (_cursor - 1 > 0) return _tokens[_cursor - 1];
 		return _tokens.First();
 	}
@@ -946,7 +979,7 @@ public class Parser {
 	/// If the end of the token list is reached, returns the last token.
 	/// </summary>
 	/// <returns>The next token in the token stream, or the last token if at the end of the stream.</returns>
-	private Token Peek() {
+	internal Token Peek() {
 		return PeekAt(1);
 	}
 
@@ -956,7 +989,7 @@ public class Parser {
 	/// </summary>
 	/// <param name="offset">The number of positions to move forward from the current cursor to peek at a token.</param>
 	/// <returns>The token located at the specified offset, or the last token if the offset exceeds the bounds of the token list.</returns>
-	private Token PeekAt(int offset) {
+	internal Token PeekAt(int offset) {
 		var target = _cursor + offset;
 		if (target < _tokens.Count) return _tokens[target];
 		return _tokens.Last();
@@ -969,7 +1002,87 @@ public class Parser {
 	/// True if the current token is of type <see cref="TokenType.Eof"/>, indicating the end of the stream;
 	/// otherwise, false.
 	/// </returns>
-	private bool AtEof() => _current.Type == TokenType.Eof;
+	internal bool AtEof() => _current.Type == TokenType.Eof;
+
+	/// <summary>The current token under the cursor, exposed for sub-parsers.</summary>
+	internal Token Current => _current;
+
+	/// <summary>Returns the current cursor index so a sub-parser can restore it on failure.</summary>
+	internal int SaveCursor() => _cursor;
+
+	/// <summary>Restores the cursor to a previously saved position.</summary>
+	internal void RestoreTo(int pos) {
+		_cursor = pos;
+		_current = _tokens[pos];
+	}
+
+	/// <summary>
+	/// Attempts to parse a type expression without throwing on failure.
+	/// Returns <c>null</c> if the tokens at the current position do not form a valid type,
+	/// leaving the cursor wherever parsing stalled (caller must <see cref="RestoreTo"/> on null).
+	/// </summary>
+	internal TypeExpression? TryParseTypeExpression() {
+		var start = _current.Span;
+
+		OwnershipModifier? ownership = null;
+		if (CheckOperator(Operator.Not))       { ownership = OwnershipModifier.Transfer;  Advance(); }
+		else if (CheckOperator(Operator.And))  { ownership = OwnershipModifier.MutBorrow; Advance(); }
+
+		BaseType baseType;
+
+		if (CheckOperator(Operator.LBracket)) {
+			Advance();
+			var elem = TryParseTypeExpression();
+			if (elem == null || !CheckOperator(Operator.RBracket)) return null;
+			Advance();
+			baseType = new BaseType.Array(elem.Value);
+		}
+		else if (CheckOperator(Operator.LParen)) {
+			Advance();
+			var first = TryParseTypeExpression();
+			if (first == null) return null;
+			var elems = new List<TypeExpression> { first.Value };
+			while (ConsumeOp(Operator.Comma)) {
+				var next = TryParseTypeExpression();
+				if (next == null) return null;
+				elems.Add(next.Value);
+			}
+			if (!CheckOperator(Operator.RParen)) return null;
+			Advance();
+			baseType = new BaseType.Tuple(elems);
+		}
+		else if (CheckKeyword(Keyword.Void)) { Advance(); baseType = new BaseType.Void(); }
+		else if (CheckKeyword(Keyword.Any))  { Advance(); baseType = new BaseType.Any();  }
+		else if (_current.Type == TokenType.Identifier || _current.Type == TokenType.Keyword) {
+			var name = _current.Lexeme;
+			Advance();
+			if (CheckOperator(Operator.Less)) {
+				Advance();
+				var firstArg = TryParseTypeExpression();
+				if (firstArg == null) return null;
+				var args = new List<TypeExpression> { firstArg.Value };
+				while (ConsumeOp(Operator.Comma)) {
+					var nextArg = TryParseTypeExpression();
+					if (nextArg == null) return null;
+					args.Add(nextArg.Value);
+				}
+				if (!CheckOperator(Operator.Greater)) return null;
+				Advance();
+				baseType = new BaseType.Generic(name, args);
+			}
+			else {
+				baseType = new BaseType.Named(name);
+			}
+		}
+		else {
+			return null;
+		}
+
+		var nullable = false;
+		if (CheckOperator(Operator.Question)) { nullable = true; Advance(); }
+
+		return new TypeExpression(baseType, nullable, ownership, TokenSpan.Merge(start, Previous().Span));
+	}
 
 	/// <summary>
 	/// Ensures that the end of the file (EOF) has been reached in the token stream.
