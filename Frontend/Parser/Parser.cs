@@ -351,7 +351,7 @@ public class Parser {
 				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers)));
 			}
 			else if (CheckKeyword(Keyword.Fragment)) {
-				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers, Keyword.Fragment)));
+				members.Add(new MemberDeclaration.Fragment(ParseFragmentDecl(annotations, visibility, modifiers)));
 			}
 			else if (ExpectIdentifier().Equals(_currentFileName)) { // Main.co -> public Main {}
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
@@ -499,10 +499,10 @@ public class Parser {
 	/// Thrown if required tokens, such as the function keyword ('func'), method name, parentheses, or semicolon, are missing
 	/// or if the syntax of the method declaration is invalid.
 	/// </exception>
-	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers, Keyword keyword = Keyword.Func) {
+	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers) {
 		var start = _current.Span;
 
-		ExpectKeyword(keyword);
+		ExpectKeyword(Keyword.Func);
 		var name = ExpectIdentifier();
 
 		ExpectOperator(Operator.LParen);
@@ -536,6 +536,45 @@ public class Parser {
 		}
 
 		return new MethodDeclaration(annotations, visibility, modifiers, name, parameters, returnType, maybeClause, body, TokenSpan.Merge(start, Previous().Span));
+	}
+
+	private FragmentDeclaration ParseFragmentDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers) {
+		var start = _current.Span;
+
+		ExpectKeyword(Keyword.Fragment);
+		var name = ExpectIdentifier();
+
+		ExpectOperator(Operator.LParen);
+		var parameters = ParseParameters();
+		ExpectOperator(Operator.RParen);
+
+		TypeExpression returnType;
+		if (CheckOperator(Operator.Colon)) {
+			Advance(); // consume ':'
+			returnType = ParseTypeExpression();
+		}
+		else {
+			returnType = new TypeExpression(new BaseType.Void(), false, null, _current.Span);
+		}
+
+		var maybeClause = new List<TypeExpression>();
+		if (CheckKeyword(Keyword.Maybe)) {
+			Advance(); // consume 'maybe'
+			maybeClause.Add(ParseTypeExpression());
+			while (ConsumeOp(Operator.Comma)) {
+				maybeClause.Add(ParseTypeExpression());
+			}
+		}
+
+		Block? body = null;
+		if (CheckOperator(Operator.LBrace)) {
+			body = ParseBlock(); // TODO: replace with ParseBlock() when statement parsing is implemented
+		}
+		else {
+			ExpectSemiColon(); // abstract / prototype method
+		}
+
+		return new FragmentDeclaration(annotations, visibility, modifiers, name, parameters, returnType, maybeClause, body, TokenSpan.Merge(start, Previous().Span));
 	}
 
 	/// <summary>
@@ -662,7 +701,7 @@ public class Parser {
 		var start = _current.Span;
 
 		OwnershipModifier? ownership = null;
-		if (CheckOperator(Operator.Tilde)) {
+		if (CheckOperator(Operator.Not)) {
 			ownership = OwnershipModifier.Transfer;
 			Advance();
 		}
