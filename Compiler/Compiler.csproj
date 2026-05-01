@@ -7,4 +7,11 @@
         <AssemblyName>CC</AssemblyName>
     </PropertyGroup>
 
+    <ItemGroup>
+      <Folder Include="CIR\" />
+      <Folder Include="Link\" />
+      <Folder Include="LLVM\" />
+      <Folder Include="Semantics\" />
+    </ItemGroup>
+
 </Project>

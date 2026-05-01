@@ -140,9 +140,15 @@ public class Parser {
 
 		ExpectKeyword(Keyword.Import); // consume 'import', _current = first path segment
 		var path = new List<string>();
-		path.Add(ExpectIdentifier());
+		path.Add(ExpectImportIdentifier());
 
-		while (CheckOperator(Operator.Dot) && PeekAt(1).Type == TokenType.Identifier) {
+		while (CheckOperator(Operator.Dot) && (PeekAt(1).Type == TokenType.Identifier || PeekAt(1).Operator == Operator.Star)) {
+			if (PeekAt(1).Operator == Operator.Star) {
+				path.Add(PeekAt(1).Literal);
+				Advance(); // eat .
+				Advance(); // eat *
+				break;
+			}
 			Advance(); // consume '.', _current = next segment
 			path.Add(ExpectIdentifier());
 		}
@@ -344,6 +350,9 @@ public class Parser {
 			else if (CheckKeyword(Keyword.Func)) {
 				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers)));
 			}
+			else if (CheckKeyword(Keyword.Fragment)) {
+				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers, Keyword.Fragment)));
+			}
 			else if (ExpectIdentifier().Equals(_currentFileName)) { // Main.co -> public Main {}
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
@@ -490,10 +499,10 @@ public class Parser {
 	/// Thrown if required tokens, such as the function keyword ('func'), method name, parentheses, or semicolon, are missing
 	/// or if the syntax of the method declaration is invalid.
 	/// </exception>
-	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers) {
+	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers, Keyword keyword = Keyword.Func) {
 		var start = _current.Span;
 
-		ExpectKeyword(Keyword.Func);
+		ExpectKeyword(keyword);
 		var name = ExpectIdentifier();
 
 		ExpectOperator(Operator.LParen);
@@ -801,6 +810,14 @@ public class Parser {
 	/// <exception cref="ParserError">Thrown when the current token is not an identifier.</exception>
 	private string ExpectIdentifier() {
 		if (_current.Type != TokenType.Identifier)
+			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).WithMessage($"expected {nameof(TokenType.Identifier)}, got '{_current.Lexeme}'").Render();
+		var name = _current.Literal;
+		Advance();
+		return name;
+	}
+
+	private string ExpectImportIdentifier() {
+		if (_current.Type != TokenType.Identifier && _current.Operator != Operator.Star)
 			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).WithMessage($"expected {nameof(TokenType.Identifier)}, got '{_current.Lexeme}'").Render();
 		var name = _current.Literal;
 		Advance();

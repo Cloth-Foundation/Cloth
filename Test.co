@@ -1,20 +1,23 @@
 ﻿module _src;
 
 import cloth.io.IO::{ println };
-import cloth.lang.Nullable;
-import cloth.lang.Serializable;
-import cloth.lang.Object;
+import cloth.lang.*;
 
 public class (): Object -> Serializable, Nullable {
 
     public Test {
+        run();
     }
 
     public Test(string s) {
     }
 
-    public prototype func run (): void {
+    public fragment run (): void {
+        println("Hello World");
+    }
 
+    public fragment run (): void {
+        println(" I am Cloth!");
     }
 
 }
