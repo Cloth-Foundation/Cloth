@@ -8,5 +8,6 @@
 namespace FrontEnd.Parser.AST;
 
 public enum FunctionModifiers {
-	Const
+	Const,
+	Prototype
 }

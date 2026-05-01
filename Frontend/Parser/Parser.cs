@@ -332,11 +332,9 @@ public class Parser {
 		while (!CheckOperator(Operator.RBrace) && !AtEof()) {
 			var annotations = ParseAnnotations();
 			var visibility = ParseMemberVisibility();
+			var modifiers = ParseFunctionModifiers();
 
-			if (ExpectIdentifier().Equals(_currentFileName)) { // Main.co -> public Main {}
-				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
-			}
-			else if (CheckKeyword(Keyword.Static)) {
+			if (CheckKeyword(Keyword.Static)) {
 				Advance(); // consume 'static', must be followed by 'const'
 				members.Add(new MemberDeclaration.Const(ParseConstDecl(visibility, isStatic: true)));
 			}
@@ -344,7 +342,10 @@ public class Parser {
 				members.Add(new MemberDeclaration.Const(ParseConstDecl(visibility, isStatic: false)));
 			}
 			else if (CheckKeyword(Keyword.Func)) {
-				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility)));
+				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers)));
+			}
+			else if (ExpectIdentifier().Equals(_currentFileName)) { // Main.co -> public Main {}
+				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
 			else {
 				members.Add(new MemberDeclaration.Field(ParseFieldDecl(annotations, visibility)));
@@ -489,14 +490,8 @@ public class Parser {
 	/// Thrown if required tokens, such as the function keyword ('func'), method name, parentheses, or semicolon, are missing
 	/// or if the syntax of the method declaration is invalid.
 	/// </exception>
-	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility) {
+	private MethodDeclaration ParseMethodDecl(List<TraitAnnotation> annotations, Visibility visibility, List<FunctionModifiers> modifiers) {
 		var start = _current.Span;
-
-		var modifiers = new List<FunctionModifiers>();
-		if (CheckKeyword(Keyword.Const)) {
-			modifiers.Add(FunctionModifiers.Const);
-			Advance();
-		}
 
 		ExpectKeyword(Keyword.Func);
 		var name = ExpectIdentifier();
@@ -506,8 +501,8 @@ public class Parser {
 		ExpectOperator(Operator.RParen);
 
 		TypeExpression returnType;
-		if (CheckOperator(Operator.ReturnArrow)) {
-			Advance(); // consume '->'
+		if (CheckOperator(Operator.Colon)) {
+			Advance(); // consume ':'
 			returnType = ParseTypeExpression();
 		}
 		else {
@@ -532,6 +527,29 @@ public class Parser {
 		}
 
 		return new MethodDeclaration(annotations, visibility, modifiers, name, parameters, returnType, maybeClause, body, TokenSpan.Merge(start, Previous().Span));
+	}
+
+	/// <summary>
+	/// Parses a list of function modifiers from the current token stream.
+	/// Supports recognizing specific function-level modifiers such as `const` and `prototype`.
+	/// Advances the token stream upon identifying valid modifiers.
+	/// </summary>
+	/// <returns>
+	/// A list of <see cref="FunctionModifiers"/> representing the parsed function modifiers.
+	/// </returns>
+	private List<FunctionModifiers> ParseFunctionModifiers() {
+		var modifiers = new List<FunctionModifiers>();
+		if (CheckKeyword(Keyword.Const)) {
+			modifiers.Add(FunctionModifiers.Const);
+			Advance();
+		}
+
+		if (CheckKeyword(Keyword.Prototype)) {
+			modifiers.Add(FunctionModifiers.Prototype);
+			Advance();
+		}
+
+		return modifiers;
 	}
 
 	/// <summary>
@@ -783,7 +801,7 @@ public class Parser {
 	/// <exception cref="ParserError">Thrown when the current token is not an identifier.</exception>
 	private string ExpectIdentifier() {
 		if (_current.Type != TokenType.Identifier)
-			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).Render();
+			throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).WithMessage($"expected {nameof(TokenType.Identifier)}, got '{_current.Lexeme}'").Render();
 		var name = _current.Literal;
 		Advance();
 		return name;
