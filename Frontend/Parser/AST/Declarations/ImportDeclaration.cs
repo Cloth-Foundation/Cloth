@@ -11,7 +11,6 @@ using FrontEnd.Token;
 namespace FrontEnd.Parser.AST.Declarations;
 
 public readonly record struct ImportDeclaration(List<string> Path, ImportDeclaration.ImportItems Items, TokenSpan Span) {
-
 	public abstract record ImportItems {
 		public sealed record Module : ImportItems;
 

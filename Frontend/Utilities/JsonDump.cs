@@ -10,7 +10,6 @@ namespace FrontEnd.Utilities;
 using System.Text.Json;
 
 public class JsonDump<T>(T data) {
-
 	private readonly JsonSerializerOptions _options = new() {
 		WriteIndented = true
 	};

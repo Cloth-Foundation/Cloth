@@ -13,14 +13,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct MethodDeclaration {
-	public readonly List<TraitAnnotation> Annotations;
-	public readonly Visibility Visibility;
-	public readonly List<FunctionModifiers> Modifiers;
-	public readonly string Name;
-	public readonly List<Parameter> Parameters;
-	public readonly TypeExpression ReturnType;
-	public readonly List<TypeExpression> MaybeClause;
-	public readonly Block? Body;
-	public readonly TokenSpan Span;
-}
+public readonly record struct MethodDeclaration(List<TraitAnnotation> Annotations, Visibility Visibility, List<FunctionModifiers> Modifiers, string Name, List<Parameter> Parameters, TypeExpression ReturnType, List<TypeExpression> MaybeClause, Block? Body, TokenSpan Span);

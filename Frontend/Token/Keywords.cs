@@ -1,7 +1,7 @@
 ﻿// Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // Keywords.cs is part of the Cloth Frontend.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -46,6 +46,7 @@ public enum Keyword {
 	Getter,
 	Setter,
 	Atomic,
+	Abstract,
 
 	Module,
 	Import,
@@ -59,7 +60,6 @@ public enum Keyword {
 	New,
 	This,
 	Super,
-	Extends,
 
 	Bit,
 	Bool,
@@ -158,6 +158,7 @@ public static class Keywords {
 			Keyword.Getter => "getter",
 			Keyword.Setter => "setter",
 			Keyword.Atomic => "atomic",
+			Keyword.Abstract => "abstract",
 			Keyword.Module => "module",
 			Keyword.Import => "import",
 			Keyword.Class => "class",
@@ -170,7 +171,6 @@ public static class Keywords {
 			Keyword.New => "new",
 			Keyword.This => "this",
 			Keyword.Super => "super",
-			Keyword.Extends => "extends",
 			Keyword.Bit => "bit",
 			Keyword.Bool => "bool",
 			Keyword.Char => "char",
@@ -264,6 +264,7 @@ public static class Keywords {
 			"getter" => Keyword.Getter,
 			"setter" => Keyword.Setter,
 			"atomic" => Keyword.Atomic,
+			"abstract" => Keyword.Abstract,
 			"module" => Keyword.Module,
 			"import" => Keyword.Import,
 			"class" => Keyword.Class,
@@ -276,7 +277,6 @@ public static class Keywords {
 			"new" => Keyword.New,
 			"this" => Keyword.This,
 			"super" => Keyword.Super,
-			"extends" => Keyword.Extends,
 			"bit" => Keyword.Bit,
 			"bool" => Keyword.Bool,
 			"char" => Keyword.Char,

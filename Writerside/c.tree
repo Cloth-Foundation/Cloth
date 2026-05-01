@@ -12,8 +12,8 @@
         SYSTEM "https://resources.jetbrains.com/writerside/1.0/product-profile.dtd">
 
 <instance-profile id="c"
-                 name="Cloth"
-                 start-page="Home.md">
+                  name="Cloth"
+                  start-page="Home.md">
 
     <toc-element topic="Home.md"/>
     <toc-element toc-title="Getting Started">

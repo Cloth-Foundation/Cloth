@@ -3,18 +3,20 @@
 To complete this tutorial, you need to have installed Cloth.
 
 In this tutorial, we will learn how to write a simple program, using Cloth Object files and writing source code, which
-we will then compile to produce an executable binary. However, this tutorial is written for beginners, it is not intended
-to be a comprehensive introduction to Cloth. The goal is to sketch out the basics of Cloth and avoid getting into too much
-detail.
+we will then compile to produce an executable binary. However, this tutorial is written for beginners, it is not
+intended to be a comprehensive introduction to Cloth. The goal is to sketch out the basics of Cloth and avoid getting into too
+much detail.
 
 ## Setup
+
 To setup a Cloth project, run the following command:
 
 ```bash
 $ cloth init My-Project
 ```
+
 > Spaces are not allowed in project names.
-{style="warning"}
+> {style="warning"}
 
 Running `cloth init` creates a new project directory with the following structure:
 
@@ -103,7 +105,7 @@ Because `Main.co` is located at `src/hello/world/Main.co`, and the source direct
 `src/` is `hello/world/` — which maps directly to `hello.world`.
 
 > If you move a source file to a different directory, its module declaration must be updated to match.
-{style="note"}
+> {style="note"}
 
 The declaration ends with a semicolon, as do all statements in Cloth.
 

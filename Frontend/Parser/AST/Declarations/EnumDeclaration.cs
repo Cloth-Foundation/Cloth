@@ -12,16 +12,6 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct EnumDeclaration {
-	public readonly Visibility Visibility;
-	public readonly string Name;
-	public readonly List<EnumCase> Cases;
-	public readonly TokenSpan Span;
-
-	public readonly record struct EnumCase {
-		public readonly string Name;
-		public readonly Expression? Discriminant;
-		public readonly List<TypeExpression> Payload;
-		public readonly TokenSpan Span;
-	}
+public readonly record struct EnumDeclaration(Visibility Visibility, string Name, List<EnumDeclaration.EnumCase> Cases, TokenSpan Span) {
+	public readonly record struct EnumCase(string Name, Expression? Discriminant, List<TypeExpression> Payload, TokenSpan Span);
 }

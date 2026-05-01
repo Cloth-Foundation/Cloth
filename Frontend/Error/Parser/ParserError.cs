@@ -24,15 +24,17 @@ public class ParserError : Exception, IError {
 		_span = span;
 	}
 
-	public static readonly ParserError ModuleAlreadyDefined  = new("P001", "module already defined",                          true);
-	public static readonly ParserError ModuleExpected        = new("P002", "'module' must be the first declaration",          true);
-	public static readonly ParserError ExpectedSemiColon     = new("P003", "expected ';'",                                    true);
-	public static readonly ParserError ExpectedIdentifier    = new("P004", "expected an identifier",                          true);
-	public static readonly ParserError ExpectedKeyword       = new("P005", "expected keyword",                                true);
-	public static readonly ParserError ExpectedEof           = new("P006", "expected end of file",                            true);
-	public static readonly ParserError ExpectedOperator      = new("P007", "expected operator",                               true);
-	public static readonly ParserError ModulePathNotDefined  = new("P008", "module path not defined",                         true);
-	public static readonly ParserError ModuleSrcInvalid      = new("P009", "'_src' is only valid as its own identifier",      true);
+	public static readonly ParserError ModuleAlreadyDefined = new("P001", "module already defined", true);
+	public static readonly ParserError ModuleExpected = new("P002", "'module' must be the first declaration", true);
+	public static readonly ParserError ExpectedSemiColon = new("P003", "expected ';'", true);
+	public static readonly ParserError ExpectedIdentifier = new("P004", "expected an identifier", true);
+	public static readonly ParserError ExpectedKeyword = new("P005", "expected keyword", true);
+	public static readonly ParserError ExpectedEof = new("P006", "expected end of file", true);
+	public static readonly ParserError ExpectedOperator = new("P007", "expected operator", true);
+	public static readonly ParserError ModulePathNotDefined = new("P008", "module path not defined", true);
+	public static readonly ParserError ModuleSrcInvalid = new("P009", "'_src' is only valid as its own identifier", true);
+	public static readonly ParserError InvalidVisibilityModifier = new("P00A", "invalid visibility modifier", true);
+	public static readonly ParserError InvalidTopLevelDecl = new("P00B", "invalid top-level declaration", true);
 
 	public ParserError WithMessage(string message) => new(_code, _label, _willExit, message, _span);
 	public ParserError WithSpan(TokenSpan span) => new(_code, _label, _willExit, _message, span);
