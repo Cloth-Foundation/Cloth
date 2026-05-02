@@ -6,10 +6,10 @@ import cloth.lang.*;
 public class (): Object -> Serializable, Nullable {
 
     public Test {
-        void frag = run();
-        frag();
+        //void frag = run();
+        //frag();
 
-        let x;// = 1;
+        let x = 1;
 
         if (true) {
             println("Hello World");
@@ -18,7 +18,7 @@ public class (): Object -> Serializable, Nullable {
         }
     }
 
-    public ~Test () {
+    public ~Test {
         println("Goodbye World");
     }
 

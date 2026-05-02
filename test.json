@@ -105,12 +105,43 @@
               "Visibility": 0,
               "Parameters": [],
               "Body": {
-                "Statements": [],
+                "Statements": [
+                  {
+                    "Span": {
+                      "Start": 196,
+                      "End": 206,
+                      "StartLine": 12,
+                      "EndLine": 12,
+                      "StartColumn": 9,
+                      "EndColumn": 19,
+                      "File": {
+                        "Path": "F:/Cloth/Test.co",
+                        "Name": "Test.co",
+                        "FileType": "ClothObject"
+                      }
+                    }
+                  },
+                  {
+                    "Span": {
+                      "Start": 216,
+                      "End": 326,
+                      "StartLine": 14,
+                      "EndLine": 18,
+                      "StartColumn": 9,
+                      "EndColumn": 10,
+                      "File": {
+                        "Path": "F:/Cloth/Test.co",
+                        "Name": "Test.co",
+                        "FileType": "ClothObject"
+                      }
+                    }
+                  }
+                ],
                 "Span": {
                   "Start": 138,
-                  "End": 188,
+                  "End": 332,
                   "StartLine": 8,
-                  "EndLine": 11,
+                  "EndLine": 19,
                   "StartColumn": 17,
                   "EndColumn": 6,
                   "File": {
@@ -122,10 +153,61 @@
               },
               "Span": {
                 "Start": 138,
-                "End": 188,
+                "End": 332,
                 "StartLine": 8,
-                "EndLine": 11,
+                "EndLine": 19,
                 "StartColumn": 17,
+                "EndColumn": 6,
+                "File": {
+                  "Path": "F:/Cloth/Test.co",
+                  "Name": "Test.co",
+                  "FileType": "ClothObject"
+                }
+              }
+            }
+          },
+          {
+            "$type": "Destructor",
+            "Declaration": {
+              "Visibility": 0,
+              "Body": {
+                "Statements": [
+                  {
+                    "Span": {
+                      "Start": 361,
+                      "End": 385,
+                      "StartLine": 22,
+                      "EndLine": 22,
+                      "StartColumn": 9,
+                      "EndColumn": 33,
+                      "File": {
+                        "Path": "F:/Cloth/Test.co",
+                        "Name": "Test.co",
+                        "FileType": "ClothObject"
+                      }
+                    }
+                  }
+                ],
+                "Span": {
+                  "Start": 351,
+                  "End": 392,
+                  "StartLine": 21,
+                  "EndLine": 23,
+                  "StartColumn": 18,
+                  "EndColumn": 6,
+                  "File": {
+                    "Path": "F:/Cloth/Test.co",
+                    "Name": "Test.co",
+                    "FileType": "ClothObject"
+                  }
+                }
+              },
+              "Span": {
+                "Start": 346,
+                "End": 392,
+                "StartLine": 21,
+                "EndLine": 23,
+                "StartColumn": 13,
                 "EndColumn": 6,
                 "File": {
                   "Path": "F:/Cloth/Test.co",
@@ -150,10 +232,10 @@
                     "Nullable": false,
                     "Ownership": null,
                     "Span": {
-                      "Start": 206,
-                      "End": 212,
-                      "StartLine": 13,
-                      "EndLine": 13,
+                      "Start": 410,
+                      "End": 416,
+                      "StartLine": 25,
+                      "EndLine": 25,
                       "StartColumn": 17,
                       "EndColumn": 23,
                       "File": {
@@ -166,10 +248,10 @@
                   "Name": "s",
                   "Default": null,
                   "Span": {
-                    "Start": 206,
-                    "End": 214,
-                    "StartLine": 13,
-                    "EndLine": 13,
+                    "Start": 410,
+                    "End": 418,
+                    "StartLine": 25,
+                    "EndLine": 25,
                     "StartColumn": 17,
                     "EndColumn": 25,
                     "File": {
@@ -183,10 +265,10 @@
               "Body": {
                 "Statements": [],
                 "Span": {
-                  "Start": 216,
-                  "End": 223,
-                  "StartLine": 13,
-                  "EndLine": 14,
+                  "Start": 420,
+                  "End": 427,
+                  "StartLine": 25,
+                  "EndLine": 26,
                   "StartColumn": 27,
                   "EndColumn": 6,
                   "File": {
@@ -197,10 +279,10 @@
                 }
               },
               "Span": {
-                "Start": 205,
-                "End": 223,
-                "StartLine": 13,
-                "EndLine": 14,
+                "Start": 409,
+                "End": 427,
+                "StartLine": 25,
+                "EndLine": 26,
                 "StartColumn": 16,
                 "EndColumn": 6,
                 "File": {
@@ -226,10 +308,10 @@
                 "Nullable": false,
                 "Ownership": null,
                 "Span": {
-                  "Start": 253,
-                  "End": 257,
-                  "StartLine": 16,
-                  "EndLine": 16,
+                  "Start": 457,
+                  "End": 461,
+                  "StartLine": 28,
+                  "EndLine": 28,
                   "StartColumn": 29,
                   "EndColumn": 33,
                   "File": {
@@ -241,12 +323,28 @@
               },
               "MaybeClause": [],
               "Body": {
-                "Statements": [],
+                "Statements": [
+                  {
+                    "Span": {
+                      "Start": 472,
+                      "End": 494,
+                      "StartLine": 29,
+                      "EndLine": 29,
+                      "StartColumn": 9,
+                      "EndColumn": 31,
+                      "File": {
+                        "Path": "F:/Cloth/Test.co",
+                        "Name": "Test.co",
+                        "FileType": "ClothObject"
+                      }
+                    }
+                  }
+                ],
                 "Span": {
-                  "Start": 258,
-                  "End": 297,
-                  "StartLine": 16,
-                  "EndLine": 18,
+                  "Start": 462,
+                  "End": 501,
+                  "StartLine": 28,
+                  "EndLine": 30,
                   "StartColumn": 34,
                   "EndColumn": 6,
                   "File": {
@@ -257,10 +355,10 @@
                 }
               },
               "Span": {
-                "Start": 236,
-                "End": 297,
-                "StartLine": 16,
-                "EndLine": 18,
+                "Start": 440,
+                "End": 501,
+                "StartLine": 28,
+                "EndLine": 30,
                 "StartColumn": 12,
                 "EndColumn": 6,
                 "File": {
@@ -286,10 +384,10 @@
                 "Nullable": false,
                 "Ownership": null,
                 "Span": {
-                  "Start": 327,
-                  "End": 331,
-                  "StartLine": 20,
-                  "EndLine": 20,
+                  "Start": 531,
+                  "End": 535,
+                  "StartLine": 32,
+                  "EndLine": 32,
                   "StartColumn": 29,
                   "EndColumn": 33,
                   "File": {
@@ -301,12 +399,28 @@
               },
               "MaybeClause": [],
               "Body": {
-                "Statements": [],
+                "Statements": [
+                  {
+                    "Span": {
+                      "Start": 546,
+                      "End": 569,
+                      "StartLine": 33,
+                      "EndLine": 33,
+                      "StartColumn": 9,
+                      "EndColumn": 32,
+                      "File": {
+                        "Path": "F:/Cloth/Test.co",
+                        "Name": "Test.co",
+                        "FileType": "ClothObject"
+                      }
+                    }
+                  }
+                ],
                 "Span": {
-                  "Start": 332,
-                  "End": 372,
-                  "StartLine": 20,
-                  "EndLine": 22,
+                  "Start": 536,
+                  "End": 576,
+                  "StartLine": 32,
+                  "EndLine": 34,
                   "StartColumn": 34,
                   "EndColumn": 6,
                   "File": {
@@ -317,10 +431,10 @@
                 }
               },
               "Span": {
-                "Start": 310,
-                "End": 372,
-                "StartLine": 20,
-                "EndLine": 22,
+                "Start": 514,
+                "End": 576,
+                "StartLine": 32,
+                "EndLine": 34,
                 "StartColumn": 12,
                 "EndColumn": 6,
                 "File": {
@@ -334,9 +448,9 @@
         ],
         "Span": {
           "Start": 76,
-          "End": 375,
+          "End": 579,
           "StartLine": 6,
-          "EndLine": 24,
+          "EndLine": 36,
           "StartColumn": 8,
           "EndColumn": 2,
           "File": {
@@ -350,9 +464,9 @@
   ],
   "Span": {
     "Start": 0,
-    "End": 375,
+    "End": 579,
     "StartLine": 1,
-    "EndLine": 24,
+    "EndLine": 36,
     "StartColumn": 1,
     "EndColumn": 2,
     "File": {
