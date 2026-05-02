@@ -5,7 +5,7 @@
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
-using System.Linq.Expressions;
+using FrontEnd.Parser.AST.Expressions;
 using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Statements;

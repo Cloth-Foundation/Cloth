@@ -940,6 +940,15 @@ public class Parser {
 		return false;
 	}
 
+	internal bool ConsumeKeyword(Keyword keyword) {
+		if (_current.Keyword == keyword) {
+			Advance();
+			return true;
+		}
+
+		return false;
+	}
+
 	/// <summary>
 	/// Checks if the current token matches the specified keyword.
 	/// </summary>
