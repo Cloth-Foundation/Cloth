@@ -197,9 +197,27 @@ internal sealed class StatementParser(Parser parser) {
 	}
 
 	private Expression ParseExpression() => parser.ExpressionParser.ParseExpression();
+	private List<Expression> ParseCallArgs() => parser.ExpressionParser.ParseCallArgs();
 
-	private Stmt ParseSuperCall()    => throw new NotImplementedException("ParseSuperCall requires expression parsing.");
-	private Stmt ParseThisCall()     => throw new NotImplementedException("ParseThisCall requires expression parsing.");
+	private Stmt ParseSuperCall() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Super);
+		parser.ExpectOperator(Operator.LParen);
+		var args = ParseCallArgs();
+		parser.ExpectOperator(Operator.RParen);
+		parser.ExpectSemiColon();
+		return new Stmt.SuperCall(args, TokenSpan.Merge(start, parser.Previous().Span));
+	}
+
+	private Stmt ParseThisCall() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.This);
+		parser.ExpectOperator(Operator.LParen);
+		var args = ParseCallArgs();
+		parser.ExpectOperator(Operator.RParen);
+		parser.ExpectSemiColon();
+		return new Stmt.ThisCall(args, TokenSpan.Merge(start, parser.Previous().Span));
+	}
 
 	/// <summary>
 	/// Parses an "if" statement from the source code, including its condition,
@@ -242,6 +260,21 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.If(new IfStmt(cond, thenBranch, elseIfBranches, elseBranch, span));
 	}
 
+	/// <summary>
+	/// Parses a switch statement from the source code. This method handles the
+	/// parsing of the expression to be evaluated, the cases defined within the
+	/// switch, and the statements belonging to each case or the default case.
+	/// </summary>
+	/// <returns>
+	/// A parsed switch statement represented as an instance of
+	/// <see cref="Stmt.Switch"/>. The returned statement contains
+	/// information about the controlling expression, the defined cases, and
+	/// their respective bodies.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the switch statement is improperly formatted, such as missing
+	/// expected keywords, delimiters, or other structural components.
+	/// </exception>
 	private Stmt.Switch ParseSwitchStmt() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.Switch);
@@ -281,6 +314,15 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.Switch(new SwitchStmt(expr, cases, TokenSpan.Merge(start, parser.Previous().Span)));
 	}
 
+	/// <summary>
+	/// Parses a while loop statement from the source code. This method processes
+	/// the `while` keyword, the loop condition within parentheses, and the loop body
+	/// as a block statement.
+	/// </summary>
+	/// <returns>
+	/// A parsed while statement represented as an instance of <see cref="Stmt.While"/>.
+	/// This encapsulates the loop condition, body, and its corresponding source code span.
+	/// </returns>
 	private Stmt.While ParseWhileStmt() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.While);
@@ -291,6 +333,17 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.While(new WhileStmt(cond, body, TokenSpan.Merge(start, parser.Previous().Span)));
 	}
 
+	/// <summary>
+	/// Parses a do-while statement from the source code. This method handles
+	/// the `do` keyword, the statement body, the `while` keyword, and the
+	/// conditional expression wrapped in parentheses. It ensures correct syntax
+	/// by validating the presence and order of these elements.
+	/// </summary>
+	/// <returns>
+	/// A parsed do-while statement represented as an instance of
+	/// <see cref="Stmt.DoWhile"/>. This includes the loop's body statement
+	/// and its associated conditional expression.
+	/// </returns>
 	private Stmt.DoWhile ParseDoWhileStmt() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.Do);
@@ -302,8 +355,90 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.DoWhile(new DoWhileStmt(body, condition, TokenSpan.Merge(start, parser.Previous().Span)));
 	}
 
-	private Stmt.For ParseForStmt()      => throw new NotImplementedException("ParseForStmt");
+	/// <summary>
+	/// Parses a 'for' statement from the source code. This method supports two
+	/// distinct types of 'for' statements: traditional 'for' loops with an
+	/// initializer, condition, and iterator, and 'for-in' loops where an
+	/// identifier iterates over an iterable collection.
+	/// </summary>
+	/// <returns>
+	/// A parsed 'for' statement represented as an instance of <see cref="Stmt.For"/>
+	/// or <see cref="Stmt.ForIn"/>. The specific type depends on the syntax of
+	/// the 'for' statement being parsed.
+	/// </returns>
+	private Stmt ParseForStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.For);
+		parser.ExpectOperator(Operator.LParen);
 
+		// Disambiguate: for (Type name in ...) vs for (init; cond; iter)
+		var isForIn = false;
+		if (IsTypeKeyword() || parser.Current.Type == TokenType.Identifier) {
+			var saved = parser.SaveCursor();
+			_ = parser.TryParseTypeExpression(); // speculatively consume type
+			if (parser.Current.Type == TokenType.Identifier) {
+				parser.Advance(); // speculatively consume name
+				isForIn = parser.CheckKeyword(Keyword.In);
+			}
+			parser.RestoreTo(saved);
+		}
+
+		if (isForIn) {
+			var type = parser.ParseTypeExpression();
+			var name = parser.ExpectIdentifier();
+			parser.ExpectKeyword(Keyword.In);
+			var iterable = ParseExpression();
+			parser.ExpectOperator(Operator.RParen);
+			var body = parser.ParseBlock();
+			var span = TokenSpan.Merge(start, parser.Previous().Span);
+			return new Stmt.ForIn(new ForInStmt(type, name, iterable, body, span));
+		} else {
+			var init = ParseForInit();
+			var cond = ParseExpression();
+			parser.ExpectSemiColon();
+			var iter = ParseExpression();
+			parser.ExpectOperator(Operator.RParen);
+			var body = parser.ParseBlock();
+			var span = TokenSpan.Merge(start, parser.Previous().Span);
+			return new Stmt.For(new ForStmt(init, cond, iter, body, span));
+		}
+	}
+
+	/// <summary>
+	/// Parses the initializer section of a 'for' loop statement. This method determines
+	/// whether the initialization is a variable declaration, a type-annotated variable
+	/// declaration, or an expression, and subsequently parses it accordingly.
+	/// </summary>
+	/// <returns>
+	/// An instance of <see cref="Stmt"/> representing the parsed initializer,
+	/// which could either be a variable declaration, an expression statement,
+	/// or null if no initialization is present.
+	/// </returns>
+	private Stmt ParseForInit() {
+		if (IsTypeKeyword())
+			return ParseVarDecl([]);
+		if (parser.Current.Type == TokenType.Identifier) {
+			var saved = parser.SaveCursor();
+			var ty = parser.TryParseTypeExpression();
+			if (ty != null && parser.Current.Type == TokenType.Identifier)
+				return ParseVarDeclWithType(ty.Value);
+			parser.RestoreTo(saved);
+		}
+		var expr = ParseExpression();
+		parser.ExpectSemiColon();
+		return new Stmt.ExprStmt(expr, expr.Span);
+	}
+
+	/// <summary>
+	/// Parses a return statement from the source code. This method identifies
+	/// the `return` keyword and optionally parses the accompanying expression
+	/// if one is provided.
+	/// </summary>
+	/// <returns>
+	/// A return statement represented as an instance of <see cref="Stmt.Return"/>.
+	/// If no expression accompanies the `return` keyword, the `Value` property
+	/// of the resulting statement will be null.
+	/// </returns>
 	private Stmt.Return ParseReturnStmt() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.Return);
@@ -317,6 +452,15 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.Return(expression, TokenSpan.Merge(start, parser.Previous().Span));
 	}
 
+	/// <summary>
+	/// Parses a throw statement from the source code. This method processes
+	/// the 'throw' keyword, followed by an expression, and expects a semicolon
+	/// to terminate the statement.
+	/// </summary>
+	/// <returns>
+	/// A parsed throw statement represented as an instance of <see cref="Stmt.Throw"/>.
+	/// The expression contained within the throw statement specifies the value to be thrown.
+	/// </returns>
 	private Stmt.Throw ParseThrowStmt() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.Throw);
@@ -324,5 +468,10 @@ internal sealed class StatementParser(Parser parser) {
 		parser.ExpectSemiColon();
 		return new Stmt.Throw(expression, TokenSpan.Merge(start, parser.Previous().Span));
 	}
-	private Stmt ParseExprStmt()     => throw new NotImplementedException("ParseExprStmt requires expression parsing.");
+
+	private Stmt ParseExprStmt() {
+		var expr = ParseExpression();
+		parser.ExpectSemiColon();
+		return new Stmt.ExprStmt(expr, expr.Span);
+	}
 }

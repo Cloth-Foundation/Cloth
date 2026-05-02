@@ -357,7 +357,12 @@ public class Parser {
 			else if (CheckKeyword(Keyword.Fragment)) {
 				members.Add(new MemberDeclaration.Fragment(ParseFragmentDecl(annotations, visibility, modifiers)));
 			}
-			else if (ExpectIdentifier().Equals(_currentFileName)) { // Main.co -> public Main {}
+			else if (CheckOperator(Operator.Tilde)) { // DESTRUCTOR
+				Advance(); // consume '~'
+				members.Add(new MemberDeclaration.Destructor(ParseDestructorDecl(annotations, visibility)));
+			}
+			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentFileName) { // CONSTRUCTOR
+				Advance(); // consume constructor name; ParseConstructorDecl starts at '(' or '{'
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
 			else {
@@ -655,7 +660,30 @@ public class Parser {
 		return new ConstructorDeclaration(annotations, visibility, parameters, body, TokenSpan.Merge(start, Previous().Span));
 	}
 
-	// TODO: We must parse blocks instead of skipping for now.
+	private DestructorDeclaration ParseDestructorDecl(List<TraitAnnotation> annotations, Visibility visibility) {
+		var start = _current.Span;
+		var name = ExpectIdentifier();
+		if (name != _currentFileName) throw ParserError.InvalidDestructorName.WithMessage($"Got {name}, expected {_currentFileName}").WithSpan(_current.Span).Render();
+
+		// This is optional, as the primary parameters are handled at the head.
+		/*if (ExpectOperator(Operator.LParen, false)) {
+			parameters = ParseParameters();
+			ExpectOperator(Operator.RParen);
+		}*/
+
+		var body = ParseBlock();
+		return new DestructorDeclaration(visibility, body, TokenSpan.Merge(start, Previous().Span));
+	}
+
+	/// <summary>
+	/// Parses a block of statements enclosed within curly braces ('{', '}'), ensuring proper syntax and structure.
+	/// </summary>
+	/// <returns>
+	/// A <see cref="Block"/> object containing a list of parsed statements and the combined token span of the block.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the opening or closing curly brace is missing or if a syntax error occurs within the block.
+	/// </exception>
 	internal Block ParseBlock() {
 		var start = _current.Span;
 		ExpectOperator(Operator.LBrace); // consume '{', _current = first token inside
