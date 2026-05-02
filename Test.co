@@ -9,7 +9,7 @@ public class (): Object -> Serializable, Nullable {
         void frag = run();
         frag();
 
-        let x = 1;
+        let x;// = 1;
 
         if (true) {
             println("Hello World");

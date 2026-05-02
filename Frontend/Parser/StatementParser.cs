@@ -11,6 +11,7 @@ using Token;
 using AST.Expressions;
 using AST.Statements;
 using AST.Type;
+using FrontEnd.Error.Parser;
 
 internal sealed class StatementParser(Parser parser) {
 
@@ -134,18 +135,18 @@ internal sealed class StatementParser(Parser parser) {
 	/// An instance of <see cref="Stmt"/> representing the parsed variable declaration. This includes
 	/// details of the variable's type, name, optional initializer, and any modifiers applied.
 	/// </returns>
-	private Stmt ParseVarDecl(List<VarModifier> modifiers) {
+	private Stmt.VarDecl ParseVarDecl(List<VarModifier> modifiers) {
 		var start = parser.Current.Span;
 
 		if (parser.CheckKeyword(Keyword.Let)) {
 			parser.Advance();
 			var name = parser.ExpectIdentifier();
 
-			TypeExpression? type = null;
-			if (parser.CheckOperator(Operator.Colon)) {
+			TypeExpression? type = null; // just infer
+			/*if (parser.CheckOperator(Operator.Colon)) {
 				parser.Advance();
 				type = parser.ParseTypeExpression();
-			}
+			}*/
 
 			Expression? init = null;
 			if (parser.ConsumeOp(Operator.Equal)) {
@@ -181,7 +182,7 @@ internal sealed class StatementParser(Parser parser) {
 	/// A variable declaration statement represented as an instance of <see cref="Stmt.VarDecl"/>.
 	/// The statement includes the type, name, optional initializer, and associated span information.
 	/// </returns>
-	private Stmt ParseVarDeclWithType(TypeExpression type) {
+	private Stmt.VarDecl ParseVarDeclWithType(TypeExpression type) {
 		var start = type.Span;
 		var name = parser.ExpectIdentifier();
 
@@ -195,7 +196,7 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.VarDecl(new VarDeclStmt([], type, name, init, span));
 	}
 
-	private Expression ParseExpression() => throw new NotImplementedException("ParseExpression requires ExpressionParser.");
+	private Expression ParseExpression() => parser.ExpressionParser.ParseExpression();
 
 	private Stmt ParseSuperCall()    => throw new NotImplementedException("ParseSuperCall requires expression parsing.");
 	private Stmt ParseThisCall()     => throw new NotImplementedException("ParseThisCall requires expression parsing.");
@@ -240,11 +241,88 @@ internal sealed class StatementParser(Parser parser) {
 		var span = TokenSpan.Merge(start, parser.Previous().Span);
 		return new Stmt.If(new IfStmt(cond, thenBranch, elseIfBranches, elseBranch, span));
 	}
-	private Stmt ParseSwitchStmt()   => throw new NotImplementedException("ParseSwitchStmt");
-	private Stmt ParseWhileStmt()    => throw new NotImplementedException("ParseWhileStmt");
-	private Stmt ParseDoWhileStmt()  => throw new NotImplementedException("ParseDoWhileStmt");
-	private Stmt ParseForStmt()      => throw new NotImplementedException("ParseForStmt");
-	private Stmt ParseReturnStmt()   => throw new NotImplementedException("ParseReturnStmt requires expression parsing.");
-	private Stmt ParseThrowStmt()    => throw new NotImplementedException("ParseThrowStmt requires expression parsing.");
+
+	private Stmt.Switch ParseSwitchStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Switch);
+		parser.ExpectOperator(Operator.LParen);
+		var expr = ParseExpression();
+		parser.ExpectOperator(Operator.RParen);
+		parser.ExpectOperator(Operator.LBrace);
+
+		var cases = new List<SwitchCase>();
+		while (!parser.CheckOperator(Operator.RBrace) && !parser.AtEof()) {
+			var caseStart = parser.Current.Span;
+			SwitchPattern pattern;
+			if (parser.ConsumeKeyword(Keyword.Case)) {
+				pattern = new SwitchPattern.Case(ParseExpression());
+			} else if (parser.ConsumeKeyword(Keyword.Default)) {
+				pattern = new SwitchPattern.Default();
+			} else {
+				throw ParserError.ExpectedKeyword
+					.WithMessage($"expected 'case' or 'default', got '{parser.Current.Lexeme}'")
+					.WithSpan(parser.Current.Span)
+					.Render();
+			}
+			parser.ExpectOperator(Operator.Colon);
+
+			var body = new List<Stmt>();
+			while (!parser.CheckKeyword(Keyword.Case)
+				&& !parser.CheckKeyword(Keyword.Default)
+				&& !parser.CheckOperator(Operator.RBrace)
+				&& !parser.AtEof()) {
+				body.Add(parser.ParseStatement());
+			}
+
+			cases.Add(new SwitchCase(pattern, body, TokenSpan.Merge(caseStart, parser.Previous().Span)));
+		}
+
+		parser.ExpectOperator(Operator.RBrace);
+		return new Stmt.Switch(new SwitchStmt(expr, cases, TokenSpan.Merge(start, parser.Previous().Span)));
+	}
+
+	private Stmt.While ParseWhileStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.While);
+		parser.ExpectOperator(Operator.LParen);
+		var cond = ParseExpression();
+		parser.ExpectOperator(Operator.RParen);
+		var body = parser.ParseBlock();
+		return new Stmt.While(new WhileStmt(cond, body, TokenSpan.Merge(start, parser.Previous().Span)));
+	}
+
+	private Stmt.DoWhile ParseDoWhileStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Do);
+		var body = parser.ParseBlock();
+		parser.ExpectKeyword(Keyword.While);
+		parser.ExpectOperator(Operator.LParen);
+		var condition = ParseExpression();
+		parser.ExpectOperator(Operator.RParen);
+		return new Stmt.DoWhile(new DoWhileStmt(body, condition, TokenSpan.Merge(start, parser.Previous().Span)));
+	}
+
+	private Stmt.For ParseForStmt()      => throw new NotImplementedException("ParseForStmt");
+
+	private Stmt.Return ParseReturnStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Return);
+		Expression? expression = null;
+
+		if (!parser.CheckOperator(Operator.Semicolon)) {
+			expression = ParseExpression();
+		}
+
+		parser.ExpectSemiColon();
+		return new Stmt.Return(expression, TokenSpan.Merge(start, parser.Previous().Span));
+	}
+
+	private Stmt.Throw ParseThrowStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Throw);
+		Expression expression = ParseExpression();
+		parser.ExpectSemiColon();
+		return new Stmt.Throw(expression, TokenSpan.Merge(start, parser.Previous().Span));
+	}
 	private Stmt ParseExprStmt()     => throw new NotImplementedException("ParseExprStmt requires expression parsing.");
 }
