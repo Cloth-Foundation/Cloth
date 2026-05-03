@@ -1,8 +1,8 @@
-﻿module hello.world;
+module hello.world;
 
 import cloth.io.IO::{ println };
 
-public class () {
+public class (string[] args) {
 
     public Main {
         println("Hello, World!");
