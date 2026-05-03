@@ -11,6 +11,10 @@ let runBuild (path: string, args: string[]) =
         Failure $"build.toml not found in '{path}'"
     else
         let compiler = Compiler.Compiler(path)
-        compiler.Compile()
-        let _relevantFlags = getRelevantFlags (args, "build")
+        let cirModule = compiler.Compile()
+        let relevantFlags = getRelevantFlags (args, "build")
+
+        if relevantFlags |> Array.contains "--dump" then
+            printfn $"{Compiler.CIR.CirPrinter.Print(cirModule)}"
+
         Success "Build completed."
