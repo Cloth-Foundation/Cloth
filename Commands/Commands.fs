@@ -2,6 +2,7 @@
 
 open System
 open Commands.DispatchResult
+open Commands.Executor.Build
 open Commands.Executor.Lexer
 open Commands.Executor.Help
 open Commands.Executor.Parser
@@ -15,7 +16,11 @@ let dispatch (args: string[]) =
         | "?"
         | "help" -> runHelp ()
 
-        | "build" -> Success "Build Called"
+        | "build" ->
+            if args.Length < 2 then
+                Failure "Expected project directory. Example: cloth build ./my-project"
+            else
+                runBuild (args[1], args)
 
         | "run" -> Success "Run Called"
 

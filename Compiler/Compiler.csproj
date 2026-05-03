@@ -14,4 +14,8 @@
       <Folder Include="Semantics\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\Frontend\Frontend.csproj" />
+    </ItemGroup>
+
 </Project>

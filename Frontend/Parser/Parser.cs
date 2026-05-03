@@ -665,11 +665,11 @@ public class Parser {
 		var name = ExpectIdentifier();
 		if (name != _currentFileName) throw ParserError.InvalidDestructorName.WithMessage($"Got {name}, expected {_currentFileName}").WithSpan(_current.Span).Render();
 
-		// This is optional, as the primary parameters are handled at the head.
-		/*if (ExpectOperator(Operator.LParen, false)) {
-			parameters = ParseParameters();
+		// Optional empty parens: ~Name() {} is equivalent to ~Name {}
+		if (CheckOperator(Operator.LParen)) {
+			Advance(); // consume '('
 			ExpectOperator(Operator.RParen);
-		}*/
+		}
 
 		var body = ParseBlock();
 		return new DestructorDeclaration(visibility, body, TokenSpan.Merge(start, Previous().Span));
@@ -762,6 +762,7 @@ public class Parser {
 
 		BaseType baseType;
 
+		// Arrays with [] postfix
 		if (CheckOperator(Operator.LBracket)) {
 			// Array: [ElementType]
 			Advance(); // consume '['
@@ -810,6 +811,13 @@ public class Parser {
 		}
 		else {
 			throw ParserError.ExpectedIdentifier.WithMessage($"expected type, got '{_current.Lexeme}'").WithSpan(_current.Span).Render();
+		}
+
+		// Postfix array syntax: type[]  (repeatable: type[][])
+		while (CheckOperator(Operator.LBracket) && PeekAt(1).Operator == Operator.RBracket) {
+			Advance(); // consume '['
+			Advance(); // consume ']'
+			baseType = new BaseType.Array(new TypeExpression(baseType, false, null, TokenSpan.Merge(start, Previous().Span)));
 		}
 
 		var nullable = false;
@@ -1113,6 +1121,13 @@ public class Parser {
 		}
 		else {
 			return null;
+		}
+
+		// Postfix array syntax: type[]
+		while (CheckOperator(Operator.LBracket) && PeekAt(1).Operator == Operator.RBracket) {
+			Advance();
+			Advance();
+			baseType = new BaseType.Array(new TypeExpression(baseType, false, null, TokenSpan.Merge(start, Previous().Span)));
 		}
 
 		var nullable = false;
