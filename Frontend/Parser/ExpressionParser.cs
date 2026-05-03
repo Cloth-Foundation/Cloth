@@ -7,17 +7,35 @@
 
 using FrontEnd.Error.Parser;
 using FrontEnd.Parser.AST.Expressions;
-using FrontEnd.Parser.AST.Type;
 
 namespace FrontEnd.Parser;
 
 using Token;
 
+/// <summary>
+/// A class responsible for parsing expressions within the source code.
+/// Provides methods to parse different types of expressions based on precedence
+/// and context while interacting with the token stream. This uses the Pratt parsing
+/// algorithm to parse expressions in a top-down fashion.
+/// </summary>
 internal sealed class ExpressionParser(Parser parser) {
+	internal Expression ParseExpression() => ParseExprPrecedence(0);
 
-	internal Expression ParseExpression() => ParseExprPrec(0);
-
-	private Expression ParseExprPrec(int minBp) {
+	/// <summary>
+	/// Parses an expression with a specified minimum binding power, enabling the interpretation of
+	/// infix, assignment, and ternary operators within the expression hierarchy.
+	/// The method processes primary expressions (prefixes) and progressively builds more complex
+	/// expressions by checking operator precedence and associativity.
+	/// </summary>
+	/// <param name="minBp">
+	/// The minimum binding power of operators to consider during parsing, which determines the precedence
+	/// level at which the expression parsing begins.
+	/// </param>
+	/// <returns>
+	/// An <see cref="Expression"/> representing the fully parsed expression, constructed by combining prefix,
+	/// infix, and other operators based on precedence and associativity.
+	/// </returns>
+	private Expression ParseExprPrecedence(int minBp) {
 		var left = ParsePrefix();
 
 		while (true) {
@@ -26,7 +44,7 @@ internal sealed class ExpressionParser(Parser parser) {
 				var assignOp = PeekAssignOp();
 				if (assignOp.HasValue) {
 					parser.Advance();
-					var right = ParseExprPrec(1);
+					var right = ParseExprPrecedence(1);
 					left = new Expression.Assign(left, assignOp.Value, right, TokenSpan.Merge(left.Span, right.Span));
 					continue;
 				}
@@ -35,9 +53,9 @@ internal sealed class ExpressionParser(Parser parser) {
 			// Ternary (right-associative, bp 3)
 			if (minBp <= 3 && parser.CheckOperator(Operator.Question)) {
 				parser.Advance();
-				var thenE = ParseExprPrec(0);
+				var thenE = ParseExprPrecedence(0);
 				parser.ExpectOperator(Operator.Colon);
-				var elseE = ParseExprPrec(3);
+				var elseE = ParseExprPrecedence(3);
 				left = new Expression.Ternary(left, thenE, elseE, TokenSpan.Merge(left.Span, elseE.Span));
 				continue;
 			}
@@ -50,6 +68,19 @@ internal sealed class ExpressionParser(Parser parser) {
 		return left;
 	}
 
+	/// <summary>
+	/// Parses a prefix expression by interpreting the current token as a starting point
+	/// and transitioning into the appropriate expression type.
+	/// The method recognizes literals, keywords, operators, and identifiers, constructing
+	/// the corresponding expressions based on the token type and other contextual clues.
+	/// </summary>
+	/// <returns>
+	/// A new <see cref="Expression"/> representing the parsed prefix expression.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the token cannot be interpreted as a valid start for an expression, or if
+	/// an unexpected token type is encountered.
+	/// </exception>
 	private Expression ParsePrefix() {
 		var tok = parser.Current;
 		var start = tok.Span;
@@ -83,7 +114,7 @@ internal sealed class ExpressionParser(Parser parser) {
 					return ParseNewExpr();
 				case Keyword.Await: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Await, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				default:
@@ -100,27 +131,27 @@ internal sealed class ExpressionParser(Parser parser) {
 			switch (tok.Operator) {
 				case Operator.Minus: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Neg, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.Not: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Not, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.Tilde: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.BitNot, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.PlusPlus: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.PreInc, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.MinusMinus: {
 					parser.Advance();
-					var inner = ParseExprPrec(24);
+					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.PreDec, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.LParen:
@@ -139,6 +170,20 @@ internal sealed class ExpressionParser(Parser parser) {
 			.Render();
 	}
 
+	/// <summary>
+	/// Parses an infix expression by combining the provided left-hand expression
+	/// with an operator and a right-hand expression based on the specified precedence.
+	/// The method identifies the operator and recursively parses the right-hand expression.
+	/// </summary>
+	/// <param name="left">The left-hand side expression of the infix operation.</param>
+	/// <param name="rbp">The right-binding power (precedence) of the operator.</param>
+	/// <returns>
+	/// A new <see cref="Expression"/> representing the combined infix expression,
+	/// or the original left-hand expression if no valid operator is found.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the parsing fails due to an unexpected token or invalid syntax.
+	/// </exception>
 	private Expression ParseInfix(Expression left, int rbp) {
 		var tok = parser.Current;
 		var leftSpan = left.Span;
@@ -147,96 +192,96 @@ internal sealed class ExpressionParser(Parser parser) {
 			switch (tok.Operator) {
 				case Operator.Plus: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Add, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Minus: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Sub, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Star: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Mul, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Slash: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Div, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Percent: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Rem, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.And: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitAnd, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Or: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitOr, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Caret: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitXor, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Less: {
-					// < or << (shift left — two consecutive Less tokens)
+					// < or << (shift left — two consecutive 'Less' tokens)
 					if (parser.PeekAt(1).Operator == Operator.Less) {
 						parser.Advance(); parser.Advance();
-						var r = ParseExprPrec(rbp);
+						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Shl, r, TokenSpan.Merge(leftSpan, r.Span));
 					} else {
 						parser.Advance();
-						var r = ParseExprPrec(rbp);
+						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Lt, r, TokenSpan.Merge(leftSpan, r.Span));
 					}
 				}
 				case Operator.LessEqual: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.LtEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Greater: {
 					// > or >> (shift right — two consecutive Greater tokens)
 					if (parser.PeekAt(1).Operator == Operator.Greater) {
 						parser.Advance(); parser.Advance();
-						var r = ParseExprPrec(rbp);
+						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Shr, r, TokenSpan.Merge(leftSpan, r.Span));
 					} else {
 						parser.Advance();
-						var r = ParseExprPrec(rbp);
+						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Gt, r, TokenSpan.Merge(leftSpan, r.Span));
 					}
 				}
 				case Operator.GreaterEqual: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.GtEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.EqualEqual: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Eq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.NotEqual: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.NotEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Fallback: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.NullCoalesce(left, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.DotDot: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Range(left, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Dot: {
@@ -292,12 +337,12 @@ internal sealed class ExpressionParser(Parser parser) {
 			switch (tok.Keyword) {
 				case Keyword.And: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.And, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Keyword.Or: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Or, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Keyword.As: {
@@ -313,7 +358,7 @@ internal sealed class ExpressionParser(Parser parser) {
 				}
 				case Keyword.In: {
 					parser.Advance();
-					var r = ParseExprPrec(rbp);
+					var r = ParseExprPrecedence(rbp);
 					return new Expression.MembershipCheck(left, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 			}
@@ -322,6 +367,13 @@ internal sealed class ExpressionParser(Parser parser) {
 		return left;
 	}
 
+	/// <summary>
+	/// Identifies the assignment operator at the current parsing position, if any, and maps it to a specific assignment operation type.
+	/// These operators are used for right-associative assignment expressions, such as `=`, `+=`, or `-=`.
+	/// </summary>
+	/// <returns>
+	/// The corresponding assignment operation as an <see cref="AssignOp"/> value, or null if the current token does not represent an assignment operator.
+	/// </returns>
 	private AssignOp? PeekAssignOp() => parser.Current.Operator switch {
 		Operator.Equal        => AssignOp.Assign,
 		Operator.PlusEqual    => AssignOp.AddAssign,
@@ -335,6 +387,15 @@ internal sealed class ExpressionParser(Parser parser) {
 		_ => null
 	};
 
+	/// <summary>
+	/// Determines the infix binding power of the current token in the parsing process.
+	/// The binding power is represented as a tuple containing left and right precedence values.
+	/// These values dictate how the current token should associate with others in an expression.
+	/// </summary>
+	/// <returns>
+	/// A tuple containing the left and right binding powers of the current token.
+	/// Returns null if the token does not represent an operator or keyword with defined binding power.
+	/// </returns>
 	private (int Left, int Right)? PeekInfixBp() => (parser.Current.Type, parser.Current.Operator, parser.Current.Keyword) switch {
 		(TokenType.Operator, Operator.Dot,          _)           => (28, 29),
 		(TokenType.Operator, Operator.ColonColon,   _)           => (28, 29),
@@ -366,6 +427,15 @@ internal sealed class ExpressionParser(Parser parser) {
 		_ => null
 	};
 
+	/// <summary>
+	/// Parses a series of call arguments from the input and constructs a list of expressions.
+	/// The method handles expressions separated by commas and terminates upon encountering
+	/// a closing parenthesis.
+	/// </summary>
+	/// <returns>
+	/// A list of parsed expressions representing the individual arguments of a function or method call.
+	/// If no arguments are provided, an empty list is returned.
+	/// </returns>
 	internal List<Expression> ParseCallArgs() {
 		var args = new List<Expression>();
 		if (!parser.CheckOperator(Operator.RParen)) {
@@ -376,7 +446,21 @@ internal sealed class ExpressionParser(Parser parser) {
 		return args;
 	}
 
-	private Expression ParseNewExpr() {
+	/// <summary>
+	/// Parses a "new" expression, constructing an instance of the specified type with optional arguments.
+	/// This method handles the "new" keyword, the type being instantiated, and the provided argument list
+	/// enclosed in parentheses.
+	/// </summary>
+	/// <returns>
+	/// An <see cref="Expression.New"/> representing the instantiation expression.
+	/// The resulting object includes the type being instantiated, the list of initialization arguments, and
+	/// the associated source code span.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown when the syntax for the "new" expression is incorrect, such as a missing type, parentheses,
+	/// or improperly formatted arguments.
+	/// </exception>
+	private Expression.New ParseNewExpr() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.New);
 		var ty = parser.ParseTypeExpression();
@@ -386,6 +470,19 @@ internal sealed class ExpressionParser(Parser parser) {
 		return new Expression.New(ty, args, TokenSpan.Merge(start, parser.Previous().Span));
 	}
 
+	/// <summary>
+	/// Parses an expression that is either enclosed in parentheses or represents a lambda expression.
+	/// If a lambda expression is detected, the method attempts to parse it using the current token span.
+	/// If no valid lambda expression is found, the parser proceeds to parse a parenthesized expression.
+	/// </summary>
+	/// <returns>
+	/// An <see cref="Expression"/> representing either a lambda expression,
+	/// a parenthesized expression, or a tuple if multiple expressions are detected within parentheses.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown when an invalid token sequence is encountered, such as missing a closing parenthesis or
+	/// encountering an unexpected operator other than ',' or ')'.
+	/// </exception>
 	private Expression ParseParenOrLambda() {
 		var start = parser.Current.Span;
 		var saved = parser.SaveCursor();
@@ -415,7 +512,17 @@ internal sealed class ExpressionParser(Parser parser) {
 			.Render();
 	}
 
-	private Expression? TryParseLambda(TokenSpan start) {
+	/// <summary>
+	/// Attempts to parse a lambda expression starting from the specified token span.
+	/// The method expects a parameter list enclosed in parentheses, followed by an arrow (->),
+	/// and the lambda body. If the pattern is matched, a lambda expression is returned; otherwise, null.
+	/// </summary>
+	/// <param name="start">The starting token span from which the parser begins attempting to read a lambda expression.</param>
+	/// <returns>
+	/// A <see cref="Expression.Lambda"/> instance if the tokens represent a valid lambda expression;
+	/// otherwise, null.
+	/// </returns>
+	private Expression.Lambda? TryParseLambda(TokenSpan start) {
 		if (!parser.CheckOperator(Operator.LParen)) return null;
 		parser.Advance(); // consume (
 
@@ -427,11 +534,20 @@ internal sealed class ExpressionParser(Parser parser) {
 		}
 		parser.ExpectOperator(Operator.RParen);
 		parser.ExpectOperator(Operator.Arrow);
-		var body = ParseExprPrec(0);
+		var body = ParseExprPrecedence(0);
 		return new Expression.Lambda(parms, new LambdaBody.ExpressionBody(body), TokenSpan.Merge(start, body.Span));
 	}
 
-	// Non-consuming lookahead: does `(` begin a lambda? Pattern: `( [T name [, T name]*] ) ->`
+	/// <summary>
+	/// Determines whether the sequence of tokens starting from the current position
+	/// represents the beginning of a lambda expression. The pattern checked is
+	/// either an empty parameter list followed by an arrow (e.g., "() ->") or
+	/// a parameter list with type annotations, followed by an arrow (e.g., "(T name, T2 name) ->").
+	/// Non-consuming lookahead: does `(` begin a lambda? Pattern: `([T name [, T name]*]) ->`
+	/// </summary>
+	/// <returns>
+	/// True if the token sequence matches the lambda expression pattern; otherwise, false.
+	/// </returns>
 	private bool LookaheadIsLambda() {
 		int i = 1; // skip opening (
 
@@ -462,6 +578,14 @@ internal sealed class ExpressionParser(Parser parser) {
 		}
 	}
 
+	/// <summary>
+	/// Determines if the specified token is a type keyword recognized by the language.
+	/// </summary>
+	/// <param name="tok">The token to check, which is expected to have its type and keyword properties defined.</param>
+	/// <returns>
+	/// True if the token represents a type keyword (such as a primitive or predefined type);
+	/// otherwise, false.
+	/// </returns>
 	private static bool IsTypeKeyword(Token tok) => tok.Type == TokenType.Keyword && tok.Keyword is
 		Keyword.Bool    or Keyword.Char     or Keyword.Byte    or
 		Keyword.I8      or Keyword.I16      or Keyword.I32     or Keyword.I64     or
@@ -470,6 +594,16 @@ internal sealed class ExpressionParser(Parser parser) {
 		Keyword.Long    or Keyword.Short    or Keyword.Int     or Keyword.Uint    or Keyword.Unsigned or
 		Keyword.String  or Keyword.Bit      or Keyword.Any;
 
+	/// <summary>
+	/// Parses a token representing a literal and converts it into the corresponding literal expression.
+	/// </summary>
+	/// <param name="tok">The token to be parsed, which should contain the lexeme and type information identifying the literal.</param>
+	/// <returns>
+	/// A <see cref="Literal"/> instance that represents the parsed literal, such as an integer, float, string, character, or bit.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown if the token contains an invalid or unsupported literal format.
+	/// </exception>
 	private static Literal ParseLiteral(Token tok) {
 		var lexeme = tok.Lexeme;
 		if (lexeme.StartsWith('"'))
@@ -489,6 +623,16 @@ internal sealed class ExpressionParser(Parser parser) {
 		return new Literal.Int(lexeme);
 	}
 
+	/// <summary>
+	/// Retrieves and validates a member name from the current parser token.
+	/// </summary>
+	/// <returns>
+	/// A tuple containing the member name as a string and its associated <see cref="TokenSpan"/>.
+	/// </returns>
+	/// <exception cref="ParserError">
+	/// Thrown when the current token is not a valid identifier or keyword,
+	/// with an associated error message and span information.
+	/// </exception>
 	private (string Name, TokenSpan Span) ExpectMemberName() {
 		var span = parser.Current.Span;
 		if (parser.Current.Type == TokenType.Identifier || parser.Current.Type == TokenType.Keyword) {
