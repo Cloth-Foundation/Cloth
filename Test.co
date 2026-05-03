@@ -6,8 +6,8 @@ import cloth.lang.*;
 public class (): Object -> Serializable, Nullable {
 
     public Test {
-        //void frag = run();
-        //frag();
+        let frag = run();
+        frag();
 
         let x = 1;
 

@@ -196,9 +196,36 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.VarDecl(new VarDeclStmt([], type, name, init, span));
 	}
 
+	/// <summary>
+	/// Parses an expression from the source code. This method is responsible for
+	/// handling various types of expressions, including literals, binary operations,
+	/// unary operations, function calls, and more, depending on the current context
+	/// in the parsing process.
+	/// </summary>
+	/// <returns>
+	/// An instance of <see cref="Expression"/> that represents the parsed expression.
+	/// The specific type of expression returned is determined by the syntax being parsed.
+	/// </returns>
 	private Expression ParseExpression() => parser.ExpressionParser.ParseExpression();
+
+	/// <summary>
+	/// Parses the arguments provided in a function or method call. This method is responsible
+	/// for collecting and returning all expressions supplied as arguments within a call context.
+	/// </summary>
+	/// <returns>
+	/// A list containing expressions representing the parsed arguments, each as an instance
+	/// of <see cref="Expression"/>. If no arguments are provided, an empty list is returned.
+	/// </returns>
 	private List<Expression> ParseCallArgs() => parser.ExpressionParser.ParseCallArgs();
 
+	/// <summary>
+	/// Parses a `super` constructor call statement from the source code.
+	/// </summary>
+	/// <returns>
+	/// A parsed super-constructor call represented as an instance of <see cref="Stmt.SuperCall"/>.
+	/// The returned statement includes the arguments passed to the super constructor
+	/// and the associated token span information.
+	/// </returns>
 	private Stmt ParseSuperCall() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.Super);
@@ -209,6 +236,16 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.SuperCall(args, TokenSpan.Merge(start, parser.Previous().Span));
 	}
 
+	/// <summary>
+	/// Parses a 'this' constructor call statement from the source code. This method
+	/// is used in scenarios where a constructor delegates to another constructor
+	/// within the same class, using the 'this' keyword followed by argument parentheses.
+	/// </summary>
+	/// <returns>
+	/// A parsed 'this' call statement represented as an instance of <see cref="Stmt.ThisCall"/>.
+	/// This contains the arguments passed to the constructor call as well as the token span
+	/// representing the location of the statement in the source code.
+	/// </returns>
 	private Stmt ParseThisCall() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.This);
@@ -469,7 +506,16 @@ internal sealed class StatementParser(Parser parser) {
 		return new Stmt.Throw(expression, TokenSpan.Merge(start, parser.Previous().Span));
 	}
 
-	private Stmt ParseExprStmt() {
+	/// <summary>
+	/// Parses an expression statement from the source code. An expression statement
+	/// consists of an expression followed by a semicolon. This method ensures the
+	/// semicolon is present and validates the expression structure.
+	/// </summary>
+	/// <returns>
+	/// A parsed expression statement represented as an instance of <see cref="Stmt.ExprStmt"/>.
+	/// The statement contains the expression being parsed and its corresponding token span.
+	/// </returns>
+	private Stmt.ExprStmt ParseExprStmt() {
 		var expr = ParseExpression();
 		parser.ExpectSemiColon();
 		return new Stmt.ExprStmt(expr, expr.Span);

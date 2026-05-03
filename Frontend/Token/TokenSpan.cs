@@ -5,6 +5,7 @@
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
+using System.Text.Json.Serialization;
 using FrontEnd.File;
 
 namespace FrontEnd.Token;
@@ -24,20 +25,21 @@ public class TokenSpan {
 		File = file;
 	}
 
-	public int Start { get; }
+	[JsonIgnore] public int Start { get; }
 
-	public int End { get; }
+	[JsonIgnore] public int End { get; }
 
-	public int StartLine { get; }
+	[JsonIgnore] public int StartLine { get; }
 
-	public int EndLine { get; }
+	[JsonIgnore] public int EndLine { get; }
 
-	public int StartColumn { get; }
+	[JsonIgnore] public int StartColumn { get; }
 
-	public int EndColumn { get; }
+	[JsonIgnore] public int EndColumn { get; }
 
-	public ClothFile? File { get; }
+	[JsonIgnore] public ClothFile? File { get; }
 
-	public static TokenSpan Merge(TokenSpan start, TokenSpan end) =>
-		new TokenSpan(start.Start, end.End, start.StartLine, end.EndLine, start.StartColumn, end.EndColumn, start.File);
+	[JsonInclude] public string SpanRange => $"{StartLine}:{StartColumn}-{EndLine}:{EndColumn}";
+
+	public static TokenSpan Merge(TokenSpan start, TokenSpan end) => new(start.Start, end.End, start.StartLine, end.EndLine, start.StartColumn, end.EndColumn, start.File);
 }
