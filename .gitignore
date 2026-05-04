@@ -59,3 +59,5 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+/Standard-Library/build/
+build/
