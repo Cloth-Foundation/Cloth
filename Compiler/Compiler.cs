@@ -42,20 +42,28 @@ public class Compiler {
 			Environment.Exit(1);
 		}
 
-		var units = new List<(CompilationUnit Unit, string FilePath)>();
+		var units = ParseUnits(sourceRoot);
 
-		foreach (var filePath in Directory.EnumerateFiles(sourceRoot, "*.co", SearchOption.AllDirectories)) {
-			var fileName = Path.GetFileNameWithoutExtension(filePath);
-			var clothFile = new ClothFile(filePath, fileName);
-			var unit = new Parser(new Lexer(clothFile)).Parse();
-			units.Add((unit, filePath));
+		// For executable builds, also parse the source of each Cloth dependency so the
+		// CirGenerator can register their method signatures (used by compile-time dispatch
+		// and by the LLVM emitter's `declare` lines for cross-project calls).
+		var externUnits = new List<(CompilationUnit Unit, string FilePath)>();
+		if (config.Output == "executable") {
+			foreach (var (name, _) in config.Dependencies) {
+				var depRoot = ResolveStdlibRoot(name);
+				if (depRoot == null) continue;
+				var depConfig = BuildConfig.FromFile(Path.Combine(depRoot, "build.toml"));
+				var depSourceRoot = Path.Combine(depRoot, depConfig.Source);
+				if (Directory.Exists(depSourceRoot))
+					externUnits.AddRange(ParseUnits(depSourceRoot));
+			}
 		}
 
 		var analyzer = new SemanticAnalyzer(units, sourceRoot);
 		analyzer.Analyze(requireMain: config.Output == "executable");
 
 		var cirGenerator = new CirGenerator();
-		var module = cirGenerator.Generate(units);
+		var module = cirGenerator.Generate(units, analyzer.InferredVarTypes, externUnits);
 
 		var emitter = new LlvmEmitter(module, config, _projectRoot);
 		var llPath = emitter.Emit();
@@ -69,6 +77,17 @@ public class Compiler {
 		}
 
 		return module;
+	}
+
+	private static List<(CompilationUnit Unit, string FilePath)> ParseUnits(string sourceRoot) {
+		var result = new List<(CompilationUnit Unit, string FilePath)>();
+		foreach (var filePath in Directory.EnumerateFiles(sourceRoot, "*.co", SearchOption.AllDirectories)) {
+			var fileName = Path.GetFileNameWithoutExtension(filePath);
+			var clothFile = new ClothFile(filePath, fileName);
+			var unit = new Parser(new Lexer(clothFile)).Parse();
+			result.Add((unit, filePath));
+		}
+		return result;
 	}
 
 	// -------------------------------------------------------------------------
