@@ -5,7 +5,9 @@
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
+using System.Diagnostics;
 using Compiler.CIR;
+using Compiler.LLVM;
 using Compiler.Semantics;
 using FrontEnd.File;
 using FrontEnd.Lexer;
@@ -53,6 +55,43 @@ public class Compiler {
 		analyzer.Analyze();
 
 		var cirGenerator = new CirGenerator();
-		return cirGenerator.Generate(units);
+		var module = cirGenerator.Generate(units);
+
+		var emitter = new LlvmEmitter(module, config, _projectRoot);
+		var llPath = emitter.Emit();
+		InvokeClang(llPath, config, _projectRoot);
+
+		return module;
+	}
+
+	private static void InvokeClang(string llPath, BuildConfig config, string projectRoot) {
+		var buildDir = Path.Combine(projectRoot, "build");
+		var exeName = config.ProjectName + (OperatingSystem.IsWindows() ? ".exe" : "");
+		var exePath = Path.Combine(buildDir, exeName);
+
+		var psi = new ProcessStartInfo {
+			FileName = "clang",
+			ArgumentList = { llPath, "-o", exePath },
+			RedirectStandardError = true,
+			RedirectStandardOutput = true,
+			UseShellExecute = false,
+			CreateNoWindow = true
+		};
+
+		try {
+			using var proc = Process.Start(psi);
+			if (proc == null) {
+				Console.WriteLine($"Note: clang not found in PATH. Run: clang \"{llPath}\" -o \"{exePath}\"");
+				return;
+			}
+			proc.WaitForExit();
+			if (proc.ExitCode != 0) {
+				Console.Error.Write(proc.StandardError.ReadToEnd());
+				Environment.Exit(1);
+			}
+			Console.WriteLine($"Executable written to: {exePath}");
+		} catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or FileNotFoundException) {
+			Console.WriteLine($"Note: clang not found in PATH. Run: clang \"{llPath}\" -o \"{exePath}\"");
+		}
 	}
 }
