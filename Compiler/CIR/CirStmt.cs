@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // CirStmt.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -20,12 +20,7 @@ public abstract record CirStmt {
 
 	public sealed record Return(CirExpr? Value) : CirStmt;
 
-	public sealed record If(
-		CirExpr Condition,
-		List<CirStmt> Then,
-		List<(CirExpr Cond, List<CirStmt> Body)> ElseIfs,
-		List<CirStmt>? Else
-	) : CirStmt;
+	public sealed record If(CirExpr Condition, List<CirStmt> Then, List<(CirExpr Cond, List<CirStmt> Body)> ElseIfs, List<CirStmt>? Else) : CirStmt;
 
 	public sealed record While(CirExpr Condition, List<CirStmt> Body) : CirStmt;
 
@@ -39,6 +34,7 @@ public abstract record CirStmt {
 	public sealed record Switch(CirExpr Subject, List<CirSwitchCase> Cases) : CirStmt;
 
 	public sealed record Break : CirStmt;
+
 	public sealed record Continue : CirStmt;
 
 	public sealed record Throw(CirExpr Expression) : CirStmt;

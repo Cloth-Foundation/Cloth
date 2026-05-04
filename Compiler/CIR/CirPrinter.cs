@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // CirPrinter.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -60,6 +60,7 @@ public static class CirPrinter {
 					var payload = c.Payload.Count > 0 ? $"({string.Join(", ", c.Payload.Select(PrintType))})" : "";
 					sb.AppendLine($"{pad}  case {c.Name}{payload}{disc}");
 				}
+
 				sb.AppendLine($"{pad}}}");
 				break;
 
@@ -80,10 +81,10 @@ public static class CirPrinter {
 	private static void PrintFunction(StringBuilder sb, CirFunction fn, int indent) {
 		var pad = new string(' ', indent);
 		var kind = fn.Kind switch {
-			CirFunctionKind.Constructor  => "ctor",
-			CirFunctionKind.Destructor   => "dtor",
-			CirFunctionKind.Method       => "fn",
-			CirFunctionKind.Fragment     => "fragment",
+			CirFunctionKind.Constructor => "ctor",
+			CirFunctionKind.Destructor => "dtor",
+			CirFunctionKind.Method => "fn",
+			CirFunctionKind.Fragment => "fragment",
 			CirFunctionKind.StaticMethod => "static fn",
 			_ => "fn"
 		};
@@ -106,7 +107,7 @@ public static class CirPrinter {
 		switch (stmt) {
 			case CirStmt.LocalDecl d:
 				var typeStr = d.Type != null ? $": {PrintType(d.Type)}" : "";
-				var init    = d.Init  != null ? $" = {PrintExpr(d.Init)}" : "";
+				var init = d.Init != null ? $" = {PrintExpr(d.Init)}" : "";
 				sb.AppendLine($"{pad}let {d.Name}{typeStr}{init}");
 				break;
 
@@ -138,10 +139,12 @@ public static class CirPrinter {
 					sb.AppendLine($"{pad}}} else if {PrintExpr(cond)} {{");
 					foreach (var s in body) PrintStmt(sb, s, indent + 2);
 				}
+
 				if (i.Else != null) {
 					sb.AppendLine($"{pad}}} else {{");
 					foreach (var s in i.Else) PrintStmt(sb, s, indent + 2);
 				}
+
 				sb.AppendLine($"{pad}}}");
 				break;
 
@@ -180,6 +183,7 @@ public static class CirPrinter {
 					sb.AppendLine($"{pad}  {pattern}:");
 					foreach (var s in c.Body) PrintStmt(sb, s, indent + 4);
 				}
+
 				sb.AppendLine($"{pad}}}");
 				break;
 
@@ -212,32 +216,32 @@ public static class CirPrinter {
 	// -------------------------------------------------------------------------
 
 	private static string PrintExpr(CirExpr expr) => expr switch {
-		CirExpr.IntLit   i => i.Value,
+		CirExpr.IntLit i => i.Value,
 		CirExpr.FloatLit f => f.Value,
-		CirExpr.BoolLit  b => b.Value ? "true" : "false",
-		CirExpr.CharLit  c => $"'{c.Value}'",
-		CirExpr.StrLit   s => $"\"{s.Value}\"",
-		CirExpr.NullLit    => "null",
-		CirExpr.Local    l => l.Name,
-		CirExpr.ThisPtr    => "this",
+		CirExpr.BoolLit b => b.Value ? "true" : "false",
+		CirExpr.CharLit c => $"'{c.Value}'",
+		CirExpr.StrLit s => $"\"{s.Value}\"",
+		CirExpr.NullLit => "null",
+		CirExpr.Local l => l.Name,
+		CirExpr.ThisPtr => "this",
 
-		CirExpr.Binary b   => $"({PrintExpr(b.Left)} {PrintBinOp(b.Op)} {PrintExpr(b.Right)})",
-		CirExpr.Unary  u   => $"({PrintUnOp(u.Op)} {PrintExpr(u.Operand)})",
+		CirExpr.Binary b => $"({PrintExpr(b.Left)} {PrintBinOp(b.Op)} {PrintExpr(b.Right)})",
+		CirExpr.Unary u => $"({PrintUnOp(u.Op)} {PrintExpr(u.Operand)})",
 
-		CirExpr.FieldAccess  fa => $"{PrintExpr(fa.Target)}->{fa.FieldName}",
+		CirExpr.FieldAccess fa => $"{PrintExpr(fa.Target)}->{fa.FieldName}",
 		CirExpr.StaticAccess sa => $"{sa.TypeFqn}::{sa.MemberName}",
-		CirExpr.Index        i  => $"{PrintExpr(i.Target)}[{PrintExpr(i.Idx)}]",
+		CirExpr.Index i => $"{PrintExpr(i.Target)}[{PrintExpr(i.Idx)}]",
 
-		CirExpr.Call         c  => $"{c.MangledName}({string.Join(", ", c.Args.Select(PrintExpr))})",
+		CirExpr.Call c => $"{c.MangledName}({string.Join(", ", c.Args.Select(PrintExpr))})",
 		CirExpr.IndirectCall ic => $"(*{PrintExpr(ic.Callee)})({string.Join(", ", ic.Args.Select(PrintExpr))})",
-		CirExpr.Alloc        a  => $"alloc {PrintType(a.Type)} via {a.CtorMangledName}({string.Join(", ", a.Args.Select(PrintExpr))})",
+		CirExpr.Alloc a => $"alloc {PrintType(a.Type)} via {a.CtorMangledName}({string.Join(", ", a.Args.Select(PrintExpr))})",
 
-		CirExpr.Cast      c  => $"({(c.IsSafe ? "safe " : "")}cast<{PrintType(c.TargetType)}> {PrintExpr(c.Value)})",
-		CirExpr.TypeCheck t  => $"({PrintExpr(t.Value)} is {PrintType(t.TargetType)})",
-		CirExpr.Ternary   t  => $"({PrintExpr(t.Condition)} ? {PrintExpr(t.Then)} : {PrintExpr(t.Else)})",
+		CirExpr.Cast c => $"({(c.IsSafe ? "safe " : "")}cast<{PrintType(c.TargetType)}> {PrintExpr(c.Value)})",
+		CirExpr.TypeCheck t => $"({PrintExpr(t.Value)} is {PrintType(t.TargetType)})",
+		CirExpr.Ternary t => $"({PrintExpr(t.Condition)} ? {PrintExpr(t.Then)} : {PrintExpr(t.Else)})",
 		CirExpr.NullCoalesce n => $"({PrintExpr(n.Left)} ?? {PrintExpr(n.Right)})",
-		CirExpr.TupleLit  t  => $"({string.Join(", ", t.Elements.Select(PrintExpr))})",
-		CirExpr.Range     r  => $"{PrintExpr(r.Start)}..{PrintExpr(r.End)}",
+		CirExpr.TupleLit t => $"({string.Join(", ", t.Elements.Select(PrintExpr))})",
+		CirExpr.Range r => $"{PrintExpr(r.Start)}..{PrintExpr(r.End)}",
 
 		_ => $"<{expr.GetType().Name}>"
 	};
@@ -247,14 +251,14 @@ public static class CirPrinter {
 	// -------------------------------------------------------------------------
 
 	private static string PrintType(CirType type) => type switch {
-		CirType.Named    n => n.FullyQualifiedName,
-		CirType.Ptr      p => $"*{PrintType(p.Inner)}",
+		CirType.Named n => n.FullyQualifiedName,
+		CirType.Ptr p => $"*{PrintType(p.Inner)}",
 		CirType.Nullable n => $"{PrintType(n.Inner)}?",
-		CirType.Array    a => $"{PrintType(a.Element)}[]",
-		CirType.Tuple    t => $"({string.Join(", ", t.Elements.Select(PrintType))})",
-		CirType.Generic  g => $"{g.FullyQualifiedName}<{string.Join(", ", g.Args.Select(PrintType))}>",
-		CirType.Void       => "void",
-		CirType.Any        => "any",
+		CirType.Array a => $"{PrintType(a.Element)}[]",
+		CirType.Tuple t => $"({string.Join(", ", t.Elements.Select(PrintType))})",
+		CirType.Generic g => $"{g.FullyQualifiedName}<{string.Join(", ", g.Args.Select(PrintType))}>",
+		CirType.Void => "void",
+		CirType.Any => "any",
 		_ => $"<{type.GetType().Name}>"
 	};
 
@@ -263,32 +267,32 @@ public static class CirPrinter {
 	// -------------------------------------------------------------------------
 
 	private static string PrintBinOp(CirBinOp op) => op switch {
-		CirBinOp.Add    => "+",  CirBinOp.Sub  => "-",  CirBinOp.Mul => "*",
-		CirBinOp.Div    => "/",  CirBinOp.Rem  => "%",
-		CirBinOp.And    => "&&", CirBinOp.Or   => "||",
-		CirBinOp.BitAnd => "&",  CirBinOp.BitOr => "|", CirBinOp.BitXor => "^",
-		CirBinOp.Shl    => "<<", CirBinOp.Shr  => ">>",
-		CirBinOp.Eq     => "==", CirBinOp.NotEq => "!=",
-		CirBinOp.Lt     => "<",  CirBinOp.LtEq  => "<=",
-		CirBinOp.Gt     => ">",  CirBinOp.GtEq  => ">=",
-		CirBinOp.In     => "in",
+		CirBinOp.Add => "+", CirBinOp.Sub => "-", CirBinOp.Mul => "*",
+		CirBinOp.Div => "/", CirBinOp.Rem => "%",
+		CirBinOp.And => "&&", CirBinOp.Or => "||",
+		CirBinOp.BitAnd => "&", CirBinOp.BitOr => "|", CirBinOp.BitXor => "^",
+		CirBinOp.Shl => "<<", CirBinOp.Shr => ">>",
+		CirBinOp.Eq => "==", CirBinOp.NotEq => "!=",
+		CirBinOp.Lt => "<", CirBinOp.LtEq => "<=",
+		CirBinOp.Gt => ">", CirBinOp.GtEq => ">=",
+		CirBinOp.In => "in",
 		_ => "?"
 	};
 
 	private static string PrintUnOp(CirUnOp op) => op switch {
-		CirUnOp.Neg    => "-",   CirUnOp.Not    => "!",   CirUnOp.BitNot => "~",
-		CirUnOp.PreInc => "++",  CirUnOp.PreDec => "--",
+		CirUnOp.Neg => "-", CirUnOp.Not => "!", CirUnOp.BitNot => "~",
+		CirUnOp.PreInc => "++", CirUnOp.PreDec => "--",
 		CirUnOp.PostInc => "++", CirUnOp.PostDec => "--",
-		CirUnOp.Await  => "await",
+		CirUnOp.Await => "await",
 		_ => "?"
 	};
 
 	private static string PrintAssignOp(CirAssignOp op) => op switch {
-		CirAssignOp.Assign    => "=",
+		CirAssignOp.Assign => "=",
 		CirAssignOp.AddAssign => "+=", CirAssignOp.SubAssign => "-=",
 		CirAssignOp.MulAssign => "*=", CirAssignOp.DivAssign => "/=",
-		CirAssignOp.RemAssign => "%=", CirAssignOp.AndAssign  => "&=",
-		CirAssignOp.OrAssign  => "|=", CirAssignOp.XorAssign  => "^=",
+		CirAssignOp.RemAssign => "%=", CirAssignOp.AndAssign => "&=",
+		CirAssignOp.OrAssign => "|=", CirAssignOp.XorAssign => "^=",
 		_ => "="
 	};
 }

@@ -53,8 +53,10 @@ error is almost never thrown unless the parser is in an invalid state or there i
 the only identifier in the module path.
 
 ## P00A
+
 `P00A` is thrown when an invalid token is used as a visibility modifier. Valid visibility modifiers are `public`,
 `private`, and `internal`.
 
 ## P00B
+
 `P00B` is thrown when an invalid top-level statement is used.

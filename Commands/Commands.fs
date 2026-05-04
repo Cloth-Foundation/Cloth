@@ -6,6 +6,7 @@ open Commands.Executor.Build
 open Commands.Executor.Lexer
 open Commands.Executor.Help
 open Commands.Executor.Parser
+open Commands.Executor.Run
 
 let dispatch (args: string[]) =
     if args.Length = 0 then
@@ -22,7 +23,11 @@ let dispatch (args: string[]) =
             else
                 runBuild (args[1], args)
 
-        | "run" -> Success "Run Called"
+        | "run" ->
+            if args.Length < 2 then
+                Failure "Expected project directory. Example: cloth run ./my-project"
+            else
+                runRun (args[1], args)
 
         | "test" -> Success "Test Called"
 
