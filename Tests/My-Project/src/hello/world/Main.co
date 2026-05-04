@@ -1,13 +1,19 @@
 module hello.world;
 
-import cloth.io.IO::{ println };
+import cloth.io.Out::{ println };
 
 public class (string[] args) {
 
     public Main {
-        println("Hello, World!");
+        sayHello();
     }
 
     public ~Main() {
+    }
+
+    public func sayHello(): void {
+        println("Hello,");
+        println("World!");
+        println("I am Cloth!");
     }
 }

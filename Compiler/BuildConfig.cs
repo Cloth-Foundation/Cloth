@@ -13,6 +13,7 @@ public class BuildConfig {
 	public string Output { get; private set; } = "executable";
 	public string Target { get; private set; } = "";
 	public string Source { get; private set; } = "src";
+	public Dictionary<string, string> Dependencies { get; } = new();
 
 	private BuildConfig() { }
 
@@ -44,6 +45,9 @@ public class BuildConfig {
 					if (key == "output") config.Output = value;
 					else if (key == "target") config.Target = value;
 					else if (key == "source") config.Source = value;
+					break;
+				case "Dependencies":
+					config.Dependencies[key] = value;
 					break;
 			}
 		}

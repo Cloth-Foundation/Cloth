@@ -26,6 +26,10 @@ public sealed class LlvmEmitter {
 	private readonly List<string> _strings = new();
 	private readonly Dictionary<string, int> _stringIndex = new();
 
+	// CirFunctions whose IsExtern == true. Keyed by MangledName (already the literal C symbol
+	// for @Extern declarations). Provides proper signatures for `declare` lines.
+	private readonly Dictionary<string, CirFunction> _externFns = new();
+
 	// Per-function state
 	private int _tempCounter;
 	private string _currentThisFqn = "";
@@ -85,7 +89,8 @@ public sealed class LlvmEmitter {
 			sb.AppendLine();
 		}
 
-		sb.Append(EmitMainEntry());
+		if (_config.Output == "executable")
+			sb.Append(EmitMainEntry());
 		return sb.ToString();
 	}
 
@@ -101,9 +106,17 @@ public sealed class LlvmEmitter {
 	// -------------------------------------------------------------------------
 
 	private void PreScan() {
-		foreach (var fn in _module.Functions)
-			if (!fn.IsExtern)
+		foreach (var fn in _module.Functions) {
+			if (fn.IsExtern) {
+				_externFns[fn.MangledName] = fn;
+				// Pre-populate _externDecls so call-site inference doesn't override the proper signature.
+				var retTy = LlvmType(fn.ReturnType);
+				var argSig = string.Join(", ", fn.Parameters.Select(p => LlvmType(p.Type)));
+				_externDecls[fn.MangledName] = $"declare {retTy} @{fn.MangledName}({argSig})";
+			} else {
 				_definedFns.Add(fn.MangledName);
+			}
+		}
 
 		foreach (var fn in _module.Functions) {
 			foreach (var stmt in fn.Body)
@@ -469,7 +482,8 @@ public sealed class LlvmEmitter {
 
 	private string EmitCall(CirExpr.Call c) {
 		var argVals = c.Args.Select(EmitExpr).ToList();
-		var llvmName = MangleToLlvm(c.MangledName);
+		// For @Extern targets, MangledName is already the literal C symbol — do not re-mangle.
+		var llvmName = _externFns.ContainsKey(c.MangledName) ? c.MangledName : MangleToLlvm(c.MangledName);
 
 		// Look up the called function's signature if it's defined locally; fall back to extern's "all ptr / void".
 		var callee = _module.Functions.FirstOrDefault(f => f.MangledName == c.MangledName);

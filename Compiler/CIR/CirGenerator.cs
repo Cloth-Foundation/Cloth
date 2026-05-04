@@ -23,14 +23,50 @@ public sealed class CirGenerator {
 	// Import map for the current file: local name → fully-qualified name
 	private Dictionary<string, string> _importMap = new();
 
+	// FQN of the class currently being lowered. Used to resolve same-class identifier calls
+	// (e.g. `_puts(s)` inside `Out.println` resolves to `cloth.io.Out._puts`).
+	private string _currentTypeFqn = "";
+
+	// FQN of a method (e.g. "cloth.io.Out._puts") → its final mangled symbol.
+	// For Cloth-defined methods this is the regular dotted mangle; for @Extern methods
+	// it is the literal C symbol from the annotation.
+	private readonly Dictionary<string, string> _methodSymbol = new();
+
 	// -------------------------------------------------------------------------
 	// Public entry point
 	// -------------------------------------------------------------------------
 
 	public CirModule Generate(List<(CompilationUnit Unit, string FilePath)> units) {
+		// Pass 1 — register every method's final symbol so callsites can resolve.
+		foreach (var (unit, _) in units)
+			RegisterUnit(unit);
+		// Pass 2 — full lowering, with the registry available to LowerCall.
 		foreach (var (unit, filePath) in units)
 			LowerUnit(unit, filePath);
 		return new CirModule(_types, _functions);
+	}
+
+	private void RegisterUnit(CompilationUnit unit) {
+		var moduleFqn = ModuleFqn(unit.Module);
+		foreach (var typeDecl in unit.Types) {
+			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
+			var typeFqn = TypeFqn(moduleFqn, c.Name);
+			foreach (var member in c.Members) {
+				if (member is MemberDeclaration.Method { Declaration: var m }) {
+					var fqn = $"{typeFqn}.{m.Name}";
+					_methodSymbol[fqn] = TryGetExternSymbol(m.Annotations) ?? MangleMethod(typeFqn, m.Name);
+				}
+			}
+		}
+	}
+
+	private static string? TryGetExternSymbol(List<TraitAnnotation> annotations) {
+		foreach (var a in annotations) {
+			if (a.Name != "Extern") continue;
+			if (a.Args.Count == 0) return null;
+			if (a.Args[0].Value is Expression.Literal { Value: Literal.Str s }) return s.Value;
+		}
+		return null;
 	}
 
 	// -------------------------------------------------------------------------
@@ -84,9 +120,14 @@ public sealed class CirGenerator {
 		foreach (var p in decl.PrimaryParameters)
 			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, IsAtomic: false, null));
 
-		// Lower all members — functions go to _functions, fields appended to list
-		foreach (var member in decl.Members)
-			LowerMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields);
+		var prev = _currentTypeFqn;
+		_currentTypeFqn = typeFqn;
+		try {
+			foreach (var member in decl.Members)
+				LowerMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields);
+		} finally {
+			_currentTypeFqn = prev;
+		}
 
 		return new CirTypeDecl.Class(
 			typeFqn,
@@ -208,20 +249,25 @@ public sealed class CirGenerator {
 		);
 
 	private CirFunction LowerMethod(MethodDeclaration decl, string typeFqn) {
-		var isExtern = !decl.Body.HasValue;
-		var parameters = new List<CirParam> {
-			new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")
-		};
+		var externSymbol = TryGetExternSymbol(decl.Annotations);
+		var isStatic     = decl.Modifiers.Contains(FunctionModifiers.Static);
+		var isExtern     = externSymbol != null || !decl.Body.HasValue;
+
+		var parameters = new List<CirParam>();
+		if (!isStatic)
+			parameters.Add(new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this"));
 		parameters.AddRange(decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name)));
 
+		var mangledName = externSymbol ?? MangleMethod(typeFqn, decl.Name);
+
 		return new CirFunction(
-			MangleMethod(typeFqn, decl.Name),
-			CirFunctionKind.Method,
+			mangledName,
+			isStatic ? CirFunctionKind.StaticMethod : CirFunctionKind.Method,
 			parameters,
 			LowerType(decl.ReturnType),
 			isExtern ? [] : LowerBlock(decl.Body!.Value),
 			isExtern,
-			IsStatic: false
+			isStatic
 		);
 	}
 
@@ -363,12 +409,19 @@ public sealed class CirGenerator {
 
 		switch (call.Callee) {
 			case Expression.Identifier id: {
-				var resolvedName = _importMap.TryGetValue(id.Name, out var fqn) ? fqn : id.Name;
-				return new CirExpr.Call(resolvedName, args);
+				string resolvedFqn;
+				if (_importMap.TryGetValue(id.Name, out var imported)) {
+					resolvedFqn = imported;
+				} else if (!string.IsNullOrEmpty(_currentTypeFqn) && _methodSymbol.ContainsKey($"{_currentTypeFqn}.{id.Name}")) {
+					resolvedFqn = $"{_currentTypeFqn}.{id.Name}";
+				} else {
+					resolvedFqn = id.Name;
+				}
+				return new CirExpr.Call(ResolveSymbol(resolvedFqn), args);
 			}
 			case Expression.MetaAccess ma: {
 				var typePath = ResolveExprPath(ma.Target);
-				return new CirExpr.Call($"{typePath}.{ma.Member}", args);
+				return new CirExpr.Call(ResolveSymbol($"{typePath}.{ma.Member}"), args);
 			}
 			case Expression.MemberAccess ma: {
 				// obj.method(args) — inject obj as first argument for instance dispatch
@@ -381,6 +434,12 @@ public sealed class CirGenerator {
 				return new CirExpr.IndirectCall(LowerExpr(call.Callee), args);
 		}
 	}
+
+	// If the FQN matches a registered method, return its final mangled symbol;
+	// otherwise pass through unchanged (e.g. unresolved imports become extern declarations
+	// later in the LLVM lowering pass).
+	private string ResolveSymbol(string fqn) =>
+		_methodSymbol.TryGetValue(fqn, out var sym) ? sym : fqn;
 
 	private CirExpr LowerNewExpr(TypeExpression type, List<Expression> arguments) {
 		var cirType = LowerType(type);

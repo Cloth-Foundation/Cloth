@@ -43,6 +43,11 @@ CodeCoverage/
 .vs
 .idea
 
+# For build artifacts
+*.exe
+*.ll
+*.o
+
 # MSBuild Binary and Structured Log
 *.binlog
 
