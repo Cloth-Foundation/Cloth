@@ -344,12 +344,9 @@ public class Parser {
 			var visibility = ParseMemberVisibility();
 			var modifiers = ParseFunctionModifiers();
 
-			if (CheckKeyword(Keyword.Static)) {
-				Advance(); // consume 'static', must be followed by 'const'
-				members.Add(new MemberDeclaration.Const(ParseConstDecl(visibility, isStatic: true)));
-			}
-			else if (CheckKeyword(Keyword.Const)) {
-				members.Add(new MemberDeclaration.Const(ParseConstDecl(visibility, isStatic: false)));
+			if (CheckKeyword(Keyword.Const)) {
+				var isStatic = modifiers.Contains(FunctionModifiers.Static);
+				members.Add(new MemberDeclaration.Const(ParseConstDecl(visibility, isStatic)));
 			}
 			else if (CheckKeyword(Keyword.Func)) {
 				members.Add(new MemberDeclaration.Method(ParseMethodDecl(annotations, visibility, modifiers)));
@@ -393,7 +390,21 @@ public class Parser {
 				throw ParserError.ExpectedIdentifier.WithSpan(_current.Span).Render();
 			var name = _current.Literal;
 			Advance();
-			annotations.Add(new TraitAnnotation(name, new List<(string, Expression)>(), TokenSpan.Merge(start, Previous().Span)));
+
+			var args = new List<(string, Expression)>();
+			if (CheckOperator(Operator.LParen)) {
+				Advance(); // consume '('
+				if (!CheckOperator(Operator.RParen)) {
+					args.Add(("", ExpressionParser.ParseExpression()));
+					while (CheckOperator(Operator.Comma)) {
+						Advance();
+						args.Add(("", ExpressionParser.ParseExpression()));
+					}
+				}
+				ExpectOperator(Operator.RParen);
+			}
+
+			annotations.Add(new TraitAnnotation(name, args, TokenSpan.Merge(start, Previous().Span)));
 		}
 
 		return annotations;
@@ -617,16 +628,21 @@ public class Parser {
 	/// </returns>
 	private List<FunctionModifiers> ParseFunctionModifiers() {
 		var modifiers = new List<FunctionModifiers>();
-		if (CheckKeyword(Keyword.Const)) {
-			modifiers.Add(FunctionModifiers.Const);
-			Advance();
+		while (true) {
+			if (CheckKeyword(Keyword.Static) && !modifiers.Contains(FunctionModifiers.Static)) {
+				modifiers.Add(FunctionModifiers.Static);
+				Advance();
+			}
+			else if (CheckKeyword(Keyword.Const) && !modifiers.Contains(FunctionModifiers.Const)) {
+				modifiers.Add(FunctionModifiers.Const);
+				Advance();
+			}
+			else if (CheckKeyword(Keyword.Prototype) && !modifiers.Contains(FunctionModifiers.Prototype)) {
+				modifiers.Add(FunctionModifiers.Prototype);
+				Advance();
+			}
+			else break;
 		}
-
-		if (CheckKeyword(Keyword.Prototype)) {
-			modifiers.Add(FunctionModifiers.Prototype);
-			Advance();
-		}
-
 		return modifiers;
 	}
 

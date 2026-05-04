@@ -20,11 +20,11 @@ public class SemanticAnalyzer {
 		_sourceRoot = sourceRoot;
 	}
 
-	public void Analyze() {
+	public void Analyze(bool requireMain = true) {
 		foreach (var (unit, filePath) in _units)
 			ValidateModulePath(unit, filePath);
 
-		ValidateMainFile();
+		if (requireMain) ValidateMainFile();
 	}
 
 	private void ValidateModulePath(CompilationUnit unit, string filePath) {
