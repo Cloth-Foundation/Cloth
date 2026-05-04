@@ -26,9 +26,19 @@ public sealed class LlvmEmitter {
 	private readonly List<string> _strings = new();
 	private readonly Dictionary<string, int> _stringIndex = new();
 
-	// CirFunctions whose IsExtern == true. Keyed by MangledName (already the literal C symbol
-	// for @Extern declarations). Provides proper signatures for `declare` lines.
+	// CirFunctions whose IsExtern == true. Keyed by MangledName (literal C symbol for @Extern,
+	// or dotted CIR FQN for cross-project externs). Provides proper signatures for `declare` lines.
 	private readonly Dictionary<string, CirFunction> _externFns = new();
+
+	// CIR MangledName → final LLVM symbol. For @Extern (literal C symbol) the value matches the key;
+	// for cross-project externs (dotted CIR FQN) the value is the LLVM-mangled form.
+	private readonly Dictionary<string, string> _externLlvmName = new();
+
+	// C-symbol → number of leading fixed parameters for variadic externs.
+	// Populated when multiple @Extern declarations alias to the same C symbol with different
+	// signatures (e.g. _printf_i32, _printf_i64 both → "printf"); the LLVM declare and call
+	// syntax must use variadic form so each call site can pass its own argument types.
+	private readonly Dictionary<string, int> _variadicLeading = new();
 
 	// Per-function state
 	private int _tempCounter;
@@ -115,16 +125,40 @@ public sealed class LlvmEmitter {
 	// -------------------------------------------------------------------------
 
 	private void PreScan() {
+		// Group extern functions by C symbol to detect collisions (variadic candidates).
+		var externsByName = new Dictionary<string, List<CirFunction>>();
 		foreach (var fn in _module.Functions) {
 			if (fn.IsExtern) {
-				_externFns[fn.MangledName] = fn;
-				// Pre-populate _externDecls so call-site inference doesn't override the proper signature.
-				var retTy = LlvmType(fn.ReturnType);
-				var argSig = string.Join(", ", fn.Parameters.Select(p => LlvmType(p.Type)));
-				_externDecls[fn.MangledName] = $"declare {retTy} @{fn.MangledName}({argSig})";
+				if (!externsByName.TryGetValue(fn.MangledName, out var list))
+					externsByName[fn.MangledName] = list = new List<CirFunction>();
+				list.Add(fn);
 			}
 			else {
 				_definedFns.Add(fn.MangledName);
+			}
+		}
+
+		foreach (var (cname, group) in externsByName) {
+			var representative = group[0];
+			_externFns[cname] = representative;
+			// Dotted names are CIR FQNs (cross-project externs) and need LLVM mangling.
+			// Names without dots are already final C symbols (from @Extern annotations).
+			var llvmName = cname.Contains('.') ? MangleToLlvm(cname) : cname;
+			_externLlvmName[cname] = llvmName;
+			var retTy = LlvmType(representative.ReturnType);
+
+			if (group.Count == 1) {
+				var argSig = string.Join(", ", representative.Parameters.Select(p => LlvmType(p.Type)));
+				_externDecls[cname] = $"declare {retTy} @{llvmName}({argSig})";
+			} else {
+				// Multiple @Extern declarations for the same C symbol — emit variadic.
+				// Leading fixed parameters are the longest common prefix where all groups agree.
+				var leading = LongestCommonParamPrefix(group);
+				_variadicLeading[cname] = leading.Count;
+				var leadSig = string.Join(", ", leading.Select(LlvmType));
+				_externDecls[cname] = leading.Count == 0
+					? $"declare {retTy} @{llvmName}(...)"
+					: $"declare {retTy} @{llvmName}({leadSig}, ...)";
 			}
 		}
 
@@ -224,7 +258,7 @@ public sealed class LlvmEmitter {
 				ScanExpr(i.Idx);
 				break;
 			case CirExpr.Call c:
-				if (!_definedFns.Contains(c.MangledName))
+				if (!_definedFns.Contains(c.MangledName) && !_externFns.ContainsKey(c.MangledName))
 					RecordExternCall(c.MangledName, c.Args.Count);
 				foreach (var a in c.Args) ScanExpr(a);
 				break;
@@ -233,7 +267,7 @@ public sealed class LlvmEmitter {
 				foreach (var a in ic.Args) ScanExpr(a);
 				break;
 			case CirExpr.Alloc a:
-				if (!_definedFns.Contains(a.CtorMangledName))
+				if (!_definedFns.Contains(a.CtorMangledName) && !_externFns.ContainsKey(a.CtorMangledName))
 					RecordExternCall(a.CtorMangledName, a.Args.Count + 1);
 				foreach (var x in a.Args) ScanExpr(x);
 				break;
@@ -256,6 +290,19 @@ public sealed class LlvmEmitter {
 				ScanExpr(r.End);
 				break;
 		}
+	}
+
+	private static List<CirType> LongestCommonParamPrefix(List<CirFunction> fns) {
+		var first = fns[0].Parameters;
+		var common = new List<CirType>();
+		for (var i = 0; i < first.Count; i++) {
+			var ty = first[i].Type;
+			if (fns.All(f => i < f.Parameters.Count && f.Parameters[i].Type == ty))
+				common.Add(ty);
+			else
+				break;
+		}
+		return common;
 	}
 
 	private void RecordExternCall(string cirName, int argCount) {
@@ -409,6 +456,7 @@ public sealed class LlvmEmitter {
 			case CirStmt.Expr e: EmitExprStmt(e.Expression); break;
 			case CirStmt.Discard d: EmitExprStmt(d.Expression); break;
 			case CirStmt.Return r: EmitReturn(r); break;
+			case CirStmt.If i: EmitIf(i); break;
 			case CirStmt.Block b:
 				foreach (var s in b.Body) EmitStmt(s);
 				break;
@@ -417,6 +465,41 @@ public sealed class LlvmEmitter {
 				break;
 		}
 	}
+
+	private void EmitIf(CirStmt.If i) {
+		var endLabel = FreshLabel("if_end");
+		EmitIfBranches(i.Condition, i.Then, i.ElseIfs, 0, i.Else, endLabel);
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
+	}
+
+	private void EmitIfBranches(CirExpr cond, List<CirStmt> thenBody,
+	                            List<(CirExpr Cond, List<CirStmt> Body)> elseIfs, int idx,
+	                            List<CirStmt>? elseBody, string endLabel) {
+		var thenLabel = FreshLabel("then");
+		var elseLabel = FreshLabel("else");
+		var c = EmitExpr(cond);
+		_bodyLines.Add($"  br i1 {c}, label %{thenLabel}, label %{elseLabel}");
+
+		_bodyLines.Add($"{thenLabel}:");
+		_blockTerminated = false;
+		foreach (var s in thenBody) EmitStmt(s);
+		if (!_blockTerminated) _bodyLines.Add($"  br label %{endLabel}");
+
+		_bodyLines.Add($"{elseLabel}:");
+		_blockTerminated = false;
+		if (idx < elseIfs.Count) {
+			var (nextCond, nextBody) = elseIfs[idx];
+			EmitIfBranches(nextCond, nextBody, elseIfs, idx + 1, elseBody, endLabel);
+		} else if (elseBody != null) {
+			foreach (var s in elseBody) EmitStmt(s);
+			if (!_blockTerminated) _bodyLines.Add($"  br label %{endLabel}");
+		} else {
+			_bodyLines.Add($"  br label %{endLabel}");
+		}
+	}
+
+	private string FreshLabel(string prefix) => $"{prefix}_{_tempCounter++}";
 
 	private void EmitLocalDecl(CirStmt.LocalDecl d) {
 		var ty = d.Type ?? new CirType.Any();
@@ -490,6 +573,7 @@ public sealed class LlvmEmitter {
 
 			case CirExpr.Binary b: return EmitBinary(b);
 			case CirExpr.Unary u: return EmitUnary(u);
+			case CirExpr.Cast cast: return EmitCast(cast);
 		}
 
 		LlvmError.UnsupportedExpression.WithMessage($"{expr.GetType().Name} is not yet lowerable to LLVM IR").Render();
@@ -534,34 +618,111 @@ public sealed class LlvmEmitter {
 	}
 
 	private string EmitCall(CirExpr.Call c) {
+		// For known externs, use the pre-computed LLVM symbol (literal C name for @Extern,
+		// LLVM-mangled form for cross-project externs). For other targets, mangle on the spot.
+		var llvmName = _externLlvmName.TryGetValue(c.MangledName, out var ext)
+			? ext
+			: MangleToLlvm(c.MangledName);
+		var isVariadic = _variadicLeading.ContainsKey(c.MangledName);
+
+		// Variadic externs: type each arg from the expression itself (locals via _localTypeMap,
+		// literals from their CIR variant). Avoids the "first registered signature wins" bug.
+		// Non-variadic: keep the existing behavior — types come from the registered function's signature.
+		List<string> argTypes;
+		if (isVariadic) {
+			argTypes = c.Args.Select(LlvmTypeOf).ToList();
+		} else {
+			var callee = _module.Functions.FirstOrDefault(f => f.MangledName == c.MangledName);
+			argTypes = callee != null
+				? callee.Parameters.Select(p => LlvmType(p.Type)).ToList()
+				: Enumerable.Repeat("ptr", c.Args.Count).ToList();
+			while (argTypes.Count < c.Args.Count) argTypes.Add("ptr");
+		}
+
 		var argVals = c.Args.Select(EmitExpr).ToList();
-		// For @Extern targets, MangledName is already the literal C symbol — do not re-mangle.
-		var llvmName = _externFns.ContainsKey(c.MangledName) ? c.MangledName : MangleToLlvm(c.MangledName);
+		var argList = string.Join(", ", argVals.Select((v, i) => $"{argTypes[i]} {v}"));
 
-		// Look up the called function's signature if it's defined locally; fall back to extern's "all ptr / void".
-		var callee = _module.Functions.FirstOrDefault(f => f.MangledName == c.MangledName);
 		string retTy;
-		List<string> paramTys;
-		if (callee != null) {
-			retTy = LlvmType(callee.ReturnType);
-			paramTys = callee.Parameters.Select(p => LlvmType(p.Type)).ToList();
-		}
-		else {
-			retTy = "void";
-			paramTys = Enumerable.Repeat("ptr", c.Args.Count).ToList();
-		}
+		var registered = _module.Functions.FirstOrDefault(f => f.MangledName == c.MangledName);
+		retTy = registered != null ? LlvmType(registered.ReturnType) : "void";
 
-		var argList = string.Join(", ", argVals.Select((v, i) => $"{(i < paramTys.Count ? paramTys[i] : "ptr")} {v}"));
+		string fnTypePrefix = "";
+		if (isVariadic) {
+			var leadCount = _variadicLeading[c.MangledName];
+			var leadingTypes = string.Join(", ", argTypes.Take(leadCount));
+			fnTypePrefix = leadCount == 0 ? " (...)" : $" ({leadingTypes}, ...)";
+		}
 
 		if (retTy == "void") {
-			_bodyLines.Add($"  call void @{llvmName}({argList})");
+			_bodyLines.Add($"  call void{fnTypePrefix} @{llvmName}({argList})");
 			return "void";
 		}
 
 		var t = FreshTemp();
-		_bodyLines.Add($"  {t} = call {retTy} @{llvmName}({argList})");
+		_bodyLines.Add($"  {t} = call {retTy}{fnTypePrefix} @{llvmName}({argList})");
 		return t;
 	}
+
+	// LLVM type of an expression's runtime value, used when typing variadic arguments
+	// and call-site argument lists. Locals/this are looked up in _localTypeMap; literals
+	// are typed by their CIR variant; Cast carries an explicit target type.
+	private string LlvmTypeOf(CirExpr expr) => expr switch {
+		CirExpr.IntLit   => "i32",
+		CirExpr.FloatLit => "double",
+		CirExpr.BoolLit  => "i1",
+		CirExpr.CharLit  => "i8",
+		CirExpr.StrLit   => "ptr",
+		CirExpr.NullLit  => "ptr",
+		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => LlvmType(ty),
+		CirExpr.ThisPtr  => "ptr",
+		CirExpr.Cast cast => LlvmType(cast.TargetType),
+		_                => "ptr"
+	};
+
+	// Emit a CIR cast to LLVM IR. Supports lossless integer widening (sext for signed,
+	// zext for unsigned) and float widening (fpext). Target types follow canonical names.
+	private string EmitCast(CirExpr.Cast cast) {
+		var srcVal = EmitExpr(cast.Value);
+		var srcTy  = LlvmTypeOf(cast.Value);
+		var dstTy  = LlvmType(cast.TargetType);
+
+		if (srcTy == dstTy) return srcVal;
+
+		var dstName = (cast.TargetType as CirType.Named)?.FullyQualifiedName ?? "";
+		var dstSigned = dstName is "i8" or "i16" or "i32" or "i64" or "int" or "long" or "short";
+		var t = FreshTemp();
+
+		if (srcTy is "i1" or "i8" or "i16" or "i32" or "i64" && dstTy is "i8" or "i16" or "i32" or "i64") {
+			var op = dstSigned ? "sext" : "zext";
+			// Same-width src/dst already short-circuited above. Narrowing is not lossless and
+			// shouldn't be reachable from the dispatch path; emit truncate as a fallback.
+			if (BitWidth(srcTy) > BitWidth(dstTy))
+				_bodyLines.Add($"  {t} = trunc {srcTy} {srcVal} to {dstTy}");
+			else
+				_bodyLines.Add($"  {t} = {op} {srcTy} {srcVal} to {dstTy}");
+			return t;
+		}
+
+		if (srcTy == "float" && dstTy == "double") {
+			_bodyLines.Add($"  {t} = fpext float {srcVal} to double");
+			return t;
+		}
+		if (srcTy == "double" && dstTy == "float") {
+			_bodyLines.Add($"  {t} = fptrunc double {srcVal} to float");
+			return t;
+		}
+
+		// Catch-all bitcast for unhandled cases — keeps compilation moving and surfaces
+		// any miscoercions as obvious LLVM errors rather than mysterious crashes.
+		_bodyLines.Add($"  {t} = bitcast {srcTy} {srcVal} to {dstTy}");
+		return t;
+	}
+
+	private static int BitWidth(string llvmType) => llvmType switch {
+		"i1" => 1, "i8" => 8, "i16" => 16, "i32" => 32, "i64" => 64,
+		"float" => 32, "double" => 64,
+		_ => 0
+	};
 
 	private string EmitBinary(CirExpr.Binary b) {
 		var lhs = EmitExpr(b.Left);
@@ -668,27 +829,43 @@ public sealed class LlvmEmitter {
 		CirType.Tuple => "ptr",
 		CirType.Generic => "ptr",
 		CirType.Named n => n.FullyQualifiedName switch {
-			"string" => "ptr",
-			"int" => "i32",
-			"long" => "i64",
-			"short" => "i16",
-			"byte" => "i8",
-			"sbyte" => "i8",
-			"char" => "i8",
-			"bool" => "i1",
-			"float" => "float",
-			"double" => "double",
-			"void" => "void",
-			"any" => "ptr",
-			_ => "ptr"
+			// Canonical primitive types (also produced by SemanticAnalyzer aliasing).
+			"i8"  or "u8"  => "i8",
+			"i16" or "u16" => "i16",
+			"i32" or "u32" => "i32",
+			"i64" or "u64" => "i64",
+			"f32"          => "float",
+			"f64"          => "double",
+			// Aliases — kept for back-compat with code that hasn't been canonicalized.
+			"int"      => "i32",
+			"uint"     => "i32",
+			"unsigned" => "i32",
+			"long"     => "i64",
+			"short"    => "i16",
+			"float"    => "float",
+			"double"   => "double",
+			"real"     => "double",
+			// Other primitives.
+			"string"   => "ptr",
+			"byte"     => "i8",
+			"sbyte"    => "i8",
+			"char"     => "i8",
+			"bool"     => "i1",
+			"bit"      => "i1",
+			"void"     => "void",
+			"any"      => "ptr",
+			_          => "ptr"
 		},
 		_ => "ptr"
 	};
 
 	private static string DefaultValue(CirType t) => t switch {
-		CirType.Named n when n.FullyQualifiedName is "int" or "long" or "short" or "byte" or "sbyte" or "char" => "0",
-		CirType.Named n when n.FullyQualifiedName == "bool" => "0",
-		CirType.Named n when n.FullyQualifiedName is "float" or "double" => "0.0",
+		CirType.Named n when n.FullyQualifiedName is "i8" or "i16" or "i32" or "i64"
+		                                          or "u8" or "u16" or "u32" or "u64"
+		                                          or "int" or "uint" or "unsigned" or "long" or "short"
+		                                          or "byte" or "sbyte" or "char" or "bit" => "0",
+		CirType.Named n when n.FullyQualifiedName is "bool" => "0",
+		CirType.Named n when n.FullyQualifiedName is "f32" or "f64" or "float" or "double" or "real" => "0.0",
 		_ => "null"
 	};
 

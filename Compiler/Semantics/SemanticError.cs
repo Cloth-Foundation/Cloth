@@ -27,6 +27,8 @@ public class SemanticError : Exception {
 	public static readonly SemanticError MainConstructorNotFound = new("S003", "no constructor found in Main class", true);
 	public static readonly SemanticError MainConstructorInvalidArgs = new("S004", "Main constructor must accept 'string[] args'", true);
 	public static readonly SemanticError ModulePathMismatch = new("S005", "module path does not match file path", true);
+	public static readonly SemanticError TypeMismatch = new("S006", "declared type does not match initializer", true);
+	public static readonly SemanticError CannotInferType = new("S007", "cannot infer type from initializer", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);

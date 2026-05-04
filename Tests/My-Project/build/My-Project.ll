@@ -5,11 +5,16 @@ target triple = "x86_64-pc-windows-msvc"
 
 %struct.hello_world_Main = type { ptr }
 
-@.str.0 = private unnamed_addr constant [7 x i8] c"Hello,\00", align 1
-@.str.1 = private unnamed_addr constant [7 x i8] c"World!\00", align 1
-@.str.2 = private unnamed_addr constant [12 x i8] c"I am Cloth!\00", align 1
+@.str.0 = private unnamed_addr constant [14 x i8] c"Hello, World!\00", align 1
 
-declare void @println(ptr)
+declare void @cloth_io_Out_println__string(ptr)
+declare void @cloth_io_Out_println__i32(i32)
+declare void @cloth_io_Out_println__i64(i64)
+declare void @cloth_io_Out_println__u32(i32)
+declare void @cloth_io_Out_println__u64(i64)
+declare void @cloth_io_Out_println__f64(double)
+declare void @cloth_io_Out_println__bool(i1)
+declare void @cloth_io_Out_println()
 
 define void @hello_world_Main_Main(ptr %this, ptr %args) {
 entry:
@@ -35,13 +40,34 @@ entry:
 define void @hello_world_Main_sayHello(ptr %this) {
 entry:
   %this.addr = alloca ptr, align 8
+  %hello.addr = alloca ptr, align 8
+  %small.addr = alloca i8, align 8
+  %big.addr = alloca i32, align 8
+  %huge.addr = alloca i64, align 8
+  %pi.addr = alloca double, align 8
+  %flag.addr = alloca i1, align 8
   store ptr %this, ptr %this.addr
-  %_t0 = getelementptr inbounds [7 x i8], ptr @.str.0, i32 0, i32 0
-  call void @println(ptr %_t0)
-  %_t1 = getelementptr inbounds [7 x i8], ptr @.str.1, i32 0, i32 0
-  call void @println(ptr %_t1)
-  %_t2 = getelementptr inbounds [12 x i8], ptr @.str.2, i32 0, i32 0
-  call void @println(ptr %_t2)
+  %_t0 = getelementptr inbounds [14 x i8], ptr @.str.0, i32 0, i32 0
+  store ptr %_t0, ptr %hello.addr
+  call void @cloth_io_Out_println()
+  store i8 5, ptr %small.addr
+  store i32 100000, ptr %big.addr
+  store i64 5000000000, ptr %huge.addr
+  store double 3.14, ptr %pi.addr
+  store i1 1, ptr %flag.addr
+  %_t1 = load i8, ptr %small.addr
+  %_t2 = sext i8 %_t1 to i32
+  call void @cloth_io_Out_println__i32(i32 %_t2)
+  %_t3 = load i32, ptr %big.addr
+  call void @cloth_io_Out_println__i32(i32 %_t3)
+  %_t4 = load i64, ptr %huge.addr
+  call void @cloth_io_Out_println__i64(i64 %_t4)
+  %_t5 = load double, ptr %pi.addr
+  call void @cloth_io_Out_println__f64(double %_t5)
+  %_t6 = load i1, ptr %flag.addr
+  call void @cloth_io_Out_println__bool(i1 %_t6)
+  %_t7 = add i32 5, 5
+  call void @cloth_io_Out_println(ptr %_t7)
   ret void
 }
 
