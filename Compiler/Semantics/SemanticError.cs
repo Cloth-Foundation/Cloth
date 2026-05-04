@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // SemanticError.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -14,8 +14,7 @@ public class SemanticError : Exception {
 	private readonly string? _message;
 	private readonly string? _file;
 
-	private SemanticError(string code, string label, bool willExit, string? message = null, string? file = null)
-		: base(message ?? label) {
+	private SemanticError(string code, string label, bool willExit, string? message = null, string? file = null) : base(message ?? label) {
 		_code = code;
 		_label = label;
 		_willExit = willExit;

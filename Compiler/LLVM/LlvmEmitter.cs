@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // LlvmEmitter.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -75,13 +75,22 @@ public sealed class LlvmEmitter {
 		sb.AppendLine();
 
 		var types = EmitStructTypes();
-		if (types.Length > 0) { sb.Append(types); sb.AppendLine(); }
+		if (types.Length > 0) {
+			sb.Append(types);
+			sb.AppendLine();
+		}
 
 		var strs = EmitStringGlobals();
-		if (strs.Length > 0) { sb.Append(strs); sb.AppendLine(); }
+		if (strs.Length > 0) {
+			sb.Append(strs);
+			sb.AppendLine();
+		}
 
 		var externs = EmitExternDecls();
-		if (externs.Length > 0) { sb.Append(externs); sb.AppendLine(); }
+		if (externs.Length > 0) {
+			sb.Append(externs);
+			sb.AppendLine();
+		}
 
 		foreach (var fn in _module.Functions) {
 			if (fn.IsExtern) continue;
@@ -113,7 +122,8 @@ public sealed class LlvmEmitter {
 				var retTy = LlvmType(fn.ReturnType);
 				var argSig = string.Join(", ", fn.Parameters.Select(p => LlvmType(p.Type)));
 				_externDecls[fn.MangledName] = $"declare {retTy} @{fn.MangledName}({argSig})";
-			} else {
+			}
+			else {
 				_definedFns.Add(fn.MangledName);
 			}
 		}
@@ -140,16 +150,25 @@ public sealed class LlvmEmitter {
 				ScanExpr(t.Init);
 				break;
 			case CirStmt.Assign a:
-				ScanExpr(a.Target); ScanExpr(a.Value);
+				ScanExpr(a.Target);
+				ScanExpr(a.Value);
 				break;
 			case CirStmt.Expr e: ScanExpr(e.Expression); break;
 			case CirStmt.Discard d: ScanExpr(d.Expression); break;
-			case CirStmt.Return r: if (r.Value != null) ScanExpr(r.Value); break;
+			case CirStmt.Return r:
+				if (r.Value != null) ScanExpr(r.Value);
+				break;
 			case CirStmt.If i:
 				ScanExpr(i.Condition);
 				foreach (var s in i.Then) ScanStmt(s);
-				foreach (var (c, b) in i.ElseIfs) { ScanExpr(c); foreach (var s in b) ScanStmt(s); }
-				if (i.Else != null) foreach (var s in i.Else) ScanStmt(s);
+				foreach (var (c, b) in i.ElseIfs) {
+					ScanExpr(c);
+					foreach (var s in b) ScanStmt(s);
+				}
+
+				if (i.Else != null)
+					foreach (var s in i.Else)
+						ScanStmt(s);
 				break;
 			case CirStmt.While w:
 				ScanExpr(w.Condition);
@@ -160,7 +179,9 @@ public sealed class LlvmEmitter {
 				ScanExpr(dw.Condition);
 				break;
 			case CirStmt.For f:
-				ScanStmt(f.Init); ScanExpr(f.Condition); ScanExpr(f.Iterator);
+				ScanStmt(f.Init);
+				ScanExpr(f.Condition);
+				ScanExpr(f.Iterator);
 				foreach (var s in f.Body) ScanStmt(s);
 				break;
 			case CirStmt.ForIn fi:
@@ -173,6 +194,7 @@ public sealed class LlvmEmitter {
 					if (c.Pattern != null) ScanExpr(c.Pattern);
 					foreach (var s in c.Body) ScanStmt(s);
 				}
+
 				break;
 			case CirStmt.Throw t: ScanExpr(t.Expression); break;
 			case CirStmt.Delete d: ScanExpr(d.Expression); break;
@@ -189,11 +211,18 @@ public sealed class LlvmEmitter {
 					_stringIndex[s.Value] = _strings.Count;
 					_strings.Add(s.Value);
 				}
+
 				break;
-			case CirExpr.Binary b: ScanExpr(b.Left); ScanExpr(b.Right); break;
+			case CirExpr.Binary b:
+				ScanExpr(b.Left);
+				ScanExpr(b.Right);
+				break;
 			case CirExpr.Unary u: ScanExpr(u.Operand); break;
 			case CirExpr.FieldAccess fa: ScanExpr(fa.Target); break;
-			case CirExpr.Index i: ScanExpr(i.Target); ScanExpr(i.Idx); break;
+			case CirExpr.Index i:
+				ScanExpr(i.Target);
+				ScanExpr(i.Idx);
+				break;
 			case CirExpr.Call c:
 				if (!_definedFns.Contains(c.MangledName))
 					RecordExternCall(c.MangledName, c.Args.Count);
@@ -210,10 +239,22 @@ public sealed class LlvmEmitter {
 				break;
 			case CirExpr.Cast c: ScanExpr(c.Value); break;
 			case CirExpr.TypeCheck t: ScanExpr(t.Value); break;
-			case CirExpr.Ternary t: ScanExpr(t.Condition); ScanExpr(t.Then); ScanExpr(t.Else); break;
-			case CirExpr.NullCoalesce n: ScanExpr(n.Left); ScanExpr(n.Right); break;
-			case CirExpr.TupleLit t: foreach (var e in t.Elements) ScanExpr(e); break;
-			case CirExpr.Range r: ScanExpr(r.Start); ScanExpr(r.End); break;
+			case CirExpr.Ternary t:
+				ScanExpr(t.Condition);
+				ScanExpr(t.Then);
+				ScanExpr(t.Else);
+				break;
+			case CirExpr.NullCoalesce n:
+				ScanExpr(n.Left);
+				ScanExpr(n.Right);
+				break;
+			case CirExpr.TupleLit t:
+				foreach (var e in t.Elements) ScanExpr(e);
+				break;
+			case CirExpr.Range r:
+				ScanExpr(r.Start);
+				ScanExpr(r.End);
+				break;
 		}
 	}
 
@@ -237,9 +278,11 @@ public sealed class LlvmEmitter {
 				sb.AppendLine($"{name} = type {{ ptr }}");
 				continue;
 			}
+
 			var fieldTypes = string.Join(", ", c.Fields.Select(f => LlvmType(f.Type)));
 			sb.AppendLine($"{name} = type {{ {fieldTypes} }}");
 		}
+
 		return sb.ToString();
 	}
 
@@ -249,6 +292,7 @@ public sealed class LlvmEmitter {
 			var (encoded, byteCount) = EncodeStringConstant(_strings[i]);
 			sb.AppendLine($"@.str.{i} = private unnamed_addr constant [{byteCount} x i8] c\"{encoded}\", align 1");
 		}
+
 		return sb.ToString();
 	}
 
@@ -350,6 +394,7 @@ public sealed class LlvmEmitter {
 				if (fn.Parameters[i].Name == "args")
 					return fn;
 		}
+
 		return null;
 	}
 
@@ -364,7 +409,9 @@ public sealed class LlvmEmitter {
 			case CirStmt.Expr e: EmitExprStmt(e.Expression); break;
 			case CirStmt.Discard d: EmitExprStmt(d.Expression); break;
 			case CirStmt.Return r: EmitReturn(r); break;
-			case CirStmt.Block b: foreach (var s in b.Body) EmitStmt(s); break;
+			case CirStmt.Block b:
+				foreach (var s in b.Body) EmitStmt(s);
+				break;
 			default:
 				LlvmError.UnsupportedStatement.WithMessage($"{stmt.GetType().Name} is not yet lowerable to LLVM IR").Render();
 				break;
@@ -393,7 +440,8 @@ public sealed class LlvmEmitter {
 
 		if (a.Op == CirAssignOp.Assign) {
 			_bodyLines.Add($"  store {llvmTy} {rhs} , ptr {addr}".Replace(" , ", ", "));
-		} else {
+		}
+		else {
 			var loaded = FreshTemp();
 			_bodyLines.Add($"  {loaded} = load {llvmTy}, ptr {addr}");
 			var op = AssignToBinOp(a.Op);
@@ -411,10 +459,12 @@ public sealed class LlvmEmitter {
 	private void EmitReturn(CirStmt.Return r) {
 		if (r.Value == null) {
 			_bodyLines.Add("  ret void");
-		} else {
+		}
+		else {
 			var val = EmitExpr(r.Value);
 			_bodyLines.Add($"  ret {LlvmType(_currentReturnType)} {val}");
 		}
+
 		_blockTerminated = true;
 	}
 
@@ -451,6 +501,7 @@ public sealed class LlvmEmitter {
 			LlvmError.UnsupportedExpression.WithMessage($"reference to unknown local '{name}'").Render();
 			return "undef";
 		}
+
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = load {LlvmType(ty)}, ptr {addr}");
 		return t;
@@ -470,11 +521,13 @@ public sealed class LlvmEmitter {
 			LlvmError.FieldNotFound.WithMessage($"cannot resolve owning type of field '{fa.FieldName}'").Render();
 			return ("undef", new CirType.Any());
 		}
+
 		var idx = cls.Fields.FindIndex(f => f.Name == fa.FieldName);
 		if (idx < 0) {
 			LlvmError.FieldNotFound.WithMessage($"field '{fa.FieldName}' not found on {fqn}").Render();
 			return ("undef", new CirType.Any());
 		}
+
 		var gep = FreshTemp();
 		_bodyLines.Add($"  {gep} = getelementptr inbounds {StructName(fqn)}, ptr {targetVal}, i32 0, i32 {idx}");
 		return (gep, cls.Fields[idx].Type);
@@ -492,7 +545,8 @@ public sealed class LlvmEmitter {
 		if (callee != null) {
 			retTy = LlvmType(callee.ReturnType);
 			paramTys = callee.Parameters.Select(p => LlvmType(p.Type)).ToList();
-		} else {
+		}
+		else {
 			retTy = "void";
 			paramTys = Enumerable.Repeat("ptr", c.Args.Count).ToList();
 		}
@@ -503,6 +557,7 @@ public sealed class LlvmEmitter {
 			_bodyLines.Add($"  call void @{llvmName}({argList})");
 			return "void";
 		}
+
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = call {retTy} @{llvmName}({argList})");
 		return t;
@@ -521,10 +576,17 @@ public sealed class LlvmEmitter {
 		var operand = EmitExpr(u.Operand);
 		var t = FreshTemp();
 		switch (u.Op) {
-			case CirUnOp.Neg: _bodyLines.Add($"  {t} = sub i32 0, {operand}"); return t;
-			case CirUnOp.Not: _bodyLines.Add($"  {t} = xor i1 {operand}, true"); return t;
-			case CirUnOp.BitNot: _bodyLines.Add($"  {t} = xor i32 {operand}, -1"); return t;
+			case CirUnOp.Neg:
+				_bodyLines.Add($"  {t} = sub i32 0, {operand}");
+				return t;
+			case CirUnOp.Not:
+				_bodyLines.Add($"  {t} = xor i1 {operand}, true");
+				return t;
+			case CirUnOp.BitNot:
+				_bodyLines.Add($"  {t} = xor i32 {operand}, -1");
+				return t;
 		}
+
 		LlvmError.UnsupportedExpression.WithMessage($"unary operator {u.Op} not yet lowered").Render();
 		return "undef";
 	}
@@ -538,6 +600,7 @@ public sealed class LlvmEmitter {
 				return "undef";
 			case CirExpr.FieldAccess fa: return EmitFieldGep(fa).gep;
 		}
+
 		LlvmError.UnsupportedExpression.WithMessage($"cannot take address of {expr.GetType().Name}").Render();
 		return "undef";
 	}
@@ -552,16 +615,16 @@ public sealed class LlvmEmitter {
 					var f = cls.Fields.FirstOrDefault(x => x.Name == fa.FieldName);
 					if (f != null) return (f.Type, true);
 				}
+
 				return (new CirType.Any(), false);
 		}
+
 		return (new CirType.Any(), false);
 	}
 
 	private string? ResolveTargetFqn(CirExpr target) => target switch {
 		CirExpr.ThisPtr => _currentThisFqn,
-		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) =>
-			ty is CirType.Ptr p && p.Inner is CirType.Named np ? np.FullyQualifiedName :
-			ty is CirType.Named n ? n.FullyQualifiedName : null,
+		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => ty is CirType.Ptr p && p.Inner is CirType.Named np ? np.FullyQualifiedName : ty is CirType.Named n ? n.FullyQualifiedName : null,
 		_ => null
 	};
 
@@ -587,6 +650,7 @@ public sealed class LlvmEmitter {
 			else
 				sb.Append((char)b);
 		}
+
 		sb.Append("\\00");
 		return (sb.ToString(), bytes.Length + 1);
 	}

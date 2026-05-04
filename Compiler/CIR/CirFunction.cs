@@ -9,15 +9,7 @@ namespace Compiler.CIR;
 
 // A single function in the CIR module.
 // All instance methods carry 'this' as the first explicit parameter.
-public sealed record CirFunction(
-	string MangledName,
-	CirFunctionKind Kind,
-	List<CirParam> Parameters,
-	CirType ReturnType,
-	List<CirStmt> Body,
-	bool IsExtern,
-	bool IsStatic
-);
+public sealed record CirFunction(string MangledName, CirFunctionKind Kind, List<CirParam> Parameters, CirType ReturnType, List<CirStmt> Body, bool IsExtern, bool IsStatic);
 
 public sealed record CirParam(CirType Type, string Name);
 

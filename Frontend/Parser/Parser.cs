@@ -19,7 +19,6 @@ using Lexer;
 using Token;
 
 public class Parser {
-
 	private readonly List<Token> _tokens;
 	private Token _current;
 	private bool _moduleDeclared;
@@ -155,6 +154,7 @@ public class Parser {
 				Advance(); // eat *
 				break;
 			}
+
 			Advance(); // consume '.', _current = next segment
 			path.Add(ExpectIdentifier());
 		}
@@ -354,11 +354,13 @@ public class Parser {
 			else if (CheckKeyword(Keyword.Fragment)) {
 				members.Add(new MemberDeclaration.Fragment(ParseFragmentDecl(annotations, visibility, modifiers)));
 			}
-			else if (CheckOperator(Operator.Tilde)) { // DESTRUCTOR
+			else if (CheckOperator(Operator.Tilde)) {
+				// DESTRUCTOR
 				Advance(); // consume '~'
 				members.Add(new MemberDeclaration.Destructor(ParseDestructorDecl(annotations, visibility)));
 			}
-			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentFileName) { // CONSTRUCTOR
+			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentFileName) {
+				// CONSTRUCTOR
 				Advance(); // consume constructor name; ParseConstructorDecl starts at '(' or '{'
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
@@ -401,6 +403,7 @@ public class Parser {
 						args.Add(("", ExpressionParser.ParseExpression()));
 					}
 				}
+
 				ExpectOperator(Operator.RParen);
 			}
 
@@ -643,6 +646,7 @@ public class Parser {
 			}
 			else break;
 		}
+
 		return modifiers;
 	}
 
@@ -959,8 +963,10 @@ public class Parser {
 			if (throwError) {
 				throw ParserError.ExpectedOperator.WithMessage($"expected '{Operators.GetLexemeFromOperator(op)}', got '{_current.Lexeme}'").WithSpan(_current.Span).Render();
 			}
+
 			return false;
 		}
+
 		Advance();
 		return true;
 	}
@@ -1086,8 +1092,14 @@ public class Parser {
 		var start = _current.Span;
 
 		OwnershipModifier? ownership = null;
-		if (CheckOperator(Operator.Not))       { ownership = OwnershipModifier.Transfer;  Advance(); }
-		else if (CheckOperator(Operator.And))  { ownership = OwnershipModifier.MutBorrow; Advance(); }
+		if (CheckOperator(Operator.Not)) {
+			ownership = OwnershipModifier.Transfer;
+			Advance();
+		}
+		else if (CheckOperator(Operator.And)) {
+			ownership = OwnershipModifier.MutBorrow;
+			Advance();
+		}
 
 		BaseType baseType;
 
@@ -1108,12 +1120,19 @@ public class Parser {
 				if (next == null) return null;
 				elems.Add(next.Value);
 			}
+
 			if (!CheckOperator(Operator.RParen)) return null;
 			Advance();
 			baseType = new BaseType.Tuple(elems);
 		}
-		else if (CheckKeyword(Keyword.Void)) { Advance(); baseType = new BaseType.Void(); }
-		else if (CheckKeyword(Keyword.Any))  { Advance(); baseType = new BaseType.Any();  }
+		else if (CheckKeyword(Keyword.Void)) {
+			Advance();
+			baseType = new BaseType.Void();
+		}
+		else if (CheckKeyword(Keyword.Any)) {
+			Advance();
+			baseType = new BaseType.Any();
+		}
 		else if (_current.Type == TokenType.Identifier || _current.Type == TokenType.Keyword) {
 			var name = _current.Lexeme;
 			Advance();
@@ -1127,6 +1146,7 @@ public class Parser {
 					if (nextArg == null) return null;
 					args.Add(nextArg.Value);
 				}
+
 				if (!CheckOperator(Operator.Greater)) return null;
 				Advance();
 				baseType = new BaseType.Generic(name, args);
@@ -1147,7 +1167,10 @@ public class Parser {
 		}
 
 		var nullable = false;
-		if (CheckOperator(Operator.Question)) { nullable = true; Advance(); }
+		if (CheckOperator(Operator.Question)) {
+			nullable = true;
+			Advance();
+		}
 
 		return new TypeExpression(baseType, nullable, ownership, TokenSpan.Merge(start, Previous().Span));
 	}

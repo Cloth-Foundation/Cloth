@@ -1,4 +1,4 @@
-// Copyright (c) 2026. The Cloth contributors.
+// Copyright (c) 2026.The Cloth contributors.
 //
 // StatementParser.cs is part of the Cloth Frontend.
 //
@@ -14,7 +14,6 @@ using AST.Type;
 using FrontEnd.Error.Parser;
 
 internal sealed class StatementParser(Parser parser) {
-
 	/// <summary>
 	/// Parses a single statement from the source code. This method handles
 	/// various types of statements, including control flow statements,
@@ -35,13 +34,13 @@ internal sealed class StatementParser(Parser parser) {
 			return ParseThisCall();
 
 		// Control flow
-		if (parser.CheckKeyword(Keyword.If))      return ParseIfStmt();
-		if (parser.CheckKeyword(Keyword.Switch))  return ParseSwitchStmt();
-		if (parser.CheckKeyword(Keyword.While))   return ParseWhileStmt();
-		if (parser.CheckKeyword(Keyword.Do))      return ParseDoWhileStmt();
-		if (parser.CheckKeyword(Keyword.For))     return ParseForStmt();
-		if (parser.CheckKeyword(Keyword.Return))  return ParseReturnStmt();
-		if (parser.CheckKeyword(Keyword.Throw))   return ParseThrowStmt();
+		if (parser.CheckKeyword(Keyword.If)) return ParseIfStmt();
+		if (parser.CheckKeyword(Keyword.Switch)) return ParseSwitchStmt();
+		if (parser.CheckKeyword(Keyword.While)) return ParseWhileStmt();
+		if (parser.CheckKeyword(Keyword.Do)) return ParseDoWhileStmt();
+		if (parser.CheckKeyword(Keyword.For)) return ParseForStmt();
+		if (parser.CheckKeyword(Keyword.Return)) return ParseReturnStmt();
+		if (parser.CheckKeyword(Keyword.Throw)) return ParseThrowStmt();
 
 		if (parser.CheckKeyword(Keyword.Break)) {
 			var span = parser.Current.Span;
@@ -100,8 +99,16 @@ internal sealed class StatementParser(Parser parser) {
 	/// </returns>
 	private List<VarModifier> ParseVarModifiers() {
 		var mods = new List<VarModifier>();
-		if (parser.CheckKeyword(Keyword.Static)) { mods.Add(VarModifier.Static); parser.Advance(); }
-		if (parser.CheckKeyword(Keyword.Atomic)) { mods.Add(VarModifier.Atomic); parser.Advance(); }
+		if (parser.CheckKeyword(Keyword.Static)) {
+			mods.Add(VarModifier.Static);
+			parser.Advance();
+		}
+
+		if (parser.CheckKeyword(Keyword.Atomic)) {
+			mods.Add(VarModifier.Atomic);
+			parser.Advance();
+		}
+
 		return mods;
 	}
 
@@ -114,13 +121,7 @@ internal sealed class StatementParser(Parser parser) {
 	/// A boolean value indicating whether the current token is recognized as a type keyword.
 	/// Returns <c>true</c> if the current token matches a predefined type keyword; otherwise, <c>false</c>.
 	/// </returns>
-	private bool IsTypeKeyword() => parser.Current.Keyword is
-		Keyword.Bool    or Keyword.Char     or Keyword.Byte    or
-		Keyword.I8      or Keyword.I16      or Keyword.I32     or Keyword.I64     or
-		Keyword.U8      or Keyword.U16      or Keyword.U32     or Keyword.U64     or
-		Keyword.F32     or Keyword.F64      or Keyword.Float   or Keyword.Double  or Keyword.Real or
-		Keyword.Long    or Keyword.Short    or Keyword.Int     or Keyword.Uint    or Keyword.Unsigned or
-		Keyword.String  or Keyword.Bit      or Keyword.Any;
+	private bool IsTypeKeyword() => parser.Current.Keyword is Keyword.Bool or Keyword.Char or Keyword.Byte or Keyword.I8 or Keyword.I16 or Keyword.I32 or Keyword.I64 or Keyword.U8 or Keyword.U16 or Keyword.U32 or Keyword.U64 or Keyword.F32 or Keyword.F64 or Keyword.Float or Keyword.Double or Keyword.Real or Keyword.Long or Keyword.Short or Keyword.Int or Keyword.Uint or Keyword.Unsigned or Keyword.String or Keyword.Bit or Keyword.Any;
 
 	/// <summary>
 	/// Parses a variable declaration statement. This method processes declarations with optional
@@ -287,7 +288,8 @@ internal sealed class StatementParser(Parser parser) {
 				var eiCond = ParseExpression();
 				parser.ExpectOperator(Operator.RParen);
 				elseIfBranches.Add(new ElseIfBranch(eiCond, parser.ParseBlock()));
-			} else {
+			}
+			else {
 				elseBranch = parser.ParseBlock();
 				break;
 			}
@@ -326,21 +328,18 @@ internal sealed class StatementParser(Parser parser) {
 			SwitchPattern pattern;
 			if (parser.ConsumeKeyword(Keyword.Case)) {
 				pattern = new SwitchPattern.Case(ParseExpression());
-			} else if (parser.ConsumeKeyword(Keyword.Default)) {
-				pattern = new SwitchPattern.Default();
-			} else {
-				throw ParserError.ExpectedKeyword
-					.WithMessage($"expected 'case' or 'default', got '{parser.Current.Lexeme}'")
-					.WithSpan(parser.Current.Span)
-					.Render();
 			}
+			else if (parser.ConsumeKeyword(Keyword.Default)) {
+				pattern = new SwitchPattern.Default();
+			}
+			else {
+				throw ParserError.ExpectedKeyword.WithMessage($"expected 'case' or 'default', got '{parser.Current.Lexeme}'").WithSpan(parser.Current.Span).Render();
+			}
+
 			parser.ExpectOperator(Operator.Colon);
 
 			var body = new List<Stmt>();
-			while (!parser.CheckKeyword(Keyword.Case)
-				&& !parser.CheckKeyword(Keyword.Default)
-				&& !parser.CheckOperator(Operator.RBrace)
-				&& !parser.AtEof()) {
+			while (!parser.CheckKeyword(Keyword.Case) && !parser.CheckKeyword(Keyword.Default) && !parser.CheckOperator(Operator.RBrace) && !parser.AtEof()) {
 				body.Add(parser.ParseStatement());
 			}
 
@@ -417,6 +416,7 @@ internal sealed class StatementParser(Parser parser) {
 				parser.Advance(); // speculatively consume name
 				isForIn = parser.CheckKeyword(Keyword.In);
 			}
+
 			parser.RestoreTo(saved);
 		}
 
@@ -429,7 +429,8 @@ internal sealed class StatementParser(Parser parser) {
 			var body = parser.ParseBlock();
 			var span = TokenSpan.Merge(start, parser.Previous().Span);
 			return new Stmt.ForIn(new ForInStmt(type, name, iterable, body, span));
-		} else {
+		}
+		else {
 			var init = ParseForInit();
 			var cond = ParseExpression();
 			parser.ExpectSemiColon();
@@ -461,6 +462,7 @@ internal sealed class StatementParser(Parser parser) {
 				return ParseVarDeclWithType(ty.Value);
 			parser.RestoreTo(saved);
 		}
+
 		var expr = ParseExpression();
 		parser.ExpectSemiColon();
 		return new Stmt.ExprStmt(expr, expr.Span);

@@ -8,14 +8,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Folder Include="CIR\" />
-      <Folder Include="Link\" />
-      <Folder Include="LLVM\" />
-      <Folder Include="Semantics\" />
+        <Folder Include="CIR\"/>
+        <Folder Include="Link\"/>
+        <Folder Include="LLVM\"/>
+        <Folder Include="Semantics\"/>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Frontend\Frontend.csproj" />
+        <ProjectReference Include="..\Frontend\Frontend.csproj"/>
     </ItemGroup>
 
 </Project>

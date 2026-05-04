@@ -4,7 +4,8 @@ To complete this tutorial, you need to have installed Cloth.
 
 In this tutorial, we will learn how to write a simple program, using Cloth Object files and writing source code, which
 we will then compile to produce an executable binary. However, this tutorial is written for beginners, it is not
-intended to be a comprehensive introduction to Cloth. The goal is to sketch out the basics of Cloth and avoid getting into too
+intended to be a comprehensive introduction to Cloth. The goal is to sketch out the basics of Cloth and avoid getting
+into too
 much detail.
 
 ## Setup

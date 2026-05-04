@@ -1,7 +1,7 @@
-// Copyright (c) 2026. The Cloth contributors.
-//
+// Copyright (c) 2026.The Cloth contributors.
+// 
 // ExpressionParser.cs is part of the Cloth Frontend.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -112,7 +112,8 @@ internal sealed class ExpressionParser(Parser parser) {
 					return new Expression.Super(start);
 				case Keyword.New:
 					return ParseNewExpr();
-				case Keyword.Await: {
+				case Keyword.Await:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Await, inner, TokenSpan.Merge(start, inner.Span));
@@ -123,33 +124,39 @@ internal sealed class ExpressionParser(Parser parser) {
 						parser.Advance();
 						return new Expression.Identifier(name, start);
 					}
+
 					break;
 			}
 		}
 
 		if (tok.Type == TokenType.Operator) {
 			switch (tok.Operator) {
-				case Operator.Minus: {
+				case Operator.Minus:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Neg, inner, TokenSpan.Merge(start, inner.Span));
 				}
-				case Operator.Not: {
+				case Operator.Not:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.Not, inner, TokenSpan.Merge(start, inner.Span));
 				}
-				case Operator.Tilde: {
+				case Operator.Tilde:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.BitNot, inner, TokenSpan.Merge(start, inner.Span));
 				}
-				case Operator.PlusPlus: {
+				case Operator.PlusPlus:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.PreInc, inner, TokenSpan.Merge(start, inner.Span));
 				}
-				case Operator.MinusMinus: {
+				case Operator.MinusMinus:
+				{
 					parser.Advance();
 					var inner = ParseExprPrecedence(24);
 					return new Expression.Unary(UnOp.PreDec, inner, TokenSpan.Merge(start, inner.Span));
@@ -164,10 +171,7 @@ internal sealed class ExpressionParser(Parser parser) {
 			return new Expression.Identifier(tok.Lexeme, start);
 		}
 
-		throw ParserError.ExpectedIdentifier
-			.WithMessage($"unexpected token '{tok.Lexeme}' in expression")
-			.WithSpan(start)
-			.Render();
+		throw ParserError.ExpectedIdentifier.WithMessage($"unexpected token '{tok.Lexeme}' in expression").WithSpan(start).Render();
 	}
 
 	/// <summary>
@@ -190,101 +194,122 @@ internal sealed class ExpressionParser(Parser parser) {
 
 		if (tok.Type == TokenType.Operator) {
 			switch (tok.Operator) {
-				case Operator.Plus: {
+				case Operator.Plus:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Add, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Minus: {
+				case Operator.Minus:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Sub, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Star: {
+				case Operator.Star:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Mul, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Slash: {
+				case Operator.Slash:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Div, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Percent: {
+				case Operator.Percent:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Rem, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.And: {
+				case Operator.And:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitAnd, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Or: {
+				case Operator.Or:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitOr, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Caret: {
+				case Operator.Caret:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.BitXor, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Less: {
+				case Operator.Less:
+				{
 					// < or << (shift left — two consecutive 'Less' tokens)
 					if (parser.PeekAt(1).Operator == Operator.Less) {
-						parser.Advance(); parser.Advance();
+						parser.Advance();
+						parser.Advance();
 						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Shl, r, TokenSpan.Merge(leftSpan, r.Span));
-					} else {
+					}
+					else {
 						parser.Advance();
 						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Lt, r, TokenSpan.Merge(leftSpan, r.Span));
 					}
 				}
-				case Operator.LessEqual: {
+				case Operator.LessEqual:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.LtEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Greater: {
+				case Operator.Greater:
+				{
 					// > or >> (shift right — two consecutive Greater tokens)
 					if (parser.PeekAt(1).Operator == Operator.Greater) {
-						parser.Advance(); parser.Advance();
+						parser.Advance();
+						parser.Advance();
 						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Shr, r, TokenSpan.Merge(leftSpan, r.Span));
-					} else {
+					}
+					else {
 						parser.Advance();
 						var r = ParseExprPrecedence(rbp);
 						return new Expression.Binary(left, BinOp.Gt, r, TokenSpan.Merge(leftSpan, r.Span));
 					}
 				}
-				case Operator.GreaterEqual: {
+				case Operator.GreaterEqual:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.GtEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.EqualEqual: {
+				case Operator.EqualEqual:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Eq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.NotEqual: {
+				case Operator.NotEqual:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.NotEq, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Fallback: {
+				case Operator.Fallback:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.NullCoalesce(left, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.DotDot: {
+				case Operator.DotDot:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Range(left, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Operator.Dot: {
+				case Operator.Dot:
+				{
 					parser.Advance();
 					var (member, memberSpan) = ExpectMemberName();
 					if (parser.CheckOperator(Operator.LParen)) {
@@ -294,38 +319,41 @@ internal sealed class ExpressionParser(Parser parser) {
 						var merged = TokenSpan.Merge(leftSpan, parser.Previous().Span);
 						return new Expression.Call(new Expression.MemberAccess(left, member, memberSpan), args, merged);
 					}
+
 					return new Expression.MemberAccess(left, member, TokenSpan.Merge(leftSpan, memberSpan));
 				}
-				case Operator.ColonColon: {
+				case Operator.ColonColon:
+				{
 					parser.Advance();
 					if (parser.Current.Type != TokenType.Meta)
-						throw ParserError.ExpectedKeyword
-							.WithMessage($"expected meta keyword (e.g. SIZE, TYPE), got '{parser.Current.Lexeme}'")
-							.WithSpan(parser.Current.Span)
-							.Render();
+						throw ParserError.ExpectedKeyword.WithMessage($"expected meta keyword (e.g. SIZE, TYPE), got '{parser.Current.Lexeme}'").WithSpan(parser.Current.Span).Render();
 					var metaName = parser.Current.Lexeme;
 					var metaSpan = parser.Current.Span;
 					parser.Advance();
 					return new Expression.MetaAccess(left, metaName, TokenSpan.Merge(leftSpan, metaSpan));
 				}
-				case Operator.LParen: {
+				case Operator.LParen:
+				{
 					parser.Advance();
 					var args = ParseCallArgs();
 					parser.ExpectOperator(Operator.RParen);
 					return new Expression.Call(left, args, TokenSpan.Merge(leftSpan, parser.Previous().Span));
 				}
-				case Operator.LBracket: {
+				case Operator.LBracket:
+				{
 					parser.Advance();
 					var idx = ParseExpression();
 					parser.ExpectOperator(Operator.RBracket);
 					return new Expression.Index(left, idx, TokenSpan.Merge(leftSpan, parser.Previous().Span));
 				}
-				case Operator.PlusPlus: {
+				case Operator.PlusPlus:
+				{
 					var end = parser.Current.Span;
 					parser.Advance();
 					return new Expression.Postfix(left, PostOp.Inc, TokenSpan.Merge(leftSpan, end));
 				}
-				case Operator.MinusMinus: {
+				case Operator.MinusMinus:
+				{
 					var end = parser.Current.Span;
 					parser.Advance();
 					return new Expression.Postfix(left, PostOp.Dec, TokenSpan.Merge(leftSpan, end));
@@ -335,28 +363,33 @@ internal sealed class ExpressionParser(Parser parser) {
 
 		if (tok.Type == TokenType.Keyword) {
 			switch (tok.Keyword) {
-				case Keyword.And: {
+				case Keyword.And:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.And, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Keyword.Or: {
+				case Keyword.Or:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.Binary(left, BinOp.Or, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
-				case Keyword.As: {
+				case Keyword.As:
+				{
 					parser.Advance();
 					var safe = parser.ConsumeOp(Operator.Question);
 					var ty = parser.ParseTypeExpression();
 					return new Expression.Cast(left, ty, safe, TokenSpan.Merge(leftSpan, ty.Span));
 				}
-				case Keyword.Is: {
+				case Keyword.Is:
+				{
 					parser.Advance();
 					var ty = parser.ParseTypeExpression();
 					return new Expression.TypeCheck(left, ty, TokenSpan.Merge(leftSpan, ty.Span));
 				}
-				case Keyword.In: {
+				case Keyword.In:
+				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
 					return new Expression.MembershipCheck(left, r, TokenSpan.Merge(leftSpan, r.Span));
@@ -375,15 +408,15 @@ internal sealed class ExpressionParser(Parser parser) {
 	/// The corresponding assignment operation as an <see cref="AssignOp"/> value, or null if the current token does not represent an assignment operator.
 	/// </returns>
 	private AssignOp? PeekAssignOp() => parser.Current.Operator switch {
-		Operator.Equal        => AssignOp.Assign,
-		Operator.PlusEqual    => AssignOp.AddAssign,
-		Operator.MinusEqual   => AssignOp.SubAssign,
-		Operator.StarEqual    => AssignOp.MulAssign,
-		Operator.SlashEqual   => AssignOp.DivAssign,
+		Operator.Equal => AssignOp.Assign,
+		Operator.PlusEqual => AssignOp.AddAssign,
+		Operator.MinusEqual => AssignOp.SubAssign,
+		Operator.StarEqual => AssignOp.MulAssign,
+		Operator.SlashEqual => AssignOp.DivAssign,
 		Operator.PercentEqual => AssignOp.RemAssign,
-		Operator.AndEqual     => AssignOp.AndAssign,
-		Operator.OrEqual      => AssignOp.OrAssign,
-		Operator.CaretEqual   => AssignOp.XorAssign,
+		Operator.AndEqual => AssignOp.AndAssign,
+		Operator.OrEqual => AssignOp.OrAssign,
+		Operator.CaretEqual => AssignOp.XorAssign,
 		_ => null
 	};
 
@@ -397,33 +430,33 @@ internal sealed class ExpressionParser(Parser parser) {
 	/// Returns null if the token does not represent an operator or keyword with defined binding power.
 	/// </returns>
 	private (int Left, int Right)? PeekInfixBp() => (parser.Current.Type, parser.Current.Operator, parser.Current.Keyword) switch {
-		(TokenType.Operator, Operator.Dot,          _)           => (28, 29),
-		(TokenType.Operator, Operator.ColonColon,   _)           => (28, 29),
-		(TokenType.Operator, Operator.LParen,       _)           => (28, 29),
-		(TokenType.Operator, Operator.LBracket,     _)           => (28, 29),
-		(TokenType.Operator, Operator.PlusPlus,     _)           => (28, 0),
-		(TokenType.Operator, Operator.MinusMinus,   _)           => (28, 0),
-		(TokenType.Keyword,  _,                     Keyword.As)  => (26, 0),
-		(TokenType.Keyword,  _,                     Keyword.Is)  => (12, 0),
-		(TokenType.Keyword,  _,                     Keyword.In)  => (12, 13),
-		(TokenType.Operator, Operator.Star,         _)           => (22, 23),
-		(TokenType.Operator, Operator.Slash,        _)           => (22, 23),
-		(TokenType.Operator, Operator.Percent,      _)           => (22, 23),
-		(TokenType.Operator, Operator.Plus,         _)           => (20, 21),
-		(TokenType.Operator, Operator.Minus,        _)           => (20, 21),
-		(TokenType.Operator, Operator.Less,         _)           => (20, 21),
-		(TokenType.Operator, Operator.Greater,      _)           => (20, 21),
-		(TokenType.Operator, Operator.And,          _)           => (18, 19),
-		(TokenType.Operator, Operator.Caret,        _)           => (16, 17),
-		(TokenType.Operator, Operator.Or,           _)           => (14, 15),
-		(TokenType.Operator, Operator.LessEqual,    _)           => (12, 13),
-		(TokenType.Operator, Operator.GreaterEqual, _)           => (12, 13),
-		(TokenType.Operator, Operator.EqualEqual,   _)           => (10, 11),
-		(TokenType.Operator, Operator.NotEqual,     _)           => (10, 11),
-		(TokenType.Keyword,  _,                     Keyword.And) => (8, 9),
-		(TokenType.Keyword,  _,                     Keyword.Or)  => (6, 7),
-		(TokenType.Operator, Operator.Fallback,     _)           => (4, 5),
-		(TokenType.Operator, Operator.DotDot,       _)           => (2, 3),
+		(TokenType.Operator, Operator.Dot, _) => (28, 29),
+		(TokenType.Operator, Operator.ColonColon, _) => (28, 29),
+		(TokenType.Operator, Operator.LParen, _) => (28, 29),
+		(TokenType.Operator, Operator.LBracket, _) => (28, 29),
+		(TokenType.Operator, Operator.PlusPlus, _) => (28, 0),
+		(TokenType.Operator, Operator.MinusMinus, _) => (28, 0),
+		(TokenType.Keyword, _, Keyword.As) => (26, 0),
+		(TokenType.Keyword, _, Keyword.Is) => (12, 0),
+		(TokenType.Keyword, _, Keyword.In) => (12, 13),
+		(TokenType.Operator, Operator.Star, _) => (22, 23),
+		(TokenType.Operator, Operator.Slash, _) => (22, 23),
+		(TokenType.Operator, Operator.Percent, _) => (22, 23),
+		(TokenType.Operator, Operator.Plus, _) => (20, 21),
+		(TokenType.Operator, Operator.Minus, _) => (20, 21),
+		(TokenType.Operator, Operator.Less, _) => (20, 21),
+		(TokenType.Operator, Operator.Greater, _) => (20, 21),
+		(TokenType.Operator, Operator.And, _) => (18, 19),
+		(TokenType.Operator, Operator.Caret, _) => (16, 17),
+		(TokenType.Operator, Operator.Or, _) => (14, 15),
+		(TokenType.Operator, Operator.LessEqual, _) => (12, 13),
+		(TokenType.Operator, Operator.GreaterEqual, _) => (12, 13),
+		(TokenType.Operator, Operator.EqualEqual, _) => (10, 11),
+		(TokenType.Operator, Operator.NotEqual, _) => (10, 11),
+		(TokenType.Keyword, _, Keyword.And) => (8, 9),
+		(TokenType.Keyword, _, Keyword.Or) => (6, 7),
+		(TokenType.Operator, Operator.Fallback, _) => (4, 5),
+		(TokenType.Operator, Operator.DotDot, _) => (2, 3),
 		_ => null
 	};
 
@@ -443,6 +476,7 @@ internal sealed class ExpressionParser(Parser parser) {
 			while (parser.ConsumeOp(Operator.Comma))
 				args.Add(ParseExpression());
 		}
+
 		return args;
 	}
 
@@ -499,6 +533,7 @@ internal sealed class ExpressionParser(Parser parser) {
 			parser.Advance();
 			return first;
 		}
+
 		if (parser.CheckOperator(Operator.Comma)) {
 			var items = new List<Expression> { first };
 			while (parser.ConsumeOp(Operator.Comma))
@@ -506,10 +541,8 @@ internal sealed class ExpressionParser(Parser parser) {
 			parser.ExpectOperator(Operator.RParen);
 			return new Expression.Tuple(items, TokenSpan.Merge(start, parser.Previous().Span));
 		}
-		throw ParserError.ExpectedOperator
-			.WithMessage($"expected ')' or ','")
-			.WithSpan(parser.Current.Span)
-			.Render();
+
+		throw ParserError.ExpectedOperator.WithMessage($"expected ')' or ','").WithSpan(parser.Current.Span).Render();
 	}
 
 	/// <summary>
@@ -532,6 +565,7 @@ internal sealed class ExpressionParser(Parser parser) {
 				parms.Add(parser.ParseParameter());
 			} while (parser.ConsumeOp(Operator.Comma));
 		}
+
 		parser.ExpectOperator(Operator.RParen);
 		parser.ExpectOperator(Operator.Arrow);
 		var body = ParseExprPrecedence(0);
@@ -572,7 +606,11 @@ internal sealed class ExpressionParser(Parser parser) {
 			if (parser.PeekAt(i).Type != TokenType.Identifier) return false;
 			i++;
 
-			if (parser.PeekAt(i).Operator == Operator.Comma) { i++; continue; }
+			if (parser.PeekAt(i).Operator == Operator.Comma) {
+				i++;
+				continue;
+			}
+
 			if (parser.PeekAt(i).Operator == Operator.RParen) return parser.PeekAt(i + 1).Operator == Operator.Arrow;
 			return false;
 		}
@@ -586,13 +624,7 @@ internal sealed class ExpressionParser(Parser parser) {
 	/// True if the token represents a type keyword (such as a primitive or predefined type);
 	/// otherwise, false.
 	/// </returns>
-	private static bool IsTypeKeyword(Token tok) => tok.Type == TokenType.Keyword && tok.Keyword is
-		Keyword.Bool    or Keyword.Char     or Keyword.Byte    or
-		Keyword.I8      or Keyword.I16      or Keyword.I32     or Keyword.I64     or
-		Keyword.U8      or Keyword.U16      or Keyword.U32     or Keyword.U64     or
-		Keyword.F32     or Keyword.F64      or Keyword.Float   or Keyword.Double  or Keyword.Real or
-		Keyword.Long    or Keyword.Short    or Keyword.Int     or Keyword.Uint    or Keyword.Unsigned or
-		Keyword.String  or Keyword.Bit      or Keyword.Any;
+	private static bool IsTypeKeyword(Token tok) => tok.Type == TokenType.Keyword && tok.Keyword is Keyword.Bool or Keyword.Char or Keyword.Byte or Keyword.I8 or Keyword.I16 or Keyword.I32 or Keyword.I64 or Keyword.U8 or Keyword.U16 or Keyword.U32 or Keyword.U64 or Keyword.F32 or Keyword.F64 or Keyword.Float or Keyword.Double or Keyword.Real or Keyword.Long or Keyword.Short or Keyword.Int or Keyword.Uint or Keyword.Unsigned or Keyword.String or Keyword.Bit or Keyword.Any;
 
 	/// <summary>
 	/// Parses a token representing a literal and converts it into the corresponding literal expression.
@@ -610,13 +642,16 @@ internal sealed class ExpressionParser(Parser parser) {
 			return new Literal.Str(lexeme[1..^1]);
 		if (lexeme.StartsWith('\'')) {
 			var content = lexeme[1..^1];
-			char ch = content.Length == 1 ? content[0] : content[1] switch {
-				'n'  => '\n', 't' => '\t', 'r' => '\r',
-				'\\' => '\\', '\'' => '\'', '0' => '\0',
-				_    => content[1]
-			};
+			char ch = content.Length == 1
+				? content[0]
+				: content[1] switch {
+					'n' => '\n', 't' => '\t', 'r' => '\r',
+					'\\' => '\\', '\'' => '\'', '0' => '\0',
+					_ => content[1]
+				};
 			return new Literal.Char(ch);
 		}
+
 		if (lexeme is "0t" or "1t") return new Literal.Bit(lexeme[0] == '0' ? (byte)0 : (byte)1);
 		if (lexeme.Contains('.') || lexeme.Contains('e') || lexeme.Contains('E'))
 			return new Literal.Float(lexeme);
@@ -640,9 +675,7 @@ internal sealed class ExpressionParser(Parser parser) {
 			parser.Advance();
 			return (name, span);
 		}
-		throw ParserError.ExpectedIdentifier
-			.WithMessage($"expected member name, got '{parser.Current.Lexeme}'")
-			.WithSpan(span)
-			.Render();
+
+		throw ParserError.ExpectedIdentifier.WithMessage($"expected member name, got '{parser.Current.Lexeme}'").WithSpan(span).Render();
 	}
 }

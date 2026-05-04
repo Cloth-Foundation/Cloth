@@ -62,7 +62,8 @@ public class Compiler {
 
 		if (config.Output == "library") {
 			BuildLibrary(llPath, config, _projectRoot);
-		} else {
+		}
+		else {
 			var libsToLink = ResolveDependencies(config);
 			InvokeClang(llPath, config, _projectRoot, libsToLink);
 		}
@@ -104,6 +105,7 @@ public class Compiler {
 					Console.Error.WriteLine($"Error: cannot resolve dependency '{name}={version}': no source root known");
 					Environment.Exit(1);
 				}
+
 				Console.WriteLine($"Building dependency '{name}' from {stdlibRoot}...");
 				new Compiler(stdlibRoot).Compile();
 				libPath = FindCachedLib(name, version);
@@ -112,8 +114,10 @@ public class Compiler {
 					Environment.Exit(1);
 				}
 			}
+
 			libs.Add(libPath);
 		}
+
 		return libs;
 	}
 
@@ -133,6 +137,7 @@ public class Compiler {
 				return candidate;
 			}
 		}
+
 		return null;
 	}
 
@@ -150,6 +155,7 @@ public class Compiler {
 			if (Directory.Exists(resolved) && File.Exists(Path.Combine(resolved, "build.toml")))
 				return resolved;
 		}
+
 		return null;
 	}
 
@@ -175,8 +181,9 @@ public class Compiler {
 
 		try {
 			RunTool("clang", args.ToArray());
-			Console.WriteLine($"Executable written to: {exePath}");
-		} catch (FileNotFoundException) {
+			//Console.WriteLine($"Executable written to: {exePath}");
+		}
+		catch (FileNotFoundException) {
 			var manualArgs = string.Join(" ", args.Select(a => $"\"{a}\""));
 			Console.WriteLine($"Note: clang not found in PATH. Run: clang {manualArgs}");
 		}
@@ -197,9 +204,11 @@ public class Compiler {
 		Process? proc;
 		try {
 			proc = Process.Start(psi);
-		} catch (System.ComponentModel.Win32Exception) {
+		}
+		catch (System.ComponentModel.Win32Exception) {
 			throw new FileNotFoundException($"tool '{tool}' not found in PATH", tool);
 		}
+
 		if (proc == null)
 			throw new FileNotFoundException($"tool '{tool}' could not be started", tool);
 

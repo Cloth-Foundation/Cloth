@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // SemanticAnalyzer.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -35,25 +35,17 @@ public class SemanticAnalyzer {
 
 		if (modulePath.Count == 1 && modulePath[0] == "_src") {
 			if (dirParts.Count != 0)
-				SemanticError.ModulePathMismatch
-					.WithFile(filePath)
-					.WithMessage("module '_src' is only valid for files at the source root")
-					.Render();
+				SemanticError.ModulePathMismatch.WithFile(filePath).WithMessage("module '_src' is only valid for files at the source root").Render();
 			return;
 		}
 
-		if (dirParts.Count != modulePath.Count ||
-		    dirParts.Zip(modulePath).Any(pair => !string.Equals(pair.First, pair.Second, StringComparison.Ordinal))) {
-			SemanticError.ModulePathMismatch
-				.WithFile(filePath)
-				.WithMessage($"expected module '{string.Join(".", dirParts)}' but found '{string.Join(".", modulePath)}'")
-				.Render();
+		if (dirParts.Count != modulePath.Count || dirParts.Zip(modulePath).Any(pair => !string.Equals(pair.First, pair.Second, StringComparison.Ordinal))) {
+			SemanticError.ModulePathMismatch.WithFile(filePath).WithMessage($"expected module '{string.Join(".", dirParts)}' but found '{string.Join(".", modulePath)}'").Render();
 		}
 	}
 
 	private void ValidateMainFile() {
-		var mainEntry = _units.FirstOrDefault(u =>
-			Path.GetFileName(u.FilePath).Equals("Main.co", StringComparison.Ordinal));
+		var mainEntry = _units.FirstOrDefault(u => Path.GetFileName(u.FilePath).Equals("Main.co", StringComparison.Ordinal));
 
 		if (mainEntry == default) {
 			SemanticError.MainFileNotFound.Render();
@@ -81,15 +73,10 @@ public class SemanticAnalyzer {
 		var hasArgsInCtor = ctor.Parameters.Count == 1 && IsStringArray(ctor.Parameters[0].Type);
 
 		if (!hasArgsInPrimary && !hasArgsInCtor) {
-			SemanticError.MainConstructorInvalidArgs
-				.WithFile(filePath)
-				.WithMessage("expected a single parameter of type 'string[]' in the class or constructor")
-				.Render();
+			SemanticError.MainConstructorInvalidArgs.WithFile(filePath).WithMessage("expected a single parameter of type 'string[]' in the class or constructor").Render();
 		}
 	}
 
 	private static bool IsStringArray(TypeExpression type) =>
-		type.Base is BaseType.Array arr &&
-		arr.ElementType.Base is BaseType.Named named &&
-		named.Name == "string";
+		type.Base is BaseType.Array arr && arr.ElementType.Base is BaseType.Named named && named.Name == "string";
 }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026.The Cloth contributors.
-//
+// 
 // CirExpr.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -11,10 +11,15 @@ namespace Compiler.CIR;
 // SSA/3-address flattening is deferred to the LLVM lowering pass.
 public abstract record CirExpr {
 	public sealed record IntLit(string Value) : CirExpr;
+
 	public sealed record FloatLit(string Value) : CirExpr;
+
 	public sealed record BoolLit(bool Value) : CirExpr;
+
 	public sealed record CharLit(char Value) : CirExpr;
+
 	public sealed record StrLit(string Value) : CirExpr;
+
 	public sealed record NullLit : CirExpr;
 
 	// Variable or parameter reference (name is resolved — no further scope lookup needed)
@@ -24,6 +29,7 @@ public abstract record CirExpr {
 	public sealed record ThisPtr : CirExpr;
 
 	public sealed record Binary(CirExpr Left, CirBinOp Op, CirExpr Right) : CirExpr;
+
 	public sealed record Unary(CirUnOp Op, CirExpr Operand) : CirExpr;
 
 	// target->field (struct field access through a pointer)
@@ -44,30 +50,59 @@ public abstract record CirExpr {
 	public sealed record Alloc(CirType Type, string CtorMangledName, List<CirExpr> Args) : CirExpr;
 
 	public sealed record Cast(CirExpr Value, CirType TargetType, bool IsSafe) : CirExpr;
+
 	public sealed record TypeCheck(CirExpr Value, CirType TargetType) : CirExpr;
+
 	public sealed record Ternary(CirExpr Condition, CirExpr Then, CirExpr Else) : CirExpr;
+
 	public sealed record NullCoalesce(CirExpr Left, CirExpr Right) : CirExpr;
+
 	public sealed record TupleLit(List<CirExpr> Elements) : CirExpr;
+
 	public sealed record Range(CirExpr Start, CirExpr End) : CirExpr;
 }
 
 public enum CirBinOp {
-	Add, Sub, Mul, Div, Rem,
-	And, Or,
-	BitAnd, BitOr, BitXor, Shl, Shr,
-	Eq, NotEq, Lt, LtEq, Gt, GtEq,
+	Add,
+	Sub,
+	Mul,
+	Div,
+	Rem,
+	And,
+	Or,
+	BitAnd,
+	BitOr,
+	BitXor,
+	Shl,
+	Shr,
+	Eq,
+	NotEq,
+	Lt,
+	LtEq,
+	Gt,
+	GtEq,
 	In
 }
 
 public enum CirUnOp {
-	Neg, Not, BitNot,
-	PreInc, PreDec,
-	PostInc, PostDec,
+	Neg,
+	Not,
+	BitNot,
+	PreInc,
+	PreDec,
+	PostInc,
+	PostDec,
 	Await
 }
 
 public enum CirAssignOp {
 	Assign,
-	AddAssign, SubAssign, MulAssign, DivAssign, RemAssign,
-	AndAssign, OrAssign, XorAssign
+	AddAssign,
+	SubAssign,
+	MulAssign,
+	DivAssign,
+	RemAssign,
+	AndAssign,
+	OrAssign,
+	XorAssign
 }

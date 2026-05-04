@@ -15,7 +15,8 @@ public class BuildConfig {
 	public string Source { get; private set; } = "src";
 	public Dictionary<string, string> Dependencies { get; } = new();
 
-	private BuildConfig() { }
+	private BuildConfig() {
+	}
 
 	public static BuildConfig Parse(string tomlContent) {
 		var config = new BuildConfig();
