@@ -3,6 +3,7 @@ module Commands.Executor.Run
 open System
 open System.Diagnostics
 open Commands.DispatchResult
+open Compiler.Configs
 
 let runRun (path: string, _args: string[]) =
     let tomlPath = IO.Path.Combine(path, "build.toml")
@@ -13,18 +14,18 @@ let runRun (path: string, _args: string[]) =
         let compiler = Compiler.Compiler(path)
         compiler.Compile() |> ignore
 
-        let config = Compiler.BuildConfig.FromFile(tomlPath)
+        let config = ConfigReader.Read(tomlPath)
 
-        if config.Output <> "executable" then
-            Failure $"cannot run a project with output='{config.Output}' (only 'executable' is runnable)"
+        if config.Build.OutputType <> OutputType.Executable then
+            Failure $"cannot run a project with output='{ClothConfig.OutputTypeToString config.Build.OutputType}' (only 'executable' is runnable)"
         else
             let buildDir = IO.Path.Combine(path, "build")
 
             let exeName =
                 if OperatingSystem.IsWindows() then
-                    config.ProjectName + ".exe"
+                    config.Project.Name + ".exe"
                 else
-                    config.ProjectName
+                    config.Project.Name
 
             let exePath = IO.Path.Combine(buildDir, exeName)
 

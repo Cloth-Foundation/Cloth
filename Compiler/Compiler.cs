@@ -7,6 +7,7 @@
 
 using System.Diagnostics;
 using Compiler.CIR;
+using Compiler.Configs;
 using Compiler.LLVM;
 using Compiler.Semantics;
 using FrontEnd.File;
@@ -34,8 +35,8 @@ public class Compiler {
 			Environment.Exit(1);
 		}
 
-		var config = BuildConfig.FromFile(tomlPath);
-		var sourceRoot = Path.Combine(_projectRoot, config.Source);
+		var config = ConfigReader.Read(tomlPath);
+		var sourceRoot = Path.Combine(_projectRoot, config.Build.Source);
 
 		if (!Directory.Exists(sourceRoot)) {
 			Console.Error.WriteLine($"Error: source directory '{sourceRoot}' does not exist");
@@ -48,19 +49,19 @@ public class Compiler {
 		// CirGenerator can register their method signatures (used by compile-time dispatch
 		// and by the LLVM emitter's `declare` lines for cross-project calls).
 		var externUnits = new List<(CompilationUnit Unit, string FilePath)>();
-		if (config.Output == "executable") {
+		if (config.Build.OutputType == OutputType.Executable) {
 			foreach (var (name, _) in config.Dependencies) {
 				var depRoot = ResolveStdlibRoot(name);
 				if (depRoot == null) continue;
-				var depConfig = BuildConfig.FromFile(Path.Combine(depRoot, "build.toml"));
-				var depSourceRoot = Path.Combine(depRoot, depConfig.Source);
+				var depConfig = ConfigReader.Read(Path.Combine(depRoot, "build.toml"));
+				var depSourceRoot = Path.Combine(depRoot, depConfig.Build.Source);
 				if (Directory.Exists(depSourceRoot))
 					externUnits.AddRange(ParseUnits(depSourceRoot));
 			}
 		}
 
-		var analyzer = new SemanticAnalyzer(units, sourceRoot);
-		analyzer.Analyze(requireMain: config.Output == "executable");
+		var analyzer = new SemanticAnalyzer(units, sourceRoot, externUnits);
+		analyzer.Analyze(requireMain: config.Build.OutputType == OutputType.Executable);
 
 		var cirGenerator = new CirGenerator();
 		var module = cirGenerator.Generate(units, analyzer.InferredVarTypes, externUnits);
@@ -68,7 +69,7 @@ public class Compiler {
 		var emitter = new LlvmEmitter(module, config, _projectRoot);
 		var llPath = emitter.Emit();
 
-		if (config.Output == "library") {
+		if (config.Build.OutputType == OutputType.Library) {
 			BuildLibrary(llPath, config, _projectRoot);
 		}
 		else {
@@ -87,6 +88,7 @@ public class Compiler {
 			var unit = new Parser(new Lexer(clothFile)).Parse();
 			result.Add((unit, filePath));
 		}
+
 		return result;
 	}
 
@@ -94,16 +96,16 @@ public class Compiler {
 	// Library build: cloth.ll → cloth.o → cloth.lib → cache install
 	// -------------------------------------------------------------------------
 
-	private static void BuildLibrary(string llPath, BuildConfig config, string projectRoot) {
+	private static void BuildLibrary(string llPath, ClothConfig config, string projectRoot) {
 		var buildDir = Path.Combine(projectRoot, "build");
-		var objPath = Path.Combine(buildDir, config.ProjectName + ".o");
+		var objPath = Path.Combine(buildDir, config.Project.Name + ".o");
 
 		RunTool("clang", new[] { "-c", llPath, "-o", objPath });
 
 		var libPath = Path.Combine(buildDir, "cloth.lib");
 		RunTool("llvm-lib", new[] { "/OUT:" + libPath, objPath });
 
-		var cacheDir = StdlibCacheDir("cloth", config.Version);
+		var cacheDir = StdlibCacheDir("cloth", config.Project.Version);
 		Directory.CreateDirectory(cacheDir);
 		var installedLib = Path.Combine(cacheDir, "cloth.lib");
 		File.Copy(libPath, installedLib, overwrite: true);
@@ -114,7 +116,7 @@ public class Compiler {
 	// Executable build: resolve deps, link via clang
 	// -------------------------------------------------------------------------
 
-	private List<string> ResolveDependencies(BuildConfig config) {
+	private List<string> ResolveDependencies(ClothConfig config) {
 		var libs = new List<string>();
 		foreach (var (name, version) in config.Dependencies) {
 			var libPath = FindCachedLib(name, version);
@@ -188,9 +190,9 @@ public class Compiler {
 	// External tool invocations
 	// -------------------------------------------------------------------------
 
-	private static void InvokeClang(string llPath, BuildConfig config, string projectRoot, IEnumerable<string> extraInputs) {
+	private static void InvokeClang(string llPath, ClothConfig config, string projectRoot, IEnumerable<string> extraInputs) {
 		var buildDir = Path.Combine(projectRoot, "build");
-		var exeName = config.ProjectName + (OperatingSystem.IsWindows() ? ".exe" : "");
+		var exeName = config.Project.Name + (OperatingSystem.IsWindows() ? ".exe" : "");
 		var exePath = Path.Combine(buildDir, exeName);
 
 		var args = new List<string> { llPath };

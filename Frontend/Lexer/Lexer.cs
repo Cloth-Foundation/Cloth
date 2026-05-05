@@ -479,7 +479,7 @@ public class Lexer {
 	}
 
 	private static bool IsIdentStart(char ch) {
-		return ch is '_' or >= 'a' and <= 'z' or >= 'A' and <= 'Z';
+		return ch is '_' or >= 'a' and <= 'z' or >= 'A' and <= 'Z' or '$';
 	}
 
 	private static bool IsIdentPart(char ch) {

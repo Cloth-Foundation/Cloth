@@ -7,6 +7,7 @@ open Commands.Executor.Lexer
 open Commands.Executor.Help
 open Commands.Executor.Parser
 open Commands.Executor.Run
+open Commands.Executor.NewProject
 
 let dispatch (args: string[]) =
     if args.Length = 0 then
@@ -42,6 +43,12 @@ let dispatch (args: string[]) =
                 Failure "Expected file path. Example: cloth parser ./src/Main.co"
             else
                 runParser (args[1], args)
+
+        | "new" ->
+            if args.Length < 2 then
+                Failure "Expected project directory. Example: cloth new ./my-project"
+            else
+                runNewProject (args[1], args)
 
         | unknown -> Failure $"Unknown command: {unknown}"
 
