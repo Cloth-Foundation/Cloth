@@ -16,14 +16,16 @@ namespace Compiler.Semantics;
 
 public class SemanticAnalyzer {
 	private readonly List<(CompilationUnit Unit, string FilePath)> _units;
+	private readonly List<(CompilationUnit Unit, string FilePath)> _externUnits;
 	private readonly string _sourceRoot;
 
 	// Inferred types for VarDeclStmts whose source has no explicit type annotation.
 	// Keyed by the VarDeclStmt's Span (TokenSpan is a reference type, so identity is stable).
 	public Dictionary<TokenSpan, TypeExpression> InferredVarTypes { get; } = new();
 
-	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot) {
+	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot, List<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
 		_units = units;
+		_externUnits = externUnits ?? new();
 		_sourceRoot = sourceRoot;
 	}
 
@@ -33,8 +35,50 @@ public class SemanticAnalyzer {
 
 		if (requireMain) ValidateMainFile();
 
+		ValidateImports();
+
 		foreach (var (unit, filePath) in _units)
 			InferDeclarations(unit, filePath);
+	}
+
+	// Build a lookup of (moduleFqn, className) → set of method names, then verify each
+	// `import path::{ a, b, ... }` references a class that exists and names that exist
+	// as methods in that class. Only considers classes — modules and other type kinds
+	// aren't currently importable selectively.
+	private void ValidateImports() {
+		var classMethods = new Dictionary<(string Module, string Class), HashSet<string>>();
+		foreach (var (unit, _) in _units.Concat(_externUnits)) {
+			var moduleFqn = string.Join(".", unit.Module.Path);
+			foreach (var typeDecl in unit.Types) {
+				if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
+				var key = (moduleFqn, c.Name);
+				if (!classMethods.TryGetValue(key, out var methods))
+					classMethods[key] = methods = new HashSet<string>();
+				foreach (var member in c.Members) {
+					if (member is MemberDeclaration.Method { Declaration: var m })
+						methods.Add(m.Name);
+				}
+			}
+		}
+
+		foreach (var (unit, filePath) in _units) {
+			foreach (var import in unit.Imports) {
+				if (import.Items is not ImportDeclaration.ImportItems.Selective sel) continue;
+				if (import.Path.Count < 1) continue;
+				var className = import.Path[^1];
+				var moduleFqn = string.Join(".", import.Path.Take(import.Path.Count - 1));
+				if (!classMethods.TryGetValue((moduleFqn, className), out var methods)) {
+					SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"class '{className}' not found in module '{moduleFqn}'").Render();
+					continue;
+				}
+
+				foreach (var entry in sel.Entries) {
+					if (!methods.Contains(entry.Name)) {
+						SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"'{entry.Name}' is not a method of '{moduleFqn}.{className}'").Render();
+					}
+				}
+			}
+		}
 	}
 
 	private void ValidateModulePath(CompilationUnit unit, string filePath) {
@@ -45,25 +89,17 @@ public class SemanticAnalyzer {
 
 		if (modulePath.Count == 1 && modulePath[0] == "_src") {
 			if (dirParts.Count != 0)
-				SemanticError.ModulePathMismatch
-					.WithFile(filePath)
-					.WithMessage("module '_src' is only valid for files at the source root")
-					.Render();
+				SemanticError.ModulePathMismatch.WithFile(filePath).WithMessage("module '_src' is only valid for files at the source root").Render();
 			return;
 		}
 
-		if (dirParts.Count != modulePath.Count ||
-		    dirParts.Zip(modulePath).Any(pair => !string.Equals(pair.First, pair.Second, StringComparison.Ordinal))) {
-			SemanticError.ModulePathMismatch
-				.WithFile(filePath)
-				.WithMessage($"expected module '{string.Join(".", dirParts)}' but found '{string.Join(".", modulePath)}'")
-				.Render();
+		if (dirParts.Count != modulePath.Count || dirParts.Zip(modulePath).Any(pair => !string.Equals(pair.First, pair.Second, StringComparison.Ordinal))) {
+			SemanticError.ModulePathMismatch.WithFile(filePath).WithMessage($"expected module '{string.Join(".", dirParts)}' but found '{string.Join(".", modulePath)}'").Render();
 		}
 	}
 
 	private void ValidateMainFile() {
-		var mainEntry = _units.FirstOrDefault(u =>
-			Path.GetFileName(u.FilePath).Equals("Main.co", StringComparison.Ordinal));
+		var mainEntry = _units.FirstOrDefault(u => Path.GetFileName(u.FilePath).Equals("Main.co", StringComparison.Ordinal));
 
 		if (mainEntry == default) {
 			SemanticError.MainFileNotFound.Render();
@@ -91,17 +127,12 @@ public class SemanticAnalyzer {
 		var hasArgsInCtor = ctor.Parameters.Count == 1 && IsStringArray(ctor.Parameters[0].Type);
 
 		if (!hasArgsInPrimary && !hasArgsInCtor) {
-			SemanticError.MainConstructorInvalidArgs
-				.WithFile(filePath)
-				.WithMessage("expected a single parameter of type 'string[]' in the class or constructor")
-				.Render();
+			SemanticError.MainConstructorInvalidArgs.WithFile(filePath).WithMessage("expected a single parameter of type 'string[]' in the class or constructor").Render();
 		}
 	}
 
 	private static bool IsStringArray(TypeExpression type) =>
-		type.Base is BaseType.Array arr &&
-		arr.ElementType.Base is BaseType.Named named &&
-		named.Name == "string";
+		type.Base is BaseType.Array arr && arr.ElementType.Base is BaseType.Named named && named.Name == "string";
 
 	// -------------------------------------------------------------------------
 	// Type inference / declaration validation
@@ -147,14 +178,19 @@ public class SemanticAnalyzer {
 				foreach (var ei in s.ElseIfBranches) WalkBlock(ei.Body, filePath);
 				if (s.ElseBranch.HasValue) WalkBlock(s.ElseBranch.Value, filePath);
 				break;
-			case Stmt.While { Statement: var s }:    WalkBlock(s.Body, filePath); break;
-			case Stmt.DoWhile { Statement: var s }:  WalkBlock(s.Body, filePath); break;
-			case Stmt.For { Statement: var s }:      WalkBlock(s.Body, filePath); WalkStmt(s.Init, filePath); break;
-			case Stmt.ForIn { Statement: var s }:    WalkBlock(s.Body, filePath); break;
-			case Stmt.Switch { Statement: var s }:
-				foreach (var c in s.Cases) foreach (var inner in c.Body) WalkStmt(inner, filePath);
+			case Stmt.While { Statement: var s }: WalkBlock(s.Body, filePath); break;
+			case Stmt.DoWhile { Statement: var s }: WalkBlock(s.Body, filePath); break;
+			case Stmt.For { Statement: var s }:
+				WalkBlock(s.Body, filePath);
+				WalkStmt(s.Init, filePath);
 				break;
-			case Stmt.BlockStmt { Block: var b }:    WalkBlock(b, filePath); break;
+			case Stmt.ForIn { Statement: var s }: WalkBlock(s.Body, filePath); break;
+			case Stmt.Switch { Statement: var s }:
+				foreach (var c in s.Cases)
+				foreach (var inner in c.Body)
+					WalkStmt(inner, filePath);
+				break;
+			case Stmt.BlockStmt { Block: var b }: WalkBlock(b, filePath); break;
 		}
 	}
 
@@ -167,20 +203,15 @@ public class SemanticAnalyzer {
 			if (inferred == null) return; // can't compare — leave the explicit annotation in place
 			var inferredCanon = TypeInference.Canonicalize(inferred.Name);
 			if (!string.IsNullOrEmpty(declared) && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
-				SemanticError.TypeMismatch
-					.WithFile(filePath)
-					.WithMessage($"declared '{declared}', initializer is '{inferredCanon}' (no lossless promotion)")
-					.Render();
+				SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"declared '{declared}', initializer is '{inferredCanon}' (no lossless promotion)").Render();
 			}
+
 			return;
 		}
 
 		// Case B: type omitted — infer from initializer when possible.
 		if (d.Init == null) {
-			SemanticError.CannotInferType
-				.WithFile(filePath)
-				.WithMessage($"'let {d.Name}' has no initializer")
-				.Render();
+			SemanticError.CannotInferType.WithFile(filePath).WithMessage($"'let {d.Name}' has no initializer").Render();
 			return;
 		}
 

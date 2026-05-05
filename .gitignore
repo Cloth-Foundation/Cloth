@@ -61,3 +61,4 @@ TestResult.xml
 nunit-*.xml
 /Standard-Library/build/
 build/
+/Cloth.sln.DotSettings.user

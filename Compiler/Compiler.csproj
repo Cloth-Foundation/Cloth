@@ -9,6 +9,7 @@
 
     <ItemGroup>
         <Folder Include="CIR\"/>
+        <Folder Include="Configs\Profiles\" />
         <Folder Include="Link\"/>
         <Folder Include="LLVM\"/>
         <Folder Include="Semantics\"/>
@@ -16,6 +17,10 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Frontend\Frontend.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Tomlyn" Version="2.3.2"/>
     </ItemGroup>
 
 </Project>

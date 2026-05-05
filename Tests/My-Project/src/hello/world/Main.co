@@ -14,21 +14,19 @@ public class (string[] args) {
     public func sayHello(): void {
         string hello = "Hello, World!";
 
-        //println(hello + "I am Cloth!");
+        println(hello + " I am Cloth!");
         println();
 
-        let small = 5;
-        let big = 100000;
-        let huge = 5000000000;
-        let pi = 3.14;
-        let flag = true;
+        let x = (5 + 5) / 2 * 6;
+        let big = 5000000000 + 5;
+        let isHigh = 5 > 3;
+        let copy = x;
+        string s = "foo" + "bar";
 
-        println(small);
+        println(x);
         println(big);
-        println(huge);
-        println(pi);
-        println(flag);
-
-        println(5 + 5);
+        println(isHigh);
+        println(copy);
+        println(s);
     }
 }
