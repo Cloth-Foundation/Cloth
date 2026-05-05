@@ -1,0 +1,15 @@
+﻿module hello.world;
+
+import cloth.io.Out::{ println };
+
+public class () {
+
+    public HelloPrinter {
+
+    }
+
+    public func printHelloWorld(): void {
+        println("Hello World!");
+    }
+
+}
