@@ -118,7 +118,7 @@ public static class Keywords {
 
 	public static readonly string[] TraitKeywordStrings = Enum.GetNames(typeof(TraitKeyword));
 
-	public static string GetKeywordString(Keyword? keyword) {
+	public static string GetStringFromKeyword(Keyword? keyword) {
 		if (keyword == null) {
 			return "[UNKNOWN]";
 		}
@@ -229,7 +229,7 @@ public static class Keywords {
 		};
 	}
 
-	public static Keyword? GetKeywordFromLexeme(string lexeme) {
+	public static Keyword? GetKeywordFromString(string lexeme) {
 		return lexeme switch {
 			"true" => Keyword.True,
 			"false" => Keyword.False,

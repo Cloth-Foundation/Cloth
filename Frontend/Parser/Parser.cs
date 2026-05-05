@@ -961,7 +961,7 @@ public class Parser {
 	internal bool ExpectOperator(Operator op, bool throwError = true) {
 		if (_current.Operator != op) {
 			if (throwError) {
-				throw ParserError.ExpectedOperator.WithMessage($"expected '{Operators.GetLexemeFromOperator(op)}', got '{_current.Lexeme}'").WithSpan(_current.Span).Render();
+				throw ParserError.ExpectedOperator.WithMessage($"expected '{Operators.GetStringFromOperator(op)}', got '{_current.Lexeme}'").WithSpan(_current.Span).Render();
 			}
 
 			return false;
@@ -979,7 +979,7 @@ public class Parser {
 	/// <exception cref="ParserError">Thrown when the current token does not match the expected keyword.</exception>
 	internal bool ExpectKeyword(Keyword keyword) {
 		if (_current.Keyword != keyword)
-			throw ParserError.ExpectedKeyword.WithMessage($"expected '{Keywords.GetKeywordString(keyword)}', got {_current.Type.ToString().ToLower()} '{_current.Lexeme}'").Render();
+			throw ParserError.ExpectedKeyword.WithMessage($"expected '{Keywords.GetStringFromKeyword(keyword)}', got {_current.Type.ToString().ToLower()} '{_current.Lexeme}'").Render();
 		Advance();
 		return true;
 	}

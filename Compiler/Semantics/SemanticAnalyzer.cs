@@ -18,15 +18,29 @@ public class SemanticAnalyzer {
 	private readonly List<(CompilationUnit Unit, string FilePath)> _units;
 	private readonly List<(CompilationUnit Unit, string FilePath)> _externUnits;
 	private readonly string _sourceRoot;
+	private readonly SymbolRegistry _symbols;
+
+	// Per-method state — fresh for each function body we walk. Carries the local-variable
+	// scope plus the SymbolRegistry, so any inference call reads through it consistently
+	// with the CIR generator (single source of truth).
+	private ExpressionTyper _typer = null!;
+	private Dictionary<string, string> _importMap = new();
+	private string _currentTypeFqn = "";
+
+	// Canonical return type of the function currently being walked, used to validate
+	// `return value;` statements. "void" for constructors, destructors, and methods
+	// declared with `: void`. "" means we haven't entered a function yet.
+	private string _currentReturnType = "";
 
 	// Inferred types for VarDeclStmts whose source has no explicit type annotation.
 	// Keyed by the VarDeclStmt's Span (TokenSpan is a reference type, so identity is stable).
 	public Dictionary<TokenSpan, TypeExpression> InferredVarTypes { get; } = new();
 
-	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot, List<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
+	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot, SymbolRegistry symbols, List<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
 		_units = units;
 		_externUnits = externUnits ?? new();
 		_sourceRoot = sourceRoot;
+		_symbols = symbols;
 	}
 
 	public void Analyze(bool requireMain = true) {
@@ -139,29 +153,77 @@ public class SemanticAnalyzer {
 	// -------------------------------------------------------------------------
 
 	private void InferDeclarations(CompilationUnit unit, string filePath) {
+		_importMap = BuildImportMap(unit.Imports);
+		var moduleFqn = string.Join(".", unit.Module.Path);
 		foreach (var typeDecl in unit.Types) {
 			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
+			_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? c.Name : $"{moduleFqn}.{c.Name}";
 			foreach (var member in c.Members)
-				WalkMember(member, filePath);
+				WalkMember(member, filePath, c.PrimaryParameters);
 		}
 	}
 
-	private void WalkMember(MemberDeclaration member, string filePath) {
+	private static Dictionary<string, string> BuildImportMap(List<ImportDeclaration> imports) {
+		var map = new Dictionary<string, string>();
+		foreach (var import in imports) {
+			if (import.Items is ImportDeclaration.ImportItems.Selective selective) {
+				var path = string.Join(".", import.Path);
+				foreach (var entry in selective.Entries) {
+					var key = entry.Alias ?? entry.Name;
+					map[key] = $"{path}.{entry.Name}";
+				}
+			}
+			else if (import.Items is ImportDeclaration.ImportItems.Module && import.Path.Count > 0) {
+				var name = import.Path[^1];
+				map[name] = string.Join(".", import.Path);
+			}
+		}
+
+		return map;
+	}
+
+	// Build a fresh typer for each function body, pre-populating the local-type scope with
+	// the function's parameters (including primary class params for constructors).
+	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
+		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
+		foreach (var p in parameters) {
+			if (p.Type.Base is BaseType.Named n)
+				_typer.DeclareLocal(p.Name, TypeInference.Canonicalize(n.Name));
+		}
+	}
+
+	private void WalkMember(MemberDeclaration member, string filePath, List<Parameter> primaryParams) {
 		switch (member) {
 			case MemberDeclaration.Constructor { Declaration: var ctor }:
+				BeginFunctionScope(primaryParams.Concat(ctor.Parameters));
+				_currentReturnType = "void";
 				WalkBlock(ctor.Body, filePath);
 				break;
 			case MemberDeclaration.Destructor { Declaration: var dtor }:
+				BeginFunctionScope(Enumerable.Empty<Parameter>());
+				_currentReturnType = "void";
 				WalkBlock(dtor.Body, filePath);
 				break;
 			case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
+				BeginFunctionScope(m.Parameters);
+				_currentReturnType = ResolveReturnType(m.ReturnType);
 				WalkBlock(m.Body.Value, filePath);
+				ValidateAllPathsReturn(m.Body.Value, m.Name, filePath);
 				break;
 			case MemberDeclaration.Fragment { Declaration: var f } when f.Body.HasValue:
+				BeginFunctionScope(f.Parameters);
+				_currentReturnType = ResolveReturnType(f.ReturnType);
 				WalkBlock(f.Body.Value, filePath);
+				ValidateAllPathsReturn(f.Body.Value, f.Name, filePath);
 				break;
 		}
 	}
+
+	private static string ResolveReturnType(TypeExpression type) => type.Base switch {
+		BaseType.Named n => TypeInference.Canonicalize(n.Name),
+		BaseType.Void => "void",
+		_ => ""
+	};
 
 	private void WalkBlock(Block block, string filePath) {
 		foreach (var stmt in block.Statements)
@@ -172,40 +234,280 @@ public class SemanticAnalyzer {
 		switch (stmt) {
 			case Stmt.VarDecl { Declaration: var d }:
 				ProcessVarDecl(d, filePath);
+				if (d.Init != null) WalkExpr(d.Init, filePath);
+				break;
+			case Stmt.ExprStmt { Expression: var e }:
+				WalkExpr(e, filePath);
+				break;
+			case Stmt.Return { Value: var v }:
+				if (v != null) WalkExpr(v, filePath);
+				ValidateReturn(v, filePath);
+				break;
+			case Stmt.Assign { Assignment: var a }:
+				WalkExpr(a.Target, filePath);
+				WalkExpr(a.Value, filePath);
+				ValidateAssign(a, filePath);
 				break;
 			case Stmt.If { Statement: var s }:
+				WalkExpr(s.Condition, filePath);
 				WalkBlock(s.ThenBranch, filePath);
-				foreach (var ei in s.ElseIfBranches) WalkBlock(ei.Body, filePath);
+				foreach (var ei in s.ElseIfBranches) {
+					WalkExpr(ei.Condition, filePath);
+					WalkBlock(ei.Body, filePath);
+				}
+
 				if (s.ElseBranch.HasValue) WalkBlock(s.ElseBranch.Value, filePath);
 				break;
-			case Stmt.While { Statement: var s }: WalkBlock(s.Body, filePath); break;
-			case Stmt.DoWhile { Statement: var s }: WalkBlock(s.Body, filePath); break;
-			case Stmt.For { Statement: var s }:
+			case Stmt.While { Statement: var s }:
+				WalkExpr(s.Condition, filePath);
 				WalkBlock(s.Body, filePath);
-				WalkStmt(s.Init, filePath);
 				break;
-			case Stmt.ForIn { Statement: var s }: WalkBlock(s.Body, filePath); break;
+			case Stmt.DoWhile { Statement: var s }:
+				WalkBlock(s.Body, filePath);
+				WalkExpr(s.Condition, filePath);
+				break;
+			case Stmt.For { Statement: var s }:
+				WalkStmt(s.Init, filePath);
+				WalkExpr(s.Condition, filePath);
+				WalkExpr(s.Iterator, filePath);
+				WalkBlock(s.Body, filePath);
+				break;
+			case Stmt.ForIn { Statement: var s }:
+				WalkExpr(s.Iterable, filePath);
+				WalkBlock(s.Body, filePath);
+				break;
 			case Stmt.Switch { Statement: var s }:
-				foreach (var c in s.Cases)
-				foreach (var inner in c.Body)
-					WalkStmt(inner, filePath);
+				WalkExpr(s.Expression, filePath);
+				foreach (var c in s.Cases) {
+					if (c.Pattern is SwitchPattern.Case cp) WalkExpr(cp.Expression, filePath);
+					foreach (var inner in c.Body) WalkStmt(inner, filePath);
+				}
+
+				break;
+			case Stmt.Throw { Expression: var e }: WalkExpr(e, filePath); break;
+			case Stmt.Delete { Expression: var e }: WalkExpr(e, filePath); break;
+			case Stmt.Discard { Expression: var e }: WalkExpr(e, filePath); break;
+			case Stmt.SuperCall { Arguments: var args }:
+				foreach (var a in args) WalkExpr(a, filePath);
+				break;
+			case Stmt.ThisCall { Arguments: var args }:
+				foreach (var a in args) WalkExpr(a, filePath);
+				break;
+			case Stmt.TupleDestructure { Declaration: var d }:
+				WalkExpr(d.Init, filePath);
 				break;
 			case Stmt.BlockStmt { Block: var b }: WalkBlock(b, filePath); break;
+		}
+	}
+
+	// Recursively validate an expression: undefined identifiers fire S010, calls with no
+	// matching overload fire S009 (or S010 when the callee FQN is wholly unknown).
+	private void WalkExpr(Expression expr, string filePath) {
+		switch (expr) {
+			case Expression.Call call:
+				// Walk args first so undefined-arg errors surface before "no overload" errors.
+				foreach (var arg in call.Arguments) WalkExpr(arg, filePath);
+				// For instance member-access targets, walk the target as a value. For static
+				// dot-calls and meta-access calls, the target is a class name and is validated
+				// as part of overload resolution — don't double-error.
+				if (call.Callee is Expression.MemberAccess ma && ma.Target is Expression.Identifier { Name: var classOrLocal } && !_typer.TryGetLocalType(classOrLocal, out _) && !_importMap.ContainsKey(classOrLocal) && !_symbols.KnownClasses.Contains(classOrLocal)) {
+					// Genuinely unknown receiver — surface the identifier error.
+					WalkExpr(ma.Target, filePath);
+				}
+
+				ValidateCall(call, filePath);
+				break;
+
+			case Expression.Identifier id:
+				ValidateIdentifier(id, filePath);
+				break;
+
+			case Expression.Binary b:
+				WalkExpr(b.Left, filePath);
+				WalkExpr(b.Right, filePath);
+				break;
+			case Expression.Unary u:
+				WalkExpr(u.Operand, filePath);
+				break;
+			case Expression.Postfix p:
+				WalkExpr(p.Operand, filePath);
+				break;
+			case Expression.Cast c:
+				WalkExpr(c.Value, filePath);
+				break;
+			case Expression.TypeCheck tc:
+				WalkExpr(tc.Value, filePath);
+				break;
+			case Expression.MembershipCheck mc:
+				WalkExpr(mc.Value, filePath);
+				WalkExpr(mc.Collection, filePath);
+				break;
+			case Expression.Ternary t:
+				WalkExpr(t.Condition, filePath);
+				WalkExpr(t.ThenBranch, filePath);
+				WalkExpr(t.ElseBranch, filePath);
+				break;
+			case Expression.NullCoalesce nc:
+				WalkExpr(nc.Left, filePath);
+				WalkExpr(nc.Right, filePath);
+				break;
+			case Expression.MemberAccess maExpr:
+				WalkExpr(maExpr.Target, filePath);
+				break;
+			case Expression.Index idx:
+				WalkExpr(idx.Target, filePath);
+				WalkExpr(idx.IndexExpr, filePath);
+				break;
+			case Expression.New n:
+				foreach (var a in n.Arguments) WalkExpr(a, filePath);
+				break;
+			case Expression.Tuple tup:
+				foreach (var e in tup.Elements) WalkExpr(e, filePath);
+				break;
+			case Expression.Range r:
+				WalkExpr(r.Start, filePath);
+				WalkExpr(r.End, filePath);
+				break;
+			case Expression.Spread sp:
+				WalkExpr(sp.Value, filePath);
+				break;
+			case Expression.Assign asn:
+				WalkExpr(asn.Target, filePath);
+				WalkExpr(asn.Value, filePath);
+				ValidateAssignExpr(asn, filePath);
+				break;
+			// Literals, This, Super, Lambda, MetaAccess: no value-identifier check.
+		}
+	}
+
+	private void ValidateIdentifier(Expression.Identifier id, string filePath) {
+		if (_typer.TryGetLocalType(id.Name, out _)) return; // local or parameter
+		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method)
+		if (_symbols.KnownClasses.Contains(id.Name)) return; // bare class name
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method
+		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{id.Name}' is not defined in this scope").Render();
+	}
+
+	// Validate that every path through a non-void function ends in a return (or throw).
+	// Skipped for void functions — falling off the end is implicit `return;`.
+	private void ValidateAllPathsReturn(Block body, string functionName, string filePath) {
+		if (string.IsNullOrEmpty(_currentReturnType) || _currentReturnType == "void") return;
+		if (DefinitelyReturns(body)) return;
+		SemanticError.MissingReturn.WithFile(filePath).WithMessage($"function '{functionName}' returns '{_currentReturnType}' but not all paths return a value").Render();
+	}
+
+	// True when every path through the block ends in a Return or Throw (no fall-through).
+	// Loops and Switch are conservatively treated as fall-through-possible — even
+	// `while (true) { return; }` doesn't count, since static analysis of loop conditions
+	// is out of scope. Add an explicit `return` after such loops to satisfy the check.
+	private static bool DefinitelyReturns(Block block) {
+		foreach (var stmt in block.Statements) {
+			if (StmtDefinitelyReturns(stmt)) return true;
+		}
+
+		return false;
+	}
+
+	private static bool StmtDefinitelyReturns(Stmt stmt) => stmt switch {
+		Stmt.Return => true,
+		Stmt.Throw => true,
+		Stmt.If { Statement: var s } => s.ElseBranch.HasValue && DefinitelyReturns(s.ThenBranch) && s.ElseIfBranches.All(eib => DefinitelyReturns(eib.Body)) && DefinitelyReturns(s.ElseBranch.Value),
+		Stmt.BlockStmt { Block: var b } => DefinitelyReturns(b),
+		_ => false
+	};
+
+	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
+	// Same rule as `let T x = init` and `return value;`. Augmented ops (`+=`, etc.) follow
+	// the same shape — the produced value-after-op must still fit the target.
+	private void ValidateAssign(AssignStmt a, string filePath) =>
+		ValidateAssignParts(a.Target, a.Value, filePath);
+
+	// Same logic for the assignment-as-expression form (which is how `x = 5;` actually
+	// reaches the analyzer — the parser emits ExprStmt(Expression.Assign), not Stmt.Assign).
+	private void ValidateAssignExpr(Expression.Assign a, string filePath) =>
+		ValidateAssignParts(a.Target, a.Value, filePath);
+
+	private void ValidateAssignParts(Expression target, Expression value, string filePath) {
+		var lhsType = _typer.InferType(target);
+		if (lhsType == null) return; // can't infer target type — skip validation
+		var rhsType = _typer.InferType(value);
+		if (rhsType == null) return; // can't infer source type — skip validation
+		if (lhsType == rhsType) return;
+		if (TypeInference.IsLosslessPromotion(rhsType, lhsType)) return;
+		SemanticError.AssignTypeMismatch
+			.WithFile(filePath)
+			.WithMessage($"expected '{lhsType}', got '{rhsType}'")
+			.Render();
+	}
+
+	// Validate `return value;` against the enclosing function's declared return type.
+	// Allows lossless promotion (e.g. function returns i32, return value is i8).
+	// CIR-side LowerStmt inserts the matching widening Cast at the return site.
+	private void ValidateReturn(Expression? value, string filePath) {
+		if (string.IsNullOrEmpty(_currentReturnType)) return;
+
+		if (value == null) {
+			// Bare `return;` — only legal in void functions.
+			if (_currentReturnType != "void") {
+				SemanticError.ReturnTypeMismatch.WithFile(filePath).WithMessage($"function expects '{_currentReturnType}' but `return;` returns nothing").Render();
+			}
+
+			return;
+		}
+
+		// `return expr;` in a void function — never legal.
+		if (_currentReturnType == "void") {
+			var inferredVoidCtx = _typer.InferType(value) ?? "?";
+			SemanticError.ReturnTypeMismatch.WithFile(filePath).WithMessage($"expected `None`, got '{inferredVoidCtx}'").Render();
+			return;
+		}
+
+		// `return expr;` with a value — type must lossless-widen to the declared return.
+		var inferred = _typer.InferType(value);
+		if (inferred == null) return; // can't validate; CIR lowering handles type-flow downstream
+		if (inferred == _currentReturnType) return;
+		if (TypeInference.IsLosslessPromotion(inferred, _currentReturnType)) return;
+		SemanticError.ReturnTypeMismatch.WithFile(filePath).WithMessage($"expected '{_currentReturnType}', got '{inferred}'").Render();
+	}
+
+	private void ValidateCall(Expression.Call call, string filePath) {
+		var overload = _typer.ResolveCallExpressionOverload(call);
+		if (overload != null) return;
+
+		// Distinguish "no FQN at all" (S010) from "FQN exists, no overload matches" (S009).
+		var candidates = _typer.GetCalleeCandidates(call);
+		var anyKnown = candidates.Any(_symbols.Overloads.ContainsKey);
+		var calleeName = call.Callee switch {
+			Expression.Identifier id => id.Name,
+			Expression.MetaAccess m => m.Member,
+			Expression.MemberAccess m => m.Member,
+			_ => "?"
+		};
+
+		if (anyKnown) {
+			var argTypes = call.Arguments.Select(a => _typer.InferType(a) ?? "?").ToList();
+			SemanticError.NoMatchingOverload.WithFile(filePath).WithMessage($"no overload of '{calleeName}' matches argument types ({string.Join(", ", argTypes)})").Render();
+		}
+		else {
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{calleeName}' is not a known method or function").Render();
 		}
 	}
 
 	private void ProcessVarDecl(VarDeclStmt d, string filePath) {
 		// Case A: explicit type annotation present — verify the initializer can widen losslessly.
 		if (d.Type.HasValue) {
-			if (d.Init == null) return;
 			var declared = TypeInference.Canonicalize((d.Type.Value.Base as BaseType.Named)?.Name ?? "");
-			var inferred = TypeInference.Infer(d.Init);
-			if (inferred == null) return; // can't compare — leave the explicit annotation in place
-			var inferredCanon = TypeInference.Canonicalize(inferred.Name);
-			if (!string.IsNullOrEmpty(declared) && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
-				SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"declared '{declared}', initializer is '{inferredCanon}' (no lossless promotion)").Render();
+
+			if (d.Init != null) {
+				var inferredCanon = _typer.InferType(d.Init);
+				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
+					SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"expected '{declared}', got '{inferredCanon}'").Render();
+				}
 			}
 
+			// Register the explicit type in the local scope so subsequent statements can resolve it.
+			if (!string.IsNullOrEmpty(declared))
+				_typer.DeclareLocal(d.Name, declared);
 			return;
 		}
 
@@ -215,14 +517,16 @@ public class SemanticAnalyzer {
 			return;
 		}
 
-		var inferredBase = TypeInference.Infer(d.Init);
-		if (inferredBase == null) {
-			// Inference failed for a complex expression — silently leave Type=null.
-			// CIR lowering falls back to `Any` (ptr) for now; richer inference comes later.
+		var canonName = _typer.InferType(d.Init);
+		if (canonName == null) {
+			// Inference failed for a complex expression — leave Type=null. CIR lowering will
+			// fall back to `Any` (ptr) and the LLVM emitter may surface the type at codegen.
+			// This is the kind of case we should grow the analyzer to cover when it bites.
 			return;
 		}
 
-		var canonName = TypeInference.Canonicalize(inferredBase.Name);
+		// Register in scope AND publish via InferredVarTypes so CirGenerator picks it up.
+		_typer.DeclareLocal(d.Name, canonName);
 		var canonical = new TypeExpression(new BaseType.Named(canonName), Nullable: false, Ownership: null, d.Span);
 		InferredVarTypes[d.Span] = canonical;
 	}

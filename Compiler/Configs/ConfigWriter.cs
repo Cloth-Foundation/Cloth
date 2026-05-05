@@ -11,7 +11,6 @@ using Tomlyn;
 namespace Compiler.Configs;
 
 public static class ConfigWriter {
-
 	private static readonly TomlSerializerOptions Options = new() {
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		WriteIndented = true,
@@ -22,5 +21,4 @@ public static class ConfigWriter {
 		var toml = TomlSerializer.Serialize(config, Options);
 		File.WriteAllText(path, toml);
 	}
-
 }

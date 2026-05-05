@@ -5,28 +5,21 @@ import cloth.io.Out::{ println };
 public class (string[] args) {
 
     public Main {
-        sayHello();
+        println(hello() + " " + world());
+
+        i32 x = 5;
+        x = 100;
+        println(x);
     }
 
     public ~Main() {
     }
 
-    public func sayHello(): void {
-        string hello = "Hello, World!";
+    public func hello(): string {
+        return "Hello";
+    }
 
-        println(hello + " I am Cloth!");
-        println();
-
-        let x = (5 + 5) / 2 * 6;
-        let big = 5000000000 + 5;
-        let isHigh = 5 > 3;
-        let copy = x;
-        string s = "foo" + "bar";
-
-        println(x);
-        println(big);
-        println(isHigh);
-        println(copy);
-        println(s);
+    public func world(): string {
+        return "World";
     }
 }
