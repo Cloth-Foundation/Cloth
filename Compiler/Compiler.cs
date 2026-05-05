@@ -1,4 +1,4 @@
-// Copyright (c) 2026.The Cloth contributors.
+// Copyright (c) 2026. The Cloth contributors.
 //
 // Compiler.cs is part of the Cloth Compiler.
 //
@@ -18,25 +18,30 @@ using FrontEnd.Parser.AST;
 namespace Compiler;
 
 /// <summary>
-///     The Compiler is responsible for generating Cloth IR (CIR) code as well as turning the CIR into LLVM IR code.
-///     It also compiles the code into the provided target(s) provided by the build system (build.toml).
+/// Represents a compiler that processes source code and dependencies located in a project directory.
+/// The compiler performs parsing, semantic analysis, intermediate representation (CIR) generation,
+/// and optional LLVM emission for the specified output type (e.g., executable or library).
 /// </summary>
-public class Compiler {
-	private readonly string _projectRoot;
-
-	public Compiler(string projectRoot) {
-		_projectRoot = projectRoot;
-	}
-
+public class Compiler(string projectRoot) {
+	/// <summary>
+	/// Compiles all source files in the project, processes dependencies (if any), and generates
+	/// the complete CIR module representing the project's intermediate representation. This method
+	/// handles source parsing, semantic analysis, CIR generation, and optional LLVM emission for
+	/// different build outputs such as executables or libraries.
+	/// </summary>
+	/// <returns>
+	/// A <see cref="CIR.CirModule"/> that encapsulates the types and functions generated during the
+	/// compilation process, representing the intermediate state of the program.
+	/// </returns>
 	public CIR.CirModule Compile() {
-		var tomlPath = Path.Combine(_projectRoot, "build.toml");
+		var tomlPath = Path.Combine(projectRoot, "build.toml");
 		if (!File.Exists(tomlPath)) {
-			Console.Error.WriteLine($"Error: build.toml not found in '{_projectRoot}'");
+			Console.Error.WriteLine($"Error: build.toml not found in '{projectRoot}'");
 			Environment.Exit(1);
 		}
 
 		var config = ConfigReader.Read(tomlPath);
-		var sourceRoot = Path.Combine(_projectRoot, config.Build.Source);
+		var sourceRoot = Path.Combine(projectRoot, config.Build.Source);
 
 		if (!Directory.Exists(sourceRoot)) {
 			Console.Error.WriteLine($"Error: source directory '{sourceRoot}' does not exist");
@@ -70,20 +75,32 @@ public class Compiler {
 		var cirGenerator = new CirGenerator(symbols);
 		var module = cirGenerator.Generate(units, analyzer.InferredVarTypes);
 
-		var emitter = new LlvmEmitter(module, config, _projectRoot);
+		var emitter = new LlvmEmitter(module, config, projectRoot);
 		var llPath = emitter.Emit();
 
 		if (config.Build.OutputType == OutputType.Library) {
-			BuildLibrary(llPath, config, _projectRoot);
+			BuildLibrary(llPath, config, projectRoot);
 		}
 		else {
 			var libsToLink = ResolveDependencies(config);
-			InvokeClang(llPath, config, _projectRoot, libsToLink);
+			InvokeClang(llPath, config, projectRoot, libsToLink);
 		}
 
 		return module;
 	}
 
+	/// <summary>
+	/// Parses all source files located in the specified source root directory and converts them into a list of compilation units.
+	/// Each compilation unit represents a single parsed source file, including its structure, imports, and types.
+	/// </summary>
+	/// <param name="sourceRoot">
+	/// The root directory containing the source files to parse. All files with the extension ".co" within this directory
+	/// and its subdirectories will be processed.
+	/// </param>
+	/// <returns>
+	/// A list of tuples where each tuple consists of a parsed <see cref="CompilationUnit"/> representing a source file
+	/// and the corresponding file path.
+	/// </returns>
 	private static List<(CompilationUnit Unit, string FilePath)> ParseUnits(string sourceRoot) {
 		var result = new List<(CompilationUnit Unit, string FilePath)>();
 		foreach (var filePath in Directory.EnumerateFiles(sourceRoot, "*.co", SearchOption.AllDirectories)) {
@@ -96,10 +113,21 @@ public class Compiler {
 		return result;
 	}
 
-	// -------------------------------------------------------------------------
-	// Library build: cloth.ll → cloth.o → cloth.lib → cache install
-	// -------------------------------------------------------------------------
-
+	/// <summary>
+	/// Builds a static library from the provided LLVM intermediate representation (IR) file.
+	/// This method compiles the LLVM IR file into an object file, creates a static library,
+	/// and installs the library into a versioned cache directory for reusability.
+	/// </summary>
+	/// <param name="llPath">
+	/// The file path to the LLVM IR file that serves as the input for the build process.
+	/// </param>
+	/// <param name="config">
+	/// The configuration object containing project-specific build and dependency information.
+	/// This includes details such as the project name and version.
+	/// </param>
+	/// <param name="projectRoot">
+	/// The root directory of the project, used to resolve paths for build outputs and cache installation.
+	/// </param>
 	private static void BuildLibrary(string llPath, ClothConfig config, string projectRoot) {
 		var buildDir = Path.Combine(projectRoot, "build");
 		var objPath = Path.Combine(buildDir, config.Project.Name + ".o");
@@ -116,10 +144,19 @@ public class Compiler {
 		Console.WriteLine($"Library installed: {installedLib}");
 	}
 
-	// -------------------------------------------------------------------------
-	// Executable build: resolve deps, link via clang
-	// -------------------------------------------------------------------------
-
+	/// <summary>
+	/// Resolves a list of library dependencies required for compiling the project.
+	/// This method scans the specified configuration for declared dependencies,
+	/// attempts to locate cached versions of the libraries, and builds missing libraries if necessary.
+	/// </summary>
+	/// <param name="config">
+	/// The configuration object containing dependency information. This includes a dictionary
+	/// mapping dependency names to their required versions.
+	/// </param>
+	/// <returns>
+	/// A list of file paths to the resolved and cached library files required for the project compilation.
+	/// If a dependency cannot be resolved, the process will exit with an error.
+	/// </returns>
 	private List<string> ResolveDependencies(ClothConfig config) {
 		var libs = new List<string>();
 		foreach (var (name, version) in config.Dependencies) {
@@ -127,7 +164,13 @@ public class Compiler {
 			if (libPath == null) {
 				var stdlibRoot = ResolveStdlibRoot(name);
 				if (stdlibRoot == null) {
-					Console.Error.WriteLine($"Error: cannot resolve dependency '{name}={version}': no source root known");
+					Console.Error.WriteLine(
+						$"Error: cannot locate the Cloth standard library for dependency '{name}={version}'.\n" +
+						"  Tried (in order):\n" +
+						"    1. CLOTH_STDLIB_PATH environment variable\n" +
+						$"    2. {Path.Combine(AppContext.BaseDirectory, "Standard-Library")}\n" +
+						"    3. Walking up from the compiler binary's directory\n" +
+						"  Set CLOTH_STDLIB_PATH or place Standard-Library next to the compiler binary.");
 					Environment.Exit(1);
 				}
 
@@ -146,8 +189,22 @@ public class Compiler {
 		return libs;
 	}
 
-	// Look up a cached .lib for the given dependency. For first iteration, version pinning is
-	// not enforced — we accept any cached version of the named library if the exact pin isn't found.
+	/// <summary>
+	/// Searches for a cached library file (.lib) corresponding to the specified dependency name and version.
+	/// This method attempts to locate an exact version match in the cache. If an exact match is not found, it
+	/// scans for any compatible library version for the given dependency and returns the first available match.
+	/// </summary>
+	/// <param name="name">
+	/// The name of the dependency for which the cached library is being searched.
+	/// </param>
+	/// <param name="version">
+	/// The version of the dependency to locate in the cache. Version pinning may not be enforced, in which case
+	/// this method may return any cached version of the named dependency.
+	/// </param>
+	/// <returns>
+	/// The full file system path to the cached library file if found; otherwise, null if no matching or compatible
+	/// library file is located in the cache.
+	/// </returns>
 	private static string? FindCachedLib(string name, string version) {
 		var exact = Path.Combine(StdlibCacheDir(name, version), "cloth.lib");
 		if (File.Exists(exact)) return exact;
@@ -166,34 +223,103 @@ public class Compiler {
 		return null;
 	}
 
+	// TODO: This is extremely temporary. We need to either validate via github pulls for projects
+	// TODO: or design a package registry and versioned download mechanism via a repository.
+	/// <summary>
+	/// Resolves the root directory of the Cloth Standard Library on the local machine.
+	/// This method determines the path based on various strategies, such as environment
+	/// variable overrides, bundled or sibling directories, and directory traversal.
+	/// </summary>
+	/// <param name="name">
+	/// The name of the requested standard library. Currently, only "cloth" is supported.
+	/// </param>
+	/// <returns>
+	/// The full file system path to the Cloth Standard Library root directory if resolved successfully;
+	/// otherwise, null if the resolution fails or if the specified name is not recognized.
+	/// </returns>
 	private static string? ResolveStdlibRoot(string name) {
-		// First-iteration: hardcode 'cloth' to the in-repo Standard-Library sibling of the user project.
-		// Real package fetching is deferred.
 		if (name != "cloth") return null;
-		// Walk upward from this file's typical location: F:\Cloth\Compiler -> F:\Cloth\Standard-Library
-		var candidates = new[] {
-			@"F:\Cloth\Standard-Library",
-			Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Standard-Library")
-		};
-		foreach (var c in candidates) {
-			var resolved = Path.GetFullPath(c);
-			if (Directory.Exists(resolved) && File.Exists(Path.Combine(resolved, "build.toml")))
-				return resolved;
+
+		// Explicit override via environment variable. Takes precedence over everything.
+		var envPath = Environment.GetEnvironmentVariable("CLOTH_STDLIB_PATH");
+		if (!string.IsNullOrWhiteSpace(envPath) && IsValidStdlibRoot(envPath))
+			return Path.GetFullPath(envPath);
+
+		// Bundled next to the compiler binary (typical for installed/published builds —
+		// the .csproj's Content include copies Standard-Library/ into the output directory).
+		var bundled = Path.Combine(AppContext.BaseDirectory, "Standard-Library");
+		if (IsValidStdlibRoot(bundled)) return Path.GetFullPath(bundled);
+
+		// Walk up from the binary's directory looking for a `Standard-Library`
+		// sibling. Handles `dotnet run` from inside the repo where the binary lives many levels
+		// deep under bin/<config>/<tfm>/.
+		var dir = new DirectoryInfo(AppContext.BaseDirectory);
+		while (dir != null) {
+			var candidate = Path.Combine(dir.FullName, "Standard-Library");
+			if (IsValidStdlibRoot(candidate)) return Path.GetFullPath(candidate);
+			dir = dir.Parent;
 		}
 
 		return null;
 	}
 
+	/// <summary>
+	/// Validates whether the specified path qualifies as a valid root directory for the Cloth Standard Library.
+	/// A valid root directory must exist and contain the "build.toml" file required for build configuration.
+	/// </summary>
+	/// <param name="path">The file system path to be validated as a potential Standard Library root.</param>
+	/// <returns>
+	/// True if the specified path exists and includes a "build.toml" file, otherwise false.
+	/// </returns>
+	private static bool IsValidStdlibRoot(string path) =>
+		Directory.Exists(path) && File.Exists(Path.Combine(path, "build.toml"));
+
+	/// <summary>
+	/// Retrieves the root directory path for storing user-specific cached libraries and assets used by the compiler.
+	/// This directory is utilized to store shared resources that can be reused across multiple projects or builds.
+	/// </summary>
+	/// <returns>
+	/// The full path to the root directory designated for user-specific cache storage.
+	/// </returns>
 	private static string UserCacheRoot() =>
 		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cloth", "lib");
 
+	/// <summary>
+	/// Constructs the directory path for caching a standard library based on the provided library name and version.
+	/// This directory is used to store and retrieve compiled library binaries for reuse in subsequent builds or executions.
+	/// </summary>
+	/// <param name="name">
+	/// The name of the library whose cache directory is being constructed.
+	/// </param>
+	/// <param name="version">
+	/// The version of the library associated with the cache directory. This allows different versions of a library to have separate cache paths.
+	/// </param>
+	/// <returns>
+	/// The full path to the directory designated for caching the specified library and version.
+	/// </returns>
 	private static string StdlibCacheDir(string name, string version) =>
 		Path.Combine(UserCacheRoot(), $"{name}-{version}");
 
-	// -------------------------------------------------------------------------
-	// External tool invocations
-	// -------------------------------------------------------------------------
-
+	/// <summary>
+	/// Invokes the Clang compiler to generate the target output binary from the provided LLVM IR and additional inputs.
+	/// This method attempts to execute the "clang" tool with the specified arguments and writes the resulting executable
+	/// to the build output directory. If Clang is not found in the system's PATH, a manual invocation command is suggested.
+	/// </summary>
+	/// <param name="llPath">
+	/// The full path to the LLVM IR file that serves as input for the Clang compiler.
+	/// </param>
+	/// <param name="config">
+	/// The build configuration, which provides project-level details such as the name of the target executable and other build parameters.
+	/// </param>
+	/// <param name="projectRoot">
+	/// The root directory of the project, which is used to determine the build output directory.
+	/// </param>
+	/// <param name="extraInputs">
+	/// An enumerable collection of additional input files that are passed to the Clang compiler during execution.
+	/// </param>
+	/// <exception cref="FileNotFoundException">
+	/// Thrown when the Clang tool is not found in the system's PATH.
+	/// </exception>
 	private static void InvokeClang(string llPath, ClothConfig config, string projectRoot, IEnumerable<string> extraInputs) {
 		var buildDir = Path.Combine(projectRoot, "build");
 		var exeName = config.Project.Name + (OperatingSystem.IsWindows() ? ".exe" : "");
@@ -214,8 +340,21 @@ public class Compiler {
 		}
 	}
 
-	// Runs an external tool; throws FileNotFoundException if the tool is missing,
-	// exits the process if the tool returns a non-zero code.
+	/// <summary>
+	/// Runs an external tool using the specified command and arguments. This method throws
+	/// a <see cref="FileNotFoundException"/> if the specified tool is missing, and terminates
+	/// the process if the tool returns a non-zero exit code.
+	/// </summary>
+	/// <param name="tool">
+	/// The name or path of the external tool to execute. This must be a tool available in the system's PATH or
+	/// specified with a full or relative file path.
+	/// </param>
+	/// <param name="args">
+	/// An array of arguments to pass to the external tool during execution.
+	/// </param>
+	/// <exception cref="FileNotFoundException">
+	/// Thrown when the specified tool cannot be found in the system's PATH or when the tool fails to start.
+	/// </exception>
 	private static void RunTool(string tool, string[] args) {
 		var psi = new ProcessStartInfo {
 			FileName = tool,

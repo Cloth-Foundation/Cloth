@@ -9,6 +9,7 @@
     <ItemGroup>
         <Compile Include="Flags.fs"/>
         <Compile Include="DispatchResult.fs"/>
+        <Compile Include="Cleanup.fs" />
         <Compile Include="Executor\Lexer.fs"/>
         <Compile Include="Executor\Help.fs"/>
         <Compile Include="Executor\Parser.fs"/>
@@ -21,6 +22,19 @@
     <ItemGroup>
         <ProjectReference Include="..\Compiler\Compiler.csproj"/>
         <ProjectReference Include="..\Frontend\Frontend.csproj"/>
+    </ItemGroup>
+
+    <!--
+        Bundle the standard library next to the compiler binary on every build/publish so the
+        runtime ResolveStdlibRoot's "next to the binary" step finds it without manual setup.
+        Excludes the stdlib's own build artifacts and speculative content.
+    -->
+    <ItemGroup>
+        <Content Include="..\Standard-Library\**\*"
+                 Exclude="..\Standard-Library\build\**\*;..\Standard-Library\_unfinished\**\*">
+            <Link>Standard-Library\%(RecursiveDir)%(Filename)%(Extension)</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 
 </Project>
