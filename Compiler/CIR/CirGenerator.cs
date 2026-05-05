@@ -335,8 +335,7 @@ public sealed class CirGenerator {
 		// promotion applies — same pattern as LowerVarDecl and LowerReturn.
 		var lhsType = _typer.InferType(targetExpr);
 		var rhsType = _typer.InferType(valueExpr);
-		if (lhsType != null && rhsType != null && lhsType != rhsType
-		    && TypeInference.IsLosslessPromotion(rhsType, lhsType)) {
+		if (lhsType != null && rhsType != null && lhsType != rhsType && TypeInference.IsLosslessPromotion(rhsType, lhsType)) {
 			value = new CirExpr.Cast(value, new CirType.Named(lhsType), IsSafe: false);
 		}
 

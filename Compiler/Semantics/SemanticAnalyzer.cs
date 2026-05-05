@@ -353,6 +353,7 @@ public class SemanticAnalyzer {
 				break;
 			case Expression.MemberAccess maExpr:
 				WalkExpr(maExpr.Target, filePath);
+				ValidateMemberAccess(maExpr, filePath);
 				break;
 			case Expression.Index idx:
 				WalkExpr(idx.Target, filePath);
@@ -416,6 +417,19 @@ public class SemanticAnalyzer {
 		_ => false
 	};
 
+	// Validate that a value-position member access (e.g. `x.foo`) is happening on a value
+	// whose type can actually have members. Primitives like `i32`, `string`, `bool` don't
+	// have user-accessible fields — accessing one is a bug we should catch early.
+	//
+	// Method calls on primitives (`x.foo()`) take a different path through ValidateCall,
+	// which already produces S009/S010 — this check only fires on field-access shapes.
+	private void ValidateMemberAccess(Expression.MemberAccess ma, string filePath) {
+		var targetType = _typer.InferType(ma.Target);
+		if (targetType == null) return; // can't infer — skip
+		if (!TypeInference.IsKnownPrimitive(targetType)) return; // probably a class instance
+		SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot access field '{ma.Member}' on '{targetType}' (not a class)").Render();
+	}
+
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
 	// Same rule as `let T x = init` and `return value;`. Augmented ops (`+=`, etc.) follow
 	// the same shape — the produced value-after-op must still fit the target.
@@ -434,10 +448,7 @@ public class SemanticAnalyzer {
 		if (rhsType == null) return; // can't infer source type — skip validation
 		if (lhsType == rhsType) return;
 		if (TypeInference.IsLosslessPromotion(rhsType, lhsType)) return;
-		SemanticError.AssignTypeMismatch
-			.WithFile(filePath)
-			.WithMessage($"expected '{lhsType}', got '{rhsType}'")
-			.Render();
+		SemanticError.AssignTypeMismatch.WithFile(filePath).WithMessage($"expected '{lhsType}', got '{rhsType}'").Render();
 	}
 
 	// Validate `return value;` against the enclosing function's declared return type.
