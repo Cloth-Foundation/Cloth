@@ -174,7 +174,7 @@ public class Lexer {
 			if (metaKw.HasValue) return (TokenType.Meta, null, metaKw);
 		}
 
-		var kw = Keywords.GetKeywordFromLexeme(lexeme);
+		var kw = Keywords.GetKeywordFromString(lexeme);
 		if (kw.HasValue) return (TokenType.Keyword, kw, null);
 
 		return (TokenType.Identifier, null, null);
@@ -373,7 +373,7 @@ public class Lexer {
 				var endCol = _column;
 				var lexeme = op;
 				_afterColonColon = op == "::";
-				var opKind = Operators.GetOperatorFromLexeme(op);
+				var opKind = Operators.GetOperatorFromString(op);
 				return MakeToken(TokenType.Operator, lexeme, lexeme, startIndex, endIndex, startLine, startCol, endLine, endCol, op: opKind);
 			}
 
@@ -385,7 +385,7 @@ public class Lexer {
 			var endCol = _column;
 			var lexeme = Slice(startIndex, endIndex);
 			_afterColonColon = false;
-			var opKind = Operators.GetOperatorFromLexeme(lexeme);
+			var opKind = Operators.GetOperatorFromString(lexeme);
 			return MakeToken(TokenType.Operator, lexeme, lexeme, startIndex, endIndex, startLine, startCol, endLine, endCol, op: opKind);
 		}
 

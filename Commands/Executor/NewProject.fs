@@ -9,7 +9,9 @@ open Compiler.Configs
 open Compiler.Configs.Sections
 
 let private normalizeProjectName (path: string) =
-    let name = Path.GetFileName(Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+    let name =
+        Path.GetFileName(Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+
     if String.IsNullOrWhiteSpace(name) then
         "MyProject"
     else
@@ -20,30 +22,17 @@ let private createBuildToml (projectDir: string) =
     let projectName = normalizeProjectName projectDir
 
     let project =
-        ProjectSection(
-            Name = projectName,
-            Version = "0.1.0",
-            Authors = [| "me" |],
-            Description = "A Cloth project",
-            Url = null
-        )
+        ProjectSection(Name = projectName, Version = "0.1.0", Authors = [| "me" |], Description = "A Cloth project", Url = null)
 
     let build =
-        BuildSection(
-            Target = "x86_64",
-            OutputType = OutputType.Executable,
-            Source = "src"
-        )
+        BuildSection(Target = "x86_64", OutputType = OutputType.Executable, Source = "src")
 
     let dependencies = Dictionary<string, string>()
     dependencies.Add(("cloth", "2026.0.1A"))
 
     let config =
-        ClothConfig(
-            Project = project,
-            Build = build,
-            Dependencies = dependencies
-        )
+        ClothConfig(Project = project, Build = build, Dependencies = dependencies)
+
     ConfigWriter.Write(buildTomlPath, config)
 
 
@@ -64,5 +53,5 @@ let runNewProject (path: string, args: string[]) =
             else
                 createBuildToml projectDir
                 Success $"Created new Cloth project: {projectDir}"
-    with
-    | ex -> Failure $"Error creating project: {ex.Message}"
+    with ex ->
+        Failure $"Error creating project: {ex.Message}"

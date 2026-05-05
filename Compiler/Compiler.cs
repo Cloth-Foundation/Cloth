@@ -60,11 +60,15 @@ public class Compiler {
 			}
 		}
 
-		var analyzer = new SemanticAnalyzer(units, sourceRoot, externUnits);
+		// Build the cross-cutting symbol registry once over all units (user + extern). Both the
+		// analyzer and CIR generator read from the same registry — keeps their views in sync.
+		var symbols = SymbolRegistry.Build(units, externUnits);
+
+		var analyzer = new SemanticAnalyzer(units, sourceRoot, symbols, externUnits);
 		analyzer.Analyze(requireMain: config.Build.OutputType == OutputType.Executable);
 
-		var cirGenerator = new CirGenerator();
-		var module = cirGenerator.Generate(units, analyzer.InferredVarTypes, externUnits);
+		var cirGenerator = new CirGenerator(symbols);
+		var module = cirGenerator.Generate(units, analyzer.InferredVarTypes);
 
 		var emitter = new LlvmEmitter(module, config, _projectRoot);
 		var llPath = emitter.Emit();

@@ -72,7 +72,7 @@ public static class Operators {
 		'#', '$', '?', '`'
 	};
 
-	public static Operator GetOperatorFromLexeme(string lexeme) {
+	public static Operator GetOperatorFromString(string lexeme) {
 		return lexeme switch {
 			"..." => Operator.DotDotDot,
 			".." => Operator.DotDot,
@@ -126,7 +126,7 @@ public static class Operators {
 		};
 	}
 
-	public static string GetLexemeFromOperator(Operator op) {
+	public static string GetStringFromOperator(Operator op) {
 		return op switch {
 			Operator.DotDotDot => "...",
 			Operator.DotDot => "..",

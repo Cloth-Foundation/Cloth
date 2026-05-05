@@ -30,6 +30,11 @@ public class SemanticError : Exception {
 	public static readonly SemanticError TypeMismatch = new("S006", "declared type does not match initializer", true);
 	public static readonly SemanticError CannotInferType = new("S007", "cannot infer type from initializer", true);
 	public static readonly SemanticError ImportNotFound = new("S008", "imported name does not exist in target class", true);
+	public static readonly SemanticError NoMatchingOverload = new("S009", "no matching overload", true);
+	public static readonly SemanticError UndefinedIdentifier = new("S00A", "undefined identifier", true);
+	public static readonly SemanticError ReturnTypeMismatch = new("S00B", "return value does not match declared return type", true);
+	public static readonly SemanticError MissingReturn = new("S00C", "function does not return on every path", true);
+	public static readonly SemanticError AssignTypeMismatch = new("S00D", "assignment value does not match target type", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);

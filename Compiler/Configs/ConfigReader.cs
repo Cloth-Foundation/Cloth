@@ -11,7 +11,6 @@ using Tomlyn;
 namespace Compiler.Configs;
 
 public static class ConfigReader {
-
 	private static readonly TomlSerializerOptions Options = new() {
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		WriteIndented = true
@@ -23,5 +22,4 @@ public static class ConfigReader {
 		if (config is null) throw new InvalidOperationException($"Failed to read config file: {path}");
 		return config;
 	}
-
 }

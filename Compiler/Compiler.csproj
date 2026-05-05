@@ -9,7 +9,7 @@
 
     <ItemGroup>
         <Folder Include="CIR\"/>
-        <Folder Include="Configs\Profiles\" />
+        <Folder Include="Configs\Profiles\"/>
         <Folder Include="Link\"/>
         <Folder Include="LLVM\"/>
         <Folder Include="Semantics\"/>

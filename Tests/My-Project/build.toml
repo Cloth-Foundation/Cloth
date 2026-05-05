@@ -1,11 +1,11 @@
-﻿[Project]
+[project]
 name = "My-Project"
 version = "0.0.1"
 
-[Build]
-output = "executable"
+[build]
 target = "x86_64"
+outputType = 0
 source = "src"
 
-[Dependencies]
+[dependencies]
 cloth = "2026.0.1A"

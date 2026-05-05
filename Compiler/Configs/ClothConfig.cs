@@ -27,5 +27,4 @@ public record ClothConfig {
 		OutputType.Object => "object",
 		_ => throw new ArgumentException($"Invalid output type: {type}")
 	};
-
 }
