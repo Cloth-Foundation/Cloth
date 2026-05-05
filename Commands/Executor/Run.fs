@@ -2,8 +2,12 @@ module Commands.Executor.Run
 
 open System
 open System.Diagnostics
+open Commands.Cleanup
 open Commands.DispatchResult
 open Compiler.Configs
+
+let clean (dir: string) =
+    cleanup (dir, CLEANUP_EXTENSIONS)
 
 let runRun (path: string, _args: string[]) =
     let tomlPath = IO.Path.Combine(path, "build.toml")
@@ -30,6 +34,7 @@ let runRun (path: string, _args: string[]) =
             let exePath = IO.Path.Combine(buildDir, exeName)
 
             if not (IO.File.Exists(exePath)) then
+                clean buildDir
                 Failure $"expected binary '{exePath}' was not produced by build"
             else
                 let psi = ProcessStartInfo()
@@ -40,6 +45,7 @@ let runRun (path: string, _args: string[]) =
 
                 use proc = Process.Start(psi)
                 proc.WaitForExit()
+                clean buildDir
 
                 if proc.ExitCode = 0 then
                     Success ""

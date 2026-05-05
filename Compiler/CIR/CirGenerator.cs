@@ -508,7 +508,7 @@ public sealed class CirGenerator {
 	// Routed through ResolveOverload so the registered overload's mangled symbol is used
 	// (and cross-project extern declares fire correctly when the user-project lowers this).
 	private CirExpr BuildStringConcatCall(Expression left, Expression right) {
-		const string fqn = "cloth.lang.String._concat";
+		const string fqn = "cloth.lang.String.concat";
 		var rawArgs = new List<Expression> { left, right };
 		var loweredArgs = new List<CirExpr> { LowerExpr(left), LowerExpr(right) };
 		var resolved = _typer.ResolveOverload(fqn, rawArgs);
