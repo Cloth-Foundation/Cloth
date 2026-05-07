@@ -386,6 +386,7 @@ public class SemanticAnalyzer {
 		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method)
 		if (_symbols.KnownClasses.Contains(id.Name)) return; // bare class name
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) return; // same-class field (implicit this)
 		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{id.Name}' is not defined in this scope").Render();
 	}
 
@@ -426,8 +427,18 @@ public class SemanticAnalyzer {
 	private void ValidateMemberAccess(Expression.MemberAccess ma, string filePath) {
 		var targetType = _typer.InferType(ma.Target);
 		if (targetType == null) return; // can't infer — skip
-		if (!TypeInference.IsKnownPrimitive(targetType)) return; // probably a class instance
-		SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot access field '{ma.Member}' on '{targetType}' (not a class)").Render();
+		if (TypeInference.IsKnownPrimitive(targetType)) {
+			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot access field '{ma.Member}' on '{targetType}' (not a class)").Render();
+			return;
+		}
+
+		// Target is a class instance: verify the member exists as a field or method.
+		if (!_symbols.KnownClasses.Contains(targetType)) return; // unknown class — skip
+		var hasField = _symbols.Fields.TryGetValue(targetType, out var fields) && fields.Any(f => f.Name == ma.Member);
+		var hasMethod = _symbols.Overloads.ContainsKey($"{targetType}.{ma.Member}");
+		if (!hasField && !hasMethod) {
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a field or method of '{targetType}'").Render();
+		}
 	}
 
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.

@@ -30,6 +30,12 @@ public sealed class SymbolRegistry {
 	// Currently informational; held for future passes that need to distinguish.
 	public HashSet<string> ExternMethodSymbols { get; } = new();
 
+	// Class FQN → declared instance fields. Populated alongside KnownClasses so that
+	// scope resolution inside an instance method/constructor body can fall back to
+	// `this.<field>` when a bare identifier isn't a local. Visibility is recorded for
+	// the future cross-class access pass; current usage ignores it.
+	public Dictionary<string, List<FieldInfo>> Fields { get; } = new();
+
 	public static SymbolRegistry Build(IEnumerable<(CompilationUnit Unit, string FilePath)> units, IEnumerable<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
 		var registry = new SymbolRegistry();
 		foreach (var (unit, _) in units)
@@ -49,18 +55,31 @@ public sealed class SymbolRegistry {
 			var typeFqn = TypeFqn(moduleFqn, c.Name);
 			KnownClasses.Add(typeFqn);
 			foreach (var member in c.Members) {
-				if (member is not MemberDeclaration.Method { Declaration: var m }) continue;
-				var externSymbol = TryGetExternSymbol(m.Annotations);
-				var fqn = $"{typeFqn}.{m.Name}";
-				var paramTypes = m.Parameters.Select(p => p.Type.Base is BaseType.Named n ? TypeInference.Canonicalize(n.Name) : "any").ToList();
-				var returnTypeCanonical = m.ReturnType.Base is BaseType.Named rn ? TypeInference.Canonicalize(rn.Name) : m.ReturnType.Base is BaseType.Void ? "void" : "any";
-				var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
+				switch (member) {
+					case MemberDeclaration.Method { Declaration: var m }:
+					{
+						var externSymbol = TryGetExternSymbol(m.Annotations);
+						var fqn = $"{typeFqn}.{m.Name}";
+						var paramTypes = m.Parameters.Select(p => p.Type.Base is BaseType.Named n ? TypeInference.Canonicalize(n.Name) : "any").ToList();
+						var returnTypeCanonical = m.ReturnType.Base is BaseType.Named rn ? TypeInference.Canonicalize(rn.Name) : m.ReturnType.Base is BaseType.Void ? "void" : "any";
+						var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
 
-				if (!Overloads.TryGetValue(fqn, out var list))
-					Overloads[fqn] = list = new();
-				list.Add(new MethodOverload(symbol, paramTypes, returnTypeCanonical, externSymbol != null, asExtern));
+						if (!Overloads.TryGetValue(fqn, out var list))
+							Overloads[fqn] = list = new();
+						list.Add(new MethodOverload(symbol, paramTypes, returnTypeCanonical, externSymbol != null, asExtern));
 
-				if (asExtern) ExternMethodSymbols.Add(symbol);
+						if (asExtern) ExternMethodSymbols.Add(symbol);
+						break;
+					}
+					case MemberDeclaration.Field { Declaration: var f }:
+					{
+						var fieldType = f.TypeExpression.Base is BaseType.Named ftn ? TypeInference.Canonicalize(ftn.Name) : "any";
+						if (!Fields.TryGetValue(typeFqn, out var fieldList))
+							Fields[typeFqn] = fieldList = new();
+						fieldList.Add(new FieldInfo(f.Name, fieldType, f.Visibility));
+						break;
+					}
+				}
 			}
 		}
 	}
@@ -89,3 +108,7 @@ public sealed class SymbolRegistry {
 // (post-alias) names; MangledSymbol is either the literal C symbol from `@Extern` or the
 // dotted CIR FQN that the LLVM emitter then mangles to its final form.
 public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, string ReturnType, bool IsExtern, bool IsCrossProject);
+
+// One declared instance field on a class. CanonicalType is post-alias (e.g. "i32"); Visibility
+// is captured but not currently enforced — same-class access is what's wired up today.
+public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility);

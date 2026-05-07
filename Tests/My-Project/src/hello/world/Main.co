@@ -4,12 +4,11 @@ import cloth.io.Out::{ println };
 
 public class (string[] args) {
 
+    private i32 x = 10;
+
     public Main {
         println(hello() + " " + world());
-
-        i32 x = 5;
-        x = 100;
-        println(x);
+        println(this.x);
     }
 
     public ~Main() {
