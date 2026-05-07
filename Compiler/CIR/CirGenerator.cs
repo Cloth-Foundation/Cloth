@@ -136,11 +136,20 @@ public sealed class CirGenerator {
 		foreach (var p in decl.PrimaryParameters)
 			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, IsAtomic: false, null));
 
+		// Pre-collect declared field initializers so each constructor can emit them as
+		// `this.<field> = <init>` ahead of the user-written body. Source order is preserved
+		// so a later initializer can reference an earlier field via implicit `this`.
+		var fieldInitializers = decl.Members
+			.OfType<MemberDeclaration.Field>()
+			.Where(f => f.Declaration.Initializer != null)
+			.Select(f => (f.Declaration.Name, f.Declaration.Initializer!))
+			.ToList();
+
 		var prev = _currentTypeFqn;
 		_currentTypeFqn = typeFqn;
 		try {
 			foreach (var member in decl.Members)
-				LowerMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields);
+				LowerMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields, fieldInitializers);
 		}
 		finally {
 			_currentTypeFqn = prev;
@@ -154,7 +163,7 @@ public sealed class CirGenerator {
 		var fields = new List<CirField>();
 
 		foreach (var member in decl.Members)
-			LowerMember(member, typeFqn, [], decl.Name, filePath, fields);
+			LowerMember(member, typeFqn, [], decl.Name, filePath, fields, []);
 
 		return new CirTypeDecl.Struct(typeFqn, fields);
 	}
@@ -169,7 +178,7 @@ public sealed class CirGenerator {
 	// Member lowering
 	// -------------------------------------------------------------------------
 
-	private void LowerMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields) {
+	private void LowerMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields, List<(string Name, Expression Init)> fieldInitializers) {
 		switch (member) {
 			case MemberDeclaration.Field f:
 				fields.Add(LowerField(f.Declaration));
@@ -180,7 +189,7 @@ public sealed class CirGenerator {
 				break;
 
 			case MemberDeclaration.Constructor c:
-				_functions.Add(LowerConstructor(c.Declaration, typeFqn, primaryParams, className));
+				_functions.Add(LowerConstructor(c.Declaration, typeFqn, primaryParams, className, fieldInitializers));
 				break;
 
 			case MemberDeclaration.Destructor d:
@@ -197,7 +206,7 @@ public sealed class CirGenerator {
 		}
 	}
 
-	private CirFunction LowerConstructor(ConstructorDeclaration decl, string typeFqn, List<Parameter> primaryParams, string className) {
+	private CirFunction LowerConstructor(ConstructorDeclaration decl, string typeFqn, List<Parameter> primaryParams, string className, List<(string Name, Expression Init)> fieldInitializers) {
 		var thisParam = new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this");
 		var primaryCirParams = primaryParams.Select(p => new CirParam(LowerType(p.Type), p.Name));
 		var explicitParams = decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name));
@@ -206,12 +215,18 @@ public sealed class CirGenerator {
 		allParams.AddRange(primaryCirParams);
 		allParams.AddRange(explicitParams);
 
-		// Desugar primary params: this->name = name
-		var prologue = primaryParams.Select(p => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), p.Name), CirAssignOp.Assign, new CirExpr.Local(p.Name))).ToList();
-
 		BeginFunctionScope(primaryParams.Concat(decl.Parameters));
 		_currentReturnType = "void";
-		var body = prologue.Concat(LowerBlock(decl.Body)).ToList();
+
+		// Primary-param prologue: `this.<name> = <name>` for each primary parameter.
+		var primaryPrologue = primaryParams.Select(p => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), p.Name), CirAssignOp.Assign, new CirExpr.Local(p.Name))).ToList();
+
+		// Field-initializer prologue: `this.<field> = <init-expr>` for each declared default.
+		// Runs after primary-param assignments so initializers can reference primary fields,
+		// and before the user-written body so the body sees fully-initialized state.
+		var fieldPrologue = fieldInitializers.Select(fi => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), fi.Name), CirAssignOp.Assign, LowerExpr(fi.Init))).ToList();
+
+		var body = primaryPrologue.Concat(fieldPrologue).Concat(LowerBlock(decl.Body)).ToList();
 
 		return new CirFunction(MangleCtor(typeFqn, className), CirFunctionKind.Constructor, allParams, new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
@@ -447,10 +462,16 @@ public sealed class CirGenerator {
 		_ => throw CirError.UnsupportedExpression.WithMessage($"unhandled: {expr.GetType().Name}").Render()
 	};
 
-	private CirExpr ResolveIdentifier(string name) =>
-		_importMap.TryGetValue(name, out var fqn)
-			? new CirExpr.Local(fqn) // imported name — caller context determines call vs value
-			: new CirExpr.Local(name);
+	private CirExpr ResolveIdentifier(string name) {
+		if (_importMap.TryGetValue(name, out var fqn))
+			return new CirExpr.Local(fqn); // imported name — caller context determines call vs value
+		// Implicit `this.<field>`: bare identifier with no local in scope, but the enclosing
+		// class declares a field by that name. Mirrors SemanticAnalyzer.ValidateIdentifier's
+		// fallback so analyzer-accepted programs lower correctly.
+		if (!_typer.TryGetLocalType(name, out _) && !string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == name))
+			return new CirExpr.FieldAccess(new CirExpr.ThisPtr(), name);
+		return new CirExpr.Local(name);
+	}
 
 	private CirExpr LowerCall(Expression.Call call) {
 		var args = call.Arguments.Select(LowerExpr).ToList();

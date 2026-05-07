@@ -467,10 +467,8 @@ public class Parser {
 		var name = ExpectIdentifier();
 
 		Expression? initializer = null;
-		if (ConsumeOp(Operator.Equal)) {
-			// TODO: parse initializer expression; skip to ';' for now
-			while (!CheckOperator(Operator.Semicolon) && !AtEof()) Advance();
-		}
+		if (ConsumeOp(Operator.Equal))
+			initializer = ExpressionParser.ParseExpression();
 
 		var end = ExpectSemiColon();
 		return new FieldDeclaration(annotations, visibility, modifier, type, name, initializer, null, TokenSpan.Merge(start, end));

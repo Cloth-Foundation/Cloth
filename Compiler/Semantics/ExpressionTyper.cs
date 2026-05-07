@@ -48,7 +48,24 @@ public sealed class ExpressionTyper {
 
 		switch (expr) {
 			case Expression.Identifier id:
-				return _localTypes.TryGetValue(id.Name, out var ty) ? ty : null;
+				if (_localTypes.TryGetValue(id.Name, out var ty)) return ty;
+				// Fall back to a field of the enclosing class — bare `x` inside an instance
+				// method/constructor refers to `this.x` when no local shadows it.
+				if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var idFields)) {
+					var idFld = idFields.FirstOrDefault(f => f.Name == id.Name);
+					if (idFld != null) return idFld.CanonicalType;
+				}
+				return null;
+
+			case Expression.MemberAccess ma:
+			{
+				var targetType = InferType(ma.Target);
+				if (targetType != null && _symbols.Fields.TryGetValue(targetType, out var maFields)) {
+					var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member);
+					if (maFld != null) return maFld.CanonicalType;
+				}
+				return null;
+			}
 
 			case Expression.Binary b:
 			{
