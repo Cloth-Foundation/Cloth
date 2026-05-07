@@ -89,6 +89,14 @@ public sealed class ExpressionTyper {
 			case Expression.Cast { TargetType: var tt }:
 				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
 
+			case Expression.New { Type: var nt }:
+				// `new Foo()` types as Foo. Resolve the bare class name through the importMap so
+				// subsequent member access on the result can find the class metadata in registry.
+				if (nt.Base is FrontEnd.Parser.AST.Type.BaseType.Named nn) {
+					return _importMap.TryGetValue(nn.Name, out var mappedFqn) ? mappedFqn : nn.Name;
+				}
+				return null;
+
 			case Expression.This:
 			case Expression.Super:
 				return string.IsNullOrEmpty(_currentTypeFqn) ? null : _currentTypeFqn;
@@ -152,10 +160,19 @@ public sealed class ExpressionTyper {
 			case Expression.MetaAccess metaAccess:
 				candidates.Add($"{ResolveExprPath(metaAccess.Target)}.{metaAccess.Member}");
 				break;
-			case Expression.MemberAccess memberAccess when memberAccess.Target is Expression.Identifier classId:
-				var resolvedClass = _importMap.TryGetValue(classId.Name, out var classFqn) ? classFqn : classId.Name;
-				if (_symbols.KnownClasses.Contains(resolvedClass))
-					candidates.Add($"{resolvedClass}.{memberAccess.Member}");
+			case Expression.MemberAccess memberAccess:
+				// Static dispatch: target is an Identifier naming a class (via importMap or direct).
+				if (memberAccess.Target is Expression.Identifier classId) {
+					var resolvedClass = _importMap.TryGetValue(classId.Name, out var classFqn) ? classFqn : classId.Name;
+					if (_symbols.KnownClasses.Contains(resolvedClass)) {
+						candidates.Add($"{resolvedClass}.{memberAccess.Member}");
+						break;
+					}
+				}
+				// Instance dispatch: target is a value whose inferred type names a known class.
+				var instanceType = InferType(memberAccess.Target);
+				if (instanceType != null && _symbols.KnownClasses.Contains(instanceType))
+					candidates.Add($"{instanceType}.{memberAccess.Member}");
 				break;
 		}
 

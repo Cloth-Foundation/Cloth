@@ -26,6 +26,9 @@ public class SemanticAnalyzer {
 	private ExpressionTyper _typer = null!;
 	private Dictionary<string, string> _importMap = new();
 	private string _currentTypeFqn = "";
+	// Module FQN (e.g. "hello.world") of the file currently being walked. Drives the
+	// `internal` access rule: caller's module must match the target's owning module.
+	private string _currentModuleFqn = "";
 
 	// Canonical return type of the function currently being walked, used to validate
 	// `return value;` statements. "void" for constructors, destructors, and methods
@@ -60,35 +63,65 @@ public class SemanticAnalyzer {
 	// as methods in that class. Only considers classes — modules and other type kinds
 	// aren't currently importable selectively.
 	private void ValidateImports() {
-		var classMethods = new Dictionary<(string Module, string Class), HashSet<string>>();
-		foreach (var (unit, _) in _units.Concat(_externUnits)) {
-			var moduleFqn = string.Join(".", unit.Module.Path);
-			foreach (var typeDecl in unit.Types) {
-				if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
-				var key = (moduleFqn, c.Name);
-				if (!classMethods.TryGetValue(key, out var methods))
-					classMethods[key] = methods = new HashSet<string>();
-				foreach (var member in c.Members) {
-					if (member is MemberDeclaration.Method { Declaration: var m })
-						methods.Add(m.Name);
-				}
-			}
-		}
-
 		foreach (var (unit, filePath) in _units) {
+			var importerModule = string.Join(".", unit.Module.Path);
 			foreach (var import in unit.Imports) {
-				if (import.Items is not ImportDeclaration.ImportItems.Selective sel) continue;
 				if (import.Path.Count < 1) continue;
-				var className = import.Path[^1];
-				var moduleFqn = string.Join(".", import.Path.Take(import.Path.Count - 1));
-				if (!classMethods.TryGetValue((moduleFqn, className), out var methods)) {
-					SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"class '{className}' not found in module '{moduleFqn}'").Render();
-					continue;
-				}
 
-				foreach (var entry in sel.Entries) {
-					if (!methods.Contains(entry.Name)) {
-						SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"'{entry.Name}' is not a method of '{moduleFqn}.{className}'").Render();
+				switch (import.Items) {
+					case ImportDeclaration.ImportItems.Module:
+					{
+						// `import foo.bar.Baz;` — Baz is the class, foo.bar is the module.
+						if (import.Path.Count < 2) continue; // bare module path; nothing to check here
+						var className = import.Path[^1];
+						var moduleFqn = string.Join(".", import.Path.Take(import.Path.Count - 1));
+						var classFqn = string.IsNullOrEmpty(moduleFqn) ? className : $"{moduleFqn}.{className}";
+
+						if (!_symbols.Classes.TryGetValue(classFqn, out var info)) {
+							SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"class '{className}' not found in module '{moduleFqn}'").Render();
+							continue;
+						}
+
+						if (info.Visibility == Visibility.Internal && importerModule != info.OwnerModule)
+							SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import 'internal' class '{classFqn}' from module '{importerModule}'").Render();
+						break;
+					}
+
+					case ImportDeclaration.ImportItems.Selective sel:
+					{
+						var className = import.Path[^1];
+						var moduleFqn = string.Join(".", import.Path.Take(import.Path.Count - 1));
+						var classFqn = string.IsNullOrEmpty(moduleFqn) ? className : $"{moduleFqn}.{className}";
+
+						if (!_symbols.Classes.TryGetValue(classFqn, out var classInfo)) {
+							SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"class '{className}' not found in module '{moduleFqn}'").Render();
+							continue;
+						}
+
+						// The class itself must be reachable from the importer's module.
+						if (classInfo.Visibility == Visibility.Internal && importerModule != classInfo.OwnerModule) {
+							SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import from 'internal' class '{classFqn}' from module '{importerModule}'").Render();
+							continue;
+						}
+
+						foreach (var entry in sel.Entries) {
+							var fqn = $"{classFqn}.{entry.Name}";
+							if (!_symbols.Overloads.TryGetValue(fqn, out var overloads)) {
+								SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"'{entry.Name}' is not a method of '{classFqn}'").Render();
+								continue;
+							}
+
+							// At least one overload must be reachable. Private members can never
+							// be imported (their owner-class wouldn't match the importer's class).
+							var importable = overloads.Any(o =>
+								o.Visibility == Visibility.Public ||
+								(o.Visibility == Visibility.Internal && importerModule == o.OwnerModule));
+							if (!importable) {
+								var sample = overloads[0];
+								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import '{entry.Name}' from '{classFqn}' — {VisibilityWord(sample.Visibility)} members are not accessible from module '{importerModule}'").Render();
+							}
+						}
+						break;
 					}
 				}
 			}
@@ -155,6 +188,7 @@ public class SemanticAnalyzer {
 	private void InferDeclarations(CompilationUnit unit, string filePath) {
 		_importMap = BuildImportMap(unit.Imports);
 		var moduleFqn = string.Join(".", unit.Module.Path);
+		_currentModuleFqn = moduleFqn;
 		foreach (var typeDecl in unit.Types) {
 			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
 			_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? c.Name : $"{moduleFqn}.{c.Name}";
@@ -361,6 +395,7 @@ public class SemanticAnalyzer {
 				break;
 			case Expression.New n:
 				foreach (var a in n.Arguments) WalkExpr(a, filePath);
+				ValidateNewExpression(n, filePath);
 				break;
 			case Expression.Tuple tup:
 				foreach (var e in tup.Elements) WalkExpr(e, filePath);
@@ -383,11 +418,34 @@ public class SemanticAnalyzer {
 
 	private void ValidateIdentifier(Expression.Identifier id, string filePath) {
 		if (_typer.TryGetLocalType(id.Name, out _)) return; // local or parameter
-		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method)
-		if (_symbols.KnownClasses.Contains(id.Name)) return; // bare class name
-		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method
+		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method) — already checked in ValidateImports
+		if (_symbols.KnownClasses.Contains(id.Name)) {
+			ValidateClassReference(id.Name, filePath);
+			return;
+		}
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method — same-class is always accessible
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) return; // same-class field (implicit this)
 		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{id.Name}' is not defined in this scope").Render();
+	}
+
+	// Centralized visibility check. Returns true when the caller is allowed to reach the
+	// target according to Cloth's access rules:
+	//   public   — always accessible.
+	//   internal — caller's module FQN must equal the target's owning module FQN.
+	//   private  — caller's enclosing class FQN must equal the target's owning class FQN.
+	private bool CanAccess(Visibility memberVis, string ownerModule, string ownerClass) => memberVis switch {
+		Visibility.Public => true,
+		Visibility.Internal => _currentModuleFqn == ownerModule,
+		Visibility.Private => !string.IsNullOrEmpty(_currentTypeFqn) && _currentTypeFqn == ownerClass,
+		_ => false
+	};
+
+	private void ValidateClassReference(string classFqn, string filePath) {
+		if (!_symbols.Classes.TryGetValue(classFqn, out var info)) return;
+		// Class FQNs are top-level so `private` is impossible (parser rejects it). Internal
+		// requires same module; public always accessible.
+		if (info.Visibility == Visibility.Internal && _currentModuleFqn != info.OwnerModule)
+			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"class '{classFqn}' is internal to module '{info.OwnerModule}' and cannot be referenced from module '{_currentModuleFqn}'").Render();
 	}
 
 	// Validate that every path through a non-void function ends in a return (or throw).
@@ -432,13 +490,71 @@ public class SemanticAnalyzer {
 			return;
 		}
 
-		// Target is a class instance: verify the member exists as a field or method.
+		// Target is a class instance: verify the member exists as a field or method, then
+		// enforce visibility against the caller's class/module.
 		if (!_symbols.KnownClasses.Contains(targetType)) return; // unknown class — skip
-		var hasField = _symbols.Fields.TryGetValue(targetType, out var fields) && fields.Any(f => f.Name == ma.Member);
-		var hasMethod = _symbols.Overloads.ContainsKey($"{targetType}.{ma.Member}");
-		if (!hasField && !hasMethod) {
-			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a field or method of '{targetType}'").Render();
+
+		if (_symbols.Fields.TryGetValue(targetType, out var fields)) {
+			var field = fields.FirstOrDefault(f => f.Name == ma.Member);
+			if (field != null) {
+				if (!_symbols.Classes.TryGetValue(targetType, out var owner)) return;
+				if (!CanAccess(field.Visibility, owner.OwnerModule, targetType))
+					SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"field '{ma.Member}' on '{targetType}' is {VisibilityWord(field.Visibility)} and not accessible from this scope").Render();
+				return;
+			}
 		}
+
+		// Method-as-value access (without a call) routes here too. Use any overload's
+		// visibility — within a single method name they should agree, but when they don't
+		// we conservatively reject if any overload is reachable.
+		if (_symbols.Overloads.TryGetValue($"{targetType}.{ma.Member}", out var overloads)) {
+			var anyAccessible = overloads.Any(o => CanAccess(o.Visibility, o.OwnerModule, o.OwnerClass));
+			if (!anyAccessible) {
+				var first = overloads[0];
+				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{ma.Member}' on '{targetType}' is {VisibilityWord(first.Visibility)} and not accessible from this scope").Render();
+			}
+			return;
+		}
+
+		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a field or method of '{targetType}'").Render();
+	}
+
+	private static string VisibilityWord(Visibility v) => v switch {
+		Visibility.Public => "public",
+		Visibility.Private => "private",
+		Visibility.Internal => "internal",
+		_ => "?"
+	};
+
+	// Validate a `new Foo(...)` expression: the class itself and the resolved constructor
+	// must both be accessible from the caller's class/module.
+	private void ValidateNewExpression(Expression.New n, string filePath) {
+		if (n.Type.Base is not BaseType.Named named) return;
+		var rawName = named.Name;
+		var classFqn = _importMap.TryGetValue(rawName, out var mapped) ? mapped : rawName;
+
+		if (!_symbols.Classes.TryGetValue(classFqn, out var classInfo)) {
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"class '{rawName}' is not known").Render();
+			return;
+		}
+
+		// Class-level visibility check. (Top-level `private` is rejected by the parser.)
+		if (classInfo.Visibility == Visibility.Internal && _currentModuleFqn != classInfo.OwnerModule) {
+			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"class '{classFqn}' is internal to module '{classInfo.OwnerModule}' and cannot be instantiated from module '{_currentModuleFqn}'").Render();
+			return;
+		}
+
+		// Constructor visibility check. If the class declares no explicit constructors, an
+		// implicit zero-arg one is assumed accessible (matches how primary-param classes work).
+		if (!_symbols.Constructors.TryGetValue(classFqn, out var ctors) || ctors.Count == 0) return;
+
+		var argTypes = n.Arguments.Select(a => _typer.InferType(a)).ToList();
+		var matching = ctors.FirstOrDefault(c => c.ParamTypes.Count == n.Arguments.Count
+			&& c.ParamTypes.Zip(argTypes).All(p => p.Second == null || p.Second == p.First || TypeInference.IsLosslessPromotion(p.Second!, p.First)));
+		if (matching == null) return; // no overload selection — defer; the call shape may yet be valid
+
+		if (!CanAccess(matching.Visibility, matching.OwnerModule, matching.OwnerClass))
+			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"constructor of '{classFqn}' is {VisibilityWord(matching.Visibility)} and not accessible from this scope").Render();
 	}
 
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
@@ -494,12 +610,23 @@ public class SemanticAnalyzer {
 
 	private void ValidateCall(Expression.Call call, string filePath) {
 		var overload = _typer.ResolveCallExpressionOverload(call);
-		if (overload != null) return;
+		if (overload != null) {
+			if (!CanAccess(overload.Visibility, overload.OwnerModule, overload.OwnerClass)) {
+				var calleeName = call.Callee switch {
+					Expression.Identifier id => id.Name,
+					Expression.MetaAccess m => m.Member,
+					Expression.MemberAccess m => m.Member,
+					_ => "?"
+				};
+				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{calleeName}' is {VisibilityWord(overload.Visibility)} on '{overload.OwnerClass}' and not accessible from this scope").Render();
+			}
+			return;
+		}
 
 		// Distinguish "no FQN at all" (S010) from "FQN exists, no overload matches" (S009).
 		var candidates = _typer.GetCalleeCandidates(call);
 		var anyKnown = candidates.Any(_symbols.Overloads.ContainsKey);
-		var calleeName = call.Callee switch {
+		var calleeName2 = call.Callee switch {
 			Expression.Identifier id => id.Name,
 			Expression.MetaAccess m => m.Member,
 			Expression.MemberAccess m => m.Member,
@@ -508,10 +635,10 @@ public class SemanticAnalyzer {
 
 		if (anyKnown) {
 			var argTypes = call.Arguments.Select(a => _typer.InferType(a) ?? "?").ToList();
-			SemanticError.NoMatchingOverload.WithFile(filePath).WithMessage($"no overload of '{calleeName}' matches argument types ({string.Join(", ", argTypes)})").Render();
+			SemanticError.NoMatchingOverload.WithFile(filePath).WithMessage($"no overload of '{calleeName2}' matches argument types ({string.Join(", ", argTypes)})").Render();
 		}
 		else {
-			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{calleeName}' is not a known method or function").Render();
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{calleeName2}' is not a known method or function").Render();
 		}
 	}
 

@@ -1,14 +1,14 @@
 module hello.world;
 
-import cloth.io.Out::{ println };
+import cloth.io.Out::{ println as p };
 
 public class (string[] args) {
 
     private i32 x = 10;
 
     public Main {
-        println(hello() + " " + world());
-        println(this.x);
+        p(hello() + " " + world());
+        p(this.x);
     }
 
     public ~Main() {
@@ -21,4 +21,5 @@ public class (string[] args) {
     public func world(): string {
         return "World";
     }
+
 }

@@ -860,13 +860,14 @@ public class Parser {
 				Advance();
 				return Visibility.Public;
 			case Keyword.Private:
-				Advance();
-				return Visibility.Private;
+				// Top-level `private` is rejected: top-level decls live in a module and
+				// `internal` (same-module access) is the most-restrictive sensible default.
+				throw ParserError.InvalidVisibilityModifier.WithMessage($"top level declarations cannot be {Keywords.GetStringFromKeyword(Keyword.Private)}").WithSpan(_current.Span).Render();
 			case Keyword.Internal:
 				Advance();
 				return Visibility.Internal;
 			// No keyword token, or a keyword that starts the rest of the declaration —
-			// visibility was simply omitted, default to Private without consuming.
+			// visibility was simply omitted, default to Internal without consuming.
 			case null:
 			case Keyword.Class:
 			case Keyword.Struct:
@@ -875,7 +876,7 @@ public class Parser {
 			case Keyword.Trait:
 			case Keyword.Const:
 			case Keyword.Abstract:
-				return Visibility.Private;
+				return Visibility.Internal;
 			default:
 				throw ParserError.InvalidVisibilityModifier.WithMessage($"invalid visibility modifier '{_current.Lexeme}'").WithSpan(_current.Span).Render();
 		}
