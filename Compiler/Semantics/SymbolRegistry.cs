@@ -86,6 +86,19 @@ public sealed class SymbolRegistry {
 		foreach (var typeDecl in unit.Types) {
 			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
 			var typeFqn = TypeFqn(moduleFqn, c.Name);
+
+			// Primary parameters become stored fields on the class instance — they're
+			// addressable via implicit-this from any method, just like declared fields.
+			// Register them in `Fields` so identifier resolution accepts them outside the
+			// constructor scope. Default to `Private` visibility (parsed primary params don't
+			// carry a visibility modifier).
+			foreach (var p in c.PrimaryParameters) {
+				var pType = TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass);
+				if (!Fields.TryGetValue(typeFqn, out var pList))
+					Fields[typeFqn] = pList = new();
+				pList.Add(new FieldInfo(p.Name, pType, Visibility.Private));
+			}
+
 			foreach (var member in c.Members) {
 				switch (member) {
 					case MemberDeclaration.Method { Declaration: var m }:
@@ -93,12 +106,13 @@ public sealed class SymbolRegistry {
 						var externSymbol = TryGetExternSymbol(m.Annotations);
 						var fqn = $"{typeFqn}.{m.Name}";
 						var paramTypes = m.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
+						var paramOwnership = m.Parameters.Select(p => p.Type.Ownership).ToList();
 						var returnTypeCanonical = TypeInference.CanonicalizeTypeExpression(m.ReturnType, resolveClass);
 						var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
 
 						if (!Overloads.TryGetValue(fqn, out var list))
 							Overloads[fqn] = list = new();
-						list.Add(new MethodOverload(symbol, paramTypes, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn));
+						list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn));
 
 						if (asExtern) ExternMethodSymbols.Add(symbol);
 						break;
@@ -116,13 +130,13 @@ public sealed class SymbolRegistry {
 						// Constructor signature = primary class params + explicit ctor params.
 						// Both are part of what `new Foo(...)` passes; both go into the mangled
 						// symbol so overloads with different signatures don't collide.
-						var paramTypes = c.PrimaryParameters.Concat(ctor.Parameters)
-							.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass))
-							.ToList();
+						var combined = c.PrimaryParameters.Concat(ctor.Parameters).ToList();
+						var paramTypes = combined.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
+						var paramOwnership = combined.Select(p => p.Type.Ownership).ToList();
 						var mangledSymbol = paramTypes.Count == 0 ? $"{typeFqn}.{c.Name}" : $"{typeFqn}.{c.Name}__{string.Join("__", paramTypes)}";
 						if (!Constructors.TryGetValue(typeFqn, out var ctorList))
 							Constructors[typeFqn] = ctorList = new();
-						ctorList.Add(new ConstructorInfo(paramTypes, ctor.Visibility, typeFqn, moduleFqn, mangledSymbol));
+						ctorList.Add(new ConstructorInfo(paramTypes, paramOwnership, ctor.Visibility, typeFqn, moduleFqn, mangledSymbol));
 						break;
 					}
 				}
@@ -186,7 +200,9 @@ public sealed class SymbolRegistry {
 // (post-alias) names; MangledSymbol is either the literal C symbol from `@Extern` or the
 // dotted CIR FQN that the LLVM emitter then mangles to its final form. Visibility,
 // OwnerClass, and OwnerModule together drive cross-class/cross-module access checks.
-public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule);
+// ParamOwnership is parallel to ParamTypes — null means "borrow" (default), Transfer
+// means the caller relinquishes ownership at the call site, MutBorrow is mutable borrow.
+public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule);
 
 // One declared instance field on a class. CanonicalType is post-alias (e.g. "i32").
 public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility);
@@ -195,7 +211,7 @@ public sealed record FieldInfo(string Name, string CanonicalType, Visibility Vis
 // `Overloads` because their lookup shape (Expression.New on a class) is distinct.
 // `MangledSymbol` matches the symbol the CirGenerator emits for the constructor, so
 // `Expression.New` resolution can hand the correct name straight to LowerNewExpr.
-public sealed record ConstructorInfo(List<string> ParamTypes, Visibility Visibility, string OwnerClass, string OwnerModule, string MangledSymbol);
+public sealed record ConstructorInfo(List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, Visibility Visibility, string OwnerClass, string OwnerModule, string MangledSymbol);
 
 // Visibility + owning module for a class. Used when checking whether a caller is
 // allowed to reference the class (instantiate, import, name as a type).

@@ -2,18 +2,17 @@
 
 import cloth.io.Out::{ println };
 
-public class () {
+public class (string value) {
 
     public HelloPrinter {
 
     }
 
     public ~HelloPrinter {
-        println("Goodbye World!");
     }
 
-    public func printHelloWorld(): void {
-        println("Hello World!");
+    public func print(): void {
+        println("Hello, " + value);
     }
 
 }

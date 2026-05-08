@@ -69,7 +69,7 @@ public class Compiler(string projectRoot) {
 		// analyzer and CIR generator read from the same registry — keeps their views in sync.
 		var symbols = SymbolRegistry.Build(units, externUnits);
 
-		var analyzer = new SemanticAnalyzer(units, sourceRoot, symbols, externUnits);
+		var analyzer = new SemanticAnalyzer(units, sourceRoot, symbols, externUnits, config.Build.AllowLeaks);
 		analyzer.Analyze(requireMain: config.Build.OutputType == OutputType.Executable);
 
 		var cirGenerator = new CirGenerator(symbols);

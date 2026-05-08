@@ -767,17 +767,6 @@ public class Parser {
 	/// </exception>
 	internal TypeExpression ParseTypeExpression() {
 		var start = _current.Span;
-
-		OwnershipModifier? ownership = null;
-		if (CheckOperator(Operator.Not)) {
-			ownership = OwnershipModifier.Transfer;
-			Advance();
-		}
-		else if (CheckOperator(Operator.And)) {
-			ownership = OwnershipModifier.MutBorrow;
-			Advance();
-		}
-
 		BaseType baseType;
 
 		// Arrays with [] postfix
@@ -841,6 +830,20 @@ public class Parser {
 		var nullable = false;
 		if (CheckOperator(Operator.Question)) {
 			nullable = true;
+			Advance();
+		}
+
+		// Postfix ownership annotation: `Type!` transfers ownership to the callee, `Type&`
+		// is a mutable borrow. Plain `Type` is the implicit (read-only) borrow. Postfix
+		// position matches the user-visible spec; it's parsed last so the modifier sticks
+		// to the fully-formed type (after array suffixes, after nullable).
+		OwnershipModifier? ownership = null;
+		if (CheckOperator(Operator.Not)) {
+			ownership = OwnershipModifier.Transfer;
+			Advance();
+		}
+		else if (CheckOperator(Operator.And)) {
+			ownership = OwnershipModifier.MutBorrow;
 			Advance();
 		}
 
@@ -1089,17 +1092,6 @@ public class Parser {
 	/// </summary>
 	internal TypeExpression? TryParseTypeExpression() {
 		var start = _current.Span;
-
-		OwnershipModifier? ownership = null;
-		if (CheckOperator(Operator.Not)) {
-			ownership = OwnershipModifier.Transfer;
-			Advance();
-		}
-		else if (CheckOperator(Operator.And)) {
-			ownership = OwnershipModifier.MutBorrow;
-			Advance();
-		}
-
 		BaseType baseType;
 
 		if (CheckOperator(Operator.LBracket)) {
@@ -1168,6 +1160,18 @@ public class Parser {
 		var nullable = false;
 		if (CheckOperator(Operator.Question)) {
 			nullable = true;
+			Advance();
+		}
+
+		// Postfix ownership annotation, mirroring ParseTypeExpression. `Type!` = transfer,
+		// `Type&` = mutable borrow, none = implicit borrow.
+		OwnershipModifier? ownership = null;
+		if (CheckOperator(Operator.Not)) {
+			ownership = OwnershipModifier.Transfer;
+			Advance();
+		}
+		else if (CheckOperator(Operator.And)) {
+			ownership = OwnershipModifier.MutBorrow;
 			Advance();
 		}
 

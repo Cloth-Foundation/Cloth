@@ -14,12 +14,21 @@ public class () {
         v = x;
     }
 
+    public ~Foo {
+    }
+
     public func get(): i32 {
         return v;
     }
 
     public func combine(Foo other): i32 {
         return v + other.get();
+    }
+
+    public func consume(Foo! other): i32 {
+        let result = v + other.get();
+        delete other;
+        return result;
     }
 
     public func clone(): Foo {
