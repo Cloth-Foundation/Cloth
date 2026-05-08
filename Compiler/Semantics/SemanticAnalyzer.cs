@@ -50,14 +50,15 @@ public class SemanticAnalyzer {
 	// merged across branches/loops alongside `_deletedNames`.
 	private Dictionary<string, HashSet<string>> _aliasGroups = new();
 
-	// Phase 4 — owned-local leak detection. `_ownedLocals` records `local:<name>` keys
-	// that own a heap allocation in this function frame (added at `let x = new Foo()`,
-	// at owning-call returns, and at `Type!` parameter entry). `_consumedAllPaths` tracks
-	// which of those have been consumed (delete / return / transfer-call / move-into-field)
-	// on EVERY reachable path — branches use intersect-merge so a name is only "consumed"
-	// after a conditional if every branch consumed it. At end-of-function, any owned name
-	// not in `_consumedAllPaths` fires S012.
-	private HashSet<string> _ownedLocals = new();
+	// Leak detection. `_ownedKeys` records keys that own a heap allocation
+	// (added at `let x = new Foo()`, at `this.f = new Foo()`, at owning-call returns,
+	// and at `Type!` parameter entry). Both `local:<name>` and `field:<name>` are tracked
+	// so reassignment-overwrite checks fire for either. `_consumedAllPaths` tracks which
+	// of those have been consumed (delete / return / transfer-call / move-into-field) on
+	// EVERY reachable path — branches use intersect-merge so a name is only "consumed"
+	// after a conditional if every branch consumed it. At end-of-function, any owned
+	// LOCAL not in `_consumedAllPaths` fires S012 (fields persist with the instance).
+	private HashSet<string> _ownedKeys = new();
 	private HashSet<string> _consumedAllPaths = new();
 
 	// Canonical return type of the function currently being walked, used to validate
@@ -69,7 +70,7 @@ public class SemanticAnalyzer {
 	// Keyed by the VarDeclStmt's Span (TokenSpan is a reference type, so identity is stable).
 	public Dictionary<TokenSpan, TypeExpression> InferredVarTypes { get; } = new();
 
-	// When true, Phase 4's S012 LeakedOwnedValue is rendered as a warning (no exit) so the
+	// When true, S012 LeakedOwnedValue is rendered as a warning (no exit) so the
 	// build still completes. Wired from build.toml's `[build] allowLeaks` flag.
 	private readonly bool _allowLeaks;
 
@@ -259,7 +260,7 @@ public class SemanticAnalyzer {
 		_deletedNames = new HashSet<string>();
 		_paramOwnership = new Dictionary<string, OwnershipModifier?>();
 		_aliasGroups = new Dictionary<string, HashSet<string>>();
-		_ownedLocals = new HashSet<string>();
+		_ownedKeys = new HashSet<string>();
 		_consumedAllPaths = new HashSet<string>();
 		foreach (var p in parameters) {
 			if (p.Type.Base is BaseType.Named n)
@@ -268,7 +269,7 @@ public class SemanticAnalyzer {
 			// `Type!` parameters transfer ownership IN — the function body now owns the
 			// allocation and is responsible for delete / return / transfer / store-in-field.
 			if (p.Type.Ownership == OwnershipModifier.Transfer)
-				_ownedLocals.Add($"local:{p.Name}");
+				_ownedKeys.Add($"local:{p.Name}");
 		}
 	}
 
@@ -303,14 +304,17 @@ public class SemanticAnalyzer {
 		}
 	}
 
-	// Phase 4 — fire the end-of-function leak check. Iterate the names registered as
+	// Fire the end-of-function leak check. Iterate the names registered as
 	// owning a heap allocation; any not consumed on every reachable path is reported as
 	// `S012 LeakedOwnedValue`. Severity is configurable via build.toml's `[build]
 	// allowLeaks` flag — when true the diagnostic is a warning that doesn't fail the build.
 	private void CheckOwnedLocalLeaks(string filePath) {
-		foreach (var ownedKey in _ownedLocals) {
+		foreach (var ownedKey in _ownedKeys) {
+			// Only function-scoped owners are checked at function exit. Fields persist with
+			// the instance and are freed by the class's destructor.
+			if (!ownedKey.StartsWith("local:")) continue;
 			if (_consumedAllPaths.Contains(ownedKey)) continue;
-			var name = ownedKey.StartsWith("local:") ? ownedKey[6..] : ownedKey;
+			var name = ownedKey[6..];
 			SemanticError.LeakedOwnedValue
 				.WithFile(filePath)
 				.WithMessage($"'{name}' owns a heap allocation that is never consumed on at least one path")
@@ -334,11 +338,14 @@ public class SemanticAnalyzer {
 		switch (stmt) {
 			case Stmt.VarDecl { Declaration: var d }:
 				// Re-declaring a name shadows any prior binding, including a tombstoned one
-				// or an aliased one — start fresh.
+				// or an aliased one. If the previous binding owned an unconsumed allocation,
+				// the shadow is effectively a reassignment-overwrite.
 				var newLocalKey = $"local:{d.Name}";
+				if (d.Init != null)
+					CheckOverwriteLeak(newLocalKey, d.Init, filePath);
 				_deletedNames.Remove(newLocalKey);
 				_consumedAllPaths.Remove(newLocalKey);
-				_ownedLocals.Remove(newLocalKey);
+				_ownedKeys.Remove(newLocalKey);
 				BreakAlias(newLocalKey);
 				ProcessVarDecl(d, filePath);
 				if (d.Init != null) {
@@ -361,11 +368,14 @@ public class SemanticAnalyzer {
 				// Clear the tombstone *before* walking the LHS so reassigning a deleted name
 				// (rebinding the variable / field, not dereferencing it) doesn't false-positive.
 				// Also break the LHS's prior alias — reassignment severs the old pointer
-				// relationship before establishing a new one.
+				// relationship before establishing a new one. Before any of that, check whether
+				// the reassignment overwrites a still-owning, unconsumed allocation.
 				var hasLhsKey = TryGetWriteTombstoneKey(a.Target, out var key);
 				if (hasLhsKey) {
+					CheckOverwriteLeak(key, a.Value, filePath);
 					_deletedNames.Remove(key);
 					_consumedAllPaths.Remove(key);
+					_ownedKeys.Remove(key); // about to be reclassified by ClassifyAssignOwnership
 					BreakAlias(key);
 				}
 				WalkExpr(a.Target, filePath);
@@ -503,12 +513,13 @@ public class SemanticAnalyzer {
 				WalkExpr(sp.Value, filePath);
 				break;
 			case Expression.Assign asn:
-				// Mirror Stmt.Assign: clear the tombstone and break the alias for the LHS
-				// before walking; record the new alias post-walk if the operator is `=`.
+				// Mirror Stmt.Assign: overwrite-leak check, then clear tombstone / break alias.
 				var asnHasKey = TryGetWriteTombstoneKey(asn.Target, out var asnKey);
 				if (asnHasKey) {
+					CheckOverwriteLeak(asnKey, asn.Value, filePath);
 					_deletedNames.Remove(asnKey);
 					_consumedAllPaths.Remove(asnKey);
+					_ownedKeys.Remove(asnKey);
 					BreakAlias(asnKey);
 				}
 				WalkExpr(asn.Target, filePath);
@@ -706,7 +717,7 @@ public class SemanticAnalyzer {
 		_consumedAllPaths.Add(key);
 		// Propagate to every alias of `key` — they share the same heap allocation, so a
 		// delete of any one dangles all of them. Aliases are also "consumed" via the same
-		// delete event (Phase 4 leak tracking).
+		// delete event..
 		if (_aliasGroups.TryGetValue(key, out var group)) {
 			foreach (var member in group) {
 				_deletedNames.Add(member);
@@ -725,6 +736,22 @@ public class SemanticAnalyzer {
 		for (var i = 0; i < n; i++) {
 			if (paramOwnership[i] == OwnershipModifier.Transfer)
 				RecordDeletion(args[i]);
+		}
+	}
+
+	// Temporary-expression leak. A `new Foo()` passed to a non-Transfer parameter
+	// has no caller-side name and can't be `delete`d, so it's a guaranteed runtime leak.
+	// Force the user to hoist: `let t = new Foo(); f(t); delete t;`. Only fires for direct
+	// `new` arguments — wrapping the temporary in another expression (e.g. `f(g(new Foo()))`)
+	// is out of scope; user-defined returns might own or borrow.
+	private void CheckTemporaryLeaks(List<OwnershipModifier?> paramOwnership, List<Expression> args, string filePath) {
+		var n = Math.Min(paramOwnership.Count, args.Count);
+		for (var i = 0; i < n; i++) {
+			if (args[i] is Expression.New && paramOwnership[i] != OwnershipModifier.Transfer)
+				SemanticError.TemporaryLeak
+					.WithFile(filePath)
+					.WithMessage($"argument {i} is a `new` temporary passed to a non-transfer parameter — the allocation has no owner and will leak; assign it to a local first or mark the parameter `Type!`")
+					.Render();
 		}
 	}
 
@@ -750,7 +777,7 @@ public class SemanticAnalyzer {
 		}
 	}
 
-	// Alias-tracking helpers — Phase 3.
+	// Alias-tracking helpers
 	//
 	// If RHS is an aliasing source (a writable lvalue whose alias key we can extract),
 	// merge `lhsKey` into RHS's group so subsequent deletes propagate. Non-aliasing RHS
@@ -836,28 +863,51 @@ public class SemanticAnalyzer {
 		return canonical;
 	}
 
-	// Phase 4 helpers — owned-local classification.
+	// Owned-local classification.
 	//
 	// At `let x = init;`, decide whether `x` becomes a fresh owner. Aliasing inits don't
-	// produce a new owner (Phase 3 records the alias separately). Class-typed non-aliasing
-	// inits (Expression.New, calls returning a class) do — `x` then needs consumption.
+	// produce a new owner. Class-typed non-aliasing inits (Expression.New, calls returning a class)
+	// do — `x` then needs consumption.
 	private void ClassifyInitOwnership(string lhsKey, Expression init) {
 		if (TryGetWriteTombstoneKey(init, out _)) return; // alias — not a fresh owner
 		if (!IsOwningInit(init)) return;
-		_ownedLocals.Add(lhsKey);
+		_ownedKeys.Add(lhsKey);
 	}
 
-	// At `lhsKey = value;` (reassignment), Phase 4 has two concerns:
-	// (1) If LHS is a local being rebound to a fresh class allocation, the local owns the
-	//     new allocation.
+	// At `lhsKey = value;` (reassignment), has three concerns:
+	// (1) If LHS is being rebound to a fresh class allocation (local or field), the LHS
+	//     now owns the new allocation; track it for end-of-function leak detection.
 	// (2) If LHS is a class field and RHS is an aliasing source (a local or this.field),
-	//     this is a move into the field — the RHS's local ownership is transferred to the
-	//     field's containing instance, so RecordDeletion the RHS to mark it consumed.
+	//     this is a move into the field — RecordDeletion the RHS to mark it consumed.
+	// (3) The PRE-existing owner (if any) was already overwrite-checked in
+	//     CheckOverwriteLeak before BreakAlias ran; nothing to do here for that.
 	private void ClassifyAssignOwnership(string lhsKey, Expression value) {
-		if (lhsKey.StartsWith("local:") && !TryGetWriteTombstoneKey(value, out _) && IsOwningInit(value))
-			_ownedLocals.Add(lhsKey);
+		if (!TryGetWriteTombstoneKey(value, out _) && IsOwningInit(value))
+			_ownedKeys.Add(lhsKey); // both `local:` and `field:` LHS are tracked
 		if (lhsKey.StartsWith("field:") && TryGetWriteTombstoneKey(value, out _))
 			RecordDeletion(value);
+	}
+
+	// Reassignment-overwrite leak. Called BEFORE BreakAlias on the LHS of an
+	// assignment. If the LHS currently owns an unconsumed allocation, the new RHS allocates
+	// fresh, and no other name in LHS's alias group still holds the previous allocation,
+	// the previous heap memory becomes unreachable → emit S012.
+	private void CheckOverwriteLeak(string lhsKey, Expression value, string filePath) {
+		if (!_ownedKeys.Contains(lhsKey)) return;
+		if (_consumedAllPaths.Contains(lhsKey)) return;
+		// Only an RHS that allocates fresh memory displaces the previous owner. Aliasing
+		// reassignments (`b = a`) leave the previous allocation reachable through the new
+		// alias group; null-assignments don't allocate; primitive RHS aren't classes anyway.
+		if (!IsOwningInit(value)) return;
+		// Surviving alias check: if any OTHER name shares LHS's group, the previous
+		// allocation remains reachable through that name after BreakAlias.
+		if (_aliasGroups.TryGetValue(lhsKey, out var group) && group.Count > 1) return;
+		var name = lhsKey.StartsWith("local:") ? lhsKey[6..] : lhsKey.StartsWith("field:") ? "this." + lhsKey[6..] : lhsKey;
+		SemanticError.LeakedOwnedValue
+			.WithFile(filePath)
+			.WithMessage($"reassigning '{name}' overwrites a heap allocation that was never consumed; the previous value is now unreachable")
+			.WithSeverity(!_allowLeaks)
+			.Render();
 	}
 
 	// True when an expression is treated as a "fresh ownership" producer: `new Foo()` and
@@ -1061,6 +1111,7 @@ public class SemanticAnalyzer {
 		// Apply transfer-tombstoning: any constructor parameter declared `Type!` consumes
 		// its caller-side argument, mirroring the behavior at regular call sites.
 		ApplyTransferTombstones(matching.ParamOwnership, n.Arguments);
+		CheckTemporaryLeaks(matching.ParamOwnership, n.Arguments, filePath);
 	}
 
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
@@ -1127,6 +1178,7 @@ public class SemanticAnalyzer {
 				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{calleeName}' is {VisibilityWord(overload.Visibility)} on '{overload.OwnerClass}' and not accessible from this scope").Render();
 			}
 			ApplyTransferTombstones(overload.ParamOwnership, call.Arguments);
+			CheckTemporaryLeaks(overload.ParamOwnership, call.Arguments, filePath);
 			return;
 		}
 
