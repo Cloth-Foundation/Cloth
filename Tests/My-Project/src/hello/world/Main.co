@@ -13,21 +13,13 @@ public class (string[] args) {
         printer.print();
         delete printer;
 
-        let a = new Foo(7);
-        p(a.get());
-        delete a;
-
-        let lhs = new Foo(11);
-        let rhs = lhs;
-        delete rhs;
-
         let acc = new Foo(1);
-        let donor = new Foo(99);
-        p(acc.consume(donor));
+        p(acc.consume(new Foo(5)));   // temp to Foo! param is OK (transfer)
         delete acc;
 
-        let core = new Foo(42);
-        this.foo = core;
+        // Field assignment: `this.foo` takes ownership of the new Foo;
+        // Phase 1 auto-destruct frees it on Main exit.
+        this.foo = new Foo(42);
     }
 
     public ~Main() {

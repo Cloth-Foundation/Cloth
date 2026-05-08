@@ -40,6 +40,7 @@ public class SemanticError : Exception {
 	public static readonly SemanticError UseAfterFree = new("S010", "use-after-free", true);
 	public static readonly SemanticError BorrowedDelete = new("S011", "cannot delete a borrowed value", true);
 	public static readonly SemanticError LeakedOwnedValue = new("S012", "owned value leaked at function exit", true);
+	public static readonly SemanticError TemporaryLeak = new("S013", "temporary heap allocation has no owner", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);
