@@ -9,17 +9,28 @@ public class (string[] args) {
     private Foo foo;
 
     public Main {
-        let printer = new HelloPrinter();
-        printer.printHelloWorld();
+        let printer = new HelloPrinter("Wylan");
+        printer.print();
         delete printer;
 
-        foo = new Foo();
-        p(foo.get());
-        delete foo;
+        let a = new Foo(7);
+        p(a.get());
+        delete a;
+
+        let lhs = new Foo(11);
+        let rhs = lhs;
+        delete rhs;
+
+        let acc = new Foo(1);
+        let donor = new Foo(99);
+        p(acc.consume(donor));
+        delete acc;
+
+        let core = new Foo(42);
+        this.foo = core;
     }
 
     public ~Main() {
-        p("Goodbye");
     }
 
     public func hello(): string {

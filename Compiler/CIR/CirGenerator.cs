@@ -134,7 +134,7 @@ public sealed class CirGenerator {
 		var typeFqn = TypeFqn(moduleFqn, decl.Name);
 		var fields = new List<CirField>();
 
-		// Primary parameters become stored fields
+		// Primary parameters become stored fields.
 		foreach (var p in decl.PrimaryParameters)
 			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, IsAtomic: false, null));
 
@@ -150,8 +150,31 @@ public sealed class CirGenerator {
 		var prev = _currentTypeFqn;
 		_currentTypeFqn = typeFqn;
 		try {
+			// Pass 1 — populate the field list (Field + Const) so subsequent function lowering
+			// (and especially the destructor's auto-destruct epilogue) sees the complete layout
+			// regardless of declaration order.
+			foreach (var member in decl.Members) {
+				switch (member) {
+					case MemberDeclaration.Field f:
+						fields.Add(LowerField(f.Declaration));
+						break;
+					case MemberDeclaration.Const c:
+						fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, IsAtomic: false, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
+						break;
+				}
+			}
+
+			// Pass 2 — lower constructors / destructors / methods / fragments now that the
+			// field list is complete.
 			foreach (var member in decl.Members)
-				LowerMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields, fieldInitializers);
+				LowerNonFieldMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields, fieldInitializers);
+
+			// Synthesize an auto-destructor when the class has class-typed fields but no
+			// user-written destructor. Without this, `delete <instance>` would only `free`
+			// the outer allocation and silently leak every owned class-typed field.
+			var hasUserDtor = decl.Members.Any(m => m is MemberDeclaration.Destructor);
+			if (!hasUserDtor && fields.Any(IsAutoDestructable))
+				_functions.Add(SynthesizeAutoDestructor(typeFqn, decl.Name, fields));
 		}
 		finally {
 			_currentTypeFqn = prev;
@@ -164,8 +187,18 @@ public sealed class CirGenerator {
 		var typeFqn = TypeFqn(moduleFqn, decl.Name);
 		var fields = new List<CirField>();
 
+		foreach (var member in decl.Members) {
+			switch (member) {
+				case MemberDeclaration.Field f:
+					fields.Add(LowerField(f.Declaration));
+					break;
+				case MemberDeclaration.Const c:
+					fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, IsAtomic: false, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
+					break;
+			}
+		}
 		foreach (var member in decl.Members)
-			LowerMember(member, typeFqn, [], decl.Name, filePath, fields, []);
+			LowerNonFieldMember(member, typeFqn, [], decl.Name, filePath, fields, []);
 
 		return new CirTypeDecl.Struct(typeFqn, fields);
 	}
@@ -180,22 +213,14 @@ public sealed class CirGenerator {
 	// Member lowering
 	// -------------------------------------------------------------------------
 
-	private void LowerMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields, List<(string Name, Expression Init)> fieldInitializers) {
+	private void LowerNonFieldMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields, List<(string Name, Expression Init)> fieldInitializers) {
 		switch (member) {
-			case MemberDeclaration.Field f:
-				fields.Add(LowerField(f.Declaration));
-				break;
-
-			case MemberDeclaration.Const c:
-				fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, IsAtomic: false, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
-				break;
-
 			case MemberDeclaration.Constructor c:
 				_functions.Add(LowerConstructor(c.Declaration, typeFqn, primaryParams, className, fieldInitializers));
 				break;
 
 			case MemberDeclaration.Destructor d:
-				_functions.Add(LowerDestructor(d.Declaration, typeFqn, className));
+				_functions.Add(LowerDestructor(d.Declaration, typeFqn, className, fields));
 				break;
 
 			case MemberDeclaration.Method m:
@@ -236,10 +261,49 @@ public sealed class CirGenerator {
 		return new CirFunction(MangleCtor(typeFqn, className, combinedParamTypes), CirFunctionKind.Constructor, allParams, new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
-	private CirFunction LowerDestructor(DestructorDeclaration decl, string typeFqn, string className) {
+	private CirFunction LowerDestructor(DestructorDeclaration decl, string typeFqn, string className, List<CirField> fields) {
 		BeginFunctionScope(Enumerable.Empty<Parameter>());
 		_currentReturnType = "void";
-		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), LowerBlock(decl.Body), IsExtern: false, IsStatic: false);
+		var body = LowerBlock(decl.Body);
+		// Auto-destruct class-typed fields after the user-written body. Each delete is null-
+		// guarded because explicit `delete this.<f>;` writes null after the free (see
+		// LowerDeleteStmt); a field already cleaned up by the user therefore skips the
+		// epilogue free without a double-delete. Reverse declaration order matches typical
+		// dtor convention (mirror image of construction).
+		foreach (var f in fields.AsEnumerable().Reverse()) {
+			if (IsAutoDestructable(f))
+				body.Add(BuildFieldAutoDestruct(f));
+		}
+		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
+	}
+
+	// Synthesize a destructor for a class that has class-typed fields but no user-written
+	// `~ClassName { ... }`. Body is just the auto-destruct epilogue.
+	private CirFunction SynthesizeAutoDestructor(string typeFqn, string className, List<CirField> fields) {
+		BeginFunctionScope(Enumerable.Empty<Parameter>());
+		_currentReturnType = "void";
+		var body = new List<CirStmt>();
+		foreach (var f in fields.AsEnumerable().Reverse()) {
+			if (IsAutoDestructable(f))
+				body.Add(BuildFieldAutoDestruct(f));
+		}
+		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
+	}
+
+	// A field is auto-destructed if its declared type names a known class (i.e. an owned
+	// heap allocation). Primitives, arrays, tuples, generics, and unknown types are skipped.
+	private bool IsAutoDestructable(CirField f) =>
+		f.Type is CirType.Named named && _symbols.KnownClasses.Contains(named.FullyQualifiedName);
+
+	// `if (this.<f> != null) { delete this.<f>; }` — null-guarded auto-destruct for a single
+	// owned field. The CirStmt.Delete carries the field's class FQN so the LLVM emitter can
+	// emit the destructor call with the correct mangled symbol.
+	private CirStmt BuildFieldAutoDestruct(CirField f) {
+		var fieldFqn = ((CirType.Named)f.Type).FullyQualifiedName;
+		var fieldAccess = new CirExpr.FieldAccess(new CirExpr.ThisPtr(), f.Name);
+		var nullCheck = new CirExpr.Binary(fieldAccess, CirBinOp.NotEq, new CirExpr.NullLit());
+		var deleteStmt = new CirStmt.Delete(fieldAccess, fieldFqn);
+		return new CirStmt.If(nullCheck, new List<CirStmt> { deleteStmt }, new List<(CirExpr Cond, List<CirStmt> Body)>(), null);
 	}
 
 	private CirFunction LowerMethod(MethodDeclaration decl, string typeFqn) {
@@ -337,7 +401,7 @@ public sealed class CirGenerator {
 		Stmt.Break b => new CirStmt.Break(),
 		Stmt.Continue c => new CirStmt.Continue(),
 		Stmt.Throw { Expression: var e } => new CirStmt.Throw(LowerExpr(e)),
-		Stmt.Delete { Expression: var e } => new CirStmt.Delete(LowerExpr(e), _typer.InferType(e) ?? ""),
+		Stmt.Delete { Expression: var e } => LowerDeleteStmt(e),
 		Stmt.BlockStmt { Block: var b } => new CirStmt.Block(LowerBlock(b)),
 		Stmt.Discard { Expression: var e } => new CirStmt.Discard(LowerExpr(e)),
 		Stmt.SuperCall { Arguments: var args } => new CirStmt.Expr(new CirExpr.Call("__super__", args.Select(LowerExpr).ToList())),
@@ -355,6 +419,22 @@ public sealed class CirGenerator {
 	// AssignStmt struct.
 	private CirStmt LowerAssignFromExpr(Expression.Assign a) =>
 		LowerAssignParts(a.Target, a.Operator, a.Value);
+
+	// `delete <expr>;` — lower the destructor + free, and when the target is a writable
+	// field reference, append `<expr> = null;` so subsequent reads see null and the
+	// dtor's auto-destruct epilogue can null-check before re-deleting. Locals don't need
+	// the null-write because their lifetime ends at function exit anyway and UAF tombstones
+	// already catch any subsequent read at compile time.
+	private CirStmt LowerDeleteStmt(Expression target) {
+		var lowered = LowerExpr(target);
+		var classFqn = _typer.InferType(target) ?? "";
+		var deleteStmt = new CirStmt.Delete(lowered, classFqn);
+		if (lowered is CirExpr.FieldAccess fa) {
+			var nullAssign = new CirStmt.Assign(fa, CirAssignOp.Assign, new CirExpr.NullLit());
+			return new CirStmt.Block(new List<CirStmt> { deleteStmt, nullAssign });
+		}
+		return deleteStmt;
+	}
 
 	private CirStmt LowerAssignParts(Expression targetExpr, AssignOp op, Expression valueExpr) {
 		var target = LowerExpr(targetExpr);
@@ -714,8 +794,9 @@ public sealed class CirGenerator {
 
 	private CirType LowerBaseType(BaseType baseType) => baseType switch {
 		// Apply alias canonicalization so source-level `float` becomes `f64`, `int` becomes `i32`,
-		// etc. — keeps the CIR type system consistent with literal-inference's canonical names.
-		BaseType.Named n => new CirType.Named(TypeInference.Canonicalize(n.Name)),
+		// etc. For class names, also resolve to the registry FQN so the CIR type aligns with
+		// what `Expression.New`, member access, and the auto-destruct epilogue produce.
+		BaseType.Named n => new CirType.Named(CanonicalizeNamedType(n.Name)),
 		BaseType.Generic g => new CirType.Generic(g.Name, g.Arguments.Select(LowerType).ToList()),
 		BaseType.Array a => new CirType.Array(LowerType(a.ElementType)),
 		BaseType.Tuple t => new CirType.Tuple(t.Elements.Select(LowerType).ToList()),

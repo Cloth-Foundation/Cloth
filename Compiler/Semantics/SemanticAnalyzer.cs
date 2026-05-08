@@ -37,6 +37,29 @@ public class SemanticAnalyzer {
 	// (remove); read at every identifier / member-access read site.
 	private HashSet<string> _deletedNames = new();
 
+	// Parameter-name → declared ownership for the current function body. `null` value means
+	// implicit borrow; `Transfer` / `MutBorrow` reflect the source-level annotation. Drives
+	// the rule that `delete <param>` is only legal on `Type!` parameters. Cleared per
+	// function in BeginFunctionScope.
+	private Dictionary<string, OwnershipModifier?> _paramOwnership = new();
+
+	// Tombstone-key → set of names sharing the same heap allocation. Members of a group
+	// point to a *shared* HashSet instance, so `let b = a; let c = b;` produces three
+	// entries all referring to one set {a, b, c}. RecordDeletion propagates a tombstone to
+	// every group member so deleting any alias dangles the rest. Cleared per-function and
+	// merged across branches/loops alongside `_deletedNames`.
+	private Dictionary<string, HashSet<string>> _aliasGroups = new();
+
+	// Phase 4 — owned-local leak detection. `_ownedLocals` records `local:<name>` keys
+	// that own a heap allocation in this function frame (added at `let x = new Foo()`,
+	// at owning-call returns, and at `Type!` parameter entry). `_consumedAllPaths` tracks
+	// which of those have been consumed (delete / return / transfer-call / move-into-field)
+	// on EVERY reachable path — branches use intersect-merge so a name is only "consumed"
+	// after a conditional if every branch consumed it. At end-of-function, any owned name
+	// not in `_consumedAllPaths` fires S012.
+	private HashSet<string> _ownedLocals = new();
+	private HashSet<string> _consumedAllPaths = new();
+
 	// Canonical return type of the function currently being walked, used to validate
 	// `return value;` statements. "void" for constructors, destructors, and methods
 	// declared with `: void`. "" means we haven't entered a function yet.
@@ -46,11 +69,16 @@ public class SemanticAnalyzer {
 	// Keyed by the VarDeclStmt's Span (TokenSpan is a reference type, so identity is stable).
 	public Dictionary<TokenSpan, TypeExpression> InferredVarTypes { get; } = new();
 
-	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot, SymbolRegistry symbols, List<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
+	// When true, Phase 4's S012 LeakedOwnedValue is rendered as a warning (no exit) so the
+	// build still completes. Wired from build.toml's `[build] allowLeaks` flag.
+	private readonly bool _allowLeaks;
+
+	public SemanticAnalyzer(List<(CompilationUnit Unit, string FilePath)> units, string sourceRoot, SymbolRegistry symbols, List<(CompilationUnit Unit, string FilePath)>? externUnits = null, bool allowLeaks = false) {
 		_units = units;
 		_externUnits = externUnits ?? new();
 		_sourceRoot = sourceRoot;
 		_symbols = symbols;
+		_allowLeaks = allowLeaks;
 	}
 
 	public void Analyze(bool requireMain = true) {
@@ -229,9 +257,18 @@ public class SemanticAnalyzer {
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
 		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
 		_deletedNames = new HashSet<string>();
+		_paramOwnership = new Dictionary<string, OwnershipModifier?>();
+		_aliasGroups = new Dictionary<string, HashSet<string>>();
+		_ownedLocals = new HashSet<string>();
+		_consumedAllPaths = new HashSet<string>();
 		foreach (var p in parameters) {
 			if (p.Type.Base is BaseType.Named n)
 				_typer.DeclareLocal(p.Name, CanonicalizeDeclaredType(n.Name));
+			_paramOwnership[p.Name] = p.Type.Ownership;
+			// `Type!` parameters transfer ownership IN — the function body now owns the
+			// allocation and is responsible for delete / return / transfer / store-in-field.
+			if (p.Type.Ownership == OwnershipModifier.Transfer)
+				_ownedLocals.Add($"local:{p.Name}");
 		}
 	}
 
@@ -241,24 +278,44 @@ public class SemanticAnalyzer {
 				BeginFunctionScope(primaryParams.Concat(ctor.Parameters));
 				_currentReturnType = "void";
 				WalkBlock(ctor.Body, filePath);
+				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Destructor { Declaration: var dtor }:
 				BeginFunctionScope(Enumerable.Empty<Parameter>());
 				_currentReturnType = "void";
 				WalkBlock(dtor.Body, filePath);
+				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
 				BeginFunctionScope(m.Parameters);
 				_currentReturnType = ResolveReturnType(m.ReturnType);
 				WalkBlock(m.Body.Value, filePath);
 				ValidateAllPathsReturn(m.Body.Value, m.Name, filePath);
+				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Fragment { Declaration: var f } when f.Body.HasValue:
 				BeginFunctionScope(f.Parameters);
 				_currentReturnType = ResolveReturnType(f.ReturnType);
 				WalkBlock(f.Body.Value, filePath);
 				ValidateAllPathsReturn(f.Body.Value, f.Name, filePath);
+				CheckOwnedLocalLeaks(filePath);
 				break;
+		}
+	}
+
+	// Phase 4 — fire the end-of-function leak check. Iterate the names registered as
+	// owning a heap allocation; any not consumed on every reachable path is reported as
+	// `S012 LeakedOwnedValue`. Severity is configurable via build.toml's `[build]
+	// allowLeaks` flag — when true the diagnostic is a warning that doesn't fail the build.
+	private void CheckOwnedLocalLeaks(string filePath) {
+		foreach (var ownedKey in _ownedLocals) {
+			if (_consumedAllPaths.Contains(ownedKey)) continue;
+			var name = ownedKey.StartsWith("local:") ? ownedKey[6..] : ownedKey;
+			SemanticError.LeakedOwnedValue
+				.WithFile(filePath)
+				.WithMessage($"'{name}' owns a heap allocation that is never consumed on at least one path")
+				.WithSeverity(!_allowLeaks)
+				.Render();
 		}
 	}
 
@@ -276,10 +333,19 @@ public class SemanticAnalyzer {
 	private void WalkStmt(Stmt stmt, string filePath) {
 		switch (stmt) {
 			case Stmt.VarDecl { Declaration: var d }:
-				// Re-declaring a name shadows any prior binding, including a tombstoned one.
-				_deletedNames.Remove($"local:{d.Name}");
+				// Re-declaring a name shadows any prior binding, including a tombstoned one
+				// or an aliased one — start fresh.
+				var newLocalKey = $"local:{d.Name}";
+				_deletedNames.Remove(newLocalKey);
+				_consumedAllPaths.Remove(newLocalKey);
+				_ownedLocals.Remove(newLocalKey);
+				BreakAlias(newLocalKey);
 				ProcessVarDecl(d, filePath);
-				if (d.Init != null) WalkExpr(d.Init, filePath);
+				if (d.Init != null) {
+					WalkExpr(d.Init, filePath);
+					TryRecordInitAlias(newLocalKey, d.Init);
+					ClassifyInitOwnership(newLocalKey, d.Init);
+				}
 				break;
 			case Stmt.ExprStmt { Expression: var e }:
 				WalkExpr(e, filePath);
@@ -287,14 +353,30 @@ public class SemanticAnalyzer {
 			case Stmt.Return { Value: var v }:
 				if (v != null) WalkExpr(v, filePath);
 				ValidateReturn(v, filePath);
+				// Returning a class-typed local/field transfers ownership to the caller —
+				// mark consumed via RecordDeletion so alias propagation fires too.
+				if (v != null) RecordDeletion(v);
 				break;
 			case Stmt.Assign { Assignment: var a }:
 				// Clear the tombstone *before* walking the LHS so reassigning a deleted name
 				// (rebinding the variable / field, not dereferencing it) doesn't false-positive.
-				if (TryGetWriteTombstoneKey(a.Target, out var key)) _deletedNames.Remove(key);
+				// Also break the LHS's prior alias — reassignment severs the old pointer
+				// relationship before establishing a new one.
+				var hasLhsKey = TryGetWriteTombstoneKey(a.Target, out var key);
+				if (hasLhsKey) {
+					_deletedNames.Remove(key);
+					_consumedAllPaths.Remove(key);
+					BreakAlias(key);
+				}
 				WalkExpr(a.Target, filePath);
 				WalkExpr(a.Value, filePath);
 				ValidateAssign(a, filePath);
+				// Only direct assignment (`=`) creates an alias; compound forms like `+=` don't
+				// produce an aliasing relationship between target and value.
+				if (hasLhsKey && a.Operator == AssignOp.Assign) {
+					TryRecordInitAlias(key, a.Value);
+					ClassifyAssignOwnership(key, a.Value);
+				}
 				break;
 			case Stmt.If { Statement: var s }:
 				WalkExpr(s.Condition, filePath);
@@ -421,12 +503,21 @@ public class SemanticAnalyzer {
 				WalkExpr(sp.Value, filePath);
 				break;
 			case Expression.Assign asn:
-				// Mirror Stmt.Assign: clear the tombstone for the LHS before walking, so a
-				// reassignment of a deleted local/field doesn't fire UAF on its own LHS.
-				if (TryGetWriteTombstoneKey(asn.Target, out var asnKey)) _deletedNames.Remove(asnKey);
+				// Mirror Stmt.Assign: clear the tombstone and break the alias for the LHS
+				// before walking; record the new alias post-walk if the operator is `=`.
+				var asnHasKey = TryGetWriteTombstoneKey(asn.Target, out var asnKey);
+				if (asnHasKey) {
+					_deletedNames.Remove(asnKey);
+					_consumedAllPaths.Remove(asnKey);
+					BreakAlias(asnKey);
+				}
 				WalkExpr(asn.Target, filePath);
 				WalkExpr(asn.Value, filePath);
 				ValidateAssignExpr(asn, filePath);
+				if (asnHasKey && asn.Operator == AssignOp.Assign) {
+					TryRecordInitAlias(asnKey, asn.Value);
+					ClassifyAssignOwnership(asnKey, asn.Value);
+				}
 				break;
 			// Literals, This, Super, Lambda, MetaAccess: no value-identifier check.
 		}
@@ -594,25 +685,52 @@ public class SemanticAnalyzer {
 	// an implicit-this field, and explicit `this.<member>`. Anything else (e.g. `other.foo`
 	// where `other` is a local) is silently ignored — out-of-scope for v1.
 	private void RecordDeletion(Expression target) {
+		string? key = null;
 		switch (target) {
 			case Expression.Identifier id:
 				if (_typer.TryGetLocalType(id.Name, out _)) {
-					_deletedNames.Add($"local:{id.Name}");
+					key = $"local:{id.Name}";
 				}
 				else if (!string.IsNullOrEmpty(_currentTypeFqn)
 				         && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs)
 				         && fs.Any(f => f.Name == id.Name)) {
-					_deletedNames.Add($"field:{id.Name}");
+					key = $"field:{id.Name}";
 				}
 				break;
 			case Expression.MemberAccess { Target: Expression.This, Member: var m }:
-				_deletedNames.Add($"field:{m}");
+				key = $"field:{m}";
 				break;
+		}
+		if (key == null) return;
+		_deletedNames.Add(key);
+		_consumedAllPaths.Add(key);
+		// Propagate to every alias of `key` — they share the same heap allocation, so a
+		// delete of any one dangles all of them. Aliases are also "consumed" via the same
+		// delete event (Phase 4 leak tracking).
+		if (_aliasGroups.TryGetValue(key, out var group)) {
+			foreach (var member in group) {
+				_deletedNames.Add(member);
+				_consumedAllPaths.Add(member);
+			}
+		}
+	}
+
+	// At a call site, for each parameter declared `Type!` (transfer ownership), record the
+	// corresponding argument as deleted in the caller's scope. The caller relinquishes the
+	// reference; subsequent reads fire S010 via the normal UAF check. Argument shapes that
+	// RecordDeletion can't classify (literals, complex expressions, `new Foo()` temporaries)
+	// are silently skipped — there's nothing to tombstone.
+	private void ApplyTransferTombstones(List<OwnershipModifier?> paramOwnership, List<Expression> args) {
+		var n = Math.Min(paramOwnership.Count, args.Count);
+		for (var i = 0; i < n; i++) {
+			if (paramOwnership[i] == OwnershipModifier.Transfer)
+				RecordDeletion(args[i]);
 		}
 	}
 
 	// Mirror of RecordDeletion's classification, but produces the key only — used by
 	// assignment LHS handling to clear a tombstone before walking the LHS as a value.
+	// Doubles as the alias-key extractor; the same shape rules apply for both concerns.
 	private bool TryGetWriteTombstoneKey(Expression target, out string key) {
 		switch (target) {
 			case Expression.Identifier id when _typer.TryGetLocalType(id.Name, out _):
@@ -632,68 +750,244 @@ public class SemanticAnalyzer {
 		}
 	}
 
+	// Alias-tracking helpers — Phase 3.
+	//
+	// If RHS is an aliasing source (a writable lvalue whose alias key we can extract),
+	// merge `lhsKey` into RHS's group so subsequent deletes propagate. Non-aliasing RHS
+	// (literals, calls, `new Foo()`, anything else) leaves the LHS as a singleton — it
+	// owns a fresh allocation.
+	private void TryRecordInitAlias(string lhsKey, Expression rhs) {
+		if (TryGetWriteTombstoneKey(rhs, out var rhsKey))
+			UnionAliasGroup(lhsKey, rhsKey);
+	}
+
+	// Merge the groups containing `a` and `b` into one shared HashSet. Callers that
+	// reassign a name (severing its old alias) must call BreakAlias first.
+	private void UnionAliasGroup(string a, string b) {
+		if (a == b) return;
+		var groupA = _aliasGroups.TryGetValue(a, out var existingA) ? existingA : null;
+		var groupB = _aliasGroups.TryGetValue(b, out var existingB) ? existingB : null;
+		if (groupA != null && groupA == groupB) return; // already same group
+
+		HashSet<string> merged;
+		if (groupA == null && groupB == null) {
+			merged = new HashSet<string> { a, b };
+		}
+		else if (groupA != null && groupB == null) {
+			merged = groupA;
+			merged.Add(b);
+		}
+		else if (groupA == null && groupB != null) {
+			merged = groupB;
+			merged.Add(a);
+		}
+		else {
+			merged = groupA!;
+			foreach (var m in groupB!) merged.Add(m);
+		}
+
+		// Re-point every member to the merged set so all entries share one instance.
+		foreach (var m in merged) _aliasGroups[m] = merged;
+	}
+
+	// Sever `key`'s membership in its current alias group (e.g. on reassignment, the
+	// name no longer points to the same allocation). Other members of the group remain
+	// linked to each other.
+	private void BreakAlias(string key) {
+		if (!_aliasGroups.TryGetValue(key, out var group)) return;
+		group.Remove(key);
+		_aliasGroups.Remove(key);
+	}
+
+	// Combine alias-group dictionaries from multiple control-flow paths. A name in any
+	// state's group joins the merged group — conservative union so a delete in any
+	// branch dangles every reachable alias post-merge. Returns a freshly-allocated
+	// dictionary with freshly-allocated sets (safe to mutate without affecting inputs).
+	private static Dictionary<string, HashSet<string>> MergeAliasStates(IEnumerable<Dictionary<string, HashSet<string>>> states) {
+		var result = new Dictionary<string, HashSet<string>>();
+		foreach (var state in states) {
+			foreach (var (key, group) in state) {
+				if (result.TryGetValue(key, out var existing)) {
+					foreach (var m in group) existing.Add(m);
+				}
+				else {
+					result[key] = new HashSet<string>(group);
+				}
+			}
+		}
+		// Re-point each name's entry to a single shared set per equivalence class. Names
+		// that ended up linked through transitive merges should share one set instance.
+		var canonical = new Dictionary<string, HashSet<string>>();
+		foreach (var (key, _) in result) {
+			if (canonical.ContainsKey(key)) continue;
+			var visited = new HashSet<string> { key };
+			var stack = new Stack<string>();
+			stack.Push(key);
+			while (stack.Count > 0) {
+				var cur = stack.Pop();
+				if (!result.TryGetValue(cur, out var g)) continue;
+				foreach (var m in g) {
+					if (visited.Add(m)) stack.Push(m);
+				}
+			}
+			var shared = visited;
+			foreach (var m in visited) canonical[m] = shared;
+		}
+		return canonical;
+	}
+
+	// Phase 4 helpers — owned-local classification.
+	//
+	// At `let x = init;`, decide whether `x` becomes a fresh owner. Aliasing inits don't
+	// produce a new owner (Phase 3 records the alias separately). Class-typed non-aliasing
+	// inits (Expression.New, calls returning a class) do — `x` then needs consumption.
+	private void ClassifyInitOwnership(string lhsKey, Expression init) {
+		if (TryGetWriteTombstoneKey(init, out _)) return; // alias — not a fresh owner
+		if (!IsOwningInit(init)) return;
+		_ownedLocals.Add(lhsKey);
+	}
+
+	// At `lhsKey = value;` (reassignment), Phase 4 has two concerns:
+	// (1) If LHS is a local being rebound to a fresh class allocation, the local owns the
+	//     new allocation.
+	// (2) If LHS is a class field and RHS is an aliasing source (a local or this.field),
+	//     this is a move into the field — the RHS's local ownership is transferred to the
+	//     field's containing instance, so RecordDeletion the RHS to mark it consumed.
+	private void ClassifyAssignOwnership(string lhsKey, Expression value) {
+		if (lhsKey.StartsWith("local:") && !TryGetWriteTombstoneKey(value, out _) && IsOwningInit(value))
+			_ownedLocals.Add(lhsKey);
+		if (lhsKey.StartsWith("field:") && TryGetWriteTombstoneKey(value, out _))
+			RecordDeletion(value);
+	}
+
+	// True when an expression is treated as a "fresh ownership" producer: `new Foo()` and
+	// any call whose return type is a known class FQN. Conservative — assumes class-returning
+	// functions transfer ownership of a fresh allocation to the caller. (False positives mean
+	// false leak warnings, which the user can silence via `[build] allowLeaks`.)
+	private bool IsOwningInit(Expression e) {
+		if (e is Expression.New) return true;
+		if (e is Expression.Call) {
+			var ty = _typer.InferType(e);
+			return ty != null && _symbols.KnownClasses.Contains(ty);
+		}
+		return false;
+	}
+
+	// Snapshot the current alias state for branch-walk isolation. Each set is cloned so
+	// the snapshot doesn't share refs with the live state.
+	private static Dictionary<string, HashSet<string>> SnapshotAliasGroups(Dictionary<string, HashSet<string>> source) {
+		var copy = new Dictionary<string, HashSet<string>>();
+		var setMap = new Dictionary<HashSet<string>, HashSet<string>>(ReferenceEqualityComparer.Instance);
+		foreach (var (key, set) in source) {
+			if (!setMap.TryGetValue(set, out var clonedSet)) {
+				clonedSet = new HashSet<string>(set);
+				setMap[set] = clonedSet;
+			}
+			copy[key] = clonedSet;
+		}
+		return copy;
+	}
+
 	// Walk an If statement with branch-by-branch tombstone isolation. Each branch starts
 	// from the pre-If state; at the end, the merged state is the UNION of every branch's
 	// post-state (conservative: if any path freed a name, downstream uses are unsafe).
 	// When no `else` is present, the implicit fall-through contributes the pre-state, so
 	// a tombstone added in the then-branch survives the merge.
 	private void WalkIfMerged(IfStmt s, string filePath) {
-		var preState = new HashSet<string>(_deletedNames);
-		var endStates = new List<HashSet<string>>();
+		var preDeleted = new HashSet<string>(_deletedNames);
+		var preConsumed = new HashSet<string>(_consumedAllPaths);
+		var preAliases = SnapshotAliasGroups(_aliasGroups);
+		var endDeleted = new List<HashSet<string>>();
+		var endConsumed = new List<HashSet<string>>();
+		var endAliases = new List<Dictionary<string, HashSet<string>>>();
 
-		_deletedNames = new HashSet<string>(preState);
+		_deletedNames = new HashSet<string>(preDeleted);
+		_consumedAllPaths = new HashSet<string>(preConsumed);
+		_aliasGroups = SnapshotAliasGroups(preAliases);
 		WalkBlock(s.ThenBranch, filePath);
-		endStates.Add(_deletedNames);
+		endDeleted.Add(_deletedNames);
+		endConsumed.Add(_consumedAllPaths);
+		endAliases.Add(_aliasGroups);
 
 		foreach (var ei in s.ElseIfBranches) {
-			_deletedNames = new HashSet<string>(preState);
+			_deletedNames = new HashSet<string>(preDeleted);
+			_consumedAllPaths = new HashSet<string>(preConsumed);
+			_aliasGroups = SnapshotAliasGroups(preAliases);
 			WalkExpr(ei.Condition, filePath);
 			WalkBlock(ei.Body, filePath);
-			endStates.Add(_deletedNames);
+			endDeleted.Add(_deletedNames);
+			endConsumed.Add(_consumedAllPaths);
+			endAliases.Add(_aliasGroups);
 		}
 
 		if (s.ElseBranch.HasValue) {
-			_deletedNames = new HashSet<string>(preState);
+			_deletedNames = new HashSet<string>(preDeleted);
+			_consumedAllPaths = new HashSet<string>(preConsumed);
+			_aliasGroups = SnapshotAliasGroups(preAliases);
 			WalkBlock(s.ElseBranch.Value, filePath);
-			endStates.Add(_deletedNames);
+			endDeleted.Add(_deletedNames);
+			endConsumed.Add(_consumedAllPaths);
+			endAliases.Add(_aliasGroups);
 		}
 		else {
 			// Implicit-else takes the pre-If state unchanged.
-			endStates.Add(preState);
+			endDeleted.Add(preDeleted);
+			endConsumed.Add(preConsumed);
+			endAliases.Add(preAliases);
 		}
 
-		_deletedNames = UnionAll(endStates);
+		_deletedNames = UnionAll(endDeleted);
+		_consumedAllPaths = IntersectAll(endConsumed);
+		_aliasGroups = MergeAliasStates(endAliases);
 	}
 
 	private void WalkSwitchMerged(SwitchStmt s, string filePath) {
-		var preState = new HashSet<string>(_deletedNames);
-		var endStates = new List<HashSet<string>>();
+		var preDeleted = new HashSet<string>(_deletedNames);
+		var preConsumed = new HashSet<string>(_consumedAllPaths);
+		var preAliases = SnapshotAliasGroups(_aliasGroups);
+		var endDeleted = new List<HashSet<string>>();
+		var endConsumed = new List<HashSet<string>>();
+		var endAliases = new List<Dictionary<string, HashSet<string>>>();
 		var hasDefault = false;
 		foreach (var c in s.Cases) {
+			_deletedNames = new HashSet<string>(preDeleted);
+			_consumedAllPaths = new HashSet<string>(preConsumed);
+			_aliasGroups = SnapshotAliasGroups(preAliases);
 			if (c.Pattern is SwitchPattern.Case cp) {
-				_deletedNames = new HashSet<string>(preState);
 				WalkExpr(cp.Expression, filePath);
 			}
 			else {
-				_deletedNames = new HashSet<string>(preState);
 				hasDefault = true;
 			}
 			foreach (var inner in c.Body) WalkStmt(inner, filePath);
-			endStates.Add(_deletedNames);
+			endDeleted.Add(_deletedNames);
+			endConsumed.Add(_consumedAllPaths);
+			endAliases.Add(_aliasGroups);
 		}
 		// No default → implicit fall-through contributes the pre-state.
-		if (!hasDefault) endStates.Add(preState);
-		_deletedNames = UnionAll(endStates);
+		if (!hasDefault) {
+			endDeleted.Add(preDeleted);
+			endConsumed.Add(preConsumed);
+			endAliases.Add(preAliases);
+		}
+		_deletedNames = UnionAll(endDeleted);
+		_consumedAllPaths = IntersectAll(endConsumed);
+		_aliasGroups = MergeAliasStates(endAliases);
 	}
 
 	// Walk a loop body once, then merge the body's end-state with the pre-state. The body
 	// might not run at all (live → live) or may run any number of times (live → body-end).
-	// A single union covers both cases conservatively. Misses the cross-iteration UAF case
-	// (use-then-delete-then-loop-back) — documented as an out-of-scope follow-up.
+	// A single union covers both cases conservatively for UAF tombstones. For consumption
+	// tracking we revert to pre-state — a loop body's consumption can't be relied on, so
+	// any owned local consumed only inside the loop body is treated as not-consumed at exit.
 	private void WalkLoopBody(Block body, string filePath) {
-		var preState = new HashSet<string>(_deletedNames);
+		var preDeleted = new HashSet<string>(_deletedNames);
+		var preConsumed = new HashSet<string>(_consumedAllPaths);
+		var preAliases = SnapshotAliasGroups(_aliasGroups);
 		WalkBlock(body, filePath);
-		_deletedNames.UnionWith(preState);
+		_deletedNames.UnionWith(preDeleted);
+		_consumedAllPaths = preConsumed;
+		_aliasGroups = MergeAliasStates(new[] { preAliases, _aliasGroups });
 	}
 
 	private static HashSet<string> UnionAll(List<HashSet<string>> states) {
@@ -702,8 +996,19 @@ public class SemanticAnalyzer {
 		return merged;
 	}
 
+	// Intersection of every state — used for consumption tracking, where a name only counts
+	// as "consumed at this control-flow join" if every reaching path consumed it.
+	private static HashSet<string> IntersectAll(List<HashSet<string>> states) {
+		if (states.Count == 0) return new HashSet<string>();
+		var merged = new HashSet<string>(states[0]);
+		for (var i = 1; i < states.Count; i++) merged.IntersectWith(states[i]);
+		return merged;
+	}
+
 	// `delete <expr>;` — target must resolve to a class-instance value. Primitives, unknown
-	// targets, and class-name references (static, no instance) are rejected.
+	// targets, and class-name references (static, no instance) are rejected. Additionally,
+	// a borrowed parameter (`Type` or `Type&`) cannot be deleted — only `Type!` (transfer)
+	// gives the function ownership and therefore the right to free.
 	private void ValidateDelete(Expression target, string filePath) {
 		var ty = _typer.InferType(target);
 		if (ty == null) return; // can't infer — defer to runtime
@@ -711,8 +1016,16 @@ public class SemanticAnalyzer {
 			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot delete a value of primitive type '{ty}'").Render();
 			return;
 		}
-		if (!_symbols.KnownClasses.Contains(ty))
+		if (!_symbols.KnownClasses.Contains(ty)) {
 			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"cannot delete '{ty}' — not a known class type").Render();
+			return;
+		}
+		// Borrowed-parameter check: `delete <param>` is rejected when the parameter is a
+		// borrow (default) or mutable borrow (`&`). Only `!` transfers ownership.
+		if (target is Expression.Identifier id && _paramOwnership.TryGetValue(id.Name, out var ownership) && ownership != OwnershipModifier.Transfer) {
+			var kind = ownership == OwnershipModifier.MutBorrow ? "mutable-borrow" : "borrow";
+			SemanticError.BorrowedDelete.WithFile(filePath).WithMessage($"parameter '{id.Name}' is a {kind} — caller retains ownership; mark it '{ty}!' to take ownership").Render();
+		}
 	}
 
 	// Validate a `new Foo(...)` expression: the class itself and the resolved constructor
@@ -744,6 +1057,10 @@ public class SemanticAnalyzer {
 
 		if (!CanAccess(matching.Visibility, matching.OwnerModule, matching.OwnerClass))
 			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"constructor of '{classFqn}' is {VisibilityWord(matching.Visibility)} and not accessible from this scope").Render();
+
+		// Apply transfer-tombstoning: any constructor parameter declared `Type!` consumes
+		// its caller-side argument, mirroring the behavior at regular call sites.
+		ApplyTransferTombstones(matching.ParamOwnership, n.Arguments);
 	}
 
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
@@ -809,6 +1126,7 @@ public class SemanticAnalyzer {
 				};
 				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{calleeName}' is {VisibilityWord(overload.Visibility)} on '{overload.OwnerClass}' and not accessible from this scope").Render();
 			}
+			ApplyTransferTombstones(overload.ParamOwnership, call.Arguments);
 			return;
 		}
 

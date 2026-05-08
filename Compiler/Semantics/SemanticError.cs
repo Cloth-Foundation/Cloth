@@ -38,9 +38,14 @@ public class SemanticError : Exception {
 	public static readonly SemanticError FieldAccessOnNonClass = new("S00E", "cannot access field on a non-class value", true);
 	public static readonly SemanticError VisibilityViolation = new("S00F", "visibility rule violated", true);
 	public static readonly SemanticError UseAfterFree = new("S010", "use-after-free", true);
+	public static readonly SemanticError BorrowedDelete = new("S011", "cannot delete a borrowed value", true);
+	public static readonly SemanticError LeakedOwnedValue = new("S012", "owned value leaked at function exit", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);
+	// Override the will-exit flag — used by checks whose severity is configurable (e.g.
+	// leak detection: error by default, demoted to warning via build.toml `allowLeaks`).
+	public SemanticError WithSeverity(bool willExit) => new(_code, _label, willExit, _message, _file);
 
 	public SemanticError Render() {
 		var type = _willExit ? "Error" : "Warning";
