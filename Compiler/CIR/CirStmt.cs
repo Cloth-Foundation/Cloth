@@ -39,7 +39,10 @@ public abstract record CirStmt {
 
 	public sealed record Throw(CirExpr Expression) : CirStmt;
 
-	public sealed record Delete(CirExpr Expression) : CirStmt;
+	// Manual destruction: runs the destructor for ClassFqn (when defined) and frees the
+	// underlying heap allocation via libc free(). ClassFqn is captured at CIR-lowering time
+	// so the LLVM emitter doesn't need to re-infer the target's type.
+	public sealed record Delete(CirExpr Expression, string ClassFqn) : CirStmt;
 
 	public sealed record Block(List<CirStmt> Body) : CirStmt;
 }

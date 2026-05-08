@@ -60,6 +60,7 @@ public enum Keyword {
 	Func,
 	Fragment,
 	New,
+	Delete,
 	This,
 	Super,
 
@@ -172,6 +173,7 @@ public static class Keywords {
 			Keyword.Func => "func",
 			Keyword.Fragment => "fragment",
 			Keyword.New => "new",
+			Keyword.Delete => "delete",
 			Keyword.This => "this",
 			Keyword.Super => "super",
 			Keyword.Bit => "bit",
@@ -279,6 +281,7 @@ public static class Keywords {
 			"func" => Keyword.Func,
 			"fragment" => Keyword.Fragment,
 			"new" => Keyword.New,
+			"delete" => Keyword.Delete,
 			"this" => Keyword.This,
 			"super" => Keyword.Super,
 			"bit" => Keyword.Bit,

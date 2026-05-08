@@ -30,6 +30,7 @@ public sealed class CirGenerator {
 
 	// Import map for the current file: local name → fully-qualified name
 	private Dictionary<string, string> _importMap = new();
+	private string _currentModuleFqn = "";
 
 	// FQN of the class currently being lowered. Used to resolve same-class identifier calls.
 	private string _currentTypeFqn = "";
@@ -90,6 +91,7 @@ public sealed class CirGenerator {
 	private void LowerUnit(CompilationUnit unit, string filePath) {
 		_importMap = BuildImportMap(unit.Imports);
 		var moduleFqn = ModuleFqn(unit.Module);
+		_currentModuleFqn = moduleFqn;
 		foreach (var typeDecl in unit.Types)
 			_types.Add(LowerTypeDeclaration(typeDecl, moduleFqn, filePath));
 	}
@@ -228,7 +230,10 @@ public sealed class CirGenerator {
 
 		var body = primaryPrologue.Concat(fieldPrologue).Concat(LowerBlock(decl.Body)).ToList();
 
-		return new CirFunction(MangleCtor(typeFqn, className), CirFunctionKind.Constructor, allParams, new CirType.Void(), body, IsExtern: false, IsStatic: false);
+		var combinedParamTypes = primaryParams.Concat(decl.Parameters)
+			.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn))
+			.ToList();
+		return new CirFunction(MangleCtor(typeFqn, className, combinedParamTypes), CirFunctionKind.Constructor, allParams, new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
 	private CirFunction LowerDestructor(DestructorDeclaration decl, string typeFqn, string className) {
@@ -247,7 +252,7 @@ public sealed class CirGenerator {
 			parameters.Add(new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this"));
 		parameters.AddRange(decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name)));
 
-		var paramTypes = decl.Parameters.Select(p => p.Type.Base is BaseType.Named n ? TypeInference.Canonicalize(n.Name) : "any").ToList();
+		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn)).ToList();
 		var mangledName = externSymbol ?? MangleMethod(typeFqn, decl.Name, paramTypes);
 
 		BeginFunctionScope(decl.Parameters);
@@ -262,26 +267,35 @@ public sealed class CirGenerator {
 		};
 		parameters.AddRange(decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name)));
 
-		var paramTypes = decl.Parameters.Select(p => p.Type.Base is BaseType.Named n ? TypeInference.Canonicalize(n.Name) : "any").ToList();
+		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn)).ToList();
 
 		BeginFunctionScope(decl.Parameters);
 		_currentReturnType = ResolveReturnTypeCanonical(decl.ReturnType);
 		return new CirFunction(MangleMethod(typeFqn, decl.Name, paramTypes), CirFunctionKind.Fragment, parameters, LowerType(decl.ReturnType), isExtern ? [] : LowerBlock(decl.Body!.Value), isExtern, IsStatic: false);
 	}
 
-	private static string ResolveReturnTypeCanonical(TypeExpression type) => type.Base switch {
-		BaseType.Named n => TypeInference.Canonicalize(n.Name),
+	private string ResolveReturnTypeCanonical(TypeExpression type) => type.Base switch {
+		BaseType.Named n => CanonicalizeNamedType(n.Name),
 		BaseType.Void => "void",
 		_ => ""
 	};
 
+	// Apply alias canonicalization, then if the name is a class (not a primitive) resolve
+	// it to a registry FQN. Mirrors SemanticAnalyzer.CanonicalizeDeclaredType.
+	private string CanonicalizeNamedType(string raw) {
+		var canon = TypeInference.Canonicalize(raw);
+		if (TypeInference.IsKnownPrimitive(canon)) return canon;
+		return ResolveClassFqn(canon) ?? canon;
+	}
+
 	// Fresh per-function state. The typer carries the local-variable scope plus the
 	// SymbolRegistry, so any subsequent inference/resolution call reads through it.
+	// Class-typed parameters land in the typer with their FQN.
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
 		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
 		foreach (var p in parameters) {
 			if (p.Type.Base is BaseType.Named n)
-				_typer.DeclareLocal(p.Name, TypeInference.Canonicalize(n.Name));
+				_typer.DeclareLocal(p.Name, CanonicalizeNamedType(n.Name));
 		}
 	}
 
@@ -323,7 +337,7 @@ public sealed class CirGenerator {
 		Stmt.Break b => new CirStmt.Break(),
 		Stmt.Continue c => new CirStmt.Continue(),
 		Stmt.Throw { Expression: var e } => new CirStmt.Throw(LowerExpr(e)),
-		Stmt.Delete { Expression: var e } => new CirStmt.Delete(LowerExpr(e)),
+		Stmt.Delete { Expression: var e } => new CirStmt.Delete(LowerExpr(e), _typer.InferType(e) ?? ""),
 		Stmt.BlockStmt { Block: var b } => new CirStmt.Block(LowerBlock(b)),
 		Stmt.Discard { Expression: var e } => new CirStmt.Discard(LowerExpr(e)),
 		Stmt.SuperCall { Arguments: var args } => new CirStmt.Expr(new CirExpr.Call("__super__", args.Select(LowerExpr).ToList())),
@@ -379,8 +393,12 @@ public sealed class CirGenerator {
 		string? canonicalName = null;
 		if (d.Type.HasValue) {
 			type = LowerType(d.Type.Value);
-			if (d.Type.Value.Base is BaseType.Named explicitNamed)
-				canonicalName = TypeInference.Canonicalize(explicitNamed.Name);
+			if (d.Type.Value.Base is BaseType.Named explicitNamed) {
+				var canon = TypeInference.Canonicalize(explicitNamed.Name);
+				// For class types, swap to the registry FQN so the typer's local-type entry
+				// matches what `Expression.New` / member access produce. Primitives stay as-is.
+				canonicalName = TypeInference.IsKnownPrimitive(canon) ? canon : (ResolveClassFqn(canon) ?? canon);
+			}
 		}
 		else if (_inferredVarTypes.TryGetValue(d.Span, out var inferred)) {
 			type = LowerType(inferred);
@@ -514,10 +532,29 @@ public sealed class CirGenerator {
 					}
 				}
 
-				// obj.method(args) — instance dispatch: inject obj as first argument
+				// obj.method(args) — instance dispatch: resolve the method statically through the
+				// receiver's inferred class type, then emit a direct call passing the receiver as
+				// the implicit first argument (`this`). Virtual dispatch via vtables is not yet
+				// implemented; all instance methods are resolved at compile time.
+				var receiverType = _typer.InferType(ma.Target);
 				var target = LowerExpr(ma.Target);
 				var allArgs = new List<CirExpr> { target };
 				allArgs.AddRange(args);
+				if (receiverType != null && _symbols.KnownClasses.Contains(receiverType)) {
+					var calleeFqn = $"{receiverType}.{ma.Member}";
+					var resolved = _typer.ResolveOverload(calleeFqn, call.Arguments);
+					if (resolved != null) {
+						// Receiver doesn't get widened; only the user-supplied args run through the
+						// overload's promotion rules.
+						var promotedArgs = new List<CirExpr> { target };
+						promotedArgs.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
+						return new CirExpr.Call(resolved.MangledSymbol, promotedArgs);
+					}
+					return new CirExpr.Call(calleeFqn, allArgs);
+				}
+				// Fallback: receiver type unknown — keep the indirect-call shape for now (still
+				// likely to fail at LLVM but at least preserves behavior for cases that didn't
+				// type-resolve).
 				return new CirExpr.IndirectCall(new CirExpr.FieldAccess(target, ma.Member), allArgs);
 			}
 			default:
@@ -539,7 +576,12 @@ public sealed class CirGenerator {
 
 	// Build the call expression for a resolved overload: wraps each arg in a Cast when the
 	// chosen parameter type is wider than the arg's inferred type (lossless promotion).
-	private CirExpr BuildOverloadCall(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) {
+	private CirExpr BuildOverloadCall(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) =>
+		new CirExpr.Call(overload.MangledSymbol, BuildOverloadCallArgs(overload, rawArgs, loweredArgs));
+
+	// Promote each argument to the chosen overload's parameter type via a lossless Cast when
+	// types differ. Returned list is in the same order as the inputs and excludes any receiver.
+	private List<CirExpr> BuildOverloadCallArgs(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) {
 		var finalArgs = new List<CirExpr>(loweredArgs.Count);
 		for (var i = 0; i < loweredArgs.Count; i++) {
 			var argType = _typer.InferType(rawArgs[i]);
@@ -550,15 +592,69 @@ public sealed class CirGenerator {
 				finalArgs.Add(loweredArgs[i]);
 			}
 		}
-
-		return new CirExpr.Call(overload.MangledSymbol, finalArgs);
+		return finalArgs;
 	}
 
 	private CirExpr LowerNewExpr(TypeExpression type, List<Expression> arguments) {
-		var cirType = LowerType(type);
 		var rawName = type.Base is BaseType.Named n ? n.Name : "?";
-		var ctorName = MangleCtor(rawName, rawName.Split('.').Last());
-		return new CirExpr.Alloc(cirType, ctorName, arguments.Select(LowerExpr).ToList());
+		// Resolve raw → registry FQN: importMap, direct match, or same-module sibling. The
+		// resulting FQN drives both the struct type name (`%struct.<fqn>`) and the constructor
+		// symbol; using the raw name would misalign with what RegisterUnit / LowerClassDeclaration
+		// produce.
+		var resolvedFqn = ResolveClassFqn(rawName) ?? rawName;
+		var className = resolvedFqn.Contains('.') ? resolvedFqn[(resolvedFqn.LastIndexOf('.') + 1)..] : resolvedFqn;
+		var cirType = new CirType.Named(resolvedFqn);
+		var loweredArgs = arguments.Select(LowerExpr).ToList();
+
+		// Resolve the constructor overload via the registry so the mangled symbol matches the
+		// one LowerConstructor emitted. Falls back to a no-arg mangling when no overload is
+		// registered (defensive — analyzer should have caught it).
+		var ctor = ResolveConstructor(resolvedFqn, arguments);
+		if (ctor != null)
+			return new CirExpr.Alloc(cirType, ctor.MangledSymbol, loweredArgs);
+
+		// Best-effort fallback: assume the canonical no-arg form.
+		return new CirExpr.Alloc(cirType, MangleCtor(resolvedFqn, className, new List<string>()), loweredArgs);
+	}
+
+	// Pick the best constructor overload for a `new` call against the registered constructors
+	// of `classFqn`. Same matching shape as MethodOverload resolution: arity match + lossless
+	// promotion from each arg's inferred type to the parameter type, smallest-fit wins.
+	private ConstructorInfo? ResolveConstructor(string classFqn, List<Expression> rawArgs) {
+		if (!_symbols.Constructors.TryGetValue(classFqn, out var list)) return null;
+		var matching = list.Where(c => c.ParamTypes.Count == rawArgs.Count).ToList();
+		if (matching.Count == 0) return null;
+		if (rawArgs.Count == 0) return matching[0];
+
+		var argTypes = rawArgs.Select(_typer.InferType).ToList();
+		// One overload only? Use it without strict typing — useful when arg typing is incomplete.
+		if (argTypes.Any(t => t == null)) return matching.Count == 1 ? matching[0] : null;
+
+		ConstructorInfo? best = null;
+		var bestScore = int.MaxValue;
+		foreach (var c in matching) {
+			var ok = true;
+			var score = 0;
+			for (var i = 0; i < c.ParamTypes.Count; i++) {
+				if (!TypeInference.IsLosslessPromotion(argTypes[i]!, c.ParamTypes[i])) { ok = false; break; }
+				score += ExpressionTyper.TypeWidth(Keywords.GetKeywordFromString(c.ParamTypes[i]));
+			}
+			if (!ok) continue;
+			if (score < bestScore) { bestScore = score; best = c; }
+		}
+		return best;
+	}
+
+	// Same resolution as SemanticAnalyzer.ResolveClassFqn — kept separate because the two
+	// passes own their own importMaps. Returns null when no resolution succeeds.
+	private string? ResolveClassFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownClasses.Contains(mapped)) return mapped;
+		if (_symbols.KnownClasses.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
+		}
+		return null;
 	}
 
 	// Resolve a chain of identifiers/meta-accesses to a dotted string path
@@ -696,6 +792,10 @@ public sealed class CirGenerator {
 	private static string MangleMethod(string typeFqn, string name, List<string> paramTypes) =>
 		paramTypes.Count == 0 ? $"{typeFqn}.{name}" : $"{typeFqn}.{name}__{string.Join("__", paramTypes)}";
 
-	private static string MangleCtor(string typeFqn, string className) => $"{typeFqn}.{className}";
+	// Constructor mangling mirrors method mangling for overload disambiguation: the combined
+	// parameter list (primary + explicit) is encoded as `__<type>__<type>` so two `public Foo`
+	// declarations with different signatures don't collide.
+	internal static string MangleCtor(string typeFqn, string className, List<string> paramTypes) =>
+		paramTypes.Count == 0 ? $"{typeFqn}.{className}" : $"{typeFqn}.{className}__{string.Join("__", paramTypes)}";
 	private static string MangleDtor(string typeFqn, string className) => $"{typeFqn}.~{className}";
 }

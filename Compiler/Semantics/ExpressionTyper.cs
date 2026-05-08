@@ -90,10 +90,23 @@ public sealed class ExpressionTyper {
 				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
 
 			case Expression.New { Type: var nt }:
-				// `new Foo()` types as Foo. Resolve the bare class name through the importMap so
-				// subsequent member access on the result can find the class metadata in registry.
+				// `new Foo()` types as Foo. Resolve the raw class name to a registry FQN: importMap
+				// first (`import a.b.Foo` puts `Foo` → `a.b.Foo`), then direct hit on KnownClasses,
+				// then same-module sibling. Returning the FQN lets downstream `obj.x` look up the
+				// class's fields/methods.
 				if (nt.Base is FrontEnd.Parser.AST.Type.BaseType.Named nn) {
-					return _importMap.TryGetValue(nn.Name, out var mappedFqn) ? mappedFqn : nn.Name;
+					if (_importMap.TryGetValue(nn.Name, out var mappedFqn) && _symbols.KnownClasses.Contains(mappedFqn)) return mappedFqn;
+					if (_symbols.KnownClasses.Contains(nn.Name)) return nn.Name;
+					if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+						// Use the enclosing class's module path as the same-module prefix.
+						var lastDot = _currentTypeFqn.LastIndexOf('.');
+						if (lastDot > 0) {
+							var modulePrefix = _currentTypeFqn[..lastDot];
+							var sameModule = $"{modulePrefix}.{nn.Name}";
+							if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
+						}
+					}
+					return nn.Name; // best-effort fallback so callers don't see null
 				}
 				return null;
 

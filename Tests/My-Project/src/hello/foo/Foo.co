@@ -1,0 +1,29 @@
+module hello.foo;
+
+import cloth.io.Out::{ println };
+
+public class () {
+
+    private i32 v;
+
+    public Foo {
+        v = 1;
+    }
+
+    public Foo(i32 x) {
+        v = x;
+    }
+
+    public func get(): i32 {
+        return v;
+    }
+
+    public func combine(Foo other): i32 {
+        return v + other.get();
+    }
+
+    public func clone(): Foo {
+        return new Foo(v);
+    }
+
+}

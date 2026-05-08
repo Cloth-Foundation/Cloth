@@ -42,6 +42,7 @@ ScaffoldingReadMe.txt
 CodeCoverage/
 .vs
 .idea
+/.*
 
 # For build artifacts
 *.exe

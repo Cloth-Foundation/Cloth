@@ -30,6 +30,13 @@ public class SemanticAnalyzer {
 	// `internal` access rule: caller's module must match the target's owning module.
 	private string _currentModuleFqn = "";
 
+	// Use-after-free tombstones for the current function body. Entries are keyed by
+	// `local:<name>` for let/type-declared locals + parameters, and `field:<name>` for
+	// implicit-this / explicit `this.<name>` field references. Reset per-function in
+	// BeginFunctionScope; mutated as the walk encounters `delete` (add) and reassignment
+	// (remove); read at every identifier / member-access read site.
+	private HashSet<string> _deletedNames = new();
+
 	// Canonical return type of the function currently being walked, used to validate
 	// `return value;` statements. "void" for constructors, destructors, and methods
 	// declared with `: void`. "" means we haven't entered a function yet.
@@ -217,12 +224,14 @@ public class SemanticAnalyzer {
 	}
 
 	// Build a fresh typer for each function body, pre-populating the local-type scope with
-	// the function's parameters (including primary class params for constructors).
+	// the function's parameters (including primary class params for constructors). Class-typed
+	// parameters land in the typer with their FQN so member-access on them resolves correctly.
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
 		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
+		_deletedNames = new HashSet<string>();
 		foreach (var p in parameters) {
 			if (p.Type.Base is BaseType.Named n)
-				_typer.DeclareLocal(p.Name, TypeInference.Canonicalize(n.Name));
+				_typer.DeclareLocal(p.Name, CanonicalizeDeclaredType(n.Name));
 		}
 	}
 
@@ -253,8 +262,8 @@ public class SemanticAnalyzer {
 		}
 	}
 
-	private static string ResolveReturnType(TypeExpression type) => type.Base switch {
-		BaseType.Named n => TypeInference.Canonicalize(n.Name),
+	private string ResolveReturnType(TypeExpression type) => type.Base switch {
+		BaseType.Named n => CanonicalizeDeclaredType(n.Name),
 		BaseType.Void => "void",
 		_ => ""
 	};
@@ -267,6 +276,8 @@ public class SemanticAnalyzer {
 	private void WalkStmt(Stmt stmt, string filePath) {
 		switch (stmt) {
 			case Stmt.VarDecl { Declaration: var d }:
+				// Re-declaring a name shadows any prior binding, including a tombstoned one.
+				_deletedNames.Remove($"local:{d.Name}");
 				ProcessVarDecl(d, filePath);
 				if (d.Init != null) WalkExpr(d.Init, filePath);
 				break;
@@ -278,48 +289,45 @@ public class SemanticAnalyzer {
 				ValidateReturn(v, filePath);
 				break;
 			case Stmt.Assign { Assignment: var a }:
+				// Clear the tombstone *before* walking the LHS so reassigning a deleted name
+				// (rebinding the variable / field, not dereferencing it) doesn't false-positive.
+				if (TryGetWriteTombstoneKey(a.Target, out var key)) _deletedNames.Remove(key);
 				WalkExpr(a.Target, filePath);
 				WalkExpr(a.Value, filePath);
 				ValidateAssign(a, filePath);
 				break;
 			case Stmt.If { Statement: var s }:
 				WalkExpr(s.Condition, filePath);
-				WalkBlock(s.ThenBranch, filePath);
-				foreach (var ei in s.ElseIfBranches) {
-					WalkExpr(ei.Condition, filePath);
-					WalkBlock(ei.Body, filePath);
-				}
-
-				if (s.ElseBranch.HasValue) WalkBlock(s.ElseBranch.Value, filePath);
+				WalkIfMerged(s, filePath);
 				break;
 			case Stmt.While { Statement: var s }:
 				WalkExpr(s.Condition, filePath);
-				WalkBlock(s.Body, filePath);
+				WalkLoopBody(s.Body, filePath);
 				break;
 			case Stmt.DoWhile { Statement: var s }:
-				WalkBlock(s.Body, filePath);
+				WalkLoopBody(s.Body, filePath);
 				WalkExpr(s.Condition, filePath);
 				break;
 			case Stmt.For { Statement: var s }:
 				WalkStmt(s.Init, filePath);
 				WalkExpr(s.Condition, filePath);
 				WalkExpr(s.Iterator, filePath);
-				WalkBlock(s.Body, filePath);
+				WalkLoopBody(s.Body, filePath);
 				break;
 			case Stmt.ForIn { Statement: var s }:
 				WalkExpr(s.Iterable, filePath);
-				WalkBlock(s.Body, filePath);
+				WalkLoopBody(s.Body, filePath);
 				break;
 			case Stmt.Switch { Statement: var s }:
 				WalkExpr(s.Expression, filePath);
-				foreach (var c in s.Cases) {
-					if (c.Pattern is SwitchPattern.Case cp) WalkExpr(cp.Expression, filePath);
-					foreach (var inner in c.Body) WalkStmt(inner, filePath);
-				}
-
+				WalkSwitchMerged(s, filePath);
 				break;
 			case Stmt.Throw { Expression: var e }: WalkExpr(e, filePath); break;
-			case Stmt.Delete { Expression: var e }: WalkExpr(e, filePath); break;
+			case Stmt.Delete { Expression: var e }:
+				WalkExpr(e, filePath);
+				ValidateDelete(e, filePath);
+				RecordDeletion(e);
+				break;
 			case Stmt.Discard { Expression: var e }: WalkExpr(e, filePath); break;
 			case Stmt.SuperCall { Arguments: var args }:
 				foreach (var a in args) WalkExpr(a, filePath);
@@ -344,10 +352,15 @@ public class SemanticAnalyzer {
 				// For instance member-access targets, walk the target as a value. For static
 				// dot-calls and meta-access calls, the target is a class name and is validated
 				// as part of overload resolution — don't double-error.
-				if (call.Callee is Expression.MemberAccess ma && ma.Target is Expression.Identifier { Name: var classOrLocal } && !_typer.TryGetLocalType(classOrLocal, out _) && !_importMap.ContainsKey(classOrLocal) && !_symbols.KnownClasses.Contains(classOrLocal)) {
-					// Genuinely unknown receiver — surface the identifier error.
+				// Always walk the receiver of a member-access callee. For a bare-identifier
+				// receiver this fires ValidateIdentifier (UAF / undefined-name checks); for
+				// a nested member-access like `this.foo.get()` it walks the inner `this.foo`
+				// so its ValidateMemberAccess (and tombstone check) runs. Static-call shapes
+				// (`Foo.bar()` where Foo is an imported class) pass through harmlessly —
+				// ValidateIdentifier on an imported / known class is a no-op aside from the
+				// already-existing visibility check.
+				if (call.Callee is Expression.MemberAccess ma)
 					WalkExpr(ma.Target, filePath);
-				}
 
 				ValidateCall(call, filePath);
 				break;
@@ -408,6 +421,9 @@ public class SemanticAnalyzer {
 				WalkExpr(sp.Value, filePath);
 				break;
 			case Expression.Assign asn:
+				// Mirror Stmt.Assign: clear the tombstone for the LHS before walking, so a
+				// reassignment of a deleted local/field doesn't fire UAF on its own LHS.
+				if (TryGetWriteTombstoneKey(asn.Target, out var asnKey)) _deletedNames.Remove(asnKey);
 				WalkExpr(asn.Target, filePath);
 				WalkExpr(asn.Value, filePath);
 				ValidateAssignExpr(asn, filePath);
@@ -417,14 +433,24 @@ public class SemanticAnalyzer {
 	}
 
 	private void ValidateIdentifier(Expression.Identifier id, string filePath) {
-		if (_typer.TryGetLocalType(id.Name, out _)) return; // local or parameter
+		if (_typer.TryGetLocalType(id.Name, out _)) {
+			// Local / parameter — check tombstone before accepting as a live read.
+			if (_deletedNames.Contains($"local:{id.Name}"))
+				SemanticError.UseAfterFree.WithFile(filePath).WithMessage($"'{id.Name}' has been deleted").Render();
+			return;
+		}
 		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method) — already checked in ValidateImports
 		if (_symbols.KnownClasses.Contains(id.Name)) {
 			ValidateClassReference(id.Name, filePath);
 			return;
 		}
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method — same-class is always accessible
-		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) return; // same-class field (implicit this)
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) {
+			// Same-class field via implicit-this — also tombstone-checked.
+			if (_deletedNames.Contains($"field:{id.Name}"))
+				SemanticError.UseAfterFree.WithFile(filePath).WithMessage($"'{id.Name}' has been deleted").Render();
+			return;
+		}
 		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{id.Name}' is not defined in this scope").Render();
 	}
 
@@ -433,6 +459,33 @@ public class SemanticAnalyzer {
 	//   public   — always accessible.
 	//   internal — caller's module FQN must equal the target's owning module FQN.
 	//   private  — caller's enclosing class FQN must equal the target's owning class FQN.
+	// Canonical type string used by the typer / equality checks. For primitives, applies
+	// alias canonicalization (`int → i32`). For class names, resolves to a registry FQN so
+	// `Foo a = new Foo();` compares apples-to-apples against the initializer's inferred type
+	// (`hello.world.Foo`). Falls back to the post-alias raw name when no class match.
+	private string CanonicalizeDeclaredType(string rawName) {
+		if (string.IsNullOrEmpty(rawName)) return rawName;
+		var canonical = TypeInference.Canonicalize(rawName);
+		// Primitives short-circuit — they aren't class names.
+		if (TypeInference.IsKnownPrimitive(canonical)) return canonical;
+		// Class types: resolve to a registry FQN when one matches; otherwise leave as-is.
+		return ResolveClassFqn(canonical) ?? canonical;
+	}
+
+	// Resolve a class name as written in source to its fully-qualified registry key.
+	// Lookup order: importMap (`import foo.bar.Baz` brings `Baz` into scope) → already-FQN
+	// (raw name matches a known class directly) → same-module sibling (prefix with the
+	// current file's module FQN). Returns null when no resolution succeeds.
+	private string? ResolveClassFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownClasses.Contains(mapped)) return mapped;
+		if (_symbols.KnownClasses.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
+		}
+		return null;
+	}
+
 	private bool CanAccess(Visibility memberVis, string ownerModule, string ownerClass) => memberVis switch {
 		Visibility.Public => true,
 		Visibility.Internal => _currentModuleFqn == ownerModule,
@@ -483,6 +536,14 @@ public class SemanticAnalyzer {
 	// Method calls on primitives (`x.foo()`) take a different path through ValidateCall,
 	// which already produces S009/S010 — this check only fires on field-access shapes.
 	private void ValidateMemberAccess(Expression.MemberAccess ma, string filePath) {
+		// Explicit `this.<field>` access — tombstone check before any other validation.
+		// (Implicit-this `<field>` reads route through ValidateIdentifier, which has its
+		// own tombstone check; this branch covers the explicit form.)
+		if (ma.Target is Expression.This && _deletedNames.Contains($"field:{ma.Member}")) {
+			SemanticError.UseAfterFree.WithFile(filePath).WithMessage($"'{ma.Member}' has been deleted").Render();
+			return;
+		}
+
 		var targetType = _typer.InferType(ma.Target);
 		if (targetType == null) return; // can't infer — skip
 		if (TypeInference.IsKnownPrimitive(targetType)) {
@@ -526,14 +587,142 @@ public class SemanticAnalyzer {
 		_ => "?"
 	};
 
+	// Tombstone helpers — UAF tracking.
+	//
+	// Classify a `delete` target into a tombstone key and add it to the per-function set.
+	// Recognized shapes: bare identifier resolving to a local, bare identifier resolving to
+	// an implicit-this field, and explicit `this.<member>`. Anything else (e.g. `other.foo`
+	// where `other` is a local) is silently ignored — out-of-scope for v1.
+	private void RecordDeletion(Expression target) {
+		switch (target) {
+			case Expression.Identifier id:
+				if (_typer.TryGetLocalType(id.Name, out _)) {
+					_deletedNames.Add($"local:{id.Name}");
+				}
+				else if (!string.IsNullOrEmpty(_currentTypeFqn)
+				         && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs)
+				         && fs.Any(f => f.Name == id.Name)) {
+					_deletedNames.Add($"field:{id.Name}");
+				}
+				break;
+			case Expression.MemberAccess { Target: Expression.This, Member: var m }:
+				_deletedNames.Add($"field:{m}");
+				break;
+		}
+	}
+
+	// Mirror of RecordDeletion's classification, but produces the key only — used by
+	// assignment LHS handling to clear a tombstone before walking the LHS as a value.
+	private bool TryGetWriteTombstoneKey(Expression target, out string key) {
+		switch (target) {
+			case Expression.Identifier id when _typer.TryGetLocalType(id.Name, out _):
+				key = $"local:{id.Name}";
+				return true;
+			case Expression.Identifier id when !string.IsNullOrEmpty(_currentTypeFqn)
+			                                   && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs)
+			                                   && fs.Any(f => f.Name == id.Name):
+				key = $"field:{id.Name}";
+				return true;
+			case Expression.MemberAccess { Target: Expression.This, Member: var m }:
+				key = $"field:{m}";
+				return true;
+			default:
+				key = "";
+				return false;
+		}
+	}
+
+	// Walk an If statement with branch-by-branch tombstone isolation. Each branch starts
+	// from the pre-If state; at the end, the merged state is the UNION of every branch's
+	// post-state (conservative: if any path freed a name, downstream uses are unsafe).
+	// When no `else` is present, the implicit fall-through contributes the pre-state, so
+	// a tombstone added in the then-branch survives the merge.
+	private void WalkIfMerged(IfStmt s, string filePath) {
+		var preState = new HashSet<string>(_deletedNames);
+		var endStates = new List<HashSet<string>>();
+
+		_deletedNames = new HashSet<string>(preState);
+		WalkBlock(s.ThenBranch, filePath);
+		endStates.Add(_deletedNames);
+
+		foreach (var ei in s.ElseIfBranches) {
+			_deletedNames = new HashSet<string>(preState);
+			WalkExpr(ei.Condition, filePath);
+			WalkBlock(ei.Body, filePath);
+			endStates.Add(_deletedNames);
+		}
+
+		if (s.ElseBranch.HasValue) {
+			_deletedNames = new HashSet<string>(preState);
+			WalkBlock(s.ElseBranch.Value, filePath);
+			endStates.Add(_deletedNames);
+		}
+		else {
+			// Implicit-else takes the pre-If state unchanged.
+			endStates.Add(preState);
+		}
+
+		_deletedNames = UnionAll(endStates);
+	}
+
+	private void WalkSwitchMerged(SwitchStmt s, string filePath) {
+		var preState = new HashSet<string>(_deletedNames);
+		var endStates = new List<HashSet<string>>();
+		var hasDefault = false;
+		foreach (var c in s.Cases) {
+			if (c.Pattern is SwitchPattern.Case cp) {
+				_deletedNames = new HashSet<string>(preState);
+				WalkExpr(cp.Expression, filePath);
+			}
+			else {
+				_deletedNames = new HashSet<string>(preState);
+				hasDefault = true;
+			}
+			foreach (var inner in c.Body) WalkStmt(inner, filePath);
+			endStates.Add(_deletedNames);
+		}
+		// No default → implicit fall-through contributes the pre-state.
+		if (!hasDefault) endStates.Add(preState);
+		_deletedNames = UnionAll(endStates);
+	}
+
+	// Walk a loop body once, then merge the body's end-state with the pre-state. The body
+	// might not run at all (live → live) or may run any number of times (live → body-end).
+	// A single union covers both cases conservatively. Misses the cross-iteration UAF case
+	// (use-then-delete-then-loop-back) — documented as an out-of-scope follow-up.
+	private void WalkLoopBody(Block body, string filePath) {
+		var preState = new HashSet<string>(_deletedNames);
+		WalkBlock(body, filePath);
+		_deletedNames.UnionWith(preState);
+	}
+
+	private static HashSet<string> UnionAll(List<HashSet<string>> states) {
+		var merged = new HashSet<string>();
+		foreach (var s in states) merged.UnionWith(s);
+		return merged;
+	}
+
+	// `delete <expr>;` — target must resolve to a class-instance value. Primitives, unknown
+	// targets, and class-name references (static, no instance) are rejected.
+	private void ValidateDelete(Expression target, string filePath) {
+		var ty = _typer.InferType(target);
+		if (ty == null) return; // can't infer — defer to runtime
+		if (TypeInference.IsKnownPrimitive(ty)) {
+			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot delete a value of primitive type '{ty}'").Render();
+			return;
+		}
+		if (!_symbols.KnownClasses.Contains(ty))
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"cannot delete '{ty}' — not a known class type").Render();
+	}
+
 	// Validate a `new Foo(...)` expression: the class itself and the resolved constructor
 	// must both be accessible from the caller's class/module.
 	private void ValidateNewExpression(Expression.New n, string filePath) {
 		if (n.Type.Base is not BaseType.Named named) return;
 		var rawName = named.Name;
-		var classFqn = _importMap.TryGetValue(rawName, out var mapped) ? mapped : rawName;
+		var classFqn = ResolveClassFqn(rawName);
 
-		if (!_symbols.Classes.TryGetValue(classFqn, out var classInfo)) {
+		if (classFqn == null || !_symbols.Classes.TryGetValue(classFqn, out var classInfo)) {
 			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"class '{rawName}' is not known").Render();
 			return;
 		}
@@ -645,11 +834,12 @@ public class SemanticAnalyzer {
 	private void ProcessVarDecl(VarDeclStmt d, string filePath) {
 		// Case A: explicit type annotation present — verify the initializer can widen losslessly.
 		if (d.Type.HasValue) {
-			var declared = TypeInference.Canonicalize((d.Type.Value.Base as BaseType.Named)?.Name ?? "");
+			var rawDeclared = (d.Type.Value.Base as BaseType.Named)?.Name ?? "";
+			var declared = CanonicalizeDeclaredType(rawDeclared);
 
 			if (d.Init != null) {
 				var inferredCanon = _typer.InferType(d.Init);
-				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
+				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && declared != inferredCanon && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
 					SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"expected '{declared}', got '{inferredCanon}'").Render();
 				}
 			}

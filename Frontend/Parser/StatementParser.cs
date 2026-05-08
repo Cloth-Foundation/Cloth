@@ -41,6 +41,7 @@ internal sealed class StatementParser(Parser parser) {
 		if (parser.CheckKeyword(Keyword.For)) return ParseForStmt();
 		if (parser.CheckKeyword(Keyword.Return)) return ParseReturnStmt();
 		if (parser.CheckKeyword(Keyword.Throw)) return ParseThrowStmt();
+		if (parser.CheckKeyword(Keyword.Delete)) return ParseDeleteStmt();
 
 		if (parser.CheckKeyword(Keyword.Break)) {
 			var span = parser.Current.Span;
@@ -506,6 +507,17 @@ internal sealed class StatementParser(Parser parser) {
 		Expression expression = ParseExpression();
 		parser.ExpectSemiColon();
 		return new Stmt.Throw(expression, TokenSpan.Merge(start, parser.Previous().Span));
+	}
+
+	// `delete <expr>;` — manual destruction. The expression must evaluate to a class-instance
+	// pointer (validated downstream); LLVM lowering runs the destructor (when defined) and
+	// frees the heap allocation.
+	private Stmt.Delete ParseDeleteStmt() {
+		var start = parser.Current.Span;
+		parser.ExpectKeyword(Keyword.Delete);
+		var expression = ParseExpression();
+		parser.ExpectSemiColon();
+		return new Stmt.Delete(expression, TokenSpan.Merge(start, parser.Previous().Span));
 	}
 
 	/// <summary>

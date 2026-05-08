@@ -8,6 +8,10 @@ public class () {
 
     }
 
+    public ~HelloPrinter {
+        println("Goodbye World!");
+    }
+
     public func printHelloWorld(): void {
         println("Hello World!");
     }
