@@ -369,7 +369,9 @@ public class SemanticAnalyzer {
 				// (rebinding the variable / field, not dereferencing it) doesn't false-positive.
 				// Also break the LHS's prior alias — reassignment severs the old pointer
 				// relationship before establishing a new one. Before any of that, check whether
-				// the reassignment overwrites a still-owning, unconsumed allocation.
+				// the reassignment overwrites a still-owning, unconsumed allocation, and
+				// whether the LHS attempts to mutate through a borrow parameter.
+				CheckMutationOfBorrow(a.Target, filePath);
 				var hasLhsKey = TryGetWriteTombstoneKey(a.Target, out var key);
 				if (hasLhsKey) {
 					CheckOverwriteLeak(key, a.Value, filePath);
@@ -513,7 +515,9 @@ public class SemanticAnalyzer {
 				WalkExpr(sp.Value, filePath);
 				break;
 			case Expression.Assign asn:
-				// Mirror Stmt.Assign: overwrite-leak check, then clear tombstone / break alias.
+				// Mirror Stmt.Assign: borrow-mutation check, overwrite-leak check, then
+				// clear tombstone / break alias.
+				CheckMutationOfBorrow(asn.Target, filePath);
 				var asnHasKey = TryGetWriteTombstoneKey(asn.Target, out var asnKey);
 				if (asnHasKey) {
 					CheckOverwriteLeak(asnKey, asn.Value, filePath);
@@ -754,6 +758,63 @@ public class SemanticAnalyzer {
 					.Render();
 		}
 	}
+
+	// MutBorrow enforcement. A plain `Type p` parameter is a read-only borrow; the callee
+	// must not write to `p`'s fields. `&` (MutBorrow) and `!` (Transfer) are exempt — both
+	// grant the callee permission to mutate. Aliasing is honored: `let q = p; q.field = X;`
+	// is also rejected when `p` is a borrow.
+	//
+	// Out of scope: method calls that may mutate (`p.someMutator()`) — needs per-method
+	// effect annotations. Postfix/prefix increment of borrow fields. Mutating subfields
+	// reached via `this.<f>` whose field type is itself a borrow.
+	private void CheckMutationOfBorrow(Expression target, string filePath) {
+		if (target is not Expression.MemberAccess ma) return;
+		var root = ExtractMemberAccessRoot(ma);
+		if (root is null or "this") return;
+
+		// Direct hit: the LHS root identifier is itself a borrow parameter.
+		if (IsBorrowParameter(root)) {
+			SemanticError.MutationOfBorrow
+				.WithFile(filePath)
+				.WithMessage($"parameter '{root}' is a borrow — mark it 'Type& {root}' to allow mutation, or 'Type! {root}' to take ownership")
+				.Render();
+			return;
+		}
+
+		// Aliasing hit: the LHS root is a local that aliases a borrow parameter.
+		var rootKey = $"local:{root}";
+		if (_aliasGroups.TryGetValue(rootKey, out var group)) {
+			foreach (var member in group) {
+				if (member == rootKey) continue;
+				if (!member.StartsWith("local:")) continue;
+				var aliasedName = member[6..];
+				if (IsBorrowParameter(aliasedName)) {
+					SemanticError.MutationOfBorrow
+						.WithFile(filePath)
+						.WithMessage($"'{root}' aliases borrow parameter '{aliasedName}'; mark '{aliasedName}' as 'Type&' to allow mutation")
+						.Render();
+					return;
+				}
+			}
+		}
+	}
+
+	// Walk a member-access chain to its left-most receiver. For `a.b.c.d` returns "a".
+	// Returns "this" for `this.x.y`. Returns null if the root is anything else (e.g.
+	// `func().field = X`) — out of scope for borrow tracking.
+	private static string? ExtractMemberAccessRoot(Expression.MemberAccess ma) {
+		Expression cur = ma.Target;
+		while (cur is Expression.MemberAccess inner)
+			cur = inner.Target;
+		return cur switch {
+			Expression.Identifier id => id.Name,
+			Expression.This => "this",
+			_ => null
+		};
+	}
+
+	private bool IsBorrowParameter(string name) =>
+		_paramOwnership.TryGetValue(name, out var ownership) && ownership == null;
 
 	// Mirror of RecordDeletion's classification, but produces the key only — used by
 	// assignment LHS handling to clear a tombstone before walking the LHS as a value.
