@@ -174,6 +174,11 @@ public sealed class LlvmEmitter {
 					if (f.Initializer != null)
 						ScanExpr(f.Initializer);
 		}
+
+		// libc allocators used by `new`/`delete` lowering. Always declared so the .ll links
+		// regardless of whether the user code actually invokes either form.
+		_externDecls["calloc"] = "declare ptr @calloc(i64, i64)";
+		_externDecls["free"] = "declare void @free(ptr)";
 	}
 
 	private void ScanStmt(CirStmt stmt) {
@@ -425,6 +430,9 @@ public sealed class LlvmEmitter {
 		sb.AppendLine("define i32 @main(i32 %argc, ptr %argv) {");
 		sb.AppendLine("entry:");
 		sb.AppendLine($"  %instance = alloca {structName}, align 8");
+		// Match the heap-allocation path's zero-init guarantee for stack-allocated Main, so
+		// fields without explicit initializers come up as 0/null/false even at the entry point.
+		sb.AppendLine($"  store {structName} zeroinitializer, ptr %instance, align 8");
 		// Pass argv as the 'args' parameter (opaque ptr — runtime conversion is a future concern).
 		sb.AppendLine($"  call void @{ctorLlvm}(ptr %instance, ptr %argv)");
 		if (dtorLlvm != null)
@@ -459,6 +467,7 @@ public sealed class LlvmEmitter {
 			case CirStmt.Discard d: EmitExprStmt(d.Expression); break;
 			case CirStmt.Return r: EmitReturn(r); break;
 			case CirStmt.If i: EmitIf(i); break;
+			case CirStmt.Delete del: EmitDelete(del); break;
 			case CirStmt.Block b:
 				foreach (var s in b.Body) EmitStmt(s);
 				break;
@@ -466,6 +475,22 @@ public sealed class LlvmEmitter {
 				LlvmError.UnsupportedStatement.WithMessage($"{stmt.GetType().Name} is not yet lowerable to LLVM IR").Render();
 				break;
 		}
+	}
+
+	// `delete obj;` — call the destructor (if defined for the target's class) and free the
+	// heap allocation. Pairs with EmitAlloc's calloc.
+	private void EmitDelete(CirStmt.Delete d) {
+		var ptr = EmitExpr(d.Expression);
+		if (!string.IsNullOrEmpty(d.ClassFqn) && _classByFqn.ContainsKey(d.ClassFqn)) {
+			// MangleDtor convention: `<TypeFqn>.~<ClassName>`.
+			var className = d.ClassFqn.Contains('.') ? d.ClassFqn[(d.ClassFqn.LastIndexOf('.') + 1)..] : d.ClassFqn;
+			var dtorCir = $"{d.ClassFqn}.~{className}";
+			if (_definedFns.Contains(dtorCir)) {
+				var dtorLlvm = MangleToLlvm(dtorCir);
+				_bodyLines.Add($"  call void @{dtorLlvm}(ptr {ptr})");
+			}
+		}
+		_bodyLines.Add($"  call void @free(ptr {ptr})");
 	}
 
 	private void EmitIf(CirStmt.If i) {
@@ -572,6 +597,7 @@ public sealed class LlvmEmitter {
 
 			case CirExpr.FieldAccess fa: return EmitFieldLoad(fa);
 			case CirExpr.Call c: return EmitCall(c);
+			case CirExpr.Alloc a: return EmitAlloc(a);
 
 			case CirExpr.Binary b: return EmitBinary(b);
 			case CirExpr.Unary u: return EmitUnary(u);
@@ -660,6 +686,53 @@ public sealed class LlvmEmitter {
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = call {retTy}{fnTypePrefix} @{llvmName}({argList})");
 		return t;
+	}
+
+	// `new ClassName(args)` — heap-allocate a zero-initialized instance, run its constructor,
+	// return the pointer. Memory model: `calloc(1, sizeof(struct))` guarantees zero bits, so
+	// fields without explicit initializers come up as 0/null/false. Lifetime is unmanaged
+	// (leaks until explicit `delete`).
+	private string EmitAlloc(CirExpr.Alloc a) {
+		if (a.Type is not CirType.Named named) {
+			LlvmError.UnsupportedExpression.WithMessage($"alloc target must be a named class type, got {a.Type.GetType().Name}").Render();
+			return "undef";
+		}
+
+		var fqn = named.FullyQualifiedName;
+		var structName = StructName(fqn);
+
+		// Compute sizeof(struct) via the GEP-null trick: pointer to element index 1 of a null
+		// pointer is the byte offset of one struct, i.e. its size. ptrtoint converts to i64.
+		var sizePtr = FreshTemp();
+		_bodyLines.Add($"  {sizePtr} = getelementptr {structName}, ptr null, i32 1");
+		var sizeI64 = FreshTemp();
+		_bodyLines.Add($"  {sizeI64} = ptrtoint ptr {sizePtr} to i64");
+
+		// Heap allocation. calloc zeroes the memory, satisfying the "fields default to zero" rule
+		// without an additional memset.
+		var obj = FreshTemp();
+		_bodyLines.Add($"  {obj} = call ptr @calloc(i64 1, i64 {sizeI64})");
+
+		// Constructor invocation. Receiver (`this`) is the first arg; user-supplied args follow.
+		// Argument LLVM types come from the constructor's registered signature when available.
+		var ctorLlvm = MangleToLlvm(a.CtorMangledName);
+		var argVals = a.Args.Select(EmitExpr).ToList();
+		var argTypes = ResolveCallArgTypes(a.CtorMangledName, argVals.Count, skipReceiver: true);
+		var argList = string.Join(", ", new[] { $"ptr {obj}" }.Concat(argVals.Select((v, i) => $"{argTypes[i]} {v}")));
+		_bodyLines.Add($"  call void @{ctorLlvm}({argList})");
+
+		return obj;
+	}
+
+	// Look up an LLVM-typed argument list for a callee, optionally skipping the leading `this`.
+	// Falls back to opaque `ptr` when the callee isn't in the module table.
+	private List<string> ResolveCallArgTypes(string mangledName, int count, bool skipReceiver) {
+		var fn = _module.Functions.FirstOrDefault(f => f.MangledName == mangledName);
+		if (fn == null) return Enumerable.Repeat("ptr", count).ToList();
+		var src = skipReceiver ? fn.Parameters.Skip(1) : fn.Parameters;
+		var types = src.Select(p => LlvmType(p.Type)).ToList();
+		while (types.Count < count) types.Add("ptr");
+		return types.Take(count).ToList();
 	}
 
 	// LLVM type of an expression's runtime value, used when typing variadic arguments
@@ -946,7 +1019,9 @@ public sealed class LlvmEmitter {
 		for (var i = 0; i < parts.Length; i++)
 			if (parts[i].StartsWith('~'))
 				parts[i] = "dtor_" + parts[i][1..];
-		return string.Join('_', parts);
+		// LLVM symbol names accept letters, digits, `_`, `.`, `$`, `-`. Array brackets in
+		// canonical type names (e.g. `string[]` from a primary param) need encoding.
+		return string.Join('_', parts).Replace("[]", "_arr").Replace('[', '_').Replace(']', '_');
 	}
 
 	private static string StructName(string fqn) => "%struct." + MangleToLlvm(fqn);

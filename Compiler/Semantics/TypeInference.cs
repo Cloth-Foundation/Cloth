@@ -40,6 +40,24 @@ public static class TypeInference {
 	public static string Canonicalize(string name) =>
 		Aliases.TryGetValue(name, out var c) ? c : name;
 
+	// Canonical string for a parameter / return type, including arrays. Used for symbol
+	// mangling and overload resolution so two functions with `i32` vs `i32[]` get distinct keys.
+	// When `resolveClass` is supplied, named types that aren't primitives are resolved through
+	// it to a fully-qualified class name (importMap → known FQN → same-module sibling), so
+	// `Foo` and `hello.world.Foo` collapse to the same canonical key.
+	public static string CanonicalizeTypeExpression(TypeExpression t, Func<string, string?>? resolveClass = null) => t.Base switch {
+		BaseType.Named n => CanonicalizeNamedType(n.Name, resolveClass),
+		BaseType.Array a => CanonicalizeTypeExpression(a.ElementType, resolveClass) + "[]",
+		BaseType.Void => "void",
+		_ => "any"
+	};
+
+	private static string CanonicalizeNamedType(string rawName, Func<string, string?>? resolveClass) {
+		var canon = Canonicalize(rawName);
+		if (IsKnownPrimitive(canon)) return canon;
+		return resolveClass?.Invoke(canon) ?? canon;
+	}
+
 	public static bool IsKnownPrimitive(string canonicalName) =>
 		Canonical.Contains(canonicalName);
 

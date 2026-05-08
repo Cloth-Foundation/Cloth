@@ -1,17 +1,25 @@
 module hello.world;
 
 import cloth.io.Out::{ println as p };
+import hello.foo.Foo;
 
 public class (string[] args) {
 
     private i32 x = 10;
+    private Foo foo;
 
     public Main {
-        p(hello() + " " + world());
-        p(this.x);
+        let printer = new HelloPrinter();
+        printer.printHelloWorld();
+        delete printer;
+
+        foo = new Foo();
+        p(foo.get());
+        delete foo;
     }
 
     public ~Main() {
+        p("Goodbye");
     }
 
     public func hello(): string {

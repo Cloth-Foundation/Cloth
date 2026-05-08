@@ -37,6 +37,7 @@ public class SemanticError : Exception {
 	public static readonly SemanticError AssignTypeMismatch = new("S00D", "assignment value does not match target type", true);
 	public static readonly SemanticError FieldAccessOnNonClass = new("S00E", "cannot access field on a non-class value", true);
 	public static readonly SemanticError VisibilityViolation = new("S00F", "visibility rule violated", true);
+	public static readonly SemanticError UseAfterFree = new("S010", "use-after-free", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);
