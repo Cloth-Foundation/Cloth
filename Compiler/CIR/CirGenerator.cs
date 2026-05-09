@@ -181,18 +181,18 @@ public sealed class CirGenerator {
 		// constructor prologue stores the vtable global into it before any other init.
 		var hasVtable = _symbols.ClassVtables.ContainsKey(typeFqn);
 		if (hasVtable)
-			fields.Add(new CirField(SymbolRegistry.VtableFieldName, new CirType.Any(), IsConst: false, IsAtomic: false, null));
+			fields.Add(new CirField(SymbolRegistry.VtableFieldName, new CirType.Any(), IsConst: false, null));
 
 		// Inner-class capture: prepend the hidden `__outer__` field of type <outerFqn>.
 		// When the class also has a vtable, this sits at index 1 (after the vtable header).
 		// `IsAutoDestructable` skips both synthetic fields by name.
 		var classInfo = _symbols.Classes.TryGetValue(typeFqn, out var ci) ? ci : null;
 		if (classInfo != null && classInfo.IsInner && _symbols.Classes.ContainsKey(classInfo.OuterClassFqn))
-			fields.Add(new CirField(SymbolRegistry.InnerOuterFieldName, new CirType.Named(classInfo.OuterClassFqn), IsConst: false, IsAtomic: false, null));
+			fields.Add(new CirField(SymbolRegistry.InnerOuterFieldName, new CirType.Named(classInfo.OuterClassFqn), IsConst: false, null));
 
 		// Primary parameters become stored fields.
 		foreach (var p in decl.PrimaryParameters)
-			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, IsAtomic: false, null));
+			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, null));
 
 		// Pre-collect declared field initializers so each constructor can emit them as
 		// `this.<field> = <init>` ahead of the user-written body. Source order is preserved
@@ -211,7 +211,7 @@ public sealed class CirGenerator {
 						fields.Add(LowerField(f.Declaration));
 						break;
 					case MemberDeclaration.Const c:
-						fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, IsAtomic: false, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
+						fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
 						break;
 				}
 			}
@@ -240,7 +240,7 @@ public sealed class CirGenerator {
 			_currentTypeFqn = prev;
 		}
 
-		return new CirTypeDecl.Class(typeFqn, decl.Extends, decl.IsList, fields, decl.Modifiers.Contains(ClassModifiers.Abstract), decl.Modifiers.Contains(ClassModifiers.Const));
+		return new CirTypeDecl.Class(typeFqn, decl.Extends, decl.IsList, fields, decl.Modifiers.Contains(ClassModifiers.Prototype), decl.Modifiers.Contains(ClassModifiers.Const));
 	}
 
 	private CirTypeDecl LowerStructDeclaration(StructDeclaration decl, string moduleFqn, string filePath) {
@@ -253,7 +253,7 @@ public sealed class CirGenerator {
 					fields.Add(LowerField(f.Declaration));
 					break;
 				case MemberDeclaration.Const c:
-					fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, IsAtomic: false, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
+					fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
 					break;
 			}
 		}
@@ -513,7 +513,7 @@ public sealed class CirGenerator {
 	}
 
 	private CirField LowerField(FieldDeclaration decl) =>
-		new CirField(decl.Name, LowerType(decl.TypeExpression), decl.FieldModifiers == FieldModifiers.Const, decl.FieldModifiers == FieldModifiers.Atomic, decl.Initializer is null ? null : LowerExpr(decl.Initializer));
+		new CirField(decl.Name, LowerType(decl.TypeExpression), decl.FieldModifiers == FieldModifiers.Const, decl.Initializer is null ? null : LowerExpr(decl.Initializer));
 
 	// -------------------------------------------------------------------------
 	// Block & statement lowering

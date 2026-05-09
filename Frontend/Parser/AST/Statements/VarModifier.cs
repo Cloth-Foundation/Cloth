@@ -8,6 +8,5 @@
 namespace FrontEnd.Parser.AST.Statements;
 
 public enum VarModifier {
-	Static,
-	Atomic
+	Static
 }

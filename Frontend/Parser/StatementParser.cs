@@ -65,7 +65,7 @@ internal sealed class StatementParser(Parser parser) {
 		if (parser.CheckKeyword(Keyword.Let))
 			return ParseVarDecl([]);
 
-		// var modifiers (static, atomic) must precede a declaration
+		// var modifiers (currently just `static`) must precede a declaration
 		var mods = ParseVarModifiers();
 		if (mods.Count > 0)
 			return ParseVarDecl(mods);
@@ -91,8 +91,7 @@ internal sealed class StatementParser(Parser parser) {
 
 	/// <summary>
 	/// Parses and collects variable modifiers from the current token stream.
-	/// This method identifies and processes specific modifiers such as
-	/// <c>static</c> and <c>atomic</c>.
+	/// This method identifies and processes specific modifiers such as <c>static</c>.
 	/// </summary>
 	/// <returns>
 	/// A list of parsed variable modifiers represented as instances of
@@ -102,11 +101,6 @@ internal sealed class StatementParser(Parser parser) {
 		var mods = new List<VarModifier>();
 		if (parser.CheckKeyword(Keyword.Static)) {
 			mods.Add(VarModifier.Static);
-			parser.Advance();
-		}
-
-		if (parser.CheckKeyword(Keyword.Atomic)) {
-			mods.Add(VarModifier.Atomic);
 			parser.Advance();
 		}
 
@@ -130,7 +124,7 @@ internal sealed class StatementParser(Parser parser) {
 	/// a semicolon. It supports both explicit "let" declarations and declarations inferred from types.
 	/// </summary>
 	/// <param name="modifiers">
-	/// A list of <see cref="VarModifier"/> applied to the variable declaration, such as static or atomic.
+	/// A list of <see cref="VarModifier"/> applied to the variable declaration, such as static.
 	/// These modifiers define the behavior and scope of the declared variable.
 	/// </param>
 	/// <returns>
