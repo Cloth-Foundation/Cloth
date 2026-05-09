@@ -24,6 +24,10 @@ public class Parser {
 	private bool _moduleDeclared;
 	private int _cursor;
 	private readonly string _currentFileName;
+	// Tracks the name of the class/struct/etc currently being parsed so constructor
+	// detection inside member-bodies can disambiguate between an outer class and a
+	// nested one. Pushed/popped around nested-type parsing.
+	private string _currentClassName = "";
 
 	internal StatementParser StatementParser;
 	internal ExpressionParser ExpressionParser;
@@ -204,41 +208,81 @@ public class Parser {
 		};
 	}
 
-	private ClassDeclaration ParseClassDeclaration(Visibility visibility, List<ClassModifiers> modifiers) {
+	private ClassDeclaration ParseClassDeclaration(Visibility visibility, List<ClassModifiers> modifiers, bool nested = false) {
 		var start = _current.Span;
-		ExpectKeyword(Keyword.Class); // consume 'class', _current = nam
+		ExpectKeyword(Keyword.Class); // consume 'class'
 
-		var parameters = new List<Parameter>();
-		if (CheckOperator(Operator.LParen)) {
-			Advance(); // consume '(', _current = first param
-			parameters = ParseParameters();
-			ExpectOperator(Operator.RParen); // consume ')'
+		// Identifier resolution:
+		//   - nested: identifier is REQUIRED in source (no filename fallback).
+		//   - top-level: optional identifier; if present must match _currentFileName (case-sensitive).
+		string name;
+		if (nested) {
+			name = ExpectIdentifier();
+		}
+		else if (_current.Type == TokenType.Identifier) {
+			var explicitName = _current.Lexeme;
+			if (explicitName != _currentFileName)
+				throw ParserError.ClassNameMismatch.WithMessage($"top-level class identifier '{explicitName}' does not match filename '{_currentFileName}' (case sensitive)").WithSpan(_current.Span).Render();
+			Advance();
+			name = explicitName;
+		}
+		else {
+			name = _currentFileName;
 		}
 
-		var extends = CheckExtensions();
-		var implementors = CheckImplementors();
+		// Track the class being parsed so member bodies (constructor detection) can match
+		// `name == _currentClassName` instead of relying on the filename.
+		var previousClassName = _currentClassName;
+		_currentClassName = name;
+		try {
+			var parameters = new List<Parameter>();
+			// Nested classes REQUIRE the primary-ctor parens; top-level may omit them.
+			if (nested) {
+				ExpectOperator(Operator.LParen);
+				parameters = ParseParameters();
+				ExpectOperator(Operator.RParen);
+			}
+			else if (CheckOperator(Operator.LParen)) {
+				Advance();
+				parameters = ParseParameters();
+				ExpectOperator(Operator.RParen);
+			}
 
-		ExpectOperator(Operator.LBrace); // consume '{', _current = first member
-		var members = ParseMembers();
-		ExpectOperator(Operator.RBrace); // consume '}'
+			var extends = CheckExtensions();
+			var implementors = CheckImplementors();
 
-		return new ClassDeclaration(visibility, modifiers, _currentFileName, parameters, extends, implementors, members, TokenSpan.Merge(start, Previous().Span));
+			ExpectOperator(Operator.LBrace);
+			var members = ParseMembers();
+			ExpectOperator(Operator.RBrace);
+
+			return new ClassDeclaration(visibility, modifiers, name, parameters, extends, implementors, members, TokenSpan.Merge(start, Previous().Span));
+		}
+		finally {
+			_currentClassName = previousClassName;
+		}
 	}
 
-	private StructDeclaration ParseStructDeclaration(Visibility visibility) {
+	private StructDeclaration ParseStructDeclaration(Visibility visibility, bool nested = false) {
 		var start = _current.Span;
 		ExpectKeyword(Keyword.Struct);
-		var name = _currentFileName;
-		ExpectOperator(Operator.LBrace);
-		var members = ParseMembers();
-		ExpectOperator(Operator.RBrace);
-		return new StructDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		var name = ResolveTypeDeclName(nested);
+		var previousClassName = _currentClassName;
+		_currentClassName = name;
+		try {
+			ExpectOperator(Operator.LBrace);
+			var members = ParseMembers();
+			ExpectOperator(Operator.RBrace);
+			return new StructDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		}
+		finally {
+			_currentClassName = previousClassName;
+		}
 	}
 
-	private EnumDeclaration ParseEnumDeclaration(Visibility visibility) {
+	private EnumDeclaration ParseEnumDeclaration(Visibility visibility, bool nested = false) {
 		var start = _current.Span;
 		ExpectKeyword(Keyword.Enum);
-		var name = _currentFileName;
+		var name = ResolveTypeDeclName(nested);
 		ExpectOperator(Operator.LBrace);
 		var cases = new List<EnumDeclaration.EnumCase>();
 		while (!CheckOperator(Operator.RBrace) && !AtEof()) {
@@ -265,24 +309,54 @@ public class Parser {
 		return new EnumDeclaration(visibility, name, cases, TokenSpan.Merge(start, Previous().Span));
 	}
 
-	private InterfaceDeclaration ParseInterfaceDeclaration(Visibility visibility) {
+	private InterfaceDeclaration ParseInterfaceDeclaration(Visibility visibility, bool nested = false) {
 		var start = _current.Span;
 		ExpectKeyword(Keyword.Interface);
-		var name = _currentFileName;
-		ExpectOperator(Operator.LBrace);
-		var members = ParseMembers();
-		ExpectOperator(Operator.RBrace);
-		return new InterfaceDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		var name = ResolveTypeDeclName(nested);
+		var previousClassName = _currentClassName;
+		_currentClassName = name;
+		try {
+			ExpectOperator(Operator.LBrace);
+			var members = ParseMembers();
+			ExpectOperator(Operator.RBrace);
+			return new InterfaceDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		}
+		finally {
+			_currentClassName = previousClassName;
+		}
 	}
 
-	private TraitDeclaration ParseTraitDeclaration(Visibility visibility) {
+	private TraitDeclaration ParseTraitDeclaration(Visibility visibility, bool nested = false) {
 		var start = _current.Span;
 		ExpectKeyword(Keyword.Trait);
-		var name = _currentFileName;
-		ExpectOperator(Operator.LBrace);
-		var members = ParseMembers();
-		ExpectOperator(Operator.RBrace);
-		return new TraitDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		var name = ResolveTypeDeclName(nested);
+		var previousClassName = _currentClassName;
+		_currentClassName = name;
+		try {
+			ExpectOperator(Operator.LBrace);
+			var members = ParseMembers();
+			ExpectOperator(Operator.RBrace);
+			return new TraitDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+		}
+		finally {
+			_currentClassName = previousClassName;
+		}
+	}
+
+	// Resolve the name of a struct/enum/interface/trait declaration. For nested declarations
+	// the identifier is REQUIRED in source. For top-level declarations the identifier is
+	// optional; if present it must match `_currentFileName` (case sensitive); when omitted,
+	// the filename is used.
+	private string ResolveTypeDeclName(bool nested) {
+		if (nested) return ExpectIdentifier();
+		if (_current.Type == TokenType.Identifier) {
+			var explicitName = _current.Lexeme;
+			if (explicitName != _currentFileName)
+				throw ParserError.ClassNameMismatch.WithMessage($"top-level type identifier '{explicitName}' does not match filename '{_currentFileName}' (case sensitive)").WithSpan(_current.Span).Render();
+			Advance();
+			return explicitName;
+		}
+		return _currentFileName;
 	}
 
 	/// <summary>
@@ -359,8 +433,16 @@ public class Parser {
 				Advance(); // consume '~'
 				members.Add(new MemberDeclaration.Destructor(ParseDestructorDecl(annotations, visibility)));
 			}
-			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentFileName) {
-				// CONSTRUCTOR
+			else if (CheckKeyword(Keyword.Class) || CheckKeyword(Keyword.Struct)
+			         || CheckKeyword(Keyword.Enum) || CheckKeyword(Keyword.Interface)
+			         || CheckKeyword(Keyword.Trait)) {
+				// NESTED TYPE: visibility/modifiers already parsed; the nested-type helper
+				// handles the kind dispatch and identifier-required path.
+				members.Add(new MemberDeclaration.NestedType(ParseNestedTypeDeclaration(visibility, modifiers)));
+			}
+			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentClassName) {
+				// CONSTRUCTOR — name matches the class currently being parsed (filename for
+				// top-level, explicit identifier for nested).
 				Advance(); // consume constructor name; ParseConstructorDecl starts at '(' or '{'
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
@@ -370,6 +452,29 @@ public class Parser {
 		}
 
 		return members;
+	}
+
+	// Parse a nested type declaration. The kind keyword (class/struct/enum/interface/trait)
+	// is _current; the dispatcher peeks but does NOT consume it — each kind's parser
+	// consumes its own keyword. Visibility / modifiers are already parsed by ParseMembers.
+	// The kind's parser is invoked with a sentinel non-null `nestedName` (the literal
+	// "<nested>") which puts it into nested mode: identifier becomes required, filename
+	// comparison is skipped, primary-ctor parens become required where applicable.
+	// The actual identifier is then read via the parser's own identifier-acquisition path.
+	private TypeDeclaration ParseNestedTypeDeclaration(Visibility visibility, List<FunctionModifiers> _) {
+		// Dispatch on the kind keyword. Each parser consumes its own keyword and identifier.
+		// We pass a SENTINEL (empty string) as `nestedName` to flag nested-mode without
+		// substituting a name — the parser still reads the explicit identifier from source.
+		var kind = _current.Keyword;
+		var modifiers = new List<ClassModifiers>(); // top-level modifiers not honored on nested in v1
+		return kind switch {
+			Keyword.Class => new TypeDeclaration.Class(ParseClassDeclaration(visibility, modifiers, nested: true)),
+			Keyword.Struct => new TypeDeclaration.Struct(ParseStructDeclaration(visibility, nested: true)),
+			Keyword.Enum => new TypeDeclaration.Enum(ParseEnumDeclaration(visibility, nested: true)),
+			Keyword.Interface => new TypeDeclaration.Interface(ParseInterfaceDeclaration(visibility, nested: true)),
+			Keyword.Trait => new TypeDeclaration.Trait(ParseTraitDeclaration(visibility, nested: true)),
+			_ => throw ParserError.InvalidTopLevelDecl.WithMessage($"unexpected nested-type keyword '{kind}'").WithSpan(_current.Span).Render()
+		};
 	}
 
 	/// <summary>
@@ -681,7 +786,9 @@ public class Parser {
 	private DestructorDeclaration ParseDestructorDecl(List<TraitAnnotation> annotations, Visibility visibility) {
 		var start = _current.Span;
 		var name = ExpectIdentifier();
-		if (name != _currentFileName) throw ParserError.InvalidDestructorName.WithMessage($"Got {name}, expected {_currentFileName}").WithSpan(_current.Span).Render();
+		// Match the destructor name against the class CURRENTLY being parsed — for top-level
+		// classes that's `_currentFileName`, for nested classes it's the explicit identifier.
+		if (name != _currentClassName) throw ParserError.InvalidDestructorName.WithMessage($"Got {name}, expected {_currentClassName}").WithSpan(_current.Span).Render();
 
 		// Optional empty parens: ~Name() {} is equivalent to ~Name {}
 		if (CheckOperator(Operator.LParen)) {

@@ -256,7 +256,7 @@ public class SemanticAnalyzer {
 	// the function's parameters (including primary class params for constructors). Class-typed
 	// parameters land in the typer with their FQN so member-access on them resolves correctly.
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
-		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
+		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn, _currentModuleFqn);
 		_deletedNames = new HashSet<string>();
 		_paramOwnership = new Dictionary<string, OwnershipModifier?>();
 		_aliasGroups = new Dictionary<string, HashSet<string>>();
@@ -300,6 +300,20 @@ public class SemanticAnalyzer {
 				WalkBlock(f.Body.Value, filePath);
 				ValidateAllPathsReturn(f.Body.Value, f.Name, filePath);
 				CheckOwnedLocalLeaks(filePath);
+				break;
+			case MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var nested } }:
+				// Recursively walk the nested class with `_currentTypeFqn` updated to the
+				// nested FQN. The module-fqn stays the same (file's module), so `internal`
+				// access checks continue to use the file-level module.
+				var savedTypeFqn = _currentTypeFqn;
+				_currentTypeFqn = string.IsNullOrEmpty(savedTypeFqn) ? nested.Name : $"{savedTypeFqn}.{nested.Name}";
+				try {
+					foreach (var m in nested.Members)
+						WalkMember(m, filePath, nested.PrimaryParameters);
+				}
+				finally {
+					_currentTypeFqn = savedTypeFqn;
+				}
 				break;
 		}
 	}
@@ -585,6 +599,11 @@ public class SemanticAnalyzer {
 	private string? ResolveClassFqn(string rawName) {
 		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownClasses.Contains(mapped)) return mapped;
 		if (_symbols.KnownClasses.Contains(rawName)) return rawName;
+		// Nested-type lookup: `Inner` inside `Outer`'s body resolves to `Outer.Inner`.
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(asNested)) return asNested;
+		}
 		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
 			var sameModule = $"{_currentModuleFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;

@@ -16,6 +16,7 @@ namespace FrontEnd.Parser.AST.Declarations;
 [JsonDerivedType(typeof(MemberDeclaration.Fragment), "Fragment")]
 [JsonDerivedType(typeof(MemberDeclaration.Constructor), "Constructor")]
 [JsonDerivedType(typeof(MemberDeclaration.Destructor), "Destructor")]
+[JsonDerivedType(typeof(MemberDeclaration.NestedType), "NestedType")]
 public abstract record MemberDeclaration {
 	public sealed record Field(FieldDeclaration Declaration) : MemberDeclaration;
 
@@ -28,4 +29,9 @@ public abstract record MemberDeclaration {
 	public sealed record Constructor(ConstructorDeclaration Declaration) : MemberDeclaration;
 
 	public sealed record Destructor(DestructorDeclaration Declaration) : MemberDeclaration;
+
+	// A nested type declaration (class / struct / enum / interface / trait) appearing
+	// inside another type's member list. Carries a fully-formed TypeDeclaration so the
+	// nested kind can be any of the existing type-decl variants.
+	public sealed record NestedType(TypeDeclaration Declaration) : MemberDeclaration;
 }
