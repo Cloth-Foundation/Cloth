@@ -8,17 +8,33 @@ public class (string[] args) {
     private PrintName printName;
 
     public Main {
+        sayHello();
+        makeContainer();
+        makeMulti();
+        interfaceDispatch();
+        defaultImpl();
+        loopTests();
+    }
+
+    public ~Main() {
+    }
+
+    public func sayHello() {
         printName = new PrintName("Cloth!");
         printName.print();
         delete printName;
+    }
 
+    public func makeContainer() {
         let c = new Container();
         p(c.get());                                 // 7 + 42 = 49 (inner constructed in ctor)
-        let inner = c.new Container.Inner();
-        p(inner.read());                            // 7 + 42 = 49 (constructed via receiver)
-        delete inner;
+        let i = c.new Container.Inner();
+        p(i.read());                            // 7 + 42 = 49 (constructed via receiver)
+        delete i;
         delete c;
+    }
 
+    public func makeMulti() {
         // Multi-level: Tower.Mid.Leaf where Leaf accesses both Mid and Tower fields.
         let t = new Tower();
         let m = t.new Tower.Mid();
@@ -27,27 +43,33 @@ public class (string[] args) {
         delete leaf;
         delete m;
         delete t;
+    }
 
+    public func interfaceDispatch() {
         // Interface dispatch through a Greeter-typed local.
         let speaker = new Speaker();
         Greeter g = speaker;
         p(g.greet());                               // "speaker"
         delete speaker;
+    }
 
-        // Default-impl dispatch: DefaultUser only overrides required(), but optional()
-        // has a default body in HasDefault that returns 0.
-        let user = new DefaultUser();
-        HasDefault h = user;
-        p(h.required());                            // 7
-        p(h.optional());                            // 0 (default impl)
-        delete user;
+    public func defaultImpl() {
+         // Default-impl dispatch: DefaultUser only overrides required(), but optional()
+         // has a default body in HasDefault that returns 0.
+         let user = new DefaultUser();
+         HasDefault h = user;
+         p(h.required());                            // 7
+         p(h.optional());                            // 0 (default impl)
+         delete user;
+    }
 
-        // for-loop smoke test: prints 0, 1, 2.
+    public func loopTests() {
+        // for-loop with postfix increment; prints 0, 1, 2.
         for (i32 i = 0; i < 3; i++) {
             p(i);
         }
 
-        // while + break smoke test: counts to 5 then breaks.
+        // while-loop with break: counts to 5 then breaks; prints 5.
         i32 j = 0;
         while (j < 100) {
             if (j == 5) {
@@ -55,10 +77,29 @@ public class (string[] args) {
             }
             j = j + 1;
         }
-        p(j);                                        // 5
-    }
+        p(j);
 
-    public ~Main() {
+        // do-while loop runs body once before checking; prints 3 (1+1+1).
+        i32 k = 0;
+        do {
+            k = k + 1;
+        } while (k < 3);
+        p(k);
+
+        // prefix decrement; prints 2.
+        i32 m = 3;
+        --m;
+        p(m);
+
+        // continue: skip the iteration when n == 1; sum the rest. 0+2+3+4 = 9.
+        i32 sum = 0;
+        for (i32 n = 0; n < 5; n++) {
+            if (n == 1) {
+                continue;
+            }
+            sum = sum + n;
+        }
+        p(sum);
     }
 
     public class PrintName (string& name) {
