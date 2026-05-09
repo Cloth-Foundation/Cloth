@@ -47,7 +47,15 @@ public abstract record Expression(TokenSpan Span) {
 
 	public sealed record Lambda(List<Parameter> Parameters, LambdaBody Body, TokenSpan Span) : Expression(Span);
 
-	public sealed record New(TypeExpression Type, List<Expression> Arguments, TokenSpan Span) : Expression(Span);
+	// `new T(...)` — basic instantiation. `Receiver` is non-null for the form
+	// `<expr>.new T(...)` used to construct an inner class against a specific outer
+	// instance from outside the outer's body.
+	public sealed record New(TypeExpression Type, List<Expression> Arguments, TokenSpan Span, Expression? Receiver = null) : Expression(Span);
+
+	// `<TypeName>.this` — explicit access to a named ancestor's instance from inside
+	// a nested inner class. Resolves to the nearest enclosing class whose name's last
+	// segment matches `TypeName`.
+	public sealed record OuterThis(string TypeName, TokenSpan Span) : Expression(Span);
 
 	public sealed record Tuple(List<Expression> Elements, TokenSpan Span) : Expression(Span);
 

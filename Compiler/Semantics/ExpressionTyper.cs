@@ -57,6 +57,18 @@ public sealed class ExpressionTyper {
 					var idFld = idFields.FirstOrDefault(f => f.Name == id.Name);
 					if (idFld != null) return idFld.CanonicalType;
 				}
+
+				// Outer-chain lookup: walk the captured-outer chain for inner classes.
+				var outerHostFqn = _currentTypeFqn;
+				while (!string.IsNullOrEmpty(outerHostFqn) && _symbols.Classes.TryGetValue(outerHostFqn, out var oInfo) && oInfo.IsInner) {
+					outerHostFqn = oInfo.OuterClassFqn;
+					if (string.IsNullOrEmpty(outerHostFqn)) break;
+					if (_symbols.Fields.TryGetValue(outerHostFqn, out var hostFields)) {
+						var hostFld = hostFields.FirstOrDefault(f => f.Name == id.Name);
+						if (hostFld != null) return hostFld.CanonicalType;
+					}
+				}
+
 				return null;
 
 			case Expression.MemberAccess ma:
@@ -66,6 +78,7 @@ public sealed class ExpressionTyper {
 					var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member);
 					if (maFld != null) return maFld.CanonicalType;
 				}
+
 				return null;
 			}
 
@@ -86,7 +99,13 @@ public sealed class ExpressionTyper {
 			}
 
 			case Expression.Call call:
-				return ResolveCallExpressionOverload(call)?.ReturnType;
+			{
+				var classOverload = ResolveCallExpressionOverload(call);
+				if (classOverload != null) return classOverload.ReturnType;
+				// Interface dispatch: receiver's static type names an interface, and the named
+				// method exists on it. Returns the declared return type of the interface sig.
+				return ResolveInterfaceMethodCall(call)?.ReturnType;
+			}
 
 			case Expression.Cast { TargetType: var tt }:
 				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
@@ -104,20 +123,63 @@ public sealed class ExpressionTyper {
 						var asNested = $"{_currentTypeFqn}.{nn.Name}";
 						if (_symbols.KnownClasses.Contains(asNested)) return asNested;
 					}
+
 					if (!string.IsNullOrEmpty(_currentModuleFqn)) {
 						var sameModule = $"{_currentModuleFqn}.{nn.Name}";
 						if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
 					}
+
 					return nn.Name; // best-effort fallback so callers don't see null
 				}
+
 				return null;
 
 			case Expression.This:
 			case Expression.Super:
 				return string.IsNullOrEmpty(_currentTypeFqn) ? null : _currentTypeFqn;
+
+			case Expression.OuterThis ot:
+			{
+				// Walk the inner-class chain looking for an ancestor whose simple-name
+				// matches `ot.TypeName`. Returns that ancestor's FQN.
+				var cur = _currentTypeFqn;
+				while (!string.IsNullOrEmpty(cur)) {
+					var simple = cur.Contains('.') ? cur[(cur.LastIndexOf('.') + 1)..] : cur;
+					if (simple == ot.TypeName) return cur;
+					if (!_symbols.Classes.TryGetValue(cur, out var info) || !info.IsInner) break;
+					cur = info.OuterClassFqn;
+				}
+
+				return null;
+			}
 		}
 
 		return null;
+	}
+
+	// True if a value of canonical type `from` can be implicitly used where `to` is expected.
+	// Covers exact match, lossless numeric promotion, and class → interface (when the class's
+	// implements list contains the interface). Interface → interface and any cast involving
+	// trait FQNs are intentionally rejected.
+	public bool IsAssignableTo(string from, string to) {
+		if (from == to) return true;
+		if (TypeInference.IsLosslessPromotion(from, to)) return true;
+		if (_symbols.KnownInterfaces.Contains(to) && _symbols.ImplementedInterfaces.TryGetValue(from, out var impls) && impls.Contains(to)) return true;
+		return false;
+	}
+
+	// Resolve a method call on an interface-typed receiver. The MemberAccess's target must
+	// type to an interface FQN; the matching method's signature is returned (or null if no
+	// match). Caller threads this through Stage J / CIR dispatch.
+	public InterfaceMethodSig? ResolveInterfaceMethodCall(Expression.Call call) {
+		if (call.Callee is not Expression.MemberAccess ma) return null;
+		var receiverType = InferType(ma.Target);
+		if (receiverType == null) return null;
+		if (!_symbols.Interfaces.TryGetValue(receiverType, out var info)) return null;
+		// Loose match by name + arity. Interface overloads share a slot key but distinct
+		// signatures, so we'd extend to full signature matching when we add overloads on
+		// interfaces; v1 keeps it name-and-arity.
+		return info.Methods.FirstOrDefault(m => m.Name == ma.Member && m.ParamTypes.Count == call.Arguments.Count);
 	}
 
 	// Pick the best overload for a given FQN and argument list. Each arg's type is inferred;
@@ -144,7 +206,7 @@ public sealed class ExpressionTyper {
 			var ok = true;
 			var score = 0;
 			for (var i = 0; i < o.ParamTypes.Count; i++) {
-				if (!TypeInference.IsLosslessPromotion(argTypes[i]!, o.ParamTypes[i])) {
+				if (!IsAssignableTo(argTypes[i]!, o.ParamTypes[i])) {
 					ok = false;
 					break;
 				}
@@ -184,6 +246,7 @@ public sealed class ExpressionTyper {
 						break;
 					}
 				}
+
 				// Instance dispatch: target is a value whose inferred type names a known class.
 				var instanceType = InferType(memberAccess.Target);
 				if (instanceType != null && _symbols.KnownClasses.Contains(instanceType))

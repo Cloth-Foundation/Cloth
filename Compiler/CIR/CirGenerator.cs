@@ -60,7 +60,10 @@ public sealed class CirGenerator {
 		_inferredVarTypes = inferredVarTypes ?? new();
 		foreach (var (unit, filePath) in units)
 			LowerUnit(unit, filePath);
-		return new CirModule(_types, _functions);
+		// Surface every class's vtable layout into the CirModule so the LLVM emitter can
+		// produce the matching globals without re-querying the registry.
+		var vtables = _symbols.ClassVtables.Values.Select(v => new CirVtable(v.ClassFqn, v.Slots)).ToList();
+		return new CirModule(_types, _functions, vtables);
 	}
 
 	// Walk every cross-project overload registered as `IsCrossProject` and produce a body-less
@@ -125,14 +128,67 @@ public sealed class CirGenerator {
 			TypeDeclaration.Class c => LowerClassDeclaration(c.Declaration, moduleFqn, filePath),
 			TypeDeclaration.Struct s => LowerStructDeclaration(s.Declaration, moduleFqn, filePath),
 			TypeDeclaration.Enum e => LowerEnumDeclaration(e.Declaration, moduleFqn),
-			TypeDeclaration.Interface { Declaration: var d } => new CirTypeDecl.Interface(TypeFqn(moduleFqn, d.Name)),
+			TypeDeclaration.Interface { Declaration: var d } => LowerInterfaceDeclaration(d, moduleFqn, filePath),
 			TypeDeclaration.Trait { Declaration: var d } => new CirTypeDecl.Trait(TypeFqn(moduleFqn, d.Name)),
 			_ => throw CirError.UnsupportedTypeDecl.WithMessage($"unhandled type declaration: {decl.GetType().Name}").WithFile(filePath).Render()
 		};
 
+	// Lower an interface declaration. The interface itself emits no struct layout; the
+	// CirTypeDecl.Interface stub stays a name-only entry. Default-impl method bodies are
+	// lowered as standalone CirFunctions named via SymbolRegistry.DefaultImplSymbol so the
+	// vtable layout in pass-3 can point class slots at them.
+	private CirTypeDecl LowerInterfaceDeclaration(InterfaceDeclaration decl, string moduleFqn, string filePath) {
+		var typeFqn = TypeFqn(moduleFqn, decl.Name);
+		var prev = _currentTypeFqn;
+		_currentTypeFqn = typeFqn;
+		try {
+			foreach (var member in decl.Members) {
+				if (member is MemberDeclaration.Method { Declaration: var m } && m.Body.HasValue)
+					_functions.Add(LowerInterfaceDefaultImpl(m, typeFqn));
+			}
+		}
+		finally {
+			_currentTypeFqn = prev;
+		}
+
+		return new CirTypeDecl.Interface(typeFqn);
+	}
+
+	// Lower a default-impl method on an interface. The function takes `this` as a pointer
+	// to the interface FQN (which at LLVM is just an opaque ptr). Inside the body, calls
+	// on `this.<m>` route through the typer's interface-dispatch path and lower to
+	// CirExpr.VirtualCall.
+	private CirFunction LowerInterfaceDefaultImpl(MethodDeclaration decl, string ifaceFqn) {
+		var thisParam = new CirParam(new CirType.Ptr(new CirType.Named(ifaceFqn)), "this");
+		var explicitParams = decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name));
+		var allParams = new List<CirParam> { thisParam };
+		allParams.AddRange(explicitParams);
+
+		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassOrInterfaceFqn)).ToList();
+		var mangledName = SymbolRegistry.DefaultImplSymbol(ifaceFqn, decl.Name, paramTypes);
+
+		BeginFunctionScope(decl.Parameters);
+		_currentReturnType = ResolveReturnTypeCanonical(decl.ReturnType);
+		return new CirFunction(mangledName, CirFunctionKind.Method, allParams, LowerType(decl.ReturnType), LowerBlock(decl.Body!.Value), IsExtern: false, IsStatic: false);
+	}
+
 	private CirTypeDecl LowerClassDeclaration(ClassDeclaration decl, string moduleFqn, string filePath) {
 		var typeFqn = TypeFqn(moduleFqn, decl.Name);
 		var fields = new List<CirField>();
+
+		// Vtable header: classes that implement at least one interface get a hidden
+		// `__vtable__` field of opaque-pointer type at the very front of the layout. The
+		// constructor prologue stores the vtable global into it before any other init.
+		var hasVtable = _symbols.ClassVtables.ContainsKey(typeFqn);
+		if (hasVtable)
+			fields.Add(new CirField(SymbolRegistry.VtableFieldName, new CirType.Any(), IsConst: false, IsAtomic: false, null));
+
+		// Inner-class capture: prepend the hidden `__outer__` field of type <outerFqn>.
+		// When the class also has a vtable, this sits at index 1 (after the vtable header).
+		// `IsAutoDestructable` skips both synthetic fields by name.
+		var classInfo = _symbols.Classes.TryGetValue(typeFqn, out var ci) ? ci : null;
+		if (classInfo != null && classInfo.IsInner && _symbols.Classes.ContainsKey(classInfo.OuterClassFqn))
+			fields.Add(new CirField(SymbolRegistry.InnerOuterFieldName, new CirType.Named(classInfo.OuterClassFqn), IsConst: false, IsAtomic: false, null));
 
 		// Primary parameters become stored fields.
 		foreach (var p in decl.PrimaryParameters)
@@ -141,11 +197,7 @@ public sealed class CirGenerator {
 		// Pre-collect declared field initializers so each constructor can emit them as
 		// `this.<field> = <init>` ahead of the user-written body. Source order is preserved
 		// so a later initializer can reference an earlier field via implicit `this`.
-		var fieldInitializers = decl.Members
-			.OfType<MemberDeclaration.Field>()
-			.Where(f => f.Declaration.Initializer != null)
-			.Select(f => (f.Declaration.Name, f.Declaration.Initializer!))
-			.ToList();
+		var fieldInitializers = decl.Members.OfType<MemberDeclaration.Field>().Where(f => f.Declaration.Initializer != null).Select(f => (f.Declaration.Name, f.Declaration.Initializer!)).ToList();
 
 		var prev = _currentTypeFqn;
 		_currentTypeFqn = typeFqn;
@@ -205,6 +257,7 @@ public sealed class CirGenerator {
 					break;
 			}
 		}
+
 		foreach (var member in decl.Members)
 			LowerNonFieldMember(member, typeFqn, [], decl.Name, filePath, fields, []);
 
@@ -247,14 +300,41 @@ public sealed class CirGenerator {
 		var explicitParams = decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name));
 
 		var allParams = new List<CirParam> { thisParam };
+
+		// Inner-class capture: hidden first parameter `__outer__` of type Outer*, prepended
+		// before user-declared primary params. Mangled symbol composition (in Phase 2) and
+		// the registry's ConstructorInfo include this as `paramTypes[0]` so call sites match.
+		var classInfo = _symbols.Classes.TryGetValue(typeFqn, out var ci) ? ci : null;
+		var isInner = classInfo != null && classInfo.IsInner && _symbols.Classes.ContainsKey(classInfo.OuterClassFqn);
+		if (isInner) {
+			allParams.Add(new CirParam(new CirType.Ptr(new CirType.Named(classInfo!.OuterClassFqn)), SymbolRegistry.InnerOuterFieldName));
+		}
+
 		allParams.AddRange(primaryCirParams);
 		allParams.AddRange(explicitParams);
 
 		BeginFunctionScope(primaryParams.Concat(decl.Parameters));
 		_currentReturnType = "void";
+		// Inner ctor: register `__outer__` in the local scope so the body's prologue can
+		// read it as a CirExpr.Local for the field-store.
+		if (isInner)
+			_typer.DeclareLocal(SymbolRegistry.InnerOuterFieldName, classInfo!.OuterClassFqn);
+
+		// Vtable initialization (must run first): `this.__vtable__ = &__vtable_<ClassFqn>`.
+		// Stored before any other prologue step so virtual dispatch through this instance is
+		// well-defined from the very first instruction of the constructor body.
+		var prologue = new List<CirStmt>();
+		var hasVtable = _symbols.ClassVtables.ContainsKey(typeFqn);
+		if (hasVtable)
+			prologue.Add(new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), SymbolRegistry.VtableFieldName), CirAssignOp.Assign, new CirExpr.VtableRef(typeFqn)));
+
+		// Outer-capture prologue (must run before user prologue so field initializers can
+		// reference the captured outer): `this.__outer__ = __outer__`.
+		if (isInner)
+			prologue.Add(new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), SymbolRegistry.InnerOuterFieldName), CirAssignOp.Assign, new CirExpr.Local(SymbolRegistry.InnerOuterFieldName)));
 
 		// Primary-param prologue: `this.<name> = <name>` for each primary parameter.
-		var primaryPrologue = primaryParams.Select(p => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), p.Name), CirAssignOp.Assign, new CirExpr.Local(p.Name))).ToList();
+		var primaryPrologue = prologue.Concat(primaryParams.Select(p => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), p.Name), CirAssignOp.Assign, new CirExpr.Local(p.Name)))).ToList();
 
 		// Field-initializer prologue: `this.<field> = <init-expr>` for each declared default.
 		// Runs after primary-param assignments so initializers can reference primary fields,
@@ -263,9 +343,12 @@ public sealed class CirGenerator {
 
 		var body = primaryPrologue.Concat(fieldPrologue).Concat(LowerBlock(decl.Body)).ToList();
 
-		var combinedParamTypes = primaryParams.Concat(decl.Parameters)
-			.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn))
-			.ToList();
+		var combinedParamTypes = new List<string>();
+		// Inner-class capture: the mangled symbol must include the synthetic outer slot
+		// so the call-site mangling (which goes through ConstructorInfo.MangledSymbol with
+		// the same prefix) lines up.
+		if (isInner) combinedParamTypes.Add(classInfo!.OuterClassFqn);
+		combinedParamTypes.AddRange(primaryParams.Concat(decl.Parameters).Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassOrInterfaceFqn)));
 		return new CirFunction(MangleCtor(typeFqn, className, combinedParamTypes), CirFunctionKind.Constructor, allParams, new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
@@ -282,6 +365,7 @@ public sealed class CirGenerator {
 			if (IsAutoDestructable(f))
 				body.Add(BuildFieldAutoDestruct(f));
 		}
+
 		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
@@ -295,13 +379,19 @@ public sealed class CirGenerator {
 			if (IsAutoDestructable(f))
 				body.Add(BuildFieldAutoDestruct(f));
 		}
+
 		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
 	// A field is auto-destructed if its declared type names a known class (i.e. an owned
 	// heap allocation). Primitives, arrays, tuples, generics, and unknown types are skipped.
-	private bool IsAutoDestructable(CirField f) =>
-		f.Type is CirType.Named named && _symbols.KnownClasses.Contains(named.FullyQualifiedName);
+	private bool IsAutoDestructable(CirField f) {
+		// Synthetic compiler fields (captured outer, vtable header) are not owned and must
+		// never be freed by the auto-destruct epilogue.
+		if (f.Name == SymbolRegistry.InnerOuterFieldName) return false;
+		if (f.Name == SymbolRegistry.VtableFieldName) return false;
+		return f.Type is CirType.Named named && _symbols.KnownClasses.Contains(named.FullyQualifiedName);
+	}
 
 	// `if (this.<f> != null) { delete this.<f>; }` — null-guarded auto-destruct for a single
 	// owned field. The CirStmt.Delete carries the field's class FQN so the LLVM emitter can
@@ -324,7 +414,7 @@ public sealed class CirGenerator {
 			parameters.Add(new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this"));
 		parameters.AddRange(decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name)));
 
-		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn)).ToList();
+		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassOrInterfaceFqn)).ToList();
 		var mangledName = externSymbol ?? MangleMethod(typeFqn, decl.Name, paramTypes);
 
 		BeginFunctionScope(decl.Parameters);
@@ -339,7 +429,7 @@ public sealed class CirGenerator {
 		};
 		parameters.AddRange(decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name)));
 
-		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassFqn)).ToList();
+		var paramTypes = decl.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, ResolveClassOrInterfaceFqn)).ToList();
 
 		BeginFunctionScope(decl.Parameters);
 		_currentReturnType = ResolveReturnTypeCanonical(decl.ReturnType);
@@ -352,12 +442,53 @@ public sealed class CirGenerator {
 		_ => ""
 	};
 
-	// Apply alias canonicalization, then if the name is a class (not a primitive) resolve
-	// it to a registry FQN. Mirrors SemanticAnalyzer.CanonicalizeDeclaredType.
+	// Apply alias canonicalization, then if the name is a class or interface (not a
+	// primitive) resolve it to a registry FQN. Mirrors SemanticAnalyzer.CanonicalizeDeclaredType.
 	private string CanonicalizeNamedType(string raw) {
 		var canon = TypeInference.Canonicalize(raw);
 		if (TypeInference.IsKnownPrimitive(canon)) return canon;
-		return ResolveClassFqn(canon) ?? canon;
+		return ResolveClassFqn(canon) ?? ResolveInterfaceFqn(canon) ?? canon;
+	}
+
+	// Combined class-or-interface resolver. Used by CanonicalizeTypeExpression for member
+	// signatures so an interface-typed parameter `Greeter g` canonicalizes to the interface
+	// FQN, matching what the SymbolRegistry's pass-2 produced for class fields.
+	private string? ResolveClassOrInterfaceFqn(string rawName) =>
+		ResolveClassFqn(rawName) ?? ResolveInterfaceFqn(rawName);
+
+	// Map a canonical type string to the matching CirType variant. "void" gets the dedicated
+	// CirType.Void; everything else (primitives, class FQNs, interface FQNs) goes through
+	// CirType.Named where the LLVM emitter handles the actual type lowering.
+	private static CirType CanonicalToCirType(string canonical) =>
+		canonical == "void" ? new CirType.Void() : new CirType.Named(canonical);
+
+	// Mirror of SemanticAnalyzer.ResolveInterfaceFqn — resolves a raw name to an interface
+	// FQN through the same import / nested-class / same-module / dotted-shorthand chain.
+	private string? ResolveInterfaceFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownInterfaces.Contains(mapped)) return mapped;
+		if (_symbols.KnownInterfaces.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownInterfaces.Contains(asNested)) return asNested;
+		}
+
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownInterfaces.Contains(sameModule)) return sameModule;
+		}
+
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownInterfaces.Contains(combined)) return combined;
+			}
+		}
+
+		return null;
 	}
 
 	// Fresh per-function state. The typer carries the local-variable scope plus the
@@ -441,6 +572,7 @@ public sealed class CirGenerator {
 			var nullAssign = new CirStmt.Assign(fa, CirAssignOp.Assign, new CirExpr.NullLit());
 			return new CirStmt.Block(new List<CirStmt> { deleteStmt, nullAssign });
 		}
+
 		return deleteStmt;
 	}
 
@@ -483,9 +615,10 @@ public sealed class CirGenerator {
 			type = LowerType(d.Type.Value);
 			if (d.Type.Value.Base is BaseType.Named explicitNamed) {
 				var canon = TypeInference.Canonicalize(explicitNamed.Name);
-				// For class types, swap to the registry FQN so the typer's local-type entry
-				// matches what `Expression.New` / member access produce. Primitives stay as-is.
-				canonicalName = TypeInference.IsKnownPrimitive(canon) ? canon : (ResolveClassFqn(canon) ?? canon);
+				// For class or interface types, swap to the registry FQN so the typer's
+				// local-type entry matches what `Expression.New` / member access produce.
+				// Primitives stay as-is.
+				canonicalName = TypeInference.IsKnownPrimitive(canon) ? canon : (ResolveClassOrInterfaceFqn(canon) ?? canon);
 			}
 		}
 		else if (_inferredVarTypes.TryGetValue(d.Span, out var inferred)) {
@@ -546,6 +679,7 @@ public sealed class CirGenerator {
 		Expression.Identifier id => ResolveIdentifier(id.Name),
 		Expression.This => new CirExpr.ThisPtr(),
 		Expression.Super => new CirExpr.ThisPtr(),
+		Expression.OuterThis ot => LowerOuterThis(ot),
 		Expression.Binary { Left: var l, Operator: BinOp.Add, Right: var r } when _typer.InferType(l) == "string" && _typer.InferType(r) == "string" => BuildStringConcatCall(l, r),
 		Expression.Binary { Left: var l, Operator: var op, Right: var r } => new CirExpr.Binary(LowerExpr(l), LowerBinOp(op), LowerExpr(r)),
 		Expression.Unary { Operator: var op, Operand: var o } => new CirExpr.Unary(LowerUnOp(op), LowerExpr(o)),
@@ -559,7 +693,7 @@ public sealed class CirGenerator {
 		Expression.MembershipCheck { Value: var v, Collection: var c } => new CirExpr.Binary(LowerExpr(v), CirBinOp.In, LowerExpr(c)),
 		Expression.Ternary { Condition: var cond, ThenBranch: var t, ElseBranch: var e } => new CirExpr.Ternary(LowerExpr(cond), LowerExpr(t), LowerExpr(e)),
 		Expression.NullCoalesce { Left: var l, Right: var r } => new CirExpr.NullCoalesce(LowerExpr(l), LowerExpr(r)),
-		Expression.New { Type: var t, Arguments: var args } => LowerNewExpr(t, args),
+		Expression.New { Type: var t, Arguments: var args, Receiver: var recv } => LowerNewExpr(t, args, recv),
 		Expression.Tuple { Elements: var elems } => new CirExpr.TupleLit(elems.Select(LowerExpr).ToList()),
 		Expression.Range { Start: var s, End: var e } => new CirExpr.Range(LowerExpr(s), LowerExpr(e)),
 		Expression.Spread { Value: var v } => LowerExpr(v),
@@ -571,11 +705,27 @@ public sealed class CirGenerator {
 	private CirExpr ResolveIdentifier(string name) {
 		if (_importMap.TryGetValue(name, out var fqn))
 			return new CirExpr.Local(fqn); // imported name — caller context determines call vs value
+		if (_typer.TryGetLocalType(name, out _))
+			return new CirExpr.Local(name);
 		// Implicit `this.<field>`: bare identifier with no local in scope, but the enclosing
-		// class declares a field by that name. Mirrors SemanticAnalyzer.ValidateIdentifier's
-		// fallback so analyzer-accepted programs lower correctly.
-		if (!_typer.TryGetLocalType(name, out _) && !string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == name))
+		// class declares a field by that name.
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == name))
 			return new CirExpr.FieldAccess(new CirExpr.ThisPtr(), name);
+		// Outer-chain access: walk through captured `__outer__` references for inner classes
+		// until we find an ancestor that owns a field by this name. The lowered form is
+		// `this.__outer__.[__outer__.]+name` — one hop per level of inner nesting.
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			CirExpr expr = new CirExpr.ThisPtr();
+			var cursor = _currentTypeFqn;
+			while (_symbols.Classes.TryGetValue(cursor, out var info) && info.IsInner) {
+				cursor = info.OuterClassFqn;
+				if (string.IsNullOrEmpty(cursor)) break;
+				expr = new CirExpr.FieldAccess(expr, SymbolRegistry.InnerOuterFieldName);
+				if (_symbols.Fields.TryGetValue(cursor, out var hostFields) && hostFields.Any(f => f.Name == name))
+					return new CirExpr.FieldAccess(expr, name);
+			}
+		}
+
 		return new CirExpr.Local(name);
 	}
 
@@ -620,10 +770,9 @@ public sealed class CirGenerator {
 					}
 				}
 
-				// obj.method(args) — instance dispatch: resolve the method statically through the
-				// receiver's inferred class type, then emit a direct call passing the receiver as
-				// the implicit first argument (`this`). Virtual dispatch via vtables is not yet
-				// implemented; all instance methods are resolved at compile time.
+				// obj.method(args) — instance dispatch. Two paths depending on the receiver's
+				// static type: class type → direct call to the static method; interface type
+				// → virtual dispatch through the receiver's `__vtable__` slot.
 				var receiverType = _typer.InferType(ma.Target);
 				var target = LowerExpr(ma.Target);
 				var allArgs = new List<CirExpr> { target };
@@ -638,8 +787,23 @@ public sealed class CirGenerator {
 						promotedArgs.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
 						return new CirExpr.Call(resolved.MangledSymbol, promotedArgs);
 					}
+
 					return new CirExpr.Call(calleeFqn, allArgs);
 				}
+
+				if (receiverType != null && _symbols.KnownInterfaces.Contains(receiverType)) {
+					if (_symbols.Interfaces.TryGetValue(receiverType, out var ifaceInfo)) {
+						var sig = ifaceInfo.Methods.FirstOrDefault(m => m.Name == ma.Member && m.ParamTypes.Count == call.Arguments.Count);
+						if (sig != null) {
+							var slotKey = SymbolRegistry.SlotKey(receiverType, sig.Name, sig.ParamTypes);
+							if (_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) {
+								var paramCirTypes = sig.ParamTypes.Select(CanonicalToCirType).ToList();
+								return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(sig.ReturnType), paramCirTypes, args);
+							}
+						}
+					}
+				}
+
 				// Fallback: receiver type unknown — keep the indirect-call shape for now (still
 				// likely to fail at LLVM but at least preserves behavior for cases that didn't
 				// type-resolve).
@@ -680,37 +844,93 @@ public sealed class CirGenerator {
 				finalArgs.Add(loweredArgs[i]);
 			}
 		}
+
 		return finalArgs;
 	}
 
-	private CirExpr LowerNewExpr(TypeExpression type, List<Expression> arguments) {
+	private CirExpr LowerNewExpr(TypeExpression type, List<Expression> arguments, Expression? receiver) {
 		var rawName = type.Base is BaseType.Named n ? n.Name : "?";
-		// Resolve raw → registry FQN: importMap, direct match, or same-module sibling. The
-		// resulting FQN drives both the struct type name (`%struct.<fqn>`) and the constructor
-		// symbol; using the raw name would misalign with what RegisterUnit / LowerClassDeclaration
-		// produce.
 		var resolvedFqn = ResolveClassFqn(rawName) ?? rawName;
 		var className = resolvedFqn.Contains('.') ? resolvedFqn[(resolvedFqn.LastIndexOf('.') + 1)..] : resolvedFqn;
 		var cirType = new CirType.Named(resolvedFqn);
 		var loweredArgs = arguments.Select(LowerExpr).ToList();
 
-		// Resolve the constructor overload via the registry so the mangled symbol matches the
-		// one LowerConstructor emitted. Falls back to a no-arg mangling when no overload is
-		// registered (defensive — analyzer should have caught it).
-		var ctor = ResolveConstructor(resolvedFqn, arguments);
+		// Inner-class capture: if the target class is `inner`, prepend the captured outer
+		// instance as the first argument (matching the constructor's hidden first parameter
+		// synthesized in LowerConstructor). The outer comes from either:
+		//   (a) the explicit receiver (from `outerInst.new Inner(...)`), or
+		//   (b) the current `this` if we're constructing from inside the outer class's body
+		//       (or a descendant inner whose chain reaches the target's outer).
+		var classInfo = _symbols.Classes.TryGetValue(resolvedFqn, out var ci) ? ci : null;
+		if (classInfo != null && classInfo.IsInner && _symbols.Classes.ContainsKey(classInfo.OuterClassFqn)) {
+			CirExpr outerArg;
+			if (receiver != null) {
+				outerArg = LowerExpr(receiver);
+			}
+			else {
+				// Walk our own outer chain (if we ARE in a method on Outer or a descendant) to
+				// find a `this` whose type matches the target's outer.
+				outerArg = ResolveOuterChain(classInfo.OuterClassFqn);
+			}
+
+			loweredArgs.Insert(0, outerArg);
+		}
+
+		var ctor = ResolveConstructor(resolvedFqn, arguments, isInner: classInfo?.IsInner == true);
 		if (ctor != null)
 			return new CirExpr.Alloc(cirType, ctor.MangledSymbol, loweredArgs);
 
-		// Best-effort fallback: assume the canonical no-arg form.
+		// Best-effort fallback (no registered ctor): use the no-arg canonical mangling and
+		// rely on the call site's analyzer-validated argument list.
 		return new CirExpr.Alloc(cirType, MangleCtor(resolvedFqn, className, new List<string>()), loweredArgs);
+	}
+
+	// Walk the outer-class chain from `_currentTypeFqn` until we find a class whose FQN
+	// equals (or descends through inner-class chain to) `targetOuterFqn`. Returns the CIR
+	// expression that dereferences to that outer's `this`. If we're directly inside the
+	// target outer, returns the bare ThisPtr; if we're in a deeper inner, walks via
+	// `this.__outer__.__outer__…` chain.
+	private CirExpr ResolveOuterChain(string targetOuterFqn) {
+		if (string.IsNullOrEmpty(_currentTypeFqn))
+			return new CirExpr.NullLit(); // no enclosing instance — analyzer should have errored
+		CirExpr expr = new CirExpr.ThisPtr();
+		var cursor = _currentTypeFqn;
+		while (cursor != targetOuterFqn) {
+			if (!_symbols.Classes.TryGetValue(cursor, out var info) || !info.IsInner)
+				return new CirExpr.NullLit(); // chain broken — analyzer should have errored
+			expr = new CirExpr.FieldAccess(expr, SymbolRegistry.InnerOuterFieldName);
+			cursor = info.OuterClassFqn;
+		}
+
+		return expr;
+	}
+
+	// Lower `Outer.this` (Expression.OuterThis) — walks the inner chain looking for an
+	// ancestor whose simple name matches `ot.TypeName`. Emits the corresponding chain of
+	// `__outer__` accesses, ending with the matched `this`.
+	private CirExpr LowerOuterThis(Expression.OuterThis ot) {
+		CirExpr expr = new CirExpr.ThisPtr();
+		var cursor = _currentTypeFqn;
+		while (!string.IsNullOrEmpty(cursor)) {
+			var simple = cursor.Contains('.') ? cursor[(cursor.LastIndexOf('.') + 1)..] : cursor;
+			if (simple == ot.TypeName) return expr;
+			if (!_symbols.Classes.TryGetValue(cursor, out var info) || !info.IsInner) break;
+			expr = new CirExpr.FieldAccess(expr, SymbolRegistry.InnerOuterFieldName);
+			cursor = info.OuterClassFqn;
+		}
+
+		return new CirExpr.NullLit(); // analyzer's S016 should have caught this
 	}
 
 	// Pick the best constructor overload for a `new` call against the registered constructors
 	// of `classFqn`. Same matching shape as MethodOverload resolution: arity match + lossless
 	// promotion from each arg's inferred type to the parameter type, smallest-fit wins.
-	private ConstructorInfo? ResolveConstructor(string classFqn, List<Expression> rawArgs) {
+	// For inner classes, the registered ParamTypes include the synthetic `__outer__` slot
+	// at index 0; the user's `rawArgs` does NOT — so the arity comparison must offset by 1.
+	private ConstructorInfo? ResolveConstructor(string classFqn, List<Expression> rawArgs, bool isInner = false) {
 		if (!_symbols.Constructors.TryGetValue(classFqn, out var list)) return null;
-		var matching = list.Where(c => c.ParamTypes.Count == rawArgs.Count).ToList();
+		var hiddenSlots = isInner ? 1 : 0;
+		var matching = list.Where(c => c.ParamTypes.Count == rawArgs.Count + hiddenSlots).ToList();
 		if (matching.Count == 0) return null;
 		if (rawArgs.Count == 0) return matching[0];
 
@@ -723,13 +943,25 @@ public sealed class CirGenerator {
 		foreach (var c in matching) {
 			var ok = true;
 			var score = 0;
-			for (var i = 0; i < c.ParamTypes.Count; i++) {
-				if (!TypeInference.IsLosslessPromotion(argTypes[i]!, c.ParamTypes[i])) { ok = false; break; }
-				score += ExpressionTyper.TypeWidth(Keywords.GetKeywordFromString(c.ParamTypes[i]));
+			// Skip the synthetic outer slot when matching user args (it's auto-supplied).
+			var paramOffset = c.ParamTypes.Count - rawArgs.Count;
+			for (var i = 0; i < rawArgs.Count; i++) {
+				var pType = c.ParamTypes[i + paramOffset];
+				if (!TypeInference.IsLosslessPromotion(argTypes[i]!, pType)) {
+					ok = false;
+					break;
+				}
+
+				score += ExpressionTyper.TypeWidth(Keywords.GetKeywordFromString(pType));
 			}
+
 			if (!ok) continue;
-			if (score < bestScore) { bestScore = score; best = c; }
+			if (score < bestScore) {
+				bestScore = score;
+				best = c;
+			}
 		}
+
 		return best;
 	}
 
@@ -743,10 +975,25 @@ public sealed class CirGenerator {
 			var asNested = $"{_currentTypeFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(asNested)) return asNested;
 		}
+
 		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
 			var sameModule = $"{_currentModuleFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
 		}
+
+		// Dotted-name shorthand `Outer.Inner` — resolve the prefix recursively, then verify
+		// the full chain is registered.
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownClasses.Contains(combined)) return combined;
+			}
+		}
+
 		return null;
 	}
 
@@ -891,5 +1138,6 @@ public sealed class CirGenerator {
 	// declarations with different signatures don't collide.
 	internal static string MangleCtor(string typeFqn, string className, List<string> paramTypes) =>
 		paramTypes.Count == 0 ? $"{typeFqn}.{className}" : $"{typeFqn}.{className}__{string.Join("__", paramTypes)}";
+
 	private static string MangleDtor(string typeFqn, string className) => $"{typeFqn}.~{className}";
 }

@@ -104,6 +104,12 @@ public sealed class LlvmEmitter {
 			sb.AppendLine();
 		}
 
+		var vtables = EmitVtableGlobals();
+		if (vtables.Length > 0) {
+			sb.Append(vtables);
+			sb.AppendLine();
+		}
+
 		foreach (var fn in _module.Functions) {
 			if (fn.IsExtern) continue;
 			sb.Append(EmitFunction(fn));
@@ -272,6 +278,12 @@ public sealed class LlvmEmitter {
 				ScanExpr(ic.Callee);
 				foreach (var a in ic.Args) ScanExpr(a);
 				break;
+			case CirExpr.VirtualCall vc:
+				ScanExpr(vc.Receiver);
+				foreach (var a in vc.Args) ScanExpr(a);
+				break;
+			case CirExpr.VtableRef:
+				break;
 			case CirExpr.Alloc a:
 				if (!_definedFns.Contains(a.CtorMangledName) && !_externFns.ContainsKey(a.CtorMangledName))
 					RecordExternCall(a.CtorMangledName, a.Args.Count + 1);
@@ -356,6 +368,33 @@ public sealed class LlvmEmitter {
 			sb.AppendLine(line);
 		return sb.ToString();
 	}
+
+	// One global per class with `IsList` non-empty. Each global is a constant array of
+	// function pointers, sized to the program-wide VtableSize. Slots that the class doesn't
+	// implement contain `null`; populated slots reference the implementing function (either
+	// a class-side override or an interface's default-impl symbol). Function symbols are
+	// LLVM-mangled at reference time, matching how function definitions are emitted.
+	private string EmitVtableGlobals() {
+		var sb = new StringBuilder();
+		foreach (var vt in _module.Vtables) {
+			var size = vt.Slots.Count;
+			var globalName = MangleVtableGlobal(vt.ClassFqn);
+			if (size == 0) {
+				sb.AppendLine($"@{globalName} = constant [0 x ptr] zeroinitializer");
+				continue;
+			}
+
+			var entries = vt.Slots.Select(slot => slot == null ? "ptr null" : $"ptr @{MangleToLlvm(slot)}");
+			sb.AppendLine($"@{globalName} = constant [{size} x ptr] [{string.Join(", ", entries)}]");
+		}
+
+		return sb.ToString();
+	}
+
+	// LLVM-safe symbol for a class's vtable global. Reuses MangleToLlvm so dotted FQNs
+	// produce valid IR identifiers (e.g. `__vtable_hello_world_Speaker`).
+	private static string MangleVtableGlobal(string classFqn) =>
+		MangleToLlvm($"__vtable_{classFqn}");
 
 	// -------------------------------------------------------------------------
 	// Functions
@@ -490,6 +529,7 @@ public sealed class LlvmEmitter {
 				_bodyLines.Add($"  call void @{dtorLlvm}(ptr {ptr})");
 			}
 		}
+
 		_bodyLines.Add($"  call void @free(ptr {ptr})");
 	}
 
@@ -598,6 +638,8 @@ public sealed class LlvmEmitter {
 			case CirExpr.FieldAccess fa: return EmitFieldLoad(fa);
 			case CirExpr.Call c: return EmitCall(c);
 			case CirExpr.Alloc a: return EmitAlloc(a);
+			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
+			case CirExpr.VirtualCall vc: return EmitVirtualCall(vc);
 
 			case CirExpr.Binary b: return EmitBinary(b);
 			case CirExpr.Unary u: return EmitUnary(u);
@@ -688,6 +730,41 @@ public sealed class LlvmEmitter {
 		return t;
 	}
 
+	// Virtual dispatch through the receiver's `__vtable__` header. Loads the vtable pointer
+	// from offset 0 of the receiver, GEPs to the global slot, loads the function pointer,
+	// and calls it with the receiver passed as the implicit `this` argument.
+	private string EmitVirtualCall(CirExpr.VirtualCall vc) {
+		var receiver = EmitExpr(vc.Receiver);
+		// Load the vtable pointer from the receiver's header (offset 0).
+		var vtablePtr = FreshTemp();
+		_bodyLines.Add($"  {vtablePtr} = load ptr, ptr {receiver}, align 8");
+		// GEP into the vtable to the slot's address. Use any size >= SlotId+1 so the GEP is
+		// well-typed; the static array type is meaningful only for the offset calculation.
+		var slotAddr = FreshTemp();
+		var vsize = vc.SlotId + 1;
+		_bodyLines.Add($"  {slotAddr} = getelementptr [{vsize} x ptr], ptr {vtablePtr}, i32 0, i32 {vc.SlotId}");
+		// Load the function pointer from the slot.
+		var fnPtr = FreshTemp();
+		_bodyLines.Add($"  {fnPtr} = load ptr, ptr {slotAddr}, align 8");
+
+		// Indirect call. Receiver is the first arg (`this`); user args follow. The function
+		// type signature is derived from the VirtualCall's recorded CIR return + param types.
+		var argVals = vc.Args.Select(EmitExpr).ToList();
+		var paramSigParts = new List<string> { "ptr" };
+		paramSigParts.AddRange(vc.ParamTypes.Select(LlvmType));
+		var fnType = $"{LlvmType(vc.ReturnType)} ({string.Join(", ", paramSigParts)})";
+		var argList = string.Join(", ", new[] { $"ptr {receiver}" }.Concat(argVals.Select((v, i) => $"{LlvmType(vc.ParamTypes[i])} {v}")));
+		var retTy = LlvmType(vc.ReturnType);
+		if (retTy == "void") {
+			_bodyLines.Add($"  call {fnType} {fnPtr}({argList})");
+			return "void";
+		}
+
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = call {fnType} {fnPtr}({argList})");
+		return t;
+	}
+
 	// `new ClassName(args)` — heap-allocate a zero-initialized instance, run its constructor,
 	// return the pointer. Memory model: `calloc(1, sizeof(struct))` guarantees zero bits, so
 	// fields without explicit initializers come up as 0/null/false. Lifetime is unmanaged
@@ -750,11 +827,17 @@ public sealed class LlvmEmitter {
 		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => LlvmType(ty),
 		CirExpr.ThisPtr => "ptr",
 		CirExpr.Cast cast => LlvmType(cast.TargetType),
+		// Field access: walk the chain, look up the named field's type in the parent class's
+		// declared field list. Falls back to ptr if any link in the chain can't be resolved.
+		CirExpr.FieldAccess fa => ResolveTargetFqn(fa.Target) is { } parentFqn && _classByFqn.TryGetValue(parentFqn, out var parentCls) && parentCls.Fields.FirstOrDefault(f => f.Name == fa.FieldName) is { } fld ? LlvmType(fld.Type) : "ptr",
 		// Comparisons produce i1; arithmetic produces the wider operand's LLVM type.
 		CirExpr.Binary b => IsComparisonBinOp(b.Op) ? "i1" : WiderLlvmType(LlvmTypeOf(b.Left), LlvmTypeOf(b.Right)),
 		// Look up the callee's return type from the module's function table; fall back to ptr
 		// for unresolved/unknown calls.
 		CirExpr.Call call => _module.Functions.FirstOrDefault(f => f.MangledName == call.MangledName) is { } fn ? LlvmType(fn.ReturnType) : "ptr",
+		// Vtable references are opaque pointers at runtime; virtual call type is recorded.
+		CirExpr.VtableRef => "ptr",
+		CirExpr.VirtualCall vc => LlvmType(vc.ReturnType),
 		_ => "ptr"
 	};
 
@@ -895,6 +978,10 @@ public sealed class LlvmEmitter {
 	private string? ResolveTargetFqn(CirExpr target) => target switch {
 		CirExpr.ThisPtr => _currentThisFqn,
 		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => ty is CirType.Ptr p && p.Inner is CirType.Named np ? np.FullyQualifiedName : ty is CirType.Named n ? n.FullyQualifiedName : null,
+		// Nested field-access chains (e.g. `this.__outer__.outerField`): resolve the inner
+		// FieldAccess to its containing class, then look up the named field's declared type
+		// to get its FQN. Enables inner-class outer-chain field reads.
+		CirExpr.FieldAccess fa when ResolveTargetFqn(fa.Target) is { } parentFqn && _classByFqn.TryGetValue(parentFqn, out var parentCls) => parentCls.Fields.FirstOrDefault(f => f.Name == fa.FieldName)?.Type is CirType.Named fn ? fn.FullyQualifiedName : null,
 		_ => null
 	};
 

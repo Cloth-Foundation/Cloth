@@ -4,22 +4,26 @@ import cloth.io.Out::{ println };
 
 public class Container () {
 
-    private Inner inner;
+    private i32 outerField = 42;
+    private Inner child;
 
     public Container {
-        this.inner = new Inner();
+        this.child = new Inner();   // auto-captures `this`
     }
 
     public ~Container {}
 
     public func get(): i32 {
-        return inner.read();
+        return child.read();
     }
 
-    public class Inner () {
+    public inner class Inner () {
         private i32 v = 7;
         public Inner {}
         public ~Inner {}
-        public func read(): i32 { return v; }
+        public func read(): i32 {
+            // `Container.this.outerField` is the explicit form of the same access.
+            return v + Container.this.outerField;
+        }
     }
 }

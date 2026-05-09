@@ -9,7 +9,7 @@
     <ItemGroup>
         <Compile Include="Flags.fs"/>
         <Compile Include="DispatchResult.fs"/>
-        <Compile Include="Cleanup.fs" />
+        <Compile Include="Cleanup.fs"/>
         <Compile Include="Executor\Lexer.fs"/>
         <Compile Include="Executor\Help.fs"/>
         <Compile Include="Executor\Parser.fs"/>

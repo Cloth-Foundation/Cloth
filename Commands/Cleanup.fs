@@ -13,7 +13,9 @@ let CLEANUP_EXTENSIONS: string[] = [| "o"; "ll" |]
 // above CLEANUP_EXTENSIONS.
 let cleanup (path: string, file_extensions: string[]) =
     let path = IO.Path.GetFullPath(path)
+
     for file_extension in file_extensions do
         let files = IO.Directory.GetFiles(path, $"*.{file_extension}")
+
         for file in files do
             IO.File.Delete(file)

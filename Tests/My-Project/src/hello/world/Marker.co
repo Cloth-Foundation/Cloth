@@ -1,0 +1,4 @@
+module hello.world;
+
+public trait Marker {
+}

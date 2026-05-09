@@ -1,3 +1,6 @@
 [submodule "Standard-Library"]
 	path = Standard-Library
 	url = https://github.com/Cloth-Foundation/Standard-Library
+[submodule "Documentation"]
+	path = Documentation
+	url = https://github.com/Cloth-Foundation/Documentation

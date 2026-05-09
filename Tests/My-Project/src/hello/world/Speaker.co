@@ -1,0 +1,17 @@
+module hello.world;
+
+public class () -> Greeter {
+
+    public Speaker {
+    }
+
+    public ~Speaker {
+    }
+
+    @Marker
+    @Tagged(label = "speech", priority = 5)
+    public func greet(): string {
+        return "speaker";
+    }
+
+}

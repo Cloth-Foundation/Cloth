@@ -11,6 +11,36 @@ public class (string[] args) {
         printName = new PrintName("Cloth!");
         printName.print();
         delete printName;
+
+        let c = new Container();
+        p(c.get());                                 // 7 + 42 = 49 (inner constructed in ctor)
+        let inner = c.new Container.Inner();
+        p(inner.read());                            // 7 + 42 = 49 (constructed via receiver)
+        delete inner;
+        delete c;
+
+        // Multi-level: Tower.Mid.Leaf where Leaf accesses both Mid and Tower fields.
+        let t = new Tower();
+        let m = t.new Tower.Mid();
+        let leaf = m.new Tower.Mid.Leaf();
+        p(leaf.sum());                              // 3 + 20 + 100 = 123
+        delete leaf;
+        delete m;
+        delete t;
+
+        // Interface dispatch through a Greeter-typed local.
+        let speaker = new Speaker();
+        Greeter g = speaker;
+        p(g.greet());                               // "speaker"
+        delete speaker;
+
+        // Default-impl dispatch: DefaultUser only overrides required(), but optional()
+        // has a default body in HasDefault that returns 0.
+        let user = new DefaultUser();
+        HasDefault h = user;
+        p(h.required());                            // 7
+        p(h.optional());                            // 0 (default impl)
+        delete user;
     }
 
     public ~Main() {

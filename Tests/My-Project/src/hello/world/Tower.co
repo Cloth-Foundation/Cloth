@@ -1,0 +1,32 @@
+module hello.world;
+
+import cloth.io.Out::{ println };
+
+public class Tower () {
+
+    private i32 a = 100;
+
+    public Tower {}
+    public ~Tower {}
+
+    public inner class Mid () {
+
+        private i32 b = 20;
+
+        public Mid {}
+        public ~Mid {}
+
+        public inner class Leaf () {
+
+            private i32 c = 3;
+
+            public Leaf {}
+            public ~Leaf {}
+
+            public func sum(): i32 {
+                // Explicitly walk all three levels via TypeName.this.
+                return c + Mid.this.b + Tower.this.a;
+            }
+        }
+    }
+}

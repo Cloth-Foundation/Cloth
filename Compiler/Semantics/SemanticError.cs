@@ -42,9 +42,20 @@ public class SemanticError : Exception {
 	public static readonly SemanticError LeakedOwnedValue = new("S012", "owned value leaked at function exit", true);
 	public static readonly SemanticError TemporaryLeak = new("S013", "temporary heap allocation has no owner", true);
 	public static readonly SemanticError MutationOfBorrow = new("S014", "cannot mutate a borrowed value", true);
+	public static readonly SemanticError NoOuterContext = new("S015", "no enclosing outer instance available for inner-class construction", true);
+	public static readonly SemanticError OuterChainNotFound = new("S016", "outer-this target not found in the enclosing chain", true);
+	public static readonly SemanticError InvalidImplements = new("S017", "implements-clause entry is not an interface", true);
+	public static readonly SemanticError MissingInterfaceMember = new("S018", "class does not implement a required interface member", true);
+	public static readonly SemanticError InvalidExtends = new("S019", "extends-clause entry is not a class", true);
+	public static readonly SemanticError InvalidInterfaceMember = new("S020", "member kind is not allowed inside an interface body", true);
+	public static readonly SemanticError UnknownTrait = new("S021", "annotation does not name a known trait", true);
+	public static readonly SemanticError BadTraitArguments = new("S022", "annotation arguments do not match the trait's element list", true);
+	public static readonly SemanticError InvalidTraitElementType = new("S023", "trait element uses a disallowed type", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
+
 	public SemanticError WithFile(string file) => new(_code, _label, _willExit, _message, file);
+
 	// Override the will-exit flag — used by checks whose severity is configurable (e.g.
 	// leak detection: error by default, demoted to warning via build.toml `allowLeaks`).
 	public SemanticError WithSeverity(bool willExit) => new(_code, _label, willExit, _message, _file);

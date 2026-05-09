@@ -9,5 +9,9 @@ namespace FrontEnd.Parser.AST;
 
 public enum ClassModifiers {
 	Const,
-	Abstract
+	Abstract,
+
+	// Marks a NESTED class as a Java-style inner class — instances carry a hidden
+	// reference to the enclosing instance, allowing implicit access to its fields/methods.
+	Inner
 }
