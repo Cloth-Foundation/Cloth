@@ -62,16 +62,26 @@ public sealed class SymbolRegistry {
 	}
 
 	// Pass 1 — record class FQNs and ClassInfo so subsequent member-type canonicalization can
-	// resolve `Foo` to `hello.world.Foo` even when Foo is defined in a different unit.
+	// resolve `Foo` to `hello.world.Foo` even when Foo is defined in a different unit. Also
+	// recurses into class members to register nested-type FQNs (`<outer>.<Inner>`).
 	private void RegisterClassNames(CompilationUnit unit, bool asExtern) {
 		var moduleFqn = ModuleFqn(unit.Module);
 		foreach (var typeDecl in unit.Types) {
 			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
-			var typeFqn = TypeFqn(moduleFqn, c.Name);
-			KnownClasses.Add(typeFqn);
-			// Top-level decls have a nullable Visibility; missing means "default to internal"
-			// (top-level `private` is rejected at parse time).
-			Classes[typeFqn] = new ClassInfo(c.Visibility ?? Visibility.Internal, moduleFqn, asExtern);
+			RegisterClassNameRecursive(c, moduleFqn, asExtern);
+		}
+	}
+
+	private void RegisterClassNameRecursive(ClassDeclaration c, string outerFqn, bool asExtern) {
+		var typeFqn = TypeFqn(outerFqn, c.Name);
+		KnownClasses.Add(typeFqn);
+		Classes[typeFqn] = new ClassInfo(c.Visibility ?? Visibility.Internal, outerFqn, asExtern);
+		foreach (var member in c.Members) {
+			if (member is MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var inner } })
+				RegisterClassNameRecursive(inner, typeFqn, asExtern);
+			// Other nested kinds (struct/enum/interface/trait) aren't yet tracked in
+			// KnownClasses/Classes — they live as stubs in the CIR layer. When their
+			// semantics are fleshed out, register them here too.
 		}
 	}
 
@@ -81,74 +91,99 @@ public sealed class SymbolRegistry {
 	private void RegisterMembers(CompilationUnit unit, bool asExtern) {
 		var moduleFqn = ModuleFqn(unit.Module);
 		var importMap = BuildImportMap(unit.Imports);
-		Func<string, string?> resolveClass = raw => ResolveClassName(raw, importMap, moduleFqn);
 
 		foreach (var typeDecl in unit.Types) {
 			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
-			var typeFqn = TypeFqn(moduleFqn, c.Name);
+			RegisterClassMembersRecursive(c, moduleFqn, asExtern, importMap);
+		}
+	}
 
-			// Primary parameters become stored fields on the class instance — they're
-			// addressable via implicit-this from any method, just like declared fields.
-			// Register them in `Fields` so identifier resolution accepts them outside the
-			// constructor scope. Default to `Private` visibility (parsed primary params don't
-			// carry a visibility modifier).
-			foreach (var p in c.PrimaryParameters) {
-				var pType = TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass);
-				if (!Fields.TryGetValue(typeFqn, out var pList))
-					Fields[typeFqn] = pList = new();
-				pList.Add(new FieldInfo(p.Name, pType, Visibility.Private));
-			}
+	private void RegisterClassMembersRecursive(ClassDeclaration c, string outerFqn, bool asExtern, Dictionary<string, string> importMap) {
+		var typeFqn = TypeFqn(outerFqn, c.Name);
+		var moduleFqn = ComputeModuleFqn(outerFqn);
+		// Class-name resolver scoped to THIS class — so nested-type references inside the
+		// body resolve against `<typeFqn>.<Name>` before falling through to module-level
+		// lookups. Recreated per-class so each level of nesting has its own enclosing scope.
+		Func<string, string?> resolveClass = raw => ResolveClassName(raw, importMap, moduleFqn, typeFqn);
 
-			foreach (var member in c.Members) {
-				switch (member) {
-					case MemberDeclaration.Method { Declaration: var m }:
-					{
-						var externSymbol = TryGetExternSymbol(m.Annotations);
-						var fqn = $"{typeFqn}.{m.Name}";
-						var paramTypes = m.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
-						var paramOwnership = m.Parameters.Select(p => p.Type.Ownership).ToList();
-						var returnTypeCanonical = TypeInference.CanonicalizeTypeExpression(m.ReturnType, resolveClass);
-						var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
+		// Primary parameters become stored fields on the class instance — addressable via
+		// implicit-this from any method.
+		foreach (var p in c.PrimaryParameters) {
+			var pType = TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass);
+			if (!Fields.TryGetValue(typeFqn, out var pList))
+				Fields[typeFqn] = pList = new();
+			pList.Add(new FieldInfo(p.Name, pType, Visibility.Private));
+		}
 
-						if (!Overloads.TryGetValue(fqn, out var list))
-							Overloads[fqn] = list = new();
-						list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn));
+		foreach (var member in c.Members) {
+			switch (member) {
+				case MemberDeclaration.Method { Declaration: var m }:
+				{
+					var externSymbol = TryGetExternSymbol(m.Annotations);
+					var fqn = $"{typeFqn}.{m.Name}";
+					var paramTypes = m.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
+					var paramOwnership = m.Parameters.Select(p => p.Type.Ownership).ToList();
+					var returnTypeCanonical = TypeInference.CanonicalizeTypeExpression(m.ReturnType, resolveClass);
+					var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
 
-						if (asExtern) ExternMethodSymbols.Add(symbol);
-						break;
-					}
-					case MemberDeclaration.Field { Declaration: var f }:
-					{
-						var fieldType = TypeInference.CanonicalizeTypeExpression(f.TypeExpression, resolveClass);
-						if (!Fields.TryGetValue(typeFqn, out var fieldList))
-							Fields[typeFqn] = fieldList = new();
-						fieldList.Add(new FieldInfo(f.Name, fieldType, f.Visibility));
-						break;
-					}
-					case MemberDeclaration.Constructor { Declaration: var ctor }:
-					{
-						// Constructor signature = primary class params + explicit ctor params.
-						// Both are part of what `new Foo(...)` passes; both go into the mangled
-						// symbol so overloads with different signatures don't collide.
-						var combined = c.PrimaryParameters.Concat(ctor.Parameters).ToList();
-						var paramTypes = combined.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
-						var paramOwnership = combined.Select(p => p.Type.Ownership).ToList();
-						var mangledSymbol = paramTypes.Count == 0 ? $"{typeFqn}.{c.Name}" : $"{typeFqn}.{c.Name}__{string.Join("__", paramTypes)}";
-						if (!Constructors.TryGetValue(typeFqn, out var ctorList))
-							Constructors[typeFqn] = ctorList = new();
-						ctorList.Add(new ConstructorInfo(paramTypes, paramOwnership, ctor.Visibility, typeFqn, moduleFqn, mangledSymbol));
-						break;
-					}
+					if (!Overloads.TryGetValue(fqn, out var list))
+						Overloads[fqn] = list = new();
+					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn));
+
+					if (asExtern) ExternMethodSymbols.Add(symbol);
+					break;
+				}
+				case MemberDeclaration.Field { Declaration: var f }:
+				{
+					var fieldType = TypeInference.CanonicalizeTypeExpression(f.TypeExpression, resolveClass);
+					if (!Fields.TryGetValue(typeFqn, out var fieldList))
+						Fields[typeFqn] = fieldList = new();
+					fieldList.Add(new FieldInfo(f.Name, fieldType, f.Visibility));
+					break;
+				}
+				case MemberDeclaration.Constructor { Declaration: var ctor }:
+				{
+					var combined = c.PrimaryParameters.Concat(ctor.Parameters).ToList();
+					var paramTypes = combined.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
+					var paramOwnership = combined.Select(p => p.Type.Ownership).ToList();
+					var mangledSymbol = paramTypes.Count == 0 ? $"{typeFqn}.{c.Name}" : $"{typeFqn}.{c.Name}__{string.Join("__", paramTypes)}";
+					if (!Constructors.TryGetValue(typeFqn, out var ctorList))
+						Constructors[typeFqn] = ctorList = new();
+					ctorList.Add(new ConstructorInfo(paramTypes, paramOwnership, ctor.Visibility, typeFqn, moduleFqn, mangledSymbol));
+					break;
+				}
+				case MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var nestedClass } }:
+				{
+					RegisterClassMembersRecursive(nestedClass, typeFqn, asExtern, importMap);
+					break;
 				}
 			}
 		}
 	}
 
-	// Resolve a raw class name (as written in source) to a registry FQN. Falls back to null
-	// when no resolution succeeds; CanonicalizeTypeExpression then leaves the raw name in place.
-	private string? ResolveClassName(string rawName, Dictionary<string, string> importMap, string moduleFqn) {
+	// Find the longest prefix of `outerFqn` that's NOT a known class — i.e. the module path.
+	// For top-level types, `outerFqn` IS the module (no class segments yet) so return as-is.
+	// For nested types `module.Outer`, `outerFqn` includes a class segment; strip it.
+	private string ComputeModuleFqn(string outerFqn) {
+		while (KnownClasses.Contains(outerFqn)) {
+			var lastDot = outerFqn.LastIndexOf('.');
+			if (lastDot < 0) return "";
+			outerFqn = outerFqn[..lastDot];
+		}
+		return outerFqn;
+	}
+
+	// Resolve a raw class name (as written in source) to a registry FQN. Lookup order:
+	// importMap → already-FQN → enclosing class's nested scope (`<enclosingClassFqn>.<rawName>`)
+	// → same-module sibling. The nested-scope check makes `Inner` resolve to `Outer.Inner`
+	// when referenced from inside `Outer`'s body. Returns null when no match.
+	private string? ResolveClassName(string rawName, Dictionary<string, string> importMap, string moduleFqn, string enclosingClassFqn = "") {
 		if (importMap.TryGetValue(rawName, out var mapped) && KnownClasses.Contains(mapped)) return mapped;
 		if (KnownClasses.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(enclosingClassFqn)) {
+			var asNested = $"{enclosingClassFqn}.{rawName}";
+			if (KnownClasses.Contains(asNested)) return asNested;
+		}
 		if (!string.IsNullOrEmpty(moduleFqn)) {
 			var sameModule = $"{moduleFqn}.{rawName}";
 			if (KnownClasses.Contains(sameModule)) return sameModule;

@@ -1,0 +1,25 @@
+module hello.world;
+
+import cloth.io.Out::{ println };
+
+public class Container () {
+
+    private Inner inner;
+
+    public Container {
+        this.inner = new Inner();
+    }
+
+    public ~Container {}
+
+    public func get(): i32 {
+        return inner.read();
+    }
+
+    public class Inner () {
+        private i32 v = 7;
+        public Inner {}
+        public ~Inner {}
+        public func read(): i32 { return v; }
+    }
+}

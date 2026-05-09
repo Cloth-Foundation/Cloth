@@ -5,32 +5,33 @@ import hello.foo.Foo;
 
 public class (string[] args) {
 
-    private i32 x = 10;
-    private Foo foo;
+    private PrintName printName;
 
     public Main {
-        let printer = new HelloPrinter("Wylan");
-        printer.print();
-        delete printer;
-
-        let acc = new Foo(1);
-        p(acc.consume(new Foo(5)));   // temp to Foo! param is OK (transfer)
-        delete acc;
-
-        // Field assignment: `this.foo` takes ownership of the new Foo;
-        // Phase 1 auto-destruct frees it on Main exit.
-        this.foo = new Foo(42);
+        printName = new PrintName("Cloth!");
+        printName.print();
+        delete printName;
     }
 
     public ~Main() {
     }
 
-    public func hello(): string {
-        return "Hello";
-    }
+    public class PrintName (string& name) {
 
-    public func world(): string {
-        return "World";
+        private HelloPrinter printer;
+
+        public PrintName {
+            printer = new HelloPrinter(name);
+        }
+
+        public ~PrintName() {
+            delete printer;
+        }
+
+        public func print() {
+            printer.print();
+        }
+
     }
 
 }

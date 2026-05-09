@@ -175,6 +175,14 @@ public sealed class CirGenerator {
 			var hasUserDtor = decl.Members.Any(m => m is MemberDeclaration.Destructor);
 			if (!hasUserDtor && fields.Any(IsAutoDestructable))
 				_functions.Add(SynthesizeAutoDestructor(typeFqn, decl.Name, fields));
+
+			// Recursively lower nested types as flat CIR top-level decls. Their FQNs use
+			// `typeFqn` as the prefix (`module.Outer.Inner`); LLVM mangling handles arbitrary
+			// depth via dot-to-underscore normalization.
+			foreach (var member in decl.Members) {
+				if (member is MemberDeclaration.NestedType { Declaration: var nestedTypeDecl })
+					_types.Add(LowerTypeDeclaration(nestedTypeDecl, typeFqn, filePath));
+			}
 		}
 		finally {
 			_currentTypeFqn = prev;
@@ -356,7 +364,7 @@ public sealed class CirGenerator {
 	// SymbolRegistry, so any subsequent inference/resolution call reads through it.
 	// Class-typed parameters land in the typer with their FQN.
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
-		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn);
+		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn, _currentModuleFqn);
 		foreach (var p in parameters) {
 			if (p.Type.Base is BaseType.Named n)
 				_typer.DeclareLocal(p.Name, CanonicalizeNamedType(n.Name));
@@ -730,6 +738,11 @@ public sealed class CirGenerator {
 	private string? ResolveClassFqn(string rawName) {
 		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownClasses.Contains(mapped)) return mapped;
 		if (_symbols.KnownClasses.Contains(rawName)) return rawName;
+		// Nested-type lookup: `Inner` inside `Outer`'s body resolves to `Outer.Inner`.
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(asNested)) return asNested;
+		}
 		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
 			var sameModule = $"{_currentModuleFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;

@@ -36,6 +36,7 @@ public class ParserError : Exception, IError {
 	public static readonly ParserError InvalidVisibilityModifier = new("P00A", "invalid visibility modifier", true);
 	public static readonly ParserError InvalidTopLevelDecl = new("P00B", "invalid top-level declaration", true);
 	public static readonly ParserError InvalidDestructorName = new("P00C", "destructor name must be the same as the stating class", true);
+	public static readonly ParserError ClassNameMismatch = new("P00D", "top-level class identifier must match the source file name", true);
 
 	public ParserError WithMessage(string message) => new(_code, _label, _willExit, message, _span);
 	public ParserError WithSpan(TokenSpan span) => new(_code, _label, _willExit, _message, span);

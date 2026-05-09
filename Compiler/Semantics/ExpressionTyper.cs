@@ -22,11 +22,13 @@ public sealed class ExpressionTyper {
 	private readonly Dictionary<string, string> _localTypes = new();
 	private readonly Dictionary<string, string> _importMap;
 	private readonly string _currentTypeFqn;
+	private readonly string _currentModuleFqn;
 
-	public ExpressionTyper(SymbolRegistry symbols, Dictionary<string, string> importMap, string currentTypeFqn) {
+	public ExpressionTyper(SymbolRegistry symbols, Dictionary<string, string> importMap, string currentTypeFqn, string currentModuleFqn = "") {
 		_symbols = symbols;
 		_importMap = importMap;
 		_currentTypeFqn = currentTypeFqn;
+		_currentModuleFqn = currentModuleFqn;
 	}
 
 	// Register a local variable's canonical type. Called by walks as they cross declarations
@@ -90,21 +92,21 @@ public sealed class ExpressionTyper {
 				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
 
 			case Expression.New { Type: var nt }:
-				// `new Foo()` types as Foo. Resolve the raw class name to a registry FQN: importMap
-				// first (`import a.b.Foo` puts `Foo` → `a.b.Foo`), then direct hit on KnownClasses,
-				// then same-module sibling. Returning the FQN lets downstream `obj.x` look up the
-				// class's fields/methods.
+				// `new Foo()` types as Foo. Resolve the raw class name to a registry FQN with
+				// this priority: importMap → KnownClasses direct → enclosing-class-nested
+				// (`<currentTypeFqn>.<Name>`) → same-module sibling (`<currentModuleFqn>.<Name>`).
+				// The nested-then-module order lets `Inner` inside `Outer`'s body find
+				// `Outer.Inner` before searching the module-level namespace.
 				if (nt.Base is FrontEnd.Parser.AST.Type.BaseType.Named nn) {
 					if (_importMap.TryGetValue(nn.Name, out var mappedFqn) && _symbols.KnownClasses.Contains(mappedFqn)) return mappedFqn;
 					if (_symbols.KnownClasses.Contains(nn.Name)) return nn.Name;
 					if (!string.IsNullOrEmpty(_currentTypeFqn)) {
-						// Use the enclosing class's module path as the same-module prefix.
-						var lastDot = _currentTypeFqn.LastIndexOf('.');
-						if (lastDot > 0) {
-							var modulePrefix = _currentTypeFqn[..lastDot];
-							var sameModule = $"{modulePrefix}.{nn.Name}";
-							if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
-						}
+						var asNested = $"{_currentTypeFqn}.{nn.Name}";
+						if (_symbols.KnownClasses.Contains(asNested)) return asNested;
+					}
+					if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+						var sameModule = $"{_currentModuleFqn}.{nn.Name}";
+						if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
 					}
 					return nn.Name; // best-effort fallback so callers don't see null
 				}
