@@ -389,6 +389,8 @@ internal sealed class StatementParser(Parser parser) {
 		parser.ExpectOperator(Operator.LParen);
 		var condition = ParseExpression();
 		parser.ExpectOperator(Operator.RParen);
+		// `do { ... } while (cond);` requires a trailing semicolon (C-family convention).
+		parser.ExpectSemiColon();
 		return new Stmt.DoWhile(new DoWhileStmt(body, condition, TokenSpan.Merge(start, parser.Previous().Span)));
 	}
 
