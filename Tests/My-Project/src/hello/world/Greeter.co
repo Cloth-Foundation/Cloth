@@ -1,5 +1,5 @@
 module hello.world;
 
-public interface Greeter {
+public interface {
     public func greet(): string;
 }

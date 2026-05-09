@@ -161,10 +161,19 @@ public sealed class ExpressionTyper {
 	// Covers exact match, lossless numeric promotion, and class → interface (when the class's
 	// implements list contains the interface). Interface → interface and any cast involving
 	// trait FQNs are intentionally rejected.
-	public bool IsAssignableTo(string from, string to) {
+	public bool IsAssignableTo(string from, string to) => IsAssignableTo(from, to, null);
+
+	// Expression-aware assignability. When `sourceExpr` is a non-negative integer literal,
+	// the literal's value is checked against the target's range — letting `u32 x = 10;`
+	// compile even though `10` infers to `i8` and a signed-to-unsigned promotion isn't
+	// otherwise lossless. Falls back to the type-only rules for any other source.
+	public bool IsAssignableTo(string from, string to, Expression? sourceExpr) {
 		if (from == to) return true;
 		if (TypeInference.IsLosslessPromotion(from, to)) return true;
 		if (_symbols.KnownInterfaces.Contains(to) && _symbols.ImplementedInterfaces.TryGetValue(from, out var impls) && impls.Contains(to)) return true;
+		if (sourceExpr is Expression.Literal { Value: Literal.Int lit }
+		    && TypeInference.IsIntegerCanonical(to)
+		    && TypeInference.LiteralFitsInteger(lit.Value, to)) return true;
 		return false;
 	}
 
@@ -206,7 +215,7 @@ public sealed class ExpressionTyper {
 			var ok = true;
 			var score = 0;
 			for (var i = 0; i < o.ParamTypes.Count; i++) {
-				if (!IsAssignableTo(argTypes[i]!, o.ParamTypes[i])) {
+				if (!IsAssignableTo(argTypes[i]!, o.ParamTypes[i], rawArgs[i])) {
 					ok = false;
 					break;
 				}

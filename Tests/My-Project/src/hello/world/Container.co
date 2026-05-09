@@ -2,7 +2,7 @@ module hello.world;
 
 import cloth.io.Out::{ println };
 
-public class Container () {
+public class () {
 
     private i32 outerField = 42;
     private Inner child;

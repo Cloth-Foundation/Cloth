@@ -53,6 +53,12 @@ public sealed class LlvmEmitter {
 	private readonly Dictionary<string, string> _localAddrMap = new();
 	private readonly Dictionary<string, CirType> _localTypeMap = new();
 
+	// Stack of (continueLabel, breakLabel) per enclosing loop. `break;` jumps to the top
+	// frame's break label; `continue;` to its continue label. Pushed at the start of a loop
+	// body, popped at end. Empty outside any loop — break/continue outside a loop is a
+	// hard error in LLVM (no terminator target), so the analyzer should reject those.
+	private readonly Stack<(string Continue, string Break)> _loopStack = new();
+
 	public LlvmEmitter(CirModule module, ClothConfig config, string projectRoot) {
 		_module = module;
 		_config = config;
@@ -410,6 +416,7 @@ public sealed class LlvmEmitter {
 		_blockTerminated = false;
 		_localAddrMap.Clear();
 		_localTypeMap.Clear();
+		_loopStack.Clear();
 
 		var llvmName = MangleToLlvm(fn.MangledName);
 		var paramSigParts = new List<string>();
@@ -506,6 +513,11 @@ public sealed class LlvmEmitter {
 			case CirStmt.Discard d: EmitExprStmt(d.Expression); break;
 			case CirStmt.Return r: EmitReturn(r); break;
 			case CirStmt.If i: EmitIf(i); break;
+			case CirStmt.While w: EmitWhile(w); break;
+			case CirStmt.DoWhile dw: EmitDoWhile(dw); break;
+			case CirStmt.For f: EmitFor(f); break;
+			case CirStmt.Break: EmitBreak(); break;
+			case CirStmt.Continue: EmitContinue(); break;
 			case CirStmt.Delete del: EmitDelete(del); break;
 			case CirStmt.Block b:
 				foreach (var s in b.Body) EmitStmt(s);
@@ -564,6 +576,102 @@ public sealed class LlvmEmitter {
 		else {
 			_bodyLines.Add($"  br label %{endLabel}");
 		}
+	}
+
+	// `while (cond) { body }`. `continue` jumps to the condition block; `break` to the end.
+	private void EmitWhile(CirStmt.While w) {
+		var condLabel = FreshLabel("while_cond");
+		var bodyLabel = FreshLabel("while_body");
+		var endLabel = FreshLabel("while_end");
+
+		_bodyLines.Add($"  br label %{condLabel}");
+		_bodyLines.Add($"{condLabel}:");
+		_blockTerminated = false;
+		var c = EmitExpr(w.Condition);
+		_bodyLines.Add($"  br i1 {c}, label %{bodyLabel}, label %{endLabel}");
+
+		_bodyLines.Add($"{bodyLabel}:");
+		_blockTerminated = false;
+		_loopStack.Push((condLabel, endLabel));
+		foreach (var s in w.Body) EmitStmt(s);
+		_loopStack.Pop();
+		if (!_blockTerminated) _bodyLines.Add($"  br label %{condLabel}");
+
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
+	}
+
+	// `do { body } while (cond);`. The body runs first; `continue` then evaluates `cond`,
+	// `break` exits the loop. Re-enters the body when `cond` is true.
+	private void EmitDoWhile(CirStmt.DoWhile dw) {
+		var bodyLabel = FreshLabel("do_body");
+		var condLabel = FreshLabel("do_cond");
+		var endLabel = FreshLabel("do_end");
+
+		_bodyLines.Add($"  br label %{bodyLabel}");
+		_bodyLines.Add($"{bodyLabel}:");
+		_blockTerminated = false;
+		_loopStack.Push((condLabel, endLabel));
+		foreach (var s in dw.Body) EmitStmt(s);
+		_loopStack.Pop();
+		if (!_blockTerminated) _bodyLines.Add($"  br label %{condLabel}");
+
+		_bodyLines.Add($"{condLabel}:");
+		_blockTerminated = false;
+		var c = EmitExpr(dw.Condition);
+		_bodyLines.Add($"  br i1 {c}, label %{bodyLabel}, label %{endLabel}");
+
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
+	}
+
+	// `for (init; cond; iter) { body }`. C-style three-part loop. `continue` jumps to the
+	// iter block (so the post-increment runs), then re-checks cond; `break` exits.
+	private void EmitFor(CirStmt.For f) {
+		EmitStmt(f.Init);
+		var condLabel = FreshLabel("for_cond");
+		var bodyLabel = FreshLabel("for_body");
+		var iterLabel = FreshLabel("for_iter");
+		var endLabel = FreshLabel("for_end");
+
+		_bodyLines.Add($"  br label %{condLabel}");
+		_bodyLines.Add($"{condLabel}:");
+		_blockTerminated = false;
+		var c = EmitExpr(f.Condition);
+		_bodyLines.Add($"  br i1 {c}, label %{bodyLabel}, label %{endLabel}");
+
+		_bodyLines.Add($"{bodyLabel}:");
+		_blockTerminated = false;
+		_loopStack.Push((iterLabel, endLabel));
+		foreach (var s in f.Body) EmitStmt(s);
+		_loopStack.Pop();
+		if (!_blockTerminated) _bodyLines.Add($"  br label %{iterLabel}");
+
+		_bodyLines.Add($"{iterLabel}:");
+		_blockTerminated = false;
+		_ = EmitExpr(f.Iterator);
+		_bodyLines.Add($"  br label %{condLabel}");
+
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
+	}
+
+	private void EmitBreak() {
+		if (_loopStack.Count == 0) {
+			LlvmError.UnsupportedStatement.WithMessage("'break' outside of any loop").Render();
+			return;
+		}
+		_bodyLines.Add($"  br label %{_loopStack.Peek().Break}");
+		_blockTerminated = true;
+	}
+
+	private void EmitContinue() {
+		if (_loopStack.Count == 0) {
+			LlvmError.UnsupportedStatement.WithMessage("'continue' outside of any loop").Render();
+			return;
+		}
+		_bodyLines.Add($"  br label %{_loopStack.Peek().Continue}");
+		_blockTerminated = true;
 	}
 
 	private string FreshLabel(string prefix) => $"{prefix}_{_tempCounter++}";
@@ -926,6 +1034,22 @@ public sealed class LlvmEmitter {
 	}
 
 	private string EmitUnary(CirExpr.Unary u) {
+		// Pre/post increment/decrement run on an lvalue: load, compute, store, return the
+		// value matching the operator's semantics (post returns the old value, pre returns
+		// the new). Operates on integer types only — float `++` is not supported in CIR yet.
+		if (u.Op is CirUnOp.PostInc or CirUnOp.PostDec or CirUnOp.PreInc or CirUnOp.PreDec) {
+			var addr = EmitAddrOf(u.Operand);
+			var (lvalueTy, _) = TypeOfLvalue(u.Operand);
+			var llvmTy = LlvmType(lvalueTy);
+			var oldVal = FreshTemp();
+			_bodyLines.Add($"  {oldVal} = load {llvmTy}, ptr {addr}");
+			var newVal = FreshTemp();
+			var op = u.Op is CirUnOp.PostInc or CirUnOp.PreInc ? "add" : "sub";
+			_bodyLines.Add($"  {newVal} = {op} {llvmTy} {oldVal}, 1");
+			_bodyLines.Add($"  store {llvmTy} {newVal}, ptr {addr}");
+			return u.Op is CirUnOp.PostInc or CirUnOp.PostDec ? oldVal : newVal;
+		}
+
 		var operand = EmitExpr(u.Operand);
 		var t = FreshTemp();
 		switch (u.Op) {

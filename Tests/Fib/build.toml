@@ -1,0 +1,12 @@
+[project]
+name = "Fib"
+version = "0.1.0"
+authors = ["me"]
+description = "A Cloth project"
+[build]
+target = "x86_64"
+outputType = 0
+source = "src"
+allowLeaks = false
+[dependencies]
+cloth = "2026.0.1A"
