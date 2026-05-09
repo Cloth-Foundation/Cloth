@@ -6,8 +6,7 @@ open Commands.Cleanup
 open Commands.DispatchResult
 open Compiler.Configs
 
-let clean (dir: string) =
-    cleanup (dir, CLEANUP_EXTENSIONS)
+let clean (dir: string) = cleanup (dir, CLEANUP_EXTENSIONS)
 
 let runRun (path: string, _args: string[]) =
     let tomlPath = IO.Path.Combine(path, "build.toml")

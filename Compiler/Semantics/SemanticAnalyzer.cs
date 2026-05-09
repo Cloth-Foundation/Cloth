@@ -25,7 +25,9 @@ public class SemanticAnalyzer {
 	// with the CIR generator (single source of truth).
 	private ExpressionTyper _typer = null!;
 	private Dictionary<string, string> _importMap = new();
+
 	private string _currentTypeFqn = "";
+
 	// Module FQN (e.g. "hello.world") of the file currently being walked. Drives the
 	// `internal` access rule: caller's module must match the target's owning module.
 	private string _currentModuleFqn = "";
@@ -149,14 +151,13 @@ public class SemanticAnalyzer {
 
 							// At least one overload must be reachable. Private members can never
 							// be imported (their owner-class wouldn't match the importer's class).
-							var importable = overloads.Any(o =>
-								o.Visibility == Visibility.Public ||
-								(o.Visibility == Visibility.Internal && importerModule == o.OwnerModule));
+							var importable = overloads.Any(o => o.Visibility == Visibility.Public || (o.Visibility == Visibility.Internal && importerModule == o.OwnerModule));
 							if (!importable) {
 								var sample = overloads[0];
 								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import '{entry.Name}' from '{classFqn}' — {VisibilityWord(sample.Visibility)} members are not accessible from module '{importerModule}'").Render();
 							}
 						}
+
 						break;
 					}
 				}
@@ -226,11 +227,94 @@ public class SemanticAnalyzer {
 		var moduleFqn = string.Join(".", unit.Module.Path);
 		_currentModuleFqn = moduleFqn;
 		foreach (var typeDecl in unit.Types) {
-			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
-			_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? c.Name : $"{moduleFqn}.{c.Name}";
-			foreach (var member in c.Members)
-				WalkMember(member, filePath, c.PrimaryParameters);
+			switch (typeDecl) {
+				case TypeDeclaration.Class { Declaration: var c }:
+					_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? c.Name : $"{moduleFqn}.{c.Name}";
+					ValidateClassExtendsImplements(c, filePath);
+					foreach (var member in c.Members)
+						WalkMember(member, filePath, c.PrimaryParameters);
+					break;
+				case TypeDeclaration.Interface { Declaration: var iface }:
+					_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? iface.Name : $"{moduleFqn}.{iface.Name}";
+					WalkInterface(iface, filePath);
+					break;
+				case TypeDeclaration.Trait { Declaration: var trait }:
+					_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? trait.Name : $"{moduleFqn}.{trait.Name}";
+					WalkTrait(trait, filePath);
+					break;
+				// Enum body walks are out of scope this round.
+			}
 		}
+	}
+
+	// Walk an interface body. Allowed members: methods (abstract or with default-impl body)
+	// and `const` declarations. Fields, constructors, destructors, fragments, and nested
+	// types are rejected with S020. Methods with a body get the same UAF/ownership/leak
+	// pipeline as class methods — fields don't exist on the interface FQN, so any
+	// `this.<field>` reference correctly fails with UndefinedIdentifier.
+	private void WalkInterface(InterfaceDeclaration iface, string filePath) {
+		foreach (var member in iface.Members) {
+			switch (member) {
+				case MemberDeclaration.Method { Declaration: var m }:
+					if (m.Body.HasValue) {
+						BeginFunctionScope(m.Parameters);
+						_currentReturnType = ResolveReturnType(m.ReturnType);
+						WalkBlock(m.Body.Value, filePath);
+						ValidateAllPathsReturn(m.Body.Value, m.Name, filePath);
+						CheckOwnedLocalLeaks(filePath);
+					}
+
+					ValidateAnnotations(m.Annotations, filePath);
+					break;
+				case MemberDeclaration.Const:
+					// Const declarations on interfaces are accepted by the parser; analyzer-
+					// level const evaluation is deferred. No-op here.
+					break;
+				case MemberDeclaration.Field { Declaration: var f }:
+					SemanticError.InvalidInterfaceMember.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' cannot declare field '{f.Name}'").Render();
+					break;
+				case MemberDeclaration.Constructor:
+					SemanticError.InvalidInterfaceMember.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' cannot declare a constructor").Render();
+					break;
+				case MemberDeclaration.Destructor:
+					SemanticError.InvalidInterfaceMember.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' cannot declare a destructor").Render();
+					break;
+				case MemberDeclaration.Fragment { Declaration: var fr }:
+					SemanticError.InvalidInterfaceMember.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' cannot declare fragment '{fr.Name}'").Render();
+					break;
+				case MemberDeclaration.NestedType:
+					SemanticError.InvalidInterfaceMember.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' cannot declare a nested type").Render();
+					break;
+			}
+		}
+	}
+
+	// Walk a trait body. Each element's type must be on the narrow allowlist (primitives +
+	// string + arrays of those). Default-value expressions are type-checked against the
+	// element's canonical type.
+	private void WalkTrait(TraitDeclaration trait, string filePath) {
+		if (!_symbols.Traits.TryGetValue(_currentTypeFqn, out var info)) return;
+		foreach (var elem in info.Elements) {
+			if (!IsAllowedTraitElementType(elem.CanonicalType))
+				SemanticError.InvalidTraitElementType.WithFile(filePath).WithMessage($"trait '{_currentTypeFqn}' element '{elem.Name}' has disallowed type '{elem.CanonicalType}'; allowed: primitives, string, or arrays of those").Render();
+			if (elem.Default != null) {
+				_typer ??= new ExpressionTyper(_symbols, _importMap, _currentTypeFqn, _currentModuleFqn);
+				var defType = _typer.InferType(elem.Default);
+				if (!string.IsNullOrEmpty(defType) && defType != elem.CanonicalType && !TypeInference.IsLosslessPromotion(defType, elem.CanonicalType))
+					SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"trait '{_currentTypeFqn}' element '{elem.Name}' default value type '{defType}' does not match declared type '{elem.CanonicalType}'").Render();
+			}
+		}
+	}
+
+	// Allowlist for trait element types (Java @interface analogue): primitive numerics,
+	// bool, string, and arrays of any of those. Class refs, enums (deferred), tuples,
+	// generics, and ownership-annotated types are rejected.
+	private static bool IsAllowedTraitElementType(string canonical) {
+		if (string.IsNullOrEmpty(canonical)) return false;
+		var elem = canonical.EndsWith("[]") ? canonical[..^2] : canonical;
+		while (elem.EndsWith("[]")) elem = elem[..^2];
+		if (elem == "void" || elem == "any") return false;
+		return TypeInference.IsKnownPrimitive(elem);
 	}
 
 	private static Dictionary<string, string> BuildImportMap(List<ImportDeclaration> imports) {
@@ -276,6 +360,7 @@ public class SemanticAnalyzer {
 	private void WalkMember(MemberDeclaration member, string filePath, List<Parameter> primaryParams) {
 		switch (member) {
 			case MemberDeclaration.Constructor { Declaration: var ctor }:
+				ValidateAnnotations(ctor.Annotations, filePath);
 				BeginFunctionScope(primaryParams.Concat(ctor.Parameters));
 				_currentReturnType = "void";
 				WalkBlock(ctor.Body, filePath);
@@ -288,18 +373,28 @@ public class SemanticAnalyzer {
 				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
+				ValidateAnnotations(m.Annotations, filePath);
 				BeginFunctionScope(m.Parameters);
 				_currentReturnType = ResolveReturnType(m.ReturnType);
 				WalkBlock(m.Body.Value, filePath);
 				ValidateAllPathsReturn(m.Body.Value, m.Name, filePath);
 				CheckOwnedLocalLeaks(filePath);
 				break;
+			case MemberDeclaration.Method { Declaration: var m }:
+				// Body-less method (abstract or @Extern) — no body walk, but still validate
+				// any attached annotations (e.g. user-defined `@SomeTag` traits).
+				ValidateAnnotations(m.Annotations, filePath);
+				break;
 			case MemberDeclaration.Fragment { Declaration: var f } when f.Body.HasValue:
+				ValidateAnnotations(f.Annotations, filePath);
 				BeginFunctionScope(f.Parameters);
 				_currentReturnType = ResolveReturnType(f.ReturnType);
 				WalkBlock(f.Body.Value, filePath);
 				ValidateAllPathsReturn(f.Body.Value, f.Name, filePath);
 				CheckOwnedLocalLeaks(filePath);
+				break;
+			case MemberDeclaration.Field { Declaration: var fd }:
+				ValidateAnnotations(fd.Annotations, filePath);
 				break;
 			case MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var nested } }:
 				// Recursively walk the nested class with `_currentTypeFqn` updated to the
@@ -314,6 +409,7 @@ public class SemanticAnalyzer {
 				finally {
 					_currentTypeFqn = savedTypeFqn;
 				}
+
 				break;
 		}
 	}
@@ -329,11 +425,7 @@ public class SemanticAnalyzer {
 			if (!ownedKey.StartsWith("local:")) continue;
 			if (_consumedAllPaths.Contains(ownedKey)) continue;
 			var name = ownedKey[6..];
-			SemanticError.LeakedOwnedValue
-				.WithFile(filePath)
-				.WithMessage($"'{name}' owns a heap allocation that is never consumed on at least one path")
-				.WithSeverity(!_allowLeaks)
-				.Render();
+			SemanticError.LeakedOwnedValue.WithFile(filePath).WithMessage($"'{name}' owns a heap allocation that is never consumed on at least one path").WithSeverity(!_allowLeaks).Render();
 		}
 	}
 
@@ -367,6 +459,7 @@ public class SemanticAnalyzer {
 					TryRecordInitAlias(newLocalKey, d.Init);
 					ClassifyInitOwnership(newLocalKey, d.Init);
 				}
+
 				break;
 			case Stmt.ExprStmt { Expression: var e }:
 				WalkExpr(e, filePath);
@@ -394,6 +487,7 @@ public class SemanticAnalyzer {
 					_ownedKeys.Remove(key); // about to be reclassified by ClassifyAssignOwnership
 					BreakAlias(key);
 				}
+
 				WalkExpr(a.Target, filePath);
 				WalkExpr(a.Value, filePath);
 				ValidateAssign(a, filePath);
@@ -403,6 +497,7 @@ public class SemanticAnalyzer {
 					TryRecordInitAlias(key, a.Value);
 					ClassifyAssignOwnership(key, a.Value);
 				}
+
 				break;
 			case Stmt.If { Statement: var s }:
 				WalkExpr(s.Condition, filePath);
@@ -540,6 +635,7 @@ public class SemanticAnalyzer {
 					_ownedKeys.Remove(asnKey);
 					BreakAlias(asnKey);
 				}
+
 				WalkExpr(asn.Target, filePath);
 				WalkExpr(asn.Value, filePath);
 				ValidateAssignExpr(asn, filePath);
@@ -547,9 +643,28 @@ public class SemanticAnalyzer {
 					TryRecordInitAlias(asnKey, asn.Value);
 					ClassifyAssignOwnership(asnKey, asn.Value);
 				}
+
+				break;
+			case Expression.OuterThis ot:
+				// Walk the inner-class chain looking for an ancestor whose simple-name
+				// matches `ot.TypeName`. Fires S016 if no match.
+				if (!IsReachableOuterByName(ot.TypeName))
+					SemanticError.OuterChainNotFound.WithFile(filePath).WithMessage($"'{ot.TypeName}.this' has no matching enclosing class in the inner-class chain from '{_currentTypeFqn}'").Render();
 				break;
 			// Literals, This, Super, Lambda, MetaAccess: no value-identifier check.
 		}
+	}
+
+	private bool IsReachableOuterByName(string typeName) {
+		var cur = _currentTypeFqn;
+		while (!string.IsNullOrEmpty(cur)) {
+			var simple = cur.Contains('.') ? cur[(cur.LastIndexOf('.') + 1)..] : cur;
+			if (simple == typeName) return true;
+			if (!_symbols.Classes.TryGetValue(cur, out var info) || !info.IsInner) return false;
+			cur = info.OuterClassFqn;
+		}
+
+		return false;
 	}
 
 	private void ValidateIdentifier(Expression.Identifier id, string filePath) {
@@ -559,11 +674,13 @@ public class SemanticAnalyzer {
 				SemanticError.UseAfterFree.WithFile(filePath).WithMessage($"'{id.Name}' has been deleted").Render();
 			return;
 		}
+
 		if (_importMap.ContainsKey(id.Name)) return; // imported (class or method) — already checked in ValidateImports
 		if (_symbols.KnownClasses.Contains(id.Name)) {
 			ValidateClassReference(id.Name, filePath);
 			return;
 		}
+
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method — same-class is always accessible
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) {
 			// Same-class field via implicit-this — also tombstone-checked.
@@ -571,7 +688,30 @@ public class SemanticAnalyzer {
 				SemanticError.UseAfterFree.WithFile(filePath).WithMessage($"'{id.Name}' has been deleted").Render();
 			return;
 		}
+
+		// Outer-chain lookup: if we're inside an inner class, walk up the captured chain
+		// looking for a field/method named `id.Name` on an ancestor.
+		if (FindInOuterChain(id.Name) != null) return;
 		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{id.Name}' is not defined in this scope").Render();
+	}
+
+	// Walk the outer-class chain from `_currentTypeFqn` looking for a class that owns a
+	// field or method named `name`. Returns the FQN of the matching class, or null if not
+	// found / not in an inner chain. Used both by ValidateIdentifier and ExpressionTyper
+	// (via SymbolRegistry lookups) for inner-class implicit-outer access.
+	private string? FindInOuterChain(string name) {
+		if (string.IsNullOrEmpty(_currentTypeFqn)) return null;
+		var cursor = _currentTypeFqn;
+		while (_symbols.Classes.TryGetValue(cursor, out var info) && info.IsInner) {
+			cursor = info.OuterClassFqn;
+			if (string.IsNullOrEmpty(cursor)) return null;
+			if (_symbols.Fields.TryGetValue(cursor, out var outerFields) && outerFields.Any(f => f.Name == name))
+				return cursor;
+			if (_symbols.Overloads.ContainsKey($"{cursor}.{name}"))
+				return cursor;
+		}
+
+		return null;
 	}
 
 	// Centralized visibility check. Returns true when the caller is allowed to reach the
@@ -588,8 +728,10 @@ public class SemanticAnalyzer {
 		var canonical = TypeInference.Canonicalize(rawName);
 		// Primitives short-circuit — they aren't class names.
 		if (TypeInference.IsKnownPrimitive(canonical)) return canonical;
-		// Class types: resolve to a registry FQN when one matches; otherwise leave as-is.
-		return ResolveClassFqn(canonical) ?? canonical;
+		// Class types resolve first; interface fallback covers `Greeter g;` so the local's
+		// declared type is the interface FQN. Trait FQNs are intentionally NOT considered
+		// here — traits are annotation declarations, not types of values.
+		return ResolveClassFqn(canonical) ?? ResolveInterfaceFqn(canonical) ?? canonical;
 	}
 
 	// Resolve a class name as written in source to its fully-qualified registry key.
@@ -604,19 +746,236 @@ public class SemanticAnalyzer {
 			var asNested = $"{_currentTypeFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(asNested)) return asNested;
 		}
+
 		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
 			var sameModule = $"{_currentModuleFqn}.{rawName}";
 			if (_symbols.KnownClasses.Contains(sameModule)) return sameModule;
 		}
+
+		// Dotted-name shorthand `Outer.Inner` — resolve the prefix recursively, then verify
+		// the full chain is registered.
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownClasses.Contains(combined)) return combined;
+			}
+		}
+
 		return null;
+	}
+
+	// Resolve a name as written in source to a fully-qualified interface FQN. Mirrors
+	// ResolveClassFqn but checks `KnownInterfaces`. The dotted-name shorthand still routes
+	// the prefix through `ResolveClassFqn` because nesting hosts are always classes.
+	private string? ResolveInterfaceFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownInterfaces.Contains(mapped)) return mapped;
+		if (_symbols.KnownInterfaces.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownInterfaces.Contains(asNested)) return asNested;
+		}
+
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownInterfaces.Contains(sameModule)) return sameModule;
+		}
+
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownInterfaces.Contains(combined)) return combined;
+			}
+		}
+
+		return null;
+	}
+
+	// Sibling of ResolveInterfaceFqn for traits.
+	private string? ResolveTraitFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownTraits.Contains(mapped)) return mapped;
+		if (_symbols.KnownTraits.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownTraits.Contains(asNested)) return asNested;
+		}
+
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownTraits.Contains(sameModule)) return sameModule;
+		}
+
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownTraits.Contains(combined)) return combined;
+			}
+		}
+
+		return null;
+	}
+
+	// Validate the `: BaseClass` and `-> Interface, ...` clauses on a class declaration.
+	//   - Extends must resolve to a class (not an interface, trait, or unknown name).
+	//   - Each IsList entry must resolve to an interface (not a class — those go in
+	//     Extends — and not a trait — traits attach via `@TraitName` annotations).
+	//   - For each interface in IsList, the class must provide a method whose canonical
+	//     param-types and return-type match every required (non-default-impl) signature.
+	private void ValidateClassExtendsImplements(ClassDeclaration c, string filePath) {
+		if (!string.IsNullOrEmpty(c.Extends)) {
+			var extName = c.Extends!;
+			var classFqn = ResolveClassFqn(extName);
+			if (classFqn == null) {
+				var ifaceFqn = ResolveInterfaceFqn(extName);
+				var traitFqn = ResolveTraitFqn(extName);
+				if (ifaceFqn != null)
+					SemanticError.InvalidExtends.WithFile(filePath).WithMessage($"'{extName}' is an interface; use '->' to implement, not ':' to extend").Render();
+				else if (traitFqn != null)
+					SemanticError.InvalidExtends.WithFile(filePath).WithMessage($"'{extName}' is a trait; apply via '@{extName}' annotation, not ':'").Render();
+				else
+					SemanticError.InvalidExtends.WithFile(filePath).WithMessage($"'{extName}' does not name a class").Render();
+			}
+		}
+
+		foreach (var implName in c.IsList) {
+			var ifaceFqn = ResolveInterfaceFqn(implName);
+			if (ifaceFqn != null) {
+				if (_symbols.Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) {
+					if (!CanAccess(ifaceInfo.Visibility, ifaceInfo.OwnerModule, ifaceFqn))
+						SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"interface '{ifaceFqn}' is not accessible from '{_currentTypeFqn}'").Render();
+					foreach (var sig in ifaceInfo.Methods) {
+						if (sig.HasDefaultBody) continue; // default impls don't require an override yet
+						var methodFqn = $"{_currentTypeFqn}.{sig.Name}";
+						var matched = _symbols.Overloads.TryGetValue(methodFqn, out var overloads) && overloads.Any(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
+						if (!matched)
+							SemanticError.MissingInterfaceMember.WithFile(filePath).WithMessage($"class '{_currentTypeFqn}' does not implement '{sig.Name}({string.Join(", ", sig.ParamTypes)}) : {sig.ReturnType}' required by interface '{ifaceFqn}'").Render();
+					}
+				}
+
+				continue;
+			}
+
+			if (ResolveClassFqn(implName) != null) {
+				SemanticError.InvalidImplements.WithFile(filePath).WithMessage($"'{implName}' is a class; use ':' to extend instead of '->' to implement").Render();
+				continue;
+			}
+
+			if (ResolveTraitFqn(implName) != null) {
+				SemanticError.InvalidImplements.WithFile(filePath).WithMessage($"'{implName}' is a trait; apply via '@{implName}' annotation, not the implements list").Render();
+				continue;
+			}
+
+			SemanticError.InvalidImplements.WithFile(filePath).WithMessage($"'{implName}' does not name an interface").Render();
+		}
+	}
+
+	// Built-in annotations whose semantics are wired in elsewhere. `Extern` is the FFI
+	// binding mechanism — its arg is the literal C symbol. The user-facing annotation
+	// traits (`Override`, `Implementation`, `Deprecated`) are now declared as zero-element
+	// traits in the standard library, so they go through the normal trait-arg validator.
+	private static readonly HashSet<string> BuiltinAnnotationNames = new() { "Extern" };
+
+	// Validate every annotation in a list against its trait's element schema. Resolves the
+	// trait by name, checks visibility, then matches the supplied args (named or positional)
+	// against the trait's element list — types, required-vs-optional, no extras.
+	private void ValidateAnnotations(List<TraitAnnotation> annotations, string filePath) {
+		foreach (var a in annotations) {
+			if (BuiltinAnnotationNames.Contains(a.Name)) continue;
+			var fqn = ResolveTraitFqn(a.Name);
+			if (fqn == null) {
+				SemanticError.UnknownTrait.WithFile(filePath).WithMessage($"'@{a.Name}' does not name a known trait").Render();
+				continue;
+			}
+
+			if (!_symbols.Traits.TryGetValue(fqn, out var info)) continue;
+			if (!CanAccess(info.Visibility, info.OwnerModule, fqn)) {
+				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"trait '{fqn}' is not accessible from '{_currentTypeFqn}'").Render();
+				continue;
+			}
+
+			var hasNamed = a.Args.Any(x => !string.IsNullOrEmpty(x.Key));
+			var hasPositional = a.Args.Any(x => string.IsNullOrEmpty(x.Key));
+			if (hasNamed && hasPositional) {
+				SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' arguments mix named and positional forms; use one consistently").Render();
+				continue;
+			}
+
+			var typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn, _currentModuleFqn);
+
+			if (hasNamed) {
+				var argMap = new Dictionary<string, Expression>();
+				foreach (var (key, value) in a.Args) {
+					if (argMap.ContainsKey(key))
+						SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' has duplicate argument '{key}'").Render();
+					argMap[key] = value;
+				}
+
+				foreach (var key in argMap.Keys) {
+					if (info.Elements.All(e => e.Name != key))
+						SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' has no element named '{key}'").Render();
+				}
+
+				foreach (var elem in info.Elements) {
+					if (argMap.TryGetValue(elem.Name, out var expr)) {
+						var exprType = typer.InferType(expr);
+						if (!string.IsNullOrEmpty(exprType) && exprType != elem.CanonicalType && !TypeInference.IsLosslessPromotion(exprType, elem.CanonicalType))
+							SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' argument '{elem.Name}' has type '{exprType}', expected '{elem.CanonicalType}'").Render();
+					}
+					else if (elem.Default == null) {
+						SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' missing required argument '{elem.Name}'").Render();
+					}
+				}
+			}
+			else {
+				if (a.Args.Count > info.Elements.Count) {
+					SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' takes at most {info.Elements.Count} arguments; got {a.Args.Count}").Render();
+				}
+
+				for (var i = 0; i < info.Elements.Count; i++) {
+					var elem = info.Elements[i];
+					if (i < a.Args.Count) {
+						var exprType = typer.InferType(a.Args[i].Value);
+						if (!string.IsNullOrEmpty(exprType) && exprType != elem.CanonicalType && !TypeInference.IsLosslessPromotion(exprType!, elem.CanonicalType))
+							SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' argument {i + 1} ('{elem.Name}') has type '{exprType}', expected '{elem.CanonicalType}'").Render();
+					}
+					else if (elem.Default == null) {
+						SemanticError.BadTraitArguments.WithFile(filePath).WithMessage($"trait '@{a.Name}' missing required argument '{elem.Name}'").Render();
+					}
+				}
+			}
+		}
 	}
 
 	private bool CanAccess(Visibility memberVis, string ownerModule, string ownerClass) => memberVis switch {
 		Visibility.Public => true,
 		Visibility.Internal => _currentModuleFqn == ownerModule,
-		Visibility.Private => !string.IsNullOrEmpty(_currentTypeFqn) && _currentTypeFqn == ownerClass,
+		// Same-class OR same inner-class chain: inner classes can read their outer's private
+		// members (Java semantics). Walk `_currentTypeFqn`'s outer chain looking for ownerClass.
+		Visibility.Private => !string.IsNullOrEmpty(_currentTypeFqn) && IsSelfOrEnclosingClass(_currentTypeFqn, ownerClass),
 		_ => false
 	};
+
+	private bool IsSelfOrEnclosingClass(string fromFqn, string targetFqn) {
+		var cursor = fromFqn;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (cursor == targetFqn) return true;
+			if (!_symbols.Classes.TryGetValue(cursor, out var info) || !info.IsInner) return false;
+			cursor = info.OuterClassFqn;
+		}
+
+		return false;
+	}
 
 	private void ValidateClassReference(string classFqn, string filePath) {
 		if (!_symbols.Classes.TryGetValue(classFqn, out var info)) return;
@@ -676,6 +1035,18 @@ public class SemanticAnalyzer {
 			return;
 		}
 
+		// Target is an interface instance: members are method-only (interfaces have no fields).
+		// Visibility check piggybacks on the interface's own visibility — interface methods
+		// inherit it. v1: skip detailed visibility on individual interface methods.
+		if (_symbols.KnownInterfaces.Contains(targetType)) {
+			if (_symbols.Interfaces.TryGetValue(targetType, out var ifaceInfo)) {
+				if (ifaceInfo.Methods.Any(m => m.Name == ma.Member)) return;
+			}
+
+			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a method of interface '{targetType}'").Render();
+			return;
+		}
+
 		// Target is a class instance: verify the member exists as a field or method, then
 		// enforce visibility against the caller's class/module.
 		if (!_symbols.KnownClasses.Contains(targetType)) return; // unknown class — skip
@@ -699,6 +1070,7 @@ public class SemanticAnalyzer {
 				var first = overloads[0];
 				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{ma.Member}' on '{targetType}' is {VisibilityWord(first.Visibility)} and not accessible from this scope").Render();
 			}
+
 			return;
 		}
 
@@ -725,16 +1097,16 @@ public class SemanticAnalyzer {
 				if (_typer.TryGetLocalType(id.Name, out _)) {
 					key = $"local:{id.Name}";
 				}
-				else if (!string.IsNullOrEmpty(_currentTypeFqn)
-				         && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs)
-				         && fs.Any(f => f.Name == id.Name)) {
+				else if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs) && fs.Any(f => f.Name == id.Name)) {
 					key = $"field:{id.Name}";
 				}
+
 				break;
 			case Expression.MemberAccess { Target: Expression.This, Member: var m }:
 				key = $"field:{m}";
 				break;
 		}
+
 		if (key == null) return;
 		_deletedNames.Add(key);
 		_consumedAllPaths.Add(key);
@@ -771,10 +1143,7 @@ public class SemanticAnalyzer {
 		var n = Math.Min(paramOwnership.Count, args.Count);
 		for (var i = 0; i < n; i++) {
 			if (args[i] is Expression.New && paramOwnership[i] != OwnershipModifier.Transfer)
-				SemanticError.TemporaryLeak
-					.WithFile(filePath)
-					.WithMessage($"argument {i} is a `new` temporary passed to a non-transfer parameter — the allocation has no owner and will leak; assign it to a local first or mark the parameter `Type!`")
-					.Render();
+				SemanticError.TemporaryLeak.WithFile(filePath).WithMessage($"argument {i} is a `new` temporary passed to a non-transfer parameter — the allocation has no owner and will leak; assign it to a local first or mark the parameter `Type!`").Render();
 		}
 	}
 
@@ -793,10 +1162,7 @@ public class SemanticAnalyzer {
 
 		// Direct hit: the LHS root identifier is itself a borrow parameter.
 		if (IsBorrowParameter(root)) {
-			SemanticError.MutationOfBorrow
-				.WithFile(filePath)
-				.WithMessage($"parameter '{root}' is a borrow — mark it 'Type& {root}' to allow mutation, or 'Type! {root}' to take ownership")
-				.Render();
+			SemanticError.MutationOfBorrow.WithFile(filePath).WithMessage($"parameter '{root}' is a borrow — mark it 'Type& {root}' to allow mutation, or 'Type! {root}' to take ownership").Render();
 			return;
 		}
 
@@ -808,10 +1174,7 @@ public class SemanticAnalyzer {
 				if (!member.StartsWith("local:")) continue;
 				var aliasedName = member[6..];
 				if (IsBorrowParameter(aliasedName)) {
-					SemanticError.MutationOfBorrow
-						.WithFile(filePath)
-						.WithMessage($"'{root}' aliases borrow parameter '{aliasedName}'; mark '{aliasedName}' as 'Type&' to allow mutation")
-						.Render();
+					SemanticError.MutationOfBorrow.WithFile(filePath).WithMessage($"'{root}' aliases borrow parameter '{aliasedName}'; mark '{aliasedName}' as 'Type&' to allow mutation").Render();
 					return;
 				}
 			}
@@ -843,9 +1206,7 @@ public class SemanticAnalyzer {
 			case Expression.Identifier id when _typer.TryGetLocalType(id.Name, out _):
 				key = $"local:{id.Name}";
 				return true;
-			case Expression.Identifier id when !string.IsNullOrEmpty(_currentTypeFqn)
-			                                   && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs)
-			                                   && fs.Any(f => f.Name == id.Name):
+			case Expression.Identifier id when !string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fs) && fs.Any(f => f.Name == id.Name):
 				key = $"field:{id.Name}";
 				return true;
 			case Expression.MemberAccess { Target: Expression.This, Member: var m }:
@@ -922,6 +1283,7 @@ public class SemanticAnalyzer {
 				}
 			}
 		}
+
 		// Re-point each name's entry to a single shared set per equivalence class. Names
 		// that ended up linked through transitive merges should share one set instance.
 		var canonical = new Dictionary<string, HashSet<string>>();
@@ -937,9 +1299,11 @@ public class SemanticAnalyzer {
 					if (visited.Add(m)) stack.Push(m);
 				}
 			}
+
 			var shared = visited;
 			foreach (var m in visited) canonical[m] = shared;
 		}
+
 		return canonical;
 	}
 
@@ -983,11 +1347,7 @@ public class SemanticAnalyzer {
 		// allocation remains reachable through that name after BreakAlias.
 		if (_aliasGroups.TryGetValue(lhsKey, out var group) && group.Count > 1) return;
 		var name = lhsKey.StartsWith("local:") ? lhsKey[6..] : lhsKey.StartsWith("field:") ? "this." + lhsKey[6..] : lhsKey;
-		SemanticError.LeakedOwnedValue
-			.WithFile(filePath)
-			.WithMessage($"reassigning '{name}' overwrites a heap allocation that was never consumed; the previous value is now unreachable")
-			.WithSeverity(!_allowLeaks)
-			.Render();
+		SemanticError.LeakedOwnedValue.WithFile(filePath).WithMessage($"reassigning '{name}' overwrites a heap allocation that was never consumed; the previous value is now unreachable").WithSeverity(!_allowLeaks).Render();
 	}
 
 	// True when an expression is treated as a "fresh ownership" producer: `new Foo()` and
@@ -1000,6 +1360,7 @@ public class SemanticAnalyzer {
 			var ty = _typer.InferType(e);
 			return ty != null && _symbols.KnownClasses.Contains(ty);
 		}
+
 		return false;
 	}
 
@@ -1013,8 +1374,10 @@ public class SemanticAnalyzer {
 				clonedSet = new HashSet<string>(set);
 				setMap[set] = clonedSet;
 			}
+
 			copy[key] = clonedSet;
 		}
+
 		return copy;
 	}
 
@@ -1089,17 +1452,20 @@ public class SemanticAnalyzer {
 			else {
 				hasDefault = true;
 			}
+
 			foreach (var inner in c.Body) WalkStmt(inner, filePath);
 			endDeleted.Add(_deletedNames);
 			endConsumed.Add(_consumedAllPaths);
 			endAliases.Add(_aliasGroups);
 		}
+
 		// No default → implicit fall-through contributes the pre-state.
 		if (!hasDefault) {
 			endDeleted.Add(preDeleted);
 			endConsumed.Add(preConsumed);
 			endAliases.Add(preAliases);
 		}
+
 		_deletedNames = UnionAll(endDeleted);
 		_consumedAllPaths = IntersectAll(endConsumed);
 		_aliasGroups = MergeAliasStates(endAliases);
@@ -1146,10 +1512,12 @@ public class SemanticAnalyzer {
 			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot delete a value of primitive type '{ty}'").Render();
 			return;
 		}
+
 		if (!_symbols.KnownClasses.Contains(ty)) {
 			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"cannot delete '{ty}' — not a known class type").Render();
 			return;
 		}
+
 		// Borrowed-parameter check: `delete <param>` is rejected when the parameter is a
 		// borrow (default) or mutable borrow (`&`). Only `!` transfers ownership.
 		if (target is Expression.Identifier id && _paramOwnership.TryGetValue(id.Name, out var ownership) && ownership != OwnershipModifier.Transfer) {
@@ -1176,22 +1544,52 @@ public class SemanticAnalyzer {
 			return;
 		}
 
+		// Inner-class capture validation: must have either an explicit receiver or a usable
+		// outer in scope. Fires S015 NoOuterContext when neither is available.
+		if (classInfo.IsInner) {
+			if (n.Receiver == null && !HasReachableOuter(classInfo.OuterClassFqn)) {
+				SemanticError.NoOuterContext.WithFile(filePath).WithMessage($"cannot construct inner class '{classFqn}' here — no instance of '{classInfo.OuterClassFqn}' is in scope; use 'outerInstance.new {rawName}(…)' instead").Render();
+				return;
+			}
+		}
+		else if (n.Receiver != null) {
+			SemanticError.NoOuterContext.WithFile(filePath).WithMessage($"class '{classFqn}' is not declared as 'inner' — `<expr>.new {rawName}(...)` is only valid for inner classes").Render();
+			return;
+		}
+
 		// Constructor visibility check. If the class declares no explicit constructors, an
 		// implicit zero-arg one is assumed accessible (matches how primary-param classes work).
 		if (!_symbols.Constructors.TryGetValue(classFqn, out var ctors) || ctors.Count == 0) return;
 
+		// Inner-class registered ctors include a synthetic `__outer__` slot as ParamTypes[0].
+		// User args don't include it, so subtract a hidden-slot offset when matching arity.
+		var hiddenSlots = classInfo.IsInner ? 1 : 0;
 		var argTypes = n.Arguments.Select(a => _typer.InferType(a)).ToList();
-		var matching = ctors.FirstOrDefault(c => c.ParamTypes.Count == n.Arguments.Count
-			&& c.ParamTypes.Zip(argTypes).All(p => p.Second == null || p.Second == p.First || TypeInference.IsLosslessPromotion(p.Second!, p.First)));
-		if (matching == null) return; // no overload selection — defer; the call shape may yet be valid
+		var matching = ctors.FirstOrDefault(c => c.ParamTypes.Count == n.Arguments.Count + hiddenSlots && c.ParamTypes.Skip(hiddenSlots).Zip(argTypes).All(p => p.Second == null || p.Second == p.First || TypeInference.IsLosslessPromotion(p.Second!, p.First)));
+		if (matching == null) return; // no overload selection — defer
 
 		if (!CanAccess(matching.Visibility, matching.OwnerModule, matching.OwnerClass))
 			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"constructor of '{classFqn}' is {VisibilityWord(matching.Visibility)} and not accessible from this scope").Render();
 
-		// Apply transfer-tombstoning: any constructor parameter declared `Type!` consumes
-		// its caller-side argument, mirroring the behavior at regular call sites.
-		ApplyTransferTombstones(matching.ParamOwnership, n.Arguments);
-		CheckTemporaryLeaks(matching.ParamOwnership, n.Arguments, filePath);
+		// Apply transfer-tombstoning: parameter at user-position i corresponds to
+		// matching.ParamOwnership[i + hiddenSlots]. Slice the ownership list to align.
+		var userOwnership = matching.ParamOwnership.Skip(hiddenSlots).ToList();
+		ApplyTransferTombstones(userOwnership, n.Arguments);
+		CheckTemporaryLeaks(userOwnership, n.Arguments, filePath);
+	}
+
+	// True when the current method/ctor has an enclosing-instance chain that reaches a
+	// class FQN equal to `targetFqn`. Walks `_currentTypeFqn` upward via the registry's
+	// IsInner / OuterClassFqn metadata.
+	private bool HasReachableOuter(string targetFqn) {
+		var cursor = _currentTypeFqn;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (cursor == targetFqn) return true;
+			if (!_symbols.Classes.TryGetValue(cursor, out var info) || !info.IsInner) return false;
+			cursor = info.OuterClassFqn;
+		}
+
+		return false;
 	}
 
 	// Validate that an assignment's RHS can lossless-widen to the LHS target type.
@@ -1210,8 +1608,7 @@ public class SemanticAnalyzer {
 		if (lhsType == null) return; // can't infer target type — skip validation
 		var rhsType = _typer.InferType(value);
 		if (rhsType == null) return; // can't infer source type — skip validation
-		if (lhsType == rhsType) return;
-		if (TypeInference.IsLosslessPromotion(rhsType, lhsType)) return;
+		if (_typer.IsAssignableTo(rhsType, lhsType)) return;
 		SemanticError.AssignTypeMismatch.WithFile(filePath).WithMessage($"expected '{lhsType}', got '{rhsType}'").Render();
 	}
 
@@ -1240,8 +1637,7 @@ public class SemanticAnalyzer {
 		// `return expr;` with a value — type must lossless-widen to the declared return.
 		var inferred = _typer.InferType(value);
 		if (inferred == null) return; // can't validate; CIR lowering handles type-flow downstream
-		if (inferred == _currentReturnType) return;
-		if (TypeInference.IsLosslessPromotion(inferred, _currentReturnType)) return;
+		if (_typer.IsAssignableTo(inferred, _currentReturnType)) return;
 		SemanticError.ReturnTypeMismatch.WithFile(filePath).WithMessage($"expected '{_currentReturnType}', got '{inferred}'").Render();
 	}
 
@@ -1257,10 +1653,17 @@ public class SemanticAnalyzer {
 				};
 				SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"method '{calleeName}' is {VisibilityWord(overload.Visibility)} on '{overload.OwnerClass}' and not accessible from this scope").Render();
 			}
+
 			ApplyTransferTombstones(overload.ParamOwnership, call.Arguments);
 			CheckTemporaryLeaks(overload.ParamOwnership, call.Arguments, filePath);
 			return;
 		}
+
+		// Interface dispatch: receiver static type names an interface, and a matching method
+		// exists. Visibility / transfer-ownership / temporary-leak checks aren't applied to
+		// interface methods in v1 — they're a deferred concern.
+		var ifaceMethod = _typer.ResolveInterfaceMethodCall(call);
+		if (ifaceMethod != null) return;
 
 		// Distinguish "no FQN at all" (S010) from "FQN exists, no overload matches" (S009).
 		var candidates = _typer.GetCalleeCandidates(call);
@@ -1289,7 +1692,7 @@ public class SemanticAnalyzer {
 
 			if (d.Init != null) {
 				var inferredCanon = _typer.InferType(d.Init);
-				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && declared != inferredCanon && !TypeInference.IsLosslessPromotion(inferredCanon, declared)) {
+				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && !_typer.IsAssignableTo(inferredCanon, declared)) {
 					SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"expected '{declared}', got '{inferredCanon}'").Render();
 				}
 			}

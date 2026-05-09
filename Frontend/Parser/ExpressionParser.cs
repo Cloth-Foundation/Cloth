@@ -311,6 +311,22 @@ internal sealed class ExpressionParser(Parser parser) {
 				case Operator.Dot:
 				{
 					parser.Advance();
+					// `<TypeName>.this` — explicit outer-instance reference. The LHS must be
+					// a bare Identifier (a type name); other expression shapes don't make sense.
+					if (parser.CheckKeyword(Keyword.This)) {
+						parser.Advance();
+						if (left is not Expression.Identifier idForThis)
+							throw ParserError.ExpectedIdentifier.WithMessage("'.this' must follow a type name").WithSpan(parser.Current.Span).Render();
+						return new Expression.OuterThis(idForThis.Name, TokenSpan.Merge(leftSpan, parser.Previous().Span));
+					}
+
+					// `<expr>.new T(args)` — receiver-qualified construction (Java-style for
+					// instantiating an inner class against a specific outer instance).
+					if (parser.CheckKeyword(Keyword.New)) {
+						var bare = ParseNewExpr();
+						return bare with { Receiver = left, Span = TokenSpan.Merge(leftSpan, bare.Span) };
+					}
+
 					var (member, memberSpan) = ExpectMemberName();
 					if (parser.CheckOperator(Operator.LParen)) {
 						parser.Advance();

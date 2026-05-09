@@ -46,6 +46,16 @@ public abstract record CirExpr {
 	// Indirect call through a function-pointer / vtable slot
 	public sealed record IndirectCall(CirExpr Callee, List<CirExpr> Args) : CirExpr;
 
+	// Virtual call through a class's vtable. `Receiver` is an interface-typed value (whose
+	// underlying class has a `__vtable__` first field). `SlotId` is the global slot ID
+	// assigned by SymbolRegistry.AssignVtableLayouts. The LLVM emitter expands this to:
+	// load vtable, GEP to slot, load fn ptr, indirect-call with `Receiver` as `this`.
+	public sealed record VirtualCall(CirExpr Receiver, int SlotId, CirType ReturnType, List<CirType> ParamTypes, List<CirExpr> Args) : CirExpr;
+
+	// Address of a class's vtable global. Used to initialize the `__vtable__` field in the
+	// constructor prologue. The LLVM emitter resolves the global symbol from the class FQN.
+	public sealed record VtableRef(string ClassFqn) : CirExpr;
+
 	// Heap allocation: pairs type layout with the constructor to call
 	public sealed record Alloc(CirType Type, string CtorMangledName, List<CirExpr> Args) : CirExpr;
 

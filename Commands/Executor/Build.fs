@@ -5,8 +5,7 @@ open Commands.DispatchResult
 open Commands.Flags
 open Commands.Cleanup
 
-let clean (dir: string) =
-    cleanup (dir, CLEANUP_EXTENSIONS)
+let clean (dir: string) = cleanup (dir, CLEANUP_EXTENSIONS)
 
 let runBuild (path: string, args: string[]) =
     let tomlPath = IO.Path.Combine(path, "build.toml")

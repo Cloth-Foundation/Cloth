@@ -1,0 +1,15 @@
+module hello.world;
+
+public class () -> HasDefault {
+
+    public DefaultUser {
+    }
+
+    public ~DefaultUser {
+    }
+
+    public func required(): i32 {
+        return 7;
+    }
+
+}

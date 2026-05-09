@@ -53,7 +53,9 @@ administrator permissions.
 While not recommended, you can follow [the Installation Guide](INSTALL.md).
 
 ## Required 3rd Party Libraries
+
 > There is a plan when an installer is made that it will automatically install these libraries.
+
 - [Git](https://github.com/git/git)
 - [Clang](https://clang.llvm.org/)
 

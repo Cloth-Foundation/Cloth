@@ -23,7 +23,9 @@ public class Parser {
 	private Token _current;
 	private bool _moduleDeclared;
 	private int _cursor;
+
 	private readonly string _currentFileName;
+
 	// Tracks the name of the class/struct/etc currently being parsed so constructor
 	// detection inside member-bodies can disambiguate between an outer class and a
 	// nested one. Pushed/popped around nested-type parsing.
@@ -334,9 +336,25 @@ public class Parser {
 		_currentClassName = name;
 		try {
 			ExpectOperator(Operator.LBrace);
-			var members = ParseMembers();
+			// Trait body: a sequence of element declarations of the form
+			//     <Type> <name> [= <defaultExpr>] ;
+			// Mirrors Java's @interface element shape (a typed parameter with optional default).
+			var elements = new List<TraitElement>();
+			while (!CheckOperator(Operator.RBrace) && !AtEof()) {
+				var elemStart = _current.Span;
+				var type = ParseTypeExpression();
+				var elemName = ExpectIdentifier();
+				Expression? defaultExpr = null;
+				if (ConsumeOp(Operator.Equal)) {
+					defaultExpr = ExpressionParser.ParseExpression();
+				}
+
+				var elemEnd = ExpectSemiColon();
+				elements.Add(new TraitElement(type, elemName, defaultExpr, TokenSpan.Merge(elemStart, elemEnd)));
+			}
+
 			ExpectOperator(Operator.RBrace);
-			return new TraitDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+			return new TraitDeclaration(visibility, name, elements, TokenSpan.Merge(start, Previous().Span));
 		}
 		finally {
 			_currentClassName = previousClassName;
@@ -356,6 +374,7 @@ public class Parser {
 			Advance();
 			return explicitName;
 		}
+
 		return _currentFileName;
 	}
 
@@ -433,11 +452,10 @@ public class Parser {
 				Advance(); // consume '~'
 				members.Add(new MemberDeclaration.Destructor(ParseDestructorDecl(annotations, visibility)));
 			}
-			else if (CheckKeyword(Keyword.Class) || CheckKeyword(Keyword.Struct)
-			         || CheckKeyword(Keyword.Enum) || CheckKeyword(Keyword.Interface)
-			         || CheckKeyword(Keyword.Trait)) {
-				// NESTED TYPE: visibility/modifiers already parsed; the nested-type helper
-				// handles the kind dispatch and identifier-required path.
+			else if (CheckKeyword(Keyword.Class) || CheckKeyword(Keyword.Struct) || CheckKeyword(Keyword.Enum) || CheckKeyword(Keyword.Interface) || CheckKeyword(Keyword.Trait) || CheckKeyword(Keyword.Abstract) || CheckKeyword(Keyword.Const) || (_current.Type == TokenType.Identifier && _current.Lexeme == "inner" && IsTypeKindKeyword(PeekAt(1).Keyword))) {
+				// NESTED TYPE: class modifiers (`inner`, `abstract`, `const`) may appear
+				// before the kind keyword. ParseNestedTypeDeclaration reads any modifiers,
+				// then dispatches on the kind.
 				members.Add(new MemberDeclaration.NestedType(ParseNestedTypeDeclaration(visibility, modifiers)));
 			}
 			else if (_current.Type == TokenType.Identifier && _current.Literal == _currentClassName) {
@@ -454,19 +472,13 @@ public class Parser {
 		return members;
 	}
 
-	// Parse a nested type declaration. The kind keyword (class/struct/enum/interface/trait)
-	// is _current; the dispatcher peeks but does NOT consume it — each kind's parser
-	// consumes its own keyword. Visibility / modifiers are already parsed by ParseMembers.
-	// The kind's parser is invoked with a sentinel non-null `nestedName` (the literal
-	// "<nested>") which puts it into nested mode: identifier becomes required, filename
-	// comparison is skipped, primary-ctor parens become required where applicable.
-	// The actual identifier is then read via the parser's own identifier-acquisition path.
+	// Parse a nested type declaration. Reads the class-level modifiers (`inner`, `abstract`,
+	// `const`), then dispatches on the kind keyword. Each kind's parser consumes its own
+	// keyword and the required identifier; the `nested: true` flag forces identifier-mandatory
+	// mode and (for class/struct) makes the primary-ctor parens mandatory too.
 	private TypeDeclaration ParseNestedTypeDeclaration(Visibility visibility, List<FunctionModifiers> _) {
-		// Dispatch on the kind keyword. Each parser consumes its own keyword and identifier.
-		// We pass a SENTINEL (empty string) as `nestedName` to flag nested-mode without
-		// substituting a name — the parser still reads the explicit identifier from source.
+		var modifiers = ParseTopModifiers(); // may consume `inner` / `abstract` / `const`
 		var kind = _current.Keyword;
-		var modifiers = new List<ClassModifiers>(); // top-level modifiers not honored on nested in v1
 		return kind switch {
 			Keyword.Class => new TypeDeclaration.Class(ParseClassDeclaration(visibility, modifiers, nested: true)),
 			Keyword.Struct => new TypeDeclaration.Struct(ParseStructDeclaration(visibility, nested: true)),
@@ -502,10 +514,10 @@ public class Parser {
 			if (CheckOperator(Operator.LParen)) {
 				Advance(); // consume '('
 				if (!CheckOperator(Operator.RParen)) {
-					args.Add(("", ExpressionParser.ParseExpression()));
+					args.Add(ParseAnnotationArg());
 					while (CheckOperator(Operator.Comma)) {
 						Advance();
-						args.Add(("", ExpressionParser.ParseExpression()));
+						args.Add(ParseAnnotationArg());
 					}
 				}
 
@@ -516,6 +528,20 @@ public class Parser {
 		}
 
 		return annotations;
+	}
+
+	// One annotation arg is either a positional expression or a `name = expr` named pair.
+	// We only treat `<ident> =` as a named-arg start to avoid swallowing assignments inside
+	// expressions; ParseExpression handles the rest.
+	private (string Key, Expression Value) ParseAnnotationArg() {
+		if (_current.Type == TokenType.Identifier && PeekAt(1).Operator == Operator.Equal) {
+			var key = _current.Literal;
+			Advance(); // consume identifier
+			Advance(); // consume '='
+			return (key, ExpressionParser.ParseExpression());
+		}
+
+		return ("", ExpressionParser.ParseExpression());
 	}
 
 	/// <summary>
@@ -907,6 +933,16 @@ public class Parser {
 		else if (_current.Type == TokenType.Identifier || _current.Type == TokenType.Keyword) {
 			var typeName = _current.Lexeme;
 			Advance();
+			// Optional dotted-name suffix for nested-type access at use sites: `Outer.Inner`,
+			// `A.B.C`. Each segment after a dot must be a plain identifier (keywords aren't
+			// member names of types). Consumed before the optional generic `<...>` so a chain
+			// like `Outer.Inner<T>` is parsed as `BaseType.Generic("Outer.Inner", [T])`.
+			while (CheckOperator(Operator.Dot) && PeekAt(1).Type == TokenType.Identifier) {
+				Advance(); // consume '.'
+				typeName += "." + _current.Lexeme;
+				Advance(); // consume the identifier
+			}
+
 			if (CheckOperator(Operator.Less)) {
 				// Generic: Name<T1, T2>
 				Advance(); // consume '<'
@@ -1003,18 +1039,38 @@ public class Parser {
 	private List<ClassModifiers> ParseTopModifiers() {
 		var modifiers = new List<ClassModifiers>();
 
-		if (CheckKeyword(Keyword.Const)) {
-			modifiers.Add(ClassModifiers.Const);
-			Advance();
-		}
+		// Order is flexible — accept any combination once each. `inner` is a soft keyword:
+		// lexed as Identifier (so it remains usable as a variable/field name), but
+		// recognized here in the modifier position when followed by a type-kind keyword.
+		while (true) {
+			if (CheckKeyword(Keyword.Const) && !modifiers.Contains(ClassModifiers.Const)) {
+				modifiers.Add(ClassModifiers.Const);
+				Advance();
+				continue;
+			}
 
-		if (CheckKeyword(Keyword.Abstract)) {
-			modifiers.Add(ClassModifiers.Abstract);
-			Advance();
+			if (CheckKeyword(Keyword.Abstract) && !modifiers.Contains(ClassModifiers.Abstract)) {
+				modifiers.Add(ClassModifiers.Abstract);
+				Advance();
+				continue;
+			}
+
+			if (_current.Type == TokenType.Identifier && _current.Lexeme == "inner" && !modifiers.Contains(ClassModifiers.Inner) && IsTypeKindKeyword(PeekAt(1).Keyword)) {
+				modifiers.Add(ClassModifiers.Inner);
+				Advance();
+				continue;
+			}
+
+			break;
 		}
 
 		return modifiers;
 	}
+
+	// True iff the keyword introduces a type declaration (class / struct / enum / interface
+	// / trait). Used to disambiguate the soft keyword `inner` from an ordinary identifier.
+	private static bool IsTypeKindKeyword(Keyword? k) =>
+		k is Keyword.Class or Keyword.Struct or Keyword.Enum or Keyword.Interface or Keyword.Trait;
 
 	/// <summary>
 	/// Ensures that the current token is a semicolon, consuming it if valid.
@@ -1234,6 +1290,13 @@ public class Parser {
 		else if (_current.Type == TokenType.Identifier || _current.Type == TokenType.Keyword) {
 			var name = _current.Lexeme;
 			Advance();
+			// Mirror ParseTypeExpression: consume an optional dotted chain `Outer.Inner`.
+			while (CheckOperator(Operator.Dot) && PeekAt(1).Type == TokenType.Identifier) {
+				Advance();
+				name += "." + _current.Lexeme;
+				Advance();
+			}
+
 			if (CheckOperator(Operator.Less)) {
 				Advance();
 				var firstArg = TryParseTypeExpression();

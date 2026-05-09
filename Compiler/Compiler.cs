@@ -1,7 +1,7 @@
-// Copyright (c) 2026. The Cloth contributors.
-//
+// Copyright (c) 2026.The Cloth contributors.
+// 
 // Compiler.cs is part of the Cloth Compiler.
-//
+// 
 // Use, modification, and distribution of this file are governed by the
 // license terms provided with the Cloth Compiler source distribution.
 
@@ -164,13 +164,7 @@ public class Compiler(string projectRoot) {
 			if (libPath == null) {
 				var stdlibRoot = ResolveStdlibRoot(name);
 				if (stdlibRoot == null) {
-					Console.Error.WriteLine(
-						$"Error: cannot locate the Cloth standard library for dependency '{name}={version}'.\n" +
-						"  Tried (in order):\n" +
-						"    1. CLOTH_STDLIB_PATH environment variable\n" +
-						$"    2. {Path.Combine(AppContext.BaseDirectory, "Standard-Library")}\n" +
-						"    3. Walking up from the compiler binary's directory\n" +
-						"  Set CLOTH_STDLIB_PATH or place Standard-Library next to the compiler binary.");
+					Console.Error.WriteLine($"Error: cannot locate the Cloth standard library for dependency '{name}={version}'.\n" + "  Tried (in order):\n" + "    1. CLOTH_STDLIB_PATH environment variable\n" + $"    2. {Path.Combine(AppContext.BaseDirectory, "Standard-Library")}\n" + "    3. Walking up from the compiler binary's directory\n" + "  Set CLOTH_STDLIB_PATH or place Standard-Library next to the compiler binary.");
 					Environment.Exit(1);
 				}
 
