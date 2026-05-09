@@ -8,6 +8,5 @@
 namespace FrontEnd.Parser.AST;
 
 public enum FieldModifiers {
-	Const,
-	Atomic
+	Const
 }

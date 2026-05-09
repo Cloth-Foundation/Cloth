@@ -452,8 +452,8 @@ public class Parser {
 				Advance(); // consume '~'
 				members.Add(new MemberDeclaration.Destructor(ParseDestructorDecl(annotations, visibility)));
 			}
-			else if (CheckKeyword(Keyword.Class) || CheckKeyword(Keyword.Struct) || CheckKeyword(Keyword.Enum) || CheckKeyword(Keyword.Interface) || CheckKeyword(Keyword.Trait) || CheckKeyword(Keyword.Abstract) || CheckKeyword(Keyword.Const) || (_current.Type == TokenType.Identifier && _current.Lexeme == "inner" && IsTypeKindKeyword(PeekAt(1).Keyword))) {
-				// NESTED TYPE: class modifiers (`inner`, `abstract`, `const`) may appear
+			else if (CheckKeyword(Keyword.Class) || CheckKeyword(Keyword.Struct) || CheckKeyword(Keyword.Enum) || CheckKeyword(Keyword.Interface) || CheckKeyword(Keyword.Trait) || CheckKeyword(Keyword.Prototype) || CheckKeyword(Keyword.Const) || (_current.Type == TokenType.Identifier && _current.Lexeme == "inner" && IsTypeKindKeyword(PeekAt(1).Keyword))) {
+				// NESTED TYPE: class modifiers (`inner`, `prototype`, `const`) may appear
 				// before the kind keyword. ParseNestedTypeDeclaration reads any modifiers,
 				// then dispatches on the kind.
 				members.Add(new MemberDeclaration.NestedType(ParseNestedTypeDeclaration(visibility, modifiers)));
@@ -472,12 +472,12 @@ public class Parser {
 		return members;
 	}
 
-	// Parse a nested type declaration. Reads the class-level modifiers (`inner`, `abstract`,
+	// Parse a nested type declaration. Reads the class-level modifiers (`inner`, `prototype`,
 	// `const`), then dispatches on the kind keyword. Each kind's parser consumes its own
 	// keyword and the required identifier; the `nested: true` flag forces identifier-mandatory
 	// mode and (for class/struct) makes the primary-ctor parens mandatory too.
 	private TypeDeclaration ParseNestedTypeDeclaration(Visibility visibility, List<FunctionModifiers> _) {
-		var modifiers = ParseTopModifiers(); // may consume `inner` / `abstract` / `const`
+		var modifiers = ParseTopModifiers(); // may consume `inner` / `prototype` / `const`
 		var kind = _current.Keyword;
 		return kind switch {
 			Keyword.Class => new TypeDeclaration.Class(ParseClassDeclaration(visibility, modifiers, nested: true)),
@@ -589,10 +589,6 @@ public class Parser {
 		var start = _current.Span;
 
 		FieldModifiers? modifier = null;
-		if (CheckKeyword(Keyword.Atomic)) {
-			modifier = FieldModifiers.Atomic;
-			Advance();
-		}
 
 		var type = ParseTypeExpression();
 		var name = ExpectIdentifier();
@@ -760,6 +756,13 @@ public class Parser {
 	/// </returns>
 	private List<FunctionModifiers> ParseFunctionModifiers() {
 		var modifiers = new List<FunctionModifiers>();
+		// `const` and `prototype` are ambiguous: function modifiers in member-method position,
+		// class modifiers in nested-type position. Peek through a run of class-modifier
+		// keywords starting at the cursor — if the run ends in a type-kind keyword, this is
+		// a nested type and we must not consume any of them here. ParseTopModifiers (called
+		// by ParseNestedTypeDeclaration) reads them instead.
+		if (LookaheadLeadsToNestedType()) return modifiers;
+
 		while (true) {
 			if (CheckKeyword(Keyword.Static) && !modifiers.Contains(FunctionModifiers.Static)) {
 				modifiers.Add(FunctionModifiers.Static);
@@ -777,6 +780,20 @@ public class Parser {
 		}
 
 		return modifiers;
+	}
+
+	// Peek ahead through any sequence of class-modifier keywords (`const`, `prototype`, soft
+	// `inner`) starting at the cursor. Returns true iff the run terminates in a type-kind
+	// keyword (`class`, `struct`, `enum`, `interface`, `trait`). Used to defer consumption
+	// of class-level modifiers when they precede a nested type.
+	private bool LookaheadLeadsToNestedType() {
+		var i = 0;
+		while (true) {
+			var t = PeekAt(i);
+			if (t.Keyword is Keyword.Const or Keyword.Prototype) { i++; continue; }
+			if (t.Type == TokenType.Identifier && t.Lexeme == "inner") { i++; continue; }
+			return IsTypeKindKeyword(t.Keyword);
+		}
 	}
 
 	/// <summary>
@@ -1021,7 +1038,7 @@ public class Parser {
 			case Keyword.Interface:
 			case Keyword.Trait:
 			case Keyword.Const:
-			case Keyword.Abstract:
+			case Keyword.Prototype:
 				return Visibility.Internal;
 			default:
 				throw ParserError.InvalidVisibilityModifier.WithMessage($"invalid visibility modifier '{_current.Lexeme}'").WithSpan(_current.Span).Render();
@@ -1030,7 +1047,7 @@ public class Parser {
 
 	/// <summary>
 	/// Parses and collects top-level modifiers applied to a type declaration.
-	/// Recognizes and validates modifiers such as "const" or "abstract" from the current token stream.
+	/// Recognizes and validates modifiers such as "const" or "prototype" from the current token stream.
 	/// </summary>
 	/// <returns>
 	/// A list of <see cref="ClassModifiers"/> representing the valid modifiers applied
@@ -1049,8 +1066,8 @@ public class Parser {
 				continue;
 			}
 
-			if (CheckKeyword(Keyword.Abstract) && !modifiers.Contains(ClassModifiers.Abstract)) {
-				modifiers.Add(ClassModifiers.Abstract);
+			if (CheckKeyword(Keyword.Prototype) && !modifiers.Contains(ClassModifiers.Prototype)) {
+				modifiers.Add(ClassModifiers.Prototype);
 				Advance();
 				continue;
 			}

@@ -9,7 +9,7 @@ namespace Compiler.CIR;
 
 // Type layout records — no method bodies, those live in CirFunction.
 public abstract record CirTypeDecl {
-	public sealed record Class(string FullyQualifiedName, string? BaseClass, List<string> Interfaces, List<CirField> Fields, bool IsAbstract, bool IsConst) : CirTypeDecl;
+	public sealed record Class(string FullyQualifiedName, string? BaseClass, List<string> Interfaces, List<CirField> Fields, bool IsPrototype, bool IsConst) : CirTypeDecl;
 
 	public sealed record Struct(string FullyQualifiedName, List<CirField> Fields) : CirTypeDecl;
 
@@ -21,6 +21,6 @@ public abstract record CirTypeDecl {
 	public sealed record Trait(string FullyQualifiedName) : CirTypeDecl;
 }
 
-public sealed record CirField(string Name, CirType Type, bool IsConst, bool IsAtomic, CirExpr? Initializer);
+public sealed record CirField(string Name, CirType Type, bool IsConst, CirExpr? Initializer);
 
 public sealed record CirEnumCase(string Name, CirExpr? Discriminant, List<CirType> Payload);

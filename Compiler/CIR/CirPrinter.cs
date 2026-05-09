@@ -38,11 +38,11 @@ public static class CirPrinter {
 				sb.Append($"{pad}class {c.FullyQualifiedName}");
 				if (c.BaseClass != null) sb.Append($" extends {c.BaseClass}");
 				if (c.Interfaces.Count > 0) sb.Append($" is {string.Join(", ", c.Interfaces)}");
-				if (c.IsAbstract) sb.Append(" [abstract]");
+				if (c.IsPrototype) sb.Append(" [prototype]");
 				if (c.IsConst) sb.Append(" [const]");
 				sb.AppendLine(" {");
 				foreach (var f in c.Fields)
-					sb.AppendLine($"{pad}  field {f.Name}: {PrintType(f.Type)}{(f.IsConst ? " [const]" : "")}{(f.IsAtomic ? " [atomic]" : "")}{(f.Initializer != null ? $" = {PrintExpr(f.Initializer)}" : "")}");
+					sb.AppendLine($"{pad}  field {f.Name}: {PrintType(f.Type)}{(f.IsConst ? " [const]" : "")}{(f.Initializer != null ? $" = {PrintExpr(f.Initializer)}" : "")}");
 				sb.AppendLine($"{pad}}}");
 				break;
 
