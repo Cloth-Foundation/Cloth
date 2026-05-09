@@ -743,7 +743,17 @@ public sealed class CirGenerator {
 
 				foreach (var fqn in candidates) {
 					var resolved = _typer.ResolveOverload(fqn, call.Arguments);
-					if (resolved != null) return BuildOverloadCall(resolved, call.Arguments, args);
+					if (resolved != null) {
+						// Bare-identifier call to an instance method on the enclosing class
+						// (e.g. `fib(n)` from inside `Main`'s body) — prepend the implicit
+						// `this` so the call signature lines up with the function definition.
+						if (!resolved.IsStatic && resolved.OwnerClass == _currentTypeFqn && !string.IsNullOrEmpty(_currentTypeFqn)) {
+							var withThis = new List<CirExpr> { new CirExpr.ThisPtr() };
+							withThis.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
+							return new CirExpr.Call(resolved.MangledSymbol, withThis);
+						}
+						return BuildOverloadCall(resolved, call.Arguments, args);
+					}
 				}
 
 				return new CirExpr.Call(candidates[0], args);

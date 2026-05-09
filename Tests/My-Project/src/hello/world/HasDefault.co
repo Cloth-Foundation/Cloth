@@ -1,6 +1,6 @@
 module hello.world;
 
-public interface HasDefault {
+public interface {
     public func required(): i32;
     public func optional(): i32 {
         return 0;

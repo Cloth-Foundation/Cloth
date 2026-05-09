@@ -1,0 +1,38 @@
+﻿module fib.test;
+
+import cloth.io.Out:: { println };
+
+public class (string[] args) {
+
+    private u64 number = 89;
+
+    public Main {
+        u64 final = 0;
+        for (u64 i = 0; i < number; i++) {
+            final = fibIterative(i);
+        }
+
+        println(final);
+    }
+
+    // O(2^n)
+    private func fib(u64 n): u64 {
+        if (n < 2) {
+            return n;
+        } else {
+            return fib(n - 1) + fib(n - 2);
+        }
+    }
+
+    private func fibIterative(u64 n): u64 {
+        u64 a = 0;
+        u64 b = 1;
+        for (u64 i = 0; i < n; i++) {
+            u64 temp = a + b;
+            a = b;
+            b = temp;
+        }
+        return b;
+    }
+
+}

@@ -1608,7 +1608,7 @@ public class SemanticAnalyzer {
 		if (lhsType == null) return; // can't infer target type — skip validation
 		var rhsType = _typer.InferType(value);
 		if (rhsType == null) return; // can't infer source type — skip validation
-		if (_typer.IsAssignableTo(rhsType, lhsType)) return;
+		if (_typer.IsAssignableTo(rhsType, lhsType, value)) return;
 		SemanticError.AssignTypeMismatch.WithFile(filePath).WithMessage($"expected '{lhsType}', got '{rhsType}'").Render();
 	}
 
@@ -1637,7 +1637,7 @@ public class SemanticAnalyzer {
 		// `return expr;` with a value — type must lossless-widen to the declared return.
 		var inferred = _typer.InferType(value);
 		if (inferred == null) return; // can't validate; CIR lowering handles type-flow downstream
-		if (_typer.IsAssignableTo(inferred, _currentReturnType)) return;
+		if (_typer.IsAssignableTo(inferred, _currentReturnType, value)) return;
 		SemanticError.ReturnTypeMismatch.WithFile(filePath).WithMessage($"expected '{_currentReturnType}', got '{inferred}'").Render();
 	}
 
@@ -1692,7 +1692,7 @@ public class SemanticAnalyzer {
 
 			if (d.Init != null) {
 				var inferredCanon = _typer.InferType(d.Init);
-				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && !_typer.IsAssignableTo(inferredCanon, declared)) {
+				if (inferredCanon != null && !string.IsNullOrEmpty(declared) && !_typer.IsAssignableTo(inferredCanon, declared, d.Init)) {
 					SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"expected '{declared}', got '{inferredCanon}'").Render();
 				}
 			}

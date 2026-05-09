@@ -41,6 +41,21 @@ public class (string[] args) {
         p(h.required());                            // 7
         p(h.optional());                            // 0 (default impl)
         delete user;
+
+        // for-loop smoke test: prints 0, 1, 2.
+        for (i32 i = 0; i < 3; i++) {
+            p(i);
+        }
+
+        // while + break smoke test: counts to 5 then breaks.
+        i32 j = 0;
+        while (j < 100) {
+            if (j == 5) {
+                break;
+            }
+            j = j + 1;
+        }
+        p(j);                                        // 5
     }
 
     public ~Main() {

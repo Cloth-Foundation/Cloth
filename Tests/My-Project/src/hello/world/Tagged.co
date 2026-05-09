@@ -1,6 +1,6 @@
 module hello.world;
 
-public trait Tagged {
+public trait {
     string label;
     i32 priority = 0;
 }

@@ -124,6 +124,29 @@ public static class TypeInference {
 		return "i64";
 	}
 
+	// Canonical integer test — true for i8/i16/i32/i64/u8/u16/u32/u64.
+	public static bool IsIntegerCanonical(string canonical) =>
+		canonical is "i8" or "i16" or "i32" or "i64" or "u8" or "u16" or "u32" or "u64";
+
+	// True if an integer literal's parsed value fits within `targetCanonical`'s range.
+	// Used by the assignability check to allow non-negative literals to bind to any
+	// sufficiently wide integer type, signed or unsigned (matching the user-facing rule
+	// that `u32 x = 10;` should compile without an explicit cast).
+	public static bool LiteralFitsInteger(string text, string targetCanonical) {
+		if (!TryParseSignedInt(text, out var v)) return false;
+		return targetCanonical switch {
+			"i8" => v >= sbyte.MinValue && v <= sbyte.MaxValue,
+			"i16" => v >= short.MinValue && v <= short.MaxValue,
+			"i32" => v >= int.MinValue && v <= int.MaxValue,
+			"i64" => true,
+			"u8" => v >= 0 && v <= byte.MaxValue,
+			"u16" => v >= 0 && v <= ushort.MaxValue,
+			"u32" => v >= 0 && v <= uint.MaxValue,
+			"u64" => v >= 0,
+			_ => false
+		};
+	}
+
 	private static bool TryParseSignedInt(string text, out long result) {
 		result = 0;
 		var clean = text.Replace("_", "");

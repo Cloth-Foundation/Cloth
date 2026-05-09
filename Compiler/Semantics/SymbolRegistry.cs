@@ -244,7 +244,7 @@ public sealed class SymbolRegistry {
 
 					if (!Overloads.TryGetValue(fqn, out var list))
 						Overloads[fqn] = list = new();
-					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn));
+					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn, m.Modifiers.Contains(FunctionModifiers.Static)));
 
 					if (asExtern) ExternMethodSymbols.Add(symbol);
 					break;
@@ -532,7 +532,7 @@ public sealed class SymbolRegistry {
 // OwnerClass, and OwnerModule together drive cross-class/cross-module access checks.
 // ParamOwnership is parallel to ParamTypes — null means "borrow" (default), Transfer
 // means the caller relinquishes ownership at the call site, MutBorrow is mutable borrow.
-public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule);
+public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule, bool IsStatic = false);
 
 // One declared instance field on a class. CanonicalType is post-alias (e.g. "i32").
 public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility);
