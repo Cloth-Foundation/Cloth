@@ -376,37 +376,59 @@ public sealed class SymbolRegistry {
 			if (ifaceFqn != null) implementedFqns.Add(ifaceFqn);
 		}
 
-		if (implementedFqns.Count > 0) {
+		if (implementedFqns.Count > 0)
 			ImplementedInterfaces[typeFqn] = implementedFqns;
-			var slots = new string?[VtableSize];
-			foreach (var ifaceFqn in implementedFqns) {
-				if (!Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) continue;
-				foreach (var sig in ifaceInfo.Methods) {
-					var key = SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
-					if (!InterfaceMethodSlots.TryGetValue(key, out var slot)) continue;
 
-					// Look for a class-side override matching the signature exactly.
-					string? implementer = null;
-					var methodFqn = $"{typeFqn}.{sig.Name}";
-					if (Overloads.TryGetValue(methodFqn, out var overloads)) {
-						var matching = overloads.FirstOrDefault(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
-						if (matching != null) implementer = matching.MangledSymbol;
-					}
+		// Resolve the parent class FQN (`: BaseClass`) so the runtime cast machinery can
+		// walk the chain. Unresolved names are dropped silently — the analyzer's S019 fires
+		// the user-facing diagnostic.
+		string? parentFqn = null;
+		if (!string.IsNullOrEmpty(c.Extends))
+			parentFqn = ResolveClassName(c.Extends!, importMap, moduleFqn, typeFqn);
 
-					// No class-side override — fall back to the interface's default impl, if any.
-					if (implementer == null && sig.HasDefaultBody)
-						implementer = DefaultImplSymbol(ifaceFqn, sig.Name, sig.ParamTypes);
-					slots[slot] = implementer;
+		// Every class gets a vtable layout. Classes with no `IsList` still need an identity
+		// tag for class→class downcasts; their slots array is the standard size with all
+		// nulls (no interface methods to fill). The parent pointer drives chain walks.
+		var slots = new string?[VtableSize];
+		foreach (var ifaceFqn in implementedFqns) {
+			if (!Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) continue;
+			foreach (var sig in ifaceInfo.Methods) {
+				var key = SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
+				if (!InterfaceMethodSlots.TryGetValue(key, out var slot)) continue;
+
+				// Look for a class-side override matching the signature exactly.
+				string? implementer = null;
+				var methodFqn = $"{typeFqn}.{sig.Name}";
+				if (Overloads.TryGetValue(methodFqn, out var overloads)) {
+					var matching = overloads.FirstOrDefault(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
+					if (matching != null) implementer = matching.MangledSymbol;
 				}
-			}
 
-			ClassVtables[typeFqn] = new ClassVtableLayout(typeFqn, implementedFqns, slots.ToList());
+				// No class-side override — fall back to the interface's default impl, if any.
+				if (implementer == null && sig.HasDefaultBody)
+					implementer = DefaultImplSymbol(ifaceFqn, sig.Name, sig.ParamTypes);
+				slots[slot] = implementer;
+			}
 		}
+
+		ClassVtables[typeFqn] = new ClassVtableLayout(typeFqn, parentFqn, implementedFqns, slots.ToList());
 
 		foreach (var member in c.Members) {
 			if (member is MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var nested } })
 				BuildClassVtableRecursive(nested, typeFqn, importMap);
 		}
+	}
+
+	// True when `descendant` is `ancestor` itself or extends through to `ancestor` along its
+	// `:`-chain. Used by the analyzer for upcast assignability and cast-kind validation.
+	public bool IsClassOrAncestor(string descendant, string ancestor) {
+		var cur = descendant;
+		while (!string.IsNullOrEmpty(cur)) {
+			if (cur == ancestor) return true;
+			if (!ClassVtables.TryGetValue(cur, out var layout)) return false;
+			cur = layout.ParentClassFqn ?? "";
+		}
+		return false;
 	}
 
 	// Same-shape resolver as ResolveClassName but checks `KnownInterfaces`. Used by pass 3
@@ -571,5 +593,7 @@ public sealed record TraitElementInfo(string Name, string CanonicalType, Express
 // Per-class vtable layout. `Slots[i]` is the mangled symbol the class places at global slot
 // `i`, or `null` if the class doesn't implement that slot's method. `Slots.Count` always
 // equals `SymbolRegistry.VtableSize`. `ImplementedInterfaceFqns` lists the resolved
-// interface FQNs from the class's source-level `IsList`.
-public sealed record ClassVtableLayout(string ClassFqn, List<string> ImplementedInterfaceFqns, List<string?> Slots);
+// interface FQNs from the class's source-level `IsList`. `ParentClassFqn` is the resolved
+// FQN of the class's `: BaseClass` extends clause (or null when the class has no parent);
+// this is what `as` / `is` / `as?` walk at runtime to support class→class downcasts.
+public sealed record ClassVtableLayout(string ClassFqn, string? ParentClassFqn, List<string> ImplementedInterfaceFqns, List<string?> Slots);

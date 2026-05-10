@@ -51,7 +51,8 @@ public class SemanticError : Exception {
 	public static readonly SemanticError UnknownTrait = new("S01B", "annotation does not name a known trait", true);
 	public static readonly SemanticError BadTraitArguments = new("S01C", "annotation arguments do not match the trait's element list", true);
 	public static readonly SemanticError InvalidTraitElementType = new("S01D", "trait element uses a disallowed type", true);
-	// S01E / S01F reserved for future cast work (Override/Implementation content checks; InvalidCast).
+	// S01E reserved for future @Override / @Implementation content checks.
+	public static readonly SemanticError InvalidCast = new("S01F", "cast is not legal between these types", true);
 	public static readonly SemanticError NullableDeref = new("S020", "cannot dereference a nullable value without a null check", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
