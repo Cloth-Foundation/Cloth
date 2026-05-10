@@ -6,8 +6,13 @@ import hello.foo.Foo;
 public class (string[] args) {
 
     private PrintName printName;
+    // TODO: re-enable once primitive nullable storage + println(any)/::STRING lands
+    // private int? nullX = null;
 
     public Main {
+        // nullX = 42;
+        // p(nullX);
+
         sayHello();
         makeContainer();
         makeMulti();

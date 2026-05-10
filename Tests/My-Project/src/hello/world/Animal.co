@@ -8,4 +8,8 @@ public class () {
     public ~Animal {
     }
 
+    public func describe(): string {
+        return "an animal";
+    }
+
 }

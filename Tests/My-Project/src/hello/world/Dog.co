@@ -1,5 +1,7 @@
 module hello.world;
 
+import cloth.lang.Override;
+
 public class () : Animal {
 
     public Dog {
@@ -10,6 +12,11 @@ public class () : Animal {
 
     public func bark(): string {
         return "woof";
+    }
+
+    @Override
+    public func describe(): string {
+        return "a dog";
     }
 
 }
