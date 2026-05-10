@@ -14,6 +14,7 @@ public class (string[] args) {
         interfaceDispatch();
         defaultImpl();
         loopTests();
+        nullTests();
     }
 
     public ~Main() {
@@ -100,6 +101,27 @@ public class (string[] args) {
             sum = sum + n;
         }
         p(sum);
+    }
+
+    public func nullTests() {
+        // Class nullable: `T?` is a pointer that may be null. The literal `null` only
+        // binds to nullable targets.
+        Speaker? optS = null;
+        if (optS == null) {
+            p("optS is null");
+        }
+
+        // ?? on a null left hand side picks the right hand fallback.
+        let chosenA = optS ?? new Speaker();
+        p(chosenA.greet());                     // "speaker"
+        delete chosenA;
+
+        // ?? on a non-null left hand side returns it (right is the dead branch).
+        let realS = new Speaker();
+        Speaker? present = realS;
+        let chosenB = present ?? new Speaker();
+        p(chosenB.greet());                     // "speaker"
+        delete realS;
     }
 
     public class PrintName (string& name) {

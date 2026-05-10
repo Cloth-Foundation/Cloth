@@ -45,12 +45,18 @@ public static class TypeInference {
 	// When `resolveClass` is supplied, named types that aren't primitives are resolved through
 	// it to a fully-qualified class name (importMap → known FQN → same-module sibling), so
 	// `Foo` and `hello.world.Foo` collapse to the same canonical key.
-	public static string CanonicalizeTypeExpression(TypeExpression t, Func<string, string?>? resolveClass = null) => t.Base switch {
-		BaseType.Named n => CanonicalizeNamedType(n.Name, resolveClass),
-		BaseType.Array a => CanonicalizeTypeExpression(a.ElementType, resolveClass) + "[]",
-		BaseType.Void => "void",
-		_ => "any"
-	};
+	//
+	// Nullability: `T?` produces the canonical string `<T>?` (trailing question mark). Use
+	// `IsNullableCanonical` and `StripNullable` to inspect/peel the suffix.
+	public static string CanonicalizeTypeExpression(TypeExpression t, Func<string, string?>? resolveClass = null) {
+		var inner = t.Base switch {
+			BaseType.Named n => CanonicalizeNamedType(n.Name, resolveClass),
+			BaseType.Array a => CanonicalizeTypeExpression(a.ElementType, resolveClass) + "[]",
+			BaseType.Void => "void",
+			_ => "any"
+		};
+		return t.Nullable ? inner + "?" : inner;
+	}
 
 	private static string CanonicalizeNamedType(string rawName, Func<string, string?>? resolveClass) {
 		var canon = Canonicalize(rawName);
@@ -60,6 +66,16 @@ public static class TypeInference {
 
 	public static bool IsKnownPrimitive(string canonicalName) =>
 		Canonical.Contains(canonicalName);
+
+	// True iff the canonical type ends with the `?` nullability marker. The `null` literal
+	// sentinel canonicalizes to `"null"` (not `"null?"`) — handled separately by callers.
+	public static bool IsNullableCanonical(string canonical) =>
+		!string.IsNullOrEmpty(canonical) && canonical[^1] == '?';
+
+	// Remove a trailing `?` if present, returning the underlying type. `StripNullable("i32?")`
+	// → `"i32"`. Idempotent on already-non-nullable strings.
+	public static string StripNullable(string canonical) =>
+		IsNullableCanonical(canonical) ? canonical[..^1] : canonical;
 
 	// True if a value of type `from` can be implicitly converted to type `to` without losing information.
 	// Same-signedness integer widening (i8 → i32), unsigned-to-strictly-wider-signed (u8 → i16),
@@ -110,6 +126,9 @@ public static class TypeInference {
 		Literal.Char _ => new BaseType.Named("char"),
 		Literal.Str _ => new BaseType.Named("string"),
 		Literal.Bit _ => new BaseType.Named("bit"),
+		// Sentinel canonical for the bare `null` literal. IsAssignableTo treats `"null"`
+		// as bindable only to `T?` targets; downstream comparisons match on the literal.
+		Literal.Null => new BaseType.Named("null"),
 		_ => null
 	};
 

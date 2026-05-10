@@ -8,7 +8,7 @@ public class (string[] args) {
 
     public Main {
         u64 final = 0;
-        for (u64 i = 0; i < number; i++) {
+        for (u64 i = 0; i < number; ++i) {
             final = fibIterative(i);
         }
 

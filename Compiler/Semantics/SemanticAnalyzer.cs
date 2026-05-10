@@ -347,8 +347,8 @@ public class SemanticAnalyzer {
 		_ownedKeys = new HashSet<string>();
 		_consumedAllPaths = new HashSet<string>();
 		foreach (var p in parameters) {
-			if (p.Type.Base is BaseType.Named n)
-				_typer.DeclareLocal(p.Name, CanonicalizeDeclaredType(n.Name));
+			if (p.Type.Base is BaseType.Named)
+				_typer.DeclareLocal(p.Name, CanonicalizeDeclaredTypeExpr(p.Type));
 			_paramOwnership[p.Name] = p.Type.Ownership;
 			// `Type!` parameters transfer ownership IN — the function body now owns the
 			// allocation and is responsible for delete / return / transfer / store-in-field.
@@ -430,7 +430,7 @@ public class SemanticAnalyzer {
 	}
 
 	private string ResolveReturnType(TypeExpression type) => type.Base switch {
-		BaseType.Named n => CanonicalizeDeclaredType(n.Name),
+		BaseType.Named => CanonicalizeDeclaredTypeExpr(type),
 		BaseType.Void => "void",
 		_ => ""
 	};
@@ -608,6 +608,10 @@ public class SemanticAnalyzer {
 			case Expression.Index idx:
 				WalkExpr(idx.Target, filePath);
 				WalkExpr(idx.IndexExpr, filePath);
+				// Indexing a nullable value (`maybeArr[i]`) is unsafe — extract with `??` first.
+				var idxTargetType = _typer.InferType(idx.Target);
+				if (idxTargetType != null && TypeInference.IsNullableCanonical(idxTargetType))
+					SemanticError.NullableDeref.WithFile(filePath).WithMessage($"cannot index nullable '{idxTargetType}' — extract with `??` first").Render();
 				break;
 			case Expression.New n:
 				foreach (var a in n.Arguments) WalkExpr(a, filePath);
@@ -733,6 +737,12 @@ public class SemanticAnalyzer {
 		// here — traits are annotation declarations, not types of values.
 		return ResolveClassFqn(canonical) ?? ResolveInterfaceFqn(canonical) ?? canonical;
 	}
+
+	// TypeExpression-aware canonicalizer that preserves the nullable suffix. Use this any
+	// time the declared type matters for assignability — `T?` parameters, `T?` locals,
+	// `T?` return types — so the canonical string downstream encodes the `?`.
+	private string CanonicalizeDeclaredTypeExpr(TypeExpression t) =>
+		TypeInference.CanonicalizeTypeExpression(t, raw => ResolveClassFqn(raw) ?? ResolveInterfaceFqn(raw));
 
 	// Resolve a class name as written in source to its fully-qualified registry key.
 	// Lookup order: importMap (`import foo.bar.Baz` brings `Baz` into scope) → already-FQN
@@ -1030,6 +1040,13 @@ public class SemanticAnalyzer {
 
 		var targetType = _typer.InferType(ma.Target);
 		if (targetType == null) return; // can't infer — skip
+		// Nullable receivers must be unwrapped (via `??` or a future `as`/`as?`) before any
+		// member access. Catches `s.foo` and `s.bar()` shapes; explicit narrowing lives in
+		// the user's hands per the v1 design.
+		if (TypeInference.IsNullableCanonical(targetType)) {
+			SemanticError.NullableDeref.WithFile(filePath).WithMessage($"cannot access '{ma.Member}' on nullable '{targetType}' — extract with `??` first").Render();
+			return;
+		}
 		if (TypeInference.IsKnownPrimitive(targetType)) {
 			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot access field '{ma.Member}' on '{targetType}' (not a class)").Render();
 			return;
@@ -1665,6 +1682,16 @@ public class SemanticAnalyzer {
 		var ifaceMethod = _typer.ResolveInterfaceMethodCall(call);
 		if (ifaceMethod != null) return;
 
+		// Nullable-receiver method call: emit S026 explicitly so the user gets a precise
+		// diagnostic rather than the generic "no matching overload" / "undefined" path.
+		if (call.Callee is Expression.MemberAccess mac) {
+			var recvType = _typer.InferType(mac.Target);
+			if (recvType != null && TypeInference.IsNullableCanonical(recvType)) {
+				SemanticError.NullableDeref.WithFile(filePath).WithMessage($"cannot call '{mac.Member}' on nullable '{recvType}' — extract with `??` first").Render();
+				return;
+			}
+		}
+
 		// Distinguish "no FQN at all" (S010) from "FQN exists, no overload matches" (S009).
 		var candidates = _typer.GetCalleeCandidates(call);
 		var anyKnown = candidates.Any(_symbols.Overloads.ContainsKey);
@@ -1687,8 +1714,7 @@ public class SemanticAnalyzer {
 	private void ProcessVarDecl(VarDeclStmt d, string filePath) {
 		// Case A: explicit type annotation present — verify the initializer can widen losslessly.
 		if (d.Type.HasValue) {
-			var rawDeclared = (d.Type.Value.Base as BaseType.Named)?.Name ?? "";
-			var declared = CanonicalizeDeclaredType(rawDeclared);
+			var declared = CanonicalizeDeclaredTypeExpr(d.Type.Value);
 
 			if (d.Init != null) {
 				var inferredCanon = _typer.InferType(d.Init);
@@ -1714,6 +1740,14 @@ public class SemanticAnalyzer {
 			// Inference failed for a complex expression — leave Type=null. CIR lowering will
 			// fall back to `Any` (ptr) and the LLVM emitter may surface the type at codegen.
 			// This is the kind of case we should grow the analyzer to cover when it bites.
+			return;
+		}
+
+		// `let` bindings are always non-nullable. Reject the bare `null` literal and any
+		// nullable inferred type — the user must either coalesce via `??` to extract a
+		// non-null value or declare a typed `T?` binding instead.
+		if (canonName == "null" || TypeInference.IsNullableCanonical(canonName)) {
+			SemanticError.TypeMismatch.WithFile(filePath).WithMessage($"`let {d.Name}` cannot bind a nullable value (got '{canonName}'); use `??` to coalesce or declare a typed `T?` binding instead").Render();
 			return;
 		}
 

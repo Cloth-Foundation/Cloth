@@ -107,6 +107,15 @@ public sealed class ExpressionTyper {
 				return ResolveInterfaceMethodCall(call)?.ReturnType;
 			}
 
+			case Expression.NullCoalesce { Left: var nl, Right: var nr }:
+			{
+				// `T? ?? T` strips the nullable; `T ?? T` is a no-op (return T). When Left is
+				// untypable, fall back to the Right side's type.
+				var leftType = InferType(nl);
+				if (leftType == null) return InferType(nr);
+				return TypeInference.StripNullable(leftType);
+			}
+
 			case Expression.Cast { TargetType: var tt }:
 				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
 
@@ -168,12 +177,19 @@ public sealed class ExpressionTyper {
 	// compile even though `10` infers to `i8` and a signed-to-unsigned promotion isn't
 	// otherwise lossless. Falls back to the type-only rules for any other source.
 	public bool IsAssignableTo(string from, string to, Expression? sourceExpr) {
-		if (from == to) return true;
-		if (TypeInference.IsLosslessPromotion(from, to)) return true;
-		if (_symbols.KnownInterfaces.Contains(to) && _symbols.ImplementedInterfaces.TryGetValue(from, out var impls) && impls.Contains(to)) return true;
+		// Bare `null` literal binds only to nullable targets (`T?`).
+		if (from == "null") return TypeInference.IsNullableCanonical(to);
+		// `T?` cannot be assigned to `T` — that would lose null safety.
+		if (TypeInference.IsNullableCanonical(from) && !TypeInference.IsNullableCanonical(to)) return false;
+		// Compare on the underlying types; lifting `T → T?` is always allowed.
+		var fromBase = TypeInference.StripNullable(from);
+		var toBase = TypeInference.StripNullable(to);
+		if (fromBase == toBase) return true;
+		if (TypeInference.IsLosslessPromotion(fromBase, toBase)) return true;
+		if (_symbols.KnownInterfaces.Contains(toBase) && _symbols.ImplementedInterfaces.TryGetValue(fromBase, out var impls) && impls.Contains(toBase)) return true;
 		if (sourceExpr is Expression.Literal { Value: Literal.Int lit }
-		    && TypeInference.IsIntegerCanonical(to)
-		    && TypeInference.LiteralFitsInteger(lit.Value, to)) return true;
+		    && TypeInference.IsIntegerCanonical(toBase)
+		    && TypeInference.LiteralFitsInteger(lit.Value, toBase)) return true;
 		return false;
 	}
 
