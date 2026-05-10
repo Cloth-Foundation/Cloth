@@ -437,7 +437,7 @@ public sealed class CirGenerator {
 	}
 
 	private string ResolveReturnTypeCanonical(TypeExpression type) => type.Base switch {
-		BaseType.Named n => CanonicalizeNamedType(n.Name),
+		BaseType.Named => CanonicalizeTypeExpr(type),
 		BaseType.Void => "void",
 		_ => ""
 	};
@@ -449,6 +449,12 @@ public sealed class CirGenerator {
 		if (TypeInference.IsKnownPrimitive(canon)) return canon;
 		return ResolveClassFqn(canon) ?? ResolveInterfaceFqn(canon) ?? canon;
 	}
+
+	// TypeExpression-aware canonicalizer that preserves the `?` nullable suffix. Use this
+	// any time the declared type matters for assignability — `T?` parameters, locals, return
+	// types — so the canonical string downstream encodes the nullability flag.
+	private string CanonicalizeTypeExpr(TypeExpression t) =>
+		TypeInference.CanonicalizeTypeExpression(t, ResolveClassOrInterfaceFqn);
 
 	// Combined class-or-interface resolver. Used by CanonicalizeTypeExpression for member
 	// signatures so an interface-typed parameter `Greeter g` canonicalizes to the interface
@@ -497,8 +503,8 @@ public sealed class CirGenerator {
 	private void BeginFunctionScope(IEnumerable<Parameter> parameters) {
 		_typer = new ExpressionTyper(_symbols, _importMap, _currentTypeFqn, _currentModuleFqn);
 		foreach (var p in parameters) {
-			if (p.Type.Base is BaseType.Named n)
-				_typer.DeclareLocal(p.Name, CanonicalizeNamedType(n.Name));
+			if (p.Type.Base is BaseType.Named)
+				_typer.DeclareLocal(p.Name, CanonicalizeTypeExpr(p.Type));
 		}
 	}
 
@@ -613,12 +619,11 @@ public sealed class CirGenerator {
 		string? canonicalName = null;
 		if (d.Type.HasValue) {
 			type = LowerType(d.Type.Value);
-			if (d.Type.Value.Base is BaseType.Named explicitNamed) {
-				var canon = TypeInference.Canonicalize(explicitNamed.Name);
-				// For class or interface types, swap to the registry FQN so the typer's
-				// local-type entry matches what `Expression.New` / member access produce.
-				// Primitives stay as-is.
-				canonicalName = TypeInference.IsKnownPrimitive(canon) ? canon : (ResolveClassOrInterfaceFqn(canon) ?? canon);
+			if (d.Type.Value.Base is BaseType.Named) {
+				// Canonicalize the full TypeExpression so the local's recorded canonical
+				// preserves nullability (`T?` keeps the `?` suffix). Primitive aliases /
+				// class FQN / interface FQN resolution all happen inside.
+				canonicalName = CanonicalizeTypeExpr(d.Type.Value);
 			}
 		}
 		else if (_inferredVarTypes.TryGetValue(d.Span, out var inferred)) {

@@ -47,10 +47,12 @@ public class SemanticError : Exception {
 	public static readonly SemanticError InvalidImplements = new("S017", "implements-clause entry is not an interface", true);
 	public static readonly SemanticError MissingInterfaceMember = new("S018", "class does not implement a required interface member", true);
 	public static readonly SemanticError InvalidExtends = new("S019", "extends-clause entry is not a class", true);
-	public static readonly SemanticError InvalidInterfaceMember = new("S020", "member kind is not allowed inside an interface body", true);
-	public static readonly SemanticError UnknownTrait = new("S021", "annotation does not name a known trait", true);
-	public static readonly SemanticError BadTraitArguments = new("S022", "annotation arguments do not match the trait's element list", true);
-	public static readonly SemanticError InvalidTraitElementType = new("S023", "trait element uses a disallowed type", true);
+	public static readonly SemanticError InvalidInterfaceMember = new("S01A", "member kind is not allowed inside an interface body", true);
+	public static readonly SemanticError UnknownTrait = new("S01B", "annotation does not name a known trait", true);
+	public static readonly SemanticError BadTraitArguments = new("S01C", "annotation arguments do not match the trait's element list", true);
+	public static readonly SemanticError InvalidTraitElementType = new("S01D", "trait element uses a disallowed type", true);
+	// S01E / S01F reserved for future cast work (Override/Implementation content checks; InvalidCast).
+	public static readonly SemanticError NullableDeref = new("S020", "cannot dereference a nullable value without a null check", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 

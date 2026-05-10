@@ -748,6 +748,7 @@ public sealed class LlvmEmitter {
 			case CirExpr.Alloc a: return EmitAlloc(a);
 			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
 			case CirExpr.VirtualCall vc: return EmitVirtualCall(vc);
+			case CirExpr.NullCoalesce nc: return EmitNullCoalesce(nc);
 
 			case CirExpr.Binary b: return EmitBinary(b);
 			case CirExpr.Unary u: return EmitUnary(u);
@@ -871,6 +872,52 @@ public sealed class LlvmEmitter {
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = call {fnType} {fnPtr}({argList})");
 		return t;
+	}
+
+	// `x ?? y` — null-coalesce. Yields `x` when non-null, otherwise the value of `y`. Both
+	// branches store into a stack slot; mem2reg promotes the alloca/store/load pattern back
+	// to a phi during clang's optimization passes. The slot lets us handle right-hand sides
+	// that branch internally (nested `??`, ternary, etc.) without tracking the current
+	// basic block label by hand. Restricted to pointer-typed nullables for now.
+	private string EmitNullCoalesce(CirExpr.NullCoalesce nc) {
+		var leftTy = LlvmTypeOf(nc.Left);
+		if (leftTy != "ptr") {
+			LlvmError.UnsupportedExpression.WithMessage($"`??` on non-pointer nullable type '{leftTy}' is not yet supported").Render();
+			return "undef";
+		}
+
+		// Stack slot for the coalesced result. Allocated up front so both branches share it.
+		var resultAddr = $"%coalesce_result.{_tempCounter++}";
+		_allocaLines.Add($"  {resultAddr} = alloca {leftTy}, align 8");
+
+		var leftVal = EmitExpr(nc.Left);
+		var rightLabel = FreshLabel("coalesce_right");
+		var leftLabel = FreshLabel("coalesce_left");
+		var doneLabel = FreshLabel("coalesce_done");
+
+		var isNull = FreshTemp();
+		_bodyLines.Add($"  {isNull} = icmp eq {leftTy} {leftVal}, null");
+		_bodyLines.Add($"  br i1 {isNull}, label %{rightLabel}, label %{leftLabel}");
+
+		// Right branch: evaluate the fallback and store it into the slot.
+		_bodyLines.Add($"{rightLabel}:");
+		_blockTerminated = false;
+		var rightVal = EmitExpr(nc.Right);
+		_bodyLines.Add($"  store {leftTy} {rightVal}, ptr {resultAddr}");
+		_bodyLines.Add($"  br label %{doneLabel}");
+
+		// Left branch: store the original (non-null) left value.
+		_bodyLines.Add($"{leftLabel}:");
+		_blockTerminated = false;
+		_bodyLines.Add($"  store {leftTy} {leftVal}, ptr {resultAddr}");
+		_bodyLines.Add($"  br label %{doneLabel}");
+
+		// Merge: load whichever was stored.
+		_bodyLines.Add($"{doneLabel}:");
+		_blockTerminated = false;
+		var result = FreshTemp();
+		_bodyLines.Add($"  {result} = load {leftTy}, ptr {resultAddr}");
+		return result;
 	}
 
 	// `new ClassName(args)` — heap-allocate a zero-initialized instance, run its constructor,
