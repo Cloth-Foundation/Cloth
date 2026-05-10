@@ -584,9 +584,11 @@ public class SemanticAnalyzer {
 				break;
 			case Expression.Cast c:
 				WalkExpr(c.Value, filePath);
+				ValidateCast(c, filePath);
 				break;
 			case Expression.TypeCheck tc:
 				WalkExpr(tc.Value, filePath);
+				ValidateTypeCheck(tc, filePath);
 				break;
 			case Expression.MembershipCheck mc:
 				WalkExpr(mc.Value, filePath);
@@ -1092,6 +1094,68 @@ public class SemanticAnalyzer {
 		}
 
 		SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a field or method of '{targetType}'").Render();
+	}
+
+	// Cast-kind validation. Allowed: primitive ↔ primitive any combination; same-type;
+	// class ↔ interface where the class implements the interface; interface ↔ interface
+	// (runtime-checked). Class ↔ class (different classes) is rejected — Cloth has no
+	// runtime parent-pointer / RTTI yet, so subtype downcasts aren't supported.
+	private void ValidateCast(Expression.Cast c, string filePath) {
+		var sourceType = _typer.InferType(c.Value);
+		if (sourceType == null) return;
+		if (c.TargetType.Base is not BaseType.Named targetNamed) return;
+
+		var targetCanon = TypeInference.Canonicalize(targetNamed.Name);
+		var target = TypeInference.IsKnownPrimitive(targetCanon) ? targetCanon : (ResolveClassFqn(targetCanon) ?? ResolveInterfaceFqn(targetCanon) ?? targetCanon);
+		var source = TypeInference.StripNullable(sourceType);
+
+		if (!IsValidCastKind(source, target))
+			SemanticError.InvalidCast.WithFile(filePath).WithMessage($"cannot cast '{sourceType}' to '{target}'").Render();
+	}
+
+	// `x is T` — same legality rules as a cast, just returns bool.
+	private void ValidateTypeCheck(Expression.TypeCheck tc, string filePath) {
+		var sourceType = _typer.InferType(tc.Value);
+		if (sourceType == null) return;
+		if (tc.TargetType.Base is not BaseType.Named targetNamed) return;
+
+		var targetCanon = TypeInference.Canonicalize(targetNamed.Name);
+		var target = TypeInference.IsKnownPrimitive(targetCanon) ? targetCanon : (ResolveClassFqn(targetCanon) ?? ResolveInterfaceFqn(targetCanon) ?? targetCanon);
+		var source = TypeInference.StripNullable(sourceType);
+
+		if (!IsValidCastKind(source, target))
+			SemanticError.InvalidCast.WithFile(filePath).WithMessage($"'is' check between '{sourceType}' and '{target}' is not legal").Render();
+	}
+
+	private bool IsValidCastKind(string source, string target) {
+		var srcPrim = TypeInference.IsKnownPrimitive(source);
+		var tgtPrim = TypeInference.IsKnownPrimitive(target);
+
+		// Primitive ↔ primitive: any combo (user accepts narrowing risk).
+		if (srcPrim && tgtPrim) return true;
+		// Cross-kind primitive ↔ reference is never legal.
+		if (srcPrim != tgtPrim) return false;
+		// Same type — trivial.
+		if (source == target) return true;
+
+		var srcIsClass = _symbols.KnownClasses.Contains(source);
+		var srcIsIface = _symbols.KnownInterfaces.Contains(source);
+		var tgtIsClass = _symbols.KnownClasses.Contains(target);
+		var tgtIsIface = _symbols.KnownInterfaces.Contains(target);
+
+		// Class → Interface (upcast) — legal when class implements interface.
+		if (srcIsClass && tgtIsIface)
+			return _symbols.ImplementedInterfaces.TryGetValue(source, out var impls) && impls.Contains(target);
+		// Interface → Class (downcast) — legal when class implements source interface.
+		if (srcIsIface && tgtIsClass)
+			return _symbols.ImplementedInterfaces.TryGetValue(target, out var impls) && impls.Contains(source);
+		// Interface → Interface — runtime check decides; always allowed at compile time.
+		if (srcIsIface && tgtIsIface) return true;
+		// Class → Class — legal when one is an ancestor of the other along the `: Base` chain.
+		// The runtime parent-pointer walk decides whether the cast actually succeeds.
+		if (srcIsClass && tgtIsClass)
+			return _symbols.IsClassOrAncestor(source, target) || _symbols.IsClassOrAncestor(target, source);
+		return false;
 	}
 
 	private static string VisibilityWord(Visibility v) => v switch {

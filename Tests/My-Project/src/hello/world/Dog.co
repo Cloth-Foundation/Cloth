@@ -1,0 +1,15 @@
+module hello.world;
+
+public class () : Animal {
+
+    public Dog {
+    }
+
+    public ~Dog {
+    }
+
+    public func bark(): string {
+        return "woof";
+    }
+
+}

@@ -1,0 +1,15 @@
+module hello.world;
+
+public class () -> Greeter {
+
+    public Whisperer {
+    }
+
+    public ~Whisperer {
+    }
+
+    public func greet(): string {
+        return "whisperer";
+    }
+
+}

@@ -116,8 +116,16 @@ public sealed class ExpressionTyper {
 				return TypeInference.StripNullable(leftType);
 			}
 
-			case Expression.Cast { TargetType: var tt }:
-				return tt.Base is FrontEnd.Parser.AST.Type.BaseType.Named tn ? TypeInference.Canonicalize(tn.Name) : null;
+			case Expression.Cast { TargetType: var tt, IsSafe: var safe }:
+			{
+				if (tt.Base is not FrontEnd.Parser.AST.Type.BaseType.Named tn) return null;
+				var canon = TypeInference.Canonicalize(tn.Name);
+				string resolved;
+				if (TypeInference.IsKnownPrimitive(canon)) resolved = canon;
+				else resolved = ResolveClassOrInterfaceFqn(canon) ?? canon;
+				// `as?` produces a nullable result — caller must bind to a `T?` slot.
+				return safe ? resolved + "?" : resolved;
+			}
 
 			case Expression.New { Type: var nt }:
 				// `new Foo()` types as Foo. Resolve the raw class name to a registry FQN with
@@ -187,10 +195,41 @@ public sealed class ExpressionTyper {
 		if (fromBase == toBase) return true;
 		if (TypeInference.IsLosslessPromotion(fromBase, toBase)) return true;
 		if (_symbols.KnownInterfaces.Contains(toBase) && _symbols.ImplementedInterfaces.TryGetValue(fromBase, out var impls) && impls.Contains(toBase)) return true;
+		// Class → ancestor class (upcast): `Dog d = ...; Animal a = d;` is always safe
+		// because Dog extends Animal. Walks the registry's parent chain.
+		if (_symbols.KnownClasses.Contains(fromBase) && _symbols.KnownClasses.Contains(toBase) && _symbols.IsClassOrAncestor(fromBase, toBase)) return true;
 		if (sourceExpr is Expression.Literal { Value: Literal.Int lit }
 		    && TypeInference.IsIntegerCanonical(toBase)
 		    && TypeInference.LiteralFitsInteger(lit.Value, toBase)) return true;
 		return false;
+	}
+
+	// Resolve a raw class/interface name to a registry FQN through the same import / nested /
+	// same-module / dotted-shorthand chain the analyzer uses. Returns null when unresolved.
+	private string? ResolveClassOrInterfaceFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped)) {
+			if (_symbols.KnownClasses.Contains(mapped) || _symbols.KnownInterfaces.Contains(mapped)) return mapped;
+		}
+		if (_symbols.KnownClasses.Contains(rawName) || _symbols.KnownInterfaces.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentTypeFqn)) {
+			var asNested = $"{_currentTypeFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(asNested) || _symbols.KnownInterfaces.Contains(asNested)) return asNested;
+		}
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownClasses.Contains(sameModule) || _symbols.KnownInterfaces.Contains(sameModule)) return sameModule;
+		}
+		if (rawName.Contains('.')) {
+			var firstDot = rawName.IndexOf('.');
+			var prefix = rawName[..firstDot];
+			var rest = rawName[(firstDot + 1)..];
+			var prefixFqn = ResolveClassOrInterfaceFqn(prefix);
+			if (prefixFqn != null) {
+				var combined = $"{prefixFqn}.{rest}";
+				if (_symbols.KnownClasses.Contains(combined) || _symbols.KnownInterfaces.Contains(combined)) return combined;
+			}
+		}
+		return null;
 	}
 
 	// Resolve a method call on an interface-typed receiver. The MemberAccess's target must

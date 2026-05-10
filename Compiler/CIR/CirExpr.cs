@@ -56,6 +56,13 @@ public abstract record CirExpr {
 	// constructor prologue. The LLVM emitter resolves the global symbol from the class FQN.
 	public sealed record VtableRef(string ClassFqn) : CirExpr;
 
+	// Reference-type downcast. `Receiver` is a class-or-interface pointer; `TargetClassFqn`
+	// is the concrete class to compare against (the class whose vtable global we check at
+	// runtime). When `IsSafe` is true (`as?`), a mismatch yields null; otherwise (`as`),
+	// the runtime aborts. Class → interface upcasts and same-type casts are not represented
+	// here — they're already the receiver value verbatim.
+	public sealed record Downcast(CirExpr Receiver, string TargetClassFqn, bool IsSafe) : CirExpr;
+
 	// Heap allocation: pairs type layout with the constructor to call
 	public sealed record Alloc(CirType Type, string CtorMangledName, List<CirExpr> Args) : CirExpr;
 

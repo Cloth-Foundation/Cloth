@@ -191,6 +191,8 @@ public sealed class LlvmEmitter {
 		// regardless of whether the user code actually invokes either form.
 		_externDecls["calloc"] = "declare ptr @calloc(i64, i64)";
 		_externDecls["free"] = "declare void @free(ptr)";
+		// Used by failed `as` downcasts to halt the program.
+		_externDecls["abort"] = "declare void @abort()";
 	}
 
 	private void ScanStmt(CirStmt stmt) {
@@ -290,6 +292,9 @@ public sealed class LlvmEmitter {
 				break;
 			case CirExpr.VtableRef:
 				break;
+			case CirExpr.Downcast dc:
+				ScanExpr(dc.Receiver);
+				break;
 			case CirExpr.Alloc a:
 				if (!_definedFns.Contains(a.CtorMangledName) && !_externFns.ContainsKey(a.CtorMangledName))
 					RecordExternCall(a.CtorMangledName, a.Args.Count + 1);
@@ -385,17 +390,24 @@ public sealed class LlvmEmitter {
 		foreach (var vt in _module.Vtables) {
 			var size = vt.Slots.Count;
 			var globalName = MangleVtableGlobal(vt.ClassFqn);
+			var parentRef = vt.ParentClassFqn == null ? "ptr null" : $"ptr @{MangleVtableGlobal(vt.ParentClassFqn)}";
+			var structTy = $"{{ ptr, [{size} x ptr] }}";
 			if (size == 0) {
-				sb.AppendLine($"@{globalName} = constant [0 x ptr] zeroinitializer");
+				sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [0 x ptr] zeroinitializer }}");
 				continue;
 			}
 
 			var entries = vt.Slots.Select(slot => slot == null ? "ptr null" : $"ptr @{MangleToLlvm(slot)}");
-			sb.AppendLine($"@{globalName} = constant [{size} x ptr] [{string.Join(", ", entries)}]");
+			sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [{size} x ptr] [{string.Join(", ", entries)}] }}");
 		}
 
 		return sb.ToString();
 	}
+
+	// Vtable size constant — number of interface-method slots in every class's vtable
+	// (uniform across the program). Stored on `_module` indirectly through `CirVtable.Slots`,
+	// but easier to read here for GEPs that need the array length.
+	private int VtableSlotCount() => _module.Vtables.Count > 0 ? _module.Vtables[0].Slots.Count : 0;
 
 	// LLVM-safe symbol for a class's vtable global. Reuses MangleToLlvm so dotted FQNs
 	// produce valid IR identifiers (e.g. `__vtable_hello_world_Speaker`).
@@ -749,6 +761,8 @@ public sealed class LlvmEmitter {
 			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
 			case CirExpr.VirtualCall vc: return EmitVirtualCall(vc);
 			case CirExpr.NullCoalesce nc: return EmitNullCoalesce(nc);
+			case CirExpr.Downcast dc: return EmitDowncast(dc);
+			case CirExpr.TypeCheck tc: return EmitTypeCheck(tc);
 
 			case CirExpr.Binary b: return EmitBinary(b);
 			case CirExpr.Unary u: return EmitUnary(u);
@@ -847,11 +861,12 @@ public sealed class LlvmEmitter {
 		// Load the vtable pointer from the receiver's header (offset 0).
 		var vtablePtr = FreshTemp();
 		_bodyLines.Add($"  {vtablePtr} = load ptr, ptr {receiver}, align 8");
-		// GEP into the vtable to the slot's address. Use any size >= SlotId+1 so the GEP is
-		// well-typed; the static array type is meaningful only for the offset calculation.
+		// GEP into the vtable's methods array. The vtable struct shape is `{ ptr, [N x ptr] }`
+		// — the leading `ptr` is the parent-class vtable used for inheritance walks; field 1
+		// is the interface-method array. Use any size >= SlotId+1 so the GEP is well-typed.
 		var slotAddr = FreshTemp();
 		var vsize = vc.SlotId + 1;
-		_bodyLines.Add($"  {slotAddr} = getelementptr [{vsize} x ptr], ptr {vtablePtr}, i32 0, i32 {vc.SlotId}");
+		_bodyLines.Add($"  {slotAddr} = getelementptr {{ ptr, [{vsize} x ptr] }}, ptr {vtablePtr}, i32 0, i32 1, i32 {vc.SlotId}");
 		// Load the function pointer from the slot.
 		var fnPtr = FreshTemp();
 		_bodyLines.Add($"  {fnPtr} = load ptr, ptr {slotAddr}, align 8");
@@ -872,6 +887,113 @@ public sealed class LlvmEmitter {
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = call {fnType} {fnPtr}({argList})");
 		return t;
+	}
+
+	// Emit the runtime parent-chain walk for class identity checks. Loads the receiver's
+	// vtable, compares against the target's vtable global, and on mismatch loads the
+	// parent slot and loops. Returns `(hitLabel, missLabel)` — labels at which the caller
+	// must terminate each branch with the appropriate result handling.
+	//
+	// Loop shape:
+	//   entry:    vt0 = load receiver; br loop
+	//   loop:     cur = phi [vt0, entry], [parent, iter]
+	//             match = icmp eq cur, target
+	//             br match → hit | check_null
+	//   check_null: isnull = icmp eq cur, null
+	//             br isnull → miss | iter
+	//   iter:     parent_addr = gep cur, field 0
+	//             parent = load
+	//             br loop
+	//   hit:      <caller's success branch>
+	//   miss:     <caller's failure branch>
+	private (string hitLabel, string missLabel) EmitVtableChainSearch(string receiver, string targetVtableSym) {
+		var entryLabel = FreshLabel("cast_entry");
+		var loopLabel = FreshLabel("cast_loop");
+		var iterLabel = FreshLabel("cast_iter");
+		var checkNullLabel = FreshLabel("cast_chknull");
+		var hitLabel = FreshLabel("cast_hit");
+		var missLabel = FreshLabel("cast_miss");
+
+		var initVt = FreshTemp();
+		var cur = FreshTemp();
+		var match = FreshTemp();
+		var isNull = FreshTemp();
+		var parentAddr = FreshTemp();
+		var parent = FreshTemp();
+		var vsize = VtableSlotCount();
+
+		_bodyLines.Add($"  br label %{entryLabel}");
+		_bodyLines.Add($"{entryLabel}:");
+		_bodyLines.Add($"  {initVt} = load ptr, ptr {receiver}, align 8");
+		_bodyLines.Add($"  br label %{loopLabel}");
+
+		_bodyLines.Add($"{loopLabel}:");
+		_bodyLines.Add($"  {cur} = phi ptr [{initVt}, %{entryLabel}], [{parent}, %{iterLabel}]");
+		_bodyLines.Add($"  {match} = icmp eq ptr {cur}, {targetVtableSym}");
+		_bodyLines.Add($"  br i1 {match}, label %{hitLabel}, label %{checkNullLabel}");
+
+		_bodyLines.Add($"{checkNullLabel}:");
+		_bodyLines.Add($"  {isNull} = icmp eq ptr {cur}, null");
+		_bodyLines.Add($"  br i1 {isNull}, label %{missLabel}, label %{iterLabel}");
+
+		_bodyLines.Add($"{iterLabel}:");
+		_bodyLines.Add($"  {parentAddr} = getelementptr {{ ptr, [{vsize} x ptr] }}, ptr {cur}, i32 0, i32 0");
+		_bodyLines.Add($"  {parent} = load ptr, ptr {parentAddr}, align 8");
+		_bodyLines.Add($"  br label %{loopLabel}");
+
+		return (hitLabel, missLabel);
+	}
+
+	// `x as T` / `x as? T` for reference downcasts. The chain-walk loop searches the
+	// receiver's class and every ancestor for a vtable matching the target. On match the
+	// receiver is the answer; on mismatch `as` aborts and `as?` yields null.
+	private string EmitDowncast(CirExpr.Downcast dc) {
+		var receiver = EmitExpr(dc.Receiver);
+		var (hitLabel, missLabel) = EmitVtableChainSearch(receiver, $"@{MangleVtableGlobal(dc.TargetClassFqn)}");
+
+		if (dc.IsSafe) {
+			var doneLabel = FreshLabel("cast_done");
+			_bodyLines.Add($"{hitLabel}:");
+			_bodyLines.Add($"  br label %{doneLabel}");
+			_bodyLines.Add($"{missLabel}:");
+			_bodyLines.Add($"  br label %{doneLabel}");
+			_bodyLines.Add($"{doneLabel}:");
+			_blockTerminated = false;
+			var result = FreshTemp();
+			_bodyLines.Add($"  {result} = phi ptr [{receiver}, %{hitLabel}], [null, %{missLabel}]");
+			return result;
+		}
+
+		// Unsafe `as` — abort on miss. The miss block is unreachable after `abort()`, so
+		// control only continues from the hit block.
+		_bodyLines.Add($"{missLabel}:");
+		_bodyLines.Add("  call void @abort()");
+		_bodyLines.Add("  unreachable");
+		_bodyLines.Add($"{hitLabel}:");
+		_blockTerminated = false;
+		return receiver;
+	}
+
+	// `x is T` — runtime kind check. Walks the same chain as the downcast and returns `i1`
+	// (true on match, false on miss). Restricted to class targets; the analyzer rejects
+	// other combinations with S01F before reaching here.
+	private string EmitTypeCheck(CirExpr.TypeCheck tc) {
+		if (tc.TargetType is not CirType.Named { FullyQualifiedName: var targetFqn } || !_classByFqn.ContainsKey(targetFqn)) {
+			LlvmError.UnsupportedExpression.WithMessage("`is` target must be a known class").Render();
+			return "0";
+		}
+		var receiver = EmitExpr(tc.Value);
+		var (hitLabel, missLabel) = EmitVtableChainSearch(receiver, $"@{MangleVtableGlobal(targetFqn)}");
+		var doneLabel = FreshLabel("is_done");
+		_bodyLines.Add($"{hitLabel}:");
+		_bodyLines.Add($"  br label %{doneLabel}");
+		_bodyLines.Add($"{missLabel}:");
+		_bodyLines.Add($"  br label %{doneLabel}");
+		_bodyLines.Add($"{doneLabel}:");
+		_blockTerminated = false;
+		var result = FreshTemp();
+		_bodyLines.Add($"  {result} = phi i1 [1, %{hitLabel}], [0, %{missLabel}]");
+		return result;
 	}
 
 	// `x ?? y` — null-coalesce. Yields `x` when non-null, otherwise the value of `y`. Both
@@ -993,6 +1115,9 @@ public sealed class LlvmEmitter {
 		// Vtable references are opaque pointers at runtime; virtual call type is recorded.
 		CirExpr.VtableRef => "ptr",
 		CirExpr.VirtualCall vc => LlvmType(vc.ReturnType),
+		// Downcast yields a pointer (or null for `as?`); TypeCheck is i1.
+		CirExpr.Downcast => "ptr",
+		CirExpr.TypeCheck => "i1",
 		_ => "ptr"
 	};
 

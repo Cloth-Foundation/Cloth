@@ -62,7 +62,7 @@ public sealed class CirGenerator {
 			LowerUnit(unit, filePath);
 		// Surface every class's vtable layout into the CirModule so the LLVM emitter can
 		// produce the matching globals without re-querying the registry.
-		var vtables = _symbols.ClassVtables.Values.Select(v => new CirVtable(v.ClassFqn, v.Slots)).ToList();
+		var vtables = _symbols.ClassVtables.Values.Select(v => new CirVtable(v.ClassFqn, v.ParentClassFqn, v.Slots)).ToList();
 		return new CirModule(_types, _functions, vtables);
 	}
 
@@ -176,12 +176,12 @@ public sealed class CirGenerator {
 		var typeFqn = TypeFqn(moduleFqn, decl.Name);
 		var fields = new List<CirField>();
 
-		// Vtable header: classes that implement at least one interface get a hidden
-		// `__vtable__` field of opaque-pointer type at the very front of the layout. The
-		// constructor prologue stores the vtable global into it before any other init.
-		var hasVtable = _symbols.ClassVtables.ContainsKey(typeFqn);
-		if (hasVtable)
-			fields.Add(new CirField(SymbolRegistry.VtableFieldName, new CirType.Any(), IsConst: false, null));
+		// Vtable header: every class gets a hidden `__vtable__` field at the very front of
+		// the layout, pointing to the class's vtable global. The vtable itself carries
+		// interface-method slots AND the parent-class vtable pointer used by `as`/`is`/`as?`
+		// to walk inheritance chains at runtime. The constructor prologue stores the vtable
+		// global into the field before any other init.
+		fields.Add(new CirField(SymbolRegistry.VtableFieldName, new CirType.Any(), IsConst: false, null));
 
 		// Inner-class capture: prepend the hidden `__outer__` field of type <outerFqn>.
 		// When the class also has a vtable, this sits at index 1 (after the vtable header).
@@ -321,12 +321,11 @@ public sealed class CirGenerator {
 			_typer.DeclareLocal(SymbolRegistry.InnerOuterFieldName, classInfo!.OuterClassFqn);
 
 		// Vtable initialization (must run first): `this.__vtable__ = &__vtable_<ClassFqn>`.
-		// Stored before any other prologue step so virtual dispatch through this instance is
-		// well-defined from the very first instruction of the constructor body.
+		// Every class has a vtable global, so the store is unconditional. Runs before any
+		// other prologue step so virtual dispatch and inheritance walks against this
+		// instance are well-defined from the first instruction of the constructor body.
 		var prologue = new List<CirStmt>();
-		var hasVtable = _symbols.ClassVtables.ContainsKey(typeFqn);
-		if (hasVtable)
-			prologue.Add(new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), SymbolRegistry.VtableFieldName), CirAssignOp.Assign, new CirExpr.VtableRef(typeFqn)));
+		prologue.Add(new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), SymbolRegistry.VtableFieldName), CirAssignOp.Assign, new CirExpr.VtableRef(typeFqn)));
 
 		// Outer-capture prologue (must run before user prologue so field initializers can
 		// reference the captured outer): `this.__outer__ = __outer__`.
@@ -467,6 +466,57 @@ public sealed class CirGenerator {
 	// CirType.Named where the LLVM emitter handles the actual type lowering.
 	private static CirType CanonicalToCirType(string canonical) =>
 		canonical == "void" ? new CirType.Void() : new CirType.Named(canonical);
+
+	// Lower an `as` / `as?` cast based on source/target kinds. Three runtime shapes:
+	//   - Primitive ↔ primitive → CirExpr.Cast (existing widening / narrowing path).
+	//   - Class → interface (upcast) → no-op; the underlying pointer is already valid.
+	//   - Reference downcast (interface → class, interface → interface) → CirExpr.Downcast,
+	//     which the LLVM emitter expands into a vtable comparison + abort/null branch.
+	// Same-type and class → class (same class) reduce to no-ops as well.
+	private CirExpr LowerCastExpr(Expression.Cast c) {
+		var loweredValue = LowerExpr(c.Value);
+		var loweredTargetType = LowerType(c.TargetType);
+
+		// Resolve canonical source / target so we can classify the shape.
+		var sourceCanon = _typer.InferType(c.Value);
+		string targetCanon = "";
+		if (c.TargetType.Base is BaseType.Named tn) {
+			var raw = TypeInference.Canonicalize(tn.Name);
+			targetCanon = TypeInference.IsKnownPrimitive(raw) ? raw : (ResolveClassOrInterfaceFqn(raw) ?? raw);
+		}
+
+		var srcStripped = sourceCanon == null ? "" : TypeInference.StripNullable(sourceCanon);
+		var srcPrim = !string.IsNullOrEmpty(srcStripped) && TypeInference.IsKnownPrimitive(srcStripped);
+		var tgtPrim = !string.IsNullOrEmpty(targetCanon) && TypeInference.IsKnownPrimitive(targetCanon);
+
+		// Primitive ↔ primitive: existing widening/narrowing path.
+		if (srcPrim && tgtPrim)
+			return new CirExpr.Cast(loweredValue, loweredTargetType, c.IsSafe);
+
+		var srcIsClass = !string.IsNullOrEmpty(srcStripped) && _symbols.KnownClasses.Contains(srcStripped);
+		var tgtIsClass = !string.IsNullOrEmpty(targetCanon) && _symbols.KnownClasses.Contains(targetCanon);
+		var tgtIsIface = !string.IsNullOrEmpty(targetCanon) && _symbols.KnownInterfaces.Contains(targetCanon);
+
+		// Same type or class → interface upcast: the pointer is already valid; pass through.
+		if (srcStripped == targetCanon) return loweredValue;
+		if (srcIsClass && tgtIsIface) return loweredValue;
+
+		// Class → ancestor class (upcast): also a runtime no-op. The LLVM struct of the
+		// descendant is layout-compatible with the ancestor at offset 0 (vtable + any
+		// inherited fields), so pass the pointer through untouched.
+		if (srcIsClass && tgtIsClass && _symbols.IsClassOrAncestor(srcStripped, targetCanon))
+			return loweredValue;
+
+		// Downcast to a class (the only kind with a vtable global to compare against). Used
+		// for interface → class, class → descendant class, and class → sibling class. The
+		// runtime walks the receiver's vtable parent chain.
+		if (tgtIsClass) return new CirExpr.Downcast(loweredValue, targetCanon, c.IsSafe);
+
+		// Interface → interface: the analyzer accepts; we'd need to pick a *concrete class*
+		// to compare the vtable against, which we don't know without RTTI. Out of scope for
+		// v1 — fall through to the existing Cast (no-op at the LLVM level for ptr → ptr).
+		return new CirExpr.Cast(loweredValue, loweredTargetType, c.IsSafe);
+	}
 
 	// Mirror of SemanticAnalyzer.ResolveInterfaceFqn — resolves a raw name to an interface
 	// FQN through the same import / nested-class / same-module / dotted-shorthand chain.
@@ -693,7 +743,7 @@ public sealed class CirGenerator {
 		Expression.MemberAccess { Target: var t, Member: var m } => new CirExpr.FieldAccess(LowerExpr(t), m),
 		Expression.MetaAccess { Target: var t, Member: var m } => new CirExpr.StaticAccess(ResolveExprPath(t), m),
 		Expression.Index { Target: var t, IndexExpr: var i } => new CirExpr.Index(LowerExpr(t), LowerExpr(i)),
-		Expression.Cast { Value: var v, TargetType: var tt, IsSafe: var safe } => new CirExpr.Cast(LowerExpr(v), LowerType(tt), safe),
+		Expression.Cast cExpr => LowerCastExpr(cExpr),
 		Expression.TypeCheck { Value: var v, TargetType: var tt } => new CirExpr.TypeCheck(LowerExpr(v), LowerType(tt)),
 		Expression.MembershipCheck { Value: var v, Collection: var c } => new CirExpr.Binary(LowerExpr(v), CirBinOp.In, LowerExpr(c)),
 		Expression.Ternary { Condition: var cond, ThenBranch: var t, ElseBranch: var e } => new CirExpr.Ternary(LowerExpr(cond), LowerExpr(t), LowerExpr(e)),

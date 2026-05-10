@@ -15,6 +15,8 @@ public class (string[] args) {
         defaultImpl();
         loopTests();
         nullTests();
+        castTests();
+        inheritanceTests();
     }
 
     public ~Main() {
@@ -122,6 +124,66 @@ public class (string[] args) {
         let chosenB = present ?? new Speaker();
         p(chosenB.greet());                     // "speaker"
         delete realS;
+    }
+
+    public func inheritanceTests() {
+        // Upcast: Dog → Animal is implicit because Dog extends Animal.
+        let dog = new Dog();
+        Animal a = dog;
+
+        // `is` walks the parent chain — Dog's vtable matches both Dog and Animal.
+        if (a is Dog) {
+            p("a is Dog");
+        }
+        if (a is Animal) {
+            p("a is Animal");
+        }
+
+        // `as` downcast — chain-walk finds Dog at the head, returns the receiver.
+        let back = a as Dog;
+        p(back.bark());                     // "woof"
+        delete dog;
+
+        // A bare Animal is NOT a Dog — the chain walk reaches null without finding Dog.
+        let alone = new Animal();
+        Dog? optDog = alone as? Dog;
+        if (optDog == null) {
+            p("alone not a Dog");
+        }
+        delete alone;
+    }
+
+    public func castTests() {
+        // Class → interface upcast. The runtime pointer is unchanged; only the static
+        // type changes.
+        let speaker = new Speaker();
+        Greeter g = speaker;
+
+        // `is` runtime kind check via vtable comparison.
+        if (g is Speaker) {
+            p("g is Speaker");
+        }
+
+        // `as` downcast — vtable matches, returns the receiver.
+        let back = g as Speaker;
+        p(back.greet());                         // "speaker"
+
+        // `as?` downcast — when it matches, returns the receiver as a nullable.
+        Speaker? maybeBack = g as? Speaker;
+        let unwrapped = maybeBack ?? new Speaker();
+        p(unwrapped.greet());                    // "speaker"
+
+        delete speaker;
+
+        // `as?` to a sibling implementer — at runtime the vtable doesn't match, so the
+        // cast returns null. ?? then picks the fallback path.
+        let whisperer = new Whisperer();
+        Greeter g2 = whisperer;
+        Speaker? mismatched = g2 as? Speaker;
+        let fallbackS = mismatched ?? new Speaker();
+        p(fallbackS.greet());                    // "speaker" (from the fallback)
+        delete whisperer;
+        delete fallbackS;
     }
 
     public class PrintName (string& name) {
