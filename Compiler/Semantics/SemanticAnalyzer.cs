@@ -109,19 +109,30 @@ public class SemanticAnalyzer {
 				switch (import.Items) {
 					case ImportDeclaration.ImportItems.Module:
 					{
-						// `import foo.bar.Baz;` — Baz is the class, foo.bar is the module.
+						// `import foo.bar.Baz;` — Baz is a class, interface, or trait;
+						// foo.bar is the module path.
 						if (import.Path.Count < 2) continue; // bare module path; nothing to check here
-						var className = import.Path[^1];
+						var typeName = import.Path[^1];
 						var moduleFqn = string.Join(".", import.Path.Take(import.Path.Count - 1));
-						var classFqn = string.IsNullOrEmpty(moduleFqn) ? className : $"{moduleFqn}.{className}";
+						var typeFqn = string.IsNullOrEmpty(moduleFqn) ? typeName : $"{moduleFqn}.{typeName}";
 
-						if (!_symbols.Classes.TryGetValue(classFqn, out var info)) {
-							SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"class '{className}' not found in module '{moduleFqn}'").Render();
-							continue;
+						if (_symbols.Classes.TryGetValue(typeFqn, out var classMod)) {
+							if (classMod.Visibility == Visibility.Internal && importerModule != classMod.OwnerModule)
+								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import 'internal' class '{typeFqn}' from module '{importerModule}'").Render();
+							break;
+						}
+						if (_symbols.Interfaces.TryGetValue(typeFqn, out var ifaceMod)) {
+							if (ifaceMod.Visibility == Visibility.Internal && importerModule != ifaceMod.OwnerModule)
+								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import 'internal' interface '{typeFqn}' from module '{importerModule}'").Render();
+							break;
+						}
+						if (_symbols.Traits.TryGetValue(typeFqn, out var traitMod)) {
+							if (traitMod.Visibility == Visibility.Internal && importerModule != traitMod.OwnerModule)
+								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import 'internal' trait '{typeFqn}' from module '{importerModule}'").Render();
+							break;
 						}
 
-						if (info.Visibility == Visibility.Internal && importerModule != info.OwnerModule)
-							SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"cannot import 'internal' class '{classFqn}' from module '{importerModule}'").Render();
+						SemanticError.ImportNotFound.WithFile(filePath).WithMessage($"type '{typeName}' not found in module '{moduleFqn}'").Render();
 						break;
 					}
 
@@ -374,6 +385,7 @@ public class SemanticAnalyzer {
 				break;
 			case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
 				ValidateAnnotations(m.Annotations, filePath);
+				ValidateMethodAnnotations(m, filePath);
 				BeginFunctionScope(m.Parameters);
 				_currentReturnType = ResolveReturnType(m.ReturnType);
 				WalkBlock(m.Body.Value, filePath);
@@ -381,9 +393,10 @@ public class SemanticAnalyzer {
 				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Method { Declaration: var m }:
-				// Body-less method (abstract or @Extern) — no body walk, but still validate
+				// Body-less method (prototype or @Extern) — no body walk, but still validate
 				// any attached annotations (e.g. user-defined `@SomeTag` traits).
 				ValidateAnnotations(m.Annotations, filePath);
+				ValidateMethodAnnotations(m, filePath);
 				break;
 			case MemberDeclaration.Fragment { Declaration: var f } when f.Body.HasValue:
 				ValidateAnnotations(f.Annotations, filePath);
@@ -897,6 +910,60 @@ public class SemanticAnalyzer {
 	// traits (`Override`, `Implementation`, `Deprecated`) are now declared as zero-element
 	// traits in the standard library, so they go through the normal trait-arg validator.
 	private static readonly HashSet<string> BuiltinAnnotationNames = new() { "Extern" };
+
+	// FQNs of the stdlib annotations whose presence triggers extra content validation.
+	private const string OverrideTraitFqn = "cloth.lang.Override";
+	private const string ImplementationTraitFqn = "cloth.lang.Implementation";
+
+	// For each method on a class, run the trait-content checks driven by `@Override` and
+	// `@Implementation`. Both annotations are user-declared zero-element traits in
+	// `cloth.lang`; their presence asserts a relationship the analyzer can verify.
+	private void ValidateMethodAnnotations(MethodDeclaration m, string filePath) {
+		if (string.IsNullOrEmpty(_currentTypeFqn)) return;
+		foreach (var a in m.Annotations) {
+			var fqn = ResolveTraitFqn(a.Name);
+			if (fqn == OverrideTraitFqn) CheckOverrideAnnotation(m, filePath);
+			else if (fqn == ImplementationTraitFqn) CheckImplementationAnnotation(m, filePath);
+		}
+	}
+
+	// `@Override` — walk the class's `: BaseClass` chain looking for an ancestor whose
+	// overload set contains a method with the same name, canonical parameter types, and
+	// return type. If none matches, the annotation is a lie.
+	private void CheckOverrideAnnotation(MethodDeclaration m, string filePath) {
+		var paramTypes = m.Parameters.Select(p => CanonicalizeDeclaredTypeExpr(p.Type)).ToList();
+		var returnType = CanonicalizeDeclaredTypeExpr(m.ReturnType);
+
+		var cursor = _symbols.ClassVtables.TryGetValue(_currentTypeFqn, out var layout) ? layout.ParentClassFqn : null;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (_symbols.Overloads.TryGetValue($"{cursor}.{m.Name}", out var overloads)
+			    && overloads.Any(o => o.ParamTypes.SequenceEqual(paramTypes) && o.ReturnType == returnType))
+				return;
+			cursor = _symbols.ClassVtables.TryGetValue(cursor, out var nextLayout) ? nextLayout.ParentClassFqn : null;
+		}
+
+		SemanticError.OverrideMismatch.WithFile(filePath).WithMessage($"method '{m.Name}' on class '{_currentTypeFqn}' is marked @Override but no ancestor class declares a matching '{m.Name}({string.Join(", ", paramTypes)}) : {returnType}'").Render();
+	}
+
+	// `@Implementation` — verify some interface in the class's implements list (`-> ...`)
+	// declares a method with the same name + canonical signature.
+	private void CheckImplementationAnnotation(MethodDeclaration m, string filePath) {
+		var paramTypes = m.Parameters.Select(p => CanonicalizeDeclaredTypeExpr(p.Type)).ToList();
+		var returnType = CanonicalizeDeclaredTypeExpr(m.ReturnType);
+
+		if (!_symbols.ImplementedInterfaces.TryGetValue(_currentTypeFqn, out var ifaces) || ifaces.Count == 0) {
+			SemanticError.ImplementationMismatch.WithFile(filePath).WithMessage($"method '{m.Name}' on class '{_currentTypeFqn}' is marked @Implementation but the class implements no interfaces").Render();
+			return;
+		}
+
+		foreach (var ifaceFqn in ifaces) {
+			if (!_symbols.Interfaces.TryGetValue(ifaceFqn, out var info)) continue;
+			if (info.Methods.Any(sig => sig.Name == m.Name && sig.ParamTypes.SequenceEqual(paramTypes) && sig.ReturnType == returnType))
+				return;
+		}
+
+		SemanticError.ImplementationMismatch.WithFile(filePath).WithMessage($"method '{m.Name}' on class '{_currentTypeFqn}' is marked @Implementation but no interface in the implements list declares '{m.Name}({string.Join(", ", paramTypes)}) : {returnType}'").Render();
+	}
 
 	// Validate every annotation in a list against its trait's element schema. Resolves the
 	// trait by name, checks visibility, then matches the supplied args (named or positional)
