@@ -318,10 +318,13 @@ public class Parser {
 		var previousClassName = _currentClassName;
 		_currentClassName = name;
 		try {
+			// Optional `: Bar, Baz` extends clause for interface inheritance. Multiple
+			// parents are allowed because interfaces are pure contracts (no data-diamond).
+			var extendsList = CheckInterfaceExtends();
 			ExpectOperator(Operator.LBrace);
 			var members = ParseMembers();
 			ExpectOperator(Operator.RBrace);
-			return new InterfaceDeclaration(visibility, name, members, TokenSpan.Merge(start, Previous().Span));
+			return new InterfaceDeclaration(visibility, name, extendsList, members, TokenSpan.Merge(start, Previous().Span));
 		}
 		finally {
 			_currentClassName = previousClassName;
@@ -416,6 +419,32 @@ public class Parser {
 		}
 
 		return implementors;
+	}
+
+	// Parse the optional `:` extends list for an interface declaration. Multiple parent
+	// interfaces are separated by commas. Returns an empty list when no `:` is present.
+	// Mirrors the dotted-name handling of `ParseTypeExpression` so `Outer.Inner` parents
+	// work via the same path.
+	private List<string> CheckInterfaceExtends() {
+		var extends = new List<string>();
+		if (!CheckOperator(Operator.Colon)) return extends;
+
+		Advance(); // consume ':', _current = first parent name
+		extends.Add(ParseDottedName());
+		while (ConsumeOp(Operator.Comma))
+			extends.Add(ParseDottedName());
+		return extends;
+	}
+
+	// Parse `A` or `A.B.C` (a dotted identifier chain) and return the joined string.
+	// Used by the interface-extends list so users can name nested interfaces directly.
+	private string ParseDottedName() {
+		var name = ExpectIdentifier();
+		while (CheckOperator(Operator.Dot) && PeekAt(1).Type == TokenType.Identifier) {
+			Advance(); // consume '.'
+			name += "." + ExpectIdentifier();
+		}
+		return name;
 	}
 
 	/// <summary>

@@ -1,0 +1,19 @@
+module hello.world;
+
+import cloth.lang.Override;
+
+public class () : Truck {
+
+    public Pickup {
+    }
+
+    public ~Pickup {
+    }
+
+    // Pickup only needs to fill in model() — make() comes from Truck.
+    @Override
+    public func model(): string {
+        return "f-150";
+    }
+
+}

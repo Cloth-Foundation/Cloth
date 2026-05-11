@@ -9,4 +9,7 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct InterfaceDeclaration(Visibility Visibility, string Name, List<MemberDeclaration> Members, TokenSpan Span);
+// `Extends` is the (possibly empty) list of parent interface names from the `: Bar, Baz`
+// clause on the interface declaration. Stored as raw identifiers; the registry resolves
+// each entry to a fully-qualified interface FQN at registration time.
+public readonly record struct InterfaceDeclaration(Visibility Visibility, string Name, List<string> Extends, List<MemberDeclaration> Members, TokenSpan Span);

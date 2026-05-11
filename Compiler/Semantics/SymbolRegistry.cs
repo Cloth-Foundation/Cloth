@@ -91,6 +91,21 @@ public sealed class SymbolRegistry {
 	// has in that slot, or null if the class doesn't implement the slot's method.
 	public Dictionary<string, ClassVtableLayout> ClassVtables { get; } = new();
 
+	// Interface FQNs whose `Extends` chain forms a cycle. Populated in pass-3 by
+	// `DetectInterfaceCycles`. The analyzer reads this to emit `S022 InterfaceCycle`,
+	// and the transitive-walk helpers short-circuit on these to avoid infinite loops.
+	public HashSet<string> CycleBrokenInterfaces { get; } = new();
+
+	// Class FQNs whose `:` extends chain forms a cycle. Populated in pass-3 by
+	// `DetectClassCycles`. The analyzer reads this to emit `S02B ClassInheritanceCycle`,
+	// and every parent-chain walker short-circuits on these to avoid infinite loops.
+	public HashSet<string> CycleBrokenClasses { get; } = new();
+
+	// Memoization caches for the transitive walks. Keyed by interface FQN. Populated
+	// lazily on first access.
+	private readonly Dictionary<string, List<InterfaceMethodSig>> _transitiveMethodsCache = new();
+	private readonly Dictionary<string, HashSet<string>> _transitiveAncestorsCache = new();
+
 	public static SymbolRegistry Build(IEnumerable<(CompilationUnit Unit, string FilePath)> units, IEnumerable<(CompilationUnit Unit, string FilePath)>? externUnits = null) {
 		var registry = new SymbolRegistry();
 		var allUnits = new List<(CompilationUnit Unit, bool IsExtern)>();
@@ -153,7 +168,8 @@ public sealed class SymbolRegistry {
 		var isInner = outerIsClass && c.Modifiers.Contains(ClassModifiers.Inner);
 		var ownerModule = ComputeModuleFqn(outerFqn);
 		var outerClassFqn = outerIsClass ? outerFqn : "";
-		Classes[typeFqn] = new ClassInfo(c.Visibility ?? Visibility.Internal, ownerModule, asExtern, isInner, outerClassFqn);
+		var isPrototype = c.Modifiers.Contains(ClassModifiers.Prototype);
+		Classes[typeFqn] = new ClassInfo(c.Visibility ?? Visibility.Internal, ownerModule, asExtern, isInner, outerClassFqn, isPrototype);
 		foreach (var member in c.Members) {
 			switch (member) {
 				case MemberDeclaration.NestedType { Declaration: TypeDeclaration.Class { Declaration: var nestedClass } }:
@@ -173,7 +189,7 @@ public sealed class SymbolRegistry {
 		var typeFqn = TypeFqn(outerFqn, i.Name);
 		KnownInterfaces.Add(typeFqn);
 		var ownerModule = ComputeModuleFqn(outerFqn);
-		Interfaces[typeFqn] = new InterfaceInfo(i.Visibility, ownerModule, asExtern, new List<InterfaceMethodSig>());
+		Interfaces[typeFqn] = new InterfaceInfo(i.Visibility, ownerModule, asExtern, new List<InterfaceMethodSig>(), new List<string>());
 	}
 
 	private void RegisterTraitNameRecursive(TraitDeclaration t, string outerFqn, bool asExtern) {
@@ -244,7 +260,7 @@ public sealed class SymbolRegistry {
 
 					if (!Overloads.TryGetValue(fqn, out var list))
 						Overloads[fqn] = list = new();
-					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn, m.Modifiers.Contains(FunctionModifiers.Static)));
+					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn, m.Modifiers.Contains(FunctionModifiers.Static), m.Modifiers.Contains(FunctionModifiers.Prototype)));
 
 					if (asExtern) ExternMethodSymbols.Add(symbol);
 					break;
@@ -310,6 +326,15 @@ public sealed class SymbolRegistry {
 		Func<string, string?> resolveClass = raw => ResolveClassName(raw, importMap, moduleFqn, typeFqn) ?? ResolveInterfaceName(raw, importMap, moduleFqn, typeFqn);
 
 		if (!Interfaces.TryGetValue(typeFqn, out var info)) return;
+
+		// Resolve each `:`-extends entry to a parent interface FQN. Names that don't resolve
+		// to a known interface are dropped here; the analyzer's S017-style validator emits
+		// the user-facing diagnostic against `iface.Extends` directly.
+		foreach (var raw in iface.Extends) {
+			var parentFqn = ResolveInterfaceName(raw, importMap, moduleFqn, typeFqn);
+			if (parentFqn != null) info.Extends.Add(parentFqn);
+		}
+
 		foreach (var member in iface.Members) {
 			if (member is not MemberDeclaration.Method { Declaration: var m }) continue;
 			var paramTypes = m.Parameters.Select(p => TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass)).ToList();
@@ -335,14 +360,130 @@ public sealed class SymbolRegistry {
 		}
 	}
 
+	// Walk every interface's `Extends` chain depth-first; record any FQN that participates
+	// in a cycle. Run before any transitive-walk consumer so the helpers can short-circuit
+	// on the cycle set without infinite-looping.
+	private void DetectInterfaceCycles() {
+		foreach (var fqn in Interfaces.Keys) {
+			if (CycleBrokenInterfaces.Contains(fqn)) continue; // already flagged on a prior root
+			var path = new HashSet<string>();
+			Visit(fqn, path);
+		}
+
+		void Visit(string current, HashSet<string> path) {
+			if (!path.Add(current)) {
+				// Re-entered — every FQN currently on the path is part of the cycle.
+				foreach (var node in path) CycleBrokenInterfaces.Add(node);
+				return;
+			}
+
+			if (Interfaces.TryGetValue(current, out var info)) {
+				foreach (var parent in info.Extends)
+					Visit(parent, path);
+			}
+
+			path.Remove(current);
+		}
+	}
+
+	// Transitive method set for an interface — its own methods plus all inherited from
+	// `Extends`, deduplicated by `(Name, ParamTypes-canonical, ReturnType-canonical)` so
+	// diamond inheritance produces each method once. Returns an empty list for cycle-broken
+	// interfaces (the cycle is reported separately as S022).
+	public IReadOnlyList<InterfaceMethodSig> TransitiveMethods(string ifaceFqn) {
+		if (_transitiveMethodsCache.TryGetValue(ifaceFqn, out var cached)) return cached;
+		if (CycleBrokenInterfaces.Contains(ifaceFqn)) {
+			_transitiveMethodsCache[ifaceFqn] = new();
+			return _transitiveMethodsCache[ifaceFqn];
+		}
+
+		var seen = new HashSet<(string, string, string)>(); // (name, paramKey, returnType)
+		var collected = new List<InterfaceMethodSig>();
+		var visited = new HashSet<string>();
+		Walk(ifaceFqn);
+		_transitiveMethodsCache[ifaceFqn] = collected;
+		return collected;
+
+		void Walk(string fqn) {
+			if (!visited.Add(fqn)) return;
+			if (!Interfaces.TryGetValue(fqn, out var info)) return;
+			// Parents first so their methods anchor the dedup; then this interface's own.
+			foreach (var parent in info.Extends) Walk(parent);
+			foreach (var sig in info.Methods) {
+				var key = (sig.Name, string.Join("|", sig.ParamTypes), sig.ReturnType);
+				if (seen.Add(key)) collected.Add(sig);
+			}
+		}
+	}
+
+	// Transitive ancestor set for an interface — every interface reachable through
+	// `Extends`, including this one. Used by `IsAssignableTo` for upcast checks.
+	public HashSet<string> TransitiveAncestors(string ifaceFqn) {
+		if (_transitiveAncestorsCache.TryGetValue(ifaceFqn, out var cached)) return cached;
+		var result = new HashSet<string>();
+		if (CycleBrokenInterfaces.Contains(ifaceFqn)) {
+			_transitiveAncestorsCache[ifaceFqn] = result;
+			return result;
+		}
+
+		Walk(ifaceFqn);
+		_transitiveAncestorsCache[ifaceFqn] = result;
+		return result;
+
+		void Walk(string fqn) {
+			if (!result.Add(fqn)) return;
+			if (!Interfaces.TryGetValue(fqn, out var info)) return;
+			foreach (var parent in info.Extends) Walk(parent);
+		}
+	}
+
+	// Transitive interface closure for a class — every interface implemented directly
+	// (`-> Iface, ...`) plus all of those interfaces' ancestors. Used by `IsAssignableTo`
+	// for class → ancestor-interface upcasts.
+	public HashSet<string> TransitiveInterfaceClosure(string classFqn) {
+		// Walk the class parent chain — interfaces implemented by any ancestor are
+		// inherited by descendants. Each ancestor contributes its directly-listed
+		// interfaces plus those interfaces' transitive ancestors.
+		var result = new HashSet<string>();
+		var cursor = classFqn;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (CycleBrokenClasses.Contains(cursor)) break;
+			if (ImplementedInterfaces.TryGetValue(cursor, out var direct))
+				foreach (var ifaceFqn in direct)
+					foreach (var ancestor in TransitiveAncestors(ifaceFqn))
+						result.Add(ancestor);
+			cursor = ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
+		}
+		return result;
+	}
+
 	// Pass 3 — assign global slot IDs to every interface method and build per-class vtable
 	// layouts. Slot order is deterministic: interfaces in dictionary-insertion order, and
 	// methods within each interface in their declaration order.
 	private void AssignVtableLayouts(List<(CompilationUnit Unit, bool IsExtern)> allUnits) {
+		// Detect interface inheritance cycles first so transitive walks don't infinite-loop.
+		DetectInterfaceCycles();
+
 		var nextSlot = 0;
 		foreach (var (ifaceFqn, info) in Interfaces) {
 			foreach (var sig in info.Methods) {
 				var key = SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
+				if (InterfaceMethodSlots.ContainsKey(key)) continue;
+				InterfaceMethodSlots[key] = nextSlot++;
+			}
+		}
+
+		// Prototype methods on classes share the same slot space as interface methods.
+		// Each `(declaringPrototypeClassFqn, methodName, paramTypes)` triple gets one
+		// global slot ID. Concrete subclasses fill the slot with their implementation;
+		// prototype subclasses can leave it null (deferred further).
+		foreach (var (methodFqn, overloads) in Overloads) {
+			foreach (var o in overloads) {
+				if (!o.IsPrototype) continue;
+				var lastDot = methodFqn.LastIndexOf('.');
+				if (lastDot < 0) continue;
+				var methodName = methodFqn[(lastDot + 1)..];
+				var key = SlotKey(o.OwnerClass, methodName, o.ParamTypes);
 				if (InterfaceMethodSlots.ContainsKey(key)) continue;
 				InterfaceMethodSlots[key] = nextSlot++;
 			}
@@ -358,6 +499,133 @@ public sealed class SymbolRegistry {
 			foreach (var typeDecl in unit.Types) {
 				if (typeDecl is TypeDeclaration.Class { Declaration: var c })
 					BuildClassVtableRecursive(c, moduleFqn, importMap);
+			}
+		}
+
+		// Detect class inheritance cycles before any chain walker runs. Mirrors the
+		// interface-cycle pass; uses already-resolved `ParentClassFqn`s. Walkers
+		// downstream short-circuit on members of `CycleBrokenClasses`.
+		DetectClassCycles();
+
+		// Inherit interface-method slot fills from each class's parent chain. Without
+		// this, `class Child : Parent` where Parent (and only Parent) declares `-> Iface`
+		// would leave Iface's slots null in Child's vtable, segfaulting on virtual
+		// dispatch through an Iface-typed reference to a Child instance.
+		FillInheritedInterfaceSlots();
+
+		// Once every class has its layout (including ParentClassFqn), fill prototype-method
+		// slots. Walks each class's parent chain looking for prototype methods declared on
+		// any ancestor, then picks the most-derived implementation reachable from the class.
+		FillPrototypeMethodSlots();
+	}
+
+	// For each class, scan its ancestor chain (parents, grandparents, …) for interfaces
+	// any ancestor directly implements. Fill the corresponding slots in this class's
+	// vtable using the most-derived (closest-to-leaf) overload that matches the signature.
+	// Skips slots already populated by the class's own IsList processing.
+	private void FillInheritedInterfaceSlots() {
+		foreach (var (classFqn, layout) in ClassVtables) {
+			if (CycleBrokenClasses.Contains(classFqn)) continue;
+
+			var chain = new List<string>();
+			var cursor = classFqn;
+			while (!string.IsNullOrEmpty(cursor)) {
+				if (CycleBrokenClasses.Contains(cursor)) break;
+				chain.Add(cursor);
+				cursor = ClassVtables.TryGetValue(cursor, out var l) ? l.ParentClassFqn ?? "" : "";
+			}
+
+			// Only ancestors contribute new interface slots — `self` was already covered in
+			// `BuildClassVtableRecursive` for its own IsList.
+			foreach (var ancestor in chain.Skip(1)) {
+				if (!ImplementedInterfaces.TryGetValue(ancestor, out var ancestorIfaces)) continue;
+				foreach (var directIface in ancestorIfaces) {
+					foreach (var ifaceFqn in TransitiveAncestors(directIface)) {
+						if (!Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) continue;
+						foreach (var sig in ifaceInfo.Methods) {
+							var key = SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
+							if (!InterfaceMethodSlots.TryGetValue(key, out var slot)) continue;
+							if (layout.Slots[slot] != null) continue;
+
+							// Most-derived impl wins: walk from leaf upward.
+							foreach (var derived in chain) {
+								if (!Overloads.TryGetValue($"{derived}.{sig.Name}", out var overloads)) continue;
+								var match = overloads.FirstOrDefault(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
+								if (match != null) {
+									layout.Slots[slot] = match.MangledSymbol;
+									break;
+								}
+							}
+
+							if (layout.Slots[slot] == null && sig.HasDefaultBody)
+								layout.Slots[slot] = DefaultImplSymbol(ifaceFqn, sig.Name, sig.ParamTypes);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Walk every class's `: BaseClass` chain depth-first via `ClassVtables[..].ParentClassFqn`;
+	// record any FQN that participates in a cycle. Mirrors `DetectInterfaceCycles`.
+	private void DetectClassCycles() {
+		foreach (var fqn in ClassVtables.Keys) {
+			if (CycleBrokenClasses.Contains(fqn)) continue; // already flagged on a prior root
+			var path = new HashSet<string>();
+			Visit(fqn, path);
+		}
+
+		void Visit(string current, HashSet<string> path) {
+			if (!path.Add(current)) {
+				// Re-entered — every FQN currently on the path is part of the cycle.
+				foreach (var node in path) CycleBrokenClasses.Add(node);
+				return;
+			}
+
+			if (ClassVtables.TryGetValue(current, out var layout) && !string.IsNullOrEmpty(layout.ParentClassFqn))
+				Visit(layout.ParentClassFqn!, path);
+
+			path.Remove(current);
+		}
+	}
+
+	private void FillPrototypeMethodSlots() {
+		foreach (var (classFqn, layout) in ClassVtables) {
+			// Build the parent chain from this class up to a null root. Skip cycle-broken
+			// classes — their `chain` is meaningless and would loop without the guard.
+			if (CycleBrokenClasses.Contains(classFqn)) continue;
+			var chain = new List<string>();
+			var cursor = classFqn;
+			while (!string.IsNullOrEmpty(cursor)) {
+				if (CycleBrokenClasses.Contains(cursor)) break;
+				chain.Add(cursor);
+				cursor = ClassVtables.TryGetValue(cursor, out var l) ? l.ParentClassFqn ?? "" : "";
+			}
+
+			// For each ancestor (including the class itself when it's prototype), find every
+			// prototype method declared on it. Match each to the most-derived implementation
+			// in the chain — closest-to-`classFqn` wins, since slots reflect virtual dispatch.
+			foreach (var ancestor in chain) {
+				foreach (var (methodFqn, overloads) in Overloads) {
+					if (!methodFqn.StartsWith(ancestor + ".")) continue;
+					var tail = methodFqn[(ancestor.Length + 1)..];
+					if (tail.Contains('.')) continue;
+					foreach (var proto in overloads) {
+						if (!proto.IsPrototype || proto.OwnerClass != ancestor) continue;
+						var slotKey = SlotKey(ancestor, tail, proto.ParamTypes);
+						if (!InterfaceMethodSlots.TryGetValue(slotKey, out var slot)) continue;
+						// Walk the chain from classFqn upward looking for the first non-prototype
+						// overload matching the signature.
+						foreach (var derived in chain) {
+							if (!Overloads.TryGetValue($"{derived}.{tail}", out var dOverloads)) continue;
+							var match = dOverloads.FirstOrDefault(o => !o.IsPrototype && o.ParamTypes.SequenceEqual(proto.ParamTypes) && o.ReturnType == proto.ReturnType);
+							if (match != null) {
+								layout.Slots[slot] = match.MangledSymbol;
+								break;
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -389,25 +657,33 @@ public sealed class SymbolRegistry {
 		// Every class gets a vtable layout. Classes with no `IsList` still need an identity
 		// tag for class→class downcasts; their slots array is the standard size with all
 		// nulls (no interface methods to fill). The parent pointer drives chain walks.
+		//
+		// For each interface in IsList, walk its transitive ancestor chain so methods
+		// inherited from parent interfaces (`interface Polite : Greeter` etc.) also get
+		// slotted. Each ancestor's methods retain their own slot keys.
 		var slots = new string?[VtableSize];
 		foreach (var ifaceFqn in implementedFqns) {
-			if (!Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) continue;
-			foreach (var sig in ifaceInfo.Methods) {
-				var key = SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
-				if (!InterfaceMethodSlots.TryGetValue(key, out var slot)) continue;
+			foreach (var ancestorFqn in TransitiveAncestors(ifaceFqn)) {
+				if (!Interfaces.TryGetValue(ancestorFqn, out var ifaceInfo)) continue;
+				foreach (var sig in ifaceInfo.Methods) {
+					var key = SlotKey(ancestorFqn, sig.Name, sig.ParamTypes);
+					if (!InterfaceMethodSlots.TryGetValue(key, out var slot)) continue;
 
-				// Look for a class-side override matching the signature exactly.
-				string? implementer = null;
-				var methodFqn = $"{typeFqn}.{sig.Name}";
-				if (Overloads.TryGetValue(methodFqn, out var overloads)) {
-					var matching = overloads.FirstOrDefault(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
-					if (matching != null) implementer = matching.MangledSymbol;
+					// Look for a class-side override matching the signature exactly.
+					string? implementer = null;
+					var methodFqn = $"{typeFqn}.{sig.Name}";
+					if (Overloads.TryGetValue(methodFqn, out var overloads)) {
+						var matching = overloads.FirstOrDefault(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
+						if (matching != null) implementer = matching.MangledSymbol;
+					}
+
+					// No class-side override — fall back to the originating interface's default
+					// impl, if any. The slot key is anchored on the ancestor that DECLARED the
+					// method, so the default-impl symbol lives there.
+					if (implementer == null && sig.HasDefaultBody)
+						implementer = DefaultImplSymbol(ancestorFqn, sig.Name, sig.ParamTypes);
+					slots[slot] = implementer;
 				}
-
-				// No class-side override — fall back to the interface's default impl, if any.
-				if (implementer == null && sig.HasDefaultBody)
-					implementer = DefaultImplSymbol(ifaceFqn, sig.Name, sig.ParamTypes);
-				slots[slot] = implementer;
 			}
 		}
 
@@ -425,6 +701,7 @@ public sealed class SymbolRegistry {
 		var cur = descendant;
 		while (!string.IsNullOrEmpty(cur)) {
 			if (cur == ancestor) return true;
+			if (CycleBrokenClasses.Contains(cur)) return false; // cycle: chain isn't meaningful past this point
 			if (!ClassVtables.TryGetValue(cur, out var layout)) return false;
 			cur = layout.ParentClassFqn ?? "";
 		}
@@ -554,7 +831,7 @@ public sealed class SymbolRegistry {
 // OwnerClass, and OwnerModule together drive cross-class/cross-module access checks.
 // ParamOwnership is parallel to ParamTypes — null means "borrow" (default), Transfer
 // means the caller relinquishes ownership at the call site, MutBorrow is mutable borrow.
-public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule, bool IsStatic = false);
+public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule, bool IsStatic = false, bool IsPrototype = false);
 
 // One declared instance field on a class. CanonicalType is post-alias (e.g. "i32").
 public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility);
@@ -570,11 +847,15 @@ public sealed record ConstructorInfo(List<string> ParamTypes, List<OwnershipModi
 // `IsInner` is true when the class was declared with the `inner` modifier — its instances
 // carry a hidden `__outer__` field referencing the enclosing instance. `OuterClassFqn` is
 // the FQN of the immediate enclosing class for an inner class, or empty for non-inner.
-public sealed record ClassInfo(Visibility Visibility, string OwnerModule, bool IsExtern, bool IsInner = false, string OuterClassFqn = "");
+public sealed record ClassInfo(Visibility Visibility, string OwnerModule, bool IsExtern, bool IsInner = false, string OuterClassFqn = "", bool IsPrototype = false);
 
 // Interface metadata. Methods is mutable so pass-2 can populate it; pass-1 inserts the
 // record with an empty list keyed by FQN.
-public sealed record InterfaceInfo(Visibility Visibility, string OwnerModule, bool IsExtern, List<InterfaceMethodSig> Methods);
+// Interface metadata. Methods is mutable so pass-2 can populate it; pass-1 inserts the
+// record with empty `Methods` and `Extends` lists keyed by FQN. `Extends` holds the
+// resolved FQNs of any parent interfaces from the source-level `: Bar, Baz` clause —
+// the analyzer / vtable layout walks this chain transitively.
+public sealed record InterfaceInfo(Visibility Visibility, string OwnerModule, bool IsExtern, List<InterfaceMethodSig> Methods, List<string> Extends);
 
 // One method declared on an interface. ParamTypes / ReturnType are canonical (post-alias).
 // HasDefaultBody is true when the source supplied a `{ ... }` body — implementing classes

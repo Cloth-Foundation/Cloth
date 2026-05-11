@@ -1,5 +1,7 @@
 module hello.world;
 
+import cloth.lang.Implementation;
+
 public class () -> HasDefault {
 
     public DefaultUser {
@@ -8,6 +10,7 @@ public class () -> HasDefault {
     public ~DefaultUser {
     }
 
+    @Implementation
     public func required(): i32 {
         return 7;
     }

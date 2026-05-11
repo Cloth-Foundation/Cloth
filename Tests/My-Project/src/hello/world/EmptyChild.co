@@ -1,0 +1,11 @@
+module hello.world;
+
+public class () : EmptyBase {
+
+    public EmptyChild {
+    }
+
+    public ~EmptyChild {
+    }
+
+}

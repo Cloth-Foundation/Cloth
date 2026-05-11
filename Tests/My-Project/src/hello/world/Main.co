@@ -13,7 +13,13 @@ public class (string[] args) {
         // nullX = 42;
         // p(nullX);
 
-        sayHello();
+        int x = 7;
+        int y = 42;
+
+        if ((x + y) == (y + x)) {
+            p((x + y) == (y + x));
+            sayHello();
+        }
         makeContainer();
         makeMulti();
         interfaceDispatch();
@@ -22,6 +28,8 @@ public class (string[] args) {
         nullTests();
         castTests();
         inheritanceTests();
+        interfaceInheritanceTests();
+        prototypeTests();
     }
 
     public ~Main() {
@@ -129,6 +137,101 @@ public class (string[] args) {
         let chosenB = present ?? new Speaker();
         p(chosenB.greet());                     // "speaker"
         delete realS;
+    }
+
+    public func prototypeTests() {
+        // Circle extends prototype Shape, which has a prototype method `name()` — Circle
+        // provides the body. Construction is fine because Circle is concrete; instantiating
+        // Shape directly would be rejected with S024.
+        let c = new Circle();
+
+        // Direct dispatch on the concrete type: works as usual.
+        p(c.name());                        // "circle"
+
+        // Upcast to the prototype base, then call the prototype method — dispatch goes
+        // through the vtable and lands on Circle.name().
+        Shape s = c;
+        p(s.name());                        // "circle"
+
+        delete c;
+
+        // Three-level prototype chain: Vehicle (proto) → Truck (proto, overrides make())
+        // → Pickup (concrete, overrides model()). Pickup doesn't redeclare make() —
+        // Truck's implementation propagates down.
+        let pickup = new Pickup();
+        p(pickup.wheels);                   // 4          — inherited field from Vehicle
+        pickup.wheels = 6;                  // write to inherited field
+        p(pickup.wheels);                   // 6          — updated value
+        p(pickup.make());                   // "ford"     — inherited from Truck
+        p(pickup.model());                  // "f-150"    — Pickup's own
+
+        Truck t = pickup;
+        p(t.wheels);                        // 6          — inherited field via Truck ref
+        p(t.make());                        // "ford"     — virtual via vtable
+        p(t.model());                       // "f-150"    — virtual via vtable
+
+        Vehicle v = pickup;
+        p(v.wheels);                        // 6          — same field via Vehicle ref
+        p(v.make());                        // "ford"     — virtual from the root prototype
+        p(v.model());                       // "f-150"    — virtual from the root prototype
+
+        // is/as/as? against a prototype-typed receiver. Runtime chain walks use the
+        // vtable parent pointers, which prototype classes carry just like concrete
+        // classes, so identity checks work regardless of prototype-ness.
+        if (v is Pickup) {
+            p("v is Pickup");
+        }
+        if (v is Truck) {
+            p("v is Truck");                // intermediate prototype matches
+        }
+        if (v is Vehicle) {
+            p("v is Vehicle");              // root prototype matches itself
+        }
+
+        let asPickup = v as Pickup;         // root-prototype ref → concrete-leaf downcast
+        p(asPickup.model());                // "f-150"
+
+        Truck? maybeTruck = v as? Truck;    // safe downcast to an intermediate prototype
+        if (maybeTruck != null) {
+            p("safe cast to Truck succeeded");
+        }
+
+        delete pickup;
+
+        // Prototype class implementing an interface. DisplayBase satisfies Display's
+        // `label()` contract with a concrete body; DisplayChild inherits the impl
+        // without redeclaring it.
+        let dc = new DisplayChild();
+        p(dc.label());                      // "base-label" via inherited method dispatch
+        Display disp = dc;
+        p(disp.label());                    // "base-label" via interface dispatch
+        delete dc;
+
+        // Empty prototype class — non-instantiable, no methods, no fields. The concrete
+        // leaf instantiates and constructs through the chain.
+        let ec = new EmptyChild();
+        if (ec is EmptyBase) {
+            p("EmptyChild is EmptyBase");
+        }
+        delete ec;
+    }
+
+    public func interfaceInheritanceTests() {
+        // PoliteSpeaker implements Polite, which extends Greeter — class → ancestor-interface
+        // upcast and virtual dispatch through both levels of the chain.
+        let ps = new PoliteSpeaker();
+
+        Polite polite = ps;
+        p(polite.greet());                  // "hello"   — inherited from Greeter
+        p(polite.farewell());               // "goodbye" — declared on Polite
+
+        Greeter g = ps;                     // class → ancestor-interface upcast
+        p(g.greet());                       // "hello"
+
+        Greeter g2 = polite;                // interface → ancestor-interface upcast
+        p(g2.greet());                      // "hello"
+
+        delete ps;
     }
 
     public func inheritanceTests() {

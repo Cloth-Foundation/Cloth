@@ -1,5 +1,7 @@
 module hello.world;
 
+import cloth.lang.Implementation;
+
 public class () -> Greeter {
 
     public Whisperer {
@@ -8,6 +10,7 @@ public class () -> Greeter {
     public ~Whisperer {
     }
 
+    @Implementation
     public func greet(): string {
         return "whisperer";
     }

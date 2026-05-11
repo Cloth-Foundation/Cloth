@@ -221,11 +221,13 @@ public sealed class CirGenerator {
 			foreach (var member in decl.Members)
 				LowerNonFieldMember(member, typeFqn, decl.PrimaryParameters, decl.Name, filePath, fields, fieldInitializers);
 
-			// Synthesize an auto-destructor when the class has class-typed fields but no
-			// user-written destructor. Without this, `delete <instance>` would only `free`
-			// the outer allocation and silently leak every owned class-typed field.
+			// Synthesize a destructor when the class has no user-written one. The body covers
+			// (a) auto-destruct for class-typed fields and (b) the parent-destructor chain
+			// call — so every class participating in an inheritance hierarchy has a callable
+			// dtor symbol. Empty for classes with no fields and no parent (linker still gets
+			// a valid symbol if any descendant chains into it).
 			var hasUserDtor = decl.Members.Any(m => m is MemberDeclaration.Destructor);
-			if (!hasUserDtor && fields.Any(IsAutoDestructable))
+			if (!hasUserDtor)
 				_functions.Add(SynthesizeAutoDestructor(typeFqn, decl.Name, fields));
 
 			// Recursively lower nested types as flat CIR top-level decls. Their FQNs use
@@ -240,7 +242,11 @@ public sealed class CirGenerator {
 			_currentTypeFqn = prev;
 		}
 
-		return new CirTypeDecl.Class(typeFqn, decl.Extends, decl.IsList, fields, decl.Modifiers.Contains(ClassModifiers.Prototype), decl.Modifiers.Contains(ClassModifiers.Const));
+		// Store the registry-resolved parent FQN (e.g. `hello.world.Truck`) rather than the
+		// parser-level simple name (`Truck`). Downstream layers (LLVM struct flattening,
+		// vtable chain walks) need the canonical FQN.
+		var resolvedParentFqn = _symbols.ClassVtables.TryGetValue(typeFqn, out var resolvedLayout) ? resolvedLayout.ParentClassFqn : decl.Extends;
+		return new CirTypeDecl.Class(typeFqn, resolvedParentFqn, decl.IsList, fields, decl.Modifiers.Contains(ClassModifiers.Prototype), decl.Modifiers.Contains(ClassModifiers.Const));
 	}
 
 	private CirTypeDecl LowerStructDeclaration(StructDeclaration decl, string moduleFqn, string filePath) {
@@ -320,11 +326,25 @@ public sealed class CirGenerator {
 		if (isInner)
 			_typer.DeclareLocal(SymbolRegistry.InnerOuterFieldName, classInfo!.OuterClassFqn);
 
-		// Vtable initialization (must run first): `this.__vtable__ = &__vtable_<ClassFqn>`.
-		// Every class has a vtable global, so the store is unconditional. Runs before any
-		// other prologue step so virtual dispatch and inheritance walks against this
-		// instance are well-defined from the first instruction of the constructor body.
 		var prologue = new List<CirStmt>();
+
+		// Parent constructor chain (must run before this class's own prologue so parent
+		// fields are initialized — and before this class's vtable store so the child's
+		// vtable wins after the chain returns). Skipped when no parent class exists, or
+		// when the parent has no no-arg constructor (in which case the user is responsible
+		// for explicit ctor selection — a future syntax for `: Parent(args)` will add the
+		// chain at parse time instead).
+		var parentFqnForCtorChain = _symbols.ClassVtables.TryGetValue(typeFqn, out var ctorParentLayout) ? ctorParentLayout.ParentClassFqn : null;
+		if (!string.IsNullOrEmpty(parentFqnForCtorChain) && _symbols.Constructors.TryGetValue(parentFqnForCtorChain, out var parentCtors)) {
+			var parentNoArg = parentCtors.FirstOrDefault(c => c.ParamTypes.Count == 0);
+			if (parentNoArg != null)
+				prologue.Add(new CirStmt.Expr(new CirExpr.Call(parentNoArg.MangledSymbol, new List<CirExpr> { new CirExpr.ThisPtr() })));
+		}
+
+		// Vtable initialization (must run after the parent-ctor chain so the child's vtable
+		// store overrides the parent's): `this.__vtable__ = &__vtable_<ClassFqn>`. Every
+		// class has a vtable global, so the store is unconditional. Virtual dispatch and
+		// inheritance walks against this instance are well-defined from this point onward.
 		prologue.Add(new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), SymbolRegistry.VtableFieldName), CirAssignOp.Assign, new CirExpr.VtableRef(typeFqn)));
 
 		// Outer-capture prologue (must run before user prologue so field initializers can
@@ -365,6 +385,8 @@ public sealed class CirGenerator {
 				body.Add(BuildFieldAutoDestruct(f));
 		}
 
+		AppendParentDestructorCall(body, typeFqn);
+
 		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
 	}
 
@@ -379,7 +401,20 @@ public sealed class CirGenerator {
 				body.Add(BuildFieldAutoDestruct(f));
 		}
 
+		AppendParentDestructorCall(body, typeFqn);
+
 		return new CirFunction(MangleDtor(typeFqn, className), CirFunctionKind.Destructor, [new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this")], new CirType.Void(), body, IsExtern: false, IsStatic: false);
+	}
+
+	// Append a call to the parent class's destructor on `this`, after the child's own body
+	// + auto-destruct epilogue. Mirrors the constructor chain: child cleans its own state
+	// first, then the parent runs its cleanup. Skipped when no parent exists.
+	private void AppendParentDestructorCall(List<CirStmt> body, string typeFqn) {
+		var parentFqn = _symbols.ClassVtables.TryGetValue(typeFqn, out var layout) ? layout.ParentClassFqn : null;
+		if (string.IsNullOrEmpty(parentFqn)) return;
+		var dot = parentFqn.LastIndexOf('.');
+		var parentSimple = dot >= 0 ? parentFqn[(dot + 1)..] : parentFqn;
+		body.Add(new CirStmt.Expr(new CirExpr.Call(MangleDtor(parentFqn, parentSimple), new List<CirExpr> { new CirExpr.ThisPtr() })));
 	}
 
 	// A field is auto-destructed if its declared type names a known class (i.e. an owned
@@ -460,6 +495,28 @@ public sealed class CirGenerator {
 	// FQN, matching what the SymbolRegistry's pass-2 produced for class fields.
 	private string? ResolveClassOrInterfaceFqn(string rawName) =>
 		ResolveClassFqn(rawName) ?? ResolveInterfaceFqn(rawName);
+
+	// Try to lower a class-method call as a virtual prototype dispatch. Walks the receiver
+	// class's parent chain looking for a class that declares `methodName` with the `prototype`
+	// modifier. If found, emits a VirtualCall through the receiver's vtable. Returns null when
+	// no such prototype declaration exists — caller falls through to direct dispatch.
+	private CirExpr? TryEmitVirtualPrototypeCall(string receiverClass, string methodName, List<Expression> rawArgs, CirExpr target, List<CirExpr> args) {
+		var cursor = receiverClass;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (_symbols.Overloads.TryGetValue($"{cursor}.{methodName}", out var overloads)) {
+				var proto = overloads.FirstOrDefault(o => o.IsPrototype && o.ParamTypes.Count == rawArgs.Count);
+				if (proto != null) {
+					var slotKey = SymbolRegistry.SlotKey(cursor, methodName, proto.ParamTypes);
+					if (_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) {
+						var paramCirTypes = proto.ParamTypes.Select(CanonicalToCirType).ToList();
+						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(proto.ReturnType), paramCirTypes, args);
+					}
+				}
+			}
+			cursor = _symbols.ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
+		}
+		return null;
+	}
 
 	// Map a canonical type string to the matching CirType variant. "void" gets the dedicated
 	// CirType.Void; everything else (primitives, class FQNs, interface FQNs) goes through
@@ -843,29 +900,46 @@ public sealed class CirGenerator {
 				var allArgs = new List<CirExpr> { target };
 				allArgs.AddRange(args);
 				if (receiverType != null && _symbols.KnownClasses.Contains(receiverType)) {
-					var calleeFqn = $"{receiverType}.{ma.Member}";
-					var resolved = _typer.ResolveOverload(calleeFqn, call.Arguments);
-					if (resolved != null) {
-						// Receiver doesn't get widened; only the user-supplied args run through the
-						// overload's promotion rules.
-						var promotedArgs = new List<CirExpr> { target };
-						promotedArgs.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
-						return new CirExpr.Call(resolved.MangledSymbol, promotedArgs);
+					// Check first for a prototype method anywhere in the receiver's parent
+					// chain — those dispatch virtually through the class's `__vtable__`.
+					var virtualHit = TryEmitVirtualPrototypeCall(receiverType, ma.Member, call.Arguments, target, args);
+					if (virtualHit != null) return virtualHit;
+
+					// Walk the parent chain looking for a class that declares the method.
+					// This lets a leaf class call an inherited method (declared on an ancestor)
+					// with the correct mangled symbol and resolved return type, instead of
+					// emitting a bogus `<leaf>.<method>` call that LLVM can't size.
+					var lookupClass = receiverType;
+					while (!string.IsNullOrEmpty(lookupClass)) {
+						if (_symbols.CycleBrokenClasses.Contains(lookupClass)) break;
+						var calleeFqn = $"{lookupClass}.{ma.Member}";
+						var resolved = _typer.ResolveOverload(calleeFqn, call.Arguments);
+						if (resolved != null) {
+							// Receiver doesn't get widened; only the user-supplied args run through the
+							// overload's promotion rules.
+							var promotedArgs = new List<CirExpr> { target };
+							promotedArgs.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
+							return new CirExpr.Call(resolved.MangledSymbol, promotedArgs);
+						}
+						lookupClass = _symbols.ClassVtables.TryGetValue(lookupClass, out var l) ? l.ParentClassFqn ?? "" : "";
 					}
 
-					return new CirExpr.Call(calleeFqn, allArgs);
+					return new CirExpr.Call($"{receiverType}.{ma.Member}", allArgs);
 				}
 
 				if (receiverType != null && _symbols.KnownInterfaces.Contains(receiverType)) {
-					if (_symbols.Interfaces.TryGetValue(receiverType, out var ifaceInfo)) {
+					// Walk the transitive ancestor chain so inherited methods (declared on a
+					// parent interface) dispatch through their parent's slot ID. Each method
+					// is owned by exactly one interface in the chain — the first ancestor we
+					// find with a matching signature is the slot's home.
+					foreach (var ifaceFqn in _symbols.TransitiveAncestors(receiverType)) {
+						if (!_symbols.Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) continue;
 						var sig = ifaceInfo.Methods.FirstOrDefault(m => m.Name == ma.Member && m.ParamTypes.Count == call.Arguments.Count);
-						if (sig != null) {
-							var slotKey = SymbolRegistry.SlotKey(receiverType, sig.Name, sig.ParamTypes);
-							if (_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) {
-								var paramCirTypes = sig.ParamTypes.Select(CanonicalToCirType).ToList();
-								return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(sig.ReturnType), paramCirTypes, args);
-							}
-						}
+						if (sig == null) continue;
+						var slotKey = SymbolRegistry.SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
+						if (!_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) continue;
+						var paramCirTypes = sig.ParamTypes.Select(CanonicalToCirType).ToList();
+						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(sig.ReturnType), paramCirTypes, args);
 					}
 				}
 

@@ -1,0 +1,23 @@
+module hello.world;
+
+import cloth.lang.Implementation;
+
+public class () -> Polite {
+
+    public PoliteSpeaker {
+    }
+
+    public ~PoliteSpeaker {
+    }
+
+    @Implementation
+    public func greet(): string {
+        return "hello";
+    }
+
+    @Implementation
+    public func farewell(): string {
+        return "goodbye";
+    }
+
+}

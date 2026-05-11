@@ -92,8 +92,29 @@ public class SemanticAnalyzer {
 
 		ValidateImports();
 
+		// Pre-pass: surface any class-inheritance cycle before walking method bodies, so
+		// a chain-walking dependent (a field lookup against a cycle-broken class, say)
+		// doesn't out-race the structural diagnostic on alphabetically-earlier files.
+		foreach (var (unit, filePath) in _units)
+			ReportClassInheritanceCycles(unit, filePath);
+
 		foreach (var (unit, filePath) in _units)
 			InferDeclarations(unit, filePath);
+	}
+
+	// Walk the top-level class declarations of a unit and emit `S02B ClassInheritanceCycle`
+	// for any whose FQN was flagged by `DetectClassCycles`. Each call to Render() exits
+	// the process, so only the first cycle member encountered is reported — which is
+	// enough; the user fixes the ring and recompiles.
+	private void ReportClassInheritanceCycles(CompilationUnit unit, string filePath) {
+		var moduleFqn = string.Join(".", unit.Module.Path);
+		var modulePrefix = string.IsNullOrEmpty(moduleFqn) || moduleFqn == "_src" ? "" : moduleFqn + ".";
+		foreach (var typeDecl in unit.Types) {
+			if (typeDecl is not TypeDeclaration.Class { Declaration: var c }) continue;
+			var fqn = modulePrefix + c.Name;
+			if (_symbols.CycleBrokenClasses.Contains(fqn))
+				SemanticError.ClassInheritanceCycle.WithFile(filePath).WithMessage($"class '{fqn}' participates in an inheritance cycle through its `:` extends clause").Render();
+		}
 	}
 
 	// Build a lookup of (moduleFqn, className) → set of method names, then verify each
@@ -264,6 +285,7 @@ public class SemanticAnalyzer {
 	// pipeline as class methods — fields don't exist on the interface FQN, so any
 	// `this.<field>` reference correctly fails with UndefinedIdentifier.
 	private void WalkInterface(InterfaceDeclaration iface, string filePath) {
+		ValidateInterfaceExtends(iface, filePath);
 		foreach (var member in iface.Members) {
 			switch (member) {
 				case MemberDeclaration.Method { Declaration: var m }:
@@ -384,6 +406,11 @@ public class SemanticAnalyzer {
 				CheckOwnedLocalLeaks(filePath);
 				break;
 			case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
+				// A `prototype func` cannot have a body — its body must come from a
+				// concrete subclass's override.
+				if (m.Modifiers.Contains(FunctionModifiers.Prototype))
+					SemanticError.PrototypeFuncHasBody.WithFile(filePath).WithMessage($"prototype function '{m.Name}' on class '{_currentTypeFqn}' must not have a body; subclasses provide the implementation").Render();
+				ValidatePrototypeFuncContext(m, filePath);
 				ValidateAnnotations(m.Annotations, filePath);
 				ValidateMethodAnnotations(m, filePath);
 				BeginFunctionScope(m.Parameters);
@@ -395,6 +422,7 @@ public class SemanticAnalyzer {
 			case MemberDeclaration.Method { Declaration: var m }:
 				// Body-less method (prototype or @Extern) — no body walk, but still validate
 				// any attached annotations (e.g. user-defined `@SomeTag` traits).
+				ValidatePrototypeFuncContext(m, filePath);
 				ValidateAnnotations(m.Annotations, filePath);
 				ValidateMethodAnnotations(m, filePath);
 				break;
@@ -858,6 +886,12 @@ public class SemanticAnalyzer {
 	//   - For each interface in IsList, the class must provide a method whose canonical
 	//     param-types and return-type match every required (non-default-impl) signature.
 	private void ValidateClassExtendsImplements(ClassDeclaration c, string filePath) {
+		// Cycle detection runs once per class — emit S02B if the registry's pass-3 flagged
+		// this class as part of a `: BaseClass` inheritance ring. Reported before the
+		// per-extends-entry diagnostics below so the user sees the structural problem first.
+		if (_symbols.CycleBrokenClasses.Contains(_currentTypeFqn))
+			SemanticError.ClassInheritanceCycle.WithFile(filePath).WithMessage($"class '{_currentTypeFqn}' participates in an inheritance cycle through its `:` extends clause").Render();
+
 		if (!string.IsNullOrEmpty(c.Extends)) {
 			var extName = c.Extends!;
 			var classFqn = ResolveClassFqn(extName);
@@ -879,7 +913,9 @@ public class SemanticAnalyzer {
 				if (_symbols.Interfaces.TryGetValue(ifaceFqn, out var ifaceInfo)) {
 					if (!CanAccess(ifaceInfo.Visibility, ifaceInfo.OwnerModule, ifaceFqn))
 						SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"interface '{ifaceFqn}' is not accessible from '{_currentTypeFqn}'").Render();
-					foreach (var sig in ifaceInfo.Methods) {
+					// Walk the transitive method set so methods inherited from parent
+					// interfaces are also required of the class.
+					foreach (var sig in _symbols.TransitiveMethods(ifaceFqn)) {
 						if (sig.HasDefaultBody) continue; // default impls don't require an override yet
 						var methodFqn = $"{_currentTypeFqn}.{sig.Name}";
 						var matched = _symbols.Overloads.TryGetValue(methodFqn, out var overloads) && overloads.Any(o => o.ParamTypes.SequenceEqual(sig.ParamTypes) && o.ReturnType == sig.ReturnType);
@@ -902,6 +938,82 @@ public class SemanticAnalyzer {
 			}
 
 			SemanticError.InvalidImplements.WithFile(filePath).WithMessage($"'{implName}' does not name an interface").Render();
+		}
+
+		// A non-prototype class must provide a body for every prototype method declared
+		// anywhere in its ancestor chain. Prototype classes can leave them unimplemented —
+		// some further descendant will pick them up.
+		CheckInheritedPrototypeMethods(filePath);
+	}
+
+	// Walk the parent chain collecting prototype methods declared on prototype ancestors.
+	// For each one, verify the current class (or some non-prototype class in its chain)
+	// provides an implementation matching the signature.
+	private void CheckInheritedPrototypeMethods(string filePath) {
+		if (string.IsNullOrEmpty(_currentTypeFqn)) return;
+		if (!_symbols.Classes.TryGetValue(_currentTypeFqn, out var selfInfo)) return;
+		if (selfInfo.IsPrototype) return; // prototype subclass — may leave parents' prototype methods unimplemented
+
+		var cursor = _symbols.ClassVtables.TryGetValue(_currentTypeFqn, out var layout) ? layout.ParentClassFqn : null;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
+			// Walk every overload registered as `<cursor>.<methodName>` looking for prototype
+			// declarations. The Overloads dict isn't indexed by owner, so we filter.
+			foreach (var (methodFqn, overloads) in _symbols.Overloads) {
+				if (!methodFqn.StartsWith(cursor + ".")) continue;
+				var tail = methodFqn[(cursor.Length + 1)..];
+				if (tail.Contains('.')) continue; // nested-class member; not ours
+				foreach (var proto in overloads) {
+					if (!proto.IsPrototype || proto.OwnerClass != cursor) continue;
+					if (ChainImplementsMethod(_currentTypeFqn, tail, proto.ParamTypes, proto.ReturnType)) continue;
+					SemanticError.UnimplementedPrototypeMember.WithFile(filePath).WithMessage($"class '{_currentTypeFqn}' inherits prototype function '{tail}({string.Join(", ", proto.ParamTypes)}) : {proto.ReturnType}' from '{cursor}' but provides no implementation").Render();
+				}
+			}
+			cursor = _symbols.ClassVtables.TryGetValue(cursor, out var nextLayout) ? nextLayout.ParentClassFqn : null;
+		}
+	}
+
+	// True iff some class in `startClass`'s parent chain (including itself) declares an
+	// overload of `methodName` with the given canonical signature that is NOT itself a
+	// prototype declaration — i.e. a real, body-having implementation.
+	private bool ChainImplementsMethod(string startClass, string methodName, List<string> paramTypes, string returnType) {
+		var cursor = startClass;
+		while (!string.IsNullOrEmpty(cursor)) {
+			if (_symbols.CycleBrokenClasses.Contains(cursor)) return false;
+			if (_symbols.Overloads.TryGetValue($"{cursor}.{methodName}", out var overloads)
+			    && overloads.Any(o => !o.IsPrototype && o.ParamTypes.SequenceEqual(paramTypes) && o.ReturnType == returnType))
+				return true;
+			cursor = _symbols.ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
+		}
+		return false;
+	}
+
+	// Validate the `: ParentA, ParentB` extends clause on an interface declaration. Each
+	// entry must resolve to another interface; classes / traits / unknowns are rejected
+	// with S023. The transitive chain may not contain cycles (S022).
+	private void ValidateInterfaceExtends(InterfaceDeclaration iface, string filePath) {
+		// Cycle detection runs once per interface — emit S022 if the registry's pass-3
+		// flagged this interface as part of a cycle.
+		if (_symbols.CycleBrokenInterfaces.Contains(_currentTypeFqn))
+			SemanticError.InterfaceCycle.WithFile(filePath).WithMessage($"interface '{_currentTypeFqn}' participates in an inheritance cycle through its `:` extends clause").Render();
+
+		foreach (var raw in iface.Extends) {
+			var parentFqn = ResolveInterfaceFqn(raw);
+			if (parentFqn != null) {
+				if (_symbols.Interfaces.TryGetValue(parentFqn, out var parentInfo)
+				    && !CanAccess(parentInfo.Visibility, parentInfo.OwnerModule, parentFqn))
+					SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"parent interface '{parentFqn}' is not accessible from '{_currentTypeFqn}'").Render();
+				continue;
+			}
+			if (ResolveClassFqn(raw) != null) {
+				SemanticError.InvalidInterfaceExtends.WithFile(filePath).WithMessage($"'{raw}' is a class; interfaces can only extend other interfaces").Render();
+				continue;
+			}
+			if (ResolveTraitFqn(raw) != null) {
+				SemanticError.InvalidInterfaceExtends.WithFile(filePath).WithMessage($"'{raw}' is a trait; interfaces can only extend other interfaces").Render();
+				continue;
+			}
+			SemanticError.InvalidInterfaceExtends.WithFile(filePath).WithMessage($"'{raw}' does not name an interface").Render();
 		}
 	}
 
@@ -927,6 +1039,24 @@ public class SemanticAnalyzer {
 		}
 	}
 
+	// A `prototype func` may only be declared inside a `prototype class`, must not be
+	// `static` (static methods skip the vtable, so a prototype contract is unimplementable),
+	// must not be `@Extern` (extern provides a C-symbol body that contradicts "subclasses
+	// supply the body"), and must not be `private` (private members are invisible to
+	// subclasses, so the contract could never be satisfied).
+	private void ValidatePrototypeFuncContext(MethodDeclaration m, string filePath) {
+		if (!m.Modifiers.Contains(FunctionModifiers.Prototype)) return;
+		if (string.IsNullOrEmpty(_currentTypeFqn)) return;
+		if (!_symbols.Classes.TryGetValue(_currentTypeFqn, out var info) || !info.IsPrototype)
+			SemanticError.PrototypeFuncContext.WithFile(filePath).WithMessage($"function '{m.Name}' on class '{_currentTypeFqn}' is `prototype` but the enclosing class is not — add the `prototype` modifier to the class or remove it from the function").Render();
+		if (m.Modifiers.Contains(FunctionModifiers.Static))
+			SemanticError.PrototypeFuncStatic.WithFile(filePath).WithMessage($"function '{m.Name}' on class '{_currentTypeFqn}' is both `static` and `prototype` — static methods aren't dispatched through the vtable, so the prototype contract is unreachable. Drop one of the modifiers").Render();
+		if (m.Annotations.Any(a => a.Name == "Extern"))
+			SemanticError.PrototypeFuncExtern.WithFile(filePath).WithMessage($"function '{m.Name}' on class '{_currentTypeFqn}' is both `@Extern` and `prototype` — `@Extern` binds the body to an external C symbol; `prototype` requires the body to come from a subclass override. The two are mutually exclusive").Render();
+		if (m.Visibility == Visibility.Private)
+			SemanticError.PrototypeFuncPrivate.WithFile(filePath).WithMessage($"function '{m.Name}' on class '{_currentTypeFqn}' is `private prototype` — a private method is invisible to subclasses, so no override can ever satisfy the contract. Use `public` or `internal` instead").Render();
+	}
+
 	// `@Override` — walk the class's `: BaseClass` chain looking for an ancestor whose
 	// overload set contains a method with the same name, canonical parameter types, and
 	// return type. If none matches, the annotation is a lie.
@@ -936,6 +1066,7 @@ public class SemanticAnalyzer {
 
 		var cursor = _symbols.ClassVtables.TryGetValue(_currentTypeFqn, out var layout) ? layout.ParentClassFqn : null;
 		while (!string.IsNullOrEmpty(cursor)) {
+			if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
 			if (_symbols.Overloads.TryGetValue($"{cursor}.{m.Name}", out var overloads)
 			    && overloads.Any(o => o.ParamTypes.SequenceEqual(paramTypes) && o.ReturnType == returnType))
 				return;
@@ -956,9 +1087,11 @@ public class SemanticAnalyzer {
 			return;
 		}
 
+		// Walk the transitive method set of every directly-implemented interface so methods
+		// inherited from parent interfaces (`Polite : Greeter` — greet() lives on Greeter)
+		// also count as a valid `@Implementation` target.
 		foreach (var ifaceFqn in ifaces) {
-			if (!_symbols.Interfaces.TryGetValue(ifaceFqn, out var info)) continue;
-			if (info.Methods.Any(sig => sig.Name == m.Name && sig.ParamTypes.SequenceEqual(paramTypes) && sig.ReturnType == returnType))
+			if (_symbols.TransitiveMethods(ifaceFqn).Any(sig => sig.Name == m.Name && sig.ParamTypes.SequenceEqual(paramTypes) && sig.ReturnType == returnType))
 				return;
 		}
 
@@ -1125,8 +1258,8 @@ public class SemanticAnalyzer {
 		// Visibility check piggybacks on the interface's own visibility — interface methods
 		// inherit it. v1: skip detailed visibility on individual interface methods.
 		if (_symbols.KnownInterfaces.Contains(targetType)) {
-			if (_symbols.Interfaces.TryGetValue(targetType, out var ifaceInfo)) {
-				if (ifaceInfo.Methods.Any(m => m.Name == ma.Member)) return;
+			if (_symbols.Interfaces.ContainsKey(targetType)) {
+				if (_symbols.TransitiveMethods(targetType).Any(m => m.Name == ma.Member)) return;
 			}
 
 			SemanticError.UndefinedIdentifier.WithFile(filePath).WithMessage($"'{ma.Member}' is not a method of interface '{targetType}'").Render();
@@ -1137,14 +1270,22 @@ public class SemanticAnalyzer {
 		// enforce visibility against the caller's class/module.
 		if (!_symbols.KnownClasses.Contains(targetType)) return; // unknown class — skip
 
-		if (_symbols.Fields.TryGetValue(targetType, out var fields)) {
-			var field = fields.FirstOrDefault(f => f.Name == ma.Member);
-			if (field != null) {
-				if (!_symbols.Classes.TryGetValue(targetType, out var owner)) return;
-				if (!CanAccess(field.Visibility, owner.OwnerModule, targetType))
-					SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"field '{ma.Member}' on '{targetType}' is {VisibilityWord(field.Visibility)} and not accessible from this scope").Render();
-				return;
+		// Walk the parent chain — a field declared on an ancestor is reachable through a
+		// child reference. Visibility is checked against the *declaring* class (e.g. a
+		// `private` field on Vehicle stays inaccessible even when probed via Pickup).
+		var fieldCursor = targetType;
+		while (!string.IsNullOrEmpty(fieldCursor)) {
+			if (_symbols.CycleBrokenClasses.Contains(fieldCursor)) break;
+			if (_symbols.Fields.TryGetValue(fieldCursor, out var fields)) {
+				var field = fields.FirstOrDefault(f => f.Name == ma.Member);
+				if (field != null) {
+					if (!_symbols.Classes.TryGetValue(fieldCursor, out var owner)) return;
+					if (!CanAccess(field.Visibility, owner.OwnerModule, fieldCursor))
+						SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"field '{ma.Member}' on '{fieldCursor}' is {VisibilityWord(field.Visibility)} and not accessible from this scope").Render();
+					return;
+				}
 			}
+			fieldCursor = _symbols.ClassVtables.TryGetValue(fieldCursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
 		}
 
 		// Method-as-value access (without a call) routes here too. Use any overload's
@@ -1210,12 +1351,13 @@ public class SemanticAnalyzer {
 		var tgtIsClass = _symbols.KnownClasses.Contains(target);
 		var tgtIsIface = _symbols.KnownInterfaces.Contains(target);
 
-		// Class → Interface (upcast) — legal when class implements interface.
+		// Class → Interface (upcast) — legal when class implements interface directly OR
+		// transitively through interface inheritance.
 		if (srcIsClass && tgtIsIface)
-			return _symbols.ImplementedInterfaces.TryGetValue(source, out var impls) && impls.Contains(target);
-		// Interface → Class (downcast) — legal when class implements source interface.
+			return _symbols.TransitiveInterfaceClosure(source).Contains(target);
+		// Interface → Class (downcast) — legal when class transitively implements source interface.
 		if (srcIsIface && tgtIsClass)
-			return _symbols.ImplementedInterfaces.TryGetValue(target, out var impls) && impls.Contains(source);
+			return _symbols.TransitiveInterfaceClosure(target).Contains(source);
 		// Interface → Interface — runtime check decides; always allowed at compile time.
 		if (srcIsIface && tgtIsIface) return true;
 		// Class → Class — legal when one is an ancestor of the other along the `: Base` chain.
@@ -1689,6 +1831,12 @@ public class SemanticAnalyzer {
 		// Class-level visibility check. (Top-level `private` is rejected by the parser.)
 		if (classInfo.Visibility == Visibility.Internal && _currentModuleFqn != classInfo.OwnerModule) {
 			SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"class '{classFqn}' is internal to module '{classInfo.OwnerModule}' and cannot be instantiated from module '{_currentModuleFqn}'").Render();
+			return;
+		}
+
+		// Prototype classes exist to be extended; instantiation is rejected.
+		if (classInfo.IsPrototype) {
+			SemanticError.NewOnPrototype.WithFile(filePath).WithMessage($"class '{classFqn}' is a prototype class and cannot be instantiated directly — extend it with a concrete class and instantiate that instead").Render();
 			return;
 		}
 
