@@ -22,6 +22,9 @@ public sealed class LlvmEmitter {
 	private readonly string _projectRoot;
 
 	private readonly Dictionary<string, CirTypeDecl.Class> _classByFqn = new();
+	// Enum FQN → CIR enum decl. Parallel to `_classByFqn`. Lets `EmitFieldGep` /
+	// `LlvmTypeOf` resolve a field reference when the receiver is an enum singleton.
+	private readonly Dictionary<string, CirTypeDecl.Enum> _enumByFqn = new();
 	// classFqn → flattened field layout (root-to-leaf), with the vtable header only
 	// contributed by the root. Lazily populated by GetFlattenedFields and used by both
 	// struct-type emission and field-GEP indexing so a child instance can read/write
@@ -40,6 +43,11 @@ public sealed class LlvmEmitter {
 	// CIR MangledName → final LLVM symbol. For @Extern (literal C symbol) the value matches the key;
 	// for cross-project externs (dotted CIR FQN) the value is the LLVM-mangled form.
 	private readonly Dictionary<string, string> _externLlvmName = new();
+
+	// Set by `EmitPow` when at least one `^` operator emits an integer or float code path.
+	// Drives the module-level helper / libm extern emission in `Build()`.
+	private bool _needsIntPowHelper;
+	private bool _needsLibmPow;
 
 	// C-symbol → number of leading fixed parameters for variadic externs.
 	// Populated when multiple @Extern declarations alias to the same C symbol with different
@@ -69,9 +77,12 @@ public sealed class LlvmEmitter {
 		_config = config;
 		_projectRoot = projectRoot;
 
-		foreach (var t in _module.Types)
+		foreach (var t in _module.Types) {
 			if (t is CirTypeDecl.Class c)
 				_classByFqn[c.FullyQualifiedName] = c;
+			else if (t is CirTypeDecl.Enum e)
+				_enumByFqn[e.FullyQualifiedName] = e;
+		}
 	}
 
 	public string Emit() {
@@ -121,9 +132,39 @@ public sealed class LlvmEmitter {
 			sb.AppendLine();
 		}
 
+		var statics = EmitStaticFieldGlobals();
+		if (statics.Length > 0) {
+			sb.Append(statics);
+			sb.AppendLine();
+		}
+
+		var enums = EmitEnumGlobals();
+		if (enums.Length > 0) {
+			sb.Append(enums);
+			sb.AppendLine();
+		}
+
+		var enumFunctions = EmitEnumSyntheticFunctions();
+		if (enumFunctions.Length > 0) {
+			sb.Append(enumFunctions);
+			sb.AppendLine();
+		}
+
 		foreach (var fn in _module.Functions) {
 			if (fn.IsExtern) continue;
+			// Compiler-synthesized enum helpers (e.g. `valueOf(string)`) have their LLVM
+			// bodies emitted by `EmitEnumSyntheticFunctions` below, not through the normal
+			// CIR-to-LLVM path. Skipping here avoids emitting a malformed empty define.
+			if (fn.Kind == CirFunctionKind.EnumValueOf) continue;
 			sb.Append(EmitFunction(fn));
+			sb.AppendLine();
+		}
+
+		// Integer pow helper: lazy-emitted exponentiation-by-squaring (set in PreScan when
+		// any `^` uses two integer operands). Float pow is declared as an extern up in
+		// PreScan and routed to libm at the call site.
+		if (_needsIntPowHelper) {
+			sb.AppendLine(EmitIntPowHelper());
 			sb.AppendLine();
 		}
 
@@ -131,6 +172,32 @@ public sealed class LlvmEmitter {
 			sb.Append(EmitMainEntry());
 		return sb.ToString();
 	}
+
+	// Exponentiation-by-squaring on i64. Returns 0 for non-positive exponents so the
+	// integer path stays integer-typed; users wanting fractional results (e.g. `5 ^ -1`)
+	// must cast the base to float first, routing through the libm path instead.
+	private static string EmitIntPowHelper() => string.Join("\n", new[] {
+		"define i64 @cloth_pow_i64(i64 %base, i64 %exp) {",
+		"entry:",
+		"  br label %loop",
+		"loop:",
+		"  %b = phi i64 [ %base, %entry ], [ %b_sq, %iter ]",
+		"  %e = phi i64 [ %exp,  %entry ], [ %e_shr, %iter ]",
+		"  %r = phi i64 [ 1,     %entry ], [ %r_next, %iter ]",
+		"  %done = icmp sle i64 %e, 0",
+		"  br i1 %done, label %exit, label %iter",
+		"iter:",
+		"  %odd = and i64 %e, 1",
+		"  %is_odd = icmp ne i64 %odd, 0",
+		"  %r_mul = mul i64 %r, %b",
+		"  %r_next = select i1 %is_odd, i64 %r_mul, i64 %r",
+		"  %b_sq = mul i64 %b, %b",
+		"  %e_shr = ashr i64 %e, 1",
+		"  br label %loop",
+		"exit:",
+		"  ret i64 %r",
+		"}"
+	});
 
 	private static string ResolveTriple(string target) => target switch {
 		"x64_86" or "x86_64" or "" => "x86_64-pc-windows-msvc",
@@ -186,10 +253,21 @@ public sealed class LlvmEmitter {
 		}
 
 		foreach (var t in _module.Types) {
-			if (t is CirTypeDecl.Class c)
+			if (t is CirTypeDecl.Class c) {
 				foreach (var f in c.Fields)
 					if (f.Initializer != null)
 						ScanExpr(f.Initializer);
+			}
+			// Pre-pool enum case-name strings (consumed by `getOrdinal()` / `name()` /
+			// `EmitEnumGlobals`) and any string-literal constructor args so the strings
+			// section emits a slot for them before the enum globals reference `@.str.N`.
+			else if (t is CirTypeDecl.Enum enumDecl) {
+				foreach (var ecase in enumDecl.Cases) {
+					PoolStringIndex(ecase.Name);
+					foreach (var arg in ecase.ConstructorArgs)
+						ScanExpr(arg);
+				}
+			}
 		}
 
 		// libc allocators used by `new`/`delete` lowering. Always declared so the .ll links
@@ -198,6 +276,15 @@ public sealed class LlvmEmitter {
 		_externDecls["free"] = "declare void @free(ptr)";
 		// Used by failed `as` downcasts to halt the program.
 		_externDecls["abort"] = "declare void @abort()";
+		// libm `pow` is only declared when `^` operates on at least one float operand
+		// (`_needsLibmPow` set by the Pow scan above). Integer `^` uses the in-module
+		// helper emitted by `EmitIntPowHelper`.
+		if (_needsLibmPow) _externDecls["pow"] = "declare double @pow(double, double)";
+
+		// libc `strcmp` is declared whenever the module defines at least one enum, since
+		// the synthesized `valueOf(string)` for every enum uses it for string equality.
+		if (_module.Types.Any(t => t is CirTypeDecl.Enum))
+			_externDecls["strcmp"] = "declare i32 @strcmp(ptr, ptr)";
 	}
 
 	private void ScanStmt(CirStmt stmt) {
@@ -273,6 +360,14 @@ public sealed class LlvmEmitter {
 
 				break;
 			case CirExpr.Binary b:
+				// Detect Pow operands' widths now so the helper / libm extern lands in the
+				// right module sections (externs are emitted before function bodies).
+				if (b.Op == CirBinOp.Pow) {
+					var lt = LlvmTypeOf(b.Left);
+					var rt = LlvmTypeOf(b.Right);
+					if (IsIntegerLlvmType(lt) && IsIntegerLlvmType(rt)) _needsIntPowHelper = true;
+					else _needsLibmPow = true;
+				}
 				ScanExpr(b.Left);
 				ScanExpr(b.Right);
 				break;
@@ -354,19 +449,146 @@ public sealed class LlvmEmitter {
 	private string EmitStructTypes() {
 		var sb = new StringBuilder();
 		foreach (var t in _module.Types) {
-			if (t is not CirTypeDecl.Class c) continue;
-			var name = StructName(c.FullyQualifiedName);
-			var flat = GetFlattenedFields(c.FullyQualifiedName);
-			if (flat.Count == 0) {
-				sb.AppendLine($"{name} = type {{ ptr }}");
-				continue;
-			}
+			if (t is CirTypeDecl.Class c) {
+				var name = StructName(c.FullyQualifiedName);
+				var flat = GetFlattenedFields(c.FullyQualifiedName);
+				if (flat.Count == 0) {
+					sb.AppendLine($"{name} = type {{ ptr }}");
+					continue;
+				}
 
-			var fieldTypes = string.Join(", ", flat.Select(f => LlvmType(f.Type)));
-			sb.AppendLine($"{name} = type {{ {fieldTypes} }}");
+				var fieldTypes = string.Join(", ", flat.Select(f => LlvmType(f.Type)));
+				sb.AppendLine($"{name} = type {{ {fieldTypes} }}");
+			}
+			else if (t is CirTypeDecl.Enum e) {
+				// `%enum.<fqn> = type { i32 ordinal, ptr name, <param-types...> }`. The two
+				// leading slots are built-in (driven by `getOrdinal()` / `name()`); user
+				// parameters follow in declaration order.
+				var name = StructName(e.FullyQualifiedName);
+				var fieldTypes = new List<string> { "i32", "ptr" };
+				fieldTypes.AddRange(e.Parameters.Select(p => LlvmType(p.Type)));
+				sb.AppendLine($"{name} = type {{ {string.Join(", ", fieldTypes)} }}");
+			}
 		}
 
 		return sb.ToString();
+	}
+
+	private static string MangleEnumCaseGlobal(string enumFqn, string caseName) =>
+		MangleToLlvm($"enum.{enumFqn}.{caseName}");
+
+	// Emit one `@enum.<fqn>.<CASE> = constant ...` per case across all enums in the
+	// module. Each case's user-supplied constructor args are folded to LLVM literal
+	// constants via the static-field folder; the two built-in slots (ordinal, name) are
+	// always literal. Extern enums get `external constant` declarations so the linker
+	// resolves them against the dependency's `.lib`.
+	private string EmitEnumGlobals() {
+		var sb = new StringBuilder();
+		foreach (var t in _module.Types) {
+			if (t is not CirTypeDecl.Enum e) continue;
+			var structTy = StructName(e.FullyQualifiedName);
+			var isExtern = _enumExternFqns.Contains(e.FullyQualifiedName);
+
+			foreach (var c in e.Cases) {
+				var globalName = MangleEnumCaseGlobal(e.FullyQualifiedName, c.Name);
+				if (isExtern) {
+					sb.AppendLine($"@{globalName} = external constant {structTy}");
+					continue;
+				}
+
+				// Built-in slots first: ordinal + name pointer. Pool the case-name string
+				// literal through the existing string-globals path.
+				var nameStrIdx = PoolStringIndex(c.Name);
+				var initParts = new List<string> {
+					$"i32 {c.Ordinal}",
+					$"ptr @.str.{nameStrIdx}"
+				};
+				for (var i = 0; i < c.ConstructorArgs.Count; i++) {
+					var paramTy = LlvmType(e.Parameters[i].Type);
+					var folded = FoldStaticInitializer(c.ConstructorArgs[i]);
+					if (folded != null) {
+						initParts.Add($"{paramTy} {FormatLlvmConstant(folded.Value, paramTy)}");
+						continue;
+					}
+					// String literals don't fold to a numeric value; pool them and emit a `ptr`.
+					if (c.ConstructorArgs[i] is CirExpr.StrLit s) {
+						var idx = PoolStringIndex(s.Value);
+						initParts.Add($"ptr @.str.{idx}");
+						continue;
+					}
+					LlvmError.UnsupportedExpression.WithMessage($"enum case '{e.FullyQualifiedName}.{c.Name}' arg {i} is not a compile-time constant").Render();
+					return sb.ToString();
+				}
+
+				sb.AppendLine($"@{globalName} = constant {structTy} {{ {string.Join(", ", initParts)} }}");
+			}
+		}
+		return sb.ToString();
+	}
+
+	// Add a string literal to the pool (if not already present) and return its index so
+	// callers can reference `@.str.<idx>` as a constant. Distinct from `InternString`
+	// (lower in the file) which emits a runtime GEP into the pool — this one only
+	// produces a constant-init reference for global initializers.
+	private int PoolStringIndex(string value) {
+		if (_stringIndex.TryGetValue(value, out var existing)) return existing;
+		var idx = _strings.Count;
+		_stringIndex[value] = idx;
+		_strings.Add(value);
+		return idx;
+	}
+
+	// FQNs of enums defined in dependency projects. Populated in `Generate` when the
+	// CirModule is constructed — for now, every enum in the module is local; cross-
+	// project enum visibility is a follow-up.
+	private readonly HashSet<string> _enumExternFqns = new();
+
+	// Emit synthesized per-enum functions that don't go through the normal CIR pipeline.
+	// Right now that's just `valueOf(string)` — chained `strcmp` against each case name,
+	// returning the matching `@enum.<fqn>.<CASE>` pointer or null when no match. Skips
+	// extern enums (their valueOf lives in the dependency).
+	private string EmitEnumSyntheticFunctions() {
+		var sb = new StringBuilder();
+		foreach (var t in _module.Types) {
+			if (t is not CirTypeDecl.Enum e) continue;
+			if (_enumExternFqns.Contains(e.FullyQualifiedName)) continue;
+			var mangled = MangleToLlvm($"{e.FullyQualifiedName}.valueOf__string");
+			sb.AppendLine($"define ptr @{mangled}(ptr %name) {{");
+			sb.AppendLine("entry:");
+			if (e.Cases.Count == 0) {
+				// Vacuous case — empty enum (unreachable today, defensive). Return null.
+				sb.AppendLine("  ret ptr null");
+				sb.AppendLine("}");
+				continue;
+			}
+			sb.AppendLine($"  br label %check0");
+			for (var i = 0; i < e.Cases.Count; i++) {
+				var c = e.Cases[i];
+				var nameStrIdx = PoolStringIndex(c.Name);
+				var nextLabel = i + 1 < e.Cases.Count ? $"check{i + 1}" : "miss";
+				sb.AppendLine($"check{i}:");
+				sb.AppendLine($"  %cmp{i} = call i32 @strcmp(ptr %name, ptr @.str.{nameStrIdx})");
+				sb.AppendLine($"  %eq{i} = icmp eq i32 %cmp{i}, 0");
+				sb.AppendLine($"  br i1 %eq{i}, label %match{i}, label %{nextLabel}");
+				sb.AppendLine($"match{i}:");
+				sb.AppendLine($"  ret ptr @{MangleEnumCaseGlobal(e.FullyQualifiedName, c.Name)}");
+			}
+			sb.AppendLine("miss:");
+			sb.AppendLine("  ret ptr null");
+			sb.AppendLine("}");
+		}
+		return sb.ToString();
+	}
+
+	// Map an enum field name (built-in `__ordinal__` / `__name__`, or a declared
+	// parameter) to its `{ tag, name, params... }` struct index and the corresponding
+	// CIR type. Returns (-1, undef) when the name doesn't match anything.
+	private static (int index, CirType type) ResolveEnumFieldIndex(CirTypeDecl.Enum e, string fieldName) {
+		if (fieldName == "__ordinal__") return (0, new CirType.Named("i32"));
+		if (fieldName == "__name__") return (1, new CirType.Named("string"));
+		for (var i = 0; i < e.Parameters.Count; i++)
+			if (e.Parameters[i].Name == fieldName) return (i + 2, e.Parameters[i].Type);
+		return (-1, new CirType.Any());
 	}
 
 	// Build the flattened layout for `classFqn`: root's fields first (including the vtable
@@ -432,8 +654,17 @@ public sealed class LlvmEmitter {
 		foreach (var vt in _module.Vtables) {
 			var size = vt.Slots.Count;
 			var globalName = MangleVtableGlobal(vt.ClassFqn);
-			var parentRef = vt.ParentClassFqn == null ? "ptr null" : $"ptr @{MangleVtableGlobal(vt.ParentClassFqn)}";
 			var structTy = $"{{ ptr, [{size} x ptr] }}";
+
+			// Extern vtables (classes defined in a dependency project) are declared, not
+			// defined — the linker resolves them against the dependency's `.lib`. Emitting
+			// a definition here would produce `LNK2005: multiply defined symbol` at link time.
+			if (vt.IsExtern) {
+				sb.AppendLine($"@{globalName} = external constant {structTy}");
+				continue;
+			}
+
+			var parentRef = vt.ParentClassFqn == null ? "ptr null" : $"ptr @{MangleVtableGlobal(vt.ParentClassFqn)}";
 			if (size == 0) {
 				sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [0 x ptr] zeroinitializer }}");
 				continue;
@@ -455,6 +686,108 @@ public sealed class LlvmEmitter {
 	// produce valid IR identifiers (e.g. `__vtable_hello_world_Speaker`).
 	private static string MangleVtableGlobal(string classFqn) =>
 		MangleToLlvm($"__vtable_{classFqn}");
+
+	// LLVM-safe symbol for a class-level static or const field: `cloth_math_Math_PI`.
+	// Same encoding as method names so cross-project linking sees a stable name.
+	private static string MangleStaticGlobal(string classFqn, string fieldName) =>
+		MangleToLlvm($"{classFqn}.{fieldName}");
+
+	// Folded values for already-emitted static fields, keyed by `{ClassFqn}.{Name}`. The
+	// initializer for one static can reference another via a `StaticFieldRef`; we look it
+	// up here during emission so the initializer compiles to a literal LLVM constant.
+	private readonly Dictionary<string, double> _foldedStatics = new();
+
+	// Emit one `@<mangled>` LLVM global per static / class-level-const field. Local fields
+	// get a constant or global initializer (folded at compile time); extern fields (from
+	// dependency projects) get an `external` declaration so the linker resolves them
+	// against the dependency's `.lib`.
+	private string EmitStaticFieldGlobals() {
+		var sb = new StringBuilder();
+		foreach (var sf in _module.StaticFields) {
+			var globalName = MangleStaticGlobal(sf.ClassFqn, sf.Name);
+			var llvmTy = LlvmType(sf.Type);
+			var linkage = sf.IsConst ? "constant" : "global";
+
+			if (sf.IsExtern) {
+				sb.AppendLine($"@{globalName} = external {linkage} {llvmTy}");
+				continue;
+			}
+
+			if (sf.Initializer == null) {
+				sb.AppendLine($"@{globalName} = {linkage} {llvmTy} zeroinitializer");
+				continue;
+			}
+
+			var folded = FoldStaticInitializer(sf.Initializer);
+			if (folded == null) {
+				LlvmError.UnsupportedExpression.WithMessage($"initializer for static field '{sf.ClassFqn}.{sf.Name}' is not a compile-time constant").Render();
+				return sb.ToString();
+			}
+
+			_foldedStatics[$"{sf.ClassFqn}.{sf.Name}"] = folded.Value;
+			sb.AppendLine($"@{globalName} = {linkage} {llvmTy} {FormatLlvmConstant(folded.Value, llvmTy)}");
+		}
+
+		return sb.ToString();
+	}
+
+	// Fold a CIR expression to a numeric constant at compile time. Supports integer/float
+	// literals, unary `-`, binary arithmetic over folded operands, and references to other
+	// static fields whose values are already in `_foldedStatics`. Returns null when the
+	// expression isn't constant-foldable.
+	private double? FoldStaticInitializer(CirExpr e) {
+		switch (e) {
+			case CirExpr.IntLit i:
+				return double.TryParse(i.Value, System.Globalization.NumberStyles.Integer | System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var iv) ? iv : null;
+			case CirExpr.FloatLit f:
+				return double.TryParse(f.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fv) ? fv : null;
+			case CirExpr.BoolLit b:
+				return b.Value ? 1.0 : 0.0;
+			case CirExpr.StaticFieldRef sr:
+				return _foldedStatics.TryGetValue($"{sr.ClassFqn}.{sr.Name}", out var v) ? v : null;
+			case CirExpr.Unary u:
+				var operand = FoldStaticInitializer(u.Operand);
+				if (operand == null) return null;
+				return u.Op switch {
+					CirUnOp.Neg => -operand,
+					_ => null
+				};
+			case CirExpr.Binary b:
+				var l = FoldStaticInitializer(b.Left);
+				var r = FoldStaticInitializer(b.Right);
+				if (l == null || r == null) return null;
+				return b.Op switch {
+					CirBinOp.Add => l + r,
+					CirBinOp.Sub => l - r,
+					CirBinOp.Mul => l * r,
+					CirBinOp.Div => r != 0 ? l / r : null,
+					CirBinOp.Rem => r != 0 ? l % r : null,
+					CirBinOp.Pow => Math.Pow(l.Value, r.Value),
+					_ => null
+				};
+			case CirExpr.Cast c:
+				return FoldStaticInitializer(c.Value);
+		}
+		return null;
+	}
+
+	// Format a folded numeric value as an LLVM constant matching the target type.
+	// Floats use IEEE-754 hex form. LLVM requires `float`-typed hex constants to round-
+	// trip exactly through IEEE-754 double (per LangRef), so for `float` we cast the
+	// value to single precision before encoding — that produces a double value with
+	// only the low bits that survive the round-trip.
+	private static string FormatLlvmConstant(double value, string llvmTy) {
+		if (llvmTy == "float") {
+			var asFloat = (float) value;
+			var bits = BitConverter.DoubleToInt64Bits(asFloat);
+			return "0x" + bits.ToString("X16");
+		}
+		if (llvmTy == "double") {
+			var bits = BitConverter.DoubleToInt64Bits(value);
+			return "0x" + bits.ToString("X16");
+		}
+		return ((long) value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+	}
 
 	// -------------------------------------------------------------------------
 	// Functions
@@ -573,6 +906,7 @@ public sealed class LlvmEmitter {
 			case CirStmt.Break: EmitBreak(); break;
 			case CirStmt.Continue: EmitContinue(); break;
 			case CirStmt.Delete del: EmitDelete(del); break;
+			case CirStmt.Switch sw: EmitSwitch(sw); break;
 			case CirStmt.Block b:
 				foreach (var s in b.Body) EmitStmt(s);
 				break;
@@ -630,6 +964,70 @@ public sealed class LlvmEmitter {
 		else {
 			_bodyLines.Add($"  br label %{endLabel}");
 		}
+	}
+
+	// `switch (subject) { case pattern: body; default: body; }` — break-by-default per
+	// case (no C-style fall-through). Lowers as a chain of `icmp eq` comparisons against
+	// each case's pattern value. Floating-point subjects use `fcmp oeq`. Enum-typed
+	// subjects compare as pointers (each variant is a singleton global). A `default:`
+	// arm is the miss target; without one, the miss path falls through to switch-end.
+	// `break` inside a case body jumps to switch-end via the loop-stack.
+	private void EmitSwitch(CirStmt.Switch sw) {
+		var subjectVal = EmitExpr(sw.Subject);
+		var subjectTy = LlvmTypeOf(sw.Subject);
+		var cmpOp = subjectTy is "float" or "double" ? "fcmp oeq" : "icmp eq";
+		var endLabel = FreshLabel("switch_end");
+
+		// Split pattern arms from the (at most one) default arm and pre-allocate every
+		// label so the emission is linear and self-referential branches are simple.
+		var patternIdx = new List<int>();          // indices into sw.Cases for pattern arms
+		var defaultIdx = -1;
+		for (var i = 0; i < sw.Cases.Count; i++) {
+			if (sw.Cases[i].Pattern == null) defaultIdx = i;
+			else patternIdx.Add(i);
+		}
+
+		var bodyLabels = new string[sw.Cases.Count];
+		for (var i = 0; i < sw.Cases.Count; i++)
+			bodyLabels[i] = FreshLabel(sw.Cases[i].Pattern == null ? "case_default" : "case_body");
+
+		var missLabel = defaultIdx >= 0 ? bodyLabels[defaultIdx] : endLabel;
+
+		// Per-pattern check labels (each block runs one compare + branch). The first one
+		// is what entry falls into; each subsequent check is the failure target of the
+		// previous one.
+		var checkLabels = patternIdx.Select(_ => FreshLabel("check")).ToList();
+
+		// Entry: branch into the first check (or directly to the miss target if there
+		// are no pattern arms).
+		if (checkLabels.Count > 0) _bodyLines.Add($"  br label %{checkLabels[0]}");
+		else _bodyLines.Add($"  br label %{missLabel}");
+
+		// Emit one `check<i>: cmp; br` block per pattern arm.
+		for (var k = 0; k < patternIdx.Count; k++) {
+			_bodyLines.Add($"{checkLabels[k]}:");
+			_blockTerminated = false;
+			var caseIdx = patternIdx[k];
+			var pat = EmitExpr(sw.Cases[caseIdx].Pattern!);
+			var cmp = FreshTemp();
+			_bodyLines.Add($"  {cmp} = {cmpOp} {subjectTy} {subjectVal}, {pat}");
+			var nextLabel = k + 1 < checkLabels.Count ? checkLabels[k + 1] : missLabel;
+			_bodyLines.Add($"  br i1 {cmp}, label %{bodyLabels[caseIdx]}, label %{nextLabel}");
+		}
+
+		// Emit each case body — pattern arms in declaration order, then the default arm
+		// (if any). `break` inside a body resolves through the loop-stack to switch-end.
+		_loopStack.Push((endLabel, endLabel));
+		for (var i = 0; i < sw.Cases.Count; i++) {
+			_bodyLines.Add($"{bodyLabels[i]}:");
+			_blockTerminated = false;
+			foreach (var s in sw.Cases[i].Body) EmitStmt(s);
+			if (!_blockTerminated) _bodyLines.Add($"  br label %{endLabel}");
+		}
+		_loopStack.Pop();
+
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
 	}
 
 	// `while (cond) { body }`. `continue` jumps to the condition block; `break` to the end.
@@ -798,6 +1196,8 @@ public sealed class LlvmEmitter {
 			case CirExpr.ThisPtr: return EmitLocalLoad("this");
 
 			case CirExpr.FieldAccess fa: return EmitFieldLoad(fa);
+			case CirExpr.StaticFieldRef sr: return EmitStaticFieldLoad(sr);
+			case CirExpr.EnumCaseRef ec: return "@" + MangleEnumCaseGlobal(ec.EnumFqn, ec.CaseName);
 			case CirExpr.Call c: return EmitCall(c);
 			case CirExpr.Alloc a: return EmitAlloc(a);
 			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
@@ -833,10 +1233,40 @@ public sealed class LlvmEmitter {
 		return t;
 	}
 
+	// Load a class-level static / const field by emitting a `load` from the corresponding
+	// LLVM global. The global's symbol is `@<mangled-class>_<field>` (matching
+	// `EmitStaticFieldGlobals` and the cross-project `external` declaration shape).
+	private string EmitStaticFieldLoad(CirExpr.StaticFieldRef sr) {
+		var globalName = MangleStaticGlobal(sr.ClassFqn, sr.Name);
+		var llvmTy = LlvmType(sr.Type);
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = load {llvmTy}, ptr @{globalName}");
+		return t;
+	}
+
 	private (string gep, CirType fieldType) EmitFieldGep(CirExpr.FieldAccess fa) {
 		var targetVal = EmitExpr(fa.Target);
 		var fqn = ResolveTargetFqn(fa.Target);
-		if (fqn == null || !_classByFqn.ContainsKey(fqn)) {
+		if (fqn == null) {
+			LlvmError.FieldNotFound.WithMessage($"cannot resolve owning type of field '{fa.FieldName}'").Render();
+			return ("undef", new CirType.Any());
+		}
+
+		// Enum field layout: { i32 ordinal, ptr name, <params...> }. The two built-in
+		// slots are referenced by the synthesized `getOrdinal()` and `name()` getters
+		// using their `__ordinal__` / `__name__` reserved field names.
+		if (_enumByFqn.TryGetValue(fqn, out var enumDecl)) {
+			var (idx, fieldTy) = ResolveEnumFieldIndex(enumDecl, fa.FieldName);
+			if (idx < 0) {
+				LlvmError.FieldNotFound.WithMessage($"field '{fa.FieldName}' not found on enum {fqn}").Render();
+				return ("undef", new CirType.Any());
+			}
+			var gep = FreshTemp();
+			_bodyLines.Add($"  {gep} = getelementptr inbounds {StructName(fqn)}, ptr {targetVal}, i32 0, i32 {idx}");
+			return (gep, fieldTy);
+		}
+
+		if (!_classByFqn.ContainsKey(fqn)) {
 			LlvmError.FieldNotFound.WithMessage($"cannot resolve owning type of field '{fa.FieldName}'").Render();
 			return ("undef", new CirType.Any());
 		}
@@ -844,15 +1274,15 @@ public sealed class LlvmEmitter {
 		// Look up the field in the flattened layout (own fields + ancestor contributions)
 		// so an ancestor-declared field GEPs to its correct offset in the child's struct.
 		var flat = GetFlattenedFields(fqn);
-		var idx = flat.FindIndex(f => f.Name == fa.FieldName);
-		if (idx < 0) {
+		var idx2 = flat.FindIndex(f => f.Name == fa.FieldName);
+		if (idx2 < 0) {
 			LlvmError.FieldNotFound.WithMessage($"field '{fa.FieldName}' not found on {fqn}").Render();
 			return ("undef", new CirType.Any());
 		}
 
-		var gep = FreshTemp();
-		_bodyLines.Add($"  {gep} = getelementptr inbounds {StructName(fqn)}, ptr {targetVal}, i32 0, i32 {idx}");
-		return (gep, flat[idx].Type);
+		var gep2 = FreshTemp();
+		_bodyLines.Add($"  {gep2} = getelementptr inbounds {StructName(fqn)}, ptr {targetVal}, i32 0, i32 {idx2}");
+		return (gep2, flat[idx2].Type);
 	}
 
 	private string EmitCall(CirExpr.Call c) {
@@ -1152,8 +1582,19 @@ public sealed class LlvmEmitter {
 		// Field access: walk the chain, look up the named field's type in the parent class's
 		// declared field list. Falls back to ptr if any link in the chain can't be resolved.
 		CirExpr.FieldAccess fa => ResolveTargetFqn(fa.Target) is { } parentFqn && _classByFqn.TryGetValue(parentFqn, out var parentCls) && parentCls.Fields.FirstOrDefault(f => f.Name == fa.FieldName) is { } fld ? LlvmType(fld.Type) : "ptr",
-		// Comparisons produce i1; arithmetic produces the wider operand's LLVM type.
-		CirExpr.Binary b => IsComparisonBinOp(b.Op) ? "i1" : WiderLlvmType(LlvmTypeOf(b.Left), LlvmTypeOf(b.Right)),
+		// Comparisons produce i1; Pow always widens to i64 (integer ops) or double (any
+		// float op) so the helper / libm result isn't truncated. Other arithmetic
+		// produces the wider operand's LLVM type.
+		CirExpr.Binary b => IsComparisonBinOp(b.Op) ? "i1"
+			: b.Op == CirBinOp.Pow
+				? (IsIntegerLlvmType(LlvmTypeOf(b.Left)) && IsIntegerLlvmType(LlvmTypeOf(b.Right)) ? "i64" : "double")
+				: WiderLlvmType(LlvmTypeOf(b.Left), LlvmTypeOf(b.Right)),
+		// Unary Neg/BitNot keep the operand's type; logical Not is always i1.
+		CirExpr.Unary u => u.Op == CirUnOp.Not ? "i1" : LlvmTypeOf(u.Operand),
+		// Static-field loads carry their declared type on the CIR node.
+		CirExpr.StaticFieldRef sr => LlvmType(sr.Type),
+		// Enum case references are pointers to the per-case constant global.
+		CirExpr.EnumCaseRef => "ptr",
 		// Look up the callee's return type from the module's function table; fall back to ptr
 		// for unresolved/unknown calls.
 		CirExpr.Call call => _module.Functions.FirstOrDefault(f => f.MangledName == call.MangledName) is { } fn ? LlvmType(fn.ReturnType) : "ptr",
@@ -1241,12 +1682,104 @@ public sealed class LlvmEmitter {
 	};
 
 	private string EmitBinary(CirExpr.Binary b) {
+		// Power doesn't fit the simple binop shape — route to a helper or libm.
+		if (b.Op == CirBinOp.Pow) return EmitPow(b);
 		// Pick the wider operand type for arithmetic so i64/f64 expressions emit the right binop.
-		var opTy = WiderLlvmType(LlvmTypeOf(b.Left), LlvmTypeOf(b.Right));
+		var leftTy = LlvmTypeOf(b.Left);
+		var rightTy = LlvmTypeOf(b.Right);
+		var opTy = WiderLlvmType(leftTy, rightTy);
 		var lhs = EmitExpr(b.Left);
 		var rhs = EmitExpr(b.Right);
+		// LLVM requires matching types on both sides of a binop. Widen any narrower
+		// operand to `opTy` so a mix like `i8 + i64` (e.g. after a Pow widens one side)
+		// emits as `i64 + i64`.
+		lhs = CoerceTo(lhs, leftTy, opTy);
+		rhs = CoerceTo(rhs, rightTy, opTy);
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = {LlvmBinOp(b.Op, opTy)} {opTy} {lhs}, {rhs}");
+		return t;
+	}
+
+	// True when an LLVM scalar type is integer (i1/i8/i16/i32/i64). False for floats and ptr.
+	private static bool IsIntegerLlvmType(string ty) =>
+		ty is "i1" or "i8" or "i16" or "i32" or "i64";
+
+	// Lower `base ^ exp` (power). Integer-integer routes through the module helper
+	// `@cloth_pow_i64` (exponentiation by squaring) and stays i64. Anything involving
+	// a float coerces both sides to double and calls libm `pow`, returning double.
+	// The typer matches this rule (Pow result is i64 or f64), so the surrounding store
+	// or binop sees the right width and the result isn't truncated.
+	private string EmitPow(CirExpr.Binary b) {
+		var leftTy = LlvmTypeOf(b.Left);
+		var rightTy = LlvmTypeOf(b.Right);
+		var lhs = EmitExpr(b.Left);
+		var rhs = EmitExpr(b.Right);
+
+		if (IsIntegerLlvmType(leftTy) && IsIntegerLlvmType(rightTy)) {
+			_needsIntPowHelper = true;
+			var lhs64 = WidenIntTo(lhs, leftTy, "i64");
+			var rhs64 = WidenIntTo(rhs, rightTy, "i64");
+			var call = FreshTemp();
+			_bodyLines.Add($"  {call} = call i64 @cloth_pow_i64(i64 {lhs64}, i64 {rhs64})");
+			return call;
+		}
+
+		// Float path: lift any integer operand to double, call libm `pow`, return double.
+		_needsLibmPow = true;
+		var lhsD = ToDouble(lhs, leftTy);
+		var rhsD = ToDouble(rhs, rightTy);
+		var resD = FreshTemp();
+		_bodyLines.Add($"  {resD} = call double @pow(double {lhsD}, double {rhsD})");
+		return resD;
+	}
+
+	// Coerce an emitted value `val` (currently of `fromTy`) to `toTy`. Used by
+	// `EmitBinary` so binops see operands of matching widths, which LLVM requires.
+	// Handles integer width changes (sext/trunc), float width changes (fpext/fptrunc),
+	// and int↔float crossings (sitofp/fptosi). Same-type pass-through returns the
+	// original SSA name.
+	private string CoerceTo(string val, string fromTy, string toTy) {
+		if (fromTy == toTy) return val;
+		if (IsIntegerLlvmType(fromTy) && IsIntegerLlvmType(toTy))
+			return BitWidth(toTy) > BitWidth(fromTy) ? WidenIntTo(val, fromTy, toTy) : NarrowIntTo(val, fromTy, toTy);
+		if (toTy == "double") return ToDouble(val, fromTy);
+		if (toTy == "float") {
+			var asD = ToDouble(val, fromTy);
+			return CoerceTo(asD, "double", "float");
+		}
+		if (fromTy is "double" or "float" && IsIntegerLlvmType(toTy)) return FromDouble(val, toTy);
+		return val;
+	}
+
+	private string WidenIntTo(string val, string fromTy, string toTy) {
+		if (fromTy == toTy) return val;
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = sext {fromTy} {val} to {toTy}");
+		return t;
+	}
+
+	private string NarrowIntTo(string val, string fromTy, string toTy) {
+		if (fromTy == toTy) return val;
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = trunc {fromTy} {val} to {toTy}");
+		return t;
+	}
+
+	private string ToDouble(string val, string fromTy) {
+		if (fromTy == "double") return val;
+		var t = FreshTemp();
+		if (fromTy == "float") _bodyLines.Add($"  {t} = fpext float {val} to double");
+		else if (IsIntegerLlvmType(fromTy)) _bodyLines.Add($"  {t} = sitofp {fromTy} {val} to double");
+		else _bodyLines.Add($"  {t} = bitcast {fromTy} {val} to double"); // fallback; shouldn't hit
+		return t;
+	}
+
+	private string FromDouble(string val, string toTy) {
+		if (toTy == "double") return val;
+		var t = FreshTemp();
+		if (toTy == "float") _bodyLines.Add($"  {t} = fptrunc double {val} to float");
+		else if (IsIntegerLlvmType(toTy)) _bodyLines.Add($"  {t} = fptosi double {val} to {toTy}");
+		else _bodyLines.Add($"  {t} = bitcast double {val} to {toTy}");
 		return t;
 	}
 
@@ -1267,17 +1800,22 @@ public sealed class LlvmEmitter {
 			return u.Op is CirUnOp.PostInc or CirUnOp.PostDec ? oldVal : newVal;
 		}
 
+		// Use the operand's actual LLVM type for Neg / BitNot so the result matches the
+		// surrounding arithmetic width — `let x = a + -10;` infers the literal `10` as
+		// i8 (smallest fit), and `-10` must come back as i8 too, not a hardcoded i32.
+		// Logical Not always produces i1 regardless of operand width.
+		var operandTy = LlvmTypeOf(u.Operand);
 		var operand = EmitExpr(u.Operand);
 		var t = FreshTemp();
 		switch (u.Op) {
 			case CirUnOp.Neg:
-				_bodyLines.Add($"  {t} = sub i32 0, {operand}");
+				_bodyLines.Add($"  {t} = sub {operandTy} 0, {operand}");
 				return t;
 			case CirUnOp.Not:
 				_bodyLines.Add($"  {t} = xor i1 {operand}, true");
 				return t;
 			case CirUnOp.BitNot:
-				_bodyLines.Add($"  {t} = xor i32 {operand}, -1");
+				_bodyLines.Add($"  {t} = xor {operandTy} {operand}, -1");
 				return t;
 		}
 
@@ -1309,6 +1847,10 @@ public sealed class LlvmEmitter {
 					var f = GetFlattenedFields(fqn).FirstOrDefault(x => x.Name == fa.FieldName);
 					if (f != null) return (f.Type, true);
 				}
+				if (fqn != null && _enumByFqn.TryGetValue(fqn, out var enumDecl)) {
+					var (idx, fieldTy) = ResolveEnumFieldIndex(enumDecl, fa.FieldName);
+					if (idx >= 0) return (fieldTy, true);
+				}
 
 				return (new CirType.Any(), false);
 		}
@@ -1319,6 +1861,9 @@ public sealed class LlvmEmitter {
 	private string? ResolveTargetFqn(CirExpr target) => target switch {
 		CirExpr.ThisPtr => _currentThisFqn,
 		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => ty is CirType.Ptr p && p.Inner is CirType.Named np ? np.FullyQualifiedName : ty is CirType.Named n ? n.FullyQualifiedName : null,
+		// Enum case singletons: the FQN of the value is the enum's FQN. Used by method
+		// calls on `EnumName.CASE.someGetter()`.
+		CirExpr.EnumCaseRef ec => ec.EnumFqn,
 		// Nested field-access chains (e.g. `this.__outer__.outerField`): resolve the inner
 		// FieldAccess to its containing class, then look up the named field via the
 		// flattened layout (so an ancestor-declared field still resolves).
@@ -1413,7 +1958,6 @@ public sealed class LlvmEmitter {
 			CirBinOp.Rem => isFloat ? "frem" : "srem",
 			CirBinOp.BitAnd or CirBinOp.And => "and",
 			CirBinOp.BitOr or CirBinOp.Or => "or",
-			CirBinOp.BitXor => "xor",
 			CirBinOp.Shl => "shl",
 			CirBinOp.Shr => "ashr",
 			CirBinOp.Eq => isFloat ? "fcmp oeq" : "icmp eq",
@@ -1434,7 +1978,7 @@ public sealed class LlvmEmitter {
 		CirAssignOp.RemAssign => CirBinOp.Rem,
 		CirAssignOp.AndAssign => CirBinOp.BitAnd,
 		CirAssignOp.OrAssign => CirBinOp.BitOr,
-		CirAssignOp.XorAssign => CirBinOp.BitXor,
+		CirAssignOp.PowAssign => CirBinOp.Pow,
 		_ => CirBinOp.Add
 	};
 

@@ -98,8 +98,58 @@ public class SemanticAnalyzer {
 		foreach (var (unit, filePath) in _units)
 			ReportClassInheritanceCycles(unit, filePath);
 
+		// Pre-pass: validate enum case shapes (arg count S02C, non-const S02D, duplicate
+		// case names S02E) across every file before any method body walks. Without this,
+		// a Main.co that references a case dropped due to a duplicate could fire S00A
+		// "undefined identifier" before the user sees the actual S02E source diagnostic.
+		foreach (var (unit, filePath) in _units)
+			ValidateEnumCasesGlobalPass(unit, filePath);
+
 		foreach (var (unit, filePath) in _units)
 			InferDeclarations(unit, filePath);
+	}
+
+	// File-level pre-pass that fires the structural enum diagnostics (S02C / S02D / S02E).
+	// Mirrors `ReportClassInheritanceCycles` — runs before any method body walks so the
+	// source-of-truth error appears first regardless of file ordering.
+	private void ValidateEnumCasesGlobalPass(CompilationUnit unit, string filePath) {
+		var moduleFqn = string.Join(".", unit.Module.Path);
+		var modulePrefix = string.IsNullOrEmpty(moduleFqn) || moduleFqn == "_src" ? "" : moduleFqn + ".";
+		foreach (var typeDecl in unit.Types) {
+			if (typeDecl is not TypeDeclaration.Enum { Declaration: var en }) continue;
+			var fqn = modulePrefix + en.Name;
+			var previousFqn = _currentTypeFqn;
+			_currentTypeFqn = fqn;
+			try {
+				ValidateEnumCases(en, filePath);
+			}
+			finally {
+				_currentTypeFqn = previousFqn;
+			}
+		}
+	}
+
+	// Just the case-shape validation extracted from `WalkEnum` so the global pre-pass
+	// can run it without dragging in method-body walks. Method bodies still go through
+	// `WalkEnum` during the regular `InferDeclarations` pass.
+	private void ValidateEnumCases(EnumDeclaration en, string filePath) {
+		var seen = new HashSet<string>();
+		foreach (var c in en.Cases) {
+			if (!seen.Add(c.Name)) {
+				SemanticError.DuplicateEnumCase.WithFile(filePath).WithMessage($"enum '{_currentTypeFqn}' declares case '{c.Name}' more than once").Render();
+				continue;
+			}
+
+			if (c.ConstructorArgs.Count != en.Parameters.Count) {
+				SemanticError.EnumCaseArgMismatch.WithFile(filePath).WithMessage($"enum case '{_currentTypeFqn}.{c.Name}' supplies {c.ConstructorArgs.Count} arg(s) but the constructor signature declares {en.Parameters.Count}").Render();
+				continue;
+			}
+
+			for (var i = 0; i < c.ConstructorArgs.Count; i++) {
+				if (!IsCompileTimeConstantExpression(c.ConstructorArgs[i]))
+					SemanticError.EnumCaseNonConst.WithFile(filePath).WithMessage($"enum case '{_currentTypeFqn}.{c.Name}' arg {i} is not a compile-time constant — enum case values must be literals or arithmetic on literals").Render();
+			}
+		}
 	}
 
 	// Walk the top-level class declarations of a unit and emit `S02B ClassInheritanceCycle`
@@ -274,9 +324,42 @@ public class SemanticAnalyzer {
 					_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? trait.Name : $"{moduleFqn}.{trait.Name}";
 					WalkTrait(trait, filePath);
 					break;
-				// Enum body walks are out of scope this round.
+				case TypeDeclaration.Enum { Declaration: var en }:
+					_currentTypeFqn = string.IsNullOrEmpty(moduleFqn) ? en.Name : $"{moduleFqn}.{en.Name}";
+					WalkEnum(en, filePath);
+					break;
 			}
 		}
+	}
+
+	// Walk an enum's user-declared methods. Case-shape validation (S02C/S02D/S02E) ran
+	// in the global pre-pass before this point, so this step is body-only.
+	private void WalkEnum(EnumDeclaration en, string filePath) {
+		foreach (var member in en.Members) {
+			switch (member) {
+				case MemberDeclaration.Method { Declaration: var m } when m.Body.HasValue:
+					BeginFunctionScope(m.Parameters);
+					_currentReturnType = ResolveReturnType(m.ReturnType);
+					WalkBlock(m.Body.Value, filePath);
+					ValidateAllPathsReturn(m.Body.Value, m.Name, filePath);
+					CheckOwnedLocalLeaks(filePath);
+					break;
+			}
+		}
+	}
+
+	// Heuristic compile-time-constant check at the AST level. Accepts numeric / string /
+	// bool literals, unary `-` on a constant, binary arithmetic over constants, and
+	// parenthesized constants. Anything else (calls, identifier references, casts, etc.)
+	// is rejected. The LLVM-side folder is stricter — this is just a fast pre-check to
+	// surface a clearer error before codegen.
+	private static bool IsCompileTimeConstantExpression(Expression expr) {
+		return expr switch {
+			Expression.Literal => true,
+			Expression.Unary u => u.Operator == UnOp.Neg && IsCompileTimeConstantExpression(u.Operand),
+			Expression.Binary b => IsCompileTimeConstantExpression(b.Left) && IsCompileTimeConstantExpression(b.Right),
+			_ => false
+		};
 	}
 
 	// Walk an interface body. Allowed members: methods (abstract or with default-impl body)
@@ -727,6 +810,20 @@ public class SemanticAnalyzer {
 			ValidateClassReference(id.Name, filePath);
 			return;
 		}
+
+		// Same-module class or enum by short name: `EnumName.CASE` / `ClassName.method()`
+		// inside the module that declares the type don't need an import.
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var moduleFqn = $"{_currentModuleFqn}.{id.Name}";
+			if (_symbols.KnownClasses.Contains(moduleFqn)) {
+				ValidateClassReference(moduleFqn, filePath);
+				return;
+			}
+			if (_symbols.KnownEnums.Contains(moduleFqn)) return;
+		}
+
+		// Module-less (`_src`) enums also resolve by short name.
+		if (_symbols.KnownEnums.Contains(id.Name)) return;
 
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Overloads.ContainsKey($"{_currentTypeFqn}.{id.Name}")) return; // same-class method — same-class is always accessible
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == id.Name)) {
@@ -1240,6 +1337,30 @@ public class SemanticAnalyzer {
 			return;
 		}
 
+		// Static-field access: `ClassName.FIELD`. Resolve the target via importMap and
+		// KnownClasses, then look up the field on the class chain (must be IsStatic).
+		// Visibility is enforced against the declaring class. Skips the instance path
+		// below when this matches.
+		if (ma.Target is Expression.Identifier classId) {
+			var resolvedClass = ResolveClassFqn(classId.Name);
+			if (resolvedClass != null && _symbols.KnownClasses.Contains(resolvedClass)) {
+				var staticCursor = resolvedClass;
+				while (!string.IsNullOrEmpty(staticCursor)) {
+					if (_symbols.CycleBrokenClasses.Contains(staticCursor)) break;
+					if (_symbols.Fields.TryGetValue(staticCursor, out var staticFields)) {
+						var fld = staticFields.FirstOrDefault(f => f.Name == ma.Member && f.IsStatic);
+						if (fld != null) {
+							if (!_symbols.Classes.TryGetValue(staticCursor, out var owner)) return;
+							if (!CanAccess(fld.Visibility, owner.OwnerModule, staticCursor))
+								SemanticError.VisibilityViolation.WithFile(filePath).WithMessage($"static field '{ma.Member}' on '{staticCursor}' is {VisibilityWord(fld.Visibility)} and not accessible from this scope").Render();
+							return;
+						}
+					}
+					staticCursor = _symbols.ClassVtables.TryGetValue(staticCursor, out var sLayout) ? sLayout.ParentClassFqn ?? "" : "";
+				}
+			}
+		}
+
 		var targetType = _typer.InferType(ma.Target);
 		if (targetType == null) return; // can't infer — skip
 		// Nullable receivers must be unwrapped (via `??` or a future `as`/`as?`) before any
@@ -1732,12 +1853,21 @@ public class SemanticAnalyzer {
 		var endConsumed = new List<HashSet<string>>();
 		var endAliases = new List<Dictionary<string, HashSet<string>>>();
 		var hasDefault = false;
+		// Cases covered by enum-pattern arms (for the exhaustiveness check below).
+		var coveredEnumCases = new HashSet<string>();
+		var discriminantType = _typer.InferType(s.Expression);
+		var discriminantIsEnum = discriminantType != null && _symbols.KnownEnums.Contains(discriminantType);
+
 		foreach (var c in s.Cases) {
 			_deletedNames = new HashSet<string>(preDeleted);
 			_consumedAllPaths = new HashSet<string>(preConsumed);
 			_aliasGroups = SnapshotAliasGroups(preAliases);
 			if (c.Pattern is SwitchPattern.Case cp) {
 				WalkExpr(cp.Expression, filePath);
+				// If the discriminant is an enum, record any `EnumName.CASE` patterns so the
+				// exhaustiveness check can compare against the enum's full case set.
+				if (discriminantIsEnum && cp.Expression is Expression.MemberAccess ma)
+					coveredEnumCases.Add(ma.Member);
 			}
 			else {
 				hasDefault = true;
@@ -1747,6 +1877,14 @@ public class SemanticAnalyzer {
 			endDeleted.Add(_deletedNames);
 			endConsumed.Add(_consumedAllPaths);
 			endAliases.Add(_aliasGroups);
+		}
+
+		// Exhaustiveness: switch over an enum-typed value must cover every case (or carry
+		// a `default:` arm). Missing cases reported once with the list of unmatched names.
+		if (discriminantIsEnum && !hasDefault && _symbols.Enums.TryGetValue(discriminantType!, out var enumInfo)) {
+			var missing = enumInfo.Cases.Where(ec => !coveredEnumCases.Contains(ec.Name)).Select(ec => ec.Name).ToList();
+			if (missing.Count > 0)
+				SemanticError.NonExhaustiveSwitch.WithFile(filePath).WithMessage($"switch over '{discriminantType}' is missing case(s): {string.Join(", ", missing)} — add the missing case arm(s) or a `default:` branch").Render();
 		}
 
 		// No default → implicit fall-through contributes the pre-state.

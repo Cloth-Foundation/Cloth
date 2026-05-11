@@ -19,7 +19,7 @@ public enum BinOp {
 
 	BitAnd,
 	BitOr,
-	BitXor,
+	Pow,
 
 	Shl,
 	Shr,

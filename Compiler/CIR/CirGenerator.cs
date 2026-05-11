@@ -21,6 +21,9 @@ namespace Compiler.CIR;
 public sealed class CirGenerator {
 	private readonly List<CirTypeDecl> _types = [];
 	private readonly List<CirFunction> _functions = [];
+	// Class-level `static`/`const` fields, lifted out of the instance struct and surfaced
+	// as module-level entries. The LLVM emitter produces one global per record.
+	private readonly List<CirStaticField> _staticFields = [];
 
 	// Shared symbol metadata (overloads + known classes) built once over all units before CIR runs.
 	private readonly SymbolRegistry _symbols;
@@ -61,9 +64,28 @@ public sealed class CirGenerator {
 		foreach (var (unit, filePath) in units)
 			LowerUnit(unit, filePath);
 		// Surface every class's vtable layout into the CirModule so the LLVM emitter can
-		// produce the matching globals without re-querying the registry.
-		var vtables = _symbols.ClassVtables.Values.Select(v => new CirVtable(v.ClassFqn, v.ParentClassFqn, v.Slots)).ToList();
-		return new CirModule(_types, _functions, vtables);
+		// produce the matching globals without re-querying the registry. Vtables for
+		// extern classes (defined in a dependency project) are marked so the emitter
+		// produces an `external` declaration instead of a duplicate definition.
+		var vtables = _symbols.ClassVtables.Values.Select(v => {
+			var isExtern = _symbols.Classes.TryGetValue(v.ClassFqn, out var info) && info.IsExtern;
+			return new CirVtable(v.ClassFqn, v.ParentClassFqn, v.Slots, isExtern);
+		}).ToList();
+
+		// Also surface static fields from extern (dependency) classes so the LLVM emitter
+		// produces `external` declarations for them. Local static fields are already in
+		// `_staticFields` (added by `LowerClassDeclaration`).
+		var localStaticKeys = _staticFields.Select(s => $"{s.ClassFqn}.{s.Name}").ToHashSet();
+		foreach (var (classFqn, fieldList) in _symbols.Fields) {
+			if (!_symbols.Classes.TryGetValue(classFqn, out var info) || !info.IsExtern) continue;
+			foreach (var f in fieldList) {
+				if (!f.IsStatic) continue;
+				if (localStaticKeys.Contains($"{classFqn}.{f.Name}")) continue;
+				_staticFields.Add(new CirStaticField(classFqn, f.Name, CanonicalToCirType(f.CanonicalType), Initializer: null, IsConst: f.IsConst, IsExtern: true));
+			}
+		}
+
+		return new CirModule(_types, _functions, vtables, _staticFields);
 	}
 
 	// Walk every cross-project overload registered as `IsCrossProject` and produce a body-less
@@ -127,7 +149,7 @@ public sealed class CirGenerator {
 		decl switch {
 			TypeDeclaration.Class c => LowerClassDeclaration(c.Declaration, moduleFqn, filePath),
 			TypeDeclaration.Struct s => LowerStructDeclaration(s.Declaration, moduleFqn, filePath),
-			TypeDeclaration.Enum e => LowerEnumDeclaration(e.Declaration, moduleFqn),
+			TypeDeclaration.Enum e => LowerEnumDeclaration(e.Declaration, moduleFqn, filePath),
 			TypeDeclaration.Interface { Declaration: var d } => LowerInterfaceDeclaration(d, moduleFqn, filePath),
 			TypeDeclaration.Trait { Declaration: var d } => new CirTypeDecl.Trait(TypeFqn(moduleFqn, d.Name)),
 			_ => throw CirError.UnsupportedTypeDecl.WithMessage($"unhandled type declaration: {decl.GetType().Name}").WithFile(filePath).Render()
@@ -195,23 +217,30 @@ public sealed class CirGenerator {
 			fields.Add(new CirField(p.Name, LowerType(p.Type), IsConst: false, null));
 
 		// Pre-collect declared field initializers so each constructor can emit them as
-		// `this.<field> = <init>` ahead of the user-written body. Source order is preserved
-		// so a later initializer can reference an earlier field via implicit `this`.
-		var fieldInitializers = decl.Members.OfType<MemberDeclaration.Field>().Where(f => f.Declaration.Initializer != null).Select(f => (f.Declaration.Name, f.Declaration.Initializer!)).ToList();
+		// `this.<field> = <init>` ahead of the user-written body. Static fields and
+		// class-level consts don't run through the constructor — they're module-level
+		// globals, initialized once.
+		var fieldInitializers = decl.Members.OfType<MemberDeclaration.Field>()
+			.Where(f => f.Declaration.Initializer != null && !f.Declaration.IsStatic)
+			.Select(f => (f.Declaration.Name, f.Declaration.Initializer!)).ToList();
 
 		var prev = _currentTypeFqn;
 		_currentTypeFqn = typeFqn;
 		try {
-			// Pass 1 — populate the field list (Field + Const) so subsequent function lowering
-			// (and especially the destructor's auto-destruct epilogue) sees the complete layout
-			// regardless of declaration order.
+			// Pass 1 — populate the instance field list so subsequent function lowering (and
+			// especially the destructor's auto-destruct epilogue) sees the complete layout
+			// regardless of declaration order. Static/const declarations are extracted into
+			// `_staticFields` instead — they live at module scope, not in the instance struct.
 			foreach (var member in decl.Members) {
 				switch (member) {
+					case MemberDeclaration.Field f when f.Declaration.IsStatic:
+						_staticFields.Add(new CirStaticField(typeFqn, f.Declaration.Name, LowerType(f.Declaration.TypeExpression), f.Declaration.Initializer == null ? null : LowerExpr(f.Declaration.Initializer), IsConst: f.Declaration.IsConst, IsExtern: false));
+						break;
 					case MemberDeclaration.Field f:
 						fields.Add(LowerField(f.Declaration));
 						break;
 					case MemberDeclaration.Const c:
-						fields.Add(new CirField(c.Declaration.Name, LowerType(c.Declaration.Type), IsConst: true, c.Declaration.Value is null ? null : LowerExpr(c.Declaration.Value)));
+						_staticFields.Add(new CirStaticField(typeFqn, c.Declaration.Name, LowerType(c.Declaration.Type), c.Declaration.Value == null ? null : LowerExpr(c.Declaration.Value), IsConst: true, IsExtern: false));
 						break;
 				}
 			}
@@ -270,10 +299,87 @@ public sealed class CirGenerator {
 		return new CirTypeDecl.Struct(typeFqn, fields);
 	}
 
-	private CirTypeDecl LowerEnumDeclaration(EnumDeclaration decl, string moduleFqn) {
+	private CirTypeDecl LowerEnumDeclaration(EnumDeclaration decl, string moduleFqn, string filePath) {
 		var typeFqn = TypeFqn(moduleFqn, decl.Name);
-		var cases = decl.Cases.Select(c => new CirEnumCase(c.Name, c.Discriminant is null ? null : LowerExpr(c.Discriminant), c.Payload.Select(LowerType).ToList())).ToList();
-		return new CirTypeDecl.Enum(typeFqn, cases);
+
+		// Lower constructor parameters and cases. Each case's argument list is lowered in
+		// the enum's lexical context so identifier references (e.g. between cases) resolve.
+		var cirParams = decl.Parameters.Select(p => new CirEnumParam(p.Name, LowerType(p.Type))).ToList();
+
+		var prev = _currentTypeFqn;
+		_currentTypeFqn = typeFqn;
+		var cirCases = new List<CirEnumCase>();
+		try {
+			foreach (var c in decl.Cases) {
+				var args = c.ConstructorArgs.Select(LowerExpr).ToList();
+				cirCases.Add(new CirEnumCase(c.Name, c.Ordinal, args));
+			}
+
+			// Synthesize one getter per declared parameter (`get<Capitalized>(): T`), plus
+			// the built-in `getOrdinal(): i32` and `name(): string`. Each getter loads from
+			// the corresponding field on the enum struct (the receiver is `ptr to enum`).
+			foreach (var p in decl.Parameters)
+				_functions.Add(SynthesizeEnumGetter(typeFqn, p.Name, LowerType(p.Type)));
+			_functions.Add(SynthesizeEnumGetter(typeFqn, EnumOrdinalField, new CirType.Named("i32"), getterName: "getOrdinal"));
+			_functions.Add(SynthesizeEnumGetter(typeFqn, EnumNameField, new CirType.Named("string"), getterName: "name"));
+
+			// Stub `valueOf(string): EnumType?` — the actual body is synthesized at LLVM
+			// emission time (chained strcmp). Recording it here gives EmitCall the right
+			// signature for return-type and parameter-type resolution.
+			var valueOfMangled = MangleMethod(typeFqn, "valueOf", new List<string> { "string" });
+			_functions.Add(new CirFunction(
+				valueOfMangled,
+				CirFunctionKind.EnumValueOf,
+				[new CirParam(new CirType.Named("string"), "name")],
+				new CirType.Ptr(new CirType.Named(typeFqn)),
+				new List<CirStmt>(),
+				IsExtern: false,
+				IsStatic: true));
+
+			// User-declared methods, fragments, nested types — lower through the existing
+			// class-member machinery. Constructors and destructors aren't legal on enums
+			// (singletons have no user-callable lifecycle); we accept them silently for v1
+			// and a follow-up adds the analyzer-side rejection.
+			foreach (var member in decl.Members)
+				LowerNonFieldMember(member, typeFqn, new List<Parameter>(), decl.Name, filePath, new List<CirField>(), new List<(string, Expression)>());
+		}
+		finally {
+			_currentTypeFqn = prev;
+		}
+
+		return new CirTypeDecl.Enum(typeFqn, cirParams, cirCases);
+	}
+
+	// Synthesized field names for the two built-in slots on every enum struct: the
+	// position-based ordinal (0-based) and the variant's own name as a string. Named
+	// with double-underscore prefixes so they can't collide with user-declared params.
+	internal const string EnumOrdinalField = "__ordinal__";
+	internal const string EnumNameField = "__name__";
+
+	// Resolve a raw identifier to a known enum FQN. importMap → direct → same-module.
+	// Mirrors the typer's `ResolveEnumFqn`.
+	private string? ResolveEnumFqnLocal(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownEnums.Contains(mapped)) return mapped;
+		if (_symbols.KnownEnums.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownEnums.Contains(sameModule)) return sameModule;
+		}
+		return null;
+	}
+
+	// Emit a `<EnumFqn>.<getter>(this) → T` function whose body loads the named field
+	// from the enum struct via `this`. Used for user parameters (PascalCase getters like
+	// `getAverage`) and the built-in ones (`getOrdinal`, `name`). When `getterName` is
+	// null, the user-facing name is derived from `fieldName` (`average` → `getAverage`).
+	private CirFunction SynthesizeEnumGetter(string enumFqn, string fieldName, CirType returnType, string? getterName = null) {
+		var name = getterName ?? "get" + char.ToUpperInvariant(fieldName[0]) + fieldName[1..];
+		var mangled = MangleMethod(enumFqn, name, new List<string>());
+		var thisParam = new CirParam(new CirType.Ptr(new CirType.Named(enumFqn)), "this");
+		var body = new List<CirStmt> {
+			new CirStmt.Return(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), fieldName))
+		};
+		return new CirFunction(mangled, CirFunctionKind.Method, [thisParam], returnType, body, IsExtern: false, IsStatic: false);
 	}
 
 	// -------------------------------------------------------------------------
@@ -523,6 +629,36 @@ public sealed class CirGenerator {
 	// CirType.Named where the LLVM emitter handles the actual type lowering.
 	private static CirType CanonicalToCirType(string canonical) =>
 		canonical == "void" ? new CirType.Void() : new CirType.Named(canonical);
+
+	// `target.member` → either an EnumCaseRef (when target names an enum and member is a
+	// case), a StaticFieldRef (when target is a class identifier and member is a
+	// static/const field), or a FieldAccess (instance member). Each path is checked in
+	// turn; the first match wins.
+	private CirExpr LowerMemberAccess(Expression.MemberAccess ma) {
+		if (ma.Target is Expression.Identifier enumId) {
+			var resolvedEnum = ResolveEnumFqnLocal(enumId.Name);
+			if (resolvedEnum != null && _symbols.Enums.TryGetValue(resolvedEnum, out var enumInfo)) {
+				if (enumInfo.Cases.Any(c => c.Name == ma.Member))
+					return new CirExpr.EnumCaseRef(resolvedEnum, ma.Member);
+			}
+		}
+		if (ma.Target is Expression.Identifier classId) {
+			var resolvedClass = _importMap.TryGetValue(classId.Name, out var mapped) ? mapped : classId.Name;
+			if (_symbols.KnownClasses.Contains(resolvedClass)) {
+				var cursor = resolvedClass;
+				while (!string.IsNullOrEmpty(cursor)) {
+					if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
+					if (_symbols.Fields.TryGetValue(cursor, out var fields)) {
+						var fld = fields.FirstOrDefault(f => f.Name == ma.Member && f.IsStatic);
+						if (fld != null)
+							return new CirExpr.StaticFieldRef(cursor, ma.Member, CanonicalToCirType(fld.CanonicalType));
+					}
+					cursor = _symbols.ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
+				}
+			}
+		}
+		return new CirExpr.FieldAccess(LowerExpr(ma.Target), ma.Member);
+	}
 
 	// Lower an `as` / `as?` cast based on source/target kinds. Three runtime shapes:
 	//   - Primitive ↔ primitive → CirExpr.Cast (existing widening / narrowing path).
@@ -797,7 +933,7 @@ public sealed class CirGenerator {
 		Expression.Unary { Operator: var op, Operand: var o } => new CirExpr.Unary(LowerUnOp(op), LowerExpr(o)),
 		Expression.Postfix { Operand: var o, Operator: var op } => new CirExpr.Unary(LowerPostOp(op), LowerExpr(o)),
 		Expression.Call c => LowerCall(c),
-		Expression.MemberAccess { Target: var t, Member: var m } => new CirExpr.FieldAccess(LowerExpr(t), m),
+		Expression.MemberAccess ma => LowerMemberAccess(ma),
 		Expression.MetaAccess { Target: var t, Member: var m } => new CirExpr.StaticAccess(ResolveExprPath(t), m),
 		Expression.Index { Target: var t, IndexExpr: var i } => new CirExpr.Index(LowerExpr(t), LowerExpr(i)),
 		Expression.Cast cExpr => LowerCastExpr(cExpr),
@@ -819,6 +955,14 @@ public sealed class CirGenerator {
 			return new CirExpr.Local(fqn); // imported name — caller context determines call vs value
 		if (_typer.TryGetLocalType(name, out _))
 			return new CirExpr.Local(name);
+		// Bare identifier matching a static field on the enclosing class. This makes
+		// sibling static fields visible in initializer expressions (`HALF_PI = PI / 2.0`),
+		// where `PI` isn't qualified but refers to another class-level static.
+		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var ownFields)) {
+			var staticHit = ownFields.FirstOrDefault(f => f.Name == name && f.IsStatic);
+			if (staticHit != null)
+				return new CirExpr.StaticFieldRef(_currentTypeFqn, name, CanonicalToCirType(staticHit.CanonicalType));
+		}
 		// Implicit `this.<field>`: bare identifier with no local in scope, but the enclosing
 		// class declares a field by that name.
 		if (!string.IsNullOrEmpty(_currentTypeFqn) && _symbols.Fields.TryGetValue(_currentTypeFqn, out var fields) && fields.Any(f => f.Name == name))
@@ -890,6 +1034,14 @@ public sealed class CirGenerator {
 						if (resolved != null) return BuildOverloadCall(resolved, call.Arguments, args);
 						return new CirExpr.Call(calleeFqn, args);
 					}
+					// Static call on an enum identifier: `EnumName.valueOf("MARK")`. Routes to
+					// the synthesized static method on the enum's FQN (no `this`-prepend).
+					var resolvedEnum = ResolveEnumFqnLocal(id.Name);
+					if (resolvedEnum != null) {
+						var calleeFqn = $"{resolvedEnum}.{ma.Member}";
+						var resolved = _typer.ResolveOverload(calleeFqn, call.Arguments);
+						if (resolved != null) return BuildOverloadCall(resolved, call.Arguments, args);
+					}
 				}
 
 				// obj.method(args) — instance dispatch. Two paths depending on the receiver's
@@ -925,6 +1077,19 @@ public sealed class CirGenerator {
 					}
 
 					return new CirExpr.Call($"{receiverType}.{ma.Member}", allArgs);
+				}
+
+				// Instance dispatch on an enum receiver — auto-getters and user-declared
+				// methods both live as overloads on the enum's FQN; no inheritance chain to
+				// walk. Direct call into the synthesized or user-written method.
+				if (receiverType != null && _symbols.KnownEnums.Contains(receiverType)) {
+					var calleeFqn = $"{receiverType}.{ma.Member}";
+					var resolved = _typer.ResolveOverload(calleeFqn, call.Arguments);
+					if (resolved != null) {
+						var promotedArgs = new List<CirExpr> { target };
+						promotedArgs.AddRange(BuildOverloadCallArgs(resolved, call.Arguments, args));
+						return new CirExpr.Call(resolved.MangledSymbol, promotedArgs);
+					}
 				}
 
 				if (receiverType != null && _symbols.KnownInterfaces.Contains(receiverType)) {
@@ -1218,7 +1383,7 @@ public sealed class CirGenerator {
 		BinOp.Or => CirBinOp.Or,
 		BinOp.BitAnd => CirBinOp.BitAnd,
 		BinOp.BitOr => CirBinOp.BitOr,
-		BinOp.BitXor => CirBinOp.BitXor,
+		BinOp.Pow => CirBinOp.Pow,
 		BinOp.Shl => CirBinOp.Shl,
 		BinOp.Shr => CirBinOp.Shr,
 		BinOp.Eq => CirBinOp.Eq,
@@ -1255,7 +1420,7 @@ public sealed class CirGenerator {
 		AssignOp.RemAssign => CirAssignOp.RemAssign,
 		AssignOp.AndAssign => CirAssignOp.AndAssign,
 		AssignOp.OrAssign => CirAssignOp.OrAssign,
-		AssignOp.XorAssign => CirAssignOp.XorAssign,
+		AssignOp.PowAssign => CirAssignOp.PowAssign,
 		_ => throw new ArgumentOutOfRangeException(nameof(op))
 	};
 

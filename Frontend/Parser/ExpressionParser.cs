@@ -134,19 +134,23 @@ internal sealed class ExpressionParser(Parser parser) {
 				case Operator.Minus:
 				{
 					parser.Advance();
-					var inner = ParseExprPrecedence(24);
+					// Prefix bp 26 binds tighter than `^` (lbp 25) so `-10 ^ 2` groups as
+					// `(-10) ^ 2`, matching calculator-style math conventions. The infix
+					// loop continues when `lbp >= minBp`, so the operand parser must use
+					// a threshold *strictly greater* than `^`'s lbp.
+					var inner = ParseExprPrecedence(26);
 					return new Expression.Unary(UnOp.Neg, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.Not:
 				{
 					parser.Advance();
-					var inner = ParseExprPrecedence(24);
+					var inner = ParseExprPrecedence(26);
 					return new Expression.Unary(UnOp.Not, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.Tilde:
 				{
 					parser.Advance();
-					var inner = ParseExprPrecedence(24);
+					var inner = ParseExprPrecedence(26);
 					return new Expression.Unary(UnOp.BitNot, inner, TokenSpan.Merge(start, inner.Span));
 				}
 				case Operator.PlusPlus:
@@ -240,7 +244,7 @@ internal sealed class ExpressionParser(Parser parser) {
 				{
 					parser.Advance();
 					var r = ParseExprPrecedence(rbp);
-					return new Expression.Binary(left, BinOp.BitXor, r, TokenSpan.Merge(leftSpan, r.Span));
+					return new Expression.Binary(left, BinOp.Pow, r, TokenSpan.Merge(leftSpan, r.Span));
 				}
 				case Operator.Less:
 				{
@@ -432,7 +436,7 @@ internal sealed class ExpressionParser(Parser parser) {
 		Operator.PercentEqual => AssignOp.RemAssign,
 		Operator.AndEqual => AssignOp.AndAssign,
 		Operator.OrEqual => AssignOp.OrAssign,
-		Operator.CaretEqual => AssignOp.XorAssign,
+		Operator.CaretEqual => AssignOp.PowAssign,
 		_ => null
 	};
 
@@ -463,7 +467,10 @@ internal sealed class ExpressionParser(Parser parser) {
 		(TokenType.Operator, Operator.Less, _) => (20, 21),
 		(TokenType.Operator, Operator.Greater, _) => (20, 21),
 		(TokenType.Operator, Operator.And, _) => (18, 19),
-		(TokenType.Operator, Operator.Caret, _) => (16, 17),
+		// `^` is power, right-associative (lbp > rbp), and binds tighter than `*`/`/`/`%`
+		// so `(-10) ^ 2 % 3` groups as `((-10) ^ 2) % 3`. Unary `-` (handled by the prefix
+		// parser, not this infix table) still binds tighter, keeping `-10 ^ 2` as `(-10) ^ 2`.
+		(TokenType.Operator, Operator.Caret, _) => (25, 24),
 		(TokenType.Operator, Operator.Or, _) => (14, 15),
 		(TokenType.Operator, Operator.LessEqual, _) => (12, 13),
 		(TokenType.Operator, Operator.GreaterEqual, _) => (12, 13),

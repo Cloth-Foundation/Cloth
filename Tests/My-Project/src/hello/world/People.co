@@ -1,0 +1,9 @@
+module hello.world;
+
+public enum (f64 average, i32 age, string name) {
+
+    MARK = (175.5, 25, "Mark"),
+    JAMES = (160.0, 26, "James"),
+    MARY = (144.0, 31, "Mary");
+
+}

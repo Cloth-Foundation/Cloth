@@ -65,6 +65,10 @@ public class SemanticError : Exception {
 	public static readonly SemanticError PrototypeFuncExtern = new("S029", "prototype function cannot also be @Extern", true);
 	public static readonly SemanticError PrototypeFuncPrivate = new("S02A", "prototype function cannot be private", true);
 	public static readonly SemanticError ClassInheritanceCycle = new("S02B", "class inheritance forms a cycle", true);
+	public static readonly SemanticError EnumCaseArgMismatch = new("S02C", "enum case argument count doesn't match the constructor signature", true);
+	public static readonly SemanticError EnumCaseNonConst = new("S02D", "enum case argument is not a compile-time constant", true);
+	public static readonly SemanticError DuplicateEnumCase = new("S02E", "duplicate enum case name", true);
+	public static readonly SemanticError NonExhaustiveSwitch = new("S02F", "switch over an enum-typed value is not exhaustive", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 

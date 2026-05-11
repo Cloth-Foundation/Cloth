@@ -285,30 +285,56 @@ public class Parser {
 		var start = _current.Span;
 		ExpectKeyword(Keyword.Enum);
 		var name = ResolveTypeDeclName(nested);
+
+		// Optional constructor signature: `enum (T param, ...) { ... }`. When omitted,
+		// cases are bare identifiers; otherwise each case must supply matching args via
+		// `= (expr, ...)`. Mirrors the class primary-parameter parse path.
+		var parameters = new List<Parameter>();
+		if (CheckOperator(Operator.LParen)) {
+			Advance();
+			parameters = ParseParameters();
+			ExpectOperator(Operator.RParen);
+		}
+
 		ExpectOperator(Operator.LBrace);
 		var cases = new List<EnumDeclaration.EnumCase>();
-		while (!CheckOperator(Operator.RBrace) && !AtEof()) {
+		var ordinal = 0;
+		while (!CheckOperator(Operator.RBrace) && !CheckOperator(Operator.Semicolon) && !AtEof()) {
 			var caseStart = _current.Span;
 			var caseName = ExpectIdentifier();
-			Expression? discriminant = null;
-			var payload = new List<TypeExpression>();
+			var ctorArgs = new List<Expression>();
 			if (ConsumeOp(Operator.Equal)) {
-				// TODO: parse discriminant expression
-				while (!CheckOperator(Operator.Comma) && !CheckOperator(Operator.RBrace) && !AtEof()) Advance();
-			}
-			else if (CheckOperator(Operator.LParen)) {
-				Advance(); // consume '('
-				payload.Add(ParseTypeExpression());
-				while (ConsumeOp(Operator.Comma)) payload.Add(ParseTypeExpression());
+				ExpectOperator(Operator.LParen);
+				if (!CheckOperator(Operator.RParen)) {
+					ctorArgs.Add(ExpressionParser.ParseExpression());
+					while (ConsumeOp(Operator.Comma)) ctorArgs.Add(ExpressionParser.ParseExpression());
+				}
 				ExpectOperator(Operator.RParen);
 			}
 
-			cases.Add(new EnumDeclaration.EnumCase(caseName, discriminant, payload, TokenSpan.Merge(caseStart, Previous().Span)));
+			cases.Add(new EnumDeclaration.EnumCase(caseName, ctorArgs, ordinal++, TokenSpan.Merge(caseStart, Previous().Span)));
 			if (!ConsumeOp(Operator.Comma)) break;
 		}
 
+		// Optional `;` separates the case list from a body of methods/etc. Java convention;
+		// omitting it is fine when no body members follow.
+		ConsumeOp(Operator.Semicolon);
+
+		// Track the enum being parsed so member-body code (constructor-name detection
+		// inside ParseMembers) sees the right name. Enums don't declare a user-callable
+		// constructor, but the field reuses the class-name machinery.
+		var previousClassName = _currentClassName;
+		_currentClassName = name;
+		List<MemberDeclaration> members;
+		try {
+			members = ParseMembers();
+		}
+		finally {
+			_currentClassName = previousClassName;
+		}
+
 		ExpectOperator(Operator.RBrace);
-		return new EnumDeclaration(visibility, name, cases, TokenSpan.Merge(start, Previous().Span));
+		return new EnumDeclaration(visibility, name, parameters, cases, members, TokenSpan.Merge(start, Previous().Span));
 	}
 
 	private InterfaceDeclaration ParseInterfaceDeclaration(Visibility visibility, bool nested = false) {
@@ -494,7 +520,12 @@ public class Parser {
 				members.Add(new MemberDeclaration.Constructor(ParseConstructorDecl(annotations, visibility)));
 			}
 			else {
-				members.Add(new MemberDeclaration.Field(ParseFieldDecl(annotations, visibility)));
+				// `const` and `static` are surfaced from the function-modifier list because
+				// they're consumed BEFORE the member-kind dispatch can decide field vs. const
+				// vs. function. A class-level `const` field is inherently per-class (static).
+				var isConstField = modifiers.Contains(FunctionModifiers.Const);
+				var isStaticField = modifiers.Contains(FunctionModifiers.Static) || isConstField;
+				members.Add(new MemberDeclaration.Field(ParseFieldDecl(annotations, visibility, isStaticField, isConstField)));
 			}
 		}
 
@@ -614,7 +645,7 @@ public class Parser {
 	/// A <see cref="FieldDeclaration"/> object containing metadata, syntax components,
 	/// and token span for the parsed field declaration.
 	/// </returns>
-	private FieldDeclaration ParseFieldDecl(List<TraitAnnotation> annotations, Visibility visibility) {
+	private FieldDeclaration ParseFieldDecl(List<TraitAnnotation> annotations, Visibility visibility, bool isStatic, bool isConst) {
 		var start = _current.Span;
 
 		FieldModifiers? modifier = null;
@@ -627,7 +658,7 @@ public class Parser {
 			initializer = ExpressionParser.ParseExpression();
 
 		var end = ExpectSemiColon();
-		return new FieldDeclaration(annotations, visibility, modifier, type, name, initializer, null, TokenSpan.Merge(start, end));
+		return new FieldDeclaration(annotations, visibility, modifier, isStatic, isConst, type, name, initializer, null, TokenSpan.Merge(start, end));
 	}
 
 	/// <summary>
@@ -650,11 +681,13 @@ public class Parser {
 		var name = ExpectIdentifier();
 		ExpectOperator(Operator.Equal);
 
-		// TODO: parse value expression; skip to ';' for now
-		while (!CheckOperator(Operator.Semicolon) && !AtEof()) Advance();
+		// Parse the value expression. The expression must constant-fold at compile time
+		// (literal, or arithmetic on other compile-time-known constants); the validation
+		// of that happens in the semantic phase, not here.
+		var value = ExpressionParser.ParseExpression();
 
 		var end = ExpectSemiColon();
-		return new ConstantDeclaration(visibility, isStatic, type, name, null, null, TokenSpan.Merge(start, end));
+		return new ConstantDeclaration(visibility, isStatic, type, name, value, null, TokenSpan.Merge(start, end));
 	}
 
 	/// <summary>

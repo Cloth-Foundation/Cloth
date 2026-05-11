@@ -38,6 +38,17 @@ public abstract record CirExpr {
 	// Type::member (static/meta access)
 	public sealed record StaticAccess(string TypeFqn, string MemberName) : CirExpr;
 
+	// Reference to a class-level `static` or `const` field. Lowers to a load from the
+	// `@<mangled-fqn>` global emitted alongside the class's vtable. `Type` carries the
+	// field's declared type so the emitter knows how wide the load is.
+	public sealed record StaticFieldRef(string ClassFqn, string Name, CirType Type) : CirExpr;
+
+	// Reference to a specific enum case singleton. Lowers to the pointer to the per-case
+	// global emitted by the LLVM enum pass (`@enum.<fqn>.<CASE>`). Carrying the enum FQN
+	// lets the emitter resolve the symbol name; carrying the case name lets it pick the
+	// right global within the enum's set.
+	public sealed record EnumCaseRef(string EnumFqn, string CaseName) : CirExpr;
+
 	public sealed record Index(CirExpr Target, CirExpr Idx) : CirExpr;
 
 	// Direct call to a mangled global function name
@@ -89,7 +100,7 @@ public enum CirBinOp {
 	Or,
 	BitAnd,
 	BitOr,
-	BitXor,
+	Pow,
 	Shl,
 	Shr,
 	Eq,
@@ -121,5 +132,5 @@ public enum CirAssignOp {
 	RemAssign,
 	AndAssign,
 	OrAssign,
-	XorAssign
+	PowAssign
 }

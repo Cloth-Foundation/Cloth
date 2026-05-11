@@ -18,5 +18,5 @@ public enum AssignOp {
 
 	AndAssign,
 	OrAssign,
-	XorAssign
+	PowAssign
 }

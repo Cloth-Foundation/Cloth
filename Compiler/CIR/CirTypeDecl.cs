@@ -13,7 +13,7 @@ public abstract record CirTypeDecl {
 
 	public sealed record Struct(string FullyQualifiedName, List<CirField> Fields) : CirTypeDecl;
 
-	public sealed record Enum(string FullyQualifiedName, List<CirEnumCase> Cases) : CirTypeDecl;
+	public sealed record Enum(string FullyQualifiedName, List<CirEnumParam> Parameters, List<CirEnumCase> Cases) : CirTypeDecl;
 
 	// Interfaces and Traits emit no layout; kept as stubs for vtable generation.
 	public sealed record Interface(string FullyQualifiedName) : CirTypeDecl;
@@ -23,4 +23,12 @@ public abstract record CirTypeDecl {
 
 public sealed record CirField(string Name, CirType Type, bool IsConst, CirExpr? Initializer);
 
-public sealed record CirEnumCase(string Name, CirExpr? Discriminant, List<CirType> Payload);
+// One declared parameter on an enum's constructor signature. Mirrors a class primary
+// parameter but lives at module scope (enum globals are constants, not instance fields).
+public sealed record CirEnumParam(string Name, CirType Type);
+
+// One variant of an enum. `Ordinal` is the position-based identity (0-based) used by
+// `getOrdinal()` and the `<`/`<=`/`>`/`>=` ordering operators. `ConstructorArgs` holds
+// already-lowered values matching the enum's parameter signature (empty when the enum
+// has no constructor).
+public sealed record CirEnumCase(string Name, int Ordinal, List<CirExpr> ConstructorArgs);

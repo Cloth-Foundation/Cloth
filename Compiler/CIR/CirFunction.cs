@@ -18,5 +18,9 @@ public enum CirFunctionKind {
 	Destructor,
 	Method,
 	Fragment,
-	StaticMethod
+	StaticMethod,
+	// Compiler-synthesized: body is generated directly at LLVM emission time, not
+	// lowered from source. Used for auto-generated enum helpers like `valueOf(string)`
+	// whose implementation calls libc (`strcmp`) and doesn't fit the Cloth CIR.
+	EnumValueOf
 }
