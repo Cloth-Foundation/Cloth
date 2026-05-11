@@ -72,6 +72,15 @@ public sealed class SymbolRegistry {
 	// argument shapes wherever annotations are attached.
 	public Dictionary<string, TraitInfo> Traits { get; } = new();
 
+	// Fully-qualified enum names known to the compilation. Separate from classes so the
+	// typer / analyzer can recognize `EnumName.CASE` and route through the static-case
+	// resolution path instead of an instance member access.
+	public HashSet<string> KnownEnums { get; } = new();
+
+	// Enum FQN → parameters + cases. Populated in pass 1/2. Each case knows its ordinal
+	// (position-based) and the constructor-argument expressions to be folded at codegen.
+	public Dictionary<string, EnumInfo> Enums { get; } = new();
+
 	// Global slot ID per (interface FQN, method-canonical-key). Every interface method
 	// occupies a unique slot in every class's vtable; classes that don't implement that
 	// method have null in their slot. Slot IDs are assigned during pass 3 in declaration
@@ -156,8 +165,20 @@ public sealed class SymbolRegistry {
 				case TypeDeclaration.Trait { Declaration: var t }:
 					RegisterTraitNameRecursive(t, moduleFqn, asExtern);
 					break;
+				case TypeDeclaration.Enum { Declaration: var e }:
+					RegisterEnumNameRecursive(e, moduleFqn, asExtern);
+					break;
 			}
 		}
+	}
+
+	private void RegisterEnumNameRecursive(EnumDeclaration e, string outerFqn, bool asExtern) {
+		var typeFqn = TypeFqn(outerFqn, e.Name);
+		KnownEnums.Add(typeFqn);
+		var ownerModule = ComputeModuleFqn(outerFqn);
+		// Parameters/Cases get filled in pass 2 once type names from other units are
+		// resolvable. Stash an empty shell here so cross-unit references see the FQN.
+		Enums[typeFqn] = new EnumInfo(e.Visibility, ownerModule, asExtern, new List<EnumParameter>(), new List<EnumCaseInfo>());
 	}
 
 	private void RegisterClassNameRecursive(ClassDeclaration c, string outerFqn, bool asExtern, bool outerIsClass = false) {
@@ -217,6 +238,89 @@ public sealed class SymbolRegistry {
 				case TypeDeclaration.Trait { Declaration: var t }:
 					RegisterTraitElementsRecursive(t, moduleFqn, importMap);
 					break;
+				case TypeDeclaration.Enum { Declaration: var e }:
+					RegisterEnumMembers(e, moduleFqn, asExtern, importMap);
+					break;
+			}
+		}
+	}
+
+	// Pass-2 work for an enum: resolve parameter types, fill the `Enums[fqn]` entry,
+	// register each parameter as a static field on the enum's FQN so the existing
+	// field-access machinery finds it, and register one auto-generated getter overload
+	// per parameter plus the built-in `getOrdinal()` / `name()` / `values()` / `valueOf(string)`.
+	private void RegisterEnumMembers(EnumDeclaration e, string moduleFqn, bool asExtern, Dictionary<string, string> importMap) {
+		var typeFqn = TypeFqn(moduleFqn, e.Name);
+		Func<string, string?> resolveClass = raw => ResolveClassName(raw, importMap, moduleFqn, typeFqn) ?? ResolveInterfaceName(raw, importMap, moduleFqn, typeFqn);
+
+		var canonParams = new List<EnumParameter>();
+		var fieldList = Fields.TryGetValue(typeFqn, out var existing) ? existing : (Fields[typeFqn] = new List<FieldInfo>());
+
+		// Built-in fields (positions 0/1 on the enum struct): ordinal and the variant's
+		// own name as a string. Registered first so they appear before user parameters.
+		fieldList.Add(new FieldInfo("__ordinal__", "i32", Visibility.Public, IsStatic: false, IsConst: true, OwnerClass: typeFqn));
+		fieldList.Add(new FieldInfo("__name__", "string", Visibility.Public, IsStatic: false, IsConst: true, OwnerClass: typeFqn));
+
+		foreach (var p in e.Parameters) {
+			var canon = TypeInference.CanonicalizeTypeExpression(p.Type, resolveClass);
+			canonParams.Add(new EnumParameter(p.Name, canon, Visibility.Public));
+			fieldList.Add(new FieldInfo(p.Name, canon, Visibility.Public, IsStatic: false, IsConst: true, OwnerClass: typeFqn));
+		}
+
+		var caseInfos = e.Cases.Select(c => new EnumCaseInfo(c.Name, c.Ordinal, c.ConstructorArgs)).ToList();
+		Enums[typeFqn] = new EnumInfo(e.Visibility, moduleFqn, asExtern, canonParams, caseInfos);
+
+		// Auto-generated getters: `get<Capitalized>()` per declared parameter plus the
+		// two built-ins. Mangling follows the same scheme as class methods so cross-project
+		// dispatch lines up at link time.
+		void AddGetter(string getterName, string returnCanon) {
+			var fqn = $"{typeFqn}.{getterName}";
+			if (!Overloads.TryGetValue(fqn, out var list))
+				Overloads[fqn] = list = new();
+			var symbol = MangleMethod(typeFqn, getterName, new List<string>());
+			list.Add(new MethodOverload(symbol, new List<string>(), new List<OwnershipModifier?>(), returnCanon, IsExtern: false, IsCrossProject: asExtern, e.Visibility, typeFqn, moduleFqn, IsStatic: false, IsPrototype: false));
+		}
+		foreach (var p in canonParams)
+			AddGetter("get" + char.ToUpperInvariant(p.Name[0]) + p.Name[1..], p.CanonicalType);
+		AddGetter("getOrdinal", "i32");
+		AddGetter("name", "string");
+
+		// Static `valueOf(string): <EnumFqn>?` — lookup-by-name. Returns the matching
+		// case singleton, or null when no case has the supplied name. The LLVM emitter
+		// synthesizes the body inline (chained strcmp); the registry just records the
+		// overload so call sites resolve. Nullable return is signalled by the canonical
+		// `<fqn>?` suffix (matches `T?` syntax elsewhere).
+		void AddStaticMethod(string methodName, List<string> paramTypes, string returnCanon) {
+			var methodFqn = $"{typeFqn}.{methodName}";
+			if (!Overloads.TryGetValue(methodFqn, out var list))
+				Overloads[methodFqn] = list = new();
+			var paramOwnership = new List<OwnershipModifier?>();
+			for (var i = 0; i < paramTypes.Count; i++) paramOwnership.Add(null);
+			var symbol = MangleMethod(typeFqn, methodName, paramTypes);
+			list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnCanon, IsExtern: false, IsCrossProject: asExtern, e.Visibility, typeFqn, moduleFqn, IsStatic: true, IsPrototype: false));
+		}
+		AddStaticMethod("valueOf", new List<string> { "string" }, $"{typeFqn}?");
+
+		// User-declared body members (methods, fragments, nested types). Re-route through
+		// the class-member registration path with the enum's FQN as the owner so the same
+		// overload-list machinery applies. Constructors / destructors are rejected at the
+		// analyzer layer; here we silently skip them.
+		foreach (var member in e.Members) {
+			switch (member) {
+				case MemberDeclaration.Method { Declaration: var m }:
+				{
+					var externSymbol = TryGetExternSymbol(m.Annotations);
+					var methodFqn = $"{typeFqn}.{m.Name}";
+					var paramTypes = m.Parameters.Select(pp => TypeInference.CanonicalizeTypeExpression(pp.Type, resolveClass)).ToList();
+					var paramOwnership = m.Parameters.Select(pp => pp.Type.Ownership).ToList();
+					var returnTypeCanonical = TypeInference.CanonicalizeTypeExpression(m.ReturnType, resolveClass);
+					var symbol = externSymbol ?? MangleMethod(typeFqn, m.Name, paramTypes);
+					if (!Overloads.TryGetValue(methodFqn, out var list))
+						Overloads[methodFqn] = list = new();
+					list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnTypeCanonical, externSymbol != null, asExtern, m.Visibility, typeFqn, moduleFqn, m.Modifiers.Contains(FunctionModifiers.Static), m.Modifiers.Contains(FunctionModifiers.Prototype)));
+					if (asExtern) ExternMethodSymbols.Add(symbol);
+					break;
+				}
 			}
 		}
 	}
@@ -270,7 +374,18 @@ public sealed class SymbolRegistry {
 					var fieldType = TypeInference.CanonicalizeTypeExpression(f.TypeExpression, resolveClass);
 					if (!Fields.TryGetValue(typeFqn, out var fieldList))
 						Fields[typeFqn] = fieldList = new();
-					fieldList.Add(new FieldInfo(f.Name, fieldType, f.Visibility));
+					fieldList.Add(new FieldInfo(f.Name, fieldType, f.Visibility, IsStatic: f.IsStatic, IsConst: f.IsConst, OwnerClass: typeFqn));
+					break;
+				}
+				case MemberDeclaration.Const { Declaration: var cf }:
+				{
+					// Class-level `const` is inherently per-class, not per-instance — register
+					// in Fields with IsStatic + IsConst so MemberAccess on `ClassName.FIELD`
+					// resolves the same way `static` does.
+					var fieldType = TypeInference.CanonicalizeTypeExpression(cf.Type, resolveClass);
+					if (!Fields.TryGetValue(typeFqn, out var fieldList))
+						Fields[typeFqn] = fieldList = new();
+					fieldList.Add(new FieldInfo(cf.Name, fieldType, cf.Visibility, IsStatic: true, IsConst: true, OwnerClass: typeFqn));
 					break;
 				}
 				case MemberDeclaration.Constructor { Declaration: var ctor }:
@@ -834,7 +949,10 @@ public sealed class SymbolRegistry {
 public sealed record MethodOverload(string MangledSymbol, List<string> ParamTypes, List<OwnershipModifier?> ParamOwnership, string ReturnType, bool IsExtern, bool IsCrossProject, Visibility Visibility, string OwnerClass, string OwnerModule, bool IsStatic = false, bool IsPrototype = false);
 
 // One declared instance field on a class. CanonicalType is post-alias (e.g. "i32").
-public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility);
+// Per-field metadata. `IsStatic` is set for `static`-modifier instance-class fields AND
+// for class-level `const` fields (which are inherently per-class, not per-instance). The
+// `OwnerClass` lets the codegen mangle a unique LLVM global symbol per (class, field).
+public sealed record FieldInfo(string Name, string CanonicalType, Visibility Visibility, bool IsStatic = false, bool IsConst = false, string OwnerClass = "");
 
 // A constructor's signature + ownership metadata. Constructors aren't routed through
 // `Overloads` because their lookup shape (Expression.New on a class) is distinct.
@@ -865,6 +983,15 @@ public sealed record InterfaceMethodSig(string Name, List<string> ParamTypes, Li
 // Trait metadata. Path B: a trait declares a custom annotation; Elements lists the
 // annotation's typed parameters (with optional defaults).
 public sealed record TraitInfo(Visibility Visibility, string OwnerModule, bool IsExtern, List<TraitElementInfo> Elements);
+
+// Enum metadata. `Parameters` is the constructor signature (the `(T name, ...)` clause
+// after `enum`); each `Cases` entry supplies argument expressions matching that
+// signature. `Ordinal` on each case is position-based, 0-based.
+public sealed record EnumInfo(Visibility Visibility, string OwnerModule, bool IsExtern, List<EnumParameter> Parameters, List<EnumCaseInfo> Cases);
+
+public sealed record EnumParameter(string Name, string CanonicalType, Visibility Visibility);
+
+public sealed record EnumCaseInfo(string Name, int Ordinal, List<FrontEnd.Parser.AST.Expressions.Expression> ArgExprs);
 
 // One element on a trait. CanonicalType is post-alias; Default holds the raw parse-tree
 // expression so the analyzer can type-check it lazily once. Span points at the element

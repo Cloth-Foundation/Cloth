@@ -1,0 +1,9 @@
+module hello.world;
+
+public enum {
+
+    RED,
+    GREEN,
+    BLUE
+
+}

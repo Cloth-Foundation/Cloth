@@ -73,16 +73,47 @@ public sealed class ExpressionTyper {
 
 			case Expression.MemberAccess ma:
 			{
-				// Walk the parent chain so a field declared on an ancestor is visible through
-				// a child reference. Child fields shadow parent fields of the same name; the
-				// first hit (closest to the receiver's static type) wins. Stop at the first
-				// cycle-broken class so a malformed extends chain doesn't loop here.
+				// Enum case access: `EnumName.CASE` — target is an enum identifier, member is
+				// the case name. The resulting expression has the enum's type (each case is
+				// a singleton pointer to a struct of the enum's shape).
+				if (ma.Target is Expression.Identifier enumId) {
+					var resolvedEnum = ResolveEnumFqn(enumId.Name);
+					if (resolvedEnum != null && _symbols.Enums.TryGetValue(resolvedEnum, out var enumInfo)) {
+						if (enumInfo.Cases.Any(c => c.Name == ma.Member))
+							return resolvedEnum;
+					}
+				}
+
+				// Static field access: `ClassName.FIELD` — target is a class identifier, not
+				// a value. Resolve via importMap and KnownClasses, then look up `FIELD` as a
+				// static field on the class chain. Instance-field-only access still goes
+				// through the second pass below.
+				if (ma.Target is Expression.Identifier classId) {
+					var resolvedClass = _importMap.TryGetValue(classId.Name, out var mapped) ? mapped : classId.Name;
+					if (_symbols.KnownClasses.Contains(resolvedClass)) {
+						var staticCursor = resolvedClass;
+						while (!string.IsNullOrEmpty(staticCursor)) {
+							if (_symbols.CycleBrokenClasses.Contains(staticCursor)) break;
+							if (_symbols.Fields.TryGetValue(staticCursor, out var staticFields)) {
+								var fld = staticFields.FirstOrDefault(f => f.Name == ma.Member && f.IsStatic);
+								if (fld != null) return fld.CanonicalType;
+							}
+							staticCursor = _symbols.ClassVtables.TryGetValue(staticCursor, out var sLayout) ? sLayout.ParentClassFqn ?? "" : "";
+						}
+					}
+				}
+
+				// Instance field access: walk the parent chain so a field declared on an
+				// ancestor is visible through a child reference. Child fields shadow parent
+				// fields of the same name; the first hit (closest to the receiver's static
+				// type) wins. Stop at cycle-broken classes so a malformed extends chain
+				// doesn't loop here.
 				var targetType = InferType(ma.Target);
 				var cursor = targetType;
 				while (!string.IsNullOrEmpty(cursor)) {
 					if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
 					if (_symbols.Fields.TryGetValue(cursor, out var maFields)) {
-						var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member);
+						var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member && !f.IsStatic);
 						if (maFld != null) return maFld.CanonicalType;
 					}
 					cursor = _symbols.ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
@@ -98,6 +129,14 @@ public sealed class ExpressionTyper {
 				if (IsComparisonBinOp(b.Operator)) return "bool";
 				var lt = InferType(b.Left);
 				var rt = InferType(b.Right);
+				// Power: result widens to i64 (integer base & exponent) or f64 (any float
+				// operand). Without this widening, `let x = 2 ^ 10` would type as i8 and
+				// the codegen would truncate the i64 helper result down to 0.
+				if (b.Operator == BinOp.Pow) {
+					var lFloat = lt is "f32" or "f64";
+					var rFloat = rt is "f32" or "f64";
+					return lFloat || rFloat ? "f64" : "i64";
+				}
 				if (lt != null && rt != null) {
 					var lw = TypeWidth(Keywords.GetKeywordFromString(lt));
 					var rw = TypeWidth(Keywords.GetKeywordFromString(rt));
@@ -106,6 +145,18 @@ public sealed class ExpressionTyper {
 
 				return "i32";
 			}
+
+			case Expression.Unary u:
+				// Neg/BitNot/PreInc/PreDec preserve the operand's type — `-x` of an i8
+				// stays i8. Logical Not always produces bool regardless of width. Without
+				// this case the Binary branch above falls through to its `"i32"` default
+				// any time a Unary appears in an arithmetic chain, breaking width-matched
+				// codegen (e.g. `5 + -10` gets typed as i32 but emits as i8 binops).
+				return u.Operator == UnOp.Not ? "bool" : InferType(u.Operand);
+
+			case Expression.Postfix pf:
+				// PostInc/PostDec return the operand's type — same rule as the prefix forms.
+				return InferType(pf.Operand);
 
 			case Expression.Call call:
 			{
@@ -222,6 +273,19 @@ public sealed class ExpressionTyper {
 
 	// Resolve a raw class/interface name to a registry FQN through the same import / nested /
 	// same-module / dotted-shorthand chain the analyzer uses. Returns null when unresolved.
+	// Resolve a raw identifier to a known enum FQN through importMap → direct → same-module.
+	// Used by static enum-case access (`EnumName.CASE`) and instance dispatch on enum-typed
+	// receivers.
+	private string? ResolveEnumFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownEnums.Contains(mapped)) return mapped;
+		if (_symbols.KnownEnums.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownEnums.Contains(sameModule)) return sameModule;
+		}
+		return null;
+	}
+
 	private string? ResolveClassOrInterfaceFqn(string rawName) {
 		if (_importMap.TryGetValue(rawName, out var mapped)) {
 			if (_symbols.KnownClasses.Contains(mapped) || _symbols.KnownInterfaces.Contains(mapped)) return mapped;
@@ -328,6 +392,12 @@ public sealed class ExpressionTyper {
 						candidates.Add($"{resolvedClass}.{memberAccess.Member}");
 						break;
 					}
+					// Static dispatch on an enum identifier: `EnumName.valueOf("...")`.
+					var resolvedEnumStatic = ResolveEnumFqn(classId.Name);
+					if (resolvedEnumStatic != null) {
+						candidates.Add($"{resolvedEnumStatic}.{memberAccess.Member}");
+						break;
+					}
 				}
 
 				// Instance dispatch: target is a value whose inferred type names a known class.
@@ -344,6 +414,11 @@ public sealed class ExpressionTyper {
 						candidates.Add($"{ancestor}.{memberAccess.Member}");
 						ancestor = _symbols.ClassVtables.TryGetValue(ancestor, out var nextLayout) ? nextLayout.ParentClassFqn : null;
 					}
+				}
+				// Instance dispatch on an enum-typed receiver: auto-generated getters and
+				// any user-declared methods live as overloads on the enum's FQN.
+				else if (instanceType != null && _symbols.KnownEnums.Contains(instanceType)) {
+					candidates.Add($"{instanceType}.{memberAccess.Member}");
 				}
 				break;
 		}

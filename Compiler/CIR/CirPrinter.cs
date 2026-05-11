@@ -54,11 +54,11 @@ public static class CirPrinter {
 				break;
 
 			case CirTypeDecl.Enum e:
-				sb.AppendLine($"{pad}enum {e.FullyQualifiedName} {{");
+				var paramSig = e.Parameters.Count > 0 ? "(" + string.Join(", ", e.Parameters.Select(p => $"{PrintType(p.Type)} {p.Name}")) + ")" : "";
+				sb.AppendLine($"{pad}enum {e.FullyQualifiedName}{paramSig} {{");
 				foreach (var c in e.Cases) {
-					var disc = c.Discriminant != null ? $" = {PrintExpr(c.Discriminant)}" : "";
-					var payload = c.Payload.Count > 0 ? $"({string.Join(", ", c.Payload.Select(PrintType))})" : "";
-					sb.AppendLine($"{pad}  case {c.Name}{payload}{disc}");
+					var args = c.ConstructorArgs.Count > 0 ? " = (" + string.Join(", ", c.ConstructorArgs.Select(PrintExpr)) + ")" : "";
+					sb.AppendLine($"{pad}  case {c.Name}{args}    // ordinal {c.Ordinal}");
 				}
 
 				sb.AppendLine($"{pad}}}");
@@ -270,7 +270,7 @@ public static class CirPrinter {
 		CirBinOp.Add => "+", CirBinOp.Sub => "-", CirBinOp.Mul => "*",
 		CirBinOp.Div => "/", CirBinOp.Rem => "%",
 		CirBinOp.And => "&&", CirBinOp.Or => "||",
-		CirBinOp.BitAnd => "&", CirBinOp.BitOr => "|", CirBinOp.BitXor => "^",
+		CirBinOp.BitAnd => "&", CirBinOp.BitOr => "|", CirBinOp.Pow => "^",
 		CirBinOp.Shl => "<<", CirBinOp.Shr => ">>",
 		CirBinOp.Eq => "==", CirBinOp.NotEq => "!=",
 		CirBinOp.Lt => "<", CirBinOp.LtEq => "<=",
@@ -292,7 +292,7 @@ public static class CirPrinter {
 		CirAssignOp.AddAssign => "+=", CirAssignOp.SubAssign => "-=",
 		CirAssignOp.MulAssign => "*=", CirAssignOp.DivAssign => "/=",
 		CirAssignOp.RemAssign => "%=", CirAssignOp.AndAssign => "&=",
-		CirAssignOp.OrAssign => "|=", CirAssignOp.XorAssign => "^=",
+		CirAssignOp.OrAssign => "|=", CirAssignOp.PowAssign => "^=",
 		_ => "="
 	};
 }

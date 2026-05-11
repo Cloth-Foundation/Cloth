@@ -12,4 +12,4 @@ using FrontEnd.Token;
 
 namespace FrontEnd.Parser.AST.Declarations;
 
-public readonly record struct FieldDeclaration(List<TraitAnnotation> Annotations, Visibility Visibility, FieldModifiers? FieldModifiers, TypeExpression TypeExpression, string Name, Expression? Initializer, AccessorBlock? Accessors, TokenSpan Span);
+public readonly record struct FieldDeclaration(List<TraitAnnotation> Annotations, Visibility Visibility, FieldModifiers? FieldModifiers, bool IsStatic, bool IsConst, TypeExpression TypeExpression, string Name, Expression? Initializer, AccessorBlock? Accessors, TokenSpan Span);

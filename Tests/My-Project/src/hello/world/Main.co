@@ -5,311 +5,54 @@ import hello.foo.Foo;
 
 public class (string[] args) {
 
-    private PrintName printName;
-    // TODO: re-enable once primitive nullable storage + println(any)/::STRING lands
-    // private int? nullX = null;
-
     public Main {
-        // nullX = 42;
-        // p(nullX);
+        let mark = People.MARK;
+        p(mark.getAverage());
+        p(mark.getAge());
+        p(mark.getName());
+        p(mark.getOrdinal());
+        p(mark.name());
 
-        int x = 7;
-        int y = 42;
+        let james = People.JAMES;
+        p(james.getName());
+        p(james.getOrdinal());
 
-        if ((x + y) == (y + x)) {
-            p((x + y) == (y + x));
-            sayHello();
+        let mary = People.MARY;
+        p(mary.getAge());
+        p(mary.getOrdinal());
+
+        // Bare-list enum: no constructor signature, only built-in ordinal + name.
+        let c = Color.GREEN;
+        p(c.getOrdinal());
+        p(c.name());
+
+        // valueOf(string): lookup-by-name. Returns the matching variant; null when none.
+        let found = People.valueOf("JAMES") ?? People.MARK;
+        p(found.getName());
+
+        let missing = People.valueOf("NOBODY") ?? People.MARK;
+        p(missing.getName());        // "Mark" — fallback when no match
+
+        switch (mark) {
+            case People.MARK:  p("hi Mark");
+            case People.JAMES: p("hi James");
+            case People.MARY:  p("hi Mary");
         }
-        makeContainer();
-        makeMulti();
-        interfaceDispatch();
-        defaultImpl();
-        loopTests();
-        nullTests();
-        castTests();
-        inheritanceTests();
-        interfaceInheritanceTests();
-        prototypeTests();
+
+        switch (james) {
+            case People.MARK:  p("not james");
+            case People.JAMES: p("yes james");
+            case People.MARY:  p("not james");
+        }
+
+        // default arm — missing MARY but covered by default.
+        switch (mary) {
+            case People.MARK:  p("from mark");
+            default:           p("default arm");
+        }
     }
 
     public ~Main() {
-    }
-
-    public func sayHello() {
-        printName = new PrintName("Cloth!");
-        printName.print();
-        delete printName;
-    }
-
-    public func makeContainer() {
-        let c = new Container();
-        p(c.get());                                 // 7 + 42 = 49 (inner constructed in ctor)
-        let i = c.new Container.Inner();
-        p(i.read());                            // 7 + 42 = 49 (constructed via receiver)
-        delete i;
-        delete c;
-    }
-
-    public func makeMulti() {
-        // Multi-level: Tower.Mid.Leaf where Leaf accesses both Mid and Tower fields.
-        let t = new Tower();
-        let m = t.new Tower.Mid();
-        let leaf = m.new Tower.Mid.Leaf();
-        p(leaf.sum());                              // 3 + 20 + 100 = 123
-        delete leaf;
-        delete m;
-        delete t;
-    }
-
-    public func interfaceDispatch() {
-        // Interface dispatch through a Greeter-typed local.
-        let speaker = new Speaker();
-        Greeter g = speaker;
-        p(g.greet());                               // "speaker"
-        delete speaker;
-    }
-
-    public func defaultImpl() {
-         // Default-impl dispatch: DefaultUser only overrides required(), but optional()
-         // has a default body in HasDefault that returns 0.
-         let user = new DefaultUser();
-         HasDefault h = user;
-         p(h.required());                            // 7
-         p(h.optional());                            // 0 (default impl)
-         delete user;
-    }
-
-    public func loopTests() {
-        // for-loop with postfix increment; prints 0, 1, 2.
-        for (i32 i = 0; i < 3; i++) {
-            p(i);
-        }
-
-        // while-loop with break: counts to 5 then breaks; prints 5.
-        i32 j = 0;
-        while (j < 100) {
-            if (j == 5) {
-                break;
-            }
-            j = j + 1;
-        }
-        p(j);
-
-        // do-while loop runs body once before checking; prints 3 (1+1+1).
-        i32 k = 0;
-        do {
-            k = k + 1;
-        } while (k < 3);
-        p(k);
-
-        // prefix decrement; prints 2.
-        i32 m = 3;
-        --m;
-        p(m);
-
-        // continue: skip the iteration when n == 1; sum the rest. 0+2+3+4 = 9.
-        i32 sum = 0;
-        for (i32 n = 0; n < 5; n++) {
-            if (n == 1) {
-                continue;
-            }
-            sum = sum + n;
-        }
-        p(sum);
-    }
-
-    public func nullTests() {
-        // Class nullable: `T?` is a pointer that may be null. The literal `null` only
-        // binds to nullable targets.
-        Speaker? optS = null;
-        if (optS == null) {
-            p("optS is null");
-        }
-
-        // ?? on a null left hand side picks the right hand fallback.
-        let chosenA = optS ?? new Speaker();
-        p(chosenA.greet());                     // "speaker"
-        delete chosenA;
-
-        // ?? on a non-null left hand side returns it (right is the dead branch).
-        let realS = new Speaker();
-        Speaker? present = realS;
-        let chosenB = present ?? new Speaker();
-        p(chosenB.greet());                     // "speaker"
-        delete realS;
-    }
-
-    public func prototypeTests() {
-        // Circle extends prototype Shape, which has a prototype method `name()` — Circle
-        // provides the body. Construction is fine because Circle is concrete; instantiating
-        // Shape directly would be rejected with S024.
-        let c = new Circle();
-
-        // Direct dispatch on the concrete type: works as usual.
-        p(c.name());                        // "circle"
-
-        // Upcast to the prototype base, then call the prototype method — dispatch goes
-        // through the vtable and lands on Circle.name().
-        Shape s = c;
-        p(s.name());                        // "circle"
-
-        delete c;
-
-        // Three-level prototype chain: Vehicle (proto) → Truck (proto, overrides make())
-        // → Pickup (concrete, overrides model()). Pickup doesn't redeclare make() —
-        // Truck's implementation propagates down.
-        let pickup = new Pickup();
-        p(pickup.wheels);                   // 4          — inherited field from Vehicle
-        pickup.wheels = 6;                  // write to inherited field
-        p(pickup.wheels);                   // 6          — updated value
-        p(pickup.make());                   // "ford"     — inherited from Truck
-        p(pickup.model());                  // "f-150"    — Pickup's own
-
-        Truck t = pickup;
-        p(t.wheels);                        // 6          — inherited field via Truck ref
-        p(t.make());                        // "ford"     — virtual via vtable
-        p(t.model());                       // "f-150"    — virtual via vtable
-
-        Vehicle v = pickup;
-        p(v.wheels);                        // 6          — same field via Vehicle ref
-        p(v.make());                        // "ford"     — virtual from the root prototype
-        p(v.model());                       // "f-150"    — virtual from the root prototype
-
-        // is/as/as? against a prototype-typed receiver. Runtime chain walks use the
-        // vtable parent pointers, which prototype classes carry just like concrete
-        // classes, so identity checks work regardless of prototype-ness.
-        if (v is Pickup) {
-            p("v is Pickup");
-        }
-        if (v is Truck) {
-            p("v is Truck");                // intermediate prototype matches
-        }
-        if (v is Vehicle) {
-            p("v is Vehicle");              // root prototype matches itself
-        }
-
-        let asPickup = v as Pickup;         // root-prototype ref → concrete-leaf downcast
-        p(asPickup.model());                // "f-150"
-
-        Truck? maybeTruck = v as? Truck;    // safe downcast to an intermediate prototype
-        if (maybeTruck != null) {
-            p("safe cast to Truck succeeded");
-        }
-
-        delete pickup;
-
-        // Prototype class implementing an interface. DisplayBase satisfies Display's
-        // `label()` contract with a concrete body; DisplayChild inherits the impl
-        // without redeclaring it.
-        let dc = new DisplayChild();
-        p(dc.label());                      // "base-label" via inherited method dispatch
-        Display disp = dc;
-        p(disp.label());                    // "base-label" via interface dispatch
-        delete dc;
-
-        // Empty prototype class — non-instantiable, no methods, no fields. The concrete
-        // leaf instantiates and constructs through the chain.
-        let ec = new EmptyChild();
-        if (ec is EmptyBase) {
-            p("EmptyChild is EmptyBase");
-        }
-        delete ec;
-    }
-
-    public func interfaceInheritanceTests() {
-        // PoliteSpeaker implements Polite, which extends Greeter — class → ancestor-interface
-        // upcast and virtual dispatch through both levels of the chain.
-        let ps = new PoliteSpeaker();
-
-        Polite polite = ps;
-        p(polite.greet());                  // "hello"   — inherited from Greeter
-        p(polite.farewell());               // "goodbye" — declared on Polite
-
-        Greeter g = ps;                     // class → ancestor-interface upcast
-        p(g.greet());                       // "hello"
-
-        Greeter g2 = polite;                // interface → ancestor-interface upcast
-        p(g2.greet());                      // "hello"
-
-        delete ps;
-    }
-
-    public func inheritanceTests() {
-        // Upcast: Dog → Animal is implicit because Dog extends Animal.
-        let dog = new Dog();
-        Animal a = dog;
-
-        // `is` walks the parent chain — Dog's vtable matches both Dog and Animal.
-        if (a is Dog) {
-            p("a is Dog");
-        }
-        if (a is Animal) {
-            p("a is Animal");
-        }
-
-        // `as` downcast — chain-walk finds Dog at the head, returns the receiver.
-        let back = a as Dog;
-        p(back.bark());                     // "woof"
-        delete dog;
-
-        // A bare Animal is NOT a Dog — the chain walk reaches null without finding Dog.
-        let alone = new Animal();
-        Dog? optDog = alone as? Dog;
-        if (optDog == null) {
-            p("alone not a Dog");
-        }
-        delete alone;
-    }
-
-    public func castTests() {
-        // Class → interface upcast. The runtime pointer is unchanged; only the static
-        // type changes.
-        let speaker = new Speaker();
-        Greeter g = speaker;
-
-        // `is` runtime kind check via vtable comparison.
-        if (g is Speaker) {
-            p("g is Speaker");
-        }
-
-        // `as` downcast — vtable matches, returns the receiver.
-        let back = g as Speaker;
-        p(back.greet());                         // "speaker"
-
-        // `as?` downcast — when it matches, returns the receiver as a nullable.
-        Speaker? maybeBack = g as? Speaker;
-        let unwrapped = maybeBack ?? new Speaker();
-        p(unwrapped.greet());                    // "speaker"
-
-        delete speaker;
-
-        // `as?` to a sibling implementer — at runtime the vtable doesn't match, so the
-        // cast returns null. ?? then picks the fallback path.
-        let whisperer = new Whisperer();
-        Greeter g2 = whisperer;
-        Speaker? mismatched = g2 as? Speaker;
-        let fallbackS = mismatched ?? new Speaker();
-        p(fallbackS.greet());                    // "speaker" (from the fallback)
-        delete whisperer;
-        delete fallbackS;
-    }
-
-    public class PrintName (string& name) {
-
-        private HelloPrinter printer;
-
-        public PrintName {
-            printer = new HelloPrinter(name);
-        }
-
-        public ~PrintName() {
-            delete printer;
-        }
-
-        public func print() {
-            printer.print();
-        }
-
     }
 
 }

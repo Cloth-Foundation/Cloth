@@ -9,11 +9,22 @@ namespace Compiler.CIR;
 
 // The complete CIR for all compilation units in the project.
 // LLVM lowering consumes exactly this record.
-public sealed record CirModule(List<CirTypeDecl> Types, List<CirFunction> Functions, List<CirVtable> Vtables);
+public sealed record CirModule(List<CirTypeDecl> Types, List<CirFunction> Functions, List<CirVtable> Vtables, List<CirStaticField> StaticFields);
+
+// One module-level entry per `static`/class-level-`const` field. The LLVM emitter
+// produces one global per record (`@<mangled-fqn>`) initialized from `Initializer`.
+// `IsExtern` is set when the field is defined in a dependency project — the emitter
+// then declares the global as `external` so the linker resolves it from the dependency's
+// `.lib`. `IsConst` flips the LLVM linkage between `constant` (immutable) and `global`
+// (mutable).
+public sealed record CirStaticField(string ClassFqn, string Name, CirType Type, CirExpr? Initializer, bool IsConst, bool IsExtern);
 
 // One vtable per class. `ParentClassFqn` references the next link in the inheritance chain
 // (or null at the root), driving runtime parent-walks during class→class downcasts.
 // `Slots[i]` is the mangled CIR symbol of the function at global interface-method slot `i`,
 // or null when the class doesn't implement that slot's method. The list length is uniform
-// across all vtables in a module (= VtableSize).
-public sealed record CirVtable(string ClassFqn, string? ParentClassFqn, List<string?> Slots);
+// across all vtables in a module (= VtableSize). `IsExtern` is true for classes defined in
+// a dependency project (e.g. the standard library) — the LLVM emitter emits an `external`
+// declaration rather than a definition, so the linker resolves the symbol against the
+// dependency's compiled `.lib` instead of producing a duplicate definition.
+public sealed record CirVtable(string ClassFqn, string? ParentClassFqn, List<string?> Slots, bool IsExtern = false);
