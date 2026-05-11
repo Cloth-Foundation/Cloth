@@ -1,0 +1,14 @@
+module hello.world;
+
+// Empty prototype class — no prototype methods, no fields. Acts as a non-
+// instantiable marker base; subclasses inherit nothing concrete but pick up the
+// vtable chain so `is`/`as` against EmptyBase still works on EmptyChild instances.
+public prototype class () {
+
+    public EmptyBase {
+    }
+
+    public ~EmptyBase {
+    }
+
+}

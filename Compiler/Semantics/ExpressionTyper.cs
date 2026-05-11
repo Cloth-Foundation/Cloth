@@ -73,10 +73,19 @@ public sealed class ExpressionTyper {
 
 			case Expression.MemberAccess ma:
 			{
+				// Walk the parent chain so a field declared on an ancestor is visible through
+				// a child reference. Child fields shadow parent fields of the same name; the
+				// first hit (closest to the receiver's static type) wins. Stop at the first
+				// cycle-broken class so a malformed extends chain doesn't loop here.
 				var targetType = InferType(ma.Target);
-				if (targetType != null && _symbols.Fields.TryGetValue(targetType, out var maFields)) {
-					var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member);
-					if (maFld != null) return maFld.CanonicalType;
+				var cursor = targetType;
+				while (!string.IsNullOrEmpty(cursor)) {
+					if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
+					if (_symbols.Fields.TryGetValue(cursor, out var maFields)) {
+						var maFld = maFields.FirstOrDefault(f => f.Name == ma.Member);
+						if (maFld != null) return maFld.CanonicalType;
+					}
+					cursor = _symbols.ClassVtables.TryGetValue(cursor, out var layout) ? layout.ParentClassFqn ?? "" : "";
 				}
 
 				return null;
@@ -194,7 +203,14 @@ public sealed class ExpressionTyper {
 		var toBase = TypeInference.StripNullable(to);
 		if (fromBase == toBase) return true;
 		if (TypeInference.IsLosslessPromotion(fromBase, toBase)) return true;
-		if (_symbols.KnownInterfaces.Contains(toBase) && _symbols.ImplementedInterfaces.TryGetValue(fromBase, out var impls) && impls.Contains(toBase)) return true;
+		// Class → directly-implemented interface OR any ancestor of an implemented interface.
+		// Walks the transitive interface closure so `class C -> Polite` (where Polite : Greeter)
+		// can bind to a `Greeter` slot.
+		if (_symbols.KnownInterfaces.Contains(toBase) && _symbols.KnownClasses.Contains(fromBase)
+		    && _symbols.TransitiveInterfaceClosure(fromBase).Contains(toBase)) return true;
+		// Interface → ancestor interface (upcast through `:` chain).
+		if (_symbols.KnownInterfaces.Contains(fromBase) && _symbols.KnownInterfaces.Contains(toBase)
+		    && _symbols.TransitiveAncestors(fromBase).Contains(toBase)) return true;
 		// Class → ancestor class (upcast): `Dog d = ...; Animal a = d;` is always safe
 		// because Dog extends Animal. Walks the registry's parent chain.
 		if (_symbols.KnownClasses.Contains(fromBase) && _symbols.KnownClasses.Contains(toBase) && _symbols.IsClassOrAncestor(fromBase, toBase)) return true;
@@ -243,7 +259,10 @@ public sealed class ExpressionTyper {
 		// Loose match by name + arity. Interface overloads share a slot key but distinct
 		// signatures, so we'd extend to full signature matching when we add overloads on
 		// interfaces; v1 keeps it name-and-arity.
-		return info.Methods.FirstOrDefault(m => m.Name == ma.Member && m.ParamTypes.Count == call.Arguments.Count);
+		// Walk transitive methods so calls through a child interface can dispatch to a
+		// method declared on a parent interface (`Polite : Greeter` → calling `greet()`
+		// on a Polite ref hits Greeter's signature).
+		return _symbols.TransitiveMethods(receiverType).FirstOrDefault(m => m.Name == ma.Member && m.ParamTypes.Count == call.Arguments.Count);
 	}
 
 	// Pick the best overload for a given FQN and argument list. Each arg's type is inferred;
@@ -312,9 +331,20 @@ public sealed class ExpressionTyper {
 				}
 
 				// Instance dispatch: target is a value whose inferred type names a known class.
+				// Walk the parent chain so inherited methods (including non-overridden ones
+				// satisfied higher up — e.g. a concrete impl in a prototype intermediate)
+				// resolve when the leaf class doesn't redeclare them. Stop at cycle-broken
+				// classes so a malformed extends ring doesn't loop.
 				var instanceType = InferType(memberAccess.Target);
-				if (instanceType != null && _symbols.KnownClasses.Contains(instanceType))
+				if (instanceType != null && _symbols.KnownClasses.Contains(instanceType)) {
 					candidates.Add($"{instanceType}.{memberAccess.Member}");
+					var ancestor = _symbols.ClassVtables.TryGetValue(instanceType, out var layout) ? layout.ParentClassFqn : null;
+					while (!string.IsNullOrEmpty(ancestor)) {
+						if (_symbols.CycleBrokenClasses.Contains(ancestor)) break;
+						candidates.Add($"{ancestor}.{memberAccess.Member}");
+						ancestor = _symbols.ClassVtables.TryGetValue(ancestor, out var nextLayout) ? nextLayout.ParentClassFqn : null;
+					}
+				}
 				break;
 		}
 

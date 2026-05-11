@@ -1,0 +1,16 @@
+module hello.world;
+
+public prototype class () {
+
+    public i32 wheels = 4;
+
+    public Vehicle {
+    }
+
+    public ~Vehicle {
+    }
+
+    public prototype func make(): string;
+    public prototype func model(): string;
+
+}

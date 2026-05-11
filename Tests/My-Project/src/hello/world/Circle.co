@@ -1,0 +1,18 @@
+module hello.world;
+
+import cloth.lang.Override;
+
+public class () : Shape {
+
+    public Circle {
+    }
+
+    public ~Circle {
+    }
+
+    @Override
+    public func name(): string {
+        return "circle";
+    }
+
+}

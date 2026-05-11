@@ -22,6 +22,11 @@ public sealed class LlvmEmitter {
 	private readonly string _projectRoot;
 
 	private readonly Dictionary<string, CirTypeDecl.Class> _classByFqn = new();
+	// classFqn → flattened field layout (root-to-leaf), with the vtable header only
+	// contributed by the root. Lazily populated by GetFlattenedFields and used by both
+	// struct-type emission and field-GEP indexing so a child instance can read/write
+	// ancestor fields at their natural offsets.
+	private readonly Dictionary<string, List<CirField>> _flattenedFields = new();
 	private readonly HashSet<string> _definedFns = new();
 	private readonly Dictionary<string, string> _externDecls = new();
 
@@ -351,16 +356,53 @@ public sealed class LlvmEmitter {
 		foreach (var t in _module.Types) {
 			if (t is not CirTypeDecl.Class c) continue;
 			var name = StructName(c.FullyQualifiedName);
-			if (c.Fields.Count == 0) {
+			var flat = GetFlattenedFields(c.FullyQualifiedName);
+			if (flat.Count == 0) {
 				sb.AppendLine($"{name} = type {{ ptr }}");
 				continue;
 			}
 
-			var fieldTypes = string.Join(", ", c.Fields.Select(f => LlvmType(f.Type)));
+			var fieldTypes = string.Join(", ", flat.Select(f => LlvmType(f.Type)));
 			sb.AppendLine($"{name} = type {{ {fieldTypes} }}");
 		}
 
 		return sb.ToString();
+	}
+
+	// Build the flattened layout for `classFqn`: root's fields first (including the vtable
+	// header), then each descendant's contributions in chain order with the duplicate
+	// vtable field skipped. This preserves the invariant that an ancestor pointer cast to
+	// a descendant pointer sees the same offsets for shared fields. A defensive visited-
+	// set guards against malformed BaseClass rings (the registry-level cycle detector
+	// already prevents these in normal compiles, but LLVM can't see the registry).
+	private List<CirField> GetFlattenedFields(string classFqn) {
+		if (_flattenedFields.TryGetValue(classFqn, out var cached)) return cached;
+
+		var chain = new List<string>();
+		var visited = new HashSet<string>();
+		var cursor = classFqn;
+		while (!string.IsNullOrEmpty(cursor) && _classByFqn.TryGetValue(cursor, out var cls)) {
+			if (!visited.Add(cursor)) break;
+			chain.Insert(0, cursor);
+			cursor = cls.BaseClass;
+		}
+
+		var result = new List<CirField>();
+		for (var i = 0; i < chain.Count; i++) {
+			var cls = _classByFqn[chain[i]];
+			if (i == 0) {
+				result.AddRange(cls.Fields);
+			}
+			else {
+				// Skip the descendant's `__vtable__` field — the root already contributed one
+				// at offset 0, and `this.__vtable__ = &__vtable_<Self>` simply overwrites
+				// that slot at construction time for each level of the chain.
+				result.AddRange(cls.Fields.Where(f => f.Name != SymbolRegistry.VtableFieldName));
+			}
+		}
+
+		_flattenedFields[classFqn] = result;
+		return result;
 	}
 
 	private string EmitStringGlobals() {
@@ -794,12 +836,15 @@ public sealed class LlvmEmitter {
 	private (string gep, CirType fieldType) EmitFieldGep(CirExpr.FieldAccess fa) {
 		var targetVal = EmitExpr(fa.Target);
 		var fqn = ResolveTargetFqn(fa.Target);
-		if (fqn == null || !_classByFqn.TryGetValue(fqn, out var cls)) {
+		if (fqn == null || !_classByFqn.ContainsKey(fqn)) {
 			LlvmError.FieldNotFound.WithMessage($"cannot resolve owning type of field '{fa.FieldName}'").Render();
 			return ("undef", new CirType.Any());
 		}
 
-		var idx = cls.Fields.FindIndex(f => f.Name == fa.FieldName);
+		// Look up the field in the flattened layout (own fields + ancestor contributions)
+		// so an ancestor-declared field GEPs to its correct offset in the child's struct.
+		var flat = GetFlattenedFields(fqn);
+		var idx = flat.FindIndex(f => f.Name == fa.FieldName);
 		if (idx < 0) {
 			LlvmError.FieldNotFound.WithMessage($"field '{fa.FieldName}' not found on {fqn}").Render();
 			return ("undef", new CirType.Any());
@@ -807,7 +852,7 @@ public sealed class LlvmEmitter {
 
 		var gep = FreshTemp();
 		_bodyLines.Add($"  {gep} = getelementptr inbounds {StructName(fqn)}, ptr {targetVal}, i32 0, i32 {idx}");
-		return (gep, cls.Fields[idx].Type);
+		return (gep, flat[idx].Type);
 	}
 
 	private string EmitCall(CirExpr.Call c) {
@@ -1260,8 +1305,8 @@ public sealed class LlvmEmitter {
 				return _localTypeMap.TryGetValue(l.Name, out var ty) ? (ty, true) : (new CirType.Any(), false);
 			case CirExpr.FieldAccess fa:
 				var fqn = ResolveTargetFqn(fa.Target);
-				if (fqn != null && _classByFqn.TryGetValue(fqn, out var cls)) {
-					var f = cls.Fields.FirstOrDefault(x => x.Name == fa.FieldName);
+				if (fqn != null && _classByFqn.ContainsKey(fqn)) {
+					var f = GetFlattenedFields(fqn).FirstOrDefault(x => x.Name == fa.FieldName);
 					if (f != null) return (f.Type, true);
 				}
 
@@ -1275,9 +1320,9 @@ public sealed class LlvmEmitter {
 		CirExpr.ThisPtr => _currentThisFqn,
 		CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) => ty is CirType.Ptr p && p.Inner is CirType.Named np ? np.FullyQualifiedName : ty is CirType.Named n ? n.FullyQualifiedName : null,
 		// Nested field-access chains (e.g. `this.__outer__.outerField`): resolve the inner
-		// FieldAccess to its containing class, then look up the named field's declared type
-		// to get its FQN. Enables inner-class outer-chain field reads.
-		CirExpr.FieldAccess fa when ResolveTargetFqn(fa.Target) is { } parentFqn && _classByFqn.TryGetValue(parentFqn, out var parentCls) => parentCls.Fields.FirstOrDefault(f => f.Name == fa.FieldName)?.Type is CirType.Named fn ? fn.FullyQualifiedName : null,
+		// FieldAccess to its containing class, then look up the named field via the
+		// flattened layout (so an ancestor-declared field still resolves).
+		CirExpr.FieldAccess fa when ResolveTargetFqn(fa.Target) is { } parentFqn && _classByFqn.ContainsKey(parentFqn) => GetFlattenedFields(parentFqn).FirstOrDefault(f => f.Name == fa.FieldName)?.Type is CirType.Named fn ? fn.FullyQualifiedName : null,
 		_ => null
 	};
 

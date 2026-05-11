@@ -1,0 +1,23 @@
+module hello.world;
+
+import cloth.lang.Implementation;
+
+// Prototype class implementing an interface. The interface contract is satisfied
+// here in the prototype class itself — concrete subclasses inherit `label()` and
+// don't need to redeclare it. Tests that the slot machinery shared between
+// interface methods and prototype methods doesn't trip over a prototype-but-
+// concrete-bodied method.
+public prototype class () -> Display {
+
+    public DisplayBase {
+    }
+
+    public ~DisplayBase {
+    }
+
+    @Implementation
+    public func label(): string {
+        return "base-label";
+    }
+
+}

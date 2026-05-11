@@ -1,0 +1,13 @@
+module hello.world;
+
+public prototype class () {
+
+    public Shape {
+    }
+
+    public ~Shape {
+    }
+
+    public prototype func name(): string;
+
+}

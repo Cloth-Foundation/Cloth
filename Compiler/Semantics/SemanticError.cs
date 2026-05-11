@@ -55,6 +55,16 @@ public class SemanticError : Exception {
 	public static readonly SemanticError InvalidCast = new("S01F", "cast is not legal between these types", true);
 	public static readonly SemanticError NullableDeref = new("S020", "cannot dereference a nullable value without a null check", true);
 	public static readonly SemanticError ImplementationMismatch = new("S021", "method marked @Implementation does not match any interface declaration", true);
+	public static readonly SemanticError InterfaceCycle = new("S022", "interface inheritance forms a cycle", true);
+	public static readonly SemanticError InvalidInterfaceExtends = new("S023", "interface extends-clause entry is not an interface", true);
+	public static readonly SemanticError NewOnPrototype = new("S024", "cannot instantiate a prototype class", true);
+	public static readonly SemanticError PrototypeFuncContext = new("S025", "prototype functions can only be declared inside a prototype class", true);
+	public static readonly SemanticError PrototypeFuncHasBody = new("S026", "prototype functions must not have a body", true);
+	public static readonly SemanticError UnimplementedPrototypeMember = new("S027", "concrete class does not implement an inherited prototype function", true);
+	public static readonly SemanticError PrototypeFuncStatic = new("S028", "prototype function cannot also be static", true);
+	public static readonly SemanticError PrototypeFuncExtern = new("S029", "prototype function cannot also be @Extern", true);
+	public static readonly SemanticError PrototypeFuncPrivate = new("S02A", "prototype function cannot be private", true);
+	public static readonly SemanticError ClassInheritanceCycle = new("S02B", "class inheritance forms a cycle", true);
 
 	public SemanticError WithMessage(string message) => new(_code, _label, _willExit, message, _file);
 

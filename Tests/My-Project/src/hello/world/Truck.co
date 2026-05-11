@@ -1,0 +1,20 @@
+module hello.world;
+
+import cloth.lang.Override;
+
+public prototype class () : Vehicle {
+
+    public Truck {
+    }
+
+    public ~Truck {
+    }
+
+    // Intermediate prototype: satisfies Vehicle.make() so Pickup doesn't have to.
+    // model() is left as prototype — Pickup must provide it.
+    @Override
+    public func make(): string {
+        return "ford";
+    }
+
+}
