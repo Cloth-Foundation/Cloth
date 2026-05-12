@@ -62,4 +62,15 @@ public abstract record Expression(TokenSpan Span) {
 	public sealed record Range(Expression Start, Expression End, TokenSpan Span) : Expression(Span);
 
 	public sealed record Spread(Expression Value, TokenSpan Span) : Expression(Span);
+
+	// `[expr, expr, ...]` — array literal. Builds a slice value `{ ptr, i64 }` whose
+	// backing storage is heap-allocated. Element types come from the elements themselves
+	// (widened to a common type by the typer); the resulting type is `T[]`.
+	public sealed record ArrayLit(List<Expression> Elements, TokenSpan Span) : Expression(Span);
+
+	// `new T[a]` / `new T[a][b]` / `new T[a][b][c]` — heap-allocate a nested array.
+	// `ElementType` is the LEAF element type; `Sizes` lists outer-to-inner dimensions.
+	// A 1-d allocation has `Sizes.Count == 1`; multi-dim allocations construct each
+	// outer slot by recursively allocating the inner dimensions.
+	public sealed record NewArray(TypeExpression ElementType, List<Expression> Sizes, TokenSpan Span) : Expression(Span);
 }

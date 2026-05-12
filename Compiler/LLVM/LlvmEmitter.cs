@@ -49,6 +49,11 @@ public sealed class LlvmEmitter {
 	private bool _needsIntPowHelper;
 	private bool _needsLibmPow;
 
+	// Set by `EmitIndexLoad` when any `arr[i]` access fires. Drives the lazy emission of
+	// the `@__cloth_panic_bounds` helper and the libc `fprintf` / `stderr` declarations
+	// used by it.
+	private bool _needsBoundsPanic;
+
 	// C-symbol → number of leading fixed parameters for variadic externs.
 	// Populated when multiple @Extern declarations alias to the same C symbol with different
 	// signatures (e.g. _printf_i32, _printf_i64 both → "printf"); the LLVM declare and call
@@ -152,10 +157,11 @@ public sealed class LlvmEmitter {
 
 		foreach (var fn in _module.Functions) {
 			if (fn.IsExtern) continue;
-			// Compiler-synthesized enum helpers (e.g. `valueOf(string)`) have their LLVM
-			// bodies emitted by `EmitEnumSyntheticFunctions` below, not through the normal
-			// CIR-to-LLVM path. Skipping here avoids emitting a malformed empty define.
-			if (fn.Kind == CirFunctionKind.EnumValueOf) continue;
+			// Compiler-synthesized enum helpers (e.g. `valueOf(string)`, `values()`) have
+			// their LLVM bodies emitted by `EmitEnumSyntheticFunctions` below, not through
+			// the normal CIR-to-LLVM path. Skipping here avoids emitting a malformed empty
+			// define.
+			if (fn.Kind is CirFunctionKind.EnumValueOf or CirFunctionKind.EnumValues) continue;
 			sb.Append(EmitFunction(fn));
 			sb.AppendLine();
 		}
@@ -168,10 +174,30 @@ public sealed class LlvmEmitter {
 			sb.AppendLine();
 		}
 
+		// Bounds-check panic helper. Called from every out-of-range `arr[i]` site with
+		// the (i64 idx, i64 len) pair; prints a diagnostic to stderr and aborts.
+		if (_needsBoundsPanic) {
+			sb.AppendLine(EmitBoundsPanicHelper());
+			sb.AppendLine();
+		}
+
 		if (_config.Build.OutputType == OutputType.Executable)
 			sb.Append(EmitMainEntry());
 		return sb.ToString();
 	}
+
+	// Bounds-check panic helper. Each `arr[i]` call site emits a check + branch that
+	// calls into this helper on failure. Prints a diagnostic to stdout, flushes the
+	// stream (so the message survives `abort`'s stdio drop), then aborts.
+	private static string EmitBoundsPanicHelper() => string.Join("\n", new[] {
+		"@.cloth_bounds_msg = private unnamed_addr constant [49 x i8] c\"cloth: array index %lld out of bounds [0, %lld)\\0A\\00\", align 1",
+		"define void @__cloth_panic_bounds(i64 %idx, i64 %len) {",
+		"  call i32 (ptr, ...) @printf(ptr @.cloth_bounds_msg, i64 %idx, i64 %len)",
+		"  call i32 @fflush(ptr null)",
+		"  call void @abort()",
+		"  unreachable",
+		"}"
+	});
 
 	// Exponentiation-by-squaring on i64. Returns 0 for non-positive exponents so the
 	// integer path stays integer-typed; users wanting fractional results (e.g. `5 ^ -1`)
@@ -285,6 +311,18 @@ public sealed class LlvmEmitter {
 		// the synthesized `valueOf(string)` for every enum uses it for string equality.
 		if (_module.Types.Any(t => t is CirTypeDecl.Enum))
 			_externDecls["strcmp"] = "declare i32 @strcmp(ptr, ptr)";
+
+		// Bounds-check helper needs `printf` to write a panic message and `fflush` to
+		// drain stdout before aborting (printf's line buffer is normally dropped on
+		// abort). Both are declared when any `arr[i]` access is present
+		// (`_needsBoundsPanic` set during the pre-scan). `abort` is already in the
+		// always-declared set above.
+		if (_needsBoundsPanic) {
+			if (!_externDecls.ContainsKey("printf"))
+				_externDecls["printf"] = "declare i32 @printf(ptr, ...)";
+			if (!_externDecls.ContainsKey("fflush"))
+				_externDecls["fflush"] = "declare i32 @fflush(ptr)";
+		}
 	}
 
 	private void ScanStmt(CirStmt stmt) {
@@ -374,6 +412,9 @@ public sealed class LlvmEmitter {
 			case CirExpr.Unary u: ScanExpr(u.Operand); break;
 			case CirExpr.FieldAccess fa: ScanExpr(fa.Target); break;
 			case CirExpr.Index i:
+				// Every `arr[i]` access fires the bounds-panic helper at emission. Set the
+				// flag here so PreScan can declare `printf` before externs are emitted.
+				_needsBoundsPanic = true;
 				ScanExpr(i.Target);
 				ScanExpr(i.Idx);
 				break;
@@ -543,41 +584,70 @@ public sealed class LlvmEmitter {
 	// project enum visibility is a follow-up.
 	private readonly HashSet<string> _enumExternFqns = new();
 
-	// Emit synthesized per-enum functions that don't go through the normal CIR pipeline.
-	// Right now that's just `valueOf(string)` — chained `strcmp` against each case name,
-	// returning the matching `@enum.<fqn>.<CASE>` pointer or null when no match. Skips
-	// extern enums (their valueOf lives in the dependency).
+	// Emit synthesized per-enum functions that don't go through the normal CIR pipeline:
+	// `valueOf(string)` (chained `strcmp` against each case name) and `values()` (heap-
+	// allocate an `[N x ptr]` buffer and wrap as a slice). Skips extern enums — those
+	// bodies live in the dependency's `.lib`.
 	private string EmitEnumSyntheticFunctions() {
 		var sb = new StringBuilder();
 		foreach (var t in _module.Types) {
 			if (t is not CirTypeDecl.Enum e) continue;
 			if (_enumExternFqns.Contains(e.FullyQualifiedName)) continue;
-			var mangled = MangleToLlvm($"{e.FullyQualifiedName}.valueOf__string");
-			sb.AppendLine($"define ptr @{mangled}(ptr %name) {{");
-			sb.AppendLine("entry:");
-			if (e.Cases.Count == 0) {
-				// Vacuous case — empty enum (unreachable today, defensive). Return null.
-				sb.AppendLine("  ret ptr null");
-				sb.AppendLine("}");
-				continue;
-			}
-			sb.AppendLine($"  br label %check0");
-			for (var i = 0; i < e.Cases.Count; i++) {
-				var c = e.Cases[i];
-				var nameStrIdx = PoolStringIndex(c.Name);
-				var nextLabel = i + 1 < e.Cases.Count ? $"check{i + 1}" : "miss";
-				sb.AppendLine($"check{i}:");
-				sb.AppendLine($"  %cmp{i} = call i32 @strcmp(ptr %name, ptr @.str.{nameStrIdx})");
-				sb.AppendLine($"  %eq{i} = icmp eq i32 %cmp{i}, 0");
-				sb.AppendLine($"  br i1 %eq{i}, label %match{i}, label %{nextLabel}");
-				sb.AppendLine($"match{i}:");
-				sb.AppendLine($"  ret ptr @{MangleEnumCaseGlobal(e.FullyQualifiedName, c.Name)}");
-			}
-			sb.AppendLine("miss:");
-			sb.AppendLine("  ret ptr null");
-			sb.AppendLine("}");
+			EmitEnumValueOfBody(sb, e);
+			EmitEnumValuesBody(sb, e);
 		}
 		return sb.ToString();
+	}
+
+	private void EmitEnumValueOfBody(StringBuilder sb, CirTypeDecl.Enum e) {
+		var mangled = MangleToLlvm($"{e.FullyQualifiedName}.valueOf__string");
+		sb.AppendLine($"define ptr @{mangled}(ptr %name) {{");
+		sb.AppendLine("entry:");
+		if (e.Cases.Count == 0) {
+			sb.AppendLine("  ret ptr null");
+			sb.AppendLine("}");
+			return;
+		}
+		sb.AppendLine($"  br label %check0");
+		for (var i = 0; i < e.Cases.Count; i++) {
+			var c = e.Cases[i];
+			var nameStrIdx = PoolStringIndex(c.Name);
+			var nextLabel = i + 1 < e.Cases.Count ? $"check{i + 1}" : "miss";
+			sb.AppendLine($"check{i}:");
+			sb.AppendLine($"  %cmp{i} = call i32 @strcmp(ptr %name, ptr @.str.{nameStrIdx})");
+			sb.AppendLine($"  %eq{i} = icmp eq i32 %cmp{i}, 0");
+			sb.AppendLine($"  br i1 %eq{i}, label %match{i}, label %{nextLabel}");
+			sb.AppendLine($"match{i}:");
+			sb.AppendLine($"  ret ptr @{MangleEnumCaseGlobal(e.FullyQualifiedName, c.Name)}");
+		}
+		sb.AppendLine("miss:");
+		sb.AppendLine("  ret ptr null");
+		sb.AppendLine("}");
+	}
+
+	// `values(): EnumType[]` — heap-allocate `N` pointer slots, store each case global
+	// in turn, build a slice over the buffer. The result is owned by the caller (must
+	// be `delete`d when no longer needed; if `delete` on a class-element array becomes a
+	// pattern, the element walk should free each only if it owns them — which it doesn't
+	// here, since the case globals are static constants).
+	private void EmitEnumValuesBody(StringBuilder sb, CirTypeDecl.Enum e) {
+		var mangled = MangleToLlvm($"{e.FullyQualifiedName}.values");
+		var n = e.Cases.Count;
+		sb.AppendLine($"define {{ ptr, i64 }} @{mangled}() {{");
+		sb.AppendLine("entry:");
+		// Element size — every variant pointer is just `ptr`, so 8 bytes on 64-bit. Use
+		// the GEP-null trick to stay target-agnostic.
+		sb.AppendLine($"  %eltsz.ptr = getelementptr ptr, ptr null, i64 1");
+		sb.AppendLine($"  %eltsz = ptrtoint ptr %eltsz.ptr to i64");
+		sb.AppendLine($"  %data = call ptr @calloc(i64 {n}, i64 %eltsz)");
+		for (var i = 0; i < n; i++) {
+			sb.AppendLine($"  %slot{i} = getelementptr ptr, ptr %data, i64 {i}");
+			sb.AppendLine($"  store ptr @{MangleEnumCaseGlobal(e.FullyQualifiedName, e.Cases[i].Name)}, ptr %slot{i}");
+		}
+		sb.AppendLine($"  %slice0 = insertvalue {{ ptr, i64 }} undef, ptr %data, 0");
+		sb.AppendLine($"  %slice = insertvalue {{ ptr, i64 }} %slice0, i64 {n}, 1");
+		sb.AppendLine($"  ret {{ ptr, i64 }} %slice");
+		sb.AppendLine("}");
 	}
 
 	// Map an enum field name (built-in `__ordinal__` / `__name__`, or a declared
@@ -866,8 +936,14 @@ public sealed class LlvmEmitter {
 		// Match the heap-allocation path's zero-init guarantee for stack-allocated Main, so
 		// fields without explicit initializers come up as 0/null/false even at the entry point.
 		sb.AppendLine($"  store {structName} zeroinitializer, ptr %instance, align 8");
-		// Pass argv as the 'args' parameter (opaque ptr — runtime conversion is a future concern).
-		sb.AppendLine($"  call void @{ctorLlvm}(ptr %instance, ptr %argv)");
+		// Wrap C's `(argc, argv)` pair into Cloth's slice runtime `{ ptr, i64 }` so the
+		// `string[] args` parameter sees a normal Cloth array. The data pointer is the
+		// existing argv (each entry already a `char*` / Cloth-`string`-compatible ptr);
+		// length sign-extends from i32 argc.
+		sb.AppendLine("  %argc64 = sext i32 %argc to i64");
+		sb.AppendLine("  %args.tmp = insertvalue { ptr, i64 } undef, ptr %argv, 0");
+		sb.AppendLine("  %args = insertvalue { ptr, i64 } %args.tmp, i64 %argc64, 1");
+		sb.AppendLine($"  call void @{ctorLlvm}(ptr %instance, {{ ptr, i64 }} %args)");
 		if (dtorLlvm != null)
 			sb.AppendLine($"  call void @{dtorLlvm}(ptr %instance)");
 		sb.AppendLine("  ret i32 0");
@@ -907,6 +983,7 @@ public sealed class LlvmEmitter {
 			case CirStmt.Continue: EmitContinue(); break;
 			case CirStmt.Delete del: EmitDelete(del); break;
 			case CirStmt.Switch sw: EmitSwitch(sw); break;
+			case CirStmt.ForIn fi: EmitForIn(fi); break;
 			case CirStmt.Block b:
 				foreach (var s in b.Body) EmitStmt(s);
 				break;
@@ -919,6 +996,71 @@ public sealed class LlvmEmitter {
 	// `delete obj;` — call the destructor (if defined for the target's class) and free the
 	// heap allocation. Pairs with EmitAlloc's calloc.
 	private void EmitDelete(CirStmt.Delete d) {
+		// Array case: the target is a slice `{ ptr, i64 }`. We free the data buffer
+		// (not the slice value, which lives in a stack alloca and dies with the scope).
+		// If the element type is a class, iterate and call each element's dtor first so
+		// owned heap allocations aren't leaked.
+		if (d.ClassFqn.EndsWith("[]")) {
+			var slice = EmitExpr(d.Expression);
+			var data = FreshTemp();
+			_bodyLines.Add($"  {data} = extractvalue {{ ptr, i64 }} {slice}, 0");
+
+			var elementCanon = d.ClassFqn[..^2];
+			if (_classByFqn.ContainsKey(elementCanon)) {
+				var className = elementCanon.Contains('.') ? elementCanon[(elementCanon.LastIndexOf('.') + 1)..] : elementCanon;
+				var dtorCir = $"{elementCanon}.~{className}";
+				if (_definedFns.Contains(dtorCir)) {
+					var dtorLlvm = MangleToLlvm(dtorCir);
+					var len = FreshTemp();
+					_bodyLines.Add($"  {len} = extractvalue {{ ptr, i64 }} {slice}, 1");
+
+					// Pre-allocate the loop counter in the function entry block.
+					var iAddr = FreshLabel("arrdel_i") + ".addr";
+					_allocaLines.Add($"  %{iAddr} = alloca i64, align 8");
+					_bodyLines.Add($"  store i64 0, ptr %{iAddr}");
+
+					var condLabel = FreshLabel("arrdel_cond");
+					var bodyLabel = FreshLabel("arrdel_body");
+					var dtorLabel = FreshLabel("arrdel_dtor");
+					var iterLabel = FreshLabel("arrdel_iter");
+					var endLabel = FreshLabel("arrdel_end");
+
+					_bodyLines.Add($"  br label %{condLabel}");
+					_bodyLines.Add($"{condLabel}:");
+					var iVal = FreshTemp();
+					_bodyLines.Add($"  {iVal} = load i64, ptr %{iAddr}");
+					var cmp = FreshTemp();
+					_bodyLines.Add($"  {cmp} = icmp slt i64 {iVal}, {len}");
+					_bodyLines.Add($"  br i1 {cmp}, label %{bodyLabel}, label %{endLabel}");
+
+					_bodyLines.Add($"{bodyLabel}:");
+					var slot = FreshTemp();
+					_bodyLines.Add($"  {slot} = getelementptr ptr, ptr {data}, i64 {iVal}");
+					var elem = FreshTemp();
+					_bodyLines.Add($"  {elem} = load ptr, ptr {slot}");
+					var notNull = FreshTemp();
+					_bodyLines.Add($"  {notNull} = icmp ne ptr {elem}, null");
+					_bodyLines.Add($"  br i1 {notNull}, label %{dtorLabel}, label %{iterLabel}");
+
+					_bodyLines.Add($"{dtorLabel}:");
+					_bodyLines.Add($"  call void @{dtorLlvm}(ptr {elem})");
+					_bodyLines.Add($"  call void @free(ptr {elem})");
+					_bodyLines.Add($"  br label %{iterLabel}");
+
+					_bodyLines.Add($"{iterLabel}:");
+					var iNext = FreshTemp();
+					_bodyLines.Add($"  {iNext} = add i64 {iVal}, 1");
+					_bodyLines.Add($"  store i64 {iNext}, ptr %{iAddr}");
+					_bodyLines.Add($"  br label %{condLabel}");
+
+					_bodyLines.Add($"{endLabel}:");
+				}
+			}
+
+			_bodyLines.Add($"  call void @free(ptr {data})");
+			return;
+		}
+
 		var ptr = EmitExpr(d.Expression);
 		if (!string.IsNullOrEmpty(d.ClassFqn) && _classByFqn.ContainsKey(d.ClassFqn)) {
 			// MangleDtor convention: `<TypeFqn>.~<ClassName>`.
@@ -964,6 +1106,88 @@ public sealed class LlvmEmitter {
 		else {
 			_bodyLines.Add($"  br label %{endLabel}");
 		}
+	}
+
+	// `for (let x : arr) { body }` — iterate every element of a slice. Lowered as:
+	//   %slice = <iterable>
+	//   %data  = extractvalue { ptr, i64 } %slice, 0
+	//   %len   = extractvalue { ptr, i64 } %slice, 1
+	//   %i.addr = alloca i64
+	//   store i64 0, ptr %i.addr
+	//   br label %cond
+	// cond:
+	//   %i = load i64, ptr %i.addr
+	//   %cmp = icmp slt i64 %i, %len
+	//   br i1 %cmp, label %body, label %end
+	// body:
+	//   %eltptr = getelementptr <T>, ptr %data, i64 %i
+	//   %x = load <T>, ptr %eltptr
+	//   <body stmts>
+	//   br label %iter
+	// iter:
+	//   %i.next = add i64 %i, 1
+	//   store i64 %i.next, ptr %i.addr
+	//   br label %cond
+	// end:
+	// `break` jumps to `end`, `continue` to `iter`.
+	private void EmitForIn(CirStmt.ForIn fi) {
+		var slice = EmitExpr(fi.Iterable);
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = extractvalue {{ ptr, i64 }} {slice}, 0");
+		var len = FreshTemp();
+		_bodyLines.Add($"  {len} = extractvalue {{ ptr, i64 }} {slice}, 1");
+
+		var iAddr = FreshLabel("forin_i") + ".addr";
+		// Allocas always land in the function entry block — keep them in `_allocaLines`.
+		_allocaLines.Add($"  %{iAddr} = alloca i64, align 8");
+		_bodyLines.Add($"  store i64 0, ptr %{iAddr}");
+
+		var condLabel = FreshLabel("forin_cond");
+		var bodyLabel = FreshLabel("forin_body");
+		var iterLabel = FreshLabel("forin_iter");
+		var endLabel = FreshLabel("forin_end");
+
+		_bodyLines.Add($"  br label %{condLabel}");
+		_bodyLines.Add($"{condLabel}:");
+		_blockTerminated = false;
+		var iVal = FreshTemp();
+		_bodyLines.Add($"  {iVal} = load i64, ptr %{iAddr}");
+		var cmp = FreshTemp();
+		_bodyLines.Add($"  {cmp} = icmp slt i64 {iVal}, {len}");
+		_bodyLines.Add($"  br i1 {cmp}, label %{bodyLabel}, label %{endLabel}");
+
+		_bodyLines.Add($"{bodyLabel}:");
+		_blockTerminated = false;
+		var eltTy = LlvmType(fi.ElementType);
+		var eltPtr = FreshTemp();
+		_bodyLines.Add($"  {eltPtr} = getelementptr {eltTy}, ptr {data}, i64 {iVal}");
+
+		// Element binding: `let x = elements[i]`. Register a local addr/type so the body
+		// can read `x`.
+		var elemAddr = $"%{fi.ElementName}.addr";
+		_allocaLines.Add($"  {elemAddr} = alloca {eltTy}, align 8");
+		var elemVal = FreshTemp();
+		_bodyLines.Add($"  {elemVal} = load {eltTy}, ptr {eltPtr}");
+		_bodyLines.Add($"  store {eltTy} {elemVal}, ptr {elemAddr}");
+		_localAddrMap[fi.ElementName] = elemAddr;
+		_localTypeMap[fi.ElementName] = fi.ElementType;
+
+		_loopStack.Push((iterLabel, endLabel));
+		foreach (var s in fi.Body) EmitStmt(s);
+		_loopStack.Pop();
+		if (!_blockTerminated) _bodyLines.Add($"  br label %{iterLabel}");
+
+		_bodyLines.Add($"{iterLabel}:");
+		_blockTerminated = false;
+		var iNext = FreshTemp();
+		var iCur = FreshTemp();
+		_bodyLines.Add($"  {iCur} = load i64, ptr %{iAddr}");
+		_bodyLines.Add($"  {iNext} = add i64 {iCur}, 1");
+		_bodyLines.Add($"  store i64 {iNext}, ptr %{iAddr}");
+		_bodyLines.Add($"  br label %{condLabel}");
+
+		_bodyLines.Add($"{endLabel}:");
+		_blockTerminated = false;
 	}
 
 	// `switch (subject) { case pattern: body; default: body; }` — break-by-default per
@@ -1198,6 +1422,11 @@ public sealed class LlvmEmitter {
 			case CirExpr.FieldAccess fa: return EmitFieldLoad(fa);
 			case CirExpr.StaticFieldRef sr: return EmitStaticFieldLoad(sr);
 			case CirExpr.EnumCaseRef ec: return "@" + MangleEnumCaseGlobal(ec.EnumFqn, ec.CaseName);
+			case CirExpr.ArrayLit al: return EmitArrayLit(al);
+			case CirExpr.Index ix: return EmitIndexLoad(ix);
+			case CirExpr.ArrayLength al: return EmitArrayLength(al);
+			case CirExpr.NewArray na: return EmitNewArray(na);
+			case CirExpr.Subslice ss: return EmitSubslice(ss);
 			case CirExpr.Call c: return EmitCall(c);
 			case CirExpr.Alloc a: return EmitAlloc(a);
 			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
@@ -1231,6 +1460,257 @@ public sealed class LlvmEmitter {
 		var t = FreshTemp();
 		_bodyLines.Add($"  {t} = load {LlvmType(fieldType)}, ptr {gep}");
 		return t;
+	}
+
+	// Emit `[a, b, c]` as a heap-allocated slice. Allocates a `[N x T]` buffer via
+	// calloc (already-declared in PreScan), stores each element, then constructs the
+	// slice value `{ ptr data, i64 N }` to return. Caller's `let` binding holds the
+	// slice as a local; the underlying data lives until the slice is explicitly deleted.
+	private string EmitArrayLit(CirExpr.ArrayLit lit) {
+		var eltTy = LlvmType(lit.ElementType);
+		var n = lit.Elements.Count;
+
+		// Compute sizeof(T) via the GEP-null trick: the address of the second element of
+		// a zero-based array gives the size of one element.
+		var sizePtr = FreshTemp();
+		_bodyLines.Add($"  {sizePtr} = getelementptr {eltTy}, ptr null, i64 1");
+		var sizeI64 = FreshTemp();
+		_bodyLines.Add($"  {sizeI64} = ptrtoint ptr {sizePtr} to i64");
+
+		// Allocate the backing buffer. calloc zero-fills, which matches the rest of the
+		// codebase's "new -> zero-init" convention and means uninitialized slots are 0/null.
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = call ptr @calloc(i64 {n}, i64 {sizeI64})");
+
+		// Store each element at its index.
+		for (var i = 0; i < lit.Elements.Count; i++) {
+			var v = EmitExpr(lit.Elements[i]);
+			var coerced = CoerceTo(v, LlvmTypeOf(lit.Elements[i]), eltTy);
+			var slot = FreshTemp();
+			_bodyLines.Add($"  {slot} = getelementptr {eltTy}, ptr {data}, i64 {i}");
+			_bodyLines.Add($"  store {eltTy} {coerced}, ptr {slot}");
+		}
+
+		// Build the slice value: `{ ptr data, i64 N }`.
+		var sliceWithData = FreshTemp();
+		_bodyLines.Add($"  {sliceWithData} = insertvalue {{ ptr, i64 }} undef, ptr {data}, 0");
+		var slice = FreshTemp();
+		_bodyLines.Add($"  {slice} = insertvalue {{ ptr, i64 }} {sliceWithData}, i64 {n}, 1");
+		return slice;
+	}
+
+	// `new T[a]` / `new T[a][b]` / … — heap-allocate a (possibly nested) array. Single-
+	// dimensional is a single calloc + slice build. Multi-dimensional allocates the
+	// outer buffer, then loops storing a fresh inner allocation into each slot.
+	private string EmitNewArray(CirExpr.NewArray na) {
+		// Pre-evaluate every dimension's size so we don't re-run side effects across
+		// loop iterations. Each ends up as an i64 SSA value.
+		var sizes = na.Sizes.Select(s => CoerceTo(EmitExpr(s), LlvmTypeOf(s), "i64")).ToList();
+		return EmitNewArrayDim(na.ElementType, sizes, 0);
+	}
+
+	// Recursive helper: allocate dimension `depth`'s buffer, and if there are inner
+	// dimensions left, run a loop that fills each outer slot with a fresh allocation
+	// of the next level.
+	private string EmitNewArrayDim(CirType leafElementType, List<string> sizes, int depth) {
+		var remaining = sizes.Count - depth;
+		var size = sizes[depth];
+
+		// Element type at this level: leaf when this is the deepest dim, slice-of-slices
+		// (or slice-of-leaf) wrapped as `{ ptr, i64 }` for outer dims.
+		var isLeaf = remaining == 1;
+		var thisEltTy = isLeaf ? LlvmType(leafElementType) : "{ ptr, i64 }";
+
+		// sizeof(thisEltTy) via GEP-null trick.
+		var sizePtr = FreshTemp();
+		_bodyLines.Add($"  {sizePtr} = getelementptr {thisEltTy}, ptr null, i64 1");
+		var eltBytes = FreshTemp();
+		_bodyLines.Add($"  {eltBytes} = ptrtoint ptr {sizePtr} to i64");
+
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = call ptr @calloc(i64 {size}, i64 {eltBytes})");
+
+		if (!isLeaf) {
+			// Fill each slot with a fresh allocation of the next inner dimension.
+			var iAddr = FreshLabel("newarr_i") + ".addr";
+			_allocaLines.Add($"  %{iAddr} = alloca i64, align 8");
+			_bodyLines.Add($"  store i64 0, ptr %{iAddr}");
+
+			var condLabel = FreshLabel("newarr_cond");
+			var bodyLabel = FreshLabel("newarr_body");
+			var endLabel = FreshLabel("newarr_end");
+
+			_bodyLines.Add($"  br label %{condLabel}");
+			_bodyLines.Add($"{condLabel}:");
+			var iVal = FreshTemp();
+			_bodyLines.Add($"  {iVal} = load i64, ptr %{iAddr}");
+			var cmp = FreshTemp();
+			_bodyLines.Add($"  {cmp} = icmp slt i64 {iVal}, {size}");
+			_bodyLines.Add($"  br i1 {cmp}, label %{bodyLabel}, label %{endLabel}");
+
+			_bodyLines.Add($"{bodyLabel}:");
+			_blockTerminated = false;
+			var innerSlice = EmitNewArrayDim(leafElementType, sizes, depth + 1);
+			var slot = FreshTemp();
+			_bodyLines.Add($"  {slot} = getelementptr {{ ptr, i64 }}, ptr {data}, i64 {iVal}");
+			_bodyLines.Add($"  store {{ ptr, i64 }} {innerSlice}, ptr {slot}");
+			var iNext = FreshTemp();
+			_bodyLines.Add($"  {iNext} = add i64 {iVal}, 1");
+			_bodyLines.Add($"  store i64 {iNext}, ptr %{iAddr}");
+			_bodyLines.Add($"  br label %{condLabel}");
+
+			_bodyLines.Add($"{endLabel}:");
+			_blockTerminated = false;
+		}
+
+		var sliceWithData = FreshTemp();
+		_bodyLines.Add($"  {sliceWithData} = insertvalue {{ ptr, i64 }} undef, ptr {data}, 0");
+		var slice = FreshTemp();
+		_bodyLines.Add($"  {slice} = insertvalue {{ ptr, i64 }} {sliceWithData}, i64 {size}, 1");
+		return slice;
+	}
+
+	// `arr[lo..hi]` — produce a fresh slice over `target`'s buffer starting at `lo`,
+	// length `hi - lo`. Bounds: `0 <= lo <= hi <= len`. Reuses `@__cloth_panic_bounds`
+	// for the failure path (idx = lo on panic, so the message is at least informative).
+	// The sub-slice borrows — the user must keep the parent live for its lifetime.
+	private string EmitSubslice(CirExpr.Subslice ss) {
+		_needsBoundsPanic = true;
+
+		var slice = EmitExpr(ss.Target);
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = extractvalue {{ ptr, i64 }} {slice}, 0");
+		var len = FreshTemp();
+		_bodyLines.Add($"  {len} = extractvalue {{ ptr, i64 }} {slice}, 1");
+
+		var lo = CoerceTo(EmitExpr(ss.Lo), LlvmTypeOf(ss.Lo), "i64");
+		var hi = CoerceTo(EmitExpr(ss.Hi), LlvmTypeOf(ss.Hi), "i64");
+
+		// Bounds: lo < 0, hi > len, lo > hi — any one is a panic.
+		var negLo = FreshTemp();
+		_bodyLines.Add($"  {negLo} = icmp slt i64 {lo}, 0");
+		var hiOver = FreshTemp();
+		_bodyLines.Add($"  {hiOver} = icmp sgt i64 {hi}, {len}");
+		var loGtHi = FreshTemp();
+		_bodyLines.Add($"  {loGtHi} = icmp sgt i64 {lo}, {hi}");
+		var bad1 = FreshTemp();
+		_bodyLines.Add($"  {bad1} = or i1 {negLo}, {hiOver}");
+		var bad = FreshTemp();
+		_bodyLines.Add($"  {bad} = or i1 {bad1}, {loGtHi}");
+		var panicLabel = FreshLabel("subslice_panic");
+		var okLabel = FreshLabel("subslice_ok");
+		_bodyLines.Add($"  br i1 {bad}, label %{panicLabel}, label %{okLabel}");
+		_bodyLines.Add($"{panicLabel}:");
+		_bodyLines.Add($"  call void @__cloth_panic_bounds(i64 {lo}, i64 {len})");
+		_bodyLines.Add($"  unreachable");
+		_bodyLines.Add($"{okLabel}:");
+		_blockTerminated = false;
+
+		var eltTy = LlvmType(ss.ElementType);
+		var newData = FreshTemp();
+		_bodyLines.Add($"  {newData} = getelementptr {eltTy}, ptr {data}, i64 {lo}");
+		var newLen = FreshTemp();
+		_bodyLines.Add($"  {newLen} = sub i64 {hi}, {lo}");
+		var sliceWithData = FreshTemp();
+		_bodyLines.Add($"  {sliceWithData} = insertvalue {{ ptr, i64 }} undef, ptr {newData}, 0");
+		var subslice = FreshTemp();
+		_bodyLines.Add($"  {subslice} = insertvalue {{ ptr, i64 }} {sliceWithData}, i64 {newLen}, 1");
+		return subslice;
+	}
+
+	// `arr::LENGTH` — extract the length field (offset 1) of the slice value.
+	private string EmitArrayLength(CirExpr.ArrayLength al) {
+		var slice = EmitExpr(al.Target);
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = extractvalue {{ ptr, i64 }} {slice}, 1");
+		return t;
+	}
+
+	// Load an element from a slice: `arr[i]`. Extracts the data pointer and length from
+	// the slice, validates the index against `0 <= i < length`, then GEPs to the i-th
+	// element and loads. An out-of-bounds index calls `@__cloth_panic_bounds` (lazy-
+	// emitted in `Build`), which prints a diagnostic and aborts.
+	private string EmitIndexLoad(CirExpr.Index ix) {
+		_needsBoundsPanic = true;
+
+		var slice = EmitExpr(ix.Target);
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = extractvalue {{ ptr, i64 }} {slice}, 0");
+		var len = FreshTemp();
+		_bodyLines.Add($"  {len} = extractvalue {{ ptr, i64 }} {slice}, 1");
+
+		var idx = EmitExpr(ix.Idx);
+		var idxTy = LlvmTypeOf(ix.Idx);
+		var idx64 = CoerceTo(idx, idxTy, "i64");
+
+		// Bounds check: signed comparisons cover both negative indices and >= length.
+		var neg = FreshTemp();
+		_bodyLines.Add($"  {neg} = icmp slt i64 {idx64}, 0");
+		var oob = FreshTemp();
+		_bodyLines.Add($"  {oob} = icmp sge i64 {idx64}, {len}");
+		var bad = FreshTemp();
+		_bodyLines.Add($"  {bad} = or i1 {neg}, {oob}");
+		var panicLabel = FreshLabel("bounds_panic");
+		var okLabel = FreshLabel("bounds_ok");
+		_bodyLines.Add($"  br i1 {bad}, label %{panicLabel}, label %{okLabel}");
+		_bodyLines.Add($"{panicLabel}:");
+		_bodyLines.Add($"  call void @__cloth_panic_bounds(i64 {idx64}, i64 {len})");
+		_bodyLines.Add($"  unreachable");
+		_bodyLines.Add($"{okLabel}:");
+		_blockTerminated = false;
+
+		var eltTy = LlvmElementTypeOf(ix.Target);
+		var slot = FreshTemp();
+		_bodyLines.Add($"  {slot} = getelementptr {eltTy}, ptr {data}, i64 {idx64}");
+		var t = FreshTemp();
+		_bodyLines.Add($"  {t} = load {eltTy}, ptr {slot}");
+		return t;
+	}
+
+	// Return the LLVM element type for an array-typed expression. Falls back to `ptr`
+	// when the expression isn't recognized as array-producing (defensive — should not
+	// happen in valid code).
+	private string LlvmElementTypeOf(CirExpr expr) {
+		var arr = GetCirArrayResultType(expr);
+		return arr != null ? LlvmType(arr.Element) : "ptr";
+	}
+
+	// Recover the array type produced by an expression as a `CirType.Array`. Returns null
+	// when the expression isn't array-typed (e.g. a scalar `arr[i]` on a 1-d slice, or a
+	// call whose return type is non-array). Used by both `LlvmElementTypeOf` and
+	// `TryGetArrayElementCirType` so the two views stay in sync.
+	private CirType.Array? GetCirArrayResultType(CirExpr expr) {
+		switch (expr) {
+			case CirExpr.ArrayLit al:
+				return new CirType.Array(al.ElementType);
+			case CirExpr.NewArray na: {
+				// Multi-dim `new T[a][b][c]`: the outer result type is `T[][][]`. Wrap the
+				// leaf once per declared dimension.
+				CirType t = na.ElementType;
+				for (var i = 0; i < na.Sizes.Count; i++) t = new CirType.Array(t);
+				return (CirType.Array) t;
+			}
+			case CirExpr.Subslice ss:
+				return new CirType.Array(ss.ElementType);
+			case CirExpr.Local l when _localTypeMap.TryGetValue(l.Name, out var ty) && ty is CirType.Array arr:
+				return arr;
+			case CirExpr.Call c:
+				var fn = _module.Functions.FirstOrDefault(f => f.MangledName == c.MangledName);
+				return fn?.ReturnType as CirType.Array;
+			case CirExpr.Index ix:
+				// `target[i]` produces target-element. If target-element is itself an array
+				// (i.e. target was 2+ dim), the Index result is that inner array.
+				var outerArr = GetCirArrayResultType(ix.Target);
+				return outerArr?.Element as CirType.Array;
+			case CirExpr.FieldAccess fa:
+				var fqn = ResolveTargetFqn(fa.Target);
+				if (fqn != null && _classByFqn.ContainsKey(fqn)) {
+					var f = GetFlattenedFields(fqn).FirstOrDefault(x => x.Name == fa.FieldName);
+					return f?.Type as CirType.Array;
+				}
+				return null;
+		}
+		return null;
 	}
 
 	// Load a class-level static / const field by emitting a `load` from the corresponding
@@ -1595,6 +2075,16 @@ public sealed class LlvmEmitter {
 		CirExpr.StaticFieldRef sr => LlvmType(sr.Type),
 		// Enum case references are pointers to the per-case constant global.
 		CirExpr.EnumCaseRef => "ptr",
+		// Array literals produce a slice value.
+		CirExpr.ArrayLit => "{ ptr, i64 }",
+		// Indexing into a slice produces its element type.
+		CirExpr.Index ix => LlvmElementTypeOf(ix.Target),
+		// `arr::LENGTH` is always i64.
+		CirExpr.ArrayLength => "i64",
+		// `new T[n]` produces a slice value.
+		CirExpr.NewArray => "{ ptr, i64 }",
+		// Sub-slicing also produces a slice value.
+		CirExpr.Subslice => "{ ptr, i64 }",
 		// Look up the callee's return type from the module's function table; fall back to ptr
 		// for unresolved/unknown calls.
 		CirExpr.Call call => _module.Functions.FirstOrDefault(f => f.MangledName == call.MangledName) is { } fn ? LlvmType(fn.ReturnType) : "ptr",
@@ -1831,10 +2321,48 @@ public sealed class LlvmEmitter {
 				LlvmError.UnsupportedExpression.WithMessage($"address-of unknown local '{l.Name}'").Render();
 				return "undef";
 			case CirExpr.FieldAccess fa: return EmitFieldGep(fa).gep;
+			case CirExpr.Index ix: return EmitIndexAddr(ix);
 		}
 
 		LlvmError.UnsupportedExpression.WithMessage($"cannot take address of {expr.GetType().Name}").Render();
 		return "undef";
+	}
+
+	// Compute the address of a slice slot: same bounds-checked GEP shape `EmitIndexLoad`
+	// uses, minus the trailing `load`. Returns the slot pointer so callers (e.g.
+	// `EmitAssign` for `arr[i] = v`) can store through it.
+	private string EmitIndexAddr(CirExpr.Index ix) {
+		_needsBoundsPanic = true;
+
+		var slice = EmitExpr(ix.Target);
+		var data = FreshTemp();
+		_bodyLines.Add($"  {data} = extractvalue {{ ptr, i64 }} {slice}, 0");
+		var len = FreshTemp();
+		_bodyLines.Add($"  {len} = extractvalue {{ ptr, i64 }} {slice}, 1");
+
+		var idx = EmitExpr(ix.Idx);
+		var idxTy = LlvmTypeOf(ix.Idx);
+		var idx64 = CoerceTo(idx, idxTy, "i64");
+
+		var neg = FreshTemp();
+		_bodyLines.Add($"  {neg} = icmp slt i64 {idx64}, 0");
+		var oob = FreshTemp();
+		_bodyLines.Add($"  {oob} = icmp sge i64 {idx64}, {len}");
+		var bad = FreshTemp();
+		_bodyLines.Add($"  {bad} = or i1 {neg}, {oob}");
+		var panicLabel = FreshLabel("bounds_panic");
+		var okLabel = FreshLabel("bounds_ok");
+		_bodyLines.Add($"  br i1 {bad}, label %{panicLabel}, label %{okLabel}");
+		_bodyLines.Add($"{panicLabel}:");
+		_bodyLines.Add($"  call void @__cloth_panic_bounds(i64 {idx64}, i64 {len})");
+		_bodyLines.Add($"  unreachable");
+		_bodyLines.Add($"{okLabel}:");
+		_blockTerminated = false;
+
+		var eltTy = LlvmElementTypeOf(ix.Target);
+		var slot = FreshTemp();
+		_bodyLines.Add($"  {slot} = getelementptr {eltTy}, ptr {data}, i64 {idx64}");
+		return slot;
 	}
 
 	private (CirType type, bool found) TypeOfLvalue(CirExpr expr) {
@@ -1853,9 +2381,30 @@ public sealed class LlvmEmitter {
 				}
 
 				return (new CirType.Any(), false);
+			case CirExpr.Index ix:
+				// `arr[i] = v` — the slot's CIR type is the array's element type. We walk
+				// the target through the same shapes `LlvmElementTypeOf` knows about so
+				// indexing into a local array, a call result, or a field-access array all
+				// resolve correctly.
+				if (TryGetArrayElementCirType(ix.Target, out var elemTy)) return (elemTy, true);
+				return (new CirType.Any(), false);
 		}
 
 		return (new CirType.Any(), false);
+	}
+
+	// Walk an array-typed CIR expression to recover its element type as a CirType.
+	// Used by `TypeOfLvalue` (so `arr[i] = v` knows the slot type for the LLVM store
+	// and any coercion of `v`). Routes through `GetCirArrayResultType` so the two
+	// element-type views stay in sync across expression shapes.
+	private bool TryGetArrayElementCirType(CirExpr target, out CirType element) {
+		var arr = GetCirArrayResultType(target);
+		if (arr != null) {
+			element = arr.Element;
+			return true;
+		}
+		element = new CirType.Any();
+		return false;
 	}
 
 	private string? ResolveTargetFqn(CirExpr target) => target switch {
@@ -1907,7 +2456,10 @@ public sealed class LlvmEmitter {
 		CirType.Any => "ptr",
 		CirType.Ptr => "ptr",
 		CirType.Nullable n => LlvmType(n.Inner),
-		CirType.Array => "ptr",
+		// Slice: a two-word value carrying a data pointer and an i64 length. All arrays
+		// (`T[]`, regardless of element type) use the same in-memory shape; the element
+		// type lives at the CIR level and is consulted at the GEP / load site.
+		CirType.Array => "{ ptr, i64 }",
 		CirType.Tuple => "ptr",
 		CirType.Generic => "ptr",
 		CirType.Named n => n.FullyQualifiedName switch {

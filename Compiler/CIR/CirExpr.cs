@@ -49,6 +49,28 @@ public abstract record CirExpr {
 	// right global within the enum's set.
 	public sealed record EnumCaseRef(string EnumFqn, string CaseName) : CirExpr;
 
+	// `[elem, elem, ...]` — array literal. `ElementType` is the canonical CIR element
+	// type (used by LLVM to compute element size for the heap allocation and to type the
+	// element stores). Lowers to a heap-allocated `[N x T]` buffer wrapped in a slice
+	// value `{ ptr, i64 N }`.
+	public sealed record ArrayLit(CirType ElementType, List<CirExpr> Elements) : CirExpr;
+
+	// `arr::LENGTH` — extracts the length field of a slice. The LLVM emitter lowers
+	// this to `extractvalue { ptr, i64 } %slice, 1`.
+	public sealed record ArrayLength(CirExpr Target) : CirExpr;
+
+	// `new T[a]` / `new T[a][b]` / … — heap-allocate a (possibly multi-dimensional)
+	// nested array. `ElementType` is the LEAF element type; `Sizes` lists outer-to-inner
+	// dimensions. The LLVM emitter unrolls the multi-level case as nested calloc + loop
+	// fills (one allocation per level of nesting). Every level zero-initializes.
+	public sealed record NewArray(CirType ElementType, List<CirExpr> Sizes) : CirExpr;
+
+	// `arr[lo..hi]` — sub-slice. Produces a fresh slice value whose data pointer is
+	// `target.data + lo * sizeof(T)` and whose length is `hi - lo`. The new slice
+	// borrows from the same backing buffer; callers must ensure the parent outlives
+	// the sub-slice. `ElementType` is needed so the LLVM emitter knows the GEP stride.
+	public sealed record Subslice(CirExpr Target, CirExpr Lo, CirExpr Hi, CirType ElementType) : CirExpr;
+
 	public sealed record Index(CirExpr Target, CirExpr Idx) : CirExpr;
 
 	// Direct call to a mangled global function name

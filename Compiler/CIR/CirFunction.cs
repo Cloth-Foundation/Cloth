@@ -22,5 +22,9 @@ public enum CirFunctionKind {
 	// Compiler-synthesized: body is generated directly at LLVM emission time, not
 	// lowered from source. Used for auto-generated enum helpers like `valueOf(string)`
 	// whose implementation calls libc (`strcmp`) and doesn't fit the Cloth CIR.
-	EnumValueOf
+	EnumValueOf,
+	// Compiler-synthesized: `values(): EnumType[]` — returns a slice over the enum's
+	// case singletons. Body is emitted as fixed LLVM IR that allocates a small pointer
+	// array on the heap and constructs the slice.
+	EnumValues
 }

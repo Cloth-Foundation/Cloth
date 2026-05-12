@@ -167,6 +167,20 @@ internal sealed class ExpressionParser(Parser parser) {
 				}
 				case Operator.LParen:
 					return ParseParenOrLambda();
+				case Operator.LBracket:
+				{
+					// Array literal: `[expr, expr, ...]`. Unambiguous at expression start
+					// because `[` as a postfix (`arr[i]`) is only consumed by the infix loop.
+					parser.Advance();
+					var elements = new List<Expression>();
+					if (!parser.CheckOperator(Operator.RBracket)) {
+						elements.Add(ParseExpression());
+						while (parser.ConsumeOp(Operator.Comma))
+							elements.Add(ParseExpression());
+					}
+					parser.ExpectOperator(Operator.RBracket);
+					return new Expression.ArrayLit(elements, TokenSpan.Merge(start, parser.Previous().Span));
+				}
 			}
 		}
 
@@ -325,10 +339,14 @@ internal sealed class ExpressionParser(Parser parser) {
 					}
 
 					// `<expr>.new T(args)` — receiver-qualified construction (Java-style for
-					// instantiating an inner class against a specific outer instance).
+					// instantiating an inner class against a specific outer instance). The
+					// receiver-qualified form only makes sense for class instantiation, not
+					// array allocation, so a `new T[n]` after a `.` errors out at parse time.
 					if (parser.CheckKeyword(Keyword.New)) {
 						var bare = ParseNewExpr();
-						return bare with { Receiver = left, Span = TokenSpan.Merge(leftSpan, bare.Span) };
+						if (bare is Expression.New bareNew)
+							return bareNew with { Receiver = left, Span = TokenSpan.Merge(leftSpan, bareNew.Span) };
+						throw ParserError.ExpectedKeyword.WithMessage("`.new T[n]` is not supported — array allocation does not take a receiver").WithSpan(bare.Span).Render();
 					}
 
 					var (member, memberSpan) = ExpectMemberName();
@@ -517,10 +535,22 @@ internal sealed class ExpressionParser(Parser parser) {
 	/// Thrown when the syntax for the "new" expression is incorrect, such as a missing type, parentheses,
 	/// or improperly formatted arguments.
 	/// </exception>
-	private Expression.New ParseNewExpr() {
+	private Expression ParseNewExpr() {
 		var start = parser.Current.Span;
 		parser.ExpectKeyword(Keyword.New);
 		var ty = parser.ParseTypeExpression();
+		// `new T[a]` / `new T[a][b]` — heap-allocate a nested array. `ParseTypeExpression`
+		// stops before any non-empty `[]`, so any `[` immediately after the type starts an
+		// allocation-size list. Multiple bracket pairs build a multi-dimensional array.
+		if (parser.CheckOperator(Operator.LBracket)) {
+			var sizes = new List<Expression>();
+			while (parser.CheckOperator(Operator.LBracket)) {
+				parser.Advance();
+				sizes.Add(ParseExpression());
+				parser.ExpectOperator(Operator.RBracket);
+			}
+			return new Expression.NewArray(ty, sizes, TokenSpan.Merge(start, parser.Previous().Span));
+		}
 		parser.ExpectOperator(Operator.LParen);
 		var args = ParseCallArgs();
 		parser.ExpectOperator(Operator.RParen);
