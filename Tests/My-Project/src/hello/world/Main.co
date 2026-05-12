@@ -6,7 +6,7 @@ import hello.foo.Foo;
 public class (string[] args) {
 
     public Main {
-        let mark = People.MARK;
+        /*let mark = People.MARK;
         p(mark.getAverage());
         p(mark.getAge());
         p(mark.getName());
@@ -126,7 +126,30 @@ public class (string[] args) {
         p(grid[0]::LENGTH);       // 4 — inner cols
         grid[1][2] = 42;
         p(grid[1][2]);            // 42
-        p(grid[0][0]);            // 0  — zero-initialized
+        p(grid[0][0]);            // 0  — zero-initialized*/
+        int[][] arrays = [[ 1, 2 ], [ 3, 4 ]];
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 2; j++) {
+                p(arrays[i][j]);
+            }
+        }
+
+        // Ternary: same-type branches.
+        let pick = true ? 7 : 9;
+        p(pick);                          // 7
+
+        // Ternary: width-mismatched branches widen to the wider type.
+        i32 wide = false ? 5 : 1000;
+        p(wide);                          // 1000
+
+        // Ternary: int / float branches widen to float.
+        f64 mix = true ? 1 : 2.5;
+        p(mix);                           // 1.0
+
+        // Ternary inside an expression chain.
+        for (int k = 0; k < 3; k++) {
+            p(k % 2 == 0 ? "even" : "odd");
+        }
     }
 
     public ~Main() {

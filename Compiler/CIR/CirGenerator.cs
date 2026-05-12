@@ -661,13 +661,40 @@ public sealed class CirGenerator {
 		var elementCanon = CanonicalizeTypeExpr(declaredElementType);
 		var loweredElements = new List<CirExpr>(lit.Elements.Count);
 		foreach (var e in lit.Elements) {
-			var lowered = LowerExpr(e);
-			var elementInferred = _typer.InferType(e);
-			if (elementInferred != null && elementInferred != elementCanon)
-				lowered = new CirExpr.Cast(lowered, elementCirType, IsSafe: false);
+			CirExpr lowered;
+			// Nested literal: recurse with the peeled element type so the inner buffer
+			// carries the right element width (otherwise `int[][] = [[1,2], [3,4]]` lowers
+			// the inner literals as i8[] and a single outer Cast can't fix the buffer).
+			if (e is Expression.ArrayLit innerLit && declaredElementType.Base is BaseType.Array innerArrayType) {
+				lowered = LowerArrayLitWithDeclaredElementType(innerLit, innerArrayType.ElementType);
+			}
+			else {
+				lowered = LowerExpr(e);
+				var elementInferred = _typer.InferType(e);
+				if (elementInferred != null && elementInferred != elementCanon)
+					lowered = new CirExpr.Cast(lowered, elementCirType, IsSafe: false);
+			}
 			loweredElements.Add(lowered);
 		}
 		return new CirExpr.ArrayLit(elementCirType, loweredElements);
+	}
+
+	// `cond ? t : e` — widen the narrower branch to the wider one's type when a lossless
+	// promotion exists. Without the cast the LLVM emitter sees mismatched-width values at the
+	// merge point (`store i8 ... ptr` with `load i32 ...`).
+	private CirExpr LowerTernary(Expression cond, Expression t, Expression e) {
+		var loweredCond = LowerExpr(cond);
+		var loweredT = LowerExpr(t);
+		var loweredE = LowerExpr(e);
+		var tType = _typer.InferType(t);
+		var eType = _typer.InferType(e);
+		if (tType != null && eType != null && tType != eType) {
+			if (TypeInference.IsLosslessPromotion(tType, eType))
+				loweredT = new CirExpr.Cast(loweredT, new CirType.Named(eType), IsSafe: false);
+			else if (TypeInference.IsLosslessPromotion(eType, tType))
+				loweredE = new CirExpr.Cast(loweredE, new CirType.Named(tType), IsSafe: false);
+		}
+		return new CirExpr.Ternary(loweredCond, loweredT, loweredE);
 	}
 
 	// `for (T name in iterable) { body }`. Register the loop binding in the typer scope
@@ -1045,7 +1072,7 @@ public sealed class CirGenerator {
 		Expression.Cast cExpr => LowerCastExpr(cExpr),
 		Expression.TypeCheck { Value: var v, TargetType: var tt } => new CirExpr.TypeCheck(LowerExpr(v), LowerType(tt)),
 		Expression.MembershipCheck { Value: var v, Collection: var c } => new CirExpr.Binary(LowerExpr(v), CirBinOp.In, LowerExpr(c)),
-		Expression.Ternary { Condition: var cond, ThenBranch: var t, ElseBranch: var e } => new CirExpr.Ternary(LowerExpr(cond), LowerExpr(t), LowerExpr(e)),
+		Expression.Ternary { Condition: var cond, ThenBranch: var t, ElseBranch: var e } => LowerTernary(cond, t, e),
 		Expression.NullCoalesce { Left: var l, Right: var r } => new CirExpr.NullCoalesce(LowerExpr(l), LowerExpr(r)),
 		Expression.New { Type: var t, Arguments: var args, Receiver: var recv } => LowerNewExpr(t, args, recv),
 		Expression.Tuple { Elements: var elems } => new CirExpr.TupleLit(elems.Select(LowerExpr).ToList()),

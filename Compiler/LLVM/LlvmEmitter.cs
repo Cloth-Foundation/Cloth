@@ -459,6 +459,20 @@ public sealed class LlvmEmitter {
 				ScanExpr(r.Start);
 				ScanExpr(r.End);
 				break;
+			case CirExpr.ArrayLit al:
+				foreach (var e in al.Elements) ScanExpr(e);
+				break;
+			case CirExpr.NewArray na:
+				foreach (var s in na.Sizes) ScanExpr(s);
+				break;
+			case CirExpr.Subslice ss:
+				ScanExpr(ss.Target);
+				ScanExpr(ss.Lo);
+				ScanExpr(ss.Hi);
+				break;
+			case CirExpr.ArrayLength alen:
+				ScanExpr(alen.Target);
+				break;
 		}
 	}
 
@@ -1432,6 +1446,7 @@ public sealed class LlvmEmitter {
 			case CirExpr.VtableRef v: return $"@{MangleVtableGlobal(v.ClassFqn)}";
 			case CirExpr.VirtualCall vc: return EmitVirtualCall(vc);
 			case CirExpr.NullCoalesce nc: return EmitNullCoalesce(nc);
+			case CirExpr.Ternary tn: return EmitTernary(tn);
 			case CirExpr.Downcast dc: return EmitDowncast(dc);
 			case CirExpr.TypeCheck tc: return EmitTypeCheck(tc);
 
@@ -1997,6 +2012,43 @@ public sealed class LlvmEmitter {
 		return result;
 	}
 
+	// `cond ? then : else` — evaluate the condition, branch to one side only, store the
+	// chosen value into a stack slot, then load through the merge. Mirrors EmitNullCoalesce's
+	// shape; mem2reg promotes the alloca/store/load back to a phi at clang's opt pass. The
+	// CIR lowering already widened both branches to a common type so the resultTy lookup
+	// applies to both `t.Then` and `t.Else`.
+	private string EmitTernary(CirExpr.Ternary t) {
+		var resultTy = LlvmTypeOf(t.Then);
+		var resultAddr = $"%ternary_result.{_tempCounter++}";
+		_allocaLines.Add($"  {resultAddr} = alloca {resultTy}, align 8");
+
+		var condVal = EmitExpr(t.Condition);
+
+		var thenLabel = FreshLabel("ternary_then");
+		var elseLabel = FreshLabel("ternary_else");
+		var doneLabel = FreshLabel("ternary_done");
+
+		_bodyLines.Add($"  br i1 {condVal}, label %{thenLabel}, label %{elseLabel}");
+
+		_bodyLines.Add($"{thenLabel}:");
+		_blockTerminated = false;
+		var thenVal = EmitExpr(t.Then);
+		_bodyLines.Add($"  store {resultTy} {thenVal}, ptr {resultAddr}");
+		_bodyLines.Add($"  br label %{doneLabel}");
+
+		_bodyLines.Add($"{elseLabel}:");
+		_blockTerminated = false;
+		var elseVal = EmitExpr(t.Else);
+		_bodyLines.Add($"  store {resultTy} {elseVal}, ptr {resultAddr}");
+		_bodyLines.Add($"  br label %{doneLabel}");
+
+		_bodyLines.Add($"{doneLabel}:");
+		_blockTerminated = false;
+		var loaded = FreshTemp();
+		_bodyLines.Add($"  {loaded} = load {resultTy}, ptr {resultAddr}");
+		return loaded;
+	}
+
 	// `new ClassName(args)` — heap-allocate a zero-initialized instance, run its constructor,
 	// return the pointer. Memory model: `calloc(1, sizeof(struct))` guarantees zero bits, so
 	// fields without explicit initializers come up as 0/null/false. Lifetime is unmanaged
@@ -2094,6 +2146,11 @@ public sealed class LlvmEmitter {
 		// Downcast yields a pointer (or null for `as?`); TypeCheck is i1.
 		CirExpr.Downcast => "ptr",
 		CirExpr.TypeCheck => "i1",
+		// Ternary: branches were widened to a common type at CIR lowering, so the result
+		// type matches either branch. Use the then-branch for the lookup.
+		CirExpr.Ternary tn => LlvmTypeOf(tn.Then),
+		// NullCoalesce is restricted to pointer-typed nullables today.
+		CirExpr.NullCoalesce => "ptr",
 		_ => "ptr"
 	};
 

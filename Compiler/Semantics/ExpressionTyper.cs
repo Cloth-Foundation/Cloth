@@ -217,6 +217,21 @@ public sealed class ExpressionTyper {
 				return TypeInference.StripNullable(leftType);
 			}
 
+			case Expression.Ternary { ThenBranch: var tb, ElseBranch: var eb }:
+			{
+				// `cond ? t : e` — the result type is the common type the two branches widen to.
+				// Same rule as Binary: pick the wider operand when both are numeric; otherwise
+				// fall back to whichever side typed (with the right side winning if only it did).
+				var tType = InferType(tb);
+				var eType = InferType(eb);
+				if (tType == null) return eType;
+				if (eType == null) return tType;
+				if (tType == eType) return tType;
+				if (TypeInference.IsLosslessPromotion(tType, eType)) return eType;
+				if (TypeInference.IsLosslessPromotion(eType, tType)) return tType;
+				return tType;
+			}
+
 			case Expression.Cast { TargetType: var tt, IsSafe: var safe }:
 			{
 				if (tt.Base is not FrontEnd.Parser.AST.Type.BaseType.Named tn) return null;
@@ -312,13 +327,33 @@ public sealed class ExpressionTyper {
 		// Array literal binding to a declared array type with a wider element. The CIR
 		// lowering casts each element on the way down, so `i32[] a = [1, 2, 3]` works
 		// even though the literal's natural type is `i8[]`. Only fires for array literals
-		// — generic array-to-array assignment still requires exact element match.
-		if (sourceExpr is Expression.ArrayLit && fromBase.EndsWith("[]") && toBase.EndsWith("[]")) {
-			var fromElem = fromBase[..^2];
-			var toElem = toBase[..^2];
-			if (fromElem == toElem || TypeInference.IsLosslessPromotion(fromElem, toElem)) return true;
+		// — generic array-to-array assignment still requires exact element match. Recurses
+		// through nested literals so `int[][] = [[1,2], [3,4]]` widens at every depth.
+		if (sourceExpr is Expression.ArrayLit arrLit && toBase.EndsWith("[]")) {
+			return IsArrayLitAssignableTo(arrLit, toBase);
 		}
 		return false;
+	}
+
+	// Recursive check for nested array-literal widening. Walks each element of `lit`
+	// against the peeled target element type, allowing scalar widening at the leaves
+	// (literal-fits-integer, lossless promotion) and another nested-literal recursion
+	// at intermediate levels. Empty literals at any depth are accepted — the declared
+	// type pins down the element type for the empty case (see L3 / `LowerVarDecl`).
+	private bool IsArrayLitAssignableTo(Expression.ArrayLit lit, string targetBase) {
+		if (!targetBase.EndsWith("[]")) return false;
+		var targetElem = targetBase[..^2];
+		foreach (var e in lit.Elements) {
+			if (e is Expression.ArrayLit innerLit) {
+				if (!IsArrayLitAssignableTo(innerLit, targetElem)) return false;
+			}
+			else {
+				var elemInferred = InferType(e);
+				if (elemInferred == null) return false;
+				if (!IsAssignableTo(elemInferred, targetElem, e)) return false;
+			}
+		}
+		return true;
 	}
 
 	// Resolve a raw class/interface name to a registry FQN through the same import / nested /
