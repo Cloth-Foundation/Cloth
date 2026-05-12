@@ -50,6 +50,83 @@ public class (string[] args) {
             case People.MARK:  p("from mark");
             default:           p("default arm");
         }
+
+        // Array literals + indexing + length.
+        let nums = [10, 20, 30];
+        p(nums[0]);
+        p(nums[1]);
+        p(nums[2]);
+        p(nums::LENGTH);
+
+        // for-in iteration over an array.
+        for (i8 n in nums) {
+            p(n);
+        }
+
+        // Heap-allocated array via `new T[n]` — size known only at runtime.
+        let dynSize = 5;
+        let zeros = new i32[dynSize];
+        p(zeros::LENGTH);    // 5
+        p(zeros[0]);         // 0 (calloc-zero-initialized)
+        p(zeros[4]);         // 0
+
+        // Enum `values()` + iteration.
+        let allPeople = People.values();
+        p(allPeople::LENGTH);     // 3
+        for (People person in allPeople) {
+            p(person.name());      // MARK, JAMES, MARY
+        }
+
+        p(People.values()[0].name()); // MARK
+        p(People.values()::LENGTH); // 3
+
+        string[] a = [];
+        p(a::LENGTH); // 0
+
+        // delete on a primitive-element array — frees the data buffer.
+        let toFree = new i32[8];
+        delete toFree;
+        p("freed");
+
+        // Array slot assignment.
+        let buf = new i32[3];
+        buf[0] = 10;
+        buf[1] = 20;
+        buf[2] = 30;
+        p(buf[0]);
+        p(buf[1]);
+        p(buf[2]);
+        buf[2] += 5;
+        p(buf[2]);
+        delete buf;
+
+        // Element widening: literals (i8 each) widen to declared i32[].
+        i32[] wide = [100, 200, 300];
+        p(wide[0]);
+        p(wide[1]);
+        p(wide[2]);
+        delete wide;
+
+        // Same with f64[] — int literals lossless to f64.
+        f64[] flt = [1, 2, 3];
+        p(flt[0]);
+        delete flt;
+
+        // Sub-slicing: arr[lo..hi] returns a view over the same backing buffer.
+        let big = [10, 20, 30, 40, 50];
+        let mid = big[1..4];
+        p(mid::LENGTH);   // 3
+        p(mid[0]);        // 20
+        p(mid[2]);        // 40
+        delete big;
+
+        // 2D allocation: new T[a][b].
+        let grid = new i32[3][4];
+        p(grid::LENGTH);          // 3 — outer rows
+        p(grid[0]::LENGTH);       // 4 — inner cols
+        grid[1][2] = 42;
+        p(grid[1][2]);            // 42
+        p(grid[0][0]);            // 0  — zero-initialized
     }
 
     public ~Main() {

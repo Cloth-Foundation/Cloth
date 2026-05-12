@@ -158,6 +158,47 @@ public sealed class ExpressionTyper {
 				// PostInc/PostDec return the operand's type — same rule as the prefix forms.
 				return InferType(pf.Operand);
 
+			case Expression.ArrayLit arrLit:
+			{
+				// Element type comes from the first non-null-inferring element. Result is
+				// `T[]`. Empty `[]` literals can't infer; caller must rely on context
+				// (declared type on `let T[] x = ...`) — return null here.
+				if (arrLit.Elements.Count == 0) return null;
+				foreach (var e in arrLit.Elements) {
+					var t = InferType(e);
+					if (!string.IsNullOrEmpty(t)) return t + "[]";
+				}
+				return null;
+			}
+
+			case Expression.Index idx:
+			{
+				// `arr[i]` types as the element type of arr's array type. `arr[lo..hi]` is
+				// a sub-slice expression — same element type, still an array. Strips the
+				// trailing `[]` only for scalar indexing; preserves it for range indexing.
+				var arrTy = InferType(idx.Target);
+				if (arrTy != null && arrTy.EndsWith("[]")) {
+					if (idx.IndexExpr is Expression.Range) return arrTy;
+					return arrTy[..^2];
+				}
+				return null;
+			}
+
+			case Expression.MetaAccess meta when meta.Member == "LENGTH":
+			{
+				// `arr::LENGTH` returns i64 when the target is array-typed. Other meta keys
+				// (`SIZE`, `MAX`, `MIN`, …) fall through to the existing static-access path
+				// without an inferred type — they're constant-folded by downstream passes.
+				var tgtTy = InferType(meta.Target);
+				if (tgtTy != null && tgtTy.EndsWith("[]")) return "i64";
+				return null;
+			}
+
+			case Expression.NewArray na:
+				// `new T[a]` types as `T[]`; `new T[a][b]` as `T[][]` — append one `[]` per
+				// declared dimension.
+				return TypeInference.CanonicalizeTypeExpression(na.ElementType, ResolveClassOrInterfaceFqn) + string.Concat(Enumerable.Repeat("[]", na.Sizes.Count));
+
 			case Expression.Call call:
 			{
 				var classOverload = ResolveCallExpressionOverload(call);
@@ -268,6 +309,15 @@ public sealed class ExpressionTyper {
 		if (sourceExpr is Expression.Literal { Value: Literal.Int lit }
 		    && TypeInference.IsIntegerCanonical(toBase)
 		    && TypeInference.LiteralFitsInteger(lit.Value, toBase)) return true;
+		// Array literal binding to a declared array type with a wider element. The CIR
+		// lowering casts each element on the way down, so `i32[] a = [1, 2, 3]` works
+		// even though the literal's natural type is `i8[]`. Only fires for array literals
+		// — generic array-to-array assignment still requires exact element match.
+		if (sourceExpr is Expression.ArrayLit && fromBase.EndsWith("[]") && toBase.EndsWith("[]")) {
+			var fromElem = fromBase[..^2];
+			var toElem = toBase[..^2];
+			if (fromElem == toElem || TypeInference.IsLosslessPromotion(fromElem, toElem)) return true;
+		}
 		return false;
 	}
 

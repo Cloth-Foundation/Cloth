@@ -643,6 +643,10 @@ public class SemanticAnalyzer {
 				break;
 			case Stmt.ForIn { Statement: var s }:
 				WalkExpr(s.Iterable, filePath);
+				// Register the loop-binding name as a local so identifier resolution inside
+				// the body sees it. The declared type goes through canonicalization the same
+				// way `let T x = ...` does.
+				_typer.DeclareLocal(s.Name, CanonicalizeDeclaredTypeExpr(s.Type));
 				WalkLoopBody(s.Body, filePath);
 				break;
 			case Stmt.Switch { Statement: var s }:
@@ -882,7 +886,19 @@ public class SemanticAnalyzer {
 	// time the declared type matters for assignability — `T?` parameters, `T?` locals,
 	// `T?` return types — so the canonical string downstream encodes the `?`.
 	private string CanonicalizeDeclaredTypeExpr(TypeExpression t) =>
-		TypeInference.CanonicalizeTypeExpression(t, raw => ResolveClassFqn(raw) ?? ResolveInterfaceFqn(raw));
+		TypeInference.CanonicalizeTypeExpression(t, raw => ResolveClassFqn(raw) ?? ResolveInterfaceFqn(raw) ?? ResolveEnumFqn(raw));
+
+	// Same shape as ResolveClassFqn / ResolveInterfaceFqn but searches the enum FQN set.
+	// Lookup order: importMap → direct FQN → same-module sibling.
+	private string? ResolveEnumFqn(string rawName) {
+		if (_importMap.TryGetValue(rawName, out var mapped) && _symbols.KnownEnums.Contains(mapped)) return mapped;
+		if (_symbols.KnownEnums.Contains(rawName)) return rawName;
+		if (!string.IsNullOrEmpty(_currentModuleFqn)) {
+			var sameModule = $"{_currentModuleFqn}.{rawName}";
+			if (_symbols.KnownEnums.Contains(sameModule)) return sameModule;
+		}
+		return null;
+	}
 
 	// Resolve a class name as written in source to its fully-qualified registry key.
 	// Lookup order: importMap (`import foo.bar.Baz` brings `Baz` into scope) → already-FQN
@@ -1936,6 +1952,10 @@ public class SemanticAnalyzer {
 	private void ValidateDelete(Expression target, string filePath) {
 		var ty = _typer.InferType(target);
 		if (ty == null) return; // can't infer — defer to runtime
+		// `delete arr` on an array slice frees the data buffer (and walks class-typed
+		// elements). Element-type validation lives at codegen time; here we just accept
+		// any array type and let LLVM emit the cleanup.
+		if (ty.EndsWith("[]")) return;
 		if (TypeInference.IsKnownPrimitive(ty)) {
 			SemanticError.FieldAccessOnNonClass.WithFile(filePath).WithMessage($"cannot delete a value of primitive type '{ty}'").Render();
 			return;
@@ -2169,8 +2189,22 @@ public class SemanticAnalyzer {
 		}
 
 		// Register in scope AND publish via InferredVarTypes so CirGenerator picks it up.
+		// Array canonical types like `"i32[]"` must be wrapped as `BaseType.Array` (not a
+		// flat `Named("i32[]")`) so the CIR lowering produces a `CirType.Array` and the
+		// LLVM emitter knows to use the slice runtime / element-aware GEPs.
 		_typer.DeclareLocal(d.Name, canonName);
-		var canonical = new TypeExpression(new BaseType.Named(canonName), Nullable: false, Ownership: null, d.Span);
+		var canonical = new TypeExpression(BuildBaseTypeFromCanonical(canonName), Nullable: false, Ownership: null, d.Span);
 		InferredVarTypes[d.Span] = canonical;
+	}
+
+	// Convert a canonical-form type string back to a `BaseType` tree. Handles the
+	// trailing-`[]` array-wrapping recursively so multi-dimensional arrays (`i32[][]`)
+	// also lower correctly. Uses a fresh `TokenSpan()` for inner nodes — we don't carry
+	// source positions through canonical-string round-trips since these spans are only
+	// consulted on diagnostic paths the caller already covered.
+	private static BaseType BuildBaseTypeFromCanonical(string canon) {
+		if (canon.EndsWith("[]"))
+			return new BaseType.Array(new TypeExpression(BuildBaseTypeFromCanonical(canon[..^2]), Nullable: false, Ownership: (OwnershipModifier?) null, new TokenSpan()));
+		return new BaseType.Named(canon);
 	}
 }

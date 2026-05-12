@@ -300,6 +300,7 @@ public sealed class SymbolRegistry {
 			list.Add(new MethodOverload(symbol, paramTypes, paramOwnership, returnCanon, IsExtern: false, IsCrossProject: asExtern, e.Visibility, typeFqn, moduleFqn, IsStatic: true, IsPrototype: false));
 		}
 		AddStaticMethod("valueOf", new List<string> { "string" }, $"{typeFqn}?");
+		AddStaticMethod("values", new List<string>(), $"{typeFqn}[]");
 
 		// User-declared body members (methods, fragments, nested types). Re-route through
 		// the class-member registration path with the enum's FQN as the owner so the same

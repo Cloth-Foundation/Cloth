@@ -336,6 +336,17 @@ public sealed class CirGenerator {
 				IsExtern: false,
 				IsStatic: true));
 
+			// Stub `values(): EnumType[]` — same pattern: body synthesized at LLVM emit.
+			var valuesMangled = MangleMethod(typeFqn, "values", new List<string>());
+			_functions.Add(new CirFunction(
+				valuesMangled,
+				CirFunctionKind.EnumValues,
+				new List<CirParam>(),
+				new CirType.Array(new CirType.Ptr(new CirType.Named(typeFqn))),
+				new List<CirStmt>(),
+				IsExtern: false,
+				IsStatic: true));
+
 			// User-declared methods, fragments, nested types — lower through the existing
 			// class-member machinery. Constructors and destructors aren't legal on enums
 			// (singletons have no user-callable lifecycle); we accept them silently for v1
@@ -594,7 +605,7 @@ public sealed class CirGenerator {
 	// any time the declared type matters for assignability — `T?` parameters, locals, return
 	// types — so the canonical string downstream encodes the nullability flag.
 	private string CanonicalizeTypeExpr(TypeExpression t) =>
-		TypeInference.CanonicalizeTypeExpression(t, ResolveClassOrInterfaceFqn);
+		TypeInference.CanonicalizeTypeExpression(t, raw => ResolveClassOrInterfaceFqn(raw) ?? ResolveEnumFqnLocal(raw));
 
 	// Combined class-or-interface resolver. Used by CanonicalizeTypeExpression for member
 	// signatures so an interface-typed parameter `Greeter g` canonicalizes to the interface
@@ -629,6 +640,77 @@ public sealed class CirGenerator {
 	// CirType.Named where the LLVM emitter handles the actual type lowering.
 	private static CirType CanonicalToCirType(string canonical) =>
 		canonical == "void" ? new CirType.Void() : new CirType.Named(canonical);
+
+	// Lower an array literal `[a, b, c]` to a CIR ArrayLit carrying the element type and
+	// the lowered element expressions. The element type comes from the typer's inference
+	// on the first element; if no element types, fall back to `Any` (the LLVM emitter
+	// will use pointer-sized element layout, which is fine for the empty-array case).
+	private CirExpr LowerArrayLit(Expression.ArrayLit lit) {
+		var elementCanon = lit.Elements.Select(e => _typer.InferType(e)).FirstOrDefault(t => !string.IsNullOrEmpty(t));
+		var elementType = elementCanon != null ? CanonicalToCirType(elementCanon) : new CirType.Any();
+		return new CirExpr.ArrayLit(elementType, lit.Elements.Select(LowerExpr).ToList());
+	}
+
+	// Lower an array literal with a declared element type. Used by `LowerVarDecl` when
+	// the LHS is `T[] x = [...]`: each element is lowered + cast to T, so the slice's
+	// backing buffer ends up with the declared element width. Without this routing,
+	// `i32[] a = [1, 2, 3]` would lower as `i8[]` (smallest-fit per element) and the
+	// resulting slice would have an i8-sized buffer with i32-typed reads — misaligned.
+	private CirExpr LowerArrayLitWithDeclaredElementType(Expression.ArrayLit lit, TypeExpression declaredElementType) {
+		var elementCirType = LowerType(declaredElementType);
+		var elementCanon = CanonicalizeTypeExpr(declaredElementType);
+		var loweredElements = new List<CirExpr>(lit.Elements.Count);
+		foreach (var e in lit.Elements) {
+			var lowered = LowerExpr(e);
+			var elementInferred = _typer.InferType(e);
+			if (elementInferred != null && elementInferred != elementCanon)
+				lowered = new CirExpr.Cast(lowered, elementCirType, IsSafe: false);
+			loweredElements.Add(lowered);
+		}
+		return new CirExpr.ArrayLit(elementCirType, loweredElements);
+	}
+
+	// `for (T name in iterable) { body }`. Register the loop binding in the typer scope
+	// before lowering the body so identifier references inside the loop body resolve.
+	private CirStmt LowerForInStmt(ForInStmt s) {
+		var iterable = LowerExpr(s.Iterable);
+		var elementType = LowerType(s.Type);
+		_typer.DeclareLocal(s.Name, CanonicalizeTypeExpr(s.Type));
+		var body = LowerBlock(s.Body);
+		return new CirStmt.ForIn(elementType, s.Name, iterable, body);
+	}
+
+	// `new T[a]` / `new T[a][b]` / … → CirExpr.NewArray carrying the leaf element type
+	// and the list of outer-to-inner dimension sizes. The LLVM emitter handles single-
+	// and multi-dimensional cases.
+	private CirExpr LowerNewArray(Expression.NewArray na) =>
+		new CirExpr.NewArray(LowerType(na.ElementType), na.Sizes.Select(LowerExpr).ToList());
+
+	// `arr[i]` vs `arr[lo..hi]` — the parser produces `Index` in both cases; lower to a
+	// scalar `CirExpr.Index` for the integer case and a `CirExpr.Subslice` for the
+	// range case so the LLVM emitter can take the right path.
+	private CirExpr LowerIndexExpr(Expression.Index ix) {
+		if (ix.IndexExpr is Expression.Range r) {
+			// Element type comes from the target's inferred array type. Strip the trailing
+			// `[]` to get the canonical element form.
+			var targetTy = _typer.InferType(ix.Target);
+			var elementCanon = targetTy != null && targetTy.EndsWith("[]") ? targetTy[..^2] : "any";
+			return new CirExpr.Subslice(LowerExpr(ix.Target), LowerExpr(r.Start), LowerExpr(r.End), CanonicalToCirType(elementCanon));
+		}
+		return new CirExpr.Index(LowerExpr(ix.Target), LowerExpr(ix.IndexExpr));
+	}
+
+	// `arr::LENGTH` on an array-typed expression lowers to a slice-length extract. Any
+	// other meta-key (or non-array target) falls back to the static-access shape so the
+	// existing constant-meta machinery (`i32::MAX`, `T::SIZE`, …) still resolves.
+	private CirExpr LowerMetaAccess(Expression.MetaAccess meta) {
+		if (meta.Member == "LENGTH") {
+			var tgtTy = _typer.InferType(meta.Target);
+			if (tgtTy != null && tgtTy.EndsWith("[]"))
+				return new CirExpr.ArrayLength(LowerExpr(meta.Target));
+		}
+		return new CirExpr.StaticAccess(ResolveExprPath(meta.Target), meta.Member);
+	}
 
 	// `target.member` → either an EnumCaseRef (when target names an enum and member is a
 	// case), a StaticFieldRef (when target is a class identifier and member is a
@@ -784,7 +866,7 @@ public sealed class CirGenerator {
 		Stmt.While { Statement: var s } => new CirStmt.While(LowerExpr(s.Condition), LowerBlock(s.Body)),
 		Stmt.DoWhile { Statement: var s } => new CirStmt.DoWhile(LowerBlock(s.Body), LowerExpr(s.Condition)),
 		Stmt.For { Statement: var s } => new CirStmt.For(LowerStmt(s.Init), LowerExpr(s.Condition), LowerExpr(s.Iterator), LowerBlock(s.Body)),
-		Stmt.ForIn { Statement: var s } => new CirStmt.ForIn(LowerType(s.Type), s.Name, LowerExpr(s.Iterable), LowerBlock(s.Body)),
+		Stmt.ForIn { Statement: var s } => LowerForInStmt(s),
 		Stmt.Switch { Statement: var s } => LowerSwitchStmt(s),
 		Stmt.Break b => new CirStmt.Break(),
 		Stmt.Continue c => new CirStmt.Continue(),
@@ -868,11 +950,23 @@ public sealed class CirGenerator {
 				// class FQN / interface FQN resolution all happen inside.
 				canonicalName = CanonicalizeTypeExpr(d.Type.Value);
 			}
+			else if (d.Type.Value.Base is BaseType.Array) {
+				// Array-typed declaration (`string[] a = ...`): record the canonical `T[]`
+				// form so later identifier references see the right shape. Without this,
+				// `a::LENGTH` / `a[i]` fail because the local has no type in the typer.
+				canonicalName = CanonicalizeTypeExpr(d.Type.Value);
+			}
 		}
 		else if (_inferredVarTypes.TryGetValue(d.Span, out var inferred)) {
 			type = LowerType(inferred);
 			if (inferred.Base is BaseType.Named inferredNamed)
 				canonicalName = TypeInference.Canonicalize(inferredNamed.Name);
+			else if (inferred.Base is BaseType.Array)
+				// Recover the full canonical form (`i32[]`, `string[]`, etc.) by re-running
+				// the canonicalizer over the whole type expression. Without this, array-typed
+				// locals never get a canonical name and the typer can't infer their type at
+				// later use sites.
+				canonicalName = TypeInference.CanonicalizeTypeExpression(inferred);
 		}
 		else if (d.Init != null) {
 			// SemanticAnalyzer's literal-only inference didn't fire (e.g. Binary, Call, Identifier).
@@ -894,7 +988,17 @@ public sealed class CirGenerator {
 		if (canonicalName != null)
 			_typer.DeclareLocal(d.Name, canonicalName);
 
-		var init = d.Init is null ? null : LowerExpr(d.Init);
+		// Array-literal init with a declared array type: route through a context-aware
+		// lowering so each element gets cast to the declared element type. Without this,
+		// `i32[] a = [1, 2, 3]` would lower the literal as `i8[]` (smallest-fit per
+		// element) and then mismatch the i32-element slice the declaration expects.
+		CirExpr? init;
+		if (d.Type.HasValue && d.Type.Value.Base is BaseType.Array arrayTypeDecl && d.Init is Expression.ArrayLit arrLit) {
+			init = LowerArrayLitWithDeclaredElementType(arrLit, arrayTypeDecl.ElementType);
+		}
+		else {
+			init = d.Init is null ? null : LowerExpr(d.Init);
+		}
 
 		// Insert an implicit Cast at the assignment when the init's natural type doesn't match
 		// the declared type but a lossless promotion exists. This unblocks `float x = 5 + 5;`
@@ -932,10 +1036,12 @@ public sealed class CirGenerator {
 		Expression.Binary { Left: var l, Operator: var op, Right: var r } => new CirExpr.Binary(LowerExpr(l), LowerBinOp(op), LowerExpr(r)),
 		Expression.Unary { Operator: var op, Operand: var o } => new CirExpr.Unary(LowerUnOp(op), LowerExpr(o)),
 		Expression.Postfix { Operand: var o, Operator: var op } => new CirExpr.Unary(LowerPostOp(op), LowerExpr(o)),
+		Expression.ArrayLit lit => LowerArrayLit(lit),
+		Expression.NewArray na => LowerNewArray(na),
 		Expression.Call c => LowerCall(c),
 		Expression.MemberAccess ma => LowerMemberAccess(ma),
-		Expression.MetaAccess { Target: var t, Member: var m } => new CirExpr.StaticAccess(ResolveExprPath(t), m),
-		Expression.Index { Target: var t, IndexExpr: var i } => new CirExpr.Index(LowerExpr(t), LowerExpr(i)),
+		Expression.MetaAccess meta => LowerMetaAccess(meta),
+		Expression.Index ixExpr => LowerIndexExpr(ixExpr),
 		Expression.Cast cExpr => LowerCastExpr(cExpr),
 		Expression.TypeCheck { Value: var v, TargetType: var tt } => new CirExpr.TypeCheck(LowerExpr(v), LowerType(tt)),
 		Expression.MembershipCheck { Value: var v, Collection: var c } => new CirExpr.Binary(LowerExpr(v), CirBinOp.In, LowerExpr(c)),
