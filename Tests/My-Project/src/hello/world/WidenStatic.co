@@ -1,0 +1,9 @@
+module hello.world;
+
+public class () {
+
+    public const i32 SLOT = 7;
+
+    public WidenStatic {}
+    public ~WidenStatic {}
+}

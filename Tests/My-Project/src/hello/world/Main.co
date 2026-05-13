@@ -150,6 +150,28 @@ public class (string[] args) {
         for (int k = 0; k < 3; k++) {
             p(k % 2 == 0 ? "even" : "odd");
         }
+
+        // Switch widening: subject is i32, patterns are i8 literals.
+        i32 sv = 1000;
+        switch (sv) {
+            case 5:    p("small");
+            case 1000: p("hit");
+            default:   p("miss");
+        }
+
+        // Static field widening: literal `7` (i8) widens to i32 in WidenStatic.SLOT.
+        p(WidenStatic.SLOT);
+
+        // Instance field widening: literal `9` (i8) widens to i32 in WidenInstance.value.
+        let wi = new WidenInstance();
+        p(wi.value);
+        delete wi;
+
+        // Virtual call arg widening: i8 literal `5` passed to i32 formal through interface dispatch.
+        let wa = new WidenAcceptor();
+        Widener w = wa;
+        w.accept(5);     // prints 5 — arg widened to i32 before the indirect call
+        delete wa;
     }
 
     public ~Main() {

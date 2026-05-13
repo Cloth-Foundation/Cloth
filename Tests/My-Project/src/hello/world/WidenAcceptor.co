@@ -1,0 +1,15 @@
+module hello.world;
+
+import cloth.io.Out::{ println };
+import cloth.lang.Implementation;
+
+public class () -> Widener {
+
+    public WidenAcceptor {}
+    public ~WidenAcceptor {}
+
+    @Implementation
+    public func accept(i32 v): void {
+        println(v);
+    }
+}
