@@ -218,6 +218,11 @@ public sealed class ExpressionTyper {
 				return TypeInference.StripNullable(leftType);
 			}
 
+			case Expression.TypeCheck:
+				// `x is T` always produces a bool — regardless of whether T is a class or
+				// an interface (both routes go through `EmitTypeCheck` at the LLVM layer).
+				return "bool";
+
 			case Expression.Ternary { ThenBranch: var tb, ElseBranch: var eb }:
 			{
 				// `cond ? t : e` — the result type is the common type the two branches widen to.

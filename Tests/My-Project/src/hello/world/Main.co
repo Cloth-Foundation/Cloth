@@ -172,6 +172,26 @@ public class (string[] args) {
         Widener w = wa;
         w.accept(5);     // prints 5 — arg widened to i32 before the indirect call
         delete wa;
+
+        // `is Iface` / `as Iface` runtime kind checks via per-class implements bitmap.
+        let ps = new PoliteSpeaker();
+        let sp = new Speaker();
+        Greeter g1 = ps;
+        Greeter g2 = sp;
+
+        p(g1 is Polite);           // true  — PoliteSpeaker implements Polite (extends Greeter)
+        p(g1 is Greeter);          // true
+        p(g2 is Polite);           // false — Speaker only implements Greeter
+        p(g2 is Greeter);          // true
+
+        let pol = g1 as Polite;    // unsafe downcast — succeeds
+        p(pol.farewell());         // "goodbye"
+
+        Polite? polMaybe = g2 as? Polite;
+        p(polMaybe == null);       // true — Speaker is not a Polite
+
+        delete ps;
+        delete sp;
     }
 
     public ~Main() {
