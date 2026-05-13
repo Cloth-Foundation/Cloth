@@ -69,7 +69,11 @@ public sealed class CirGenerator {
 		// produces an `external` declaration instead of a duplicate definition.
 		var vtables = _symbols.ClassVtables.Values.Select(v => {
 			var isExtern = _symbols.Classes.TryGetValue(v.ClassFqn, out var info) && info.IsExtern;
-			return new CirVtable(v.ClassFqn, v.ParentClassFqn, v.Slots, isExtern);
+			// Extern classes get an empty bitmap — their definition (and bits) live in the
+			// dependency's `.lib`. Local classes get the registry-computed bytes appended
+			// to their vtable global by `LlvmEmitter.EmitVtableGlobals`.
+			var implementsBits = isExtern ? Array.Empty<byte>() : _symbols.ImplementsBits(v.ClassFqn);
+			return new CirVtable(v.ClassFqn, v.ParentClassFqn, v.Slots, implementsBits, isExtern);
 		}).ToList();
 
 		// Also surface static fields from extern (dependency) classes so the LLVM emitter
@@ -85,7 +89,7 @@ public sealed class CirGenerator {
 			}
 		}
 
-		return new CirModule(_types, _functions, vtables, _staticFields);
+		return new CirModule(_types, _functions, vtables, _staticFields, _symbols.InterfaceCount, _symbols.InterfaceIds);
 	}
 
 	// Walk every cross-project overload registered as `IsCrossProject` and produce a body-less
@@ -848,14 +852,12 @@ public sealed class CirGenerator {
 		if (srcIsClass && tgtIsClass && _symbols.IsClassOrAncestor(srcStripped, targetCanon))
 			return loweredValue;
 
-		// Downcast to a class (the only kind with a vtable global to compare against). Used
-		// for interface → class, class → descendant class, and class → sibling class. The
-		// runtime walks the receiver's vtable parent chain.
-		if (tgtIsClass) return new CirExpr.Downcast(loweredValue, targetCanon, c.IsSafe);
+		// Downcast to a class (vtable-chain walk) or interface (implements-bitmap check).
+		// Both shapes land in `CirExpr.Downcast`; the LLVM emitter picks the right runtime
+		// mechanic by checking `_module.InterfaceIds`.
+		if (tgtIsClass || tgtIsIface) return new CirExpr.Downcast(loweredValue, targetCanon, c.IsSafe);
 
-		// Interface → interface: the analyzer accepts; we'd need to pick a *concrete class*
-		// to compare the vtable against, which we don't know without RTTI. Out of scope for
-		// v1 — fall through to the existing Cast (no-op at the LLVM level for ptr → ptr).
+		// Anything else (e.g. unresolved target) — pass through as a Cast (ptr → ptr no-op).
 		return new CirExpr.Cast(loweredValue, loweredTargetType, c.IsSafe);
 	}
 

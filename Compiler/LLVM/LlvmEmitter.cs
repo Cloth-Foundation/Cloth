@@ -735,10 +735,16 @@ public sealed class LlvmEmitter {
 	// LLVM-mangled at reference time, matching how function definitions are emitted.
 	private string EmitVtableGlobals() {
 		var sb = new StringBuilder();
+		var bitmapBytes = (_module.InterfaceCount + 7) / 8;
+		var bitmapTy = $"[{bitmapBytes} x i8]";
 		foreach (var vt in _module.Vtables) {
 			var size = vt.Slots.Count;
 			var globalName = MangleVtableGlobal(vt.ClassFqn);
-			var structTy = $"{{ ptr, [{size} x ptr] }}";
+			// Layout: `{ ptr parent_vt, [N x ptr] methods, [B x i8] implements }`. The
+			// trailing bitmap encodes which interfaces the class transitively implements,
+			// indexed by `SymbolRegistry.InterfaceIds`. Appending the bitmap at the end
+			// leaves existing field-0 (parent) and field-1 (methods) GEPs unchanged.
+			var structTy = $"{{ ptr, [{size} x ptr], {bitmapTy} }}";
 
 			// Extern vtables (classes defined in a dependency project) are declared, not
 			// defined — the linker resolves them against the dependency's `.lib`. Emitting
@@ -749,13 +755,17 @@ public sealed class LlvmEmitter {
 			}
 
 			var parentRef = vt.ParentClassFqn == null ? "ptr null" : $"ptr @{MangleVtableGlobal(vt.ParentClassFqn)}";
+			var bitmapInit = bitmapBytes == 0
+				? $"{bitmapTy} zeroinitializer"
+				: $"{bitmapTy} [{string.Join(", ", vt.ImplementsBits.Select(b => $"i8 {b}"))}]";
+
 			if (size == 0) {
-				sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [0 x ptr] zeroinitializer }}");
+				sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [0 x ptr] zeroinitializer, {bitmapInit} }}");
 				continue;
 			}
 
 			var entries = vt.Slots.Select(slot => slot == null ? "ptr null" : $"ptr @{MangleToLlvm(slot)}");
-			sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [{size} x ptr] [{string.Join(", ", entries)}] }}");
+			sb.AppendLine($"@{globalName} = constant {structTy} {{ {parentRef}, [{size} x ptr] [{string.Join(", ", entries)}], {bitmapInit} }}");
 		}
 
 		return sb.ToString();
@@ -1914,11 +1924,31 @@ public sealed class LlvmEmitter {
 		return (hitLabel, missLabel);
 	}
 
-	// `x as T` / `x as? T` for reference downcasts. The chain-walk loop searches the
-	// receiver's class and every ancestor for a vtable matching the target. On match the
-	// receiver is the answer; on mismatch `as` aborts and `as?` yields null.
+	// `x as T` / `x as? T` for reference downcasts. Two paths:
+	//   * Class target: chain-walks parent vtables looking for the target's vtable global.
+	//   * Interface target: checks the per-class implements bitmap. Hit → receiver as-is;
+	//     miss → abort (`as`) or null (`as?`).
 	private string EmitDowncast(CirExpr.Downcast dc) {
 		var receiver = EmitExpr(dc.Receiver);
+
+		if (_module.InterfaceIds != null && _module.InterfaceIds.TryGetValue(dc.TargetClassFqn, out var ifaceId)) {
+			var hit = EmitImplementsBitCheck(receiver, ifaceId);
+			if (dc.IsSafe) {
+				var sel = FreshTemp();
+				_bodyLines.Add($"  {sel} = select i1 {hit}, ptr {receiver}, ptr null");
+				return sel;
+			}
+			var okLabel = FreshLabel("iface_cast_ok");
+			var failLabel = FreshLabel("iface_cast_fail");
+			_bodyLines.Add($"  br i1 {hit}, label %{okLabel}, label %{failLabel}");
+			_bodyLines.Add($"{failLabel}:");
+			_bodyLines.Add("  call void @abort()");
+			_bodyLines.Add("  unreachable");
+			_bodyLines.Add($"{okLabel}:");
+			_blockTerminated = false;
+			return receiver;
+		}
+
 		var (hitLabel, missLabel) = EmitVtableChainSearch(receiver, $"@{MangleVtableGlobal(dc.TargetClassFqn)}");
 
 		if (dc.IsSafe) {
@@ -1944,16 +1974,29 @@ public sealed class LlvmEmitter {
 		return receiver;
 	}
 
-	// `x is T` — runtime kind check. Walks the same chain as the downcast and returns `i1`
-	// (true on match, false on miss). Restricted to class targets; the analyzer rejects
-	// other combinations with S01F before reaching here.
+	// `x is T` — runtime kind check. Two paths:
+	//   * Class target: chain-walks the receiver's vtable parents looking for the target's
+	//     vtable global. Match → true; null parent reached → false.
+	//   * Interface target: looks up the interface ID in the per-class implements bitmap
+	//     appended to every vtable struct (field 2). Bit set → true; bit clear → false.
 	private string EmitTypeCheck(CirExpr.TypeCheck tc) {
-		if (tc.TargetType is not CirType.Named { FullyQualifiedName: var targetFqn } || !_classByFqn.ContainsKey(targetFqn)) {
-			LlvmError.UnsupportedExpression.WithMessage("`is` target must be a known class").Render();
+		if (tc.TargetType is not CirType.Named { FullyQualifiedName: var targetFqn }) {
+			LlvmError.UnsupportedExpression.WithMessage("`is` target must be a named class or interface").Render();
 			return "0";
 		}
-		var receiver = EmitExpr(tc.Value);
-		var (hitLabel, missLabel) = EmitVtableChainSearch(receiver, $"@{MangleVtableGlobal(targetFqn)}");
+
+		if (_module.InterfaceIds != null && _module.InterfaceIds.TryGetValue(targetFqn, out var ifaceId)) {
+			var receiver = EmitExpr(tc.Value);
+			return EmitImplementsBitCheck(receiver, ifaceId);
+		}
+
+		if (!_classByFqn.ContainsKey(targetFqn)) {
+			LlvmError.UnsupportedExpression.WithMessage("`is` target must be a known class or interface").Render();
+			return "0";
+		}
+
+		var classReceiver = EmitExpr(tc.Value);
+		var (hitLabel, missLabel) = EmitVtableChainSearch(classReceiver, $"@{MangleVtableGlobal(targetFqn)}");
 		var doneLabel = FreshLabel("is_done");
 		_bodyLines.Add($"{hitLabel}:");
 		_bodyLines.Add($"  br label %{doneLabel}");
@@ -1963,6 +2006,30 @@ public sealed class LlvmEmitter {
 		_blockTerminated = false;
 		var result = FreshTemp();
 		_bodyLines.Add($"  {result} = phi i1 [1, %{hitLabel}], [0, %{missLabel}]");
+		return result;
+	}
+
+	// Load the receiver's vtable, GEP to the implements bitmap field (struct field 2),
+	// then to byte `ifaceId / 8`. Mask with `1 << (ifaceId % 8)` and compare against 0
+	// to produce an i1. Used by both `EmitTypeCheck` (returns the i1 directly) and
+	// `EmitDowncast` (branches on the i1 for hit/miss).
+	private string EmitImplementsBitCheck(string receiver, int ifaceId) {
+		var bitmapBytes = (_module.InterfaceCount + 7) / 8;
+		var vsize = VtableSlotCount();
+		var byteIdx = ifaceId / 8;
+		var bitMask = 1 << (ifaceId % 8);
+
+		var vtablePtr = FreshTemp();
+		_bodyLines.Add($"  {vtablePtr} = load ptr, ptr {receiver}, align 8");
+		var byteAddr = FreshTemp();
+		// GEP into field 2 (implements bitmap), then to byte `byteIdx`.
+		_bodyLines.Add($"  {byteAddr} = getelementptr {{ ptr, [{vsize} x ptr], [{bitmapBytes} x i8] }}, ptr {vtablePtr}, i32 0, i32 2, i32 {byteIdx}");
+		var byteVal = FreshTemp();
+		_bodyLines.Add($"  {byteVal} = load i8, ptr {byteAddr}, align 1");
+		var masked = FreshTemp();
+		_bodyLines.Add($"  {masked} = and i8 {byteVal}, {bitMask}");
+		var result = FreshTemp();
+		_bodyLines.Add($"  {result} = icmp ne i8 {masked}, 0");
 		return result;
 	}
 

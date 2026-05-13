@@ -87,6 +87,16 @@ public sealed class SymbolRegistry {
 	// order across all interfaces, so they're stable per compilation.
 	public Dictionary<string, int> InterfaceMethodSlots { get; } = new();
 
+	// Per-interface integer IDs (0-based) used to index the per-class implements bitmap
+	// embedded in each vtable global. Populated by `AssignVtableLayouts` in a stable
+	// (sorted-FQN) order. Cycle-broken interfaces still get an ID — only the bitmap-write
+	// for them is suppressed via `TransitiveInterfaceClosure` already skipping broken nodes.
+	public Dictionary<string, int> InterfaceIds { get; } = new();
+
+	// Total number of registered interfaces — equals the bit width of every class's
+	// implements bitmap. Used by LlvmEmitter to size `[B x i8]` where `B = ceil(N / 8)`.
+	public int InterfaceCount => InterfaceIds.Count;
+
 	// Total number of slots in any class's vtable. Equal to the count of distinct interface
 	// methods across the whole program. Every class with `IsList` non-empty has a vtable of
 	// exactly this size; classes that implement no interfaces have no vtable at all.
@@ -573,12 +583,37 @@ public sealed class SymbolRegistry {
 		return result;
 	}
 
+	// Per-class implements bitmap: a byte array of length `ceil(InterfaceCount / 8)` where
+	// bit `InterfaceIds[ifaceFqn]` is set for every interface in `TransitiveInterfaceClosure`.
+	// Used by `LlvmEmitter.EmitVtableGlobals` to seed the implements field appended to each
+	// class's vtable struct, and by `EmitTypeCheck` / `EmitDowncast` to look up bit positions
+	// at runtime. Returns a length-0 array when no interfaces exist (no bits to set).
+	public byte[] ImplementsBits(string classFqn) {
+		var byteCount = (InterfaceCount + 7) / 8;
+		var bits = new byte[byteCount];
+		if (byteCount == 0) return bits;
+		var closure = TransitiveInterfaceClosure(classFqn);
+		foreach (var ifaceFqn in closure) {
+			if (!InterfaceIds.TryGetValue(ifaceFqn, out var id)) continue;
+			bits[id / 8] |= (byte)(1 << (id % 8));
+		}
+		return bits;
+	}
+
 	// Pass 3 — assign global slot IDs to every interface method and build per-class vtable
 	// layouts. Slot order is deterministic: interfaces in dictionary-insertion order, and
 	// methods within each interface in their declaration order.
 	private void AssignVtableLayouts(List<(CompilationUnit Unit, bool IsExtern)> allUnits) {
 		// Detect interface inheritance cycles first so transitive walks don't infinite-loop.
 		DetectInterfaceCycles();
+
+		// Assign a stable 0-based ID per interface so the per-class implements bitmap
+		// embedded in each vtable can be indexed at runtime. Sorted-FQN iteration keeps
+		// IDs deterministic across builds (within the same build unit).
+		var ifaceId = 0;
+		foreach (var fqn in Interfaces.Keys.OrderBy(k => k, StringComparer.Ordinal)) {
+			InterfaceIds[fqn] = ifaceId++;
+		}
 
 		var nextSlot = 0;
 		foreach (var (ifaceFqn, info) in Interfaces) {
