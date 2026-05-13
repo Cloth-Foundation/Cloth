@@ -1,0 +1,5 @@
+module hello.world;
+
+public interface {
+    public func accept(i32 v): void;
+}

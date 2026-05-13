@@ -222,7 +222,7 @@ public sealed class CirGenerator {
 		// globals, initialized once.
 		var fieldInitializers = decl.Members.OfType<MemberDeclaration.Field>()
 			.Where(f => f.Declaration.Initializer != null && !f.Declaration.IsStatic)
-			.Select(f => (f.Declaration.Name, f.Declaration.Initializer!)).ToList();
+			.Select(f => (Name: f.Declaration.Name, Init: f.Declaration.Initializer!, FieldType: LowerType(f.Declaration.TypeExpression), FieldCanon: CanonicalizeTypeExpr(f.Declaration.TypeExpression))).ToList();
 
 		var prev = _currentTypeFqn;
 		_currentTypeFqn = typeFqn;
@@ -234,14 +234,24 @@ public sealed class CirGenerator {
 			foreach (var member in decl.Members) {
 				switch (member) {
 					case MemberDeclaration.Field f when f.Declaration.IsStatic:
-						_staticFields.Add(new CirStaticField(typeFqn, f.Declaration.Name, LowerType(f.Declaration.TypeExpression), f.Declaration.Initializer == null ? null : LowerExpr(f.Declaration.Initializer), IsConst: f.Declaration.IsConst, IsExtern: false));
+					{
+						var fieldType = LowerType(f.Declaration.TypeExpression);
+						var fieldCanon = CanonicalizeTypeExpr(f.Declaration.TypeExpression);
+						var loweredInit = f.Declaration.Initializer == null ? null : WidenIfNeeded(LowerExpr(f.Declaration.Initializer), f.Declaration.Initializer, fieldCanon, fieldType);
+						_staticFields.Add(new CirStaticField(typeFqn, f.Declaration.Name, fieldType, loweredInit, IsConst: f.Declaration.IsConst, IsExtern: false));
 						break;
+					}
 					case MemberDeclaration.Field f:
 						fields.Add(LowerField(f.Declaration));
 						break;
 					case MemberDeclaration.Const c:
-						_staticFields.Add(new CirStaticField(typeFqn, c.Declaration.Name, LowerType(c.Declaration.Type), c.Declaration.Value == null ? null : LowerExpr(c.Declaration.Value), IsConst: true, IsExtern: false));
+					{
+						var constType = LowerType(c.Declaration.Type);
+						var constCanon = CanonicalizeTypeExpr(c.Declaration.Type);
+						var loweredInit = c.Declaration.Value == null ? null : WidenIfNeeded(LowerExpr(c.Declaration.Value), c.Declaration.Value, constCanon, constType);
+						_staticFields.Add(new CirStaticField(typeFqn, c.Declaration.Name, constType, loweredInit, IsConst: true, IsExtern: false));
 						break;
+					}
 				}
 			}
 
@@ -352,7 +362,7 @@ public sealed class CirGenerator {
 			// (singletons have no user-callable lifecycle); we accept them silently for v1
 			// and a follow-up adds the analyzer-side rejection.
 			foreach (var member in decl.Members)
-				LowerNonFieldMember(member, typeFqn, new List<Parameter>(), decl.Name, filePath, new List<CirField>(), new List<(string, Expression)>());
+				LowerNonFieldMember(member, typeFqn, new List<Parameter>(), decl.Name, filePath, new List<CirField>(), new List<(string Name, Expression Init, CirType FieldType, string FieldCanon)>());
 		}
 		finally {
 			_currentTypeFqn = prev;
@@ -397,7 +407,7 @@ public sealed class CirGenerator {
 	// Member lowering
 	// -------------------------------------------------------------------------
 
-	private void LowerNonFieldMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields, List<(string Name, Expression Init)> fieldInitializers) {
+	private void LowerNonFieldMember(MemberDeclaration member, string typeFqn, List<Parameter> primaryParams, string className, string filePath, List<CirField> fields, List<(string Name, Expression Init, CirType FieldType, string FieldCanon)> fieldInitializers) {
 		switch (member) {
 			case MemberDeclaration.Constructor c:
 				_functions.Add(LowerConstructor(c.Declaration, typeFqn, primaryParams, className, fieldInitializers));
@@ -417,7 +427,7 @@ public sealed class CirGenerator {
 		}
 	}
 
-	private CirFunction LowerConstructor(ConstructorDeclaration decl, string typeFqn, List<Parameter> primaryParams, string className, List<(string Name, Expression Init)> fieldInitializers) {
+	private CirFunction LowerConstructor(ConstructorDeclaration decl, string typeFqn, List<Parameter> primaryParams, string className, List<(string Name, Expression Init, CirType FieldType, string FieldCanon)> fieldInitializers) {
 		var thisParam = new CirParam(new CirType.Ptr(new CirType.Named(typeFqn)), "this");
 		var primaryCirParams = primaryParams.Select(p => new CirParam(LowerType(p.Type), p.Name));
 		var explicitParams = decl.Parameters.Select(p => new CirParam(LowerType(p.Type), p.Name));
@@ -474,8 +484,13 @@ public sealed class CirGenerator {
 
 		// Field-initializer prologue: `this.<field> = <init-expr>` for each declared default.
 		// Runs after primary-param assignments so initializers can reference primary fields,
-		// and before the user-written body so the body sees fully-initialized state.
-		var fieldPrologue = fieldInitializers.Select(fi => (CirStmt)new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), fi.Name), CirAssignOp.Assign, LowerExpr(fi.Init))).ToList();
+		// and before the user-written body so the body sees fully-initialized state. Init
+		// expressions widen to the field's declared type so `i32 y = 5;` (literal 5 is i8)
+		// stores an i32 into the i32 slot.
+		var fieldPrologue = fieldInitializers.Select(fi => {
+			var loweredInit = WidenIfNeeded(LowerExpr(fi.Init), fi.Init, fi.FieldCanon, fi.FieldType);
+			return (CirStmt) new CirStmt.Assign(new CirExpr.FieldAccess(new CirExpr.ThisPtr(), fi.Name), CirAssignOp.Assign, loweredInit);
+		}).ToList();
 
 		var body = primaryPrologue.Concat(fieldPrologue).Concat(LowerBlock(decl.Body)).ToList();
 
@@ -626,7 +641,8 @@ public sealed class CirGenerator {
 					var slotKey = SymbolRegistry.SlotKey(cursor, methodName, proto.ParamTypes);
 					if (_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) {
 						var paramCirTypes = proto.ParamTypes.Select(CanonicalToCirType).ToList();
-						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(proto.ReturnType), paramCirTypes, args);
+						var widenedArgs = AdaptCallArgsToParams(rawArgs, args, proto.ParamTypes);
+						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(proto.ReturnType), paramCirTypes, widenedArgs);
 					}
 				}
 			}
@@ -645,6 +661,27 @@ public sealed class CirGenerator {
 	// the lowered element expressions. The element type comes from the typer's inference
 	// on the first element; if no element types, fall back to `Any` (the LLVM emitter
 	// will use pointer-sized element layout, which is fine for the empty-array case).
+	// Insert a widening `CirExpr.Cast` when `sourceExpr`'s canonical type is narrower than
+	// `targetCanon` and lossless-promotes to it. Called at every CIR-lowering site that
+	// binds a value to a typed slot: var decls, assignments, returns, call args, field
+	// initializers, array-literal elements, ternary branches, switch case patterns, etc.
+	// Returns `lowered` unchanged when the types already match or no lossless promotion
+	// is available — non-promotable shape mismatches are caught upstream by the analyzer.
+	private CirExpr WidenIfNeeded(CirExpr lowered, Expression sourceExpr, string targetCanon, CirType targetCirType) {
+		var sourceCanon = _typer.InferType(sourceExpr);
+		return WidenIfNeeded(lowered, sourceCanon, targetCanon, targetCirType);
+	}
+
+	// Variant for callers that already have the source's canonical type — avoids a redundant
+	// `InferType` call.
+	private CirExpr WidenIfNeeded(CirExpr lowered, string? sourceCanon, string targetCanon, CirType targetCirType) {
+		if (sourceCanon != null && sourceCanon != targetCanon
+		    && TypeInference.IsLosslessPromotion(sourceCanon, targetCanon)) {
+			return new CirExpr.Cast(lowered, targetCirType, IsSafe: false);
+		}
+		return lowered;
+	}
+
 	private CirExpr LowerArrayLit(Expression.ArrayLit lit) {
 		var elementCanon = lit.Elements.Select(e => _typer.InferType(e)).FirstOrDefault(t => !string.IsNullOrEmpty(t));
 		var elementType = elementCanon != null ? CanonicalToCirType(elementCanon) : new CirType.Any();
@@ -669,10 +706,7 @@ public sealed class CirGenerator {
 				lowered = LowerArrayLitWithDeclaredElementType(innerLit, innerArrayType.ElementType);
 			}
 			else {
-				lowered = LowerExpr(e);
-				var elementInferred = _typer.InferType(e);
-				if (elementInferred != null && elementInferred != elementCanon)
-					lowered = new CirExpr.Cast(lowered, elementCirType, IsSafe: false);
+				lowered = WidenIfNeeded(LowerExpr(e), e, elementCanon, elementCirType);
 			}
 			loweredElements.Add(lowered);
 		}
@@ -688,11 +722,12 @@ public sealed class CirGenerator {
 		var loweredE = LowerExpr(e);
 		var tType = _typer.InferType(t);
 		var eType = _typer.InferType(e);
+		// Pre-compute source canonicals once; the helper takes either branch's type as the
+		// target depending on which direction the promotion goes. Helper no-ops when neither
+		// direction is lossless (same-type or unrelated reference types).
 		if (tType != null && eType != null && tType != eType) {
-			if (TypeInference.IsLosslessPromotion(tType, eType))
-				loweredT = new CirExpr.Cast(loweredT, new CirType.Named(eType), IsSafe: false);
-			else if (TypeInference.IsLosslessPromotion(eType, tType))
-				loweredE = new CirExpr.Cast(loweredE, new CirType.Named(tType), IsSafe: false);
+			loweredT = WidenIfNeeded(loweredT, tType, eType, new CirType.Named(eType));
+			loweredE = WidenIfNeeded(loweredE, eType, tType, new CirType.Named(tType));
 		}
 		return new CirExpr.Ternary(loweredCond, loweredT, loweredE);
 	}
@@ -752,8 +787,12 @@ public sealed class CirGenerator {
 			}
 		}
 		if (ma.Target is Expression.Identifier classId) {
-			var resolvedClass = _importMap.TryGetValue(classId.Name, out var mapped) ? mapped : classId.Name;
-			if (_symbols.KnownClasses.Contains(resolvedClass)) {
+			// Full resolution chain — importMap → KnownClasses direct → enclosing-nested →
+			// same-module — so `WidenStatic.SLOT` from inside the same module resolves
+			// without an explicit import. Mirrors the typer's resolution path so the two
+			// stay in sync.
+			var resolvedClass = ResolveClassFqn(classId.Name);
+			if (resolvedClass != null) {
 				var cursor = resolvedClass;
 				while (!string.IsNullOrEmpty(cursor)) {
 					if (_symbols.CycleBrokenClasses.Contains(cursor)) break;
@@ -870,8 +909,12 @@ public sealed class CirGenerator {
 		return null;
 	}
 
-	private CirField LowerField(FieldDeclaration decl) =>
-		new CirField(decl.Name, LowerType(decl.TypeExpression), decl.FieldModifiers == FieldModifiers.Const, decl.Initializer is null ? null : LowerExpr(decl.Initializer));
+	private CirField LowerField(FieldDeclaration decl) {
+		var fieldType = LowerType(decl.TypeExpression);
+		var fieldCanon = CanonicalizeTypeExpr(decl.TypeExpression);
+		var initializer = decl.Initializer is null ? null : WidenIfNeeded(LowerExpr(decl.Initializer), decl.Initializer, fieldCanon, fieldType);
+		return new CirField(decl.Name, fieldType, decl.FieldModifiers == FieldModifiers.Const, initializer);
+	}
 
 	// -------------------------------------------------------------------------
 	// Block & statement lowering
@@ -939,12 +982,9 @@ public sealed class CirGenerator {
 		var value = LowerExpr(valueExpr);
 
 		// Widen the RHS to match the target's type when the analyzer-validated lossless
-		// promotion applies — same pattern as LowerVarDecl and LowerReturn.
+		// promotion applies.
 		var lhsType = _typer.InferType(targetExpr);
-		var rhsType = _typer.InferType(valueExpr);
-		if (lhsType != null && rhsType != null && lhsType != rhsType && TypeInference.IsLosslessPromotion(rhsType, lhsType)) {
-			value = new CirExpr.Cast(value, new CirType.Named(lhsType), IsSafe: false);
-		}
+		if (lhsType != null) value = WidenIfNeeded(value, valueExpr, lhsType, new CirType.Named(lhsType));
 
 		return new CirStmt.Assign(target, LowerAssignOp(op), value);
 	}
@@ -954,13 +994,9 @@ public sealed class CirGenerator {
 		var lowered = LowerExpr(value);
 
 		// Insert a widening Cast when the value's natural type is narrower than the function's
-		// declared return type. The analyzer has already validated that the promotion is lossless,
-		// so reaching this point means we're allowed to widen — same pattern as LowerVarDecl.
+		// declared return type. The analyzer has already validated that the promotion is lossless.
 		if (!string.IsNullOrEmpty(_currentReturnType) && _currentReturnType != "void") {
-			var inferred = _typer.InferType(value);
-			if (inferred != null && inferred != _currentReturnType && TypeInference.IsLosslessPromotion(inferred, _currentReturnType)) {
-				lowered = new CirExpr.Cast(lowered, new CirType.Named(_currentReturnType), IsSafe: false);
-			}
+			lowered = WidenIfNeeded(lowered, value, _currentReturnType, new CirType.Named(_currentReturnType));
 		}
 
 		return new CirStmt.Return(lowered);
@@ -1032,10 +1068,7 @@ public sealed class CirGenerator {
 		// (Binary i32 → f64) and other widening assignments without forcing the user to write
 		// an explicit conversion.
 		if (init != null && d.Type.HasValue && canonicalName != null && d.Init != null) {
-			var initType = _typer.InferType(d.Init);
-			if (initType != null && initType != canonicalName && TypeInference.IsLosslessPromotion(initType, canonicalName)) {
-				init = new CirExpr.Cast(init, new CirType.Named(canonicalName), IsSafe: false);
-			}
+			init = WidenIfNeeded(init, d.Init, canonicalName, new CirType.Named(canonicalName));
 		}
 
 		return new CirStmt.LocalDecl(type, d.Name, init, IsMutable: true);
@@ -1045,7 +1078,20 @@ public sealed class CirGenerator {
 		new CirStmt.If(LowerExpr(s.Condition), LowerBlock(s.ThenBranch), s.ElseIfBranches.Select(b => (LowerExpr(b.Condition), LowerBlock(b.Body))).ToList(), s.ElseBranch.HasValue ? LowerBlock(s.ElseBranch.Value) : null);
 
 	private CirStmt LowerSwitchStmt(SwitchStmt s) {
-		var cases = s.Cases.Select(c => new CirSwitchCase(c.Pattern is SwitchPattern.Case sc ? LowerExpr(sc.Expression) : null, c.Body.Select(LowerStmt).ToList())).ToList();
+		// Each case pattern is compared against the subject; widen the pattern to the
+		// subject's canonical type so `switch (i32_var) { case 5: ... }` compares apples
+		// to apples (literal `5` defaults to i8). Helper no-ops when the subject is a
+		// reference / enum type since `IsLosslessPromotion` only matches numerics.
+		var subjectCanon = _typer.InferType(s.Expression);
+		var cases = s.Cases.Select(c => {
+			CirExpr? pattern = null;
+			if (c.Pattern is SwitchPattern.Case sc) {
+				pattern = LowerExpr(sc.Expression);
+				if (subjectCanon != null)
+					pattern = WidenIfNeeded(pattern, sc.Expression, subjectCanon, new CirType.Named(subjectCanon));
+			}
+			return new CirSwitchCase(pattern, c.Body.Select(LowerStmt).ToList());
+		}).ToList();
 		return new CirStmt.Switch(LowerExpr(s.Expression), cases);
 	}
 
@@ -1237,7 +1283,8 @@ public sealed class CirGenerator {
 						var slotKey = SymbolRegistry.SlotKey(ifaceFqn, sig.Name, sig.ParamTypes);
 						if (!_symbols.InterfaceMethodSlots.TryGetValue(slotKey, out var slotId)) continue;
 						var paramCirTypes = sig.ParamTypes.Select(CanonicalToCirType).ToList();
-						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(sig.ReturnType), paramCirTypes, args);
+						var widenedArgs = AdaptCallArgsToParams(call.Arguments, args, sig.ParamTypes);
+						return new CirExpr.VirtualCall(target, slotId, CanonicalToCirType(sig.ReturnType), paramCirTypes, widenedArgs);
 					}
 				}
 
@@ -1268,14 +1315,22 @@ public sealed class CirGenerator {
 	private CirExpr BuildOverloadCall(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) =>
 		new CirExpr.Call(overload.MangledSymbol, BuildOverloadCallArgs(overload, rawArgs, loweredArgs));
 
-	// Promote each argument to the chosen overload's parameter type via a lossless Cast when
+	// Promote each argument to the chosen overload's parameter type via a Cast when
 	// types differ. Returned list is in the same order as the inputs and excludes any receiver.
-	private List<CirExpr> BuildOverloadCallArgs(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) {
+	private List<CirExpr> BuildOverloadCallArgs(MethodOverload overload, List<Expression> rawArgs, List<CirExpr> loweredArgs) =>
+		AdaptCallArgsToParams(rawArgs, loweredArgs, overload.ParamTypes);
+
+	// Generic arg-list adapter: for each (raw, lowered) pair, cast `lowered` to the formal
+	// param type when the inferred source type differs. The cast is unconditional (not gated
+	// on `IsLosslessPromotion`) because the analyzer has already validated assignability —
+	// this covers both lossless integer widening AND non-promotable conversions like
+	// class→interface upcasts and explicit narrowing via `as`.
+	private List<CirExpr> AdaptCallArgsToParams(List<Expression> rawArgs, List<CirExpr> loweredArgs, IReadOnlyList<string> paramCanons) {
 		var finalArgs = new List<CirExpr>(loweredArgs.Count);
 		for (var i = 0; i < loweredArgs.Count; i++) {
 			var argType = _typer.InferType(rawArgs[i]);
-			if (argType != null && argType != overload.ParamTypes[i]) {
-				finalArgs.Add(new CirExpr.Cast(loweredArgs[i], new CirType.Named(overload.ParamTypes[i]), IsSafe: false));
+			if (argType != null && argType != paramCanons[i]) {
+				finalArgs.Add(new CirExpr.Cast(loweredArgs[i], new CirType.Named(paramCanons[i]), IsSafe: false));
 			}
 			else {
 				finalArgs.Add(loweredArgs[i]);

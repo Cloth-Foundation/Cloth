@@ -85,12 +85,13 @@ public sealed class ExpressionTyper {
 				}
 
 				// Static field access: `ClassName.FIELD` — target is a class identifier, not
-				// a value. Resolve via importMap and KnownClasses, then look up `FIELD` as a
-				// static field on the class chain. Instance-field-only access still goes
-				// through the second pass below.
+				// a value. Resolve through the full chain (importMap → KnownClasses direct →
+				// enclosing-nested → same-module → dotted-shorthand) so same-module references
+				// like `WidenStatic.SLOT` from inside `hello.world.Main` work without an explicit
+				// import, matching how the enum-case branch above resolves `EnumName.CASE`.
 				if (ma.Target is Expression.Identifier classId) {
-					var resolvedClass = _importMap.TryGetValue(classId.Name, out var mapped) ? mapped : classId.Name;
-					if (_symbols.KnownClasses.Contains(resolvedClass)) {
+					var resolvedClass = ResolveClassOrInterfaceFqn(classId.Name);
+					if (resolvedClass != null && _symbols.KnownClasses.Contains(resolvedClass)) {
 						var staticCursor = resolvedClass;
 						while (!string.IsNullOrEmpty(staticCursor)) {
 							if (_symbols.CycleBrokenClasses.Contains(staticCursor)) break;

@@ -1,0 +1,9 @@
+module hello.world;
+
+public class () {
+
+    public i32 value = 9;
+
+    public WidenInstance {}
+    public ~WidenInstance {}
+}
