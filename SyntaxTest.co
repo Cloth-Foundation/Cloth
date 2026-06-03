@@ -1,0 +1,24 @@
+module my.mod;
+
+include cloth.lang.Serializable;
+
+class (): Serializable {
+
+    public:
+
+        SyntaxTest {
+
+        }
+
+        ~SyntaxTest {
+
+        }
+
+        void run() {
+
+        }
+
+    private:
+
+
+}

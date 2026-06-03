@@ -1,36 +1,15 @@
-﻿module _src;
+module mr.fart;
 
-import cloth.io.IO::{ println };
-import cloth.lang.*;
+# Test comment
+938_472,
+109f,
+5.63,
+481I,
+754F,
 
-public class (): Object -> Serializable, Nullable {
+#|
+ | I am a multiline
+ |#
+12
 
-    public Test {
-        let frag = run();
-        frag();
-
-        let x = 1;
-
-        if (true) {
-            println("Hello World");
-        } else {
-            println("I am Cloth!");
-        }
-    }
-
-    public ~Test {
-        println("Goodbye World");
-    }
-
-    public Test(string s) {
-    }
-
-    public fragment run (): void {
-        println("Hello World");
-    }
-
-    public fragment run (): void {
-        println(" I am Cloth!");
-    }
-
-}
+int x = 12;
