@@ -1,7 +1,0 @@
-module hello.world;
-
-public interface {
-
-    public func label(): string;
-
-}
