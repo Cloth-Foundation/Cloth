@@ -7,7 +7,7 @@ plugins {
 apply(from = rootProject.file("dependencies.gradle.kts"))
 
 application {
-    mainClass.set("cloth.Main")
+    mainClass.set("cloth.ClothProgram")
 }
 
 graalvmNative {
