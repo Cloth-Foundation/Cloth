@@ -85,7 +85,7 @@ public final class ClothObject {
 	}
 
 	/**
-	 * File name including extension, e.g. {@code Out.co}.
+	 * File name including extension
 	 */
 	public String fileName () {
 		return path.getFileName().toString();
