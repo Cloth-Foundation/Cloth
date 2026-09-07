@@ -1,0 +1,13 @@
+struct {
+    string file;
+    int offset;
+    uint32 line;
+    uint32 column;
+
+    SourceLocation (string file, int offset, uint32 line, uint32 column) {
+        self.file = file;
+        self.offset = offset;
+        self.line = line;
+        self.column = column;
+    }
+}

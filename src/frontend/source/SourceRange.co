@@ -1,0 +1,21 @@
+struct {
+    SourceLocation begin;
+    SourceLocation end;
+
+    SourceRange (SourceLocation begin, SourceLocation end) {
+        self.begin = begin;
+        self.end = end;
+    }
+
+    func GetBegin(): SourceLocation {
+        return self.begin;
+    }
+
+    func GetEnd(): SourceLocation {
+        return self.end;
+    }
+
+    static func PointRange (SourceLocation location): SourceRange {
+        return SourceRange(location, location);
+    }
+}

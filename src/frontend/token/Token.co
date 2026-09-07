@@ -1,0 +1,25 @@
+import frontend.source::SourceRange;
+
+struct {
+    TokenKind kind;
+    string lexeme;
+    SourceRange range;
+
+    Token (TokenKind kind, string lexeme, SourceRange range) {
+        self.kind = kind;
+        self.lexeme = lexeme;
+        self.range = range;
+    }
+
+    func GetKind(): TokenKind {
+        return self.kind;
+    }
+
+    func GetLexeme(): string {
+        return self.lexeme;
+    }
+
+    func GetRange(): SourceRange {
+        return self.range;
+    }
+}
