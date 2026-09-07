@@ -1,0 +1,7 @@
+import cloth.io::Console;
+
+static func Main(string[] args): int32 {
+    println("Hello, Cloth!");
+
+    return 0;
+}

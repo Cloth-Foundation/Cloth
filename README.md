@@ -21,7 +21,7 @@
 
 [Learn]: https://cloth.dev/learning-center
 
-[Documentation]: https://docs.cloth.dev
+[Documentation]: https://cloth.dev/docs
 
 [Contributing]: CONTRIBUTING.md
 
@@ -61,7 +61,7 @@ While not recommended, you can follow [the Installation Guide](INSTALL.md).
 
 ## Help
 
-See the [Help Center](https://cloth.dev/resources) or the [Documentation](https://docs.cloth.dev/) for help resources.
+See the [Help Center](https://cloth.dev/resources) or the [Documentation](https://cloth.dev/docs) for help resources.
 
 ## Contributing
 

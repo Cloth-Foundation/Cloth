@@ -1,0 +1,10 @@
+manifest-version = 1
+
+[package]
+name = "clothc"
+version = "0.0.1"
+
+[executable]
+entry = "Main.co"
+
+[dependencies]
