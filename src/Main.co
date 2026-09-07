@@ -4,11 +4,12 @@ import frontend.source::SourceRange;
 import frontend.source::SourceLocation;
 
 static func Main(string[] args): int32 {
-    Token token = Token(TokenKind.kIdentifier, "cloth", SourceRange.PointRange(SourceLocation("", 0, 0, 0)));
+    var token = Token(TokenKind.kIdentifier, "ident", SourceRange.PointRange(SourceLocation("", 0, 0, 0)));
 
     println(token.GetLexeme());
     println(token.GetKind());
     println(token.GetRange());
+    println(token);
 
     return 0;
 }

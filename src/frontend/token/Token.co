@@ -1,6 +1,6 @@
 import frontend.source::SourceRange;
 
-struct {
+class {
     TokenKind kind;
     string lexeme;
     SourceRange range;
