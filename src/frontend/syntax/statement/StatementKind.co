@@ -1,0 +1,14 @@
+enum {
+  kInvalid,
+  kLocalVariable,
+  kReturn,
+  kExpression,
+  kIf,
+  kWhile,
+  kForEach,
+  kFor,
+  kSwitch,
+  kBreak,
+  kContinue,
+  kNestedBlock,
+}

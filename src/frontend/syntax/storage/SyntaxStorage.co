@@ -1,0 +1,137 @@
+import frontend.syntax::BlockId;
+import frontend.syntax::BlockSyntax;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxHandle;
+import frontend.syntax.storage::SyntaxOwner;
+import frontend.syntax.storage::SyntaxPage;
+import frontend.syntax.storage::SyntaxPlacement;
+
+class {
+  final SyntaxOwner owner;
+  SyntaxPage? first;
+  SyntaxPage? last;
+  int32 nodeCount;
+  int32 pageCount;
+  bool published;
+
+  SyntaxStorage() {
+    self.owner = SyntaxOwner();
+    self.first = null;
+    self.last = null;
+    self.nodeCount = 0;
+    self.pageCount = 0;
+    self.published = false;
+  }
+
+  func AddExpression(ExpressionSyntax value): ExpressionId throws StateError {
+    final SyntaxPlacement placement = placeNode(value);
+    return ExpressionId(placement.GetOwner(), placement.GetPage(),
+                        placement.GetSlot(), placement.GetOrdinal());
+  }
+
+  func AddStatement(StatementSyntax value): StatementId throws StateError {
+    final SyntaxPlacement placement = placeNode(value);
+    return StatementId(placement.GetOwner(), placement.GetPage(),
+                       placement.GetSlot(), placement.GetOrdinal());
+  }
+
+  func AddBlock(BlockSyntax value): BlockId throws StateError {
+    final SyntaxPlacement placement = placeNode(value);
+    return BlockId(placement.GetOwner(), placement.GetPage(),
+                   placement.GetSlot(), placement.GetOrdinal());
+  }
+
+  func GetExpression(ExpressionId id): ExpressionSyntax throws StateError {
+    final ExpressionSyntax? value =
+        id.Resolve(self.owner) as ExpressionSyntax?;
+    if (value == null) {
+      throw StateError("expression handle does not belong to syntax storage");
+    }
+    return value;
+  }
+
+  func GetStatement(StatementId id): StatementSyntax throws StateError {
+    final StatementSyntax? value =
+        id.Resolve(self.owner) as StatementSyntax?;
+    if (value == null) {
+      throw StateError("statement handle does not belong to syntax storage");
+    }
+    return value;
+  }
+
+  func GetBlock(BlockId id): BlockSyntax throws StateError {
+    final BlockSyntax? value =
+        id.Resolve(self.owner) as BlockSyntax?;
+    if (value == null) {
+      throw StateError("block handle does not belong to syntax storage");
+    }
+    return value;
+  }
+
+  func OwnsExpression(ExpressionId id): bool {
+    return self.OwnsExpressionHandle(id);
+  }
+
+  func OwnsStatement(StatementId id): bool {
+    return id.Resolve(self.owner) is StatementSyntax;
+  }
+
+  func OwnsBlock(BlockId id): bool {
+    return id.Resolve(self.owner) is BlockSyntax;
+  }
+
+  func OwnsExpressionHandle(SyntaxHandle id): bool {
+    return id.Resolve(self.owner) is ExpressionSyntax;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.published) {
+      throw StateError("syntax storage is already sealed");
+    }
+    SyntaxPage? current = self.first;
+    int32 visitedPages = 0;
+    int32 visitedNodes = 0;
+    while (current != null) {
+      final SyntaxPage page = current;
+      visitedPages++;
+      visitedNodes += page.GetCount();
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (visitedPages != self.pageCount || visitedNodes != self.nodeCount) {
+      throw StateError("syntax storage page chain is inconsistent");
+    }
+    self.published = true;
+  }
+
+  func CanAppend(): bool { return !self.published; }
+  func IsSealed(): bool { return self.published; }
+  func GetNodeCount(): int32 { return self.nodeCount; }
+  func GetPageCount(): int32 { return self.pageCount; }
+
+  func placeNode(SyntaxNode value): SyntaxPlacement throws StateError {
+    if (self.published) { throw StateError("syntax storage is sealed"); }
+    SyntaxPage page;
+    if (self.last == null || self.last!.IsFull()) {
+      page = SyntaxPage(self.owner, self.nodeCount);
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+      self.pageCount++;
+    } else {
+      page = self.last!;
+    }
+    final int32 slot = page.Add(value);
+    final var placement =
+        SyntaxPlacement(self.owner, page, slot, self.nodeCount);
+    self.nodeCount++;
+    return placement;
+  }
+}

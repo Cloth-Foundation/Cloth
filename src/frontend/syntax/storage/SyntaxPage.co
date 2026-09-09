@@ -1,0 +1,74 @@
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxOwner;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final SyntaxOwner owner;
+  final int32 baseOrdinal;
+  final SyntaxNode?[] values;
+  int32 count;
+  SyntaxPage? next;
+  bool frozen;
+
+  SyntaxPage(SyntaxOwner owner, int32 baseOrdinal) {
+    self.owner = owner;
+    self.baseOrdinal = baseOrdinal;
+    self.values = SyntaxNode?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(SyntaxNode value): int32 throws StateError {
+    if (self.frozen) { throw StateError("syntax page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("syntax page is full");
+    }
+    final int32 slot = self.count;
+    self.values[slot] = value;
+    self.count++;
+    return slot;
+  }
+
+  func Resolve(SyntaxOwner owner, int32 slot,
+               int32 ordinal): SyntaxNode? {
+    if (owner != self.owner || slot < 0 || slot >= self.count ||
+        ordinal != self.baseOrdinal + slot) {
+      return null;
+    }
+    return self.values[slot];
+  }
+
+  func Link(SyntaxPage next): void throws StateError {
+    if (self.frozen) { throw StateError("syntax page is sealed"); }
+    if (self.next != null) {
+      throw StateError("syntax page is already linked");
+    }
+    if (!next.IsOwnedBy(self.owner)) {
+      throw StateError("syntax pages have different owners");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) { throw StateError("syntax page is already sealed"); }
+    self.frozen = true;
+  }
+
+  func IsOwnedBy(SyntaxOwner owner): bool {
+    return self.owner == owner;
+  }
+
+  func IsFull(): bool {
+    return self.count == self.values::length;
+  }
+
+  func GetCount(): int32 {
+    return self.count;
+  }
+
+  func GetNext(): SyntaxPage? {
+    return self.next;
+  }
+}

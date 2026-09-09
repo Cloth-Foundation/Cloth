@@ -1,0 +1,53 @@
+import frontend.syntax.storage::SyntaxHandle;
+import frontend.syntax.storage::SyntaxHandlePage;
+import frontend.syntax.storage::SyntaxHandleSequence;
+
+class {
+  SyntaxHandlePage? first;
+  SyntaxHandlePage? last;
+  SyntaxHandle? firstValue;
+  int32 count;
+  bool finished;
+
+  SyntaxHandleBuilder() {
+    self.first = null;
+    self.last = null;
+    self.firstValue = null;
+    self.count = 0;
+    self.finished = false;
+  }
+
+  func Add(SyntaxHandle value): void throws StateError {
+    if (!self.CanAdd(value)) {
+      throw StateError("syntax child builder rejects this handle");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final var page = SyntaxHandlePage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    if (self.firstValue == null) { self.firstValue = value; }
+    self.count++;
+  }
+
+  func CanAdd(SyntaxHandle value): bool {
+    if (self.finished) { return false; }
+    return self.firstValue == null || self.firstValue!.SharesOwner(value);
+  }
+
+  func Finish(): SyntaxHandleSequence throws StateError {
+    if (self.finished) {
+      throw StateError("syntax child builder is already finished");
+    }
+    self.finished = true;
+    return SyntaxHandleSequence.Build(self.first, self.count);
+  }
+
+  func GetCount(): int32 { return self.count; }
+  func IsFinished(): bool { return self.finished; }
+}

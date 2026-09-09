@@ -1,0 +1,6 @@
+import frontend.source::SourceRange;
+
+interface {
+  func GetRange(): SourceRange;
+  func IsValid(): bool;
+}

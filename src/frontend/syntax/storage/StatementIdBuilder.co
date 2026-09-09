@@ -1,0 +1,26 @@
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax.storage::SyntaxHandleBuilder;
+
+class {
+  final SyntaxHandleBuilder values;
+
+  StatementIdBuilder() {
+    self.values = SyntaxHandleBuilder();
+  }
+
+  func Add(StatementId value): void throws StateError {
+    self.values.Add(value);
+  }
+
+  func CanAdd(StatementId value): bool {
+    return self.values.CanAdd(value);
+  }
+
+  func Finish(): StatementIdSequence throws StateError {
+    return StatementIdSequence(self.values.Finish());
+  }
+
+  func GetCount(): int32 { return self.values.GetCount(); }
+  func IsFinished(): bool { return self.values.IsFinished(); }
+}

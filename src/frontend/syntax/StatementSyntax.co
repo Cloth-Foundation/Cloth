@@ -1,0 +1,6 @@
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.statement::StatementKind;
+
+interface : SyntaxNode {
+  func GetStatementKind(): StatementKind;
+}

@@ -1,0 +1,10 @@
+import bootstrap::SyntaxArenaCheck;
+import bootstrap::SyntaxSequenceCheck;
+
+class {
+  static func Run(): int32 throws StateError {
+    final int32 arenaStatus = SyntaxArenaCheck.Run();
+    if (arenaStatus != 0) { return arenaStatus; }
+    return SyntaxSequenceCheck.Run();
+  }
+}

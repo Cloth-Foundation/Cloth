@@ -1,0 +1,30 @@
+import frontend.syntax.declaration::DeclarationSyntax;
+
+class {
+  final DeclarationSyntax?[] values;
+
+  _DeclarationSyntaxSequence(DeclarationSyntax?[] values) {
+    self.values = values;
+  }
+
+  static func Build(
+      DeclarationSyntax?[] input): DeclarationSyntaxSequence throws StateError {
+    final DeclarationSyntax?[] values = DeclarationSyntax?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("declaration syntax sequence contains null");
+      }
+      values[index] = input[index];
+    }
+    return DeclarationSyntaxSequence(values);
+  }
+
+  func Get(int32 index): DeclarationSyntax throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("declaration syntax sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

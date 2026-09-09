@@ -1,0 +1,17 @@
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::SyntaxTreeVerifier;
+
+class {
+  final FileSyntax file;
+
+  _VerifiedSyntaxTree(FileSyntax file) {
+    self.file = file;
+  }
+
+  static func Build(FileSyntax file): VerifiedSyntaxTree throws StateError {
+    SyntaxTreeVerifier.Verify(file);
+    return VerifiedSyntaxTree(file);
+  }
+
+  func GetFile(): FileSyntax { return self.file; }
+}

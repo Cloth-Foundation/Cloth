@@ -1,0 +1,30 @@
+import frontend.syntax.statement::SwitchArmSyntax;
+
+class {
+  final SwitchArmSyntax?[] values;
+
+  _SwitchArmSyntaxSequence(SwitchArmSyntax?[] values) {
+    self.values = values;
+  }
+
+  static func Build(
+      SwitchArmSyntax?[] input): SwitchArmSyntaxSequence throws StateError {
+    final SwitchArmSyntax?[] values = SwitchArmSyntax?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("switch arm sequence contains null");
+      }
+      values[index] = input[index];
+    }
+    return SwitchArmSyntaxSequence(values);
+  }
+
+  func Get(int32 index): SwitchArmSyntax throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("switch arm sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

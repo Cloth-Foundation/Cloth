@@ -1,0 +1,30 @@
+import frontend.syntax.tree::EnumCaseSyntax;
+
+class {
+  final EnumCaseSyntax?[] values;
+
+  _EnumCaseSyntaxSequence(EnumCaseSyntax?[] values) {
+    self.values = values;
+  }
+
+  static func Build(
+      EnumCaseSyntax?[] input): EnumCaseSyntaxSequence throws StateError {
+    final EnumCaseSyntax?[] values = EnumCaseSyntax?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("enum case sequence contains null");
+      }
+      values[index] = input[index];
+    }
+    return EnumCaseSyntaxSequence(values);
+  }
+
+  func Get(int32 index): EnumCaseSyntax throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("enum case sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

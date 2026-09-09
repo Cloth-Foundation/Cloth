@@ -1,0 +1,9 @@
+enum {
+  kInteger,
+  kFloat,
+  kString,
+  kCharacter,
+  kBoolean,
+  kNull,
+  kEnum,
+}

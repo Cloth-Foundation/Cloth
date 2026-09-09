@@ -1,0 +1,52 @@
+import frontend.syntax.storage::SyntaxHandle;
+import frontend.syntax.storage::SyntaxHandlePage;
+
+class {
+  final SyntaxHandle?[] values;
+
+  _SyntaxHandleSequence(SyntaxHandle?[] values) {
+    self.values = values;
+  }
+
+  static func Build(SyntaxHandlePage? first,
+                    int32 count): SyntaxHandleSequence throws StateError {
+    if (count < 0 || (count == 0 && first != null) ||
+        (count > 0 && first == null)) {
+      throw StateError("invalid syntax child sequence shape");
+    }
+    final SyntaxHandle?[] values = SyntaxHandle?[:count];
+    SyntaxHandle? firstValue = null;
+    SyntaxHandlePage? current = first;
+    int32 output = 0;
+    while (current != null) {
+      final SyntaxHandlePage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= count) {
+          throw StateError("syntax child sequence exceeds its count");
+        }
+        final SyntaxHandle value = page.Get(index);
+        if (firstValue != null && !firstValue.SharesOwner(value)) {
+          throw StateError("syntax child sequence has different owners");
+        }
+        if (firstValue == null) { firstValue = value; }
+        values[output] = value;
+        output++;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != count) {
+      throw StateError("syntax child sequence does not match its count");
+    }
+    return SyntaxHandleSequence(values);
+  }
+
+  func Get(int32 index): SyntaxHandle throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("syntax child sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

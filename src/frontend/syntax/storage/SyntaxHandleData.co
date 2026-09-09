@@ -1,0 +1,36 @@
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxHandle;
+import frontend.syntax.storage::SyntaxOwner;
+import frontend.syntax.storage::SyntaxPage;
+
+struct {
+  final SyntaxOwner owner;
+  final SyntaxPage page;
+  final int32 slot;
+  final int32 ordinal;
+
+  SyntaxHandleData(SyntaxOwner owner, SyntaxPage page, int32 slot,
+                   int32 ordinal) {
+    self.owner = owner;
+    self.page = page;
+    self.slot = slot;
+    self.ordinal = ordinal;
+  }
+
+  func Resolve(SyntaxOwner owner): SyntaxNode? {
+    if (self.owner != owner) { return null; }
+    return self.page.Resolve(owner, self.slot, self.ordinal);
+  }
+
+  func IsOwnedBy(SyntaxOwner owner): bool {
+    return self.owner == owner;
+  }
+
+  func SharesOwner(SyntaxHandle other): bool {
+    return other.IsOwnedBy(self.owner);
+  }
+
+  func GetOrdinal(): int32 {
+    return self.ordinal;
+  }
+}

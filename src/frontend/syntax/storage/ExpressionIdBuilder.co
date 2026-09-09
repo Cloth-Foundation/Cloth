@@ -1,0 +1,26 @@
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax.storage::SyntaxHandleBuilder;
+
+class {
+  final SyntaxHandleBuilder values;
+
+  ExpressionIdBuilder() {
+    self.values = SyntaxHandleBuilder();
+  }
+
+  func Add(ExpressionId value): void throws StateError {
+    self.values.Add(value);
+  }
+
+  func CanAdd(ExpressionId value): bool {
+    return self.values.CanAdd(value);
+  }
+
+  func Finish(): ExpressionIdSequence throws StateError {
+    return ExpressionIdSequence(self.values.Finish());
+  }
+
+  func GetCount(): int32 { return self.values.GetCount(); }
+  func IsFinished(): bool { return self.values.IsFinished(); }
+}

@@ -1,0 +1,28 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.tree::TypeSyntax;
+
+class is ExpressionSyntax {
+  final SyntaxNodeData node;
+  final TypeSyntax target;
+  final ExpressionId value;
+
+  NumericConversionExpressionSyntax(TypeSyntax target, ExpressionId value,
+                                    SourceRange range,
+                                    bool valid) {
+    self.node = SyntaxNodeData(range, valid);
+    self.target = target;
+    self.value = value;
+  }
+
+  func GetTarget(): TypeSyntax { return self.target; }
+  func GetValue(): ExpressionId { return self.value; }
+  override func GetExpressionKind(): ExpressionKind {
+    return ExpressionKind.kNumericConversion;
+  }
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return self.node.IsValid(); }
+}

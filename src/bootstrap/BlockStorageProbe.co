@@ -1,0 +1,19 @@
+import frontend.source::SourceRange;
+import frontend.syntax::BlockSyntax;
+
+class is BlockSyntax {
+  final int32 value;
+  final SourceRange range;
+
+  BlockStorageProbe(int32 value, SourceRange range) {
+    self.value = value;
+    self.range = range;
+  }
+
+  override func GetRange(): SourceRange { return self.range; }
+  override func IsValid(): bool { return true; }
+
+  func GetValue(): int32 {
+    return self.value;
+  }
+}

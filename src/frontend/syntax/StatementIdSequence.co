@@ -1,0 +1,22 @@
+import frontend.syntax::StatementId;
+import frontend.syntax.storage::SyntaxHandleSequence;
+
+class {
+  final SyntaxHandleSequence values;
+
+  StatementIdSequence(SyntaxHandleSequence values) {
+    self.values = values;
+  }
+
+  func Get(int32 index): StatementId throws StateError {
+    final StatementId? value = self.values.Get(index) as StatementId?;
+    if (value == null) {
+      throw StateError("syntax child is not a statement handle");
+    }
+    return value;
+  }
+
+  func GetCount(): int32 {
+    return self.values.GetCount();
+  }
+}

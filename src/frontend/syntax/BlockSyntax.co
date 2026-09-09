@@ -1,0 +1,3 @@
+import frontend.syntax::SyntaxNode;
+
+interface : SyntaxNode {}

@@ -1,0 +1,140 @@
+import bootstrap::SyntaxExpressionFixture;
+import bootstrap::SyntaxStatementFixture;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.storage::ExpressionIdBuilder;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::ImportKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.syntax.tree::Visibility;
+
+class {
+  final FileSyntax file;
+  final ExpressionIdSequence expressions;
+  final StatementIdSequence statements;
+  final BlockId emptyBlock;
+  final BlockId bodyBlock;
+
+  _SyntaxTreeFixture(FileSyntax file, ExpressionIdSequence expressions,
+                     StatementIdSequence statements, BlockId emptyBlock,
+                     BlockId bodyBlock) {
+    self.file = file;
+    self.expressions = expressions;
+    self.statements = statements;
+    self.emptyBlock = emptyBlock;
+    self.bodyBlock = bodyBlock;
+  }
+
+  static func Build(): SyntaxTreeFixture throws StateError {
+    final byte[] bytes = byte[:64];
+    final SourceFile source = SourceFile.FromBytes("syntax-tree", bytes);
+    final var begin = SourceLocation(source.GetPath(), 0, 1, 1);
+    final var end = SourceLocation(source.GetPath(), source.GetLength(), 1, 65);
+    final SourceRange range = SourceRange(begin, end);
+    final var type = TypeSyntax(span(source, 0, 5), range, true, true, false,
+                               false, false);
+    final var storage = SyntaxStorage();
+    final SyntaxExpressionFixture expressionFixture =
+        SyntaxExpressionFixture.Build(storage, source, range, type);
+    final SyntaxStatementFixture statementFixture =
+        SyntaxStatementFixture.Build(storage, source, range, type,
+                                     expressionFixture.GetExpressions());
+    final DeclarationSyntaxSequence declarations = buildDeclarations(
+        source, range, type, expressionFixture.GetExpressions(),
+        statementFixture.GetEmptyBlock(), statementFixture.GetBodyBlock());
+    final ImportSyntaxSequence imports = buildImports(source, range);
+    final EnumCaseSyntaxSequence cases = buildCases(source, range);
+    final TypeSyntaxSequence interfaces = singleType(type);
+    storage.Seal();
+    final FileSyntax file = FileSyntax.Build(
+        source, "Fixture", "bootstrap", "bootstrap.Fixture",
+        Visibility.kPublic, imports, storage, declarations, type, interfaces,
+        cases, FileTypeKind.kClass, true, false, true, range, false);
+    return SyntaxTreeFixture(
+        file, expressionFixture.GetExpressions(),
+        statementFixture.GetStatements(), statementFixture.GetEmptyBlock(),
+        statementFixture.GetBodyBlock());
+  }
+
+  func GetFile(): FileSyntax { return self.file; }
+  func GetExpressions(): ExpressionIdSequence { return self.expressions; }
+  func GetStatements(): StatementIdSequence { return self.statements; }
+  func GetEmptyBlock(): BlockId { return self.emptyBlock; }
+  func GetBodyBlock(): BlockId { return self.bodyBlock; }
+
+  static func buildDeclarations(
+      SourceFile source, SourceRange range, TypeSyntax type,
+      ExpressionIdSequence expressions, BlockId emptyBlock,
+      BlockId bodyBlock): DeclarationSyntaxSequence throws StateError {
+    final ParameterSyntax?[] parameterValues = ParameterSyntax?[:1];
+    parameterValues[0] = ParameterSyntax(
+        type, span(source, 30, 31), true, range, true);
+    final ParameterSyntaxSequence parameters =
+        ParameterSyntaxSequence.Build(parameterValues);
+    final TypeSyntaxSequence throwsTypes = singleType(type);
+    final var arguments = ExpressionIdBuilder();
+    arguments.Add(expressions.Get(1));
+    final var initializer = ConstructorInitializerSyntax(
+        type, arguments.Finish(), range, true);
+    final DeclarationSyntax?[] values = DeclarationSyntax?[:3];
+    values[0] = FunctionSyntax(
+        span(source, 31, 32), Visibility.kPublic, parameters, type, bodyBlock,
+        throwsTypes, true, true, false, false, true, range, false);
+    values[1] = FieldSyntax(type, span(source, 32, 33), Visibility.kPrivate,
+                            expressions.Get(2), true, false, range, true);
+    values[2] = ConstructorSyntax(
+        span(source, 33, 34), Visibility.kPublic, parameters, initializer,
+        emptyBlock, throwsTypes, true, range, true);
+    return DeclarationSyntaxSequence.Build(values);
+  }
+
+  static func buildImports(SourceFile source,
+                           SourceRange range): ImportSyntaxSequence throws StateError {
+    final ImportSyntax?[] values = ImportSyntax?[:2];
+    values[0] = ImportSyntax(
+        ImportKind.kType, span(source, 5, 8), span(source, 8, 12),
+        span(source, 12, 13), range, true);
+    values[1] = ImportSyntax(ImportKind.kWildcard, span(source, 13, 16),
+                             null, null, range, true);
+    return ImportSyntaxSequence.Build(values);
+  }
+
+  static func buildCases(SourceFile source,
+                         SourceRange range): EnumCaseSyntaxSequence throws StateError {
+    final EnumCaseSyntax?[] values = EnumCaseSyntax?[:2];
+    values[0] = EnumCaseSyntax(span(source, 16, 17), range, true);
+    values[1] = EnumCaseSyntax(span(source, 17, 18), range, true);
+    return EnumCaseSyntaxSequence.Build(values);
+  }
+
+  static func singleType(TypeSyntax type): TypeSyntaxSequence throws StateError {
+    final TypeSyntax?[] values = TypeSyntax?[:1];
+    values[0] = type;
+    return TypeSyntaxSequence.Build(values);
+  }
+
+  static func span(SourceFile source, int32 begin,
+                   int32 end): SourceSpan throws StateError {
+    return SourceSpan(source, begin, end);
+  }
+}

@@ -1,0 +1,9 @@
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxOwner;
+
+interface {
+  func Resolve(SyntaxOwner owner): SyntaxNode?;
+  func IsOwnedBy(SyntaxOwner owner): bool;
+  func SharesOwner(SyntaxHandle other): bool;
+  func GetOrdinal(): int32;
+}

@@ -1,0 +1,212 @@
+import bootstrap::SyntaxKindCode;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax.statement::ExpressionStatementSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::ForStatementSyntax;
+import frontend.syntax.statement::ForVariableSyntax;
+import frontend.syntax.statement::IfStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.statement::NestedBlockStatementSyntax;
+import frontend.syntax.statement::ReturnStatementSyntax;
+import frontend.syntax.statement::StatementKind;
+import frontend.syntax.statement::SwitchArmSyntax;
+import frontend.syntax.statement::SwitchArmSyntaxSequence;
+import frontend.syntax.statement::SwitchStatementSyntax;
+import frontend.syntax.statement::WhileStatementSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  static func Write(SyntaxStorage storage,
+                    StatementId id): void throws StateError {
+    final StatementSyntax statement = storage.GetStatement(id);
+    final StatementKind kind = statement.GetStatementKind();
+    print("S|");
+    print(id.GetOrdinal());
+    print("|");
+    print(SyntaxKindCode.Statement(kind));
+    print("|");
+    print(flag(statement.IsValid()));
+    print("|");
+    print(statement.GetRange().GetBegin().GetOffset());
+    print("|");
+    print(statement.GetRange().GetEnd().GetOffset());
+    writePayload(kind, statement);
+    println();
+  }
+
+  static func writePayload(StatementKind kind,
+                           StatementSyntax statement): void throws StateError {
+    switch (kind) {
+      case StatementKind.kInvalid: { return; }
+      case StatementKind.kBreak: { return; }
+      case StatementKind.kContinue: { return; }
+      case StatementKind.kLocalVariable: {
+        final LocalVariableStatementSyntax? value =
+            statement as LocalVariableStatementSyntax?;
+        if (value == null) { throw StateError("local kind mismatch"); }
+        writeType(value.GetType());
+        writeSpan(value.GetName());
+        writeExpression(value.GetInitializer());
+        writeFlag(value.IsFinal());
+        return;
+      }
+      case StatementKind.kReturn: {
+        final ReturnStatementSyntax? value = statement as ReturnStatementSyntax?;
+        if (value == null) { throw StateError("return kind mismatch"); }
+        writeExpression(value.GetValue());
+        return;
+      }
+      case StatementKind.kExpression: {
+        final ExpressionStatementSyntax? value =
+            statement as ExpressionStatementSyntax?;
+        if (value == null) { throw StateError("expression kind mismatch"); }
+        writeExpression(value.GetExpression());
+        return;
+      }
+      case StatementKind.kIf: {
+        final IfStatementSyntax? value = statement as IfStatementSyntax?;
+        if (value == null) { throw StateError("if kind mismatch"); }
+        writeExpression(value.GetCondition());
+        writeBlock(value.GetThenBlock());
+        writeBlock(value.GetElseBlock());
+        return;
+      }
+      case StatementKind.kWhile: {
+        final WhileStatementSyntax? value = statement as WhileStatementSyntax?;
+        if (value == null) { throw StateError("while kind mismatch"); }
+        writeExpression(value.GetCondition());
+        writeBlock(value.GetBody());
+        return;
+      }
+      case StatementKind.kForEach: {
+        final ForEachStatementSyntax? value =
+            statement as ForEachStatementSyntax?;
+        if (value == null) { throw StateError("for-each kind mismatch"); }
+        writeVariable(value.GetVariable());
+        writeExpression(value.GetIterable());
+        writeBlock(value.GetBody());
+        return;
+      }
+      case StatementKind.kFor: {
+        final ForStatementSyntax? value = statement as ForStatementSyntax?;
+        if (value == null) { throw StateError("for kind mismatch"); }
+        writeStatement(value.GetInitializer());
+        writeExpression(value.GetCondition());
+        writeExpressions(value.GetUpdates());
+        writeBlock(value.GetBody());
+        return;
+      }
+      case StatementKind.kSwitch: {
+        final SwitchStatementSyntax? value =
+            statement as SwitchStatementSyntax?;
+        if (value == null) { throw StateError("switch kind mismatch"); }
+        writeExpression(value.GetSelector());
+        writeArms(value.GetArms());
+        return;
+      }
+      case StatementKind.kNestedBlock: {
+        final NestedBlockStatementSyntax? value =
+            statement as NestedBlockStatementSyntax?;
+        if (value == null) { throw StateError("block kind mismatch"); }
+        writeBlock(value.GetBlock());
+        return;
+      }
+    }
+  }
+
+  static func writeVariable(ForVariableSyntax value): void {
+    writeType(value.GetType());
+    writeSpan(value.GetName());
+    writeFlag(value.IsFinal());
+    writeFlag(value.IsValid());
+  }
+
+  static func writeArms(
+      SwitchArmSyntaxSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final SwitchArmSyntax value = values.Get(index);
+      writeExpressions(value.GetLabels());
+      writeBlock(value.GetBody());
+      writeFlag(value.IsValid());
+      print("|");
+      print(value.GetRange().GetBegin().GetOffset());
+      print("|");
+      print(value.GetRange().GetEnd().GetOffset());
+    }
+  }
+
+  static func writeExpressions(
+      ExpressionIdSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      writeExpression(values.Get(index));
+    }
+  }
+
+  static func writeType(TypeSyntax? value): void {
+    if (value == null) {
+      print("|-");
+      return;
+    }
+    print("|T");
+    writeSpan(value.GetName());
+    writeFlag(value.IsPrimitive());
+    writeFlag(value.IsArray());
+    writeFlag(value.IsNullable());
+    writeFlag(value.IsElementNullable());
+    writeFlag(value.IsValid());
+  }
+
+  static func writeExpression(ExpressionId? value): void {
+    print("|");
+    if (value == null) {
+      print(-1);
+    } else {
+      print(value.GetOrdinal());
+    }
+  }
+
+  static func writeStatement(StatementId? value): void {
+    print("|");
+    if (value == null) {
+      print(-1);
+    } else {
+      print(value.GetOrdinal());
+    }
+  }
+
+  static func writeBlock(BlockId? value): void {
+    print("|");
+    if (value == null) {
+      print(-1);
+    } else {
+      print(value.GetOrdinal());
+    }
+  }
+
+  static func writeSpan(SourceSpan value): void {
+    print("|");
+    print(value.GetBeginOffset());
+    print("|");
+    print(value.GetEndOffset());
+  }
+
+  static func writeFlag(bool value): void {
+    print("|");
+    print(flag(value));
+  }
+
+  static func flag(bool value): int32 {
+    if (value) { return 1; }
+    return 0;
+  }
+}

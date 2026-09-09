@@ -1,0 +1,35 @@
+import bootstrap::SyntaxTreeFixture;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::VerifiedSyntaxTree;
+
+class {
+  static func Run(): int32 throws StateError {
+    for (int32 iteration = 0; iteration < 256; iteration++) {
+      final SyntaxTreeFixture fixture = SyntaxTreeFixture.Build();
+      final VerifiedSyntaxTree tree =
+          VerifiedSyntaxTree.Build(fixture.GetFile());
+      final byte[] pressure = byte[:4096];
+      pressure[0] = byte(iteration);
+      final int32 status = inspect(tree.GetFile(), pressure[0]);
+      if (status != 0) { return status; }
+    }
+    return 0;
+  }
+
+  static func inspect(FileSyntax file,
+                      byte marker): int32 throws StateError {
+    final FunctionSyntax? function =
+        file.GetDeclarations().Get(0) as FunctionSyntax?;
+    if (function == null) { return 440; }
+    final BlockNodeSyntax? body =
+        file.GetStorage().GetBlock(function.GetBody()) as BlockNodeSyntax?;
+    if (body == null || body.GetStatements().GetCount() != 12 ||
+        file.GetSource().GetLength() != 64 ||
+        file.GetStorage().GetNodeCount() != 38 || marker > 255) {
+      return 441;
+    }
+    return 0;
+  }
+}

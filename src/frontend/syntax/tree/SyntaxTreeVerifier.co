@@ -1,0 +1,116 @@
+import frontend.source::SourceSpan;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::SyntaxDeclarationVerifier;
+import frontend.syntax.expression::SyntaxExpressionVerifier;
+import frontend.syntax.statement::SyntaxStatementVerifier;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::ImportKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::SyntaxVerificationContext;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+
+class {
+  static func Verify(FileSyntax file): void throws StateError {
+    if (!file.GetStorage().IsSealed()) {
+      throw StateError("syntax tree storage is not sealed");
+    }
+    final var context =
+        SyntaxVerificationContext(file.GetSource(), file.GetStorage());
+    context.VerifyRange(file.GetRange(), file.GetRange());
+    verifyIdentity(file);
+
+    final TypeSyntax? baseClass = file.GetBaseClass();
+    if (baseClass != null) {
+      final bool valid = context.VerifyType(baseClass, file.GetRange());
+      context.VerifyChildValidity(file.IsValid(), valid);
+    }
+    verifyTypes(file, context, file.GetInterfaces());
+    verifyImports(file, context, file.GetImports());
+    verifyCases(file, context, file.GetEnumCases());
+
+    final var expressions = SyntaxExpressionVerifier(context);
+    final var statements = SyntaxStatementVerifier(context, expressions);
+    final var declarations =
+        SyntaxDeclarationVerifier(context, expressions, statements);
+    verifyDeclarations(file, context, declarations, file.GetDeclarations());
+  }
+
+  static func verifyIdentity(FileSyntax file): void throws StateError {
+    if (file.GetName()::length == 0) {
+      throw StateError("syntax tree file name is empty");
+    }
+    string expected = file.GetName();
+    if (file.GetPackageName()::length != 0) {
+      expected = file.GetPackageName() + "." + file.GetName();
+    }
+    if (file.GetQualifiedName() != expected) {
+      throw StateError("syntax tree file identity is inconsistent");
+    }
+  }
+
+  static func verifyTypes(
+      FileSyntax file, SyntaxVerificationContext context,
+      TypeSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final bool valid = context.VerifyType(values.Get(index), file.GetRange());
+      context.VerifyChildValidity(file.IsValid(), valid);
+    }
+  }
+
+  static func verifyImports(
+      FileSyntax file, SyntaxVerificationContext context,
+      ImportSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ImportSyntax value = values.Get(index);
+      context.VerifyRange(value.GetRange(), file.GetRange());
+      final SourceSpan? packageName = value.GetPackageName();
+      final SourceSpan? typeName = value.GetTypeName();
+      final SourceSpan? alias = value.GetAlias();
+      if (packageName != null) {
+        context.VerifySpan(packageName, value.GetRange(), !value.IsValid());
+      }
+      if (typeName != null) {
+        context.VerifySpan(typeName, value.GetRange(), !value.IsValid());
+      }
+      if (alias != null) {
+        context.VerifySpan(alias, value.GetRange(), !value.IsValid());
+      }
+      if (value.IsValid() && value.GetKind() == ImportKind.kType &&
+          typeName == null) {
+        throw StateError("valid type import has no type name");
+      }
+      if (value.IsValid() && value.GetKind() == ImportKind.kWildcard &&
+          (packageName == null || typeName != null || alias != null)) {
+        throw StateError("valid wildcard import has an invalid shape");
+      }
+      context.VerifyChildValidity(file.IsValid(), value.IsValid());
+    }
+  }
+
+  static func verifyCases(
+      FileSyntax file, SyntaxVerificationContext context,
+      EnumCaseSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final EnumCaseSyntax value = values.Get(index);
+      context.VerifyRange(value.GetRange(), file.GetRange());
+      context.VerifySpan(value.GetName(), value.GetRange(), !value.IsValid());
+      context.VerifyChildValidity(file.IsValid(), value.IsValid());
+    }
+  }
+
+  static func verifyDeclarations(
+      FileSyntax file, SyntaxVerificationContext context,
+      SyntaxDeclarationVerifier verifier,
+      DeclarationSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final DeclarationSyntax value = values.Get(index);
+      final bool valid = verifier.Verify(value, file.GetRange());
+      context.VerifyChildValidity(file.IsValid(), valid);
+    }
+  }
+}

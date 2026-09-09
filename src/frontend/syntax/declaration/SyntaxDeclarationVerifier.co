@@ -1,0 +1,141 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.expression::SyntaxExpressionVerifier;
+import frontend.syntax.statement::SyntaxStatementVerifier;
+import frontend.syntax.tree::SyntaxVerificationContext;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+
+class {
+  final SyntaxVerificationContext context;
+  final SyntaxExpressionVerifier expressions;
+  final SyntaxStatementVerifier statements;
+
+  SyntaxDeclarationVerifier(SyntaxVerificationContext context,
+                            SyntaxExpressionVerifier expressions,
+                            SyntaxStatementVerifier statements) {
+    self.context = context;
+    self.expressions = expressions;
+    self.statements = statements;
+  }
+
+  func Verify(DeclarationSyntax declaration,
+              SourceRange parent): bool throws StateError {
+    self.context.VerifyRange(declaration.GetRange(), parent);
+    switch (declaration.GetDeclarationKind()) {
+      case DeclarationKind.kField: {
+        self.verifyField(declaration);
+        return declaration.IsValid();
+      }
+      case DeclarationKind.kFunction: {
+        self.verifyFunction(declaration);
+        return declaration.IsValid();
+      }
+      case DeclarationKind.kConstructor: {
+        self.verifyConstructor(declaration);
+        return declaration.IsValid();
+      }
+    }
+  }
+
+  func verifyField(DeclarationSyntax declaration): void throws StateError {
+    final FieldSyntax? value = declaration as FieldSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.context.VerifySpan(value.GetName(), declaration.GetRange(),
+                            !declaration.IsValid());
+    self.verifyType(declaration, value.GetType());
+    final ExpressionId? initializer = value.GetInitializer();
+    if (initializer != null) {
+      final bool valid = self.expressions.Verify(
+          initializer, declaration.GetRange());
+      self.context.VerifyChildValidity(declaration.IsValid(), valid);
+    }
+  }
+
+  func verifyFunction(DeclarationSyntax declaration): void throws StateError {
+    final FunctionSyntax? value = declaration as FunctionSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.context.VerifySpan(value.GetName(), declaration.GetRange(),
+                            !declaration.IsValid());
+    self.verifyParameters(declaration, value.GetParameters());
+    final TypeSyntax? returnType = value.GetReturnType();
+    if (returnType != null) { self.verifyType(declaration, returnType); }
+    final bool bodyValid = self.statements.VerifyBlock(
+        value.GetBody(), declaration.GetRange());
+    self.context.VerifyChildValidity(declaration.IsValid(), bodyValid);
+    self.verifyTypes(declaration, value.GetThrowsTypes());
+    if (!value.HasExplicitThrows() && value.GetThrowsTypes().GetCount() != 0) {
+      throw StateError("implicit throws syntax contains declared types");
+    }
+  }
+
+  func verifyConstructor(
+      DeclarationSyntax declaration): void throws StateError {
+    final ConstructorSyntax? value = declaration as ConstructorSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.context.VerifySpan(value.GetName(), declaration.GetRange(),
+                            !declaration.IsValid());
+    self.verifyParameters(declaration, value.GetParameters());
+    final ConstructorInitializerSyntax? initializer = value.GetInitializer();
+    if (initializer != null) {
+      self.context.VerifyRange(initializer.GetRange(), declaration.GetRange());
+      self.verifyType(initializer, initializer.GetBaseType());
+      for (int32 index = 0;
+           index < initializer.GetArguments().GetCount(); index++) {
+        final bool valid = self.expressions.Verify(
+            initializer.GetArguments().Get(index), initializer.GetRange());
+        self.context.VerifyChildValidity(initializer.IsValid(), valid);
+      }
+      self.context.VerifyChildValidity(declaration.IsValid(),
+                                       initializer.IsValid());
+    }
+    final bool bodyValid = self.statements.VerifyBlock(
+        value.GetBody(), declaration.GetRange());
+    self.context.VerifyChildValidity(declaration.IsValid(), bodyValid);
+    self.verifyTypes(declaration, value.GetThrowsTypes());
+    if (!value.HasExplicitThrows() && value.GetThrowsTypes().GetCount() != 0) {
+      throw StateError("implicit throws syntax contains declared types");
+    }
+  }
+
+  func verifyParameters(
+      DeclarationSyntax declaration,
+      ParameterSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ParameterSyntax value = values.Get(index);
+      self.context.VerifyRange(value.GetRange(), declaration.GetRange());
+      self.context.VerifySpan(value.GetName(), value.GetRange(),
+                              !value.IsValid());
+      final bool typeValid =
+          self.context.VerifyType(value.GetType(), value.GetRange());
+      self.context.VerifyChildValidity(value.IsValid(), typeValid);
+      self.context.VerifyChildValidity(declaration.IsValid(), value.IsValid());
+    }
+  }
+
+  func verifyTypes(DeclarationSyntax declaration,
+                   TypeSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      self.verifyType(declaration, values.Get(index));
+    }
+  }
+
+  func verifyType(SyntaxNode parent,
+                  TypeSyntax type): void throws StateError {
+    final bool valid = self.context.VerifyType(type, parent.GetRange());
+    self.context.VerifyChildValidity(parent.IsValid(), valid);
+  }
+
+  func kindMismatch(): bool throws StateError {
+    throw StateError("declaration kind does not match its node type");
+  }
+}

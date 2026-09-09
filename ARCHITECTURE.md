@@ -8,10 +8,14 @@ behavior and checkpoint scope.
 
 ```text
 Main
+  -> frontend parser orchestration (after Stage 45)
+       -> syntax storage and tree
+            -> token and source data
+       -> token and diagnostic data
   -> frontend lexer orchestration
        -> lexical scanners
        -> source, token, and diagnostic data
-            -> no lexer dependency
+            -> no lexer or parser dependency
 ```
 
 Dependencies point downward. Source, token, and diagnostic types must remain
@@ -31,6 +35,12 @@ src/
     diagnostic/              Structured frontend diagnostics and storage
     lexer/                   Lexical orchestration and byte classification
       scanners/              Identifier, trivia, operator, numeric, and text domains
+    syntax/                  Managed abstract syntax-tree representation
+      declaration/          Field, function, and constructor nodes
+      expression/           Exact expression kinds and payloads
+      statement/            Blocks, statements, loop and switch records
+      storage/               Segmented arena and child-sequence construction
+      tree/                  Root, types, imports, verification, and publication
   testdata/lexer/            Exact byte inputs used by bootstrap checks
 ```
 
@@ -62,6 +72,26 @@ the parts. Each file under `scanners/` owns one complete lexical domain rather
 than a collection of unrelated helper functions. `Utf8Decoder.co` validates
 canonical scalar byte sequences for the text scanner without owning token
 boundaries or decoded text storage.
+
+### `frontend/syntax`
+
+Owns typed syntax handles, append-only segmented storage, immutable child
+sequences, and the abstract syntax tree. One owning storage appends expression,
+statement, and block families to managed 64-slot pages. Handles resolve through
+their owner, page, slot, and global ordinal; specialized builders freeze ordered
+child handles into exact arrays. The file root retains imports, enum cases,
+inheritance, conformance, and one direct declaration sequence in source order.
+Names and arbitrary spellings remain source-backed. Syntax may depend on source
+and token data but cannot depend on parser orchestration or semantic analysis.
+`VerifiedSyntaxTree` is the publication boundary: its factory validates the
+complete reachable graph before a parser result may retain the root.
+
+### `frontend/parser`
+
+Owns the declaration and definition grammar passes. It consumes immutable
+tokens and creates syntax through the storage boundary; it does not own source,
+token, syntax, or semantic representation. Files enter this directory only
+when an approved parser implementation checkpoint requires them.
 
 ### `Main.co`
 
@@ -95,6 +125,6 @@ create catch-all files named `Utils`, `Common`, `Misc`, or `Helpers`.
 
 ## Current stage boundary
 
-Stage 44 lexer parity with the C++23 bootstrap is complete. Parser and AST code
-are absent and must not enter this tree until their own stage contract is
-approved.
+Stage 44 lexer parity with the C++23 bootstrap is complete. Stage 45 completes
+the managed storage, grammar-neutral tree, verified publication boundary, and
+exit audit. Parser grammar remains deferred to a separately approved stage.

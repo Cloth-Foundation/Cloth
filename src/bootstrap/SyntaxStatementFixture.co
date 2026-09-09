@@ -1,0 +1,141 @@
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.statement::BreakStatementSyntax;
+import frontend.syntax.statement::ContinueStatementSyntax;
+import frontend.syntax.statement::ExpressionStatementSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::ForStatementSyntax;
+import frontend.syntax.statement::ForVariableSyntax;
+import frontend.syntax.statement::IfStatementSyntax;
+import frontend.syntax.statement::InvalidStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.statement::NestedBlockStatementSyntax;
+import frontend.syntax.statement::ReturnStatementSyntax;
+import frontend.syntax.statement::SwitchArmSyntax;
+import frontend.syntax.statement::SwitchArmSyntaxSequence;
+import frontend.syntax.statement::SwitchStatementSyntax;
+import frontend.syntax.statement::WhileStatementSyntax;
+import frontend.syntax.storage::ExpressionIdBuilder;
+import frontend.syntax.storage::StatementIdBuilder;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  final StatementIdSequence statements;
+  final BlockId emptyBlock;
+  final BlockId bodyBlock;
+
+  _SyntaxStatementFixture(StatementIdSequence statements, BlockId emptyBlock,
+                          BlockId bodyBlock) {
+    self.statements = statements;
+    self.emptyBlock = emptyBlock;
+    self.bodyBlock = bodyBlock;
+  }
+
+  static func Build(
+      SyntaxStorage storage, SourceFile source, SourceRange range,
+      TypeSyntax type,
+      ExpressionIdSequence expressions): SyntaxStatementFixture throws StateError {
+    final var emptyStatements = StatementIdBuilder();
+    final BlockId emptyBlock = storage.AddBlock(
+        BlockNodeSyntax(emptyStatements.Finish(), range, true));
+    final var ids = StatementIdBuilder();
+    final StatementId invalid = add(
+        storage, ids, InvalidStatementSyntax(range));
+    final StatementId local = add(storage, ids,
+        LocalVariableStatementSyntax(null, span(source, 20, 21),
+                                     expressions.Get(1), false, range, true));
+    final StatementId returned = add(storage, ids,
+        ReturnStatementSyntax(expressions.Get(23), range, true));
+    final StatementId expression = add(storage, ids,
+        ExpressionStatementSyntax(expressions.Get(19), range, true));
+    final StatementId branch = add(storage, ids,
+        IfStatementSyntax(expressions.Get(8), emptyBlock, null, range, true));
+    final StatementId loop = add(storage, ids,
+        WhileStatementSyntax(expressions.Get(2), emptyBlock, range, true));
+    final var variable = ForVariableSyntax(
+        type, span(source, 21, 22), true, range, true);
+    final StatementId forEach = add(storage, ids,
+        ForEachStatementSyntax(variable, expressions.Get(20), emptyBlock,
+                               range, true));
+    final StatementId forLoop = add(storage, ids,
+        ForStatementSyntax(local, expressions.Get(7),
+                           pair(expressions.Get(6), expressions.Get(12)),
+                           emptyBlock, range, true));
+    final StatementId switchValue = add(storage, ids,
+        SwitchStatementSyntax(expressions.Get(1),
+                              arms(expressions.Get(2), emptyBlock, range),
+                              range, true));
+    final StatementId breakValue = add(
+        storage, ids, BreakStatementSyntax(range, true));
+    final StatementId continueValue = add(
+        storage, ids, ContinueStatementSyntax(range, true));
+    final StatementId nested = add(storage, ids,
+        NestedBlockStatementSyntax(emptyBlock, range, true));
+    final StatementIdSequence statements = ids.Finish();
+    final var bodyStatements = StatementIdBuilder();
+    for (int32 index = 0; index < statements.GetCount(); index++) {
+      bodyStatements.Add(statements.Get(index));
+    }
+    final BlockId bodyBlock = storage.AddBlock(
+        BlockNodeSyntax(bodyStatements.Finish(), range, false));
+
+    if (emptyBlock.GetOrdinal() != 24 || invalid.GetOrdinal() != 25 ||
+        local.GetOrdinal() != 26 || returned.GetOrdinal() != 27 ||
+        expression.GetOrdinal() != 28 || branch.GetOrdinal() != 29 ||
+        loop.GetOrdinal() != 30 || forEach.GetOrdinal() != 31 ||
+        forLoop.GetOrdinal() != 32 || switchValue.GetOrdinal() != 33 ||
+        breakValue.GetOrdinal() != 34 || continueValue.GetOrdinal() != 35 ||
+        nested.GetOrdinal() != 36 || bodyBlock.GetOrdinal() != 37) {
+      throw StateError("syntax statement fixture order is inconsistent");
+    }
+    return SyntaxStatementFixture(statements, emptyBlock, bodyBlock);
+  }
+
+  func GetStatements(): StatementIdSequence { return self.statements; }
+  func GetEmptyBlock(): BlockId { return self.emptyBlock; }
+  func GetBodyBlock(): BlockId { return self.bodyBlock; }
+
+  static func add(SyntaxStorage storage, StatementIdBuilder ids,
+                  StatementSyntax value): StatementId throws StateError {
+    final StatementId id = storage.AddStatement(value);
+    ids.Add(id);
+    return id;
+  }
+
+  static func pair(ExpressionId first,
+                   ExpressionId second): ExpressionIdSequence throws StateError {
+    final var values = ExpressionIdBuilder();
+    values.Add(first);
+    values.Add(second);
+    return values.Finish();
+  }
+
+  static func single(ExpressionId value): ExpressionIdSequence throws StateError {
+    final var values = ExpressionIdBuilder();
+    values.Add(value);
+    return values.Finish();
+  }
+
+  static func arms(ExpressionId label, BlockId body,
+                   SourceRange range): SwitchArmSyntaxSequence throws StateError {
+    final SwitchArmSyntax?[] values = SwitchArmSyntax?[:2];
+    values[0] = SwitchArmSyntax(single(label), body, range, true);
+    final var emptyLabels = ExpressionIdBuilder();
+    values[1] = SwitchArmSyntax(emptyLabels.Finish(), body, range, true);
+    return SwitchArmSyntaxSequence.Build(values);
+  }
+
+  static func span(SourceFile source, int32 begin,
+                   int32 end): SourceSpan throws StateError {
+    return SourceSpan(source, begin, end);
+  }
+}

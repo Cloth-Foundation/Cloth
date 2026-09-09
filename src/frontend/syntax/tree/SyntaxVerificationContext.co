@@ -1,0 +1,101 @@
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::StatementId;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  final SourceFile source;
+  final SyntaxStorage storage;
+  final bool[] visited;
+
+  SyntaxVerificationContext(SourceFile source, SyntaxStorage storage) {
+    self.source = source;
+    self.storage = storage;
+    self.visited = bool[:storage.GetNodeCount()];
+  }
+
+  func GetStorage(): SyntaxStorage { return self.storage; }
+
+  func BeginExpression(ExpressionId id): bool throws StateError {
+    if (!self.storage.OwnsExpression(id)) {
+      throw StateError("syntax tree contains a foreign expression handle");
+    }
+    return self.beginNode(id.GetOrdinal());
+  }
+
+  func BeginStatement(StatementId id): bool throws StateError {
+    if (!self.storage.OwnsStatement(id)) {
+      throw StateError("syntax tree contains a foreign statement handle");
+    }
+    return self.beginNode(id.GetOrdinal());
+  }
+
+  func BeginBlock(BlockId id): bool throws StateError {
+    if (!self.storage.OwnsBlock(id)) {
+      throw StateError("syntax tree contains a foreign block handle");
+    }
+    return self.beginNode(id.GetOrdinal());
+  }
+
+  func VerifyRange(SourceRange range,
+                   SourceRange parent): void throws StateError {
+    if (range.GetBegin().GetFile() != self.source.GetPath() ||
+        range.GetEnd().GetFile() != self.source.GetPath() ||
+        range.GetBegin().GetOffset() < 0 ||
+        range.GetBegin().GetOffset() > range.GetEnd().GetOffset() ||
+        range.GetEnd().GetOffset() > self.source.GetLength() ||
+        range.GetBegin().GetLine() == 0 ||
+        range.GetBegin().GetColumn() == 0 ||
+        range.GetEnd().GetLine() == 0 || range.GetEnd().GetColumn() == 0) {
+      throw StateError("syntax range does not belong to its source");
+    }
+    if (range.GetBegin().GetOffset() < parent.GetBegin().GetOffset() ||
+        range.GetEnd().GetOffset() > parent.GetEnd().GetOffset()) {
+      throw StateError("syntax range is outside its parent");
+    }
+  }
+
+  func VerifySpan(SourceSpan span, SourceRange parent,
+                  bool allowEmpty): void throws StateError {
+    if (span.GetSource() != self.source) {
+      throw StateError("syntax span belongs to another source");
+    }
+    if (span.GetBeginOffset() < parent.GetBegin().GetOffset() ||
+        span.GetEndOffset() > parent.GetEnd().GetOffset()) {
+      throw StateError("syntax span is outside its node");
+    }
+    if (!allowEmpty && span.GetLength() == 0) {
+      throw StateError("valid syntax name is empty");
+    }
+  }
+
+  func VerifyType(TypeSyntax type,
+                  SourceRange parent): bool throws StateError {
+    self.VerifyRange(type.GetRange(), parent);
+    self.VerifySpan(type.GetName(), type.GetRange(), !type.IsValid());
+    if (type.IsElementNullable() && !type.IsArray()) {
+      throw StateError("only array syntax may have nullable elements");
+    }
+    return type.IsValid();
+  }
+
+  func VerifyChildValidity(bool parentValid,
+                           bool childValid): void throws StateError {
+    if (parentValid && !childValid) {
+      throw StateError("valid syntax node contains an invalid child");
+    }
+  }
+
+  func beginNode(int32 ordinal): bool throws StateError {
+    if (ordinal < 0 || ordinal >= self.visited::length) {
+      throw StateError("syntax handle ordinal is out of bounds");
+    }
+    if (self.visited[ordinal]) { return false; }
+    self.visited[ordinal] = true;
+    return true;
+  }
+}

@@ -1,10 +1,28 @@
 import bootstrap::LexerFoundationCheck;
 import bootstrap::LexerLiteralCheck;
 import bootstrap::LexRecordWriter;
+import bootstrap::SyntaxStorageCheck;
+import bootstrap::SyntaxStorageFailure;
+import bootstrap::SyntaxTreeCheck;
+import bootstrap::SyntaxTreeGcCheck;
+import bootstrap::SyntaxTreeFailure;
+import bootstrap::SyntaxTreeRecordWriter;
 
 static func Main(string[] args): int32 throws IoError, StateError {
   if (args::length == 2 && args[0] == "--lex-records") {
     return LexRecordWriter.Run(args[1]);
+  }
+  if (args::length == 2 && args[0] == "--syntax-storage-failure") {
+    return SyntaxStorageFailure.Run(args[1]);
+  }
+  if (args::length == 1 && args[0] == "--syntax-tree-records") {
+    return SyntaxTreeRecordWriter.Run();
+  }
+  if (args::length == 1 && args[0] == "--syntax-tree-gc-check") {
+    return SyntaxTreeGcCheck.Run();
+  }
+  if (args::length == 2 && args[0] == "--syntax-tree-failure") {
+    return SyntaxTreeFailure.Run(args[1]);
   }
 
   final int32 status = LexerFoundationCheck.Run();
@@ -17,6 +35,18 @@ static func Main(string[] args): int32 throws IoError, StateError {
   if (literalStatus != 0) {
     println(literalStatus);
     return literalStatus;
+  }
+
+  final int32 storageStatus = SyntaxStorageCheck.Run();
+  if (storageStatus != 0) {
+    println(storageStatus);
+    return storageStatus;
+  }
+
+  final int32 treeStatus = SyntaxTreeCheck.Run();
+  if (treeStatus != 0) {
+    println(treeStatus);
+    return treeStatus;
   }
 
   println("lexer literals ok");

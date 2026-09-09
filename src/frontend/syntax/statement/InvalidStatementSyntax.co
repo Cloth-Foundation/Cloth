@@ -1,0 +1,18 @@
+import frontend.source::SourceRange;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.statement::StatementKind;
+
+class is StatementSyntax {
+  final SyntaxNodeData node;
+
+  InvalidStatementSyntax(SourceRange range) {
+    self.node = SyntaxNodeData(range, false);
+  }
+
+  override func GetStatementKind(): StatementKind {
+    return StatementKind.kInvalid;
+  }
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return false; }
+}

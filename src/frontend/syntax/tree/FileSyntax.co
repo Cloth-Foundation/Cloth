@@ -1,0 +1,99 @@
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.syntax.tree::Visibility;
+
+class is SyntaxNode {
+  final SyntaxNodeData node;
+  final SourceFile source;
+  final string name;
+  final string packageName;
+  final string qualifiedName;
+  final Visibility visibility;
+  final ImportSyntaxSequence imports;
+  final SyntaxStorage storage;
+  final DeclarationSyntaxSequence declarations;
+  final TypeSyntax? baseClass;
+  final TypeSyntaxSequence interfaces;
+  final EnumCaseSyntaxSequence enumCases;
+  final FileTypeKind kind;
+  final bool explicitDeclaration;
+  final bool abstractType;
+  final bool sealedType;
+
+  _FileSyntax(SourceFile source, string name, string packageName,
+              string qualifiedName, Visibility visibility,
+              ImportSyntaxSequence imports, SyntaxStorage storage,
+              DeclarationSyntaxSequence declarations, TypeSyntax? baseClass,
+              TypeSyntaxSequence interfaces,
+              EnumCaseSyntaxSequence enumCases, FileTypeKind kind,
+              bool explicitDeclaration, bool abstractType, bool sealedType,
+              SourceRange range, bool valid) {
+    self.node = SyntaxNodeData(range, valid);
+    self.source = source;
+    self.name = name;
+    self.packageName = packageName;
+    self.qualifiedName = qualifiedName;
+    self.visibility = visibility;
+    self.imports = imports;
+    self.storage = storage;
+    self.declarations = declarations;
+    self.baseClass = baseClass;
+    self.interfaces = interfaces;
+    self.enumCases = enumCases;
+    self.kind = kind;
+    self.explicitDeclaration = explicitDeclaration;
+    self.abstractType = abstractType;
+    self.sealedType = sealedType;
+  }
+
+  static func Build(
+      SourceFile source, string name, string packageName,
+      string qualifiedName, Visibility visibility, ImportSyntaxSequence imports,
+      SyntaxStorage storage, DeclarationSyntaxSequence declarations,
+      TypeSyntax? baseClass, TypeSyntaxSequence interfaces,
+      EnumCaseSyntaxSequence enumCases, FileTypeKind kind,
+      bool explicitDeclaration, bool abstractType, bool sealedType,
+      SourceRange range, bool valid): FileSyntax throws StateError {
+    if (range.GetBegin().GetFile() != source.GetPath() ||
+        range.GetEnd().GetFile() != source.GetPath() ||
+        range.GetBegin().GetOffset() < 0 ||
+        range.GetBegin().GetOffset() > range.GetEnd().GetOffset() ||
+        range.GetEnd().GetOffset() > source.GetLength() ||
+        !storage.IsSealed() || (valid && name::length == 0)) {
+      throw StateError("invalid file syntax");
+    }
+    return FileSyntax(source, name, packageName, qualifiedName, visibility,
+                      imports, storage, declarations, baseClass, interfaces,
+                      enumCases, kind, explicitDeclaration, abstractType,
+                      sealedType, range, valid);
+  }
+
+  func GetSource(): SourceFile { return self.source; }
+  func GetName(): string { return self.name; }
+  func GetPackageName(): string { return self.packageName; }
+  func GetQualifiedName(): string { return self.qualifiedName; }
+  func GetVisibility(): Visibility { return self.visibility; }
+  func GetImports(): ImportSyntaxSequence { return self.imports; }
+  func GetStorage(): SyntaxStorage { return self.storage; }
+  func GetDeclarations(): DeclarationSyntaxSequence {
+    return self.declarations;
+  }
+  func GetBaseClass(): TypeSyntax? { return self.baseClass; }
+  func GetInterfaces(): TypeSyntaxSequence { return self.interfaces; }
+  func GetEnumCases(): EnumCaseSyntaxSequence { return self.enumCases; }
+  func GetFileTypeKind(): FileTypeKind { return self.kind; }
+  func HasExplicitDeclaration(): bool { return self.explicitDeclaration; }
+  func IsAbstract(): bool { return self.abstractType; }
+  func IsSealed(): bool { return self.sealedType; }
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return self.node.IsValid(); }
+}

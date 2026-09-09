@@ -1,0 +1,310 @@
+import bootstrap::SyntaxExpressionRecordWriter;
+import bootstrap::SyntaxKindCode;
+import bootstrap::SyntaxStatementRecordWriter;
+import bootstrap::SyntaxTreeFixture;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.syntax.tree::VerifiedSyntaxTree;
+import frontend.syntax.tree::Visibility;
+
+class {
+  static func Run(): int32 throws StateError {
+    final SyntaxTreeFixture fixture = SyntaxTreeFixture.Build();
+    final VerifiedSyntaxTree tree = VerifiedSyntaxTree.Build(fixture.GetFile());
+    final FileSyntax file = tree.GetFile();
+    writeFile(file);
+    writeImports(file.GetImports());
+    writeCases(file.GetEnumCases());
+    writeDeclarations(file.GetDeclarations());
+    final ExpressionIdSequence expressions = fixture.GetExpressions();
+    for (int32 index = 0; index < expressions.GetCount(); index++) {
+      SyntaxExpressionRecordWriter.Write(file.GetStorage(),
+                                         expressions.Get(index));
+    }
+    final StatementIdSequence statements = fixture.GetStatements();
+    for (int32 index = 0; index < statements.GetCount(); index++) {
+      SyntaxStatementRecordWriter.Write(file.GetStorage(),
+                                        statements.Get(index));
+    }
+    writeBlock(file.GetStorage(), fixture.GetEmptyBlock());
+    writeBlock(file.GetStorage(), fixture.GetBodyBlock());
+    return 0;
+  }
+
+  static func writeFile(FileSyntax file): void {
+    print("F|");
+    print(SyntaxKindCode.FileType(file.GetFileTypeKind()));
+    print("|");
+    print(SyntaxKindCode.VisibilityValue(file.GetVisibility()));
+    print("|");
+    print(flag(file.IsValid()));
+    print("|");
+    print(file.GetRange().GetBegin().GetOffset());
+    print("|");
+    print(file.GetRange().GetEnd().GetOffset());
+    print("|");
+    print(file.GetName());
+    print("|");
+    print(file.GetPackageName());
+    print("|");
+    print(file.GetQualifiedName());
+    writeFlag(file.HasExplicitDeclaration());
+    writeFlag(file.IsAbstract());
+    writeFlag(file.IsSealed());
+    writeFlag(file.GetBaseClass() != null);
+    print("|");
+    print(file.GetInterfaces().GetCount());
+    print("|");
+    print(file.GetImports().GetCount());
+    print("|");
+    print(file.GetEnumCases().GetCount());
+    print("|");
+    print(file.GetDeclarations().GetCount());
+    println();
+  }
+
+  static func writeImports(
+      ImportSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ImportSyntax value = values.Get(index);
+      print("I|");
+      print(index);
+      print("|");
+      print(SyntaxKindCode.Import(value.GetKind()));
+      writeFlag(value.IsValid());
+      writeOptionalSpan(value.GetPackageName());
+      writeOptionalSpan(value.GetTypeName());
+      writeOptionalSpan(value.GetAlias());
+      writeRange(value.GetRange().GetBegin().GetOffset(),
+                 value.GetRange().GetEnd().GetOffset());
+      println();
+    }
+  }
+
+  static func writeCases(
+      EnumCaseSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final EnumCaseSyntax value = values.Get(index);
+      print("C|");
+      print(index);
+      writeFlag(value.IsValid());
+      writeSpan(value.GetName());
+      writeRange(value.GetRange().GetBegin().GetOffset(),
+                 value.GetRange().GetEnd().GetOffset());
+      println();
+    }
+  }
+
+  static func writeDeclarations(
+      DeclarationSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final DeclarationSyntax value = values.Get(index);
+      final DeclarationKind kind = value.GetDeclarationKind();
+      print("D|");
+      print(index);
+      print("|");
+      print(SyntaxKindCode.Declaration(kind));
+      writeFlag(value.IsValid());
+      writeRange(value.GetRange().GetBegin().GetOffset(),
+                 value.GetRange().GetEnd().GetOffset());
+      writeDeclarationPayload(kind, value);
+      println();
+    }
+  }
+
+  static func writeDeclarationPayload(
+      DeclarationKind kind, DeclarationSyntax declaration): void throws StateError {
+    switch (kind) {
+      case DeclarationKind.kField: {
+        final FieldSyntax? value = declaration as FieldSyntax?;
+        if (value == null) { throw StateError("field kind mismatch"); }
+        writeSpan(value.GetName());
+        writeVisibility(value.GetVisibility());
+        writeType(value.GetType());
+        writeExpression(value.GetInitializer());
+        writeFlag(value.IsFinal());
+        writeFlag(value.IsStatic());
+        return;
+      }
+      case DeclarationKind.kFunction: {
+        final FunctionSyntax? value = declaration as FunctionSyntax?;
+        if (value == null) { throw StateError("function kind mismatch"); }
+        writeSpan(value.GetName());
+        writeVisibility(value.GetVisibility());
+        writeParameters(value.GetParameters());
+        writeOptionalType(value.GetReturnType());
+        writeBlockId(value.GetBody());
+        writeTypes(value.GetThrowsTypes());
+        writeFlag(value.HasExplicitThrows());
+        writeFlag(value.IsStatic());
+        writeFlag(value.IsOverride());
+        writeFlag(value.IsAbstract());
+        writeFlag(value.IsFinal());
+        return;
+      }
+      case DeclarationKind.kConstructor: {
+        final ConstructorSyntax? value = declaration as ConstructorSyntax?;
+        if (value == null) { throw StateError("constructor kind mismatch"); }
+        writeSpan(value.GetName());
+        writeVisibility(value.GetVisibility());
+        writeParameters(value.GetParameters());
+        writeInitializer(value.GetInitializer());
+        writeBlockId(value.GetBody());
+        writeTypes(value.GetThrowsTypes());
+        writeFlag(value.HasExplicitThrows());
+        return;
+      }
+    }
+  }
+
+  static func writeParameters(
+      ParameterSyntaxSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ParameterSyntax value = values.Get(index);
+      writeType(value.GetType());
+      writeSpan(value.GetName());
+      writeFlag(value.IsFinal());
+      writeFlag(value.IsValid());
+    }
+  }
+
+  static func writeInitializer(
+      ConstructorInitializerSyntax? value): void throws StateError {
+    if (value == null) {
+      print("|-");
+      return;
+    }
+    print("|N");
+    writeType(value.GetBaseType());
+    writeExpressions(value.GetArguments());
+    writeFlag(value.IsValid());
+  }
+
+  static func writeTypes(TypeSyntaxSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      writeType(values.Get(index));
+    }
+  }
+
+  static func writeOptionalType(TypeSyntax? value): void {
+    if (value == null) {
+      print("|-");
+    } else {
+      writeType(value);
+    }
+  }
+
+  static func writeType(TypeSyntax value): void {
+    print("|T");
+    writeSpan(value.GetName());
+    writeFlag(value.IsPrimitive());
+    writeFlag(value.IsArray());
+    writeFlag(value.IsNullable());
+    writeFlag(value.IsElementNullable());
+    writeFlag(value.IsValid());
+  }
+
+  static func writeExpressions(
+      ExpressionIdSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      writeExpression(values.Get(index));
+    }
+  }
+
+  static func writeExpression(ExpressionId? value): void {
+    print("|");
+    if (value == null) {
+      print(-1);
+    } else {
+      print(value.GetOrdinal());
+    }
+  }
+
+  static func writeBlock(SyntaxStorage storage,
+                         BlockId id): void throws StateError {
+    final BlockNodeSyntax? block =
+        storage.GetBlock(id) as BlockNodeSyntax?;
+    if (block == null) { throw StateError("block kind mismatch"); }
+    print("B|");
+    print(id.GetOrdinal());
+    writeFlag(block.IsValid());
+    writeRange(block.GetRange().GetBegin().GetOffset(),
+               block.GetRange().GetEnd().GetOffset());
+    print("|");
+    print(block.GetStatements().GetCount());
+    for (int32 index = 0; index < block.GetStatements().GetCount(); index++) {
+      print("|");
+      print(block.GetStatements().Get(index).GetOrdinal());
+    }
+    println();
+  }
+
+  static func writeBlockId(BlockId value): void {
+    print("|");
+    print(value.GetOrdinal());
+  }
+
+  static func writeVisibility(Visibility value): void {
+    print("|");
+    print(SyntaxKindCode.VisibilityValue(value));
+  }
+
+  static func writeOptionalSpan(SourceSpan? value): void {
+    if (value == null) {
+      print("|-1|-1");
+    } else {
+      writeSpan(value);
+    }
+  }
+
+  static func writeSpan(SourceSpan value): void {
+    print("|");
+    print(value.GetBeginOffset());
+    print("|");
+    print(value.GetEndOffset());
+  }
+
+  static func writeRange(int32 begin, int32 end): void {
+    print("|");
+    print(begin);
+    print("|");
+    print(end);
+  }
+
+  static func writeFlag(bool value): void {
+    print("|");
+    print(flag(value));
+  }
+
+  static func flag(bool value): int32 {
+    if (value) { return 1; }
+    return 0;
+  }
+}

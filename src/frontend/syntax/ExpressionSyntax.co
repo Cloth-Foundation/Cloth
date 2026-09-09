@@ -1,0 +1,6 @@
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.expression::ExpressionKind;
+
+interface : SyntaxNode {
+  func GetExpressionKind(): ExpressionKind;
+}

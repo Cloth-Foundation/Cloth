@@ -1,0 +1,29 @@
+import frontend.syntax.tree::ImportSyntax;
+
+class {
+  final ImportSyntax?[] values;
+
+  _ImportSyntaxSequence(ImportSyntax?[] values) {
+    self.values = values;
+  }
+
+  static func Build(ImportSyntax?[] input): ImportSyntaxSequence throws StateError {
+    final ImportSyntax?[] values = ImportSyntax?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("import syntax sequence contains null");
+      }
+      values[index] = input[index];
+    }
+    return ImportSyntaxSequence(values);
+  }
+
+  func Get(int32 index): ImportSyntax throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("import syntax sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

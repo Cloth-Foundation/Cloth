@@ -1,0 +1,279 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import frontend.syntax.expression::ArrayLiteralExpressionSyntax;
+import frontend.syntax.expression::AssignmentExpressionSyntax;
+import frontend.syntax.expression::BinaryExpressionSyntax;
+import frontend.syntax.expression::CallExpressionSyntax;
+import frontend.syntax.expression::CheckedCastExpressionSyntax;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.expression::IdentifierExpressionSyntax;
+import frontend.syntax.expression::IndexExpressionSyntax;
+import frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import frontend.syntax.expression::InvalidExpressionSyntax;
+import frontend.syntax.expression::LiteralExpressionSyntax;
+import frontend.syntax.expression::MemberAccessExpressionSyntax;
+import frontend.syntax.expression::MetaAccessExpressionSyntax;
+import frontend.syntax.expression::NullAssertExpressionSyntax;
+import frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import frontend.syntax.expression::NumericConversionExpressionSyntax;
+import frontend.syntax.expression::ParenthesizedExpressionSyntax;
+import frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import frontend.syntax.expression::SafeMetaAccessExpressionSyntax;
+import frontend.syntax.expression::SuperExpressionSyntax;
+import frontend.syntax.expression::ThrowExpressionSyntax;
+import frontend.syntax.expression::TypeTestExpressionSyntax;
+import frontend.syntax.expression::UnaryExpressionSyntax;
+import frontend.syntax.expression::UpdateExpressionSyntax;
+import frontend.syntax.tree::SyntaxVerificationContext;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  final SyntaxVerificationContext context;
+
+  SyntaxExpressionVerifier(SyntaxVerificationContext context) {
+    self.context = context;
+  }
+
+  func Verify(ExpressionId id,
+              SourceRange parent): bool throws StateError {
+    final bool fresh = self.context.BeginExpression(id);
+    final ExpressionSyntax expression =
+        self.context.GetStorage().GetExpression(id);
+    self.context.VerifyRange(expression.GetRange(), parent);
+    if (!fresh) { return expression.IsValid(); }
+
+    switch (expression.GetExpressionKind()) {
+      case ExpressionKind.kInvalid: {
+        self.verifyInvalid(expression);
+        return false;
+      }
+      case ExpressionKind.kIdentifier: {
+        self.verifyIdentifier(expression);
+        return expression.IsValid();
+      }
+      case ExpressionKind.kLiteral: {
+        self.verifyLiteral(expression);
+        return expression.IsValid();
+      }
+      case ExpressionKind.kSuper: {
+        self.requireMatch(expression is SuperExpressionSyntax);
+        return expression.IsValid();
+      }
+      case ExpressionKind.kThrow: {
+        final ThrowExpressionSyntax? value =
+            expression as ThrowExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetOperand());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kUnary: {
+        final UnaryExpressionSyntax? value =
+            expression as UnaryExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetOperand());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kUpdate: {
+        final UpdateExpressionSyntax? value =
+            expression as UpdateExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetOperand());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kBinary: {
+        final BinaryExpressionSyntax? value =
+            expression as BinaryExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetLeft());
+        self.verifyChild(expression, value.GetRight());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kTypeTest: {
+        final TypeTestExpressionSyntax? value =
+            expression as TypeTestExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetValue());
+        self.verifyType(expression, value.GetTarget());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kCheckedCast: {
+        final CheckedCastExpressionSyntax? value =
+            expression as CheckedCastExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetValue());
+        self.verifyType(expression, value.GetTarget());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kNumericConversion: {
+        final NumericConversionExpressionSyntax? value =
+            expression as NumericConversionExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyType(expression, value.GetTarget());
+        self.verifyChild(expression, value.GetValue());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kIntegerConversion: {
+        self.verifyIntegerConversion(expression);
+        return expression.IsValid();
+      }
+      case ExpressionKind.kAssignment: {
+        final AssignmentExpressionSyntax? value =
+            expression as AssignmentExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetTarget());
+        self.verifyChild(expression, value.GetValue());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kMemberAccess: {
+        final MemberAccessExpressionSyntax? value =
+            expression as MemberAccessExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetObject());
+        self.context.VerifySpan(value.GetMember(), expression.GetRange(),
+                                !expression.IsValid());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kMetaAccess: {
+        final MetaAccessExpressionSyntax? value =
+            expression as MetaAccessExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetObject());
+        self.context.VerifySpan(value.GetMeta(), expression.GetRange(),
+                                !expression.IsValid());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kSafeMemberAccess: {
+        final SafeMemberAccessExpressionSyntax? value =
+            expression as SafeMemberAccessExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetObject());
+        self.context.VerifySpan(value.GetMember(), expression.GetRange(),
+                                !expression.IsValid());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kSafeMetaAccess: {
+        final SafeMetaAccessExpressionSyntax? value =
+            expression as SafeMetaAccessExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetObject());
+        self.context.VerifySpan(value.GetMeta(), expression.GetRange(),
+                                !expression.IsValid());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kNullCoalesce: {
+        final NullCoalesceExpressionSyntax? value =
+            expression as NullCoalesceExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetNullable());
+        self.verifyChild(expression, value.GetFallback());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kNullAssert: {
+        final NullAssertExpressionSyntax? value =
+            expression as NullAssertExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetOperand());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kCall: {
+        final CallExpressionSyntax? value = expression as CallExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetCallee());
+        self.verifyChildren(expression, value.GetArguments());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kArrayLiteral: {
+        final ArrayLiteralExpressionSyntax? value =
+            expression as ArrayLiteralExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChildren(expression, value.GetElements());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kArrayConstruction: {
+        final ArrayConstructionExpressionSyntax? value =
+            expression as ArrayConstructionExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyType(expression, value.GetElementType());
+        self.verifyChild(expression, value.GetLength());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kIndex: {
+        final IndexExpressionSyntax? value = expression as IndexExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetObject());
+        self.verifyChild(expression, value.GetIndex());
+        return expression.IsValid();
+      }
+      case ExpressionKind.kParenthesized: {
+        final ParenthesizedExpressionSyntax? value =
+            expression as ParenthesizedExpressionSyntax?;
+        if (value == null) { return self.kindMismatch(); }
+        self.verifyChild(expression, value.GetExpression());
+        return expression.IsValid();
+      }
+    }
+  }
+
+  func verifyInvalid(ExpressionSyntax expression): void throws StateError {
+    if (!(expression is InvalidExpressionSyntax) || expression.IsValid()) {
+      self.kindMismatch();
+    }
+  }
+
+  func verifyIdentifier(ExpressionSyntax expression): void throws StateError {
+    final IdentifierExpressionSyntax? value =
+        expression as IdentifierExpressionSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.context.VerifySpan(value.GetName(), expression.GetRange(),
+                            !expression.IsValid());
+  }
+
+  func verifyLiteral(ExpressionSyntax expression): void throws StateError {
+    final LiteralExpressionSyntax? value =
+        expression as LiteralExpressionSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.context.VerifySpan(value.GetLexeme(), expression.GetRange(),
+                            !expression.IsValid());
+  }
+
+  func verifyIntegerConversion(
+      ExpressionSyntax expression): void throws StateError {
+    final IntegerConversionExpressionSyntax? value =
+        expression as IntegerConversionExpressionSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.verifyType(expression, value.GetTarget());
+    self.context.VerifySpan(value.GetOperation(), expression.GetRange(),
+                            !expression.IsValid());
+    self.verifyChild(expression, value.GetValue());
+  }
+
+  func verifyChildren(ExpressionSyntax parent,
+                      ExpressionIdSequence children): void throws StateError {
+    for (int32 index = 0; index < children.GetCount(); index++) {
+      self.verifyChild(parent, children.Get(index));
+    }
+  }
+
+  func verifyChild(ExpressionSyntax parent,
+                   ExpressionId child): void throws StateError {
+    final bool valid = self.Verify(child, parent.GetRange());
+    self.context.VerifyChildValidity(parent.IsValid(), valid);
+  }
+
+  func verifyType(ExpressionSyntax parent,
+                  TypeSyntax type): void throws StateError {
+    final bool valid = self.context.VerifyType(type, parent.GetRange());
+    self.context.VerifyChildValidity(parent.IsValid(), valid);
+  }
+
+  func requireMatch(bool matches): void throws StateError {
+    if (!matches) { self.kindMismatch(); }
+  }
+
+  func kindMismatch(): bool throws StateError {
+    throw StateError("expression kind does not match its node type");
+  }
+}

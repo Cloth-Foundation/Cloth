@@ -1,0 +1,27 @@
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.expression::ExpressionKind;
+
+class is ExpressionSyntax {
+  final SyntaxNodeData node;
+  final ExpressionId receiver;
+  final SourceSpan meta;
+
+  MetaAccessExpressionSyntax(ExpressionId receiver, SourceSpan meta,
+                             SourceRange range, bool valid) {
+    self.node = SyntaxNodeData(range, valid);
+    self.receiver = receiver;
+    self.meta = meta;
+  }
+
+  func GetObject(): ExpressionId { return self.receiver; }
+  func GetMeta(): SourceSpan { return self.meta; }
+  override func GetExpressionKind(): ExpressionKind {
+    return ExpressionKind.kMetaAccess;
+  }
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return self.node.IsValid(); }
+}

@@ -1,0 +1,78 @@
+import bootstrap::BlockStorageProbe;
+import bootstrap::ExpressionStorageProbe;
+import bootstrap::StatementStorageProbe;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::StatementId;
+import frontend.syntax.storage::SyntaxStorage;
+
+class {
+  static func Run(): int32 throws StateError {
+    final SourceRange range = checkRange();
+    final var storage = SyntaxStorage();
+    final ExpressionId?[] expressions = ExpressionId?[:65];
+    if (storage.GetNodeCount() != 0 || storage.GetPageCount() != 0) {
+      return 300;
+    }
+
+    for (int32 index = 0; index < 64; index++) {
+      expressions[index] =
+          storage.AddExpression(ExpressionStorageProbe(index, range));
+    }
+    if (storage.GetNodeCount() != 64 || storage.GetPageCount() != 1) {
+      return 301;
+    }
+    expressions[64] =
+        storage.AddExpression(ExpressionStorageProbe(64, range));
+    final StatementId statement =
+        storage.AddStatement(StatementStorageProbe(65, range));
+    final BlockId block = storage.AddBlock(BlockStorageProbe(66, range));
+    if (storage.GetNodeCount() != 67 || storage.GetPageCount() != 2) {
+      return 302;
+    }
+
+    for (int32 index = 0; index < expressions::length; index++) {
+      final ExpressionId id = expressions[index]!;
+      final ExpressionSyntax value = storage.GetExpression(id);
+      final ExpressionStorageProbe? probe = value as ExpressionStorageProbe?;
+      if (id.GetOrdinal() != index || probe == null ||
+          probe.GetValue() != index || !storage.OwnsExpression(id)) {
+        return 303;
+      }
+    }
+    final StatementStorageProbe? statementValue =
+        storage.GetStatement(statement) as StatementStorageProbe?;
+    final BlockStorageProbe? blockValue =
+        storage.GetBlock(block) as BlockStorageProbe?;
+    if (statement.GetOrdinal() != 65 || block.GetOrdinal() != 66 ||
+        statementValue == null || statementValue.GetValue() != 65 ||
+        blockValue == null || blockValue.GetValue() != 66) {
+      return 304;
+    }
+
+    final var other = SyntaxStorage();
+    final ExpressionId foreign =
+        other.AddExpression(ExpressionStorageProbe(0, range));
+    if (storage.OwnsExpression(foreign) ||
+        storage.OwnsExpressionHandle(statement) ||
+        !storage.OwnsStatement(statement) || !storage.OwnsBlock(block)) {
+      return 305;
+    }
+
+    storage.Seal();
+    if (!storage.IsSealed() || storage.CanAppend() ||
+        storage.GetExpression(expressions[64]!).GetRange().GetBegin().GetOffset() != 0) {
+      return 306;
+    }
+    return 0;
+  }
+
+  static func checkRange(): SourceRange {
+    final var begin = SourceLocation("syntax-storage", 0, 1, 1);
+    final var end = SourceLocation("syntax-storage", 1, 1, 2);
+    return SourceRange(begin, end);
+  }
+}

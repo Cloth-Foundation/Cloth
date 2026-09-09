@@ -1,0 +1,22 @@
+import frontend.syntax.storage::SyntaxOwner;
+import frontend.syntax.storage::SyntaxPage;
+
+struct {
+  final SyntaxOwner owner;
+  final SyntaxPage page;
+  final int32 slot;
+  final int32 ordinal;
+
+  SyntaxPlacement(SyntaxOwner owner, SyntaxPage page, int32 slot,
+                  int32 ordinal) {
+    self.owner = owner;
+    self.page = page;
+    self.slot = slot;
+    self.ordinal = ordinal;
+  }
+
+  func GetOwner(): SyntaxOwner { return self.owner; }
+  func GetPage(): SyntaxPage { return self.page; }
+  func GetSlot(): int32 { return self.slot; }
+  func GetOrdinal(): int32 { return self.ordinal; }
+}

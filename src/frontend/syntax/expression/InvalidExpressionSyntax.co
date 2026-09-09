@@ -1,0 +1,19 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.expression::ExpressionKind;
+
+class is ExpressionSyntax {
+  final SyntaxNodeData node;
+
+  InvalidExpressionSyntax(SourceRange range) {
+    self.node = SyntaxNodeData(range, false);
+  }
+
+  override func GetExpressionKind(): ExpressionKind {
+    return ExpressionKind.kInvalid;
+  }
+
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return false; }
+}

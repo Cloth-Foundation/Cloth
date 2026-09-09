@@ -1,0 +1,28 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNodeData;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.tree::TypeSyntax;
+
+class is ExpressionSyntax {
+  final SyntaxNodeData node;
+  final TypeSyntax elementType;
+  final ExpressionId length;
+
+  ArrayConstructionExpressionSyntax(TypeSyntax elementType,
+                                    ExpressionId length, SourceRange range,
+                                    bool valid) {
+    self.node = SyntaxNodeData(range, valid);
+    self.elementType = elementType;
+    self.length = length;
+  }
+
+  func GetElementType(): TypeSyntax { return self.elementType; }
+  func GetLength(): ExpressionId { return self.length; }
+  override func GetExpressionKind(): ExpressionKind {
+    return ExpressionKind.kArrayConstruction;
+  }
+  override func GetRange(): SourceRange { return self.node.GetRange(); }
+  override func IsValid(): bool { return self.node.IsValid(); }
+}
