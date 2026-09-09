@@ -1,0 +1,34 @@
+import frontend.token::Token;
+
+class {
+  final Token?[] values;
+  int32 count;
+
+  TokenBuffer(int32 capacity) {
+    self.values = Token?[:capacity];
+    self.count = 0;
+  }
+
+  func Add(Token value) throws StateError {
+    if (self.count >= self.values::length) {
+      throw StateError("token buffer overflow");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): Token throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("token index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 {
+    return self.count;
+  }
+
+  func GetCapacity(): int32 {
+    return self.values::length;
+  }
+}

@@ -1,0 +1,168 @@
+import frontend.lexer.scanners::OperatorScanResult;
+import frontend.source::SourceCursor;
+import frontend.token::TokenKind;
+
+class {
+  static func Scan(SourceCursor cursor): OperatorScanResult {
+    switch (cursor.Peek(0)) {
+      case 40: {
+        cursor.Advance();
+        return matched(TokenKind.kLeftParen);
+      }
+      case 41: {
+        cursor.Advance();
+        return matched(TokenKind.kRightParen);
+      }
+      case 123: {
+        cursor.Advance();
+        return matched(TokenKind.kLeftBrace);
+      }
+      case 125: {
+        cursor.Advance();
+        return matched(TokenKind.kRightBrace);
+      }
+      case 91: {
+        cursor.Advance();
+        return matched(TokenKind.kLeftBracket);
+      }
+      case 93: {
+        cursor.Advance();
+        return matched(TokenKind.kRightBracket);
+      }
+      case 44: {
+        cursor.Advance();
+        return matched(TokenKind.kComma);
+      }
+      case 59: {
+        cursor.Advance();
+        return matched(TokenKind.kSemicolon);
+      }
+      case 58: { return matched(scanColon(cursor)); }
+      case 46: {
+        cursor.Advance();
+        return matched(TokenKind.kDot);
+      }
+      case 63: { return matched(scanQuestion(cursor)); }
+      case 43: { return matched(scanPlus(cursor)); }
+      case 45: { return matched(scanMinus(cursor)); }
+      case 42: { return matched(scanStar(cursor)); }
+      case 47: { return matched(scanSlash(cursor)); }
+      case 37: { return matched(scanPercent(cursor)); }
+      case 61: { return matched(scanEqual(cursor)); }
+      case 33: { return matched(scanBang(cursor)); }
+      case 60: { return matched(scanLess(cursor)); }
+      case 62: { return matched(scanGreater(cursor)); }
+      case 38: { return matched(scanAmpersand(cursor)); }
+      case 124: { return matched(scanPipe(cursor)); }
+      case 94: { return matched(scanCaret(cursor)); }
+      case 126: {
+        cursor.Advance();
+        return matched(TokenKind.kTilde);
+      }
+      default: {
+        return OperatorScanResult(false, TokenKind.kEof);
+      }
+    }
+  }
+
+  static func matched(TokenKind kind): OperatorScanResult {
+    return OperatorScanResult(true, kind);
+  }
+
+  static func scanColon(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(58)) { return TokenKind.kColonColon; }
+    return TokenKind.kColon;
+  }
+
+  static func scanQuestion(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(63)) { return TokenKind.kQuestionQuestion; }
+    if (cursor.Match(46)) { return TokenKind.kQuestionDot; }
+    return TokenKind.kQuestion;
+  }
+
+  static func scanPlus(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(43)) { return TokenKind.kPlusPlus; }
+    if (cursor.Match(61)) { return TokenKind.kPlusEqual; }
+    return TokenKind.kPlus;
+  }
+
+  static func scanMinus(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(45)) { return TokenKind.kMinusMinus; }
+    if (cursor.Match(61)) { return TokenKind.kMinusEqual; }
+    return TokenKind.kMinus;
+  }
+
+  static func scanStar(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kStarEqual; }
+    return TokenKind.kStar;
+  }
+
+  static func scanSlash(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kSlashEqual; }
+    return TokenKind.kSlash;
+  }
+
+  static func scanPercent(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kPercentEqual; }
+    return TokenKind.kPercent;
+  }
+
+  static func scanEqual(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kEqualEqual; }
+    return TokenKind.kEqual;
+  }
+
+  static func scanBang(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kBangEqual; }
+    return TokenKind.kBang;
+  }
+
+  static func scanLess(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(60)) {
+      if (cursor.Match(61)) { return TokenKind.kShiftLeftEqual; }
+      return TokenKind.kShiftLeft;
+    }
+    if (cursor.Match(61)) { return TokenKind.kLessEqual; }
+    return TokenKind.kLess;
+  }
+
+  static func scanGreater(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(62)) {
+      if (cursor.Match(61)) { return TokenKind.kShiftRightEqual; }
+      return TokenKind.kShiftRight;
+    }
+    if (cursor.Match(61)) { return TokenKind.kGreaterEqual; }
+    return TokenKind.kGreater;
+  }
+
+  static func scanAmpersand(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(38)) { return TokenKind.kAmpersandAmpersand; }
+    if (cursor.Match(61)) { return TokenKind.kAmpersandEqual; }
+    return TokenKind.kAmpersand;
+  }
+
+  static func scanPipe(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(124)) { return TokenKind.kPipePipe; }
+    if (cursor.Match(61)) { return TokenKind.kPipeEqual; }
+    return TokenKind.kPipe;
+  }
+
+  static func scanCaret(SourceCursor cursor): TokenKind {
+    cursor.Advance();
+    if (cursor.Match(61)) { return TokenKind.kCaretEqual; }
+    return TokenKind.kCaret;
+  }
+}

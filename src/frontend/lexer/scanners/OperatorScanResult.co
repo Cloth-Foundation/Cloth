@@ -1,0 +1,19 @@
+import frontend.token::TokenKind;
+
+struct {
+  final bool matched;
+  final TokenKind kind;
+
+  OperatorScanResult(bool matched, TokenKind kind) {
+    self.matched = matched;
+    self.kind = kind;
+  }
+
+  func IsMatched(): bool {
+    return self.matched;
+  }
+
+  func GetKind(): TokenKind {
+    return self.kind;
+  }
+}

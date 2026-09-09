@@ -1,0 +1,66 @@
+import frontend.source::SourceSpan;
+
+class {
+  static func GetWidth(SourceSpan span, int32 offset,
+                       int32 limit): int32 throws StateError {
+    if (offset < 0 || offset >= limit || limit > span.GetLength()) {
+      return 0;
+    }
+
+    final byte first = span.GetByte(offset);
+    if (first <= 127) {
+      return 1;
+    }
+    if (first >= 194 && first <= 223) {
+      if (offset + 2 > limit || !isContinuation(span.GetByte(offset + 1))) {
+        return 0;
+      }
+      return 2;
+    }
+    if (first >= 224 && first <= 239) {
+      if (offset + 3 > limit) {
+        return 0;
+      }
+      final byte second = span.GetByte(offset + 1);
+      final byte third = span.GetByte(offset + 2);
+      if (!isContinuation(third)) {
+        return 0;
+      }
+      if (first == 224) {
+        if (second < 160 || second > 191) { return 0; }
+      } else {
+        if (first == 237) {
+          if (second < 128 || second > 159) { return 0; }
+        } else {
+          if (!isContinuation(second)) { return 0; }
+        }
+      }
+      return 3;
+    }
+    if (first >= 240 && first <= 244) {
+      if (offset + 4 > limit) {
+        return 0;
+      }
+      final byte second = span.GetByte(offset + 1);
+      if (first == 240) {
+        if (second < 144 || second > 191) { return 0; }
+      } else {
+        if (first == 244) {
+          if (second < 128 || second > 143) { return 0; }
+        } else {
+          if (!isContinuation(second)) { return 0; }
+        }
+      }
+      if (!isContinuation(span.GetByte(offset + 2)) ||
+          !isContinuation(span.GetByte(offset + 3))) {
+        return 0;
+      }
+      return 4;
+    }
+    return 0;
+  }
+
+  static func isContinuation(byte value): bool {
+    return value >= 128 && value <= 191;
+  }
+}

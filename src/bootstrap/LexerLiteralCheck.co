@@ -1,0 +1,282 @@
+import frontend.diagnostic::LexDiagnosticBuffer;
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    final int32 validStatus = checkValidLiterals();
+    if (validStatus != 0) { return validStatus; }
+    final int32 numberStatus = checkMalformedNumbers();
+    if (numberStatus != 0) { return numberStatus; }
+    final int32 textStatus = checkMalformedText();
+    if (textStatus != 0) { return textStatus; }
+    final int32 unterminatedStatus = checkUnterminatedText();
+    if (unterminatedStatus != 0) { return unterminatedStatus; }
+    final int32 utf8Status = checkInvalidUtf8();
+    if (utf8Status != 0) { return utf8Status; }
+    return checkTrackedLiterals();
+  }
+
+  static func checkValidLiterals(): int32 throws IoError, StateError {
+    final var source = SourceFile.Load("testdata/lexer/literals.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final TokenKind[] expected = validKinds();
+    if (result.GetDiagnostics().GetCount() != 0) { return 100; }
+    if (tokens.GetCount() != expected::length + 1 ||
+        tokens.GetCapacity() != tokens.GetCount()) {
+      return 101;
+    }
+    for (int32 index = 0; index < expected::length; index++) {
+      if (tokens.Get(index).GetKind() != expected[index]) { return 102; }
+    }
+
+    final var integerBeforeDot = tokens.Get(4).GetSpan();
+    if (integerBeforeDot.GetLength() != 2 ||
+        integerBeforeDot.GetByte(0) != 52 ||
+        integerBeforeDot.GetByte(1) != 50 ||
+        tokens.Get(5).GetKind() != TokenKind.kDot) {
+      return 103;
+    }
+    final var thread = tokens.Get(26).GetSpan();
+    if (thread.GetLength() != 6 || thread.GetByte(0) != 39 ||
+        thread.GetByte(1) != 240 || thread.GetByte(2) != 159 ||
+        thread.GetByte(3) != 167 || thread.GetByte(4) != 181 ||
+        thread.GetByte(5) != 39) {
+      return 104;
+    }
+    final var maximum = tokens.Get(28).GetSpan();
+    if (maximum.GetLength() != 12) { return 105; }
+    return 0;
+  }
+
+  static func checkMalformedNumbers(): int32 throws IoError, StateError {
+    final var source =
+        SourceFile.Load("testdata/lexer/malformed_numbers.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+    final LexDiagnosticKind[] expected = malformedNumberKinds();
+    if (diagnostics.GetCount() != expected::length ||
+        diagnostics.GetCapacity() != diagnostics.GetCount()) {
+      return 110;
+    }
+    if (tokens.GetCount() != expected::length + 1 ||
+        tokens.GetCapacity() != tokens.GetCount()) {
+      return 111;
+    }
+    for (int32 index = 0; index < expected::length; index++) {
+      final var token = tokens.Get(index);
+      final var diagnostic = diagnostics.Get(index);
+      if (diagnostic.GetKind() != expected[index]) { return 112; }
+      if (token.GetSpan().GetBeginOffset() !=
+              diagnostic.GetSpan().GetBeginOffset() ||
+          token.GetSpan().GetEndOffset() !=
+              diagnostic.GetSpan().GetEndOffset()) {
+        return 113;
+      }
+    }
+    if (tokens.Get(0).GetSpan().GetLength() != 2 ||
+        tokens.Get(1).GetSpan().GetLength() != 3 ||
+        tokens.Get(28).GetSpan().GetLength() != 8) {
+      return 114;
+    }
+    return 0;
+  }
+
+  static func checkMalformedText(): int32 throws IoError, StateError {
+    final var source = SourceFile.Load("testdata/lexer/malformed_text.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+    final LexDiagnosticKind[] expected = malformedTextKinds();
+    if (diagnostics.GetCount() != expected::length ||
+        tokens.GetCount() != expected::length + 1) {
+      return 120;
+    }
+    for (int32 index = 0; index < expected::length; index++) {
+      if (diagnostics.Get(index).GetKind() != expected[index]) { return 121; }
+      if (diagnostics.Get(index).GetSpan().GetBeginOffset() !=
+          tokens.Get(index).GetSpan().GetBeginOffset()) {
+        return 122;
+      }
+    }
+    if (diagnostics.GetCapacity() != diagnostics.GetCount() ||
+        tokens.GetCapacity() != tokens.GetCount()) {
+      return 123;
+    }
+    return 0;
+  }
+
+  static func checkUnterminatedText(): int32 throws IoError, StateError {
+    final var source =
+        SourceFile.Load("testdata/lexer/unterminated_text.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+    if (tokens.GetCount() != 5 || diagnostics.GetCount() != 2) {
+      return 130;
+    }
+    if (tokens.Get(0).GetKind() != TokenKind.kStringLiteral ||
+        tokens.Get(1).GetKind() != TokenKind.kIdentifier ||
+        tokens.Get(2).GetKind() != TokenKind.kCharacterLiteral ||
+        tokens.Get(3).GetKind() != TokenKind.kIdentifier ||
+        tokens.Get(4).GetKind() != TokenKind.kEof) {
+      return 131;
+    }
+    if (diagnostics.Get(0).GetKind() !=
+            LexDiagnosticKind.kUnterminatedStringLiteral ||
+        diagnostics.Get(1).GetKind() !=
+            LexDiagnosticKind.kUnterminatedCharacterLiteral) {
+      return 132;
+    }
+    final SourceLocation stringLocation =
+        diagnostics.Get(0).GetRange().GetBegin();
+    final SourceLocation characterLocation =
+        diagnostics.Get(1).GetRange().GetBegin();
+    if (stringLocation.GetLine() != 1 || stringLocation.GetColumn() != 1 ||
+        characterLocation.GetLine() != 3 ||
+        characterLocation.GetColumn() != 1) {
+      return 133;
+    }
+    return 0;
+  }
+
+  static func checkInvalidUtf8(): int32 throws StateError {
+    final byte[] bytes = [
+      byte(34), byte(192), byte(34), byte(32),
+      byte(39), byte(226), byte(39)
+    ];
+    final var source = SourceFile.FromBytes("invalid-utf8.co", bytes);
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+    if (tokens.GetCount() != 3 || diagnostics.GetCount() != 2) {
+      return 140;
+    }
+    if (tokens.Get(0).GetKind() != TokenKind.kStringLiteral ||
+        tokens.Get(1).GetKind() != TokenKind.kCharacterLiteral ||
+        tokens.Get(2).GetKind() != TokenKind.kEof) {
+      return 141;
+    }
+    if (diagnostics.Get(0).GetKind() != LexDiagnosticKind.kInvalidUtf8 ||
+        diagnostics.Get(1).GetKind() != LexDiagnosticKind.kInvalidUtf8) {
+      return 142;
+    }
+    return 0;
+  }
+
+  static func checkTrackedLiterals(): int32 throws IoError, StateError {
+    final var source =
+        SourceFile.Load("src/bootstrap/LexerLiteralCheck.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    if (result.GetDiagnostics().GetCount() != 0 || tokens.GetCount() < 200) {
+      return 150;
+    }
+    final var eof = tokens.Get(tokens.GetCount() - 1);
+    if (eof.GetKind() != TokenKind.kEof ||
+        eof.GetSpan().GetBeginOffset() != source.GetLength()) {
+      return 151;
+    }
+    return 0;
+  }
+
+  static func validKinds(): TokenKind[] {
+    return [
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kFloatLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kDot,
+      TokenKind.kFloatLiteral,
+      TokenKind.kFloatLiteral,
+      TokenKind.kFloatLiteral,
+      TokenKind.kFloatLiteral,
+      TokenKind.kFloatLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kIntegerLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kStringLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral,
+      TokenKind.kCharacterLiteral
+    ];
+  }
+
+  static func malformedNumberKinds(): LexDiagnosticKind[] {
+    return [
+      LexDiagnosticKind.kMissingBaseDigits,
+      LexDiagnosticKind.kInvalidBaseDigit,
+      LexDiagnosticKind.kInvalidBaseDigit,
+      LexDiagnosticKind.kInvalidBaseDigit,
+      LexDiagnosticKind.kInvalidBasePrefix,
+      LexDiagnosticKind.kInvalidBasePrefix,
+      LexDiagnosticKind.kInvalidBasePrefix,
+      LexDiagnosticKind.kUnknownBasePrefix,
+      LexDiagnosticKind.kMissingExponentDigits,
+      LexDiagnosticKind.kMissingExponentDigits,
+      LexDiagnosticKind.kMissingExponentDigits,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kInvalidDigitSeparator,
+      LexDiagnosticKind.kIntegerSuffixOnFloatingCore,
+      LexDiagnosticKind.kFloatingSuffixOnNonDecimalCore,
+      LexDiagnosticKind.kFloatingSuffixOnNonDecimalCore,
+      LexDiagnosticKind.kInvalidNumericSuffix,
+      LexDiagnosticKind.kInvalidNumericSuffix
+    ];
+  }
+
+  static func malformedTextKinds(): LexDiagnosticKind[] {
+    return [
+      LexDiagnosticKind.kInvalidUnicodeEscape,
+      LexDiagnosticKind.kInvalidUnicodeEscape,
+      LexDiagnosticKind.kInvalidUnicodeScalar,
+      LexDiagnosticKind.kInvalidUnicodeScalar,
+      LexDiagnosticKind.kInvalidUnicodeEscape,
+      LexDiagnosticKind.kUnknownEscape,
+      LexDiagnosticKind.kUnknownEscape,
+      LexDiagnosticKind.kInvalidUnicodeEscape,
+      LexDiagnosticKind.kInvalidUnicodeScalar,
+      LexDiagnosticKind.kInvalidUnicodeScalar,
+      LexDiagnosticKind.kInvalidUnicodeEscape,
+      LexDiagnosticKind.kUnknownEscape,
+      LexDiagnosticKind.kEmptyCharacterLiteral,
+      LexDiagnosticKind.kMultipleCharacterLiteral
+    ];
+  }
+}

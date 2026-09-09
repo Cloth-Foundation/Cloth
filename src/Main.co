@@ -1,15 +1,24 @@
-import frontend.token::Token;
-import frontend.token::TokenKind;
-import frontend.source::SourceRange;
-import frontend.source::SourceLocation;
+import bootstrap::LexerFoundationCheck;
+import bootstrap::LexerLiteralCheck;
+import bootstrap::LexRecordWriter;
 
-static func Main(string[] args): int32 {
-    var token = Token(TokenKind.kIdentifier, "ident", SourceRange.PointRange(SourceLocation("", 0, 0, 0)));
+static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length == 2 && args[0] == "--lex-records") {
+    return LexRecordWriter.Run(args[1]);
+  }
 
-    println(token.GetLexeme());
-    println(token.GetKind());
-    println(token.GetRange());
-    println(token);
+  final int32 status = LexerFoundationCheck.Run();
+  if (status != 0) {
+    println(status);
+    return status;
+  }
 
-    return 0;
+  final int32 literalStatus = LexerLiteralCheck.Run();
+  if (literalStatus != 0) {
+    println(literalStatus);
+    return literalStatus;
+  }
+
+  println("lexer literals ok");
+  return 0;
 }

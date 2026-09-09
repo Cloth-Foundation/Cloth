@@ -1,0 +1,41 @@
+import frontend.source::SourceFile;
+
+struct {
+  final SourceFile source;
+  final int32 beginOffset;
+  final int32 endOffset;
+
+  SourceSpan(SourceFile source, int32 beginOffset, int32 endOffset) throws StateError {
+    if (beginOffset < 0 || endOffset < beginOffset ||
+        endOffset > source.GetLength()) {
+      throw StateError("invalid source span");
+    }
+
+    self.source = source;
+    self.beginOffset = beginOffset;
+    self.endOffset = endOffset;
+  }
+
+  func GetSource(): SourceFile {
+    return self.source;
+  }
+
+  func GetBeginOffset(): int32 {
+    return self.beginOffset;
+  }
+
+  func GetEndOffset(): int32 {
+    return self.endOffset;
+  }
+
+  func GetLength(): int32 {
+    return self.endOffset - self.beginOffset;
+  }
+
+  func GetByte(int32 relativeOffset): byte throws StateError {
+    if (relativeOffset < 0 || relativeOffset >= self.GetLength()) {
+      throw StateError("source span index is out of bounds");
+    }
+    return self.source.GetByte(self.beginOffset + relativeOffset);
+  }
+}

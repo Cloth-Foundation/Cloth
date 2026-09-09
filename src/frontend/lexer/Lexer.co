@@ -1,0 +1,91 @@
+import frontend.diagnostic::LexDiagnosticBuffer;
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.lexer::ByteClass;
+import frontend.lexer::LexerResult;
+import frontend.lexer::LexSink;
+import frontend.lexer.scanners::IdentifierScanner;
+import frontend.lexer.scanners::NumberScanner;
+import frontend.lexer.scanners::OperatorScanResult;
+import frontend.lexer.scanners::OperatorScanner;
+import frontend.lexer.scanners::TextScanner;
+import frontend.lexer.scanners::TriviaScanner;
+import frontend.source::SourceCursor;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  static func Lex(SourceFile source): LexerResult throws StateError {
+    final var measurement = LexSink();
+    scan(source, measurement);
+
+    final var tokens = TokenBuffer(measurement.GetTokenCount());
+    final var diagnostics =
+        LexDiagnosticBuffer(measurement.GetDiagnosticCount());
+    final var emission = LexSink(tokens, diagnostics);
+    scan(source, emission);
+
+    if (emission.GetTokenCount() != measurement.GetTokenCount() ||
+        emission.GetDiagnosticCount() != measurement.GetDiagnosticCount() ||
+        tokens.GetCount() != tokens.GetCapacity() ||
+        diagnostics.GetCount() != diagnostics.GetCapacity()) {
+      throw StateError("lexer measure and emit passes disagree");
+    }
+    return LexerResult(tokens, diagnostics);
+  }
+
+  static func scan(SourceFile source, LexSink sink) throws StateError {
+    final var cursor = SourceCursor(source);
+    while (true) {
+      TriviaScanner.Skip(cursor, sink);
+
+      final int32 beginOffset = cursor.GetOffset();
+      final SourceLocation begin = cursor.GetLocation();
+      if (cursor.AtEnd()) {
+        addToken(source, cursor, sink, TokenKind.kEof, beginOffset, begin);
+        return;
+      }
+
+      if (ByteClass.IsIdentifierStart(cursor.Peek(0))) {
+        final TokenKind kind = IdentifierScanner.Scan(cursor);
+        addToken(source, cursor, sink, kind, beginOffset, begin);
+        continue;
+      }
+      if (ByteClass.IsDigit(cursor.Peek(0))) {
+        final TokenKind kind =
+            NumberScanner.Scan(cursor, sink, beginOffset, begin);
+        addToken(source, cursor, sink, kind, beginOffset, begin);
+        continue;
+      }
+      if (cursor.Peek(0) == 34 || cursor.Peek(0) == 39) {
+        final TokenKind kind =
+            TextScanner.Scan(cursor, sink, beginOffset, begin);
+        addToken(source, cursor, sink, kind, beginOffset, begin);
+        continue;
+      }
+
+      final OperatorScanResult operator = OperatorScanner.Scan(cursor);
+      if (operator.IsMatched()) {
+        addToken(source, cursor, sink, operator.GetKind(), beginOffset, begin);
+        continue;
+      }
+
+      cursor.Advance();
+      sink.AddDiagnostic(
+          LexDiagnosticKind.kUnexpectedByte,
+          SourceSpan(source, beginOffset, cursor.GetOffset()),
+          SourceRange.PointRange(begin));
+    }
+  }
+
+  static func addToken(SourceFile source, SourceCursor cursor, LexSink sink,
+                       TokenKind kind, int32 beginOffset,
+                       SourceLocation begin) throws StateError {
+    sink.AddToken(kind,
+                  SourceSpan(source, beginOffset, cursor.GetOffset()),
+                  SourceRange(begin, cursor.GetLocation()));
+  }
+}

@@ -1,0 +1,59 @@
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.lexer::ByteClass;
+import frontend.lexer::LexSink;
+import frontend.source::SourceCursor;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+
+class {
+  static func Skip(SourceCursor cursor, LexSink sink) throws StateError {
+    while (!cursor.AtEnd()) {
+      if (ByteClass.IsWhitespace(cursor.Peek(0))) {
+        cursor.Advance();
+        continue;
+      }
+      if (cursor.Peek(0) == 47 && cursor.Peek(1) == 47) {
+        skipLineComment(cursor);
+        continue;
+      }
+      if (cursor.Peek(0) == 47 && cursor.Peek(1) == 42) {
+        skipBlockComment(cursor, sink);
+        continue;
+      }
+      return;
+    }
+  }
+
+  static func skipLineComment(SourceCursor cursor) {
+    cursor.Advance();
+    cursor.Advance();
+    while (!cursor.AtEnd() && cursor.Peek(0) != 13 &&
+           cursor.Peek(0) != 10) {
+      cursor.Advance();
+    }
+  }
+
+  static func skipBlockComment(SourceCursor cursor,
+                               LexSink sink) throws StateError {
+    final int32 beginOffset = cursor.GetOffset();
+    final SourceLocation begin = cursor.GetLocation();
+    cursor.Advance();
+    cursor.Advance();
+
+    while (!cursor.AtEnd() &&
+           !(cursor.Peek(0) == 42 && cursor.Peek(1) == 47)) {
+      cursor.Advance();
+    }
+    if (cursor.AtEnd()) {
+      sink.AddDiagnostic(
+          LexDiagnosticKind.kUnterminatedBlockComment,
+          SourceSpan(cursor.GetSource(), beginOffset, cursor.GetOffset()),
+          SourceRange.PointRange(begin));
+      return;
+    }
+
+    cursor.Advance();
+    cursor.Advance();
+  }
+}

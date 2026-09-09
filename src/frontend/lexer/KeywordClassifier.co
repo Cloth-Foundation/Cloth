@@ -1,0 +1,443 @@
+import frontend.source::SourceSpan;
+import frontend.token::TokenKind;
+
+class {
+  static func Classify(SourceSpan span): TokenKind throws StateError {
+    if (span.GetLength() > 9) {
+      return TokenKind.kIdentifier;
+    }
+
+    final uint64 fingerprint = hash(span);
+    switch (fingerprint) {
+      case 3154628: {
+        if (matches4(span, 102, 117, 110, 99)) {
+          return TokenKind.kKwFunc;
+        }
+        break;
+      }
+      case 3360570672: {
+        if (matches6(span, 114, 101, 116, 117, 114, 110)) {
+          return TokenKind.kKwReturn;
+        }
+        break;
+      }
+      case 3357: {
+        if (matches2(span, 105, 102)) {
+          return TokenKind.kKwIf;
+        }
+        break;
+      }
+      case 3116345: {
+        if (matches4(span, 101, 108, 115, 101)) {
+          return TokenKind.kKwElse;
+        }
+        break;
+      }
+      case 113101617: {
+        if (matches5(span, 119, 104, 105, 108, 101)) {
+          return TokenKind.kKwWhile;
+        }
+        break;
+      }
+      case 101577: {
+        if (matches3(span, 102, 111, 114)) {
+          return TokenKind.kKwFor;
+        }
+        break;
+      }
+      case 3365: {
+        if (matches2(span, 105, 110)) {
+          return TokenKind.kKwIn;
+        }
+        break;
+      }
+      case 94001407: {
+        if (matches5(span, 98, 114, 101, 97, 107)) {
+          return TokenKind.kKwBreak;
+        }
+        break;
+      }
+      case 2825521278119: {
+        if (matches8(span, 99, 111, 110, 116, 105, 110, 117, 101)) {
+          return TokenKind.kKwContinue;
+        }
+        break;
+      }
+      case 3405494068: {
+        if (matches6(span, 115, 119, 105, 116, 99, 104)) {
+          return TokenKind.kKwSwitch;
+        }
+        break;
+      }
+      case 3046192: {
+        if (matches4(span, 99, 97, 115, 101)) {
+          return TokenKind.kKwCase;
+        }
+        break;
+      }
+      case 91739117121: {
+        if (matches7(span, 100, 101, 102, 97, 117, 108, 116)) {
+          return TokenKind.kKwDefault;
+        }
+        break;
+      }
+      case 3402992597: {
+        if (matches6(span, 115, 116, 114, 117, 99, 116)) {
+          return TokenKind.kKwStruct;
+        }
+        break;
+      }
+      case 94742904: {
+        if (matches5(span, 99, 108, 97, 115, 115)) {
+          return TokenKind.kKwClass;
+        }
+        break;
+      }
+      case 92685896871225: {
+        if (matches9(span, 105, 110, 116, 101, 114, 102, 97, 99, 101)) {
+          return TokenKind.kKwInterface;
+        }
+        break;
+      }
+      case 2759101902882: {
+        if (matches8(span, 97, 98, 115, 116, 114, 97, 99, 116)) {
+          return TokenKind.kKwAbstract;
+        }
+        break;
+      }
+      case 3388624732: {
+        if (matches6(span, 115, 101, 97, 108, 101, 100)) {
+          return TokenKind.kKwSealed;
+        }
+        break;
+      }
+      case 3118337: {
+        if (matches4(span, 101, 110, 117, 109)) {
+          return TokenKind.kKwEnum;
+        }
+        break;
+      }
+      case 96784904: {
+        if (matches5(span, 101, 114, 114, 111, 114)) {
+          return TokenKind.kKwError;
+        }
+        break;
+      }
+      case 110339814: {
+        if (matches5(span, 116, 104, 114, 111, 119)) {
+          return TokenKind.kKwThrow;
+        }
+        break;
+      }
+      case 3420534349: {
+        if (matches6(span, 116, 104, 114, 111, 119, 115)) {
+          return TokenKind.kKwThrows;
+        }
+        break;
+      }
+      case 110621198: {
+        if (matches5(span, 116, 114, 97, 105, 116)) {
+          return TokenKind.kKwTrait;
+        }
+        break;
+      }
+      case 107035: {
+        if (matches3(span, 108, 101, 116)) {
+          return TokenKind.kKwLet;
+        }
+        break;
+      }
+      case 116519: {
+        if (matches3(span, 118, 97, 114)) {
+          return TokenKind.kKwVar;
+        }
+        break;
+      }
+      case 94844771: {
+        if (matches5(span, 99, 111, 110, 115, 116)) {
+          return TokenKind.kKwConst;
+        }
+        break;
+      }
+      case 97436022: {
+        if (matches5(span, 102, 105, 110, 97, 108)) {
+          return TokenKind.kKwFinal;
+        }
+        break;
+      }
+      case 3402485358: {
+        if (matches6(span, 115, 116, 97, 116, 105, 99)) {
+          return TokenKind.kKwStatic;
+        }
+        break;
+      }
+      case 3161625926604: {
+        if (matches8(span, 111, 118, 101, 114, 114, 105, 100, 101)) {
+          return TokenKind.kKwOverride;
+        }
+        break;
+      }
+      case 109801339: {
+        if (matches5(span, 115, 117, 112, 101, 114)) {
+          return TokenKind.kKwSuper;
+        }
+        break;
+      }
+      case 3569038: {
+        if (matches4(span, 116, 114, 117, 101)) {
+          return TokenKind.kKwTrue;
+        }
+        break;
+      }
+      case 97196323: {
+        if (matches5(span, 102, 97, 108, 115, 101)) {
+          return TokenKind.kKwFalse;
+        }
+        break;
+      }
+      case 3392903: {
+        if (matches4(span, 110, 117, 108, 108)) {
+          return TokenKind.kKwNull;
+        }
+        break;
+      }
+      case 3005923232: {
+        if (matches6(span, 101, 120, 116, 101, 114, 110)) {
+          return TokenKind.kKwExtern;
+        }
+        break;
+      }
+      case 3454720422: {
+        if (matches6(span, 117, 110, 115, 97, 102, 101)) {
+          return TokenKind.kKwUnsafe;
+        }
+        break;
+      }
+      case 3110171557: {
+        if (matches6(span, 105, 109, 112, 111, 114, 116)) {
+          return TokenKind.kKwImport;
+        }
+        break;
+      }
+      case 3370: {
+        if (matches2(span, 105, 115)) {
+          return TokenKind.kKwIs;
+        }
+        break;
+      }
+      case 3122: {
+        if (matches2(span, 97, 115)) {
+          return TokenKind.kKwAs;
+        }
+        break;
+      }
+      case 103668165: {
+        if (matches5(span, 109, 97, 116, 99, 104)) {
+          return TokenKind.kKwMatch;
+        }
+        break;
+      }
+      case 104431: {
+        if (matches3(span, 105, 110, 116)) {
+          return TokenKind.kKwInt;
+        }
+        break;
+      }
+      case 3237417: {
+        if (matches4(span, 105, 110, 116, 56)) {
+          return TokenKind.kKwInt8;
+        }
+        break;
+      }
+      case 100359764: {
+        if (matches5(span, 105, 110, 116, 49, 54)) {
+          return TokenKind.kKwInt16;
+        }
+        break;
+      }
+      case 100359822: {
+        if (matches5(span, 105, 110, 116, 51, 50)) {
+          return TokenKind.kKwInt32;
+        }
+        break;
+      }
+      case 100359917: {
+        if (matches5(span, 105, 110, 116, 54, 52)) {
+          return TokenKind.kKwInt64;
+        }
+        break;
+      }
+      case 3589978: {
+        if (matches4(span, 117, 105, 110, 116)) {
+          return TokenKind.kKwUint;
+        }
+        break;
+      }
+      case 111289374: {
+        if (matches5(span, 117, 105, 110, 116, 56)) {
+          return TokenKind.kKwUint8;
+        }
+        break;
+      }
+      case 3449970431: {
+        if (matches6(span, 117, 105, 110, 116, 49, 54)) {
+          return TokenKind.kKwUint16;
+        }
+        break;
+      }
+      case 3449970489: {
+        if (matches6(span, 117, 105, 110, 116, 51, 50)) {
+          return TokenKind.kKwUint32;
+        }
+        break;
+      }
+      case 3449970584: {
+        if (matches6(span, 117, 105, 110, 116, 54, 52)) {
+          return TokenKind.kKwUint64;
+        }
+        break;
+      }
+      case 97526364: {
+        if (matches5(span, 102, 108, 111, 97, 116)) {
+          return TokenKind.kKwFloat;
+        }
+        break;
+      }
+      case 93722837435: {
+        if (matches7(span, 102, 108, 111, 97, 116, 51, 50)) {
+          return TokenKind.kKwFloat32;
+        }
+        break;
+      }
+      case 93722837530: {
+        if (matches7(span, 102, 108, 111, 97, 116, 54, 52)) {
+          return TokenKind.kKwFloat64;
+        }
+        break;
+      }
+      case 3029738: {
+        if (matches4(span, 98, 111, 111, 108)) {
+          return TokenKind.kKwBool;
+        }
+        break;
+      }
+      case 3052374: {
+        if (matches4(span, 99, 104, 97, 114)) {
+          return TokenKind.kKwChar;
+        }
+        break;
+      }
+      case 3039496: {
+        if (matches4(span, 98, 121, 116, 101)) {
+          return TokenKind.kKwByte;
+        }
+        break;
+      }
+      case 3625364: {
+        if (matches4(span, 118, 111, 105, 100)) {
+          return TokenKind.kKwVoid;
+        }
+        break;
+      }
+      case 3271598911: {
+        if (matches6(span, 111, 98, 106, 101, 99, 116)) {
+          return TokenKind.kKwObject;
+        }
+        break;
+      }
+      default: { break; }
+    }
+    return TokenKind.kIdentifier;
+  }
+
+  static func hash(SourceSpan span): uint64 throws StateError {
+    uint64 result = 0;
+    for (int32 index = 0; index < span.GetLength(); index++) {
+      result = result * 31 + span.GetByte(index);
+    }
+    return result;
+  }
+
+  static func matches2(SourceSpan span, byte b0, byte b1): bool throws StateError {
+    return span.GetLength() == 2 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1;
+  }
+
+  static func matches3(SourceSpan span, byte b0, byte b1, byte b2): bool throws StateError {
+    return span.GetLength() == 3 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2;
+  }
+
+  static func matches4(SourceSpan span, byte b0, byte b1,
+                       byte b2, byte b3): bool throws StateError {
+    return span.GetLength() == 4 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3;
+  }
+
+  static func matches5(SourceSpan span, byte b0, byte b1, byte b2,
+                       byte b3, byte b4): bool throws StateError {
+    return span.GetLength() == 5 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3 &&
+           span.GetByte(4) == b4;
+  }
+
+  static func matches6(SourceSpan span, byte b0, byte b1, byte b2,
+                       byte b3, byte b4, byte b5): bool throws StateError {
+    return span.GetLength() == 6 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3 &&
+           span.GetByte(4) == b4 &&
+           span.GetByte(5) == b5;
+  }
+
+  static func matches7(SourceSpan span, byte b0, byte b1, byte b2, byte b3,
+                       byte b4, byte b5, byte b6): bool throws StateError {
+    return span.GetLength() == 7 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3 &&
+           span.GetByte(4) == b4 &&
+           span.GetByte(5) == b5 &&
+           span.GetByte(6) == b6;
+  }
+
+  static func matches8(SourceSpan span, byte b0, byte b1, byte b2, byte b3,
+                       byte b4, byte b5, byte b6, byte b7): bool throws StateError {
+    return span.GetLength() == 8 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3 &&
+           span.GetByte(4) == b4 &&
+           span.GetByte(5) == b5 &&
+           span.GetByte(6) == b6 &&
+           span.GetByte(7) == b7;
+  }
+
+  static func matches9(SourceSpan span, byte b0, byte b1, byte b2, byte b3, byte b4,
+                       byte b5, byte b6, byte b7, byte b8): bool throws StateError {
+    return span.GetLength() == 9 &&
+           span.GetByte(0) == b0 &&
+           span.GetByte(1) == b1 &&
+           span.GetByte(2) == b2 &&
+           span.GetByte(3) == b3 &&
+           span.GetByte(4) == b4 &&
+           span.GetByte(5) == b5 &&
+           span.GetByte(6) == b6 &&
+           span.GetByte(7) == b7 &&
+           span.GetByte(8) == b8;
+  }
+}
+

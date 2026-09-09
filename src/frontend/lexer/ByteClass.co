@@ -1,0 +1,18 @@
+class {
+  static func IsDigit(byte value): bool {
+    return value >= 48 && value <= 57;
+  }
+
+  static func IsIdentifierStart(byte value): bool {
+    return (value >= 97 && value <= 122) ||
+           (value >= 65 && value <= 90) || value == 95;
+  }
+
+  static func IsIdentifierContinue(byte value): bool {
+    return ByteClass.IsIdentifierStart(value) || ByteClass.IsDigit(value);
+  }
+
+  static func IsWhitespace(byte value): bool {
+    return value == 32 || value == 9 || value == 13 || value == 10;
+  }
+}

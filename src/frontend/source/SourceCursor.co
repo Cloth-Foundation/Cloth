@@ -1,0 +1,74 @@
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+
+class {
+  final SourceFile source;
+  int32 offset;
+  uint32 line;
+  uint32 column;
+  bool previousWasCarriageReturn;
+
+  SourceCursor(SourceFile source) {
+    self.source = source;
+    self.offset = 0;
+    self.line = 1;
+    self.column = 1;
+    self.previousWasCarriageReturn = false;
+  }
+
+  func AtEnd(): bool {
+    return self.offset >= self.source.GetLength();
+  }
+
+  func Peek(int32 lookahead): byte {
+    if (lookahead < 0 || lookahead >= self.source.GetLength() - self.offset) {
+      return 0;
+    }
+    return self.source.GetByte(self.offset + lookahead);
+  }
+
+  func Advance(): byte {
+    final byte value = self.source.GetByte(self.offset);
+    self.offset++;
+
+    if (value == 13) {
+      self.line++;
+      self.column = 1;
+      self.previousWasCarriageReturn = true;
+      return value;
+    }
+    if (value == 10) {
+      if (!self.previousWasCarriageReturn) {
+        self.line++;
+      }
+      self.column = 1;
+      self.previousWasCarriageReturn = false;
+      return value;
+    }
+
+    self.column++;
+    self.previousWasCarriageReturn = false;
+    return value;
+  }
+
+  func Match(byte expected): bool {
+    if (self.AtEnd() || self.Peek(0) != expected) {
+      return false;
+    }
+    self.Advance();
+    return true;
+  }
+
+  func GetOffset(): int32 {
+    return self.offset;
+  }
+
+  func GetSource(): SourceFile {
+    return self.source;
+  }
+
+  func GetLocation(): SourceLocation {
+    return SourceLocation(self.source.GetPath(), self.offset, self.line,
+                          self.column);
+  }
+}

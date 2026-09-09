@@ -1,0 +1,53 @@
+import frontend.diagnostic::LexDiagnostic;
+import frontend.diagnostic::LexDiagnosticBuffer;
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  final TokenBuffer? tokens;
+  final LexDiagnosticBuffer? diagnostics;
+  int32 tokenCount;
+  int32 diagnosticCount;
+
+  LexSink() {
+    self.tokens = null;
+    self.diagnostics = null;
+    self.tokenCount = 0;
+    self.diagnosticCount = 0;
+  }
+
+  LexSink(TokenBuffer tokens, LexDiagnosticBuffer diagnostics) {
+    self.tokens = tokens;
+    self.diagnostics = diagnostics;
+    self.tokenCount = 0;
+    self.diagnosticCount = 0;
+  }
+
+  func AddToken(TokenKind kind, SourceSpan span,
+                SourceRange range) throws StateError {
+    if (self.tokens) {
+      self.tokens!.Add(Token(kind, span, range));
+    }
+    self.tokenCount++;
+  }
+
+  func AddDiagnostic(LexDiagnosticKind kind, SourceSpan span,
+                     SourceRange range) throws StateError {
+    if (self.diagnostics) {
+      self.diagnostics!.Add(LexDiagnostic(kind, span, range));
+    }
+    self.diagnosticCount++;
+  }
+
+  func GetTokenCount(): int32 {
+    return self.tokenCount;
+  }
+
+  func GetDiagnosticCount(): int32 {
+    return self.diagnosticCount;
+  }
+}

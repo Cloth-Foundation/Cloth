@@ -1,13 +1,29 @@
 struct {
-    string file;
-    int offset;
-    uint32 line;
-    uint32 column;
+  final string file;
+  final int32 offset;
+  final uint32 line;
+  final uint32 column;
 
-    SourceLocation (string file, int offset, uint32 line, uint32 column) {
-        self.file = file;
-        self.offset = offset;
-        self.line = line;
-        self.column = column;
-    }
+  SourceLocation(string file, int32 offset, uint32 line, uint32 column) {
+    self.file = file;
+    self.offset = offset;
+    self.line = line;
+    self.column = column;
+  }
+
+  func GetFile(): string {
+    return self.file;
+  }
+
+  func GetOffset(): int32 {
+    return self.offset;
+  }
+
+  func GetLine(): uint32 {
+    return self.line;
+  }
+
+  func GetColumn(): uint32 {
+    return self.column;
+  }
 }

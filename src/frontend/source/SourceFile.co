@@ -1,0 +1,35 @@
+import cloth.io::File;
+
+class {
+  final string path;
+  final byte[] bytes;
+
+  sourceFile(string path, byte[] bytes) {
+    self.path = path;
+    self.bytes = bytes;
+  }
+
+  static func Load(string path): SourceFile throws IoError {
+    return SourceFile(path, File.ReadBytes(path));
+  }
+
+  static func FromBytes(string path, byte[] bytes): SourceFile {
+    final byte[] ownedBytes = byte[:bytes::length];
+    for (int32 offset = 0; offset < bytes::length; offset++) {
+      ownedBytes[offset] = bytes[offset];
+    }
+    return SourceFile(path, ownedBytes);
+  }
+
+  func GetPath(): string {
+    return self.path;
+  }
+
+  func GetLength(): int32 {
+    return self.bytes::length;
+  }
+
+  func GetByte(int32 offset): byte {
+    return self.bytes[offset];
+  }
+}

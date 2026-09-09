@@ -1,19 +1,19 @@
+import frontend.diagnostic::LexDiagnosticKind;
 import frontend.source::SourceRange;
 import frontend.source::SourceSpan;
-import frontend.token::TokenKind;
 
 class {
-  final TokenKind kind;
+  final LexDiagnosticKind kind;
   final SourceSpan span;
   final SourceRange range;
 
-  Token(TokenKind kind, SourceSpan span, SourceRange range) {
+  LexDiagnostic(LexDiagnosticKind kind, SourceSpan span, SourceRange range) {
     self.kind = kind;
     self.span = span;
     self.range = range;
   }
 
-  func GetKind(): TokenKind {
+  func GetKind(): LexDiagnosticKind {
     return self.kind;
   }
 

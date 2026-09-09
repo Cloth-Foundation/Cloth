@@ -1,0 +1,263 @@
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.lexer::ByteClass;
+import frontend.lexer::LexSink;
+import frontend.source::SourceCursor;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.token::TokenKind;
+
+class {
+  static func Scan(SourceCursor cursor, LexSink sink, int32 beginOffset,
+                   SourceLocation begin): TokenKind throws StateError {
+    if (cursor.Peek(0) == 48 && isBasePrefix(cursor.Peek(1))) {
+      cursor.Advance();
+      cursor.Advance();
+      while (!cursor.AtEnd() &&
+             ByteClass.IsIdentifierContinue(cursor.Peek(0))) {
+        cursor.Advance();
+      }
+    } else {
+      scanDecimalCandidate(cursor);
+    }
+
+    final var span = SourceSpan(cursor.GetSource(), beginOffset,
+                                cursor.GetOffset());
+    final SourceRange range = SourceRange(begin, cursor.GetLocation());
+    return validate(span, sink, range);
+  }
+
+  static func scanDecimalCandidate(SourceCursor cursor) {
+    while (!cursor.AtEnd() &&
+           (ByteClass.IsDigit(cursor.Peek(0)) || cursor.Peek(0) == 95)) {
+      cursor.Advance();
+    }
+    if (cursor.Peek(0) == 46 && ByteClass.IsDigit(cursor.Peek(1))) {
+      cursor.Advance();
+      while (!cursor.AtEnd() &&
+             (ByteClass.IsDigit(cursor.Peek(0)) || cursor.Peek(0) == 95)) {
+        cursor.Advance();
+      }
+    }
+    if (cursor.Peek(0) == 101 || cursor.Peek(0) == 69) {
+      cursor.Advance();
+      if (cursor.Peek(0) == 43 || cursor.Peek(0) == 45) {
+        cursor.Advance();
+      }
+      while (!cursor.AtEnd() &&
+             ByteClass.IsIdentifierContinue(cursor.Peek(0))) {
+        cursor.Advance();
+      }
+      return;
+    }
+    while (!cursor.AtEnd() &&
+           ByteClass.IsIdentifierContinue(cursor.Peek(0))) {
+      cursor.Advance();
+    }
+  }
+
+  static func validate(SourceSpan span, LexSink sink,
+                       SourceRange range): TokenKind throws StateError {
+    if (span.GetLength() >= 2 && span.GetByte(0) == 48) {
+      final byte second = span.GetByte(1);
+      if (second == 98) { return validateBase(span, sink, range, 2); }
+      if (second == 111) { return validateBase(span, sink, range, 8); }
+      if (second == 120) { return validateBase(span, sink, range, 16); }
+      if (second == 66 || second == 79 || second == 88) {
+        report(sink, LexDiagnosticKind.kInvalidBasePrefix, span, range);
+        return TokenKind.kIntegerLiteral;
+      }
+      if (isUnknownBasePrefix(second)) {
+        report(sink, LexDiagnosticKind.kUnknownBasePrefix, span, range);
+        return TokenKind.kIntegerLiteral;
+      }
+    }
+    return validateDecimal(span, sink, range);
+  }
+
+  static func validateDecimal(SourceSpan span, LexSink sink,
+                              SourceRange range): TokenKind throws StateError {
+    int32 offset = 0;
+    while (offset < span.GetLength() &&
+           (ByteClass.IsDigit(span.GetByte(offset)) ||
+            span.GetByte(offset) == 95)) {
+      offset++;
+    }
+    bool invalidSeparator = !isValidDigitRun(span, 0, offset);
+    bool floatingCore = false;
+
+    if (offset < span.GetLength() && span.GetByte(offset) == 46) {
+      floatingCore = true;
+      offset++;
+      final int32 fractionBegin = offset;
+      while (offset < span.GetLength() &&
+             (ByteClass.IsDigit(span.GetByte(offset)) ||
+              span.GetByte(offset) == 95)) {
+        offset++;
+      }
+      if (fractionBegin == offset) {
+        report(sink, LexDiagnosticKind.kInvalidNumericCore, span, range);
+        return TokenKind.kFloatLiteral;
+      }
+      invalidSeparator =
+          invalidSeparator || !isValidDigitRun(span, fractionBegin, offset);
+    }
+
+    if (offset < span.GetLength() &&
+        (span.GetByte(offset) == 101 || span.GetByte(offset) == 69)) {
+      floatingCore = true;
+      offset++;
+      if (offset < span.GetLength() &&
+          (span.GetByte(offset) == 43 || span.GetByte(offset) == 45)) {
+        offset++;
+      }
+      final int32 exponentBegin = offset;
+      while (offset < span.GetLength() &&
+             (ByteClass.IsDigit(span.GetByte(offset)) ||
+              span.GetByte(offset) == 95)) {
+        offset++;
+      }
+      if (!containsDigit(span, exponentBegin, offset)) {
+        report(sink, LexDiagnosticKind.kMissingExponentDigits, span, range);
+        return TokenKind.kFloatLiteral;
+      }
+      invalidSeparator =
+          invalidSeparator || !isValidDigitRun(span, exponentBegin, offset);
+    }
+
+    final int32 suffixClass = classifySuffix(span, offset);
+    TokenKind kind = TokenKind.kIntegerLiteral;
+    if (floatingCore || suffixClass == 2) {
+      kind = TokenKind.kFloatLiteral;
+    }
+    if (invalidSeparator) {
+      report(sink, LexDiagnosticKind.kInvalidDigitSeparator, span, range);
+      return kind;
+    }
+    if (suffixClass < 0) {
+      report(sink, LexDiagnosticKind.kInvalidNumericSuffix, span, range);
+      return kind;
+    }
+    if (floatingCore && suffixClass == 1) {
+      report(sink, LexDiagnosticKind.kIntegerSuffixOnFloatingCore,
+             span, range);
+    }
+    return kind;
+  }
+
+  static func validateBase(SourceSpan span, LexSink sink, SourceRange range,
+                           int32 radix): TokenKind throws StateError {
+    int32 offset = 2;
+    while (offset < span.GetLength() &&
+           (isRadixDigit(span.GetByte(offset), radix) ||
+            span.GetByte(offset) == 95)) {
+      offset++;
+    }
+    if (offset == 2) {
+      LexDiagnosticKind kind = LexDiagnosticKind.kInvalidBaseDigit;
+      if (offset == span.GetLength()) {
+        kind = LexDiagnosticKind.kMissingBaseDigits;
+      }
+      report(sink, kind, span, range);
+      return TokenKind.kIntegerLiteral;
+    }
+    if (!isValidDigitRun(span, 2, offset)) {
+      report(sink, LexDiagnosticKind.kInvalidDigitSeparator, span, range);
+      return TokenKind.kIntegerLiteral;
+    }
+
+    final int32 suffixClass = classifySuffix(span, offset);
+    if (suffixClass < 0) {
+      LexDiagnosticKind kind = LexDiagnosticKind.kInvalidNumericSuffix;
+      if (offset < span.GetLength() &&
+          ByteClass.IsDigit(span.GetByte(offset))) {
+        kind = LexDiagnosticKind.kInvalidBaseDigit;
+      }
+      report(sink, kind, span, range);
+      return TokenKind.kIntegerLiteral;
+    }
+    if (suffixClass == 2) {
+      report(sink, LexDiagnosticKind.kFloatingSuffixOnNonDecimalCore,
+             span, range);
+    }
+    return TokenKind.kIntegerLiteral;
+  }
+
+  static func classifySuffix(SourceSpan span,
+                             int32 offset): int32 throws StateError {
+    final int32 length = span.GetLength() - offset;
+    if (length == 0) { return 0; }
+    if (length == 2 && span.GetByte(offset + 1) == 56) {
+      final byte first = span.GetByte(offset);
+      if (first == 105 || first == 117) { return 1; }
+    }
+    if (length == 3) {
+      final byte first = span.GetByte(offset);
+      final byte second = span.GetByte(offset + 1);
+      final byte third = span.GetByte(offset + 2);
+      final bool supportedWidth =
+          (second == 49 && third == 54) ||
+          (second == 51 && third == 50) ||
+          (second == 54 && third == 52);
+      if ((first == 105 || first == 117) && supportedWidth) { return 1; }
+      if (first == 102 &&
+          ((second == 51 && third == 50) ||
+           (second == 54 && third == 52))) {
+        return 2;
+      }
+    }
+    return -1;
+  }
+
+  static func isValidDigitRun(SourceSpan span, int32 begin,
+                              int32 end): bool throws StateError {
+    if (begin == end || span.GetByte(begin) == 95 ||
+        span.GetByte(end - 1) == 95) {
+      return false;
+    }
+    for (int32 offset = begin + 1; offset < end; offset++) {
+      if (span.GetByte(offset) == 95 && span.GetByte(offset - 1) == 95) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func containsDigit(SourceSpan span, int32 begin,
+                            int32 end): bool throws StateError {
+    for (int32 offset = begin; offset < end; offset++) {
+      if (ByteClass.IsDigit(span.GetByte(offset))) { return true; }
+    }
+    return false;
+  }
+
+  static func isRadixDigit(byte value, int32 radix): bool {
+    final int32 digit = digitValue(value);
+    return digit >= 0 && digit < radix;
+  }
+
+  static func digitValue(byte value): int32 {
+    if (value >= 48 && value <= 57) { return int32(value - 48); }
+    if (value >= 97 && value <= 102) { return int32(value - 97) + 10; }
+    if (value >= 65 && value <= 70) { return int32(value - 65) + 10; }
+    return -1;
+  }
+
+  static func isBasePrefix(byte value): bool {
+    return value == 98 || value == 66 || value == 111 || value == 79 ||
+           value == 120 || value == 88;
+  }
+
+  static func isUnknownBasePrefix(byte value): bool {
+    final bool letter = (value >= 97 && value <= 122) ||
+                        (value >= 65 && value <= 90);
+    return letter && value != 101 && value != 69 && value != 102 &&
+           value != 70 && value != 105 && value != 73 && value != 117 &&
+           value != 85;
+  }
+
+  static func report(LexSink sink, LexDiagnosticKind kind, SourceSpan span,
+                     SourceRange range) throws StateError {
+    sink.AddDiagnostic(kind, span, range);
+  }
+}

@@ -1,0 +1,166 @@
+import frontend.diagnostic::LexDiagnosticKind;
+import frontend.lexer::LexSink;
+import frontend.lexer::Utf8Decoder;
+import frontend.source::SourceCursor;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.token::TokenKind;
+
+class {
+  static func Scan(SourceCursor cursor, LexSink sink, int32 beginOffset,
+                   SourceLocation begin): TokenKind throws StateError {
+    final byte delimiter = cursor.Peek(0);
+    TokenKind tokenKind = TokenKind.kCharacterLiteral;
+    if (delimiter == 34) {
+      tokenKind = TokenKind.kStringLiteral;
+    }
+    cursor.Advance();
+
+    while (!cursor.AtEnd()) {
+      if (cursor.Peek(0) == delimiter) {
+        cursor.Advance();
+        final var span = SourceSpan(cursor.GetSource(), beginOffset,
+                                    cursor.GetOffset());
+        validate(span, sink, SourceRange(begin, cursor.GetLocation()),
+                 delimiter);
+        return tokenKind;
+      }
+      if (cursor.Peek(0) == 13 || cursor.Peek(0) == 10) {
+        reportUnterminated(cursor, sink, beginOffset, begin, delimiter);
+        return tokenKind;
+      }
+      if (cursor.Peek(0) == 92) {
+        cursor.Advance();
+        if (cursor.AtEnd() || cursor.Peek(0) == 13 ||
+            cursor.Peek(0) == 10) {
+          reportUnterminated(cursor, sink, beginOffset, begin, delimiter);
+          return tokenKind;
+        }
+      }
+      cursor.Advance();
+    }
+
+    reportUnterminated(cursor, sink, beginOffset, begin, delimiter);
+    return tokenKind;
+  }
+
+  static func validate(SourceSpan span, LexSink sink, SourceRange range,
+                       byte delimiter) throws StateError {
+    if (span.GetLength() < 2 || span.GetByte(0) != delimiter ||
+        span.GetByte(span.GetLength() - 1) != delimiter) {
+      report(sink, malformedKind(delimiter), span, range);
+      return;
+    }
+
+    final int32 limit = span.GetLength() - 1;
+    int32 offset = 1;
+    int32 scalarCount = 0;
+    while (offset < limit) {
+      if (span.GetByte(offset) == 92) {
+        offset++;
+        if (offset >= limit) {
+          report(sink, LexDiagnosticKind.kUnknownEscape, span, range);
+          return;
+        }
+        if (span.GetByte(offset) == 117) {
+          offset++;
+          final int32 unicodeEnd = validateUnicodeEscape(span, offset, limit);
+          if (unicodeEnd == -1) {
+            report(sink, LexDiagnosticKind.kInvalidUnicodeEscape, span, range);
+            return;
+          }
+          if (unicodeEnd == -2) {
+            report(sink, LexDiagnosticKind.kInvalidUnicodeScalar, span, range);
+            return;
+          }
+          offset = unicodeEnd;
+        } else {
+          if (!isSimpleEscape(span.GetByte(offset))) {
+            report(sink, LexDiagnosticKind.kUnknownEscape, span, range);
+            return;
+          }
+          offset++;
+        }
+      } else {
+        final byte value = span.GetByte(offset);
+        if (value == delimiter || value == 13 || value == 10) {
+          report(sink, malformedKind(delimiter), span, range);
+          return;
+        }
+        final int32 width = Utf8Decoder.GetWidth(span, offset, limit);
+        if (width == 0) {
+          report(sink, LexDiagnosticKind.kInvalidUtf8, span, range);
+          return;
+        }
+        offset += width;
+      }
+
+      scalarCount++;
+      if (delimiter == 39 && scalarCount > 1) {
+        report(sink, LexDiagnosticKind.kMultipleCharacterLiteral, span, range);
+        return;
+      }
+    }
+    if (delimiter == 39 && scalarCount == 0) {
+      report(sink, LexDiagnosticKind.kEmptyCharacterLiteral, span, range);
+    }
+  }
+
+  static func validateUnicodeEscape(SourceSpan span, int32 offset,
+                                    int32 limit): int32 throws StateError {
+    if (offset >= limit || span.GetByte(offset) != 123) { return -1; }
+    offset++;
+    final int32 digitsBegin = offset;
+    int32 value = 0;
+    while (offset < limit && span.GetByte(offset) != 125) {
+      final int32 digit = hexDigitValue(span.GetByte(offset));
+      if (digit < 0 || offset - digitsBegin >= 6) { return -1; }
+      value = value * 16 + digit;
+      offset++;
+    }
+    if (offset == digitsBegin || offset >= limit ||
+        span.GetByte(offset) != 125) {
+      return -1;
+    }
+    if (value > 1114111 || (value >= 55296 && value <= 57343)) {
+      return -2;
+    }
+    return offset + 1;
+  }
+
+  static func hexDigitValue(byte value): int32 {
+    if (value >= 48 && value <= 57) { return int32(value - 48); }
+    if (value >= 97 && value <= 102) { return int32(value - 97) + 10; }
+    if (value >= 65 && value <= 70) { return int32(value - 65) + 10; }
+    return -1;
+  }
+
+  static func isSimpleEscape(byte value): bool {
+    return value == 110 || value == 114 || value == 116 || value == 48 ||
+           value == 92 || value == 39 || value == 34;
+  }
+
+  static func reportUnterminated(SourceCursor cursor, LexSink sink,
+                                 int32 beginOffset, SourceLocation begin,
+                                 byte delimiter) throws StateError {
+    LexDiagnosticKind kind = LexDiagnosticKind.kUnterminatedCharacterLiteral;
+    if (delimiter == 34) {
+      kind = LexDiagnosticKind.kUnterminatedStringLiteral;
+    }
+    sink.AddDiagnostic(
+        kind,
+        SourceSpan(cursor.GetSource(), beginOffset, cursor.GetOffset()),
+        SourceRange.PointRange(begin));
+  }
+
+  static func malformedKind(byte delimiter): LexDiagnosticKind {
+    if (delimiter == 34) { return LexDiagnosticKind.kMalformedStringLiteral; }
+    return LexDiagnosticKind.kMalformedCharacterLiteral;
+  }
+
+  static func report(LexSink sink, LexDiagnosticKind kind, SourceSpan span,
+                     SourceRange range) throws StateError {
+    sink.AddDiagnostic(kind, span, range);
+  }
+}

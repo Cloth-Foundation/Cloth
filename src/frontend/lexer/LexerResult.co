@@ -1,0 +1,20 @@
+import frontend.diagnostic::LexDiagnosticBuffer;
+import frontend.token::TokenBuffer;
+
+class {
+  final TokenBuffer tokens;
+  final LexDiagnosticBuffer diagnostics;
+
+  LexerResult(TokenBuffer tokens, LexDiagnosticBuffer diagnostics) {
+    self.tokens = tokens;
+    self.diagnostics = diagnostics;
+  }
+
+  func GetTokens(): TokenBuffer {
+    return self.tokens;
+  }
+
+  func GetDiagnostics(): LexDiagnosticBuffer {
+    return self.diagnostics;
+  }
+}

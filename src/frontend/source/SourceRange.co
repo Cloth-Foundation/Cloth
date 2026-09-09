@@ -1,21 +1,23 @@
+import frontend.source::SourceLocation;
+
 struct {
-    SourceLocation begin;
-    SourceLocation end;
+  final SourceLocation begin;
+  final SourceLocation end;
 
-    SourceRange (SourceLocation begin, SourceLocation end) {
-        self.begin = begin;
-        self.end = end;
-    }
+  SourceRange(SourceLocation begin, SourceLocation end) {
+    self.begin = begin;
+    self.end = end;
+  }
 
-    func GetBegin(): SourceLocation {
-        return self.begin;
-    }
+  func GetBegin(): SourceLocation {
+    return self.begin;
+  }
 
-    func GetEnd(): SourceLocation {
-        return self.end;
-    }
+  func GetEnd(): SourceLocation {
+    return self.end;
+  }
 
-    static func PointRange (SourceLocation location): SourceRange {
-        return SourceRange(location, location);
-    }
+  static func PointRange(SourceLocation location): SourceRange {
+    return SourceRange(location, location);
+  }
 }

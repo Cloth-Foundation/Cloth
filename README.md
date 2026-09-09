@@ -1,72 +1,76 @@
-<div align="center">
-    <picture>
-        <img alt="The Cloth Programming Language"
-             src="https://github.com/Cloth-Foundation/.github/blob/main/Logos/PNG/Header%20-%20NO%20BG.png?raw=true"
-             width="50%" />
-    </picture>
+# Cloth self-hosted compiler
 
-[Website][Cloth] | [Learn] | [Documentation] | [Contributing]
+This repository contains the compiler being written in Cloth. It is compiled
+with the production C++23 bootstrap compiler, [`cCloth`], and built as a
+project by [Shuttle]. The goal is to replace the bootstrap only after each
+frontend and backend boundary has exact behavioral coverage.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Status-Early%20Alpha-FF9800?style=for-the-badge"  alt="Early Access"/>
-  <img src="https://img.shields.io/badge/License-Apache%202.0-4CAF50?style=for-the-badge&logo=apache&logoColor=white"  alt="Apache License"/>
-  <img src="https://img.shields.io/badge/License-MIT%202.0-4CAF50?style=for-the-badge&logo=apache&logoColor=white"  alt="MIT License"/>
-  <a href="https://github.com/Cloth-Foundation/rCloth">
-    <img src="https://img.shields.io/github/stars/Cloth-Foundation/Cloth?style=for-the-badge"  alt="GitHub Stars"/>
-  </a>
-</p>
-</div>
+Cloth combines native compilation with garbage-collected memory safety,
+familiar object-oriented types, declared error effects, concise imports, and
+capitalization-based visibility. Each `.co` file defines one implicit type
+named by its file stem, which removes repeated class envelopes without losing
+nominal identity.
 
-[Cloth]: https://cloth.dev
+> The self-hosted compiler is under active bootstrap development. Use `cCloth`
+> for supported compilation today.
 
-[Learn]: https://cloth.dev/learning-center
+## Build and run
 
-[Documentation]: https://cloth.dev/docs
+You need a built `clothc` from `cCloth` and Shuttle. From this repository:
 
-[Contributing]: CONTRIBUTING.md
+```sh
+shuttle check --manifest-path Shuttle.toml --compiler <path-to-clothc>
+shuttle run --manifest-path Shuttle.toml --compiler <path-to-clothc>
+```
 
-This is the main source code repository for [Cloth](https://cloth.dev), including the compiler, standard library,
-documentation, and tooling. Shuttle can be found [here.](https://github.com/Cloth-Foundation/Shuttle)
+To run Shuttle from the `cCloth` checkout instead of an installed binary:
 
-# What is Cloth?
+```sh
+cargo run --manifest-path <path-to-cCloth>/shuttle/Cargo.toml --locked -- \
+  check --manifest-path Shuttle.toml --compiler <path-to-clothc>
+```
 
-Cloth is a high-performance, object-oriented, low-level language designed for predictable execution and maintainable
-systems programming. It combines familiar C-style control with a structured, Java-like class model.
+On Windows, the compiler path normally ends in `clothc.exe`. Shuttle selects
+the compiler-paired standard library automatically; do not add the reserved
+`cloth` dependency to `Shuttle.toml`.
 
-- *Performance* – Cloth avoids garbage collection and uses deterministic destruction, resulting in predictable runtime
-  behavior and minimal overhead.
-- *Maintainability* – A structured, class-oriented design and explicit syntax make large codebases easier to reason
-  about and evolve over time.
-- *Productivity* – Strong compile-time guarantees and explicit error handling reduce runtime surprises and debugging
-  complexity.
-- *Memory Safety* – Cloth uses a hierarchical ownership model with deterministic destruction. Objects form an ownership
-  tree rooted at program entry, while static data exists in a separate root-lifetime domain, allowing for safe and
-  predictable memory management without a garbage collector.
+The bootstrap package identity remains `clothc`, while its executable is named
+`cloth` (`cloth.exe` on Windows). The reserved package identity `cloth` remains
+exclusive to the standard library.
 
-## Quick Start Guide
+## Source map
 
-Download the latest compiler installer for your operating system and follow the on-screen instructions. You may need
-administrator permissions.
+The executable entry is [`src/Main.co`](src/Main.co). Compiler code is grouped
+under `src/frontend/` by source, token, diagnostic, and lexer responsibility.
+Read [`ARCHITECTURE.md`](ARCHITECTURE.md) before adding or moving a compiler
+component and follow [`STYLE.md`](STYLE.md) for Cloth source.
 
-## Build From Source
-
-While not recommended, you can follow [the Installation Guide](INSTALL.md).
-
-## Required 3rd Party Libraries
-
-> There is a plan when an installer is made that it will automatically install these libraries.
-
-- [Git](https://github.com/git/git)
-- [Clang](https://clang.llvm.org/)
-
-## Help
-
-See the [Help Center](https://cloth.dev/resources) or the [Documentation](https://cloth.dev/docs) for help resources.
+The active implementation order and accepted contracts live in the `cCloth`
+[`ROADMAP.md`] and [`TODO.md`]. This repository does not independently add
+language features ahead of that schedule.
 
 ## Contributing
 
-See [Contributing.md](CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Large language or compatibility
+changes start as a proposal in `cCloth`; self-hosted implementation changes
+must name the contract and checkpoint they satisfy.
+
+## Repository boundaries
+
+- [`cCloth`] — C++23 bootstrap compiler, runtime, language contracts, and the
+  authoritative implementation schedule.
+- [Shuttle] — project and build system.
+- [Standard library] — compiler-paired `cloth.*` packages.
+- [Documentation] — user-facing language documentation.
 
 ## License
 
-Cloth is distributed under the terms of the MIT license and Apache 2.0 license. 
+Cloth is available under the repository's Apache License 2.0 with LLVM
+Exceptions and MIT terms. See [`LICENSE.txt`](LICENSE.txt).
+
+[`cCloth`]: https://github.com/Cloth-Foundation/cCloth
+[`ROADMAP.md`]: https://github.com/Cloth-Foundation/cCloth/blob/master/ROADMAP.md
+[`TODO.md`]: https://github.com/Cloth-Foundation/cCloth/blob/master/TODO.md
+[Shuttle]: https://github.com/Cloth-Foundation/Shuttle
+[Standard library]: https://github.com/Cloth-Foundation/Standard-Library
+[Documentation]: https://cloth.dev/docs

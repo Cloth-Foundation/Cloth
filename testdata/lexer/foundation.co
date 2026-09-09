@@ -1,0 +1,11 @@
+func return if else while for in break continue switch case default
+struct class interface abstract sealed enum error throw throws trait
+let var const final static override super true false null extern unsafe import is as match
+int int8 int16 int32 int64 uint uint8 uint16 uint32 uint64
+float float32 float64 bool char byte void object
+identifier _private Upper
+( ) { } [ ] , ; : :: . ? ?. ??
++ - * / % = == != < <= > >= && || ! & | ^ ~
+++ -- += -= *= /= %= << >> <<= >>= &= |= ^=
+// Line comments do not produce tokens.
+/* Block comments do not produce tokens. */
