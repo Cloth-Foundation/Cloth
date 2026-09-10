@@ -1,3 +1,9 @@
+import bootstrap::DeclarationSubstrateCheck;
+import bootstrap::DeclarationSubstrateFailure;
+import bootstrap::DeclarationSubstrateGcCheck;
+import bootstrap::DeclarationGrammarCheck;
+import bootstrap::DeclarationGrammarGcCheck;
+import bootstrap::DeclarationRecordWriter;
 import bootstrap::LexerFoundationCheck;
 import bootstrap::LexerLiteralCheck;
 import bootstrap::LexRecordWriter;
@@ -9,6 +15,18 @@ import bootstrap::SyntaxTreeFailure;
 import bootstrap::SyntaxTreeRecordWriter;
 
 static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length == 3 && args[0] == "--declaration-records") {
+    return DeclarationRecordWriter.Run(args[1], args[2]);
+  }
+  if (args::length == 1 && args[0] == "--declaration-grammar-gc-check") {
+    return DeclarationGrammarGcCheck.Run();
+  }
+  if (args::length == 2 && args[0] == "--declaration-substrate-failure") {
+    return DeclarationSubstrateFailure.Run(args[1]);
+  }
+  if (args::length == 1 && args[0] == "--declaration-substrate-gc-check") {
+    return DeclarationSubstrateGcCheck.Run();
+  }
   if (args::length == 2 && args[0] == "--lex-records") {
     return LexRecordWriter.Run(args[1]);
   }
@@ -35,6 +53,18 @@ static func Main(string[] args): int32 throws IoError, StateError {
   if (literalStatus != 0) {
     println(literalStatus);
     return literalStatus;
+  }
+
+  final int32 declarationStatus = DeclarationSubstrateCheck.Run();
+  if (declarationStatus != 0) {
+    println(declarationStatus);
+    return declarationStatus;
+  }
+
+  final int32 grammarStatus = DeclarationGrammarCheck.Run();
+  if (grammarStatus != 0) {
+    println(grammarStatus);
+    return grammarStatus;
   }
 
   final int32 storageStatus = SyntaxStorageCheck.Run();

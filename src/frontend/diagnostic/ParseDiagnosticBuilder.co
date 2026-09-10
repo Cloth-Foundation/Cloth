@@ -1,0 +1,55 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticPage;
+import frontend.diagnostic::ParseDiagnosticSequence;
+
+class {
+  ParseDiagnosticPage? first;
+  ParseDiagnosticPage? last;
+  int32 count;
+  int32 lastOffset;
+  bool finished;
+
+  ParseDiagnosticBuilder() {
+    self.first = null;
+    self.last = null;
+    self.count = 0;
+    self.lastOffset = -1;
+    self.finished = false;
+  }
+
+  func Add(ParseDiagnostic value): void throws StateError {
+    if (self.finished) {
+      throw StateError("parse diagnostic builder is already finished");
+    }
+    final int32 offset = value.GetRange().GetBegin().GetOffset();
+    if (offset < self.lastOffset) {
+      throw StateError("parse diagnostics must be added in source order");
+    }
+    if (self.count == 2147483647) {
+      throw StateError("parse diagnostic count overflow");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final ParseDiagnosticPage page = ParseDiagnosticPage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    self.count++;
+    self.lastOffset = offset;
+  }
+
+  func Finish(): ParseDiagnosticSequence throws StateError {
+    if (self.finished) {
+      throw StateError("parse diagnostic builder is already finished");
+    }
+    self.finished = true;
+    return ParseDiagnosticSequence.Build(self.first, self.count);
+  }
+
+  func GetCount(): int32 { return self.count; }
+  func IsFinished(): bool { return self.finished; }
+}

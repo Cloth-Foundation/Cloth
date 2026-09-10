@@ -1,0 +1,117 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::DeferredRegionLocator;
+import frontend.parser::ParameterParser;
+import frontend.parser::ParserFacts;
+import frontend.parser::SourceText;
+import frontend.parser::ThrowsClauseParser;
+import frontend.parser::ThrowsClauseResult;
+import frontend.parser::TokenIndexRange;
+import frontend.parser::TypeParser;
+import frontend.source::SourceRange;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(DeclarationParseState state) throws StateError {
+    final int32 diagnosticCount = state.GetDiagnosticCount();
+    final int32 begin = state.GetIndex();
+    bool staticMember = false;
+    bool overrideMember = false;
+    bool abstractMember = false;
+    bool finalMember = false;
+    bool wroteModifier = false;
+    while (ParserFacts.IsFunctionModifier(state.Current().GetKind())) {
+      final Token modifier = state.Advance();
+      wroteModifier = true;
+      if (modifier.GetKind() == TokenKind.kKwStatic) {
+        if (staticMember) { duplicateModifier(state, modifier); }
+        staticMember = true;
+      }
+      if (modifier.GetKind() == TokenKind.kKwOverride) {
+        if (overrideMember) { duplicateModifier(state, modifier); }
+        overrideMember = true;
+      }
+      if (modifier.GetKind() == TokenKind.kKwAbstract) {
+        if (abstractMember) { duplicateModifier(state, modifier); }
+        abstractMember = true;
+      }
+      if (modifier.GetKind() == TokenKind.kKwFinal) {
+        if (finalMember) { duplicateModifier(state, modifier); }
+        finalMember = true;
+      }
+    }
+
+    final bool interfaceMember =
+        state.GetFileTypeKind() == FileTypeKind.kInterface;
+    if (interfaceMember && wroteModifier) {
+      state.AddDiagnostic(
+          ParseDiagnosticKind.kInvalidInterfaceFunctionModifier,
+          state.GetTokens().Get(begin).GetRange(), null);
+    }
+    if (interfaceMember) { abstractMember = true; }
+
+    if (!state.Match(TokenKind.kKwFunc)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFunc,
+                          state.Current().GetRange(), null);
+      DeferredRegionLocator.SynchronizeMember(state);
+      return;
+    }
+    if (state.Current().GetKind() != TokenKind.kIdentifier) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFunctionName,
+                          state.Current().GetRange(), null);
+      DeferredRegionLocator.SynchronizeMember(state);
+      return;
+    }
+    final Token name = state.Advance();
+    final ParameterSyntaxSequence parameters = ParameterParser.Parse(state);
+
+    TypeSyntax? declaredType = null;
+    if (state.Match(TokenKind.kColon)) {
+      declaredType = TypeParser.Parse(state);
+    }
+    final ThrowsClauseResult throwsClause = ThrowsClauseParser.Parse(state);
+
+    TokenIndexRange? body = null;
+    bool abstractTerminator = false;
+    if (abstractMember) {
+      if (state.Match(TokenKind.kSemicolon)) {
+        abstractTerminator = true;
+      } else {
+        if (state.Current().GetKind() == TokenKind.kLeftBrace) {
+          state.AddDiagnostic(ParseDiagnosticKind.kAbstractFunctionBody,
+                              state.Current().GetRange(), null);
+          body = DeferredRegionLocator.LocateBody(state);
+        } else {
+          state.AddDiagnostic(ParseDiagnosticKind.kExpectedAbstractTerminator,
+                              state.Current().GetRange(), null);
+          DeferredRegionLocator.SynchronizeMember(state);
+        }
+      }
+    } else {
+      body = DeferredRegionLocator.LocateBody(state);
+    }
+
+    final SourceRange range = state.RangeFrom(begin, state.GetIndex());
+    bool complete = body != null;
+    if (abstractMember) { complete = abstractTerminator; }
+    state.AddMember(DeclarationOutline.Build(
+        DeclarationKind.kFunction, name.GetSpan(),
+        SourceText.VisibilityOfSpan(name.GetSpan()), declaredType, parameters,
+        throwsClause.GetTypes(), throwsClause.IsExplicit(), staticMember,
+        finalMember, overrideMember, abstractMember, begin, null, null, body,
+        range, complete &&
+            state.GetDiagnosticCount() == diagnosticCount));
+  }
+
+  static func duplicateModifier(DeclarationParseState state,
+                                Token modifier) throws StateError {
+    state.AddDiagnostic(ParseDiagnosticKind.kDuplicateFunctionModifier,
+                        modifier.GetRange(), null);
+  }
+}

@@ -1,0 +1,326 @@
+import bootstrap::DeclarationSubstrateFixture;
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticBuilder;
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationResult;
+import frontend.parser::FileDeclarationOutline;
+import frontend.parser::MemberOutlineBuilder;
+import frontend.parser::TokenCursor;
+import frontend.parser::TokenIndexRange;
+import frontend.parser.storage::EnumCaseSyntaxBuilder;
+import frontend.parser.storage::ImportSyntaxBuilder;
+import frontend.parser.storage::ParameterSyntaxBuilder;
+import frontend.parser.storage::TypeSyntaxBuilder;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::ImportKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::Visibility;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+
+class {
+  static func Run(string mode): int32 throws StateError {
+    if (mode == "range") { return rangeFailure(); }
+    if (mode == "token-buffer") { return tokenBufferFailure(); }
+    if (mode == "foreign-source") { return foreignSourceFailure(); }
+    if (mode == "location") { return locationFailure(); }
+    if (mode == "slice") { return sliceFailure(); }
+    if (mode == "slice-parent") { return sliceParentFailure(); }
+    if (mode == "lookahead") { return lookaheadFailure(); }
+    if (mode == "progress") { return progressFailure(); }
+    if (mode == "progress-checkpoint") {
+      return progressCheckpointFailure();
+    }
+    if (mode == "diagnostic-order") { return diagnosticOrderFailure(); }
+    if (mode == "diagnostic-finished") {
+      return diagnosticFinishedFailure();
+    }
+    if (mode == "member-finished") { return memberFinishedFailure(); }
+    if (mode == "import-finished") { return importFinishedFailure(); }
+    if (mode == "type-finished") { return typeFinishedFailure(); }
+    if (mode == "parameter-finished") {
+      return parameterFinishedFailure();
+    }
+    if (mode == "enum-finished") { return enumFinishedFailure(); }
+    if (mode == "diagnostic-bounds") { return diagnosticBoundsFailure(); }
+    if (mode == "member-bounds") { return memberBoundsFailure(); }
+    if (mode == "result-validity") { return resultValidityFailure(); }
+    if (mode == "body-delimiter") { return bodyDelimiterFailure(); }
+    if (mode == "body-bounds") { return bodyBoundsFailure(); }
+    if (mode == "visibility") { return visibilityFailure(); }
+    if (mode == "file-range") { return fileRangeFailure(); }
+    return 2;
+  }
+
+  static func rangeFailure(): int32 throws StateError {
+    TokenIndexRange(-1, 0);
+    return 0;
+  }
+
+  static func tokenBufferFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var tokens = TokenBuffer(1);
+    TokenCursor.Build(fixture.GetSource(), tokens);
+    return 0;
+  }
+
+  static func foreignSourceFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final SourceFile other = SourceFile.FromBytes("Other.co", byte[:15]);
+    TokenCursor.Build(other, fixture.GetTokens());
+    return 0;
+  }
+
+  static func locationFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var tokens = TokenBuffer(fixture.GetTokens().GetCount());
+    for (int32 index = 0; index < fixture.GetTokens().GetCount(); index++) {
+      final Token token = fixture.GetTokens().Get(index);
+      if (index == 0) {
+        final var begin = SourceLocation(
+            fixture.GetSource().GetPath(), 0, 2, 1);
+        final var end = SourceLocation(
+            fixture.GetSource().GetPath(), 4, 2, 5);
+        tokens.Add(Token(token.GetKind(), token.GetSpan(),
+                         SourceRange(begin, end)));
+      } else {
+        tokens.Add(token);
+      }
+    }
+    TokenCursor.Build(fixture.GetSource(), tokens);
+    return 0;
+  }
+
+  static func sliceFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var cursor = TokenCursor.Build(
+        fixture.GetSource(), fixture.GetTokens());
+    cursor.Slice(TokenIndexRange(0, 7));
+    return 0;
+  }
+
+  static func sliceParentFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var cursor = TokenCursor.Build(
+        fixture.GetSource(), fixture.GetTokens());
+    final var child = cursor.Slice(TokenIndexRange(2, 4));
+    child.Slice(TokenIndexRange(1, 4));
+    return 0;
+  }
+
+  static func lookaheadFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var cursor = TokenCursor.Build(
+        fixture.GetSource(), fixture.GetTokens());
+    cursor.Peek(-1);
+    return 0;
+  }
+
+  static func progressFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var cursor = TokenCursor.Build(
+        fixture.GetSource(), fixture.GetTokens());
+    cursor.RequireProgress(cursor.GetIndex());
+    return 0;
+  }
+
+  static func progressCheckpointFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var cursor = TokenCursor.Build(
+        fixture.GetSource(), fixture.GetTokens());
+    cursor.RequireProgress(1);
+    return 0;
+  }
+
+  static func diagnosticOrderFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final SourceRange later = DeclarationSubstrateFixture.NameRange(
+        fixture.GetSource());
+    final SourceRange earlier =
+        fixture.GetResult().GetMembers().Get(0).GetRange();
+    final var diagnostics = ParseDiagnosticBuilder();
+    diagnostics.Add(ParseDiagnostic(
+        ParseDiagnosticKind.kExpectedDeclaration, later, null));
+    diagnostics.Add(ParseDiagnostic(
+        ParseDiagnosticKind.kExpectedDeclaration, earlier, null));
+    return 0;
+  }
+
+  static func diagnosticFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var diagnostics = ParseDiagnosticBuilder();
+    diagnostics.Finish();
+    diagnostics.Add(ParseDiagnostic(
+        ParseDiagnosticKind.kExpectedDeclaration,
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), null));
+    return 0;
+  }
+
+  static func memberFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var members = MemberOutlineBuilder();
+    members.Finish();
+    members.Add(fixture.GetResult().GetMembers().Get(0));
+    return 0;
+  }
+
+  static func importFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final SourceSpan name =
+        DeclarationSubstrateFixture.NameSpan(fixture.GetSource());
+    final var imports = ImportSyntaxBuilder();
+    imports.Finish();
+    imports.Add(ImportSyntax(
+        ImportKind.kType, null, name, null,
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), true));
+    return 0;
+  }
+
+  static func typeFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var types = TypeSyntaxBuilder();
+    types.Finish();
+    types.Add(buildType(fixture));
+    return 0;
+  }
+
+  static func parameterFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var parameters = ParameterSyntaxBuilder();
+    parameters.Finish();
+    parameters.Add(ParameterSyntax(
+        buildType(fixture),
+        DeclarationSubstrateFixture.NameSpan(fixture.GetSource()), false,
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), true));
+    return 0;
+  }
+
+  static func enumFinishedFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final var enumCases = EnumCaseSyntaxBuilder();
+    enumCases.Finish();
+    enumCases.Add(EnumCaseSyntax(
+        DeclarationSubstrateFixture.NameSpan(fixture.GetSource()),
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), true));
+    return 0;
+  }
+
+  static func diagnosticBoundsFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    fixture.GetResult().GetDiagnostics().Get(0);
+    return 0;
+  }
+
+  static func memberBoundsFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    fixture.GetResult().GetMembers().Get(1);
+    return 0;
+  }
+
+  static func buildType(
+      DeclarationSubstrateFixture fixture): TypeSyntax throws StateError {
+    return TypeSyntax(
+        DeclarationSubstrateFixture.NameSpan(fixture.GetSource()),
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), true,
+        false, false, false, false);
+  }
+
+  static func resultValidityFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final DeclarationResult result = fixture.GetResult();
+    DeclarationResult.Build(
+        result.GetSource(), result.GetTokens(), result.GetFile(),
+        result.GetMembers(), result.GetDiagnostics(), false);
+    return 0;
+  }
+
+  static func bodyDelimiterFailure(): int32 throws StateError {
+    return publishBody(2, 4);
+  }
+
+  static func bodyBoundsFailure(): int32 throws StateError {
+    return publishBody(4, 7);
+  }
+
+  static func publishBody(int32 begin,
+                          int32 end): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final DeclarationOutline member = DeclarationSubstrateFixture.BuildMember(
+        fixture.GetSource(), begin, end);
+    final var members = MemberOutlineBuilder();
+    members.Add(member);
+    final DeclarationResult result = fixture.GetResult();
+    DeclarationResult.Build(
+        result.GetSource(), result.GetTokens(), result.GetFile(),
+        members.Finish(), result.GetDiagnostics(), true);
+    return 0;
+  }
+
+  static func visibilityFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final DeclarationOutline original =
+        fixture.GetResult().GetMembers().Get(0);
+    final DeclarationOutline member = DeclarationOutline.Build(
+        original.GetKind(), original.GetName(), Visibility.kPrivate,
+        original.GetDeclaredType(), original.GetParameters(),
+        original.GetThrowsTypes(), original.HasExplicitThrows(),
+        original.IsStatic(), original.IsFinal(), original.IsOverride(),
+        original.IsAbstract(), original.GetBeginToken(),
+        original.GetFieldInitializerTokens(),
+        original.GetConstructorInitializerTokens(), original.GetBodyTokens(),
+        original.GetRange(), original.IsValid());
+    final var members = MemberOutlineBuilder();
+    members.Add(member);
+    final DeclarationResult result = fixture.GetResult();
+    DeclarationResult.Build(
+        result.GetSource(), result.GetTokens(), result.GetFile(),
+        members.Finish(), result.GetDiagnostics(), true);
+    return 0;
+  }
+
+  static func fileRangeFailure(): int32 throws StateError {
+    final DeclarationSubstrateFixture fixture =
+        DeclarationSubstrateFixture.Build();
+    final DeclarationResult result = fixture.GetResult();
+    final FileDeclarationOutline original = result.GetFile();
+    final var file = FileDeclarationOutline(
+        original.GetName(), original.GetPackageName(),
+        original.GetQualifiedName(), original.GetVisibility(),
+        original.GetImports(), original.GetBaseClass(),
+        original.GetInterfaces(), original.GetEnumCases(),
+        original.GetFileTypeKind(), original.HasExplicitDeclaration(),
+        original.IsAbstract(), original.IsSealed(),
+        DeclarationSubstrateFixture.NameRange(fixture.GetSource()), true);
+    DeclarationResult.Build(
+        result.GetSource(), result.GetTokens(), file, result.GetMembers(),
+        result.GetDiagnostics(), true);
+    return 0;
+  }
+}

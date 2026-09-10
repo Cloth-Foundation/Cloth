@@ -1,0 +1,273 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::MemberOutlineBuilder;
+import frontend.parser::MemberOutlineSequence;
+import frontend.parser::SourceText;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  static func Validate(MemberOutlineSequence input,
+                       DeclarationParseState state): MemberOutlineSequence
+      throws StateError {
+    final int32 count = input.GetCount();
+    int32[] order = int32[:count];
+    int32[] related = int32[:count];
+    bool[] signatureConflict = bool[:count];
+    for (int32 index = 0; index < count; index++) {
+      order[index] = index;
+      related[index] = -1;
+    }
+
+    if (count > 1) { order = sortByName(input, order); }
+    findNameConflicts(input, order, related);
+    if (count > 1) { order = sortByCallable(input, order); }
+    findSignatureConflicts(input, order, related, signatureConflict);
+
+    final var output = MemberOutlineBuilder();
+    for (int32 index = 0; index < count; index++) {
+      final DeclarationOutline value = input.Get(index);
+      if (related[index] >= 0) {
+        ParseDiagnosticKind kind = ParseDiagnosticKind.kMemberConflict;
+        if (signatureConflict[index]) {
+          kind = ParseDiagnosticKind.kDuplicateCallableSignature;
+        }
+        state.AddDiagnostic(kind, value.GetRange(),
+                            input.Get(related[index]).GetRange());
+      }
+      output.Add(copy(value, value.IsValid() && related[index] < 0));
+    }
+    return output.Finish();
+  }
+
+  static func findNameConflicts(MemberOutlineSequence input, int32[] order,
+                                int32[] related) throws StateError {
+    int32 begin = 0;
+    while (begin < order::length) {
+      final int32 first = order[begin];
+      int32 end = begin + 1;
+      while (end < order::length &&
+             SourceText.Compare(input.Get(first).GetName(),
+                                input.Get(order[end]).GetName()) == 0) {
+        end++;
+      }
+
+      int32 firstAny = -1;
+      int32 firstField = -1;
+      int32 firstFunction = -1;
+      int32 firstConstructor = -1;
+      for (int32 position = begin; position < end; position++) {
+        final int32 index = order[position];
+        final DeclarationKind kind = input.Get(index).GetKind();
+        int32 conflict = -1;
+        if (kind == DeclarationKind.kField) {
+          conflict = firstAny;
+        }
+        if (kind == DeclarationKind.kFunction) {
+          conflict = earlier(firstField, firstConstructor);
+        }
+        if (kind == DeclarationKind.kConstructor) {
+          conflict = earlier(firstField, firstFunction);
+        }
+        if (conflict >= 0) { related[index] = conflict; }
+        if (firstAny < 0) { firstAny = index; }
+        if (kind == DeclarationKind.kField && firstField < 0) {
+          firstField = index;
+        }
+        if (kind == DeclarationKind.kFunction && firstFunction < 0) {
+          firstFunction = index;
+        }
+        if (kind == DeclarationKind.kConstructor && firstConstructor < 0) {
+          firstConstructor = index;
+        }
+      }
+      begin = end;
+    }
+  }
+
+  static func findSignatureConflicts(
+      MemberOutlineSequence input, int32[] order, int32[] related,
+      bool[] signatureConflict) throws StateError {
+    int32 begin = 0;
+    while (begin < order::length) {
+      final int32 first = order[begin];
+      if (!isCallable(input.Get(first))) {
+        begin++;
+        continue;
+      }
+      int32 end = begin + 1;
+      while (end < order::length &&
+             sameCallableSignature(input.Get(first),
+                                   input.Get(order[end]))) {
+        final int32 index = order[end];
+        if (related[index] < 0 || first < related[index]) {
+          related[index] = first;
+          signatureConflict[index] = true;
+        }
+        end++;
+      }
+      begin = end;
+    }
+  }
+
+  static func sortByName(MemberOutlineSequence input,
+                         int32[] values): int32[] throws StateError {
+    return mergeSort(input, values, true);
+  }
+
+  static func sortByCallable(MemberOutlineSequence input,
+                             int32[] values): int32[] throws StateError {
+    return mergeSort(input, values, false);
+  }
+
+  static func mergeSort(MemberOutlineSequence input, int32[] values,
+                        bool byName): int32[] throws StateError {
+    final int32 count = values::length;
+    int32[] source = values;
+    int32[] destination = int32[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, source, destination, begin, middle, end, byName);
+        begin = end;
+      }
+      final int32[] swap = source;
+      source = destination;
+      destination = swap;
+      if (width > count / 2) {
+        width = count;
+      } else {
+        width *= 2;
+      }
+    }
+    return source;
+  }
+
+  static func merge(MemberOutlineSequence input, int32[] source,
+                    int32[] destination, int32 begin, int32 middle,
+                    int32 end, bool byName) throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    int32 output = begin;
+    while (output < end) {
+      bool takeLeft = right >= end;
+      if (!takeLeft && left < middle) {
+        if (byName) {
+          takeLeft = compareName(input, source[left], source[right]) <= 0;
+        } else {
+          takeLeft = compareCallable(input, source[left], source[right]) <= 0;
+        }
+      }
+      if (takeLeft) {
+        destination[output] = source[left];
+        left++;
+      } else {
+        destination[output] = source[right];
+        right++;
+      }
+      output++;
+    }
+  }
+
+  static func compareName(MemberOutlineSequence input, int32 left,
+                          int32 right): int32 throws StateError {
+    final int32 comparison = SourceText.Compare(
+        input.Get(left).GetName(), input.Get(right).GetName());
+    if (comparison != 0) { return comparison; }
+    if (left < right) { return -1; }
+    if (left > right) { return 1; }
+    return 0;
+  }
+
+  static func compareCallable(MemberOutlineSequence input, int32 left,
+                              int32 right): int32 throws StateError {
+    final DeclarationOutline leftValue = input.Get(left);
+    final DeclarationOutline rightValue = input.Get(right);
+    final int32 leftRank = callableRank(leftValue);
+    final int32 rightRank = callableRank(rightValue);
+    if (leftRank < rightRank) { return -1; }
+    if (leftRank > rightRank) { return 1; }
+    if (leftValue.GetKind() == DeclarationKind.kFunction) {
+      final int32 nameComparison = SourceText.Compare(
+          leftValue.GetName(), rightValue.GetName());
+      if (nameComparison != 0) { return nameComparison; }
+    }
+    final int32 signatureComparison = compareParameters(
+        leftValue.GetParameters(), rightValue.GetParameters());
+    if (signatureComparison != 0) { return signatureComparison; }
+    if (left < right) { return -1; }
+    if (left > right) { return 1; }
+    return 0;
+  }
+
+  static func compareParameters(ParameterSyntaxSequence left,
+                                ParameterSyntaxSequence right): int32
+      throws StateError {
+    int32 shared = left.GetCount();
+    if (right.GetCount() < shared) { shared = right.GetCount(); }
+    for (int32 index = 0; index < shared; index++) {
+      final TypeSyntax leftType = left.Get(index).GetType();
+      final TypeSyntax rightType = right.Get(index).GetType();
+      final int32 comparison =
+          SourceText.Compare(leftType.GetName(), rightType.GetName());
+      if (comparison != 0) { return comparison; }
+      if (leftType.IsArray() && !rightType.IsArray()) { return 1; }
+      if (!leftType.IsArray() && rightType.IsArray()) { return -1; }
+    }
+    if (left.GetCount() < right.GetCount()) { return -1; }
+    if (left.GetCount() > right.GetCount()) { return 1; }
+    return 0;
+  }
+
+  static func sameCallableSignature(DeclarationOutline left,
+                                    DeclarationOutline right): bool
+      throws StateError {
+    if (!isCallable(left) || left.GetKind() != right.GetKind()) {
+      return false;
+    }
+    if (left.GetKind() == DeclarationKind.kFunction &&
+        SourceText.Compare(left.GetName(), right.GetName()) != 0) {
+      return false;
+    }
+    return compareParameters(left.GetParameters(), right.GetParameters()) == 0;
+  }
+
+  static func isCallable(DeclarationOutline value): bool {
+    return value.GetKind() == DeclarationKind.kFunction ||
+           value.GetKind() == DeclarationKind.kConstructor;
+  }
+
+  static func callableRank(DeclarationOutline value): int32 {
+    if (value.GetKind() == DeclarationKind.kFunction) { return 1; }
+    if (value.GetKind() == DeclarationKind.kConstructor) { return 2; }
+    return 0;
+  }
+
+  static func earlier(int32 left, int32 right): int32 {
+    if (left < 0) { return right; }
+    if (right < 0 || left < right) { return left; }
+    return right;
+  }
+
+  static func copy(DeclarationOutline value,
+                   bool valid): DeclarationOutline throws StateError {
+    return DeclarationOutline.Build(
+        value.GetKind(), value.GetName(), value.GetVisibility(),
+        value.GetDeclaredType(), value.GetParameters(), value.GetThrowsTypes(),
+        value.HasExplicitThrows(), value.IsStatic(), value.IsFinal(),
+        value.IsOverride(), value.IsAbstract(), value.GetBeginToken(),
+        value.GetFieldInitializerTokens(),
+        value.GetConstructorInitializerTokens(), value.GetBodyTokens(),
+        value.GetRange(), valid);
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

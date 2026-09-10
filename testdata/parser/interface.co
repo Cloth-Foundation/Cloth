@@ -1,0 +1,3 @@
+interface: Parent, Auditable {
+  func Run(final int32 count): void throws Failure;
+}

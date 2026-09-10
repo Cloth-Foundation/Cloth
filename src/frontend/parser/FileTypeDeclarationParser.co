@@ -1,0 +1,121 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::EnumDeclarationParser;
+import frontend.parser::ParserFacts;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(DeclarationParseState state) throws StateError {
+    bool abstractType = false;
+    bool sealedType = false;
+    while (ParserFacts.IsFileModifier(state.Current().GetKind())) {
+      final Token modifier = state.Advance();
+      if (modifier.GetKind() == TokenKind.kKwAbstract) {
+        if (abstractType) { duplicateModifier(state, modifier); }
+        abstractType = true;
+      } else {
+        if (sealedType) { duplicateModifier(state, modifier); }
+        sealedType = true;
+      }
+    }
+
+    final Token kindToken = state.Current();
+    FileTypeKind kind = FileTypeKind.kClass;
+    bool foundKind = true;
+    if (state.Match(TokenKind.kKwInterface)) {
+      kind = FileTypeKind.kInterface;
+    } else {
+      if (state.Match(TokenKind.kKwEnum)) {
+        kind = FileTypeKind.kEnum;
+      } else {
+        if (state.Match(TokenKind.kKwStruct)) {
+          kind = FileTypeKind.kStruct;
+        } else {
+          if (state.Match(TokenKind.kKwError)) {
+            kind = FileTypeKind.kError;
+          } else {
+            if (!state.Match(TokenKind.kKwClass)) { foundKind = false; }
+          }
+        }
+      }
+    }
+    if (!foundKind) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFileType,
+                          state.Current().GetRange(), null);
+      return;
+    }
+    state.SetFileType(kind, abstractType, sealedType);
+
+    if ((kind == FileTypeKind.kInterface || kind == FileTypeKind.kEnum ||
+         kind == FileTypeKind.kStruct) && (abstractType || sealedType)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kInvalidFileModifier,
+                          kindToken.GetRange(), null);
+    }
+    if (state.Current().GetKind() == TokenKind.kIdentifier) {
+      state.AddDiagnostic(ParseDiagnosticKind.kRepeatedFileName,
+                          state.Current().GetRange(), null);
+      state.Advance();
+    }
+
+    if (kind == FileTypeKind.kInterface && state.Match(TokenKind.kColon)) {
+      parseInterfaceList(state);
+    } else {
+      if (kind != FileTypeKind.kInterface && kind != FileTypeKind.kEnum &&
+          state.Match(TokenKind.kColon)) {
+        if (state.Current().GetKind() == TokenKind.kIdentifier) {
+          final Token base = state.Advance();
+          state.SetBaseClass(TypeSyntax(base.GetSpan(), base.GetRange(), true,
+                                        false, false, false, false));
+        } else {
+          state.AddDiagnostic(ParseDiagnosticKind.kExpectedBaseType,
+                              state.Current().GetRange(), null);
+        }
+      }
+    }
+    if (kind != FileTypeKind.kInterface && kind != FileTypeKind.kEnum &&
+        state.Match(TokenKind.kKwIs)) {
+      parseInterfaceList(state);
+    }
+
+    if (!state.Match(TokenKind.kLeftBrace)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFileBody,
+                          state.Current().GetRange(), null);
+      return;
+    }
+    state.MarkBodyStarted();
+    if (kind == FileTypeKind.kEnum) {
+      EnumDeclarationParser.ParseCases(state);
+    }
+  }
+
+  static func parseInterfaceList(
+      DeclarationParseState state) throws StateError {
+    bool expectsName = true;
+    while (!state.AtEnd()) {
+      if (state.Current().GetKind() != TokenKind.kIdentifier) {
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedInterfaceType,
+                            state.Current().GetRange(), null);
+        return;
+      }
+      final Token name = state.Advance();
+      state.AddInterface(TypeSyntax(name.GetSpan(), name.GetRange(), true,
+                                    false, false, false, false));
+      expectsName = false;
+      if (!state.Match(TokenKind.kComma)) { return; }
+      expectsName = true;
+    }
+    if (expectsName) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedInterfaceType,
+                          state.Current().GetRange(), null);
+    }
+  }
+
+  static func duplicateModifier(DeclarationParseState state,
+                                Token modifier) throws StateError {
+    state.AddDiagnostic(ParseDiagnosticKind.kDuplicateFileModifier,
+                        modifier.GetRange(), null);
+  }
+}

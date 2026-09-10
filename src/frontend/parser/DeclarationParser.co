@@ -1,0 +1,133 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.parser::ConstructorDeclarationParser;
+import frontend.parser::DeclarationLookahead;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::DeclarationResult;
+import frontend.parser::DeferredRegionLocator;
+import frontend.parser::EnumCaseDuplicateValidator;
+import frontend.parser::FieldDeclarationParser;
+import frontend.parser::FileDeclarationOutline;
+import frontend.parser::FileTypeDeclarationParser;
+import frontend.parser::FunctionDeclarationParser;
+import frontend.parser::ImportDeclarationParser;
+import frontend.parser::MemberDuplicateValidator;
+import frontend.parser::MemberOutlineSequence;
+import frontend.parser::ParserFacts;
+import frontend.parser::SourceText;
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(SourceFile source, TokenBuffer tokens, string fileName,
+                    string packageName): DeclarationResult throws StateError {
+    if (fileName::length == 0 || packageName::length == 0) {
+      throw StateError("declaration parser requires file and package names");
+    }
+    final DeclarationParseState state =
+        DeclarationParseState.Build(source, tokens, fileName, packageName);
+    if (!SourceText.IsIdentifier(fileName)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kInvalidFileName,
+                          SourceRange.PointRange(
+                              state.FileRange().GetBegin()), null);
+    }
+
+    while (!state.AtEnd()) {
+      final int32 before = state.GetIndex();
+      if (state.HasBodyStarted() &&
+          state.Current().GetKind() == TokenKind.kRightBrace) {
+        state.Advance();
+        state.MarkBodyClosed();
+        if (!state.AtEnd()) {
+          state.AddDiagnostic(ParseDiagnosticKind.kExpectedFileEnd,
+                              state.Current().GetRange(), null);
+          while (!state.AtEnd()) { state.Advance(); }
+        }
+        break;
+      }
+
+      if (state.Current().GetKind() == TokenKind.kKwImport) {
+        if (state.HasMember() || state.HasExplicitDeclaration()) {
+          state.AddDiagnostic(ParseDiagnosticKind.kMisplacedImport,
+                              state.Current().GetRange(), null);
+        }
+        ImportDeclarationParser.Parse(state);
+      } else {
+        if (!state.HasMember() && !state.HasExplicitDeclaration() &&
+            DeclarationLookahead.LooksLikeFileType(state)) {
+          FileTypeDeclarationParser.Parse(state);
+        } else {
+          parseMember(state);
+        }
+      }
+
+      if (!state.AtEnd() && state.GetIndex() == before) { state.Advance(); }
+      state.RequireProgress(before);
+    }
+
+    if (state.HasBodyStarted() && !state.HasBodyClosed()) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFileClose,
+                          state.Current().GetRange(), null);
+    }
+
+    final ImportSyntaxSequence imports = state.FinishImports();
+    final TypeSyntaxSequence interfaces = state.FinishInterfaces();
+    final EnumCaseSyntaxSequence enumCases =
+        EnumCaseDuplicateValidator.Validate(state.FinishEnumCases(), state);
+    final MemberOutlineSequence members =
+        MemberDuplicateValidator.Validate(state.FinishMembers(), state);
+    final bool valid = state.IsValid();
+    final FileDeclarationOutline file = FileDeclarationOutline(
+        fileName, packageName, packageName + "." + fileName,
+        SourceText.VisibilityOfString(fileName), imports, state.GetBaseClass(),
+        interfaces, enumCases, state.GetFileTypeKind(),
+        state.HasExplicitDeclaration(), state.IsAbstract(), state.IsSealed(),
+        state.FileRange(), valid);
+    final ParseDiagnosticSequence diagnostics = state.FinishDiagnostics();
+    return DeclarationResult.Build(source, tokens, file, members, diagnostics,
+                                   valid);
+  }
+
+  static func parseMember(DeclarationParseState state) throws StateError {
+    if (DeclarationLookahead.LooksLikeFunction(state)) {
+      state.MarkMember();
+      FunctionDeclarationParser.Parse(state);
+      return;
+    }
+    if (ParserFacts.IsNestedType(state.Current().GetKind())) {
+      state.MarkMember();
+      DeferredRegionLocator.SkipNestedType(state);
+      return;
+    }
+    if (state.Current().GetKind() == TokenKind.kIdentifier &&
+        state.Peek(1).GetKind() == TokenKind.kLeftParen) {
+      state.MarkMember();
+      if (state.GetFileTypeKind() == FileTypeKind.kInterface) {
+        state.AddDiagnostic(ParseDiagnosticKind.kInterfaceConstructor,
+                            state.Current().GetRange(), null);
+      }
+      ConstructorDeclarationParser.Parse(state);
+      return;
+    }
+    if (state.Current().GetKind() == TokenKind.kKwStatic ||
+        state.Current().GetKind() == TokenKind.kKwFinal ||
+        ParserFacts.CanStartType(state.Current().GetKind())) {
+      state.MarkMember();
+      if (state.GetFileTypeKind() == FileTypeKind.kInterface) {
+        state.AddDiagnostic(ParseDiagnosticKind.kInterfaceField,
+                            state.Current().GetRange(), null);
+      }
+      FieldDeclarationParser.Parse(state);
+      return;
+    }
+    state.AddDiagnostic(ParseDiagnosticKind.kExpectedDeclaration,
+                        state.Current().GetRange(), null);
+    DeferredRegionLocator.SynchronizeMember(state);
+  }
+}

@@ -1,0 +1,5 @@
+import contracts::Primary;
+
+abstract sealed class: Base is Primary, Secondary {
+  abstract func Load(int32 id): object throws Failure;
+}

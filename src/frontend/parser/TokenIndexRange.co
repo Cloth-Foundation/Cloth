@@ -1,0 +1,17 @@
+struct {
+  final int32 begin;
+  final int32 end;
+
+  TokenIndexRange(int32 begin, int32 end) throws StateError {
+    if (begin < 0 || end < begin) {
+      throw StateError("invalid token index range");
+    }
+    self.begin = begin;
+    self.end = end;
+  }
+
+  func GetBegin(): int32 { return self.begin; }
+  func GetEnd(): int32 { return self.end; }
+  func GetLength(): int32 { return self.end - self.begin; }
+  func IsEmpty(): bool { return self.begin == self.end; }
+}

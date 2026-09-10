@@ -1,0 +1,142 @@
+import frontend.source::SourceSpan;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::Visibility;
+
+class {
+  static func Equals(SourceSpan span, string text): bool throws StateError {
+    if (span.GetLength() != text::byteLength ||
+        text::byteLength != text::length) {
+      return false;
+    }
+    for (int32 index = 0; index < span.GetLength(); index++) {
+      if (span.GetByte(index) != asciiCode(text[index])) { return false; }
+    }
+    return true;
+  }
+
+  static func EqualsIgnoreCaseAscii(SourceSpan span,
+                                    string text): bool throws StateError {
+    if (span.GetLength() != text::byteLength ||
+        text::byteLength != text::length) {
+      return false;
+    }
+    for (int32 index = 0; index < span.GetLength(); index++) {
+      if (lower(span.GetByte(index)) != lower(asciiCode(text[index]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func Compare(SourceSpan left,
+                      SourceSpan right): int32 throws StateError {
+    int32 shared = left.GetLength();
+    if (right.GetLength() < shared) { shared = right.GetLength(); }
+    for (int32 index = 0; index < shared; index++) {
+      final byte leftByte = left.GetByte(index);
+      final byte rightByte = right.GetByte(index);
+      if (leftByte < rightByte) { return -1; }
+      if (leftByte > rightByte) { return 1; }
+    }
+    if (left.GetLength() < right.GetLength()) { return -1; }
+    if (left.GetLength() > right.GetLength()) { return 1; }
+    return 0;
+  }
+
+  static func SameTypeShape(TypeSyntax left,
+                            TypeSyntax right): bool throws StateError {
+    return left.IsArray() == right.IsArray() &&
+           Compare(left.GetName(), right.GetName()) == 0;
+  }
+
+  static func VisibilityOfSpan(
+      SourceSpan name): Visibility throws StateError {
+    if (name.GetLength() > 0 && name.GetByte(0) >= 65 &&
+        name.GetByte(0) <= 90) {
+      return Visibility.kPublic;
+    }
+    return Visibility.kPrivate;
+  }
+
+  static func VisibilityOfString(string name): Visibility {
+    if (name::length > 0) {
+      final int32 first = asciiCode(name[0]);
+      if (first >= 65 && first <= 90) { return Visibility.kPublic; }
+    }
+    return Visibility.kPrivate;
+  }
+
+  static func IsIdentifier(string name): bool {
+    if (name::length == 0 || name::byteLength != name::length) {
+      return false;
+    }
+    if (!isIdentifierStart(asciiCode(name[0]))) { return false; }
+    for (int32 index = 1; index < name::length; index++) {
+      if (!isIdentifierContinue(asciiCode(name[index]))) { return false; }
+    }
+    return true;
+  }
+
+  static func IsConstructorName(SourceSpan name,
+                                string fileName): bool throws StateError {
+    if (Equals(name, fileName)) { return true; }
+    if (name.GetLength() == fileName::byteLength + 1 &&
+        name.GetByte(0) == 95 && fileName::length > 0 &&
+        asciiCode(fileName[0]) != 95 && equalsFrom(name, 1, fileName, 0)) {
+      return true;
+    }
+    if (name.GetLength() != fileName::byteLength || fileName::length == 0) {
+      return false;
+    }
+    final int32 first = asciiCode(fileName[0]);
+    if (first < 65 || first > 90 ||
+        name.GetByte(0) != byte(first + 32)) {
+      return false;
+    }
+    return equalsFrom(name, 1, fileName, 1);
+  }
+
+  static func equalsFrom(SourceSpan span, int32 spanBegin, string text,
+                         int32 textBegin): bool throws StateError {
+    if (span.GetLength() - spanBegin != text::byteLength - textBegin) {
+      return false;
+    }
+    int32 spanIndex = spanBegin;
+    int32 textIndex = textBegin;
+    while (spanIndex < span.GetLength()) {
+      if (span.GetByte(spanIndex) != asciiCode(text[textIndex])) {
+        return false;
+      }
+      spanIndex++;
+      textIndex++;
+    }
+    return true;
+  }
+
+  static func lower(int32 value): int32 {
+    if (value >= 65 && value <= 90) { return value + 32; }
+    return value;
+  }
+
+  static func isIdentifierStart(int32 value): bool {
+    return (value >= 65 && value <= 90) ||
+           (value >= 97 && value <= 122) || value == 95;
+  }
+
+  static func isIdentifierContinue(int32 value): bool {
+    return isIdentifierStart(value) || (value >= 48 && value <= 57);
+  }
+
+  static func asciiCode(char value): int32 {
+    final string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    for (int32 index = 0; index < alphabet::length; index++) {
+      if (value != alphabet[index]) { continue; }
+      if (index < 26) { return 65 + index; }
+      if (index < 52) { return 97 + index - 26; }
+      if (index < 62) { return 48 + index - 52; }
+      return 95;
+    }
+    return -1;
+  }
+}

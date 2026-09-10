@@ -1,0 +1,84 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::ParserFacts;
+import frontend.parser::TypeParser;
+import frontend.parser.storage::ParameterSyntaxBuilder;
+import frontend.source::SourceRange;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(DeclarationParseState state): ParameterSyntaxSequence
+      throws StateError {
+    final var parameters = ParameterSyntaxBuilder();
+    if (!state.Match(TokenKind.kLeftParen)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedParameterOpen,
+                          state.Current().GetRange(), null);
+      return parameters.Finish();
+    }
+
+    while (!state.AtEnd() &&
+           state.Current().GetKind() != TokenKind.kRightParen &&
+           state.Current().GetKind() != TokenKind.kLeftBrace) {
+      final int32 begin = state.GetIndex();
+      final int32 diagnosticCount = state.GetDiagnosticCount();
+      final bool finalBinding = state.Match(TokenKind.kKwFinal);
+      final TypeSyntax? parsedType = TypeParser.Parse(state);
+      if (parsedType == null) {
+        synchronize(state);
+        if (state.Match(TokenKind.kComma)) { continue; }
+        break;
+      }
+
+      if (state.Current().GetKind() != TokenKind.kIdentifier) {
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedParameterName,
+                            state.Current().GetRange(), null);
+        synchronize(state);
+        if (state.Match(TokenKind.kComma)) { continue; }
+        break;
+      }
+
+      final Token name = state.Advance();
+      final SourceRange range = state.RangeFrom(begin, state.GetIndex());
+      parameters.Add(ParameterSyntax(
+          parsedType, name.GetSpan(), finalBinding, range,
+          state.GetDiagnosticCount() == diagnosticCount));
+
+      if (state.Match(TokenKind.kComma)) {
+        if (state.Current().GetKind() == TokenKind.kRightParen) {
+          state.AddDiagnostic(ParseDiagnosticKind.kExpectedParameter,
+                              state.Current().GetRange(), null);
+        }
+        continue;
+      }
+      if (state.Current().GetKind() != TokenKind.kRightParen) {
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedParameterSeparator,
+                            state.Current().GetRange(), null);
+        if (state.Current().GetKind() == TokenKind.kKwFinal ||
+            ParserFacts.CanStartType(state.Current().GetKind())) {
+          continue;
+        }
+        synchronize(state);
+        state.Match(TokenKind.kComma);
+      }
+    }
+
+    if (!state.Match(TokenKind.kRightParen)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedParameterClose,
+                          state.Current().GetRange(), null);
+    }
+    return parameters.Finish();
+  }
+
+  static func synchronize(DeclarationParseState state) throws StateError {
+    while (!state.AtEnd() &&
+           state.Current().GetKind() != TokenKind.kComma &&
+           state.Current().GetKind() != TokenKind.kRightParen &&
+           state.Current().GetKind() != TokenKind.kLeftBrace) {
+      state.Advance();
+    }
+  }
+}

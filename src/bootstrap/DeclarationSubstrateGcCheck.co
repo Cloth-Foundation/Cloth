@@ -1,0 +1,38 @@
+import bootstrap::DeclarationSubstrateFixture;
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticBuilder;
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationResult;
+import frontend.parser::MemberOutlineBuilder;
+
+class {
+  static func Run(): int32 throws StateError {
+    for (int32 iteration = 0; iteration < 256; iteration++) {
+      final DeclarationSubstrateFixture fixture =
+          DeclarationSubstrateFixture.Build();
+      final DeclarationResult result = fixture.GetResult();
+      final DeclarationOutline member = result.GetMembers().Get(0);
+      final var members = MemberOutlineBuilder();
+      final var diagnostics = ParseDiagnosticBuilder();
+      for (int32 index = 0; index < 65; index++) {
+        members.Add(member);
+        diagnostics.Add(ParseDiagnostic(
+            ParseDiagnosticKind.kExpectedDeclaration, member.GetRange(),
+            null));
+      }
+      final var memberValues = members.Finish();
+      final var diagnosticValues = diagnostics.Finish();
+      final byte[] pressure = byte[:4096];
+      pressure[0] = byte(iteration);
+      if (result.GetSource().GetByte(5) != 77 ||
+          result.GetTokens().GetCount() != 7 ||
+          result.GetMembers().Get(0).GetName().GetByte(0) != 77 ||
+          memberValues.GetCount() != 65 ||
+          diagnosticValues.GetCount() != 65 || pressure[0] > 255) {
+        return 471;
+      }
+    }
+    return 0;
+  }
+}

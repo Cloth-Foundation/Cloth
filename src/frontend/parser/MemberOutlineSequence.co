@@ -1,0 +1,53 @@
+import frontend.parser::DeclarationOutline;
+import frontend.parser.storage::MemberOutlinePage;
+
+class {
+  final DeclarationOutline?[] values;
+
+  _MemberOutlineSequence(DeclarationOutline?[] values) {
+    self.values = values;
+  }
+
+  static func Build(MemberOutlinePage? first,
+                    int32 count): MemberOutlineSequence throws StateError {
+    if (count < 0 || (count == 0 && first != null) ||
+        (count > 0 && first == null)) {
+      throw StateError("invalid member outline sequence shape");
+    }
+    final DeclarationOutline?[] values = DeclarationOutline?[:count];
+    MemberOutlinePage? current = first;
+    int32 output = 0;
+    int32 previousOffset = -1;
+    while (current != null) {
+      final MemberOutlinePage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= count) {
+          throw StateError("member outline sequence exceeds its count");
+        }
+        final DeclarationOutline value = page.Get(index);
+        final int32 offset = value.GetRange().GetBegin().GetOffset();
+        if (offset < previousOffset) {
+          throw StateError("member outlines are not in source order");
+        }
+        values[output] = value;
+        output++;
+        previousOffset = offset;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != count) {
+      throw StateError("member outline sequence does not match its count");
+    }
+    return MemberOutlineSequence(values);
+  }
+
+  func Get(int32 index): DeclarationOutline throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("member outline sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

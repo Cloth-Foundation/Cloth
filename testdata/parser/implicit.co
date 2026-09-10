@@ -1,0 +1,13 @@
+import util::Helper;
+import util.math.*;
+
+static final int64 Count = Make(1);
+final string?[]? Names;
+
+func Run(final int32 count, string?[] values): bool throws Failure, Other {
+  return count > 0;
+}
+
+Sample(int32 value): super(value) {
+  Count = value;
+}

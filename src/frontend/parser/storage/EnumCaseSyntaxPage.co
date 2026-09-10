@@ -1,0 +1,52 @@
+import frontend.syntax.tree::EnumCaseSyntax;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final EnumCaseSyntax?[] values;
+  int32 count;
+  EnumCaseSyntaxPage? next;
+  bool frozen;
+
+  EnumCaseSyntaxPage() {
+    self.values = EnumCaseSyntax?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(EnumCaseSyntax value): void throws StateError {
+    if (self.frozen) { throw StateError("enum case syntax page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("enum case syntax page is full");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): EnumCaseSyntax throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("enum case syntax page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func Link(EnumCaseSyntaxPage next): void throws StateError {
+    if (self.frozen) { throw StateError("enum case syntax page is sealed"); }
+    if (self.next != null) {
+      throw StateError("enum case syntax page is already linked");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) {
+      throw StateError("enum case syntax page is already sealed");
+    }
+    self.frozen = true;
+  }
+
+  func IsFull(): bool { return self.count == self.values::length; }
+  func GetCount(): int32 { return self.count; }
+  func GetNext(): EnumCaseSyntaxPage? { return self.next; }
+}

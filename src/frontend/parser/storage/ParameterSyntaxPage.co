@@ -1,0 +1,52 @@
+import frontend.syntax.declaration::ParameterSyntax;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final ParameterSyntax?[] values;
+  int32 count;
+  ParameterSyntaxPage? next;
+  bool frozen;
+
+  ParameterSyntaxPage() {
+    self.values = ParameterSyntax?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(ParameterSyntax value): void throws StateError {
+    if (self.frozen) { throw StateError("parameter syntax page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("parameter syntax page is full");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): ParameterSyntax throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("parameter syntax page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func Link(ParameterSyntaxPage next): void throws StateError {
+    if (self.frozen) { throw StateError("parameter syntax page is sealed"); }
+    if (self.next != null) {
+      throw StateError("parameter syntax page is already linked");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) {
+      throw StateError("parameter syntax page is already sealed");
+    }
+    self.frozen = true;
+  }
+
+  func IsFull(): bool { return self.count == self.values::length; }
+  func GetCount(): int32 { return self.count; }
+  func GetNext(): ParameterSyntaxPage? { return self.next; }
+}

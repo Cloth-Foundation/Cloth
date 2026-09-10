@@ -1,0 +1,14 @@
+import frontend.syntax.tree::TypeSyntaxSequence;
+
+class {
+  final TypeSyntaxSequence types;
+  final bool explicitClause;
+
+  ThrowsClauseResult(TypeSyntaxSequence types, bool explicitClause) {
+    self.types = types;
+    self.explicitClause = explicitClause;
+  }
+
+  func GetTypes(): TypeSyntaxSequence { return self.types; }
+  func IsExplicit(): bool { return self.explicitClause; }
+}

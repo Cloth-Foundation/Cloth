@@ -1,0 +1,61 @@
+import frontend.source::SourceCursor;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  static func Verify(SourceFile source,
+                     TokenBuffer tokens): void throws StateError {
+    if (tokens.GetCount() < 1 ||
+        tokens.GetCount() != tokens.GetCapacity()) {
+      throw StateError("parser token buffer is not immutable and complete");
+    }
+
+    final var cursor = SourceCursor(source);
+    int32 previousEnd = 0;
+    for (int32 index = 0; index < tokens.GetCount(); index++) {
+      final Token token = tokens.Get(index);
+      final SourceSpan span = token.GetSpan();
+      final SourceRange range = token.GetRange();
+      final bool eof = token.GetKind() == TokenKind.kEof;
+      while (cursor.GetOffset() < span.GetBeginOffset()) {
+        cursor.Advance();
+      }
+      final SourceLocation expectedBegin = cursor.GetLocation();
+      while (cursor.GetOffset() < span.GetEndOffset()) {
+        cursor.Advance();
+      }
+      final SourceLocation expectedEnd = cursor.GetLocation();
+      if (span.GetSource() != source ||
+          range.GetBegin().GetFile() != source.GetPath() ||
+          range.GetEnd().GetFile() != source.GetPath() ||
+          span.GetBeginOffset() != range.GetBegin().GetOffset() ||
+          span.GetEndOffset() != range.GetEnd().GetOffset() ||
+          span.GetBeginOffset() < previousEnd ||
+          range.GetBegin().GetLine() != expectedBegin.GetLine() ||
+          range.GetBegin().GetColumn() != expectedBegin.GetColumn() ||
+          range.GetEnd().GetLine() != expectedEnd.GetLine() ||
+          range.GetEnd().GetColumn() != expectedEnd.GetColumn()) {
+        throw StateError("parser token does not belong to its source");
+      }
+      if (eof != (index == tokens.GetCount() - 1)) {
+        throw StateError("parser token buffer must end with exactly one eof");
+      }
+      if (eof) {
+        if (span.GetLength() != 0 ||
+            span.GetBeginOffset() != source.GetLength()) {
+          throw StateError("parser eof token does not end its source");
+        }
+      } else {
+        if (span.GetLength() == 0) {
+          throw StateError("parser token has an empty source span");
+        }
+      }
+      previousEnd = span.GetEndOffset();
+    }
+  }
+}

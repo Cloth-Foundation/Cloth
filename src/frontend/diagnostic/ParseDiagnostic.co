@@ -1,0 +1,19 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.source::SourceRange;
+
+class {
+  final ParseDiagnosticKind kind;
+  final SourceRange range;
+  final SourceRange? relatedRange;
+
+  ParseDiagnostic(ParseDiagnosticKind kind, SourceRange range,
+                  SourceRange? relatedRange) {
+    self.kind = kind;
+    self.range = range;
+    self.relatedRange = relatedRange;
+  }
+
+  func GetKind(): ParseDiagnosticKind { return self.kind; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetRelatedRange(): SourceRange? { return self.relatedRange; }
+}

@@ -1,0 +1,140 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticBuilder;
+import frontend.diagnostic::ParseDiagnosticPage;
+import frontend.diagnostic::ParseDiagnosticSequence;
+
+class {
+  ParseDiagnosticPage? first;
+  ParseDiagnosticPage? last;
+  int32 count;
+  bool finished;
+
+  ParseDiagnosticCollector() {
+    self.first = null;
+    self.last = null;
+    self.count = 0;
+    self.finished = false;
+  }
+
+  func Add(ParseDiagnostic value): void throws StateError {
+    if (self.finished) {
+      throw StateError("parse diagnostic collector is already finished");
+    }
+    if (self.count == 2147483647) {
+      throw StateError("parse diagnostic count overflow");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final ParseDiagnosticPage page = ParseDiagnosticPage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    self.count++;
+  }
+
+  func Finish(): ParseDiagnosticSequence throws StateError {
+    if (self.finished) {
+      throw StateError("parse diagnostic collector is already finished");
+    }
+    self.finished = true;
+    ParseDiagnostic?[] values = copyValues();
+    if (self.count > 1) { values = stableSort(values); }
+    final var builder = ParseDiagnosticBuilder();
+    for (int32 index = 0; index < self.count; index++) {
+      builder.Add(get(values, index));
+    }
+    return builder.Finish();
+  }
+
+  func GetCount(): int32 { return self.count; }
+
+  static func get(ParseDiagnostic?[] values,
+                  int32 index): ParseDiagnostic throws StateError {
+    final ParseDiagnostic? value = values[index];
+    if (value == null) {
+      throw StateError("parse diagnostic collector contains null");
+    }
+    return value;
+  }
+
+  func copyValues(): ParseDiagnostic?[] throws StateError {
+    final ParseDiagnostic?[] values = ParseDiagnostic?[:self.count];
+    ParseDiagnosticPage? current = self.first;
+    int32 output = 0;
+    while (current != null) {
+      final ParseDiagnosticPage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= self.count) {
+          throw StateError("parse diagnostic collector exceeds its count");
+        }
+        values[output] = page.Get(index);
+        output++;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != self.count) {
+      throw StateError("parse diagnostic collector does not match its count");
+    }
+    return values;
+  }
+
+  static func stableSort(
+      ParseDiagnostic?[] values): ParseDiagnostic?[] throws StateError {
+    final int32 count = values::length;
+    ParseDiagnostic?[] input = values;
+    ParseDiagnostic?[] output = ParseDiagnostic?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final ParseDiagnostic?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) {
+        width = count;
+      } else {
+        width *= 2;
+      }
+    }
+    return input;
+  }
+
+  static func merge(ParseDiagnostic?[] input, ParseDiagnostic?[] output,
+                    int32 begin, int32 middle,
+                    int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    int32 destination = begin;
+    while (destination < end) {
+      if (right >= end ||
+          (left < middle && offset(input, left) <= offset(input, right))) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+      destination++;
+    }
+  }
+
+  static func offset(ParseDiagnostic?[] values,
+                     int32 index): int32 throws StateError {
+    return get(values, index).GetRange().GetBegin().GetOffset();
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

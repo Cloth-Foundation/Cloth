@@ -1,0 +1,35 @@
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.parser::DeclarationParser;
+import frontend.parser::DeclarationResult;
+import frontend.source::SourceFile;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    for (int32 iteration = 0; iteration < 256; iteration++) {
+      final DeclarationResult result = parse();
+      final byte[] pressure = byte[:8192];
+      pressure[0] = byte(iteration);
+      if (!result.IsValid() || result.GetMembers().GetCount() != 4 ||
+          result.GetFile().GetImports().GetCount() != 2 ||
+          result.GetMembers().Get(2).GetParameters().GetCount() != 2 ||
+          result.GetMembers().Get(2).GetName().GetByte(0) != 82 ||
+          result.GetMembers().Get(3).GetBodyTokens() == null ||
+          pressure[0] > 255) {
+        return 490;
+      }
+    }
+    return 0;
+  }
+
+  static func parse(): DeclarationResult throws IoError, StateError {
+    final SourceFile source =
+        SourceFile.Load("testdata/parser/implicit.co");
+    final LexerResult lexer = Lexer.Lex(source);
+    if (lexer.GetDiagnostics().GetCount() != 0) {
+      throw StateError("declaration GC fixture has lexical diagnostics");
+    }
+    return DeclarationParser.Parse(
+        source, lexer.GetTokens(), "Sample", "bootstrap.parser");
+  }
+}

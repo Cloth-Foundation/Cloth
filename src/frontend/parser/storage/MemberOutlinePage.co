@@ -1,0 +1,52 @@
+import frontend.parser::DeclarationOutline;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final DeclarationOutline?[] values;
+  int32 count;
+  MemberOutlinePage? next;
+  bool frozen;
+
+  MemberOutlinePage() {
+    self.values = DeclarationOutline?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(DeclarationOutline value): void throws StateError {
+    if (self.frozen) { throw StateError("member outline page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("member outline page is full");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): DeclarationOutline throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("member outline page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func Link(MemberOutlinePage next): void throws StateError {
+    if (self.frozen) { throw StateError("member outline page is sealed"); }
+    if (self.next != null) {
+      throw StateError("member outline page is already linked");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) {
+      throw StateError("member outline page is already sealed");
+    }
+    self.frozen = true;
+  }
+
+  func IsFull(): bool { return self.count == self.values::length; }
+  func GetCount(): int32 { return self.count; }
+  func GetNext(): MemberOutlinePage? { return self.next; }
+}

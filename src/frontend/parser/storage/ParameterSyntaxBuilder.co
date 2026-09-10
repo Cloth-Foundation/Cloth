@@ -1,0 +1,66 @@
+import frontend.parser.storage::ParameterSyntaxPage;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+
+class {
+  ParameterSyntaxPage? first;
+  ParameterSyntaxPage? last;
+  int32 count;
+  bool finished;
+
+  ParameterSyntaxBuilder() {
+    self.first = null;
+    self.last = null;
+    self.count = 0;
+    self.finished = false;
+  }
+
+  func Add(ParameterSyntax value): void throws StateError {
+    if (self.finished) {
+      throw StateError("parameter syntax builder is already finished");
+    }
+    if (self.count == 2147483647) {
+      throw StateError("parameter syntax count overflow");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final ParameterSyntaxPage page = ParameterSyntaxPage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    self.count++;
+  }
+
+  func Finish(): ParameterSyntaxSequence throws StateError {
+    if (self.finished) {
+      throw StateError("parameter syntax builder is already finished");
+    }
+    self.finished = true;
+    final ParameterSyntax?[] values = ParameterSyntax?[:self.count];
+    ParameterSyntaxPage? current = self.first;
+    int32 output = 0;
+    while (current != null) {
+      final ParameterSyntaxPage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= self.count) {
+          throw StateError("parameter syntax builder exceeds its count");
+        }
+        values[output] = page.Get(index);
+        output++;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != self.count) {
+      throw StateError("parameter syntax builder does not match its count");
+    }
+    return ParameterSyntaxSequence.Build(values);
+  }
+
+  func GetCount(): int32 { return self.count; }
+  func IsFinished(): bool { return self.finished; }
+}

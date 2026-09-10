@@ -1,0 +1,43 @@
+import frontend.parser::DeclarationParseState;
+import frontend.parser::ParserFacts;
+import frontend.token::TokenKind;
+
+class {
+  static func LooksLikeFileType(
+      DeclarationParseState state): bool throws StateError {
+    int32 offset = 0;
+    while (ParserFacts.IsFileModifier(state.Peek(offset).GetKind())) {
+      offset++;
+    }
+    return ParserFacts.IsNestedType(state.Peek(offset).GetKind());
+  }
+
+  static func LooksLikeFunction(
+      DeclarationParseState state): bool throws StateError {
+    int32 offset = 0;
+    while (ParserFacts.IsFunctionModifier(state.Peek(offset).GetKind())) {
+      offset++;
+    }
+    return state.Peek(offset).GetKind() == TokenKind.kKwFunc;
+  }
+
+  static func LooksLikeMemberStart(
+      DeclarationParseState state): bool throws StateError {
+    final TokenKind kind = state.Current().GetKind();
+    if (kind == TokenKind.kKwFunc || kind == TokenKind.kKwFinal ||
+        kind == TokenKind.kKwStatic || kind == TokenKind.kKwOverride ||
+        kind == TokenKind.kKwAbstract || kind == TokenKind.kKwSealed ||
+        ParserFacts.IsNestedType(kind)) {
+      return true;
+    }
+    if (!ParserFacts.CanStartType(kind)) { return false; }
+    final TokenKind next = state.Peek(1).GetKind();
+    if (next == TokenKind.kIdentifier) { return true; }
+    if (kind == TokenKind.kIdentifier && next == TokenKind.kLeftParen) {
+      return true;
+    }
+    return next == TokenKind.kLeftBracket &&
+           state.Peek(2).GetKind() == TokenKind.kRightBracket &&
+           state.Peek(3).GetKind() == TokenKind.kIdentifier;
+  }
+}

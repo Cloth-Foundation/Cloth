@@ -1,0 +1,66 @@
+import frontend.parser.storage::ImportSyntaxPage;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+
+class {
+  ImportSyntaxPage? first;
+  ImportSyntaxPage? last;
+  int32 count;
+  bool finished;
+
+  ImportSyntaxBuilder() {
+    self.first = null;
+    self.last = null;
+    self.count = 0;
+    self.finished = false;
+  }
+
+  func Add(ImportSyntax value): void throws StateError {
+    if (self.finished) {
+      throw StateError("import syntax builder is already finished");
+    }
+    if (self.count == 2147483647) {
+      throw StateError("import syntax count overflow");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final ImportSyntaxPage page = ImportSyntaxPage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    self.count++;
+  }
+
+  func Finish(): ImportSyntaxSequence throws StateError {
+    if (self.finished) {
+      throw StateError("import syntax builder is already finished");
+    }
+    self.finished = true;
+    final ImportSyntax?[] values = ImportSyntax?[:self.count];
+    ImportSyntaxPage? current = self.first;
+    int32 output = 0;
+    while (current != null) {
+      final ImportSyntaxPage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= self.count) {
+          throw StateError("import syntax builder exceeds its count");
+        }
+        values[output] = page.Get(index);
+        output++;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != self.count) {
+      throw StateError("import syntax builder does not match its count");
+    }
+    return ImportSyntaxSequence.Build(values);
+  }
+
+  func GetCount(): int32 { return self.count; }
+  func IsFinished(): bool { return self.finished; }
+}

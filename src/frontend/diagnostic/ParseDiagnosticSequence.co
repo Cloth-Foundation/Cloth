@@ -1,0 +1,53 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticPage;
+
+class {
+  final ParseDiagnostic?[] values;
+
+  _ParseDiagnosticSequence(ParseDiagnostic?[] values) {
+    self.values = values;
+  }
+
+  static func Build(ParseDiagnosticPage? first,
+                    int32 count): ParseDiagnosticSequence throws StateError {
+    if (count < 0 || (count == 0 && first != null) ||
+        (count > 0 && first == null)) {
+      throw StateError("invalid parse diagnostic sequence shape");
+    }
+    final ParseDiagnostic?[] values = ParseDiagnostic?[:count];
+    ParseDiagnosticPage? current = first;
+    int32 output = 0;
+    int32 previousOffset = -1;
+    while (current != null) {
+      final ParseDiagnosticPage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        if (output >= count) {
+          throw StateError("parse diagnostic sequence exceeds its count");
+        }
+        final ParseDiagnostic value = page.Get(index);
+        final int32 offset = value.GetRange().GetBegin().GetOffset();
+        if (offset < previousOffset) {
+          throw StateError("parse diagnostics are not in source order");
+        }
+        values[output] = value;
+        output++;
+        previousOffset = offset;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != count) {
+      throw StateError("parse diagnostic sequence does not match its count");
+    }
+    return ParseDiagnosticSequence(values);
+  }
+
+  func Get(int32 index): ParseDiagnostic throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("parse diagnostic sequence index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

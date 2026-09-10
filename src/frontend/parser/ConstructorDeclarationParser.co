@@ -1,0 +1,42 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::DeferredRegionLocator;
+import frontend.parser::ParameterParser;
+import frontend.parser::SourceText;
+import frontend.parser::ThrowsClauseParser;
+import frontend.parser::ThrowsClauseResult;
+import frontend.parser::TokenIndexRange;
+import frontend.source::SourceRange;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(DeclarationParseState state) throws StateError {
+    final int32 diagnosticCount = state.GetDiagnosticCount();
+    final int32 begin = state.GetIndex();
+    final Token name = state.Advance();
+    if (!SourceText.IsConstructorName(name.GetSpan(), state.GetFileName())) {
+      state.AddDiagnostic(ParseDiagnosticKind.kInvalidConstructorName,
+                          name.GetRange(), null);
+    }
+    final ParameterSyntaxSequence parameters = ParameterParser.Parse(state);
+    final ThrowsClauseResult throwsClause = ThrowsClauseParser.Parse(state);
+
+    TokenIndexRange? initializer = null;
+    if (state.Match(TokenKind.kColon)) {
+      initializer =
+          DeferredRegionLocator.LocateConstructorInitializer(state);
+    }
+    final TokenIndexRange? body = DeferredRegionLocator.LocateBody(state);
+    final SourceRange range = state.RangeFrom(begin, state.GetIndex());
+    state.AddMember(DeclarationOutline.Build(
+        DeclarationKind.kConstructor, name.GetSpan(),
+        SourceText.VisibilityOfSpan(name.GetSpan()), null, parameters,
+        throwsClause.GetTypes(), throwsClause.IsExplicit(), false, false,
+        false, false, begin, null, initializer, body, range,
+        body != null && state.GetDiagnosticCount() == diagnosticCount));
+  }
+}

@@ -1,0 +1,176 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::MemberOutlineBuilder;
+import frontend.parser::MemberOutlineSequence;
+import frontend.parser::ParseDiagnosticCollector;
+import frontend.parser::TokenCursor;
+import frontend.parser.storage::EnumCaseSyntaxBuilder;
+import frontend.parser.storage::ImportSyntaxBuilder;
+import frontend.parser.storage::TypeSyntaxBuilder;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  final SourceFile source;
+  final TokenBuffer tokens;
+  final TokenCursor cursor;
+  final string fileName;
+  final string packageName;
+  final ImportSyntaxBuilder imports;
+  final TypeSyntaxBuilder interfaces;
+  final EnumCaseSyntaxBuilder enumCases;
+  final MemberOutlineBuilder members;
+  final ParseDiagnosticCollector diagnostics;
+  TypeSyntax? baseClass;
+  FileTypeKind fileTypeKind;
+  bool explicitDeclaration;
+  bool abstractType;
+  bool sealedType;
+  bool bodyStarted;
+  bool bodyClosed;
+  bool memberSeen;
+  bool valid;
+
+  _DeclarationParseState(SourceFile source, TokenBuffer tokens,
+                         TokenCursor cursor, string fileName,
+                         string packageName) {
+    self.source = source;
+    self.tokens = tokens;
+    self.cursor = cursor;
+    self.fileName = fileName;
+    self.packageName = packageName;
+    self.imports = ImportSyntaxBuilder();
+    self.interfaces = TypeSyntaxBuilder();
+    self.enumCases = EnumCaseSyntaxBuilder();
+    self.members = MemberOutlineBuilder();
+    self.diagnostics = ParseDiagnosticCollector();
+    self.baseClass = null;
+    self.fileTypeKind = FileTypeKind.kClass;
+    self.explicitDeclaration = false;
+    self.abstractType = false;
+    self.sealedType = false;
+    self.bodyStarted = false;
+    self.bodyClosed = false;
+    self.memberSeen = false;
+    self.valid = true;
+  }
+
+  static func Build(SourceFile source, TokenBuffer tokens, string fileName,
+                    string packageName): DeclarationParseState
+      throws StateError {
+    return DeclarationParseState(
+        source, tokens, TokenCursor.Build(source, tokens), fileName,
+        packageName);
+  }
+
+  func AddDiagnostic(ParseDiagnosticKind kind, SourceRange range,
+                     SourceRange? relatedRange): void throws StateError {
+    self.diagnostics.Add(ParseDiagnostic(kind, range, relatedRange));
+    self.valid = false;
+  }
+
+  func AddEnumCase(EnumCaseSyntax value): void throws StateError {
+    self.enumCases.Add(value);
+  }
+
+  func AddImport(ImportSyntax value): void throws StateError {
+    self.imports.Add(value);
+  }
+
+  func AddInterface(TypeSyntax value): void throws StateError {
+    self.interfaces.Add(value);
+  }
+
+  func AddMember(DeclarationOutline value): void throws StateError {
+    self.members.Add(value);
+  }
+
+  func Advance(): Token throws StateError { return self.cursor.Advance(); }
+  func AtEnd(): bool { return self.cursor.AtEnd(); }
+  func Current(): Token throws StateError { return self.cursor.Current(); }
+  func Peek(int32 lookahead): Token throws StateError {
+    return self.cursor.Peek(lookahead);
+  }
+  func Match(TokenKind kind): bool throws StateError {
+    return self.cursor.Match(kind);
+  }
+  func RequireProgress(int32 previous): void throws StateError {
+    self.cursor.RequireProgress(previous);
+  }
+
+  func FinishDiagnostics(): ParseDiagnosticSequence throws StateError {
+    return self.diagnostics.Finish();
+  }
+  func FinishEnumCases(): EnumCaseSyntaxSequence throws StateError {
+    return self.enumCases.Finish();
+  }
+  func FinishImports(): ImportSyntaxSequence throws StateError {
+    return self.imports.Finish();
+  }
+  func FinishInterfaces(): TypeSyntaxSequence throws StateError {
+    return self.interfaces.Finish();
+  }
+  func FinishMembers(): MemberOutlineSequence throws StateError {
+    return self.members.Finish();
+  }
+
+  func GetBaseClass(): TypeSyntax? { return self.baseClass; }
+  func GetDiagnosticCount(): int32 { return self.diagnostics.GetCount(); }
+  func GetEnumCaseCount(): int32 { return self.enumCases.GetCount(); }
+  func GetFileName(): string { return self.fileName; }
+  func GetFileTypeKind(): FileTypeKind { return self.fileTypeKind; }
+  func GetIndex(): int32 { return self.cursor.GetIndex(); }
+  func GetPackageName(): string { return self.packageName; }
+  func GetSource(): SourceFile { return self.source; }
+  func GetTokens(): TokenBuffer { return self.tokens; }
+  func HasBodyClosed(): bool { return self.bodyClosed; }
+  func HasBodyStarted(): bool { return self.bodyStarted; }
+  func HasExplicitDeclaration(): bool { return self.explicitDeclaration; }
+  func HasMember(): bool { return self.memberSeen; }
+  func IsAbstract(): bool { return self.abstractType; }
+  func IsSealed(): bool { return self.sealedType; }
+  func IsValid(): bool { return self.valid; }
+
+  func MarkBodyClosed() { self.bodyClosed = true; }
+  func MarkBodyStarted() { self.bodyStarted = true; }
+  func MarkInvalid() { self.valid = false; }
+  func MarkMember() { self.memberSeen = true; }
+
+  func SetBaseClass(TypeSyntax value) { self.baseClass = value; }
+  func SetFileType(FileTypeKind kind, bool abstractType,
+                   bool sealedType) {
+    self.fileTypeKind = kind;
+    self.abstractType = abstractType;
+    self.sealedType = sealedType;
+    self.explicitDeclaration = true;
+  }
+
+  func FileRange(): SourceRange throws StateError {
+    final SourceLocation end =
+        self.tokens.Get(self.tokens.GetCount() - 1).GetRange().GetEnd();
+    return SourceRange(SourceLocation(self.source.GetPath(), 0, 1, 1), end);
+  }
+
+  func RangeFrom(int32 begin, int32 end): SourceRange throws StateError {
+    if (begin < 0 || begin >= self.tokens.GetCount() - 1 ||
+        end <= begin || end > self.tokens.GetCount() - 1) {
+      throw StateError("invalid declaration parser source range");
+    }
+    return SourceRange(
+        self.tokens.Get(begin).GetRange().GetBegin(),
+        self.tokens.Get(end - 1).GetRange().GetEnd());
+  }
+}

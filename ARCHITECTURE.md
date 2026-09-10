@@ -8,7 +8,7 @@ behavior and checkpoint scope.
 
 ```text
 Main
-  -> frontend parser orchestration (after Stage 45)
+  -> frontend parser orchestration
        -> syntax storage and tree
             -> token and source data
        -> token and diagnostic data
@@ -41,7 +41,10 @@ src/
       statement/            Blocks, statements, loop and switch records
       storage/               Segmented arena and child-sequence construction
       tree/                  Root, types, imports, verification, and publication
+    parser/                  Declaration cursor, outlines, and publication
+      storage/               Typed segmented declaration construction
   testdata/lexer/            Exact byte inputs used by bootstrap checks
+  testdata/parser/           Declaration grammar and recovery fixtures
 ```
 
 Directories and files are added when their scheduled checkpoint needs them;
@@ -88,10 +91,15 @@ complete reachable graph before a parser result may retain the root.
 
 ### `frontend/parser`
 
-Owns the declaration and definition grammar passes. It consumes immutable
-tokens and creates syntax through the storage boundary; it does not own source,
-token, syntax, or semantic representation. Files enter this directory only
-when an approved parser implementation checkpoint requires them.
+Owns the declaration and definition grammar passes. The declaration pass
+verifies immutable token buffers, supplies bounded EOF-saturating cursors and
+half-open token intervals, parses declaration signatures, records exact
+deferred initializer and body intervals, and publishes only fully verified
+immutable results. Typed 64-slot builders handle unknown declaration counts;
+stable sorting provides deterministic diagnostics and `O(D log D)` duplicate
+validation. The parser consumes source, token, diagnostic, and grammar-neutral
+syntax data without changing their ownership. Definition grammar and complete
+syntax-tree publication remain deferred.
 
 ### `Main.co`
 
@@ -125,6 +133,8 @@ create catch-all files named `Utils`, `Common`, `Misc`, or `Helpers`.
 
 ## Current stage boundary
 
-Stage 44 lexer parity with the C++23 bootstrap is complete. Stage 45 completes
-the managed storage, grammar-neutral tree, verified publication boundary, and
-exit audit. Parser grammar remains deferred to a separately approved stage.
+Stage 44 lexer parity, Stage 45 syntax foundations, and the complete Stage 46
+self-hosted declaration pass are the current frontend baseline. Declaration
+results retain verified immutable outlines and exact deferred definition ranges.
+The C++ declaration pass remains authoritative until a separately approved
+definition pass and complete parser authority-transfer audit are complete.

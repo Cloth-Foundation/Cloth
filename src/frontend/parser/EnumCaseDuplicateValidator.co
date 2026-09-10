@@ -1,0 +1,100 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::DeclarationParseState;
+import frontend.parser::SourceText;
+import frontend.parser.storage::EnumCaseSyntaxBuilder;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+
+class {
+  static func Validate(EnumCaseSyntaxSequence input,
+                       DeclarationParseState state): EnumCaseSyntaxSequence
+      throws StateError {
+    final int32 count = input.GetCount();
+    int32[] order = int32[:count];
+    bool[] duplicate = bool[:count];
+    for (int32 index = 0; index < count; index++) { order[index] = index; }
+    if (count > 1) { order = sort(input, order); }
+
+    int32 groupBegin = 0;
+    while (groupBegin < count) {
+      final int32 firstIndex = order[groupBegin];
+      int32 groupEnd = groupBegin + 1;
+      while (groupEnd < count &&
+             SourceText.Compare(input.Get(firstIndex).GetName(),
+                                input.Get(order[groupEnd]).GetName()) == 0) {
+        duplicate[order[groupEnd]] = true;
+        state.AddDiagnostic(ParseDiagnosticKind.kDuplicateEnumCase,
+                            input.Get(order[groupEnd]).GetRange(),
+                            input.Get(firstIndex).GetRange());
+        groupEnd++;
+      }
+      groupBegin = groupEnd;
+    }
+
+    final var output = EnumCaseSyntaxBuilder();
+    for (int32 index = 0; index < count; index++) {
+      final EnumCaseSyntax value = input.Get(index);
+      output.Add(EnumCaseSyntax(value.GetName(), value.GetRange(),
+                                value.IsValid() && !duplicate[index]));
+    }
+    return output.Finish();
+  }
+
+  static func sort(EnumCaseSyntaxSequence input,
+                   int32[] values): int32[] throws StateError {
+    final int32 count = values::length;
+    int32[] source = values;
+    int32[] destination = int32[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, source, destination, begin, middle, end);
+        begin = end;
+      }
+      final int32[] swap = source;
+      source = destination;
+      destination = swap;
+      if (width > count / 2) {
+        width = count;
+      } else {
+        width *= 2;
+      }
+    }
+    return source;
+  }
+
+  static func merge(EnumCaseSyntaxSequence input, int32[] source,
+                    int32[] destination, int32 begin, int32 middle,
+                    int32 end) throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    int32 output = begin;
+    while (output < end) {
+      if (right >= end ||
+          (left < middle &&
+           lessOrEqual(input, source[left], source[right]))) {
+        destination[output] = source[left];
+        left++;
+      } else {
+        destination[output] = source[right];
+        right++;
+      }
+      output++;
+    }
+  }
+
+  static func lessOrEqual(EnumCaseSyntaxSequence input, int32 left,
+                          int32 right): bool throws StateError {
+    final int32 comparison = SourceText.Compare(
+        input.Get(left).GetName(), input.Get(right).GetName());
+    return comparison < 0 || (comparison == 0 && left <= right);
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

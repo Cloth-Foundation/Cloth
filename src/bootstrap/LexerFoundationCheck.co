@@ -147,7 +147,7 @@ class {
         eof.GetSpan().GetBeginOffset() != source.GetLength()) {
       return 32;
     }
-    if (location.GetLine() != 115 || location.GetColumn() != 2) {
+    if (location.GetLine() != 116 || location.GetColumn() != 1) {
       return 33;
     }
     return 0;

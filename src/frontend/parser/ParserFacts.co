@@ -1,0 +1,34 @@
+import frontend.token::TokenKind;
+
+class {
+  static func IsPrimitiveType(TokenKind kind): bool {
+    return kind == TokenKind.kKwInt || kind == TokenKind.kKwInt8 ||
+           kind == TokenKind.kKwInt16 || kind == TokenKind.kKwInt32 ||
+           kind == TokenKind.kKwInt64 || kind == TokenKind.kKwUint ||
+           kind == TokenKind.kKwUint8 || kind == TokenKind.kKwUint16 ||
+           kind == TokenKind.kKwUint32 || kind == TokenKind.kKwUint64 ||
+           kind == TokenKind.kKwFloat || kind == TokenKind.kKwFloat32 ||
+           kind == TokenKind.kKwFloat64 || kind == TokenKind.kKwBool ||
+           kind == TokenKind.kKwChar || kind == TokenKind.kKwByte ||
+           kind == TokenKind.kKwVoid || kind == TokenKind.kKwObject;
+  }
+
+  static func CanStartType(TokenKind kind): bool {
+    return kind == TokenKind.kIdentifier || IsPrimitiveType(kind);
+  }
+
+  static func IsNestedType(TokenKind kind): bool {
+    return kind == TokenKind.kKwStruct || kind == TokenKind.kKwClass ||
+           kind == TokenKind.kKwInterface || kind == TokenKind.kKwEnum ||
+           kind == TokenKind.kKwError;
+  }
+
+  static func IsFileModifier(TokenKind kind): bool {
+    return kind == TokenKind.kKwAbstract || kind == TokenKind.kKwSealed;
+  }
+
+  static func IsFunctionModifier(TokenKind kind): bool {
+    return kind == TokenKind.kKwAbstract || kind == TokenKind.kKwOverride ||
+           kind == TokenKind.kKwStatic || kind == TokenKind.kKwFinal;
+  }
+}

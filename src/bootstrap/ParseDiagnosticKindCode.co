@@ -1,0 +1,68 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+
+class {
+  static func Get(ParseDiagnosticKind kind): int32 throws StateError {
+    if (kind == ParseDiagnosticKind.kInvalidFileName) { return 0; }
+    if (kind == ParseDiagnosticKind.kExpectedDeclaration) { return 1; }
+    if (kind == ParseDiagnosticKind.kMisplacedImport) { return 2; }
+    if (kind == ParseDiagnosticKind.kExpectedImportName) { return 3; }
+    if (kind == ParseDiagnosticKind.kExpectedImportType) { return 4; }
+    if (kind == ParseDiagnosticKind.kExpectedImportPathContinuation) {
+      return 5;
+    }
+    if (kind == ParseDiagnosticKind.kReservedStandardLibraryRoot) { return 6; }
+    if (kind == ParseDiagnosticKind.kReservedImportAlias) { return 7; }
+    if (kind == ParseDiagnosticKind.kExpectedImportAlias) { return 8; }
+    if (kind == ParseDiagnosticKind.kWildcardImportAlias) { return 9; }
+    if (kind == ParseDiagnosticKind.kExpectedImportTerminator) { return 10; }
+    if (kind == ParseDiagnosticKind.kDuplicateFileModifier) { return 11; }
+    if (kind == ParseDiagnosticKind.kExpectedFileType) { return 12; }
+    if (kind == ParseDiagnosticKind.kInvalidFileModifier) { return 13; }
+    if (kind == ParseDiagnosticKind.kRepeatedFileName) { return 14; }
+    if (kind == ParseDiagnosticKind.kExpectedBaseType) { return 15; }
+    if (kind == ParseDiagnosticKind.kExpectedInterfaceType) { return 16; }
+    if (kind == ParseDiagnosticKind.kExpectedFileBody) { return 17; }
+    if (kind == ParseDiagnosticKind.kExpectedFileClose) { return 18; }
+    if (kind == ParseDiagnosticKind.kExpectedFileEnd) { return 19; }
+    if (kind == ParseDiagnosticKind.kExpectedEnumCase) { return 20; }
+    if (kind == ParseDiagnosticKind.kDuplicateEnumCase) { return 21; }
+    if (kind == ParseDiagnosticKind.kEnumCaseLimit) { return 22; }
+    if (kind == ParseDiagnosticKind.kEmptyEnum) { return 23; }
+    if (kind == ParseDiagnosticKind.kExpectedEnumSeparator) { return 24; }
+    if (kind == ParseDiagnosticKind.kExpectedType) { return 25; }
+    if (kind == ParseDiagnosticKind.kRepeatedNullability) { return 26; }
+    if (kind == ParseDiagnosticKind.kMultidimensionalArray) { return 27; }
+    if (kind == ParseDiagnosticKind.kExpectedArrayClose) { return 28; }
+    if (kind == ParseDiagnosticKind.kExpectedParameterOpen) { return 29; }
+    if (kind == ParseDiagnosticKind.kExpectedParameterName) { return 30; }
+    if (kind == ParseDiagnosticKind.kExpectedParameterSeparator) { return 31; }
+    if (kind == ParseDiagnosticKind.kExpectedParameter) { return 32; }
+    if (kind == ParseDiagnosticKind.kExpectedParameterClose) { return 33; }
+    if (kind == ParseDiagnosticKind.kExpectedFieldName) { return 34; }
+    if (kind == ParseDiagnosticKind.kExpectedFieldInitializer) { return 35; }
+    if (kind == ParseDiagnosticKind.kExpectedFieldTerminator) { return 36; }
+    if (kind == ParseDiagnosticKind.kDuplicateFunctionModifier) { return 37; }
+    if (kind == ParseDiagnosticKind.kInvalidInterfaceFunctionModifier) {
+      return 38;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedFunc) { return 39; }
+    if (kind == ParseDiagnosticKind.kExpectedFunctionName) { return 40; }
+    if (kind == ParseDiagnosticKind.kAbstractFunctionBody) { return 41; }
+    if (kind == ParseDiagnosticKind.kExpectedAbstractTerminator) { return 42; }
+    if (kind == ParseDiagnosticKind.kExpectedBody) { return 43; }
+    if (kind == ParseDiagnosticKind.kUnterminatedBody) { return 44; }
+    if (kind == ParseDiagnosticKind.kExpectedThrowsType) { return 45; }
+    if (kind == ParseDiagnosticKind.kExpectedThrowsSeparatorType) { return 46; }
+    if (kind == ParseDiagnosticKind.kInvalidConstructorName) { return 47; }
+    if (kind == ParseDiagnosticKind.kInterfaceConstructor) { return 48; }
+    if (kind == ParseDiagnosticKind.kInterfaceField) { return 49; }
+    if (kind == ParseDiagnosticKind.kExpectedConstructorInitializer) {
+      return 50;
+    }
+    if (kind == ParseDiagnosticKind.kMemberConflict) { return 51; }
+    if (kind == ParseDiagnosticKind.kDuplicateCallableSignature) { return 52; }
+    if (kind == ParseDiagnosticKind.kNestedTypeUnsupported) { return 53; }
+    if (kind == ParseDiagnosticKind.kResourceLimit) { return 54; }
+    throw StateError("unknown parse diagnostic kind");
+  }
+}

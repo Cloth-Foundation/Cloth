@@ -1,0 +1,6 @@
+int32 Value;
+func Read(int32 value): int32 { return value; }
+func Read(int32 value): int32 { return value; }
+Duplicate() {}
+duplicate() {}
+_Duplicate(string value) {}

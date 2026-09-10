@@ -1,0 +1,52 @@
+import frontend.syntax.tree::ImportSyntax;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final ImportSyntax?[] values;
+  int32 count;
+  ImportSyntaxPage? next;
+  bool frozen;
+
+  ImportSyntaxPage() {
+    self.values = ImportSyntax?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(ImportSyntax value): void throws StateError {
+    if (self.frozen) { throw StateError("import syntax page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("import syntax page is full");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): ImportSyntax throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("import syntax page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func Link(ImportSyntaxPage next): void throws StateError {
+    if (self.frozen) { throw StateError("import syntax page is sealed"); }
+    if (self.next != null) {
+      throw StateError("import syntax page is already linked");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) {
+      throw StateError("import syntax page is already sealed");
+    }
+    self.frozen = true;
+  }
+
+  func IsFull(): bool { return self.count == self.values::length; }
+  func GetCount(): int32 { return self.count; }
+  func GetNext(): ImportSyntaxPage? { return self.next; }
+}
