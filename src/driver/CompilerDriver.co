@@ -1,0 +1,81 @@
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.parser.declaration::DeclarationParser;
+import frontend.parser.declaration::DeclarationResult;
+import frontend.parser.definition::DefinitionParser;
+import frontend.parser.definition::DefinitionResult;
+import frontend.source::SourceFile;
+
+class {
+  static func Run(string[] args): int32 throws IoError, StateError {
+    if (args::length == 1 &&
+        (args[0] == "--help" || args[0] == "-h")) {
+      printUsage();
+      return 0;
+    }
+    if (args::length == 1 && args[0] == "--version") {
+      println("clothc 0.0.1");
+      return 0;
+    }
+    if (args::length == 2 && args[0] == "check") {
+      return checkFile(args[1]);
+    }
+
+    println("clothc: expected 'check <file.co>'");
+    printUsage();
+    return 2;
+  }
+
+  static func checkFile(string path): int32 throws IoError, StateError {
+    final string name = fileName(path);
+    if (name::isEmpty) {
+      println("clothc: source path must name a .co file");
+      return 2;
+    }
+
+    final SourceFile source = SourceFile.Load(path);
+    final LexerResult lexed = Lexer.Lex(source);
+    if (lexed.GetDiagnostics().GetCount() != 0) {
+      println(path + ": error: lexical analysis failed");
+      println(lexed.GetDiagnostics().GetCount());
+      return 1;
+    }
+
+    final DeclarationResult declaration = DeclarationParser.Parse(
+        source, lexed.GetTokens(), name, "main");
+    final DefinitionResult definition =
+        DefinitionParser.Parse(declaration, null);
+    if (!definition.IsValid()) {
+      println(path + ": error: syntax analysis failed");
+      println(definition.GetDiagnostics().GetCount());
+      return 1;
+    }
+    return 0;
+  }
+
+  static func fileName(string path): string {
+    if (path::length < 4 ||
+        path::slice(path::length - 3, path::length) != ".co") {
+      return "";
+    }
+    int32 begin = 0;
+    int32 end = path::length;
+    for (int32 index = 0; index < path::length; index++) {
+      final char value = path[index];
+      if (value == '/' || value == '\\') {
+        begin = index + 1;
+        end = path::length;
+      } else {
+        if (value == '.') { end = index; }
+      }
+    }
+    if (end <= begin) { return ""; }
+    return path::slice(begin, end);
+  }
+
+  static func printUsage(): void {
+    println("Usage: clothc check <file.co>");
+    println("       clothc --help");
+    println("       clothc --version");
+  }
+}

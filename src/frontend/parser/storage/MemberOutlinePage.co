@@ -1,4 +1,4 @@
-import frontend.parser::DeclarationOutline;
+import frontend.parser.declaration::DeclarationOutline;
 
 class {
   static final int32 pageCapacity = 64;

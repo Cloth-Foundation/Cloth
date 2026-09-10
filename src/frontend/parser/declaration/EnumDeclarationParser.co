@@ -1,0 +1,61 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser.declaration::DeclarationParseState;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func ParseCases(DeclarationParseState state) throws StateError {
+    bool limitReported = false;
+    while (!state.AtEnd() &&
+           state.Current().GetKind() != TokenKind.kRightBrace) {
+      final int32 before = state.GetIndex();
+      if (state.Current().GetKind() == TokenKind.kIdentifier) {
+        final Token name = state.Advance();
+        if (state.GetEnumCaseCount() == 65536) {
+          if (!limitReported) {
+            state.AddDiagnostic(ParseDiagnosticKind.kEnumCaseLimit,
+                                name.GetRange(), null);
+            limitReported = true;
+          }
+        } else {
+          state.AddEnumCase(
+              EnumCaseSyntax(name.GetSpan(), name.GetRange(), true));
+        }
+        if (state.Current().GetKind() == TokenKind.kRightBrace ||
+            state.Match(TokenKind.kComma)) {
+          continue;
+        }
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedEnumSeparator,
+                            state.Current().GetRange(), null);
+      } else {
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedEnumCase,
+                            state.Current().GetRange(), null);
+      }
+      synchronize(state);
+      state.Match(TokenKind.kComma);
+      state.RequireProgress(before);
+    }
+    if (state.GetEnumCaseCount() == 0) {
+      state.AddDiagnostic(ParseDiagnosticKind.kEmptyEnum,
+                          state.Current().GetRange(), null);
+    }
+  }
+
+  static func synchronize(DeclarationParseState state) throws StateError {
+    int32 braceDepth = 0;
+    while (!state.AtEnd()) {
+      final TokenKind kind = state.Current().GetKind();
+      if (braceDepth == 0 &&
+          (kind == TokenKind.kComma || kind == TokenKind.kRightBrace)) {
+        return;
+      }
+      if (kind == TokenKind.kLeftBrace) { braceDepth++; }
+      if (kind == TokenKind.kRightBrace && braceDepth != 0) {
+        braceDepth--;
+      }
+      state.Advance();
+    }
+  }
+}

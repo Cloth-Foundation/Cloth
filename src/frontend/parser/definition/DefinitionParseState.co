@@ -1,0 +1,31 @@
+import frontend.parser.support::ConstantParseBudget;
+import frontend.parser.support::ParseDiagnosticCollector;
+import frontend.syntax.storage::SyntaxStorage;
+
+class {
+  final SyntaxStorage storage;
+  final ParseDiagnosticCollector diagnostics;
+  final ConstantParseBudget constantBudget;
+  bool declarationLimitReported;
+
+  DefinitionParseState(ConstantParseBudget? constantBudget) {
+    self.storage = SyntaxStorage();
+    self.diagnostics = ParseDiagnosticCollector();
+    if (constantBudget == null) {
+      self.constantBudget = ConstantParseBudget();
+    } else {
+      self.constantBudget = constantBudget;
+    }
+    self.declarationLimitReported = false;
+  }
+
+  func GetStorage(): SyntaxStorage { return self.storage; }
+  func GetDiagnostics(): ParseDiagnosticCollector { return self.diagnostics; }
+  func GetConstantBudget(): ConstantParseBudget { return self.constantBudget; }
+
+  func TakeDeclarationLimitDiagnostic(): bool {
+    if (self.declarationLimitReported) { return false; }
+    self.declarationLimitReported = true;
+    return true;
+  }
+}

@@ -1,0 +1,437 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.parser.declaration::DeclarationOutline;
+import frontend.parser.declaration::FileDeclarationOutline;
+import frontend.parser.declaration::MemberOutlineSequence;
+import frontend.parser.support::TokenBufferVerifier;
+import frontend.parser.support::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::ImportKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import frontend.syntax.tree::Visibility;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  static func Verify(
+      SourceFile source, TokenBuffer tokens, FileDeclarationOutline file,
+      MemberOutlineSequence members, ParseDiagnosticSequence diagnostics,
+      bool valid): void throws StateError {
+    TokenBufferVerifier.Verify(source, tokens);
+    verifyFileRange(source, tokens, file.GetRange());
+    verifyFileIdentity(file);
+
+    bool childrenValid = file.IsValid();
+    int32 previousEnd = file.GetRange().GetBegin().GetOffset();
+    for (int32 index = 0; index < file.GetImports().GetCount(); index++) {
+      final ImportSyntax value = file.GetImports().Get(index);
+      verifyImport(source, file.GetRange(), value);
+      if (value.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("declaration imports are not in source order");
+      }
+      previousEnd = value.GetRange().GetEnd().GetOffset();
+      if (!value.IsValid()) { childrenValid = false; }
+    }
+    if (!valid) { previousEnd = file.GetRange().GetBegin().GetOffset(); }
+
+    final TypeSyntax? baseClass = file.GetBaseClass();
+    if (baseClass != null) {
+      verifyType(source, file.GetRange(), baseClass);
+      if (baseClass.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("file type clauses are not in source order");
+      }
+      previousEnd = baseClass.GetRange().GetEnd().GetOffset();
+      if (!baseClass.IsValid()) { childrenValid = false; }
+    }
+    if (!verifyTypes(source, file.GetRange(), file.GetInterfaces())) {
+      childrenValid = false;
+    }
+    if (file.GetInterfaces().GetCount() != 0) {
+      if (file.GetInterfaces().Get(0).GetRange().GetBegin().GetOffset() <
+          previousEnd) {
+        throw StateError("file type clauses are not in source order");
+      }
+      previousEnd = file.GetInterfaces()
+                        .Get(file.GetInterfaces().GetCount() - 1)
+                        .GetRange()
+                        .GetEnd()
+                        .GetOffset();
+    }
+    if (!valid) { previousEnd = file.GetRange().GetBegin().GetOffset(); }
+    if (!verifyEnumCases(source, file.GetRange(), file)) {
+      childrenValid = false;
+    }
+    if (file.GetEnumCases().GetCount() != 0) {
+      if (file.GetEnumCases().Get(0).GetRange().GetBegin().GetOffset() <
+          previousEnd) {
+        throw StateError("enum cases overlap the file declaration header");
+      }
+      previousEnd = file.GetEnumCases()
+                        .Get(file.GetEnumCases().GetCount() - 1)
+                        .GetRange()
+                        .GetEnd()
+                        .GetOffset();
+    }
+    if (!valid) { previousEnd = file.GetRange().GetBegin().GetOffset(); }
+    if (!verifyMembers(source, tokens, file.GetRange(), file, members,
+                       previousEnd)) {
+      childrenValid = false;
+    }
+    verifyDiagnostics(source, file.GetRange(), diagnostics);
+
+    final bool expectedValid =
+        childrenValid && diagnostics.GetCount() == 0;
+    if (valid != expectedValid) {
+      throw StateError("declaration result validity is inconsistent");
+    }
+    verifyValidFileShape(file, members, valid);
+  }
+
+  static func verifyFileRange(SourceFile source, TokenBuffer tokens,
+                              SourceRange range): void throws StateError {
+    final var eof = tokens.Get(tokens.GetCount() - 1).GetRange().GetEnd();
+    if (range.GetBegin().GetFile() != source.GetPath() ||
+        range.GetEnd().GetFile() != source.GetPath() ||
+        range.GetBegin().GetOffset() != 0 ||
+        range.GetBegin().GetLine() != 1 ||
+        range.GetBegin().GetColumn() != 1 ||
+        range.GetEnd().GetOffset() != source.GetLength() ||
+        range.GetEnd().GetLine() != eof.GetLine() ||
+        range.GetEnd().GetColumn() != eof.GetColumn()) {
+      throw StateError("declaration file range does not cover its source");
+    }
+  }
+
+  static func verifyFileIdentity(
+      FileDeclarationOutline file): void throws StateError {
+    if (file.GetName()::length == 0 ||
+        file.GetPackageName()::length == 0 ||
+        file.GetQualifiedName() !=
+            file.GetPackageName() + "." + file.GetName() ||
+        file.GetVisibility() != visibilityOf(file.GetName())) {
+      throw StateError("declaration file identity is inconsistent");
+    }
+    if (!file.HasExplicitDeclaration() &&
+        (file.GetFileTypeKind() != FileTypeKind.kClass ||
+         file.GetBaseClass() != null || file.GetInterfaces().GetCount() != 0 ||
+         file.IsAbstract() || file.IsSealed())) {
+      throw StateError("implicit file declaration has explicit type state");
+    }
+    if (file.GetFileTypeKind() == FileTypeKind.kEnum &&
+        (file.GetBaseClass() != null || file.GetInterfaces().GetCount() != 0)) {
+      throw StateError("enum declaration has inheritance state");
+    }
+  }
+
+  static func verifyImport(SourceFile source, SourceRange parent,
+                           ImportSyntax value): void throws StateError {
+    verifyRange(source, parent, value.GetRange());
+    final SourceSpan? packageName = value.GetPackageName();
+    final SourceSpan? typeName = value.GetTypeName();
+    final SourceSpan? alias = value.GetAlias();
+    if (packageName != null) {
+      verifySpan(source, value.GetRange(), packageName);
+    }
+    if (typeName != null) { verifySpan(source, value.GetRange(), typeName); }
+    if (alias != null) { verifySpan(source, value.GetRange(), alias); }
+    if (value.IsValid() &&
+        ((value.GetKind() == ImportKind.kType && typeName == null) ||
+         (value.GetKind() == ImportKind.kWildcard &&
+          (packageName == null || typeName != null || alias != null)))) {
+      throw StateError("valid import declaration is incomplete");
+    }
+  }
+
+  static func verifyType(SourceFile source, SourceRange parent,
+                         TypeSyntax value): void throws StateError {
+    verifyRange(source, parent, value.GetRange());
+    verifySpan(source, value.GetRange(), value.GetName());
+    if (value.IsElementNullable() && !value.IsArray()) {
+      throw StateError("only array types may have nullable elements");
+    }
+    if (value.IsValid() && value.GetName().GetLength() == 0) {
+      throw StateError("valid type syntax has an empty name");
+    }
+  }
+
+  static func verifyTypes(SourceFile source, SourceRange parent,
+                          TypeSyntaxSequence values): bool throws StateError {
+    bool valid = true;
+    int32 previousEnd = parent.GetBegin().GetOffset();
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final TypeSyntax value = values.Get(index);
+      verifyType(source, parent, value);
+      if (value.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("type syntax sequence is not in source order");
+      }
+      previousEnd = value.GetRange().GetEnd().GetOffset();
+      if (!value.IsValid()) { valid = false; }
+    }
+    return valid;
+  }
+
+  static func verifyEnumCases(SourceFile source, SourceRange parent,
+                              FileDeclarationOutline file): bool
+      throws StateError {
+    bool valid = true;
+    int32 previousEnd = parent.GetBegin().GetOffset();
+    for (int32 index = 0; index < file.GetEnumCases().GetCount(); index++) {
+      final EnumCaseSyntax value = file.GetEnumCases().Get(index);
+      verifyRange(source, parent, value.GetRange());
+      verifySpan(source, value.GetRange(), value.GetName());
+      if (value.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("enum cases are not in source order");
+      }
+      previousEnd = value.GetRange().GetEnd().GetOffset();
+      if (!value.IsValid()) { valid = false; }
+    }
+    if (file.GetFileTypeKind() != FileTypeKind.kEnum &&
+        file.GetEnumCases().GetCount() != 0) {
+      throw StateError("non-enum declaration contains enum cases");
+    }
+    return valid;
+  }
+
+  static func verifyMembers(
+      SourceFile source, TokenBuffer tokens, SourceRange parent,
+      FileDeclarationOutline file, MemberOutlineSequence members,
+      int32 previousEnd): bool throws StateError {
+    bool valid = true;
+    for (int32 index = 0; index < members.GetCount(); index++) {
+      final DeclarationOutline value = members.Get(index);
+      verifyRange(source, parent, value.GetRange());
+      verifySpan(source, value.GetRange(), value.GetName());
+      if (value.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("member outlines overlap or are out of source order");
+      }
+      previousEnd = value.GetRange().GetEnd().GetOffset();
+      verifyMember(source, tokens, value);
+      if (!value.IsValid()) { valid = false; }
+    }
+    if (file.GetFileTypeKind() == FileTypeKind.kEnum &&
+        members.GetCount() != 0) {
+      throw StateError("enum declaration contains member outlines");
+    }
+    return valid;
+  }
+
+  static func verifyMember(SourceFile source, TokenBuffer tokens,
+                           DeclarationOutline value): void throws StateError {
+    final int32 eofIndex = tokens.GetCount() - 1;
+    if (value.GetBeginToken() >= eofIndex ||
+        tokens.Get(value.GetBeginToken()).GetRange().GetBegin().GetOffset() !=
+            value.GetRange().GetBegin().GetOffset() ||
+        value.GetVisibility() != visibilityOfSpan(value.GetName())) {
+      throw StateError("member outline token identity is inconsistent");
+    }
+    final TypeSyntax? declaredType = value.GetDeclaredType();
+    if (declaredType != null) {
+      verifyType(source, value.GetRange(), declaredType);
+      if (value.IsValid() && !declaredType.IsValid()) {
+        throw StateError("valid member contains an invalid declared type");
+      }
+    }
+    int32 previousEnd = value.GetName().GetEndOffset();
+    if (value.GetKind() == DeclarationKind.kField && declaredType != null &&
+        declaredType.GetRange().GetEnd().GetOffset() >
+            value.GetName().GetBeginOffset()) {
+      throw StateError("field type does not precede its name");
+    }
+    for (int32 index = 0; index < value.GetParameters().GetCount(); index++) {
+      final ParameterSyntax parameter = value.GetParameters().Get(index);
+      verifyRange(source, value.GetRange(), parameter.GetRange());
+      verifyType(source, parameter.GetRange(), parameter.GetType());
+      verifySpan(source, parameter.GetRange(), parameter.GetName());
+      if (parameter.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("parameters are not in source order");
+      }
+      if (parameter.GetType().GetRange().GetEnd().GetOffset() >
+          parameter.GetName().GetBeginOffset()) {
+        throw StateError("parameter type does not precede its name");
+      }
+      previousEnd = parameter.GetRange().GetEnd().GetOffset();
+      if (value.IsValid() &&
+          (!parameter.IsValid() || !parameter.GetType().IsValid())) {
+        throw StateError("valid member contains an invalid parameter");
+      }
+    }
+    if (value.GetKind() == DeclarationKind.kFunction &&
+        declaredType != null) {
+      if (declaredType.GetRange().GetBegin().GetOffset() < previousEnd) {
+        throw StateError("function return type is not in source order");
+      }
+      previousEnd = declaredType.GetRange().GetEnd().GetOffset();
+    }
+    if (!verifyTypes(source, value.GetRange(), value.GetThrowsTypes()) &&
+        value.IsValid()) {
+      throw StateError("valid member contains an invalid throws type");
+    }
+    if (value.GetThrowsTypes().GetCount() != 0) {
+      if (value.GetThrowsTypes().Get(0).GetRange().GetBegin().GetOffset() <
+          previousEnd) {
+        throw StateError("throws types are not in source order");
+      }
+      previousEnd = value.GetThrowsTypes()
+                        .Get(value.GetThrowsTypes().GetCount() - 1)
+                        .GetRange()
+                        .GetEnd()
+                        .GetOffset();
+    }
+    if (!value.HasExplicitThrows() && value.GetThrowsTypes().GetCount() != 0) {
+      throw StateError("implicit throws clause contains explicit types");
+    }
+    verifyInterval(tokens, value, value.GetFieldInitializerTokens(), false);
+    previousEnd = verifyIntervalOrder(
+        tokens, value.GetFieldInitializerTokens(), previousEnd);
+    verifyInterval(tokens, value, value.GetConstructorInitializerTokens(),
+                   false);
+    previousEnd = verifyIntervalOrder(
+        tokens, value.GetConstructorInitializerTokens(), previousEnd);
+    verifyInterval(tokens, value, value.GetBodyTokens(), true);
+    verifyIntervalOrder(tokens, value.GetBodyTokens(), previousEnd);
+  }
+
+  static func verifyIntervalOrder(TokenBuffer tokens,
+                                  TokenIndexRange? interval,
+                                  int32 previousEnd): int32
+      throws StateError {
+    if (interval == null) { return previousEnd; }
+    final TokenIndexRange value = interval;
+    final int32 beginOffset =
+        tokens.Get(value.GetBegin()).GetRange().GetBegin().GetOffset();
+    if (beginOffset < previousEnd) {
+      throw StateError("deferred token ranges are not in source order");
+    }
+    if (value.IsEmpty()) { return beginOffset; }
+    return tokens.Get(value.GetEnd() - 1).GetRange().GetEnd().GetOffset();
+  }
+
+  static func verifyInterval(TokenBuffer tokens, DeclarationOutline owner,
+                             TokenIndexRange? interval,
+                             bool body): void throws StateError {
+    if (interval == null) { return; }
+    final TokenIndexRange value = interval;
+    final int32 eofIndex = tokens.GetCount() - 1;
+    if (value.GetBegin() < owner.GetBeginToken() ||
+        value.GetEnd() > eofIndex) {
+      throw StateError("deferred token range is outside its declaration");
+    }
+    if (value.IsEmpty()) {
+      if (owner.IsValid()) {
+        throw StateError("valid deferred token range is empty");
+      }
+      return;
+    }
+    if (tokens.Get(value.GetBegin()).GetRange().GetBegin().GetOffset() <
+            owner.GetRange().GetBegin().GetOffset() ||
+        tokens.Get(value.GetEnd() - 1).GetRange().GetEnd().GetOffset() >
+            owner.GetRange().GetEnd().GetOffset()) {
+      throw StateError("deferred token range escapes its source range");
+    }
+    if (body && owner.IsValid() &&
+        (tokens.Get(value.GetBegin()).GetKind() != TokenKind.kLeftBrace ||
+         tokens.Get(value.GetEnd() - 1).GetKind() != TokenKind.kRightBrace)) {
+      throw StateError("valid body token range is not brace delimited");
+    }
+  }
+
+  static func verifyDiagnostics(
+      SourceFile source, SourceRange parent,
+      ParseDiagnosticSequence diagnostics): void throws StateError {
+    int32 previousOffset = -1;
+    for (int32 index = 0; index < diagnostics.GetCount(); index++) {
+      final ParseDiagnostic value = diagnostics.Get(index);
+      verifyRange(source, parent, value.GetRange());
+      if (value.GetRange().GetBegin().GetOffset() < previousOffset) {
+        throw StateError("parse diagnostics are not in source order");
+      }
+      previousOffset = value.GetRange().GetBegin().GetOffset();
+      final SourceRange? related = value.GetRelatedRange();
+      if (related != null) { verifyRange(source, parent, related); }
+    }
+  }
+
+  static func verifyValidFileShape(FileDeclarationOutline file,
+                                   MemberOutlineSequence members,
+                                   bool valid): void throws StateError {
+    if (!valid) { return; }
+    final FileTypeKind kind = file.GetFileTypeKind();
+    if ((kind == FileTypeKind.kInterface || kind == FileTypeKind.kEnum ||
+         kind == FileTypeKind.kStruct) &&
+        (file.IsAbstract() || file.IsSealed())) {
+      throw StateError("valid file type has incompatible modifiers");
+    }
+    if (kind == FileTypeKind.kEnum && file.GetEnumCases().GetCount() == 0) {
+      throw StateError("valid enum has no cases");
+    }
+    if (kind == FileTypeKind.kInterface) {
+      if (file.GetBaseClass() != null) {
+        throw StateError("valid interface has a class base");
+      }
+      for (int32 index = 0; index < members.GetCount(); index++) {
+        final DeclarationOutline member = members.Get(index);
+        if (member.GetKind() != DeclarationKind.kFunction ||
+            !member.IsAbstract() || member.IsStatic() || member.IsOverride() ||
+            member.IsFinal() || member.GetBodyTokens() != null) {
+          throw StateError("valid interface contains a non-contract member");
+        }
+      }
+    }
+  }
+
+  static func verifyRange(SourceFile source, SourceRange parent,
+                          SourceRange value): void throws StateError {
+    if (value.GetBegin().GetFile() != source.GetPath() ||
+        value.GetEnd().GetFile() != source.GetPath() ||
+        value.GetBegin().GetOffset() < parent.GetBegin().GetOffset() ||
+        value.GetBegin().GetOffset() > value.GetEnd().GetOffset() ||
+        value.GetEnd().GetOffset() > parent.GetEnd().GetOffset() ||
+        value.GetBegin().GetLine() == 0 ||
+        value.GetBegin().GetColumn() == 0 ||
+        value.GetEnd().GetLine() == 0 || value.GetEnd().GetColumn() == 0) {
+      throw StateError("declaration range is outside its source");
+    }
+  }
+
+  static func verifySpan(SourceFile source, SourceRange parent,
+                         SourceSpan value): void throws StateError {
+    if (value.GetSource() != source ||
+        value.GetBeginOffset() < parent.GetBegin().GetOffset() ||
+        value.GetEndOffset() > parent.GetEnd().GetOffset()) {
+      throw StateError("declaration span is outside its source");
+    }
+  }
+
+  static func visibilityOf(string name): Visibility {
+    if (name::length > 0 && isUppercaseAscii(name[0])) {
+      return Visibility.kPublic;
+    }
+    return Visibility.kPrivate;
+  }
+
+  static func isUppercaseAscii(char value): bool {
+    return value == 'A' || value == 'B' || value == 'C' || value == 'D' ||
+           value == 'E' || value == 'F' || value == 'G' || value == 'H' ||
+           value == 'I' || value == 'J' || value == 'K' || value == 'L' ||
+           value == 'M' || value == 'N' || value == 'O' || value == 'P' ||
+           value == 'Q' || value == 'R' || value == 'S' || value == 'T' ||
+           value == 'U' || value == 'V' || value == 'W' || value == 'X' ||
+           value == 'Y' || value == 'Z';
+  }
+
+  static func visibilityOfSpan(SourceSpan name): Visibility {
+    if (name.GetLength() > 0 && name.GetByte(0) >= 65 &&
+        name.GetByte(0) <= 90) {
+      return Visibility.kPublic;
+    }
+    return Visibility.kPrivate;
+  }
+}

@@ -1,0 +1,203 @@
+import fixtures::SyntaxTreeFixture;
+import clothc.frontend.syntax::ExpressionIdSequence;
+import clothc.frontend.syntax::ExpressionSyntax;
+import clothc.frontend.syntax::StatementIdSequence;
+import clothc.frontend.syntax::StatementSyntax;
+import clothc.frontend.syntax.declaration::ConstructorSyntax;
+import clothc.frontend.syntax.declaration::DeclarationKind;
+import clothc.frontend.syntax.declaration::DeclarationSyntaxSequence;
+import clothc.frontend.syntax.declaration::FieldSyntax;
+import clothc.frontend.syntax.declaration::FunctionSyntax;
+import clothc.frontend.syntax.expression::CallExpressionSyntax;
+import clothc.frontend.syntax.expression::ExpressionKind;
+import clothc.frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import clothc.frontend.syntax.statement::BlockNodeSyntax;
+import clothc.frontend.syntax.statement::ForStatementSyntax;
+import clothc.frontend.syntax.statement::LocalVariableStatementSyntax;
+import clothc.frontend.syntax.statement::StatementKind;
+import clothc.frontend.syntax.statement::SwitchStatementSyntax;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+import clothc.frontend.syntax.tree::FileSyntax;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::ImportKind;
+import clothc.frontend.syntax.tree::VerifiedSyntaxTree;
+import clothc.frontend.syntax.tree::Visibility;
+
+class {
+  static func Run(): int32 throws StateError {
+    final SyntaxTreeFixture fixture = SyntaxTreeFixture.Build();
+    final VerifiedSyntaxTree tree = VerifiedSyntaxTree.Build(fixture.GetFile());
+    if (tree.GetFile() != fixture.GetFile()) { return 399; }
+    final int32 fileStatus = checkFile(fixture);
+    if (fileStatus != 0) { return fileStatus; }
+    final int32 expressionStatus = checkExpressions(fixture);
+    if (expressionStatus != 0) { return expressionStatus; }
+    final int32 statementStatus = checkStatements(fixture);
+    if (statementStatus != 0) { return statementStatus; }
+    return checkDeclarations(fixture.GetFile());
+  }
+
+  static func checkFile(SyntaxTreeFixture fixture): int32 throws StateError {
+    final FileSyntax file = fixture.GetFile();
+    final SyntaxStorage storage = file.GetStorage();
+    if (file.GetSource().GetPath() != "syntax-tree" ||
+        file.GetName() != "Fixture" ||
+        file.GetPackageName() != "bootstrap" ||
+        file.GetQualifiedName() != "bootstrap.Fixture" ||
+        file.GetFileTypeKind() != FileTypeKind.kClass ||
+        file.GetVisibility() != Visibility.kPublic || file.IsValid() ||
+        !file.HasExplicitDeclaration() || file.IsAbstract() ||
+        !file.IsSealed() || file.GetBaseClass() == null) {
+      return 400;
+    }
+    if (!storage.IsSealed() || storage.GetNodeCount() != 38 ||
+        storage.GetPageCount() != 1 || file.GetInterfaces().GetCount() != 1 ||
+        file.GetEnumCases().GetCount() != 2 ||
+        file.GetDeclarations().GetCount() != 3) {
+      return 401;
+    }
+    if (file.GetImports().GetCount() != 2 ||
+        file.GetImports().Get(0).GetKind() != ImportKind.kType ||
+        file.GetImports().Get(0).GetTypeName() == null ||
+        file.GetImports().Get(0).GetAlias() == null ||
+        file.GetImports().Get(1).GetKind() != ImportKind.kWildcard ||
+        file.GetImports().Get(1).GetTypeName() != null ||
+        file.GetImports().Get(1).GetAlias() != null) {
+      return 402;
+    }
+    if (file.GetEnumCases().Get(0).GetName().GetBeginOffset() != 16 ||
+        file.GetEnumCases().Get(1).GetName().GetBeginOffset() != 17 ||
+        file.GetRange().GetBegin().GetOffset() != 0 ||
+        file.GetRange().GetEnd().GetOffset() != 64) {
+      return 403;
+    }
+    return 0;
+  }
+
+  static func checkExpressions(
+      SyntaxTreeFixture fixture): int32 throws StateError {
+    final ExpressionIdSequence ids = fixture.GetExpressions();
+    final ExpressionKind[] kinds = expectedExpressions();
+    final SyntaxStorage storage = fixture.GetFile().GetStorage();
+    if (ids.GetCount() != kinds::length) { return 410; }
+    for (int32 index = 0; index < ids.GetCount(); index++) {
+      final ExpressionSyntax value = storage.GetExpression(ids.Get(index));
+      if (ids.Get(index).GetOrdinal() != index ||
+          value.GetExpressionKind() != kinds[index] ||
+          value.IsValid() == (index == 0)) {
+        return 411;
+      }
+    }
+    final CallExpressionSyntax? call =
+        storage.GetExpression(ids.Get(19)) as CallExpressionSyntax?;
+    final IntegerConversionExpressionSyntax? conversion =
+        storage.GetExpression(ids.Get(11)) as IntegerConversionExpressionSyntax?;
+    if (call == null || call.GetCallee().GetOrdinal() != 13 ||
+        call.GetArguments().GetCount() != 2 ||
+        call.GetArguments().Get(0).GetOrdinal() != 1 ||
+        call.GetArguments().Get(1).GetOrdinal() != 2 || conversion == null ||
+        conversion.GetOperation().GetBeginOffset() != 3 ||
+        conversion.GetOperation().GetEndOffset() != 7) {
+      return 412;
+    }
+    return 0;
+  }
+
+  static func checkStatements(
+      SyntaxTreeFixture fixture): int32 throws StateError {
+    final StatementIdSequence ids = fixture.GetStatements();
+    final StatementKind[] kinds = expectedStatements();
+    final SyntaxStorage storage = fixture.GetFile().GetStorage();
+    if (ids.GetCount() != kinds::length) { return 420; }
+    for (int32 index = 0; index < ids.GetCount(); index++) {
+      final StatementSyntax value = storage.GetStatement(ids.Get(index));
+      if (ids.Get(index).GetOrdinal() != index + 25 ||
+          value.GetStatementKind() != kinds[index] ||
+          value.IsValid() == (index == 0)) {
+        return 421;
+      }
+    }
+    final BlockNodeSyntax? empty =
+        storage.GetBlock(fixture.GetEmptyBlock()) as BlockNodeSyntax?;
+    final BlockNodeSyntax? body =
+        storage.GetBlock(fixture.GetBodyBlock()) as BlockNodeSyntax?;
+    if (empty == null || empty.GetStatements().GetCount() != 0 ||
+        !empty.IsValid() || body == null || body.IsValid() ||
+        body.GetStatements().GetCount() != 12) {
+      return 422;
+    }
+    final LocalVariableStatementSyntax? local =
+        storage.GetStatement(ids.Get(1)) as LocalVariableStatementSyntax?;
+    final ForStatementSyntax? loop =
+        storage.GetStatement(ids.Get(7)) as ForStatementSyntax?;
+    final SwitchStatementSyntax? switchValue =
+        storage.GetStatement(ids.Get(8)) as SwitchStatementSyntax?;
+    if (local == null || local.GetType() != null ||
+        local.GetInitializer() == null || loop == null ||
+        loop.GetInitializer() == null || loop.GetUpdates().GetCount() != 2 ||
+        switchValue == null || switchValue.GetArms().GetCount() != 2 ||
+        switchValue.GetArms().Get(0).IsDefault() ||
+        !switchValue.GetArms().Get(1).IsDefault()) {
+      return 423;
+    }
+    return 0;
+  }
+
+  static func checkDeclarations(FileSyntax file): int32 throws StateError {
+    final DeclarationSyntaxSequence values = file.GetDeclarations();
+    if (values.Get(0).GetDeclarationKind() != DeclarationKind.kFunction ||
+        values.Get(1).GetDeclarationKind() != DeclarationKind.kField ||
+        values.Get(2).GetDeclarationKind() != DeclarationKind.kConstructor) {
+      return 430;
+    }
+    final FunctionSyntax? function = values.Get(0) as FunctionSyntax?;
+    final FieldSyntax? field = values.Get(1) as FieldSyntax?;
+    final ConstructorSyntax? constructor = values.Get(2) as ConstructorSyntax?;
+    if (function == null || function.GetParameters().GetCount() != 1 ||
+        function.GetReturnType() == null ||
+        function.GetThrowsTypes().GetCount() != 1 ||
+        !function.HasExplicitThrows() || !function.IsStatic() ||
+        function.IsOverride() || function.IsAbstract() || !function.IsFinal() ||
+        function.IsValid()) {
+      return 431;
+    }
+    if (field == null || field.GetInitializer() == null || !field.IsFinal() ||
+        field.IsStatic() || field.GetVisibility() != Visibility.kPrivate) {
+      return 432;
+    }
+    if (constructor == null) { return 433; }
+    final var initializer = constructor.GetInitializer();
+    if (initializer == null || initializer.GetArguments().GetCount() != 1 ||
+        constructor.GetThrowsTypes().GetCount() != 1 ||
+        !constructor.HasExplicitThrows()) {
+      return 433;
+    }
+    return 0;
+  }
+
+  static func expectedExpressions(): ExpressionKind[] {
+    return [
+      ExpressionKind.kInvalid, ExpressionKind.kIdentifier,
+      ExpressionKind.kLiteral, ExpressionKind.kSuper, ExpressionKind.kThrow,
+      ExpressionKind.kUnary, ExpressionKind.kUpdate, ExpressionKind.kBinary,
+      ExpressionKind.kTypeTest, ExpressionKind.kCheckedCast,
+      ExpressionKind.kNumericConversion, ExpressionKind.kIntegerConversion,
+      ExpressionKind.kAssignment, ExpressionKind.kMemberAccess,
+      ExpressionKind.kMetaAccess, ExpressionKind.kSafeMemberAccess,
+      ExpressionKind.kSafeMetaAccess, ExpressionKind.kNullCoalesce,
+      ExpressionKind.kNullAssert, ExpressionKind.kCall,
+      ExpressionKind.kArrayLiteral, ExpressionKind.kArrayConstruction,
+      ExpressionKind.kIndex, ExpressionKind.kParenthesized
+    ];
+  }
+
+  static func expectedStatements(): StatementKind[] {
+    return [
+      StatementKind.kInvalid, StatementKind.kLocalVariable,
+      StatementKind.kReturn, StatementKind.kExpression, StatementKind.kIf,
+      StatementKind.kWhile, StatementKind.kForEach, StatementKind.kFor,
+      StatementKind.kSwitch, StatementKind.kBreak, StatementKind.kContinue,
+      StatementKind.kNestedBlock
+    ];
+  }
+}

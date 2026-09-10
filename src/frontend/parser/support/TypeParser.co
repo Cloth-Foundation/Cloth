@@ -1,0 +1,77 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser.declaration::DeclarationParseState;
+import frontend.parser.support::ParserFacts;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  static func Parse(DeclarationParseState state): TypeSyntax?
+      throws StateError {
+    if (!ParserFacts.CanStartType(state.Current().GetKind())) {
+      state.AddDiagnostic(
+          ParseDiagnosticKind.kExpectedType, state.Current().GetRange(), null);
+      return null;
+    }
+
+    final int32 diagnosticCount = state.GetDiagnosticCount();
+    final Token name = state.Advance();
+    SourceLocation end = name.GetRange().GetEnd();
+    bool innerNullable = false;
+    while (state.Current().GetKind() == TokenKind.kQuestion ||
+           state.Current().GetKind() == TokenKind.kQuestionQuestion) {
+      final Token suffix = state.Advance();
+      if (innerNullable || suffix.GetKind() == TokenKind.kQuestionQuestion) {
+        state.AddDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                            suffix.GetRange(), null);
+      }
+      innerNullable = true;
+      end = suffix.GetRange().GetEnd();
+    }
+
+    bool array = false;
+    while (state.Match(TokenKind.kLeftBracket)) {
+      final Token open = state.GetTokens().Get(state.GetIndex() - 1);
+      if (array) {
+        state.AddDiagnostic(ParseDiagnosticKind.kMultidimensionalArray,
+                            open.GetRange(), null);
+      }
+      array = true;
+      if (state.Match(TokenKind.kRightBracket)) {
+        end = state.GetTokens()
+                  .Get(state.GetIndex() - 1)
+                  .GetRange()
+                  .GetEnd();
+      } else {
+        state.AddDiagnostic(ParseDiagnosticKind.kExpectedArrayClose,
+                            state.Current().GetRange(), null);
+        break;
+      }
+    }
+
+    bool outerNullable = false;
+    if (array) {
+      while (state.Current().GetKind() == TokenKind.kQuestion ||
+             state.Current().GetKind() == TokenKind.kQuestionQuestion) {
+        final Token suffix = state.Advance();
+        if (outerNullable ||
+            suffix.GetKind() == TokenKind.kQuestionQuestion) {
+          state.AddDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                              suffix.GetRange(), null);
+        }
+        outerNullable = true;
+        end = suffix.GetRange().GetEnd();
+      }
+    }
+
+    bool nullable = innerNullable;
+    if (array) { nullable = outerNullable; }
+    return TypeSyntax(
+        name.GetSpan(), SourceRange(name.GetRange().GetBegin(), end),
+        state.GetDiagnosticCount() == diagnosticCount,
+        ParserFacts.IsPrimitiveType(name.GetKind()), array, nullable,
+        array && innerNullable);
+  }
+}

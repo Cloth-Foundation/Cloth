@@ -69,9 +69,17 @@ class {
     self.verifyParameters(declaration, value.GetParameters());
     final TypeSyntax? returnType = value.GetReturnType();
     if (returnType != null) { self.verifyType(declaration, returnType); }
+    final bool bodyParentValid =
+        declaration.IsValid() && !value.IsAbstract();
     final bool bodyValid = self.statements.VerifyBlock(
-        value.GetBody(), declaration.GetRange());
-    self.context.VerifyChildValidity(declaration.IsValid(), bodyValid);
+        value.GetBody(), declaration.GetRange(), bodyParentValid);
+    if (value.IsAbstract() && declaration.IsValid()) {
+      if (bodyValid) {
+        throw StateError("abstract function contains a concrete body");
+      }
+    } else {
+      self.context.VerifyChildValidity(declaration.IsValid(), bodyValid);
+    }
     self.verifyTypes(declaration, value.GetThrowsTypes());
     if (!value.HasExplicitThrows() && value.GetThrowsTypes().GetCount() != 0) {
       throw StateError("implicit throws syntax contains declared types");
@@ -99,7 +107,7 @@ class {
                                        initializer.IsValid());
     }
     final bool bodyValid = self.statements.VerifyBlock(
-        value.GetBody(), declaration.GetRange());
+        value.GetBody(), declaration.GetRange(), declaration.IsValid());
     self.context.VerifyChildValidity(declaration.IsValid(), bodyValid);
     self.verifyTypes(declaration, value.GetThrowsTypes());
     if (!value.HasExplicitThrows() && value.GetThrowsTypes().GetCount() != 0) {

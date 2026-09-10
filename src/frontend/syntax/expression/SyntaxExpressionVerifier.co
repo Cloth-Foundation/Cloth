@@ -49,7 +49,12 @@ class {
         final bool fresh = self.context.BeginExpression(frame.GetId());
         final ExpressionSyntax expression =
             self.context.GetStorage().GetExpression(frame.GetId());
-        self.context.VerifyRange(expression.GetRange(), frame.GetParentRange());
+        if (expression.IsValid()) {
+          self.context.VerifyRange(expression.GetRange(),
+                                   frame.GetParentRange());
+        } else {
+          self.context.VerifySourceRange(expression.GetRange());
+        }
         frame.SetExpression(expression);
         if (!fresh) {
           top = frame.GetPrevious();

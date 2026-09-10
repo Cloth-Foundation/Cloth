@@ -40,6 +40,8 @@ Use Shuttle with a current development build of `clothc`:
 ```sh
 shuttle check --manifest-path Shuttle.toml --compiler <path-to-clothc>
 shuttle build --manifest-path Shuttle.toml --compiler <path-to-clothc>
+shuttle run --manifest-path tests/self_host/Shuttle.toml \
+  --compiler <path-to-clothc>
 ```
 
 Run the focused and coordinated tests required by the active checkpoint in the

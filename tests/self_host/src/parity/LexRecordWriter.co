@@ -1,0 +1,64 @@
+import parity::LexDiagnosticKindCode;
+import parity::TokenKindCode;
+import clothc.frontend.diagnostic::LexDiagnostic;
+import clothc.frontend.diagnostic::LexDiagnosticBuffer;
+import clothc.frontend.lexer::Lexer;
+import clothc.frontend.lexer::LexerResult;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.source::SourceLocation;
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.source::SourceSpan;
+import clothc.frontend.token::Token;
+import clothc.frontend.token::TokenBuffer;
+
+class {
+  static func Run(string path): int32 throws IoError, StateError {
+    final SourceFile source = SourceFile.Load(path);
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+
+    for (int32 index = 0; index < tokens.GetCount(); index++) {
+      final Token token = tokens.Get(index);
+      writeRecord("T", TokenKindCode.Get(token.GetKind()), token.GetSpan(),
+                  token.GetRange());
+    }
+    for (int32 index = 0; index < diagnostics.GetCount(); index++) {
+      final LexDiagnostic diagnostic = diagnostics.Get(index);
+      writeRecord("D", LexDiagnosticKindCode.Get(diagnostic.GetKind()),
+                  diagnostic.GetSpan(), diagnostic.GetRange());
+    }
+    return 0;
+  }
+
+  static func writeRecord(string category, int32 kind, SourceSpan span,
+                          SourceRange range): void throws StateError {
+    final SourceLocation begin = range.GetBegin();
+    final SourceLocation end = range.GetEnd();
+    print(category);
+    print("|");
+    print(kind);
+    print("|");
+    print(span.GetBeginOffset());
+    print("|");
+    print(span.GetEndOffset());
+    print("|");
+    print(begin.GetOffset());
+    print("|");
+    print(begin.GetLine());
+    print("|");
+    print(begin.GetColumn());
+    print("|");
+    print(end.GetOffset());
+    print("|");
+    print(end.GetLine());
+    print("|");
+    print(end.GetColumn());
+    print("|");
+    for (int32 offset = 0; offset < span.GetLength(); offset++) {
+      if (offset != 0) { print(","); }
+      print(span.GetByte(offset));
+    }
+    println();
+  }
+}

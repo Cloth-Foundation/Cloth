@@ -1,0 +1,12 @@
+manifest-version = 1
+
+[package]
+name = "clothc-tests"
+version = "0.0.1"
+
+[executable]
+name = "clothc-tests"
+entry = "BootstrapMain.co"
+
+[dependencies]
+clothc = { path = "../.." }

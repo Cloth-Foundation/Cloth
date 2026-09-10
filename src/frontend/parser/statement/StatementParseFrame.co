@@ -1,0 +1,100 @@
+import frontend.parser.statement::StatementParseFrameKind;
+import frontend.parser.storage::SwitchArmSyntaxBuilder;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::StatementId;
+import frontend.syntax.statement::ForVariableSyntax;
+import frontend.syntax.storage::ExpressionIdBuilder;
+import frontend.syntax.storage::StatementIdBuilder;
+import frontend.token::Token;
+
+class {
+  final StatementParseFrameKind kind;
+  final StatementParseFrame? previous;
+  final int32 diagnosticBase;
+  int32 state;
+  Token? keyword;
+  Token? armKeyword;
+  StatementIdBuilder? statements;
+  ExpressionId? expression;
+  StatementId? statement;
+  BlockId? block;
+  BlockId? alternative;
+  ForVariableSyntax? variable;
+  ExpressionIdBuilder? expressions;
+  SwitchArmSyntaxBuilder? arms;
+  ExpressionIdBuilder? labels;
+  int32 armDiagnosticBase;
+  int32 labelCount;
+  bool hasDefault;
+  bool valid;
+
+  StatementParseFrame(StatementParseFrameKind kind,
+                      StatementParseFrame? previous, int32 diagnosticBase) {
+    self.kind = kind;
+    self.previous = previous;
+    self.diagnosticBase = diagnosticBase;
+    self.state = 0;
+    self.keyword = null;
+    self.armKeyword = null;
+    self.statements = null;
+    self.expression = null;
+    self.statement = null;
+    self.block = null;
+    self.alternative = null;
+    self.variable = null;
+    self.expressions = null;
+    self.arms = null;
+    self.labels = null;
+    self.armDiagnosticBase = 0;
+    self.labelCount = 0;
+    self.hasDefault = false;
+    self.valid = true;
+  }
+
+  func GetKind(): StatementParseFrameKind { return self.kind; }
+  func GetPrevious(): StatementParseFrame? { return self.previous; }
+  func GetDiagnosticBase(): int32 { return self.diagnosticBase; }
+  func GetState(): int32 { return self.state; }
+  func SetState(int32 value): void { self.state = value; }
+  func GetKeyword(): Token? { return self.keyword; }
+  func SetKeyword(Token value): void { self.keyword = value; }
+  func GetArmKeyword(): Token? { return self.armKeyword; }
+  func SetArmKeyword(Token value): void { self.armKeyword = value; }
+  func GetStatements(): StatementIdBuilder? { return self.statements; }
+  func SetStatements(StatementIdBuilder value): void {
+    self.statements = value;
+  }
+  func GetExpression(): ExpressionId? { return self.expression; }
+  func SetExpression(ExpressionId value): void { self.expression = value; }
+  func GetStatement(): StatementId? { return self.statement; }
+  func SetStatement(StatementId value): void { self.statement = value; }
+  func GetBlock(): BlockId? { return self.block; }
+  func SetBlock(BlockId value): void { self.block = value; }
+  func GetAlternative(): BlockId? { return self.alternative; }
+  func SetAlternative(BlockId value): void { self.alternative = value; }
+  func GetVariable(): ForVariableSyntax? { return self.variable; }
+  func SetVariable(ForVariableSyntax value): void { self.variable = value; }
+  func GetExpressions(): ExpressionIdBuilder? { return self.expressions; }
+  func SetExpressions(ExpressionIdBuilder value): void {
+    self.expressions = value;
+  }
+  func GetArms(): SwitchArmSyntaxBuilder? { return self.arms; }
+  func SetArms(SwitchArmSyntaxBuilder value): void { self.arms = value; }
+  func GetLabels(): ExpressionIdBuilder? { return self.labels; }
+  func SetLabels(ExpressionIdBuilder value): void { self.labels = value; }
+  func GetArmDiagnosticBase(): int32 { return self.armDiagnosticBase; }
+  func SetArmDiagnosticBase(int32 value): void {
+    self.armDiagnosticBase = value;
+  }
+  func GetLabelCount(): int32 { return self.labelCount; }
+  func AddLabel(): bool {
+    if (self.labelCount >= 65536) { return false; }
+    self.labelCount++;
+    return true;
+  }
+  func HasDefault(): bool { return self.hasDefault; }
+  func MarkDefault(): void { self.hasDefault = true; }
+  func IsValid(): bool { return self.valid; }
+  func MarkInvalid(): void { self.valid = false; }
+}

@@ -5,7 +5,7 @@ name = "clothc"
 version = "0.0.1"
 
 [executable]
-name = "cloth"
+name = "clothc"
 entry = "Main.co"
 
 [dependencies]

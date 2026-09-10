@@ -1,0 +1,699 @@
+import parity::ParseDiagnosticKindCode;
+import parity::SyntaxKindCode;
+import parity::TokenKindCode;
+import clothc.frontend.diagnostic::ParseDiagnostic;
+import clothc.frontend.diagnostic::ParseDiagnosticSequence;
+import clothc.frontend.lexer::Lexer;
+import clothc.frontend.lexer::LexerResult;
+import clothc.frontend.parser.declaration::DeclarationParser;
+import clothc.frontend.parser.declaration::DeclarationResult;
+import clothc.frontend.parser.definition::DefinitionParser;
+import clothc.frontend.parser.definition::DefinitionResult;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.source::SourceSpan;
+import clothc.frontend.syntax::BlockId;
+import clothc.frontend.syntax::ExpressionId;
+import clothc.frontend.syntax::ExpressionIdSequence;
+import clothc.frontend.syntax::ExpressionSyntax;
+import clothc.frontend.syntax::StatementId;
+import clothc.frontend.syntax::StatementSyntax;
+import clothc.frontend.syntax.declaration::ConstructorInitializerSyntax;
+import clothc.frontend.syntax.declaration::ConstructorSyntax;
+import clothc.frontend.syntax.declaration::DeclarationKind;
+import clothc.frontend.syntax.declaration::DeclarationSyntax;
+import clothc.frontend.syntax.declaration::FieldSyntax;
+import clothc.frontend.syntax.declaration::FunctionSyntax;
+import clothc.frontend.syntax.declaration::ParameterSyntax;
+import clothc.frontend.syntax.declaration::ParameterSyntaxSequence;
+import clothc.frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import clothc.frontend.syntax.expression::ArrayLiteralExpressionSyntax;
+import clothc.frontend.syntax.expression::AssignmentExpressionSyntax;
+import clothc.frontend.syntax.expression::BinaryExpressionSyntax;
+import clothc.frontend.syntax.expression::CallExpressionSyntax;
+import clothc.frontend.syntax.expression::CheckedCastExpressionSyntax;
+import clothc.frontend.syntax.expression::ExpressionKind;
+import clothc.frontend.syntax.expression::IdentifierExpressionSyntax;
+import clothc.frontend.syntax.expression::IndexExpressionSyntax;
+import clothc.frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import clothc.frontend.syntax.expression::LiteralExpressionSyntax;
+import clothc.frontend.syntax.expression::MemberAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::MetaAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::NullAssertExpressionSyntax;
+import clothc.frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import clothc.frontend.syntax.expression::NumericConversionExpressionSyntax;
+import clothc.frontend.syntax.expression::ParenthesizedExpressionSyntax;
+import clothc.frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::SafeMetaAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::ThrowExpressionSyntax;
+import clothc.frontend.syntax.expression::TypeTestExpressionSyntax;
+import clothc.frontend.syntax.expression::UnaryExpressionSyntax;
+import clothc.frontend.syntax.expression::UpdateExpressionSyntax;
+import clothc.frontend.syntax.statement::BlockNodeSyntax;
+import clothc.frontend.syntax.statement::ExpressionStatementSyntax;
+import clothc.frontend.syntax.statement::ForEachStatementSyntax;
+import clothc.frontend.syntax.statement::ForStatementSyntax;
+import clothc.frontend.syntax.statement::ForVariableSyntax;
+import clothc.frontend.syntax.statement::IfStatementSyntax;
+import clothc.frontend.syntax.statement::LocalVariableStatementSyntax;
+import clothc.frontend.syntax.statement::NestedBlockStatementSyntax;
+import clothc.frontend.syntax.statement::ReturnStatementSyntax;
+import clothc.frontend.syntax.statement::StatementKind;
+import clothc.frontend.syntax.statement::SwitchArmSyntax;
+import clothc.frontend.syntax.statement::SwitchArmSyntaxSequence;
+import clothc.frontend.syntax.statement::SwitchStatementSyntax;
+import clothc.frontend.syntax.statement::WhileStatementSyntax;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+import clothc.frontend.syntax.tree::FileSyntax;
+import clothc.frontend.syntax.tree::TypeSyntax;
+import clothc.frontend.syntax.tree::TypeSyntaxSequence;
+import clothc.frontend.token::TokenKind;
+
+class {
+  final FileSyntax file;
+  int32 nextExpression;
+  int32 nextStatement;
+  int32 nextBlock;
+
+  DefinitionRecordWriter(FileSyntax file) {
+    self.file = file;
+    self.nextExpression = 0;
+    self.nextStatement = 0;
+    self.nextBlock = 0;
+  }
+
+  static func Run(string path,
+                  string fileName): int32 throws IoError, StateError {
+    final SourceFile source = SourceFile.Load(path);
+    final LexerResult lexer = Lexer.Lex(source);
+    if (lexer.GetDiagnostics().GetCount() != 0) {
+      throw StateError("definition record input has lexical diagnostics");
+    }
+    final DeclarationResult declaration = DeclarationParser.Parse(
+        source, lexer.GetTokens(), fileName, "parity");
+    final DefinitionResult definition =
+        DefinitionParser.Parse(declaration, null);
+    final var writer = DefinitionRecordWriter(
+        definition.GetTree().GetFile());
+    writer.write();
+    writer.writeDiagnostics(definition.GetDiagnostics());
+    return 0;
+  }
+
+  func write(): void throws StateError {
+    print("F|");
+    writeFlag(self.file.IsValid());
+    print("|");
+    print(SyntaxKindCode.FileType(self.file.GetFileTypeKind()));
+    print("|");
+    writeFlag(self.file.HasExplicitDeclaration());
+    print("|");
+    writeFlag(self.file.IsAbstract());
+    print("|");
+    writeFlag(self.file.IsSealed());
+    print("|");
+    writeRange(self.file.GetRange());
+    println();
+    final TypeSyntax? baseClass = self.file.GetBaseClass();
+    if (baseClass != null) { self.writeType("base", baseClass); }
+    self.writeTypes("interface", self.file.GetInterfaces());
+    for (int32 index = 0;
+         index < self.file.GetDeclarations().GetCount(); index++) {
+      self.writeDeclaration(index,
+                            self.file.GetDeclarations().Get(index));
+    }
+  }
+
+  func writeDiagnostics(ParseDiagnosticSequence values): void
+      throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ParseDiagnostic value = values.Get(index);
+      print("G|");
+      print(index);
+      print("|");
+      print(ParseDiagnosticKindCode.Get(value.GetKind()));
+      print("|");
+      writeRange(value.GetRange());
+      print("|");
+      final SourceRange? related = value.GetRelatedRange();
+      if (related == null) {
+        print("-");
+      } else {
+        writeRange(related);
+      }
+      println();
+    }
+  }
+
+  func writeDeclaration(int32 index,
+                        DeclarationSyntax declaration): void
+      throws StateError {
+    if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+      final FieldSyntax? value = declaration as FieldSyntax?;
+      if (value == null) { throw StateError("field record kind mismatch"); }
+      print("D|");
+      print(index);
+      print("|0|");
+      writeFlag(value.IsValid());
+      print("|");
+      print(SyntaxKindCode.VisibilityValue(value.GetVisibility()));
+      print("|");
+      writeFlag(value.IsFinal());
+      print("|");
+      writeFlag(value.IsStatic());
+      print("|");
+      writeRange(value.GetRange());
+      print("|");
+      writeSpan(value.GetName());
+      println();
+      self.writeType("declared", value.GetType());
+      final ExpressionId? initializer = value.GetInitializer();
+      if (initializer != null) { self.writeExpression(initializer); }
+      return;
+    }
+    if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+      final FunctionSyntax? value = declaration as FunctionSyntax?;
+      if (value == null) {
+        throw StateError("function record kind mismatch");
+      }
+      print("D|");
+      print(index);
+      print("|1|");
+      writeFlag(value.IsValid());
+      print("|");
+      print(SyntaxKindCode.VisibilityValue(value.GetVisibility()));
+      print("|");
+      writeFlag(value.IsStatic());
+      print("|");
+      writeFlag(value.IsOverride());
+      print("|");
+      writeFlag(value.IsAbstract());
+      print("|");
+      writeFlag(value.IsFinal());
+      print("|");
+      writeFlag(value.HasExplicitThrows());
+      print("|");
+      writeRange(value.GetRange());
+      print("|");
+      writeSpan(value.GetName());
+      println();
+      self.writeParameters(value.GetParameters());
+      final TypeSyntax? returnType = value.GetReturnType();
+      if (returnType != null) { self.writeType("return", returnType); }
+      self.writeTypes("throws", value.GetThrowsTypes());
+      self.writeBlock(value.GetBody());
+      return;
+    }
+    final ConstructorSyntax? value = declaration as ConstructorSyntax?;
+    if (value == null) {
+      throw StateError("constructor record kind mismatch");
+    }
+    print("D|");
+    print(index);
+    print("|2|");
+    writeFlag(value.IsValid());
+    print("|");
+    print(SyntaxKindCode.VisibilityValue(value.GetVisibility()));
+    print("|");
+    writeFlag(value.HasExplicitThrows());
+    print("|");
+    writeRange(value.GetRange());
+    print("|");
+    writeSpan(value.GetName());
+    println();
+    self.writeParameters(value.GetParameters());
+    self.writeTypes("throws", value.GetThrowsTypes());
+    final ConstructorInitializerSyntax? initializer = value.GetInitializer();
+    if (initializer != null) {
+      print("C|");
+      writeFlag(initializer.IsValid());
+      print("|");
+      writeRange(initializer.GetRange());
+      print("|");
+      print(initializer.GetArguments().GetCount());
+      println();
+      self.writeType("constructor-base", initializer.GetBaseType());
+      self.writeExpressions(initializer.GetArguments());
+    }
+    self.writeBlock(value.GetBody());
+  }
+
+  func writeParameters(ParameterSyntaxSequence values): void
+      throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final ParameterSyntax value = values.Get(index);
+      print("P|");
+      writeFlag(value.IsFinal());
+      print("|");
+      writeRange(value.GetRange());
+      print("|");
+      writeSpan(value.GetName());
+      println();
+      self.writeType("parameter", value.GetType());
+    }
+  }
+
+  func writeTypes(string role, TypeSyntaxSequence values): void
+      throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      self.writeType(role, values.Get(index));
+    }
+  }
+
+  func writeType(string role, TypeSyntax value): void {
+    print("T|");
+    print(role);
+    print("|");
+    writeFlag(value.IsPrimitive());
+    print("|");
+    writeFlag(value.IsArray());
+    print("|");
+    writeFlag(value.IsNullable());
+    print("|");
+    writeFlag(value.IsElementNullable());
+    print("|");
+    writeRange(value.GetRange());
+    print("|");
+    if (!value.IsValid() &&
+        value.GetRange().GetBegin().GetOffset() ==
+            value.GetRange().GetEnd().GetOffset()) {
+      writeInvalidTypeName();
+    } else {
+      writeSpan(value.GetName());
+    }
+    println();
+  }
+
+  static func writeInvalidTypeName(): void {
+    print("60,105,110,118,97,108,105,100,62");
+  }
+
+  func writeBlock(BlockId id): void throws StateError {
+    final BlockNodeSyntax? value =
+        self.file.GetStorage().GetBlock(id) as BlockNodeSyntax?;
+    if (value == null) { throw StateError("block record kind mismatch"); }
+    print("B|");
+    print(self.nextBlock);
+    self.nextBlock++;
+    print("|");
+    writeFlag(value.IsValid());
+    print("|");
+    writeRange(value.GetRange());
+    print("|");
+    print(value.GetStatements().GetCount());
+    println();
+    for (int32 index = 0;
+         index < value.GetStatements().GetCount(); index++) {
+      self.writeStatement(value.GetStatements().Get(index));
+    }
+  }
+
+  func writeStatement(StatementId id): void throws StateError {
+    final StatementSyntax value = self.file.GetStorage().GetStatement(id);
+    final StatementKind kind = value.GetStatementKind();
+    print("S|");
+    print(self.nextStatement);
+    self.nextStatement++;
+    print("|");
+    print(SyntaxKindCode.Statement(kind));
+    print("|");
+    writeFlag(kind != StatementKind.kInvalid);
+    print("|");
+    writeRange(value.GetRange());
+    println();
+    switch (kind) {
+      case StatementKind.kInvalid: { return; }
+      case StatementKind.kLocalVariable: {
+        final LocalVariableStatementSyntax? local =
+            value as LocalVariableStatementSyntax?;
+        if (local == null) { throw StateError("local record mismatch"); }
+        final TypeSyntax? type = local.GetType();
+        if (type != null) { self.writeType("local", type); }
+        print("V|");
+        writeFlag(local.IsFinal());
+        print("|");
+        writeSpan(local.GetName());
+        println();
+        final ExpressionId? initializer = local.GetInitializer();
+        if (initializer != null) { self.writeExpression(initializer); }
+        return;
+      }
+      case StatementKind.kReturn: {
+        final ReturnStatementSyntax? returned =
+            value as ReturnStatementSyntax?;
+        if (returned == null) { throw StateError("return record mismatch"); }
+        final ExpressionId? result = returned.GetValue();
+        if (result != null) { self.writeExpression(result); }
+        return;
+      }
+      case StatementKind.kExpression: {
+        final ExpressionStatementSyntax? expression =
+            value as ExpressionStatementSyntax?;
+        if (expression == null) {
+          throw StateError("expression statement record mismatch");
+        }
+        self.writeExpression(expression.GetExpression());
+        return;
+      }
+      case StatementKind.kIf: {
+        final IfStatementSyntax? branch = value as IfStatementSyntax?;
+        if (branch == null) { throw StateError("if record mismatch"); }
+        self.writeExpression(branch.GetCondition());
+        self.writeBlock(branch.GetThenBlock());
+        final BlockId? alternative = branch.GetElseBlock();
+        if (alternative != null) { self.writeBlock(alternative); }
+        return;
+      }
+      case StatementKind.kWhile: {
+        final WhileStatementSyntax? loop = value as WhileStatementSyntax?;
+        if (loop == null) { throw StateError("while record mismatch"); }
+        self.writeExpression(loop.GetCondition());
+        self.writeBlock(loop.GetBody());
+        return;
+      }
+      case StatementKind.kForEach: {
+        final ForEachStatementSyntax? loop =
+            value as ForEachStatementSyntax?;
+        if (loop == null) { throw StateError("for-each record mismatch"); }
+        self.writeForVariable(loop.GetVariable());
+        self.writeExpression(loop.GetIterable());
+        self.writeBlock(loop.GetBody());
+        return;
+      }
+      case StatementKind.kFor: {
+        final ForStatementSyntax? loop = value as ForStatementSyntax?;
+        if (loop == null) { throw StateError("for record mismatch"); }
+        final StatementId? initializer = loop.GetInitializer();
+        if (initializer != null) { self.writeStatement(initializer); }
+        final ExpressionId? condition = loop.GetCondition();
+        if (condition != null) { self.writeExpression(condition); }
+        self.writeExpressions(loop.GetUpdates());
+        self.writeBlock(loop.GetBody());
+        return;
+      }
+      case StatementKind.kSwitch: {
+        final SwitchStatementSyntax? switchValue =
+            value as SwitchStatementSyntax?;
+        if (switchValue == null) {
+          throw StateError("switch record mismatch");
+        }
+        self.writeExpression(switchValue.GetSelector());
+        self.writeArms(switchValue.GetArms());
+        return;
+      }
+      case StatementKind.kBreak: { return; }
+      case StatementKind.kContinue: { return; }
+      case StatementKind.kNestedBlock: {
+        final NestedBlockStatementSyntax? nested =
+            value as NestedBlockStatementSyntax?;
+        if (nested == null) { throw StateError("block record mismatch"); }
+        self.writeBlock(nested.GetBlock());
+        return;
+      }
+    }
+  }
+
+  func writeForVariable(ForVariableSyntax value): void {
+    final TypeSyntax? type = value.GetType();
+    if (type != null) { self.writeType("for-variable", type); }
+    print("V|");
+    writeFlag(value.IsFinal());
+    print("|");
+    writeRange(value.GetRange());
+    print("|");
+    writeSpan(value.GetName());
+    println();
+  }
+
+  func writeArms(SwitchArmSyntaxSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      final SwitchArmSyntax value = values.Get(index);
+      print("A|");
+      writeRange(value.GetRange());
+      print("|");
+      print(value.GetLabels().GetCount());
+      println();
+      self.writeExpressions(value.GetLabels());
+      self.writeBlock(value.GetBody());
+    }
+  }
+
+  func writeExpressions(ExpressionIdSequence values): void throws StateError {
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      self.writeExpression(values.Get(index));
+    }
+  }
+
+  func writeExpression(ExpressionId id): void throws StateError {
+    final ExpressionSyntax value = self.file.GetStorage().GetExpression(id);
+    final ExpressionKind kind = value.GetExpressionKind();
+    print("X|");
+    print(self.nextExpression);
+    self.nextExpression++;
+    print("|");
+    print(SyntaxKindCode.Expression(kind));
+    print("|");
+    writeFlag(kind != ExpressionKind.kInvalid);
+    print("|");
+    writeRange(value.GetRange());
+    println();
+    switch (kind) {
+      case ExpressionKind.kInvalid: { return; }
+      case ExpressionKind.kIdentifier: {
+        final IdentifierExpressionSyntax? node =
+            value as IdentifierExpressionSyntax?;
+        if (node == null) { throw StateError("identifier record mismatch"); }
+        writeName(node.GetName());
+        return;
+      }
+      case ExpressionKind.kLiteral: {
+        final LiteralExpressionSyntax? node =
+            value as LiteralExpressionSyntax?;
+        if (node == null) { throw StateError("literal record mismatch"); }
+        print("L|");
+        print(SyntaxKindCode.Literal(node.GetLiteralKind()));
+        print("|");
+        writeSpan(node.GetLexeme());
+        println();
+        return;
+      }
+      case ExpressionKind.kSuper: { return; }
+      case ExpressionKind.kThrow: {
+        final ThrowExpressionSyntax? node = value as ThrowExpressionSyntax?;
+        if (node == null) { throw StateError("throw record mismatch"); }
+        self.writeExpression(node.GetOperand());
+        return;
+      }
+      case ExpressionKind.kUnary: {
+        final UnaryExpressionSyntax? node = value as UnaryExpressionSyntax?;
+        if (node == null) { throw StateError("unary record mismatch"); }
+        writeOperation(node.GetOperation());
+        self.writeExpression(node.GetOperand());
+        return;
+      }
+      case ExpressionKind.kUpdate: {
+        final UpdateExpressionSyntax? node = value as UpdateExpressionSyntax?;
+        if (node == null) { throw StateError("update record mismatch"); }
+        print("O|");
+        print(TokenKindCode.Get(node.GetOperation()));
+        print("|");
+        writeFlag(node.IsPostfix());
+        println();
+        self.writeExpression(node.GetOperand());
+        return;
+      }
+      case ExpressionKind.kBinary: {
+        final BinaryExpressionSyntax? node = value as BinaryExpressionSyntax?;
+        if (node == null) { throw StateError("binary record mismatch"); }
+        writeOperation(node.GetOperation());
+        self.writeExpression(node.GetLeft());
+        self.writeExpression(node.GetRight());
+        return;
+      }
+      case ExpressionKind.kTypeTest: {
+        final TypeTestExpressionSyntax? node =
+            value as TypeTestExpressionSyntax?;
+        if (node == null) { throw StateError("type-test record mismatch"); }
+        self.writeType("target", node.GetTarget());
+        self.writeExpression(node.GetValue());
+        return;
+      }
+      case ExpressionKind.kCheckedCast: {
+        final CheckedCastExpressionSyntax? node =
+            value as CheckedCastExpressionSyntax?;
+        if (node == null) { throw StateError("cast record mismatch"); }
+        self.writeType("target", node.GetTarget());
+        self.writeExpression(node.GetValue());
+        return;
+      }
+      case ExpressionKind.kNumericConversion: {
+        final NumericConversionExpressionSyntax? node =
+            value as NumericConversionExpressionSyntax?;
+        if (node == null) {
+          throw StateError("numeric conversion record mismatch");
+        }
+        self.writeType("target", node.GetTarget());
+        self.writeExpression(node.GetValue());
+        return;
+      }
+      case ExpressionKind.kIntegerConversion: {
+        final IntegerConversionExpressionSyntax? node =
+            value as IntegerConversionExpressionSyntax?;
+        if (node == null) {
+          throw StateError("integer conversion record mismatch");
+        }
+        self.writeType("target", node.GetTarget());
+        writeName(node.GetOperation());
+        self.writeExpression(node.GetValue());
+        return;
+      }
+      case ExpressionKind.kAssignment: {
+        final AssignmentExpressionSyntax? node =
+            value as AssignmentExpressionSyntax?;
+        if (node == null) { throw StateError("assignment record mismatch"); }
+        writeOperation(node.GetOperation());
+        self.writeExpression(node.GetTarget());
+        self.writeExpression(node.GetValue());
+        return;
+      }
+      case ExpressionKind.kMemberAccess: {
+        final MemberAccessExpressionSyntax? node =
+            value as MemberAccessExpressionSyntax?;
+        if (node == null) { throw StateError("member record mismatch"); }
+        self.writeNameAndReceiver(node.GetMember(), node.GetObject());
+        return;
+      }
+      case ExpressionKind.kMetaAccess: {
+        final MetaAccessExpressionSyntax? node =
+            value as MetaAccessExpressionSyntax?;
+        if (node == null) { throw StateError("meta record mismatch"); }
+        self.writeNameAndReceiver(node.GetMeta(), node.GetObject());
+        return;
+      }
+      case ExpressionKind.kSafeMemberAccess: {
+        final SafeMemberAccessExpressionSyntax? node =
+            value as SafeMemberAccessExpressionSyntax?;
+        if (node == null) { throw StateError("safe member record mismatch"); }
+        self.writeNameAndReceiver(node.GetMember(), node.GetObject());
+        return;
+      }
+      case ExpressionKind.kSafeMetaAccess: {
+        final SafeMetaAccessExpressionSyntax? node =
+            value as SafeMetaAccessExpressionSyntax?;
+        if (node == null) { throw StateError("safe meta record mismatch"); }
+        self.writeNameAndReceiver(node.GetMeta(), node.GetObject());
+        return;
+      }
+      case ExpressionKind.kNullCoalesce: {
+        final NullCoalesceExpressionSyntax? node =
+            value as NullCoalesceExpressionSyntax?;
+        if (node == null) { throw StateError("coalesce record mismatch"); }
+        self.writeExpression(node.GetNullable());
+        self.writeExpression(node.GetFallback());
+        return;
+      }
+      case ExpressionKind.kNullAssert: {
+        final NullAssertExpressionSyntax? node =
+            value as NullAssertExpressionSyntax?;
+        if (node == null) { throw StateError("assert record mismatch"); }
+        self.writeExpression(node.GetOperand());
+        return;
+      }
+      case ExpressionKind.kCall: {
+        final CallExpressionSyntax? node = value as CallExpressionSyntax?;
+        if (node == null) { throw StateError("call record mismatch"); }
+        print("Q|");
+        print(node.GetArguments().GetCount());
+        println();
+        self.writeExpression(node.GetCallee());
+        self.writeExpressions(node.GetArguments());
+        return;
+      }
+      case ExpressionKind.kArrayLiteral: {
+        final ArrayLiteralExpressionSyntax? node =
+            value as ArrayLiteralExpressionSyntax?;
+        if (node == null) { throw StateError("array record mismatch"); }
+        print("Q|");
+        print(node.GetElements().GetCount());
+        println();
+        self.writeExpressions(node.GetElements());
+        return;
+      }
+      case ExpressionKind.kArrayConstruction: {
+        final ArrayConstructionExpressionSyntax? node =
+            value as ArrayConstructionExpressionSyntax?;
+        if (node == null) {
+          throw StateError("array construction record mismatch");
+        }
+        self.writeType("element", node.GetElementType());
+        self.writeExpression(node.GetLength());
+        return;
+      }
+      case ExpressionKind.kIndex: {
+        final IndexExpressionSyntax? node = value as IndexExpressionSyntax?;
+        if (node == null) { throw StateError("index record mismatch"); }
+        self.writeExpression(node.GetObject());
+        self.writeExpression(node.GetIndex());
+        return;
+      }
+      case ExpressionKind.kParenthesized: {
+        final ParenthesizedExpressionSyntax? node =
+            value as ParenthesizedExpressionSyntax?;
+        if (node == null) { throw StateError("group record mismatch"); }
+        self.writeExpression(node.GetExpression());
+        return;
+      }
+    }
+  }
+
+  func writeNameAndReceiver(SourceSpan name,
+                            ExpressionId receiver): void throws StateError {
+    writeName(name);
+    self.writeExpression(receiver);
+  }
+
+  static func writeOperation(TokenKind operation): void {
+    print("O|");
+    print(TokenKindCode.Get(operation));
+    println();
+  }
+
+  static func writeName(SourceSpan name): void {
+    print("N|");
+    writeSpan(name);
+    println();
+  }
+
+  static func writeRange(SourceRange value): void {
+    print(value.GetBegin().GetOffset());
+    print(",");
+    print(value.GetBegin().GetLine());
+    print(",");
+    print(value.GetBegin().GetColumn());
+    print(",");
+    print(value.GetEnd().GetOffset());
+    print(",");
+    print(value.GetEnd().GetLine());
+    print(",");
+    print(value.GetEnd().GetColumn());
+  }
+
+  static func writeSpan(SourceSpan value): void {
+    if (value.GetLength() == 0) {
+      print("-");
+      return;
+    }
+    for (int32 index = 0; index < value.GetLength(); index++) {
+      if (index != 0) { print(","); }
+      print(value.GetByte(index));
+    }
+  }
+
+  static func writeFlag(bool value): void {
+    if (value) {
+      print(1);
+    } else {
+      print(0);
+    }
+  }
+}

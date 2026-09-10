@@ -1,0 +1,207 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.parser.statement::BlockParser;
+import frontend.parser.support::ConstantParseBudget;
+import frontend.parser.definition::ConstructorInitializerParseResult;
+import frontend.parser.definition::ConstructorInitializerParser;
+import frontend.parser.declaration::DeclarationOutline;
+import frontend.parser.declaration::DeclarationResult;
+import frontend.parser.definition::DefinitionParseState;
+import frontend.parser.definition::DefinitionResult;
+import frontend.parser.expression::ExpressionParseResult;
+import frontend.parser.expression::ExpressionParser;
+import frontend.parser.declaration::FileDeclarationOutline;
+import frontend.parser.support::TokenCursor;
+import frontend.parser.support::TokenIndexRange;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.storage::StatementIdBuilder;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::VerifiedSyntaxTree;
+
+class {
+  static func Parse(
+      DeclarationResult declaration,
+      ConstantParseBudget? constantBudget): DefinitionResult throws StateError {
+    final var state = DefinitionParseState(constantBudget);
+    seedDiagnostics(declaration, state);
+    final int32 count = declaration.GetMembers().GetCount();
+    final DeclarationSyntax?[] values = DeclarationSyntax?[:count];
+    bool membersValid = true;
+    for (int32 index = 0; index < count; index++) {
+      final DeclarationSyntax value = materialize(
+          declaration, declaration.GetMembers().Get(index), state);
+      values[index] = value;
+      if (!value.IsValid()) { membersValid = false; }
+    }
+
+    final DeclarationSyntaxSequence declarations =
+        DeclarationSyntaxSequence.Build(values);
+    final ParseDiagnosticSequence diagnostics =
+        state.GetDiagnostics().Finish();
+    final FileDeclarationOutline outline = declaration.GetFile();
+    final bool valid = declaration.IsValid() && membersValid &&
+                       diagnostics.GetCount() == 0;
+    final SyntaxStorage storage = state.GetStorage();
+    storage.Seal();
+    final FileSyntax file = FileSyntax.Build(
+        declaration.GetSource(), outline.GetName(), outline.GetPackageName(),
+        outline.GetQualifiedName(), outline.GetVisibility(),
+        outline.GetImports(), storage, declarations, outline.GetBaseClass(),
+        outline.GetInterfaces(), outline.GetEnumCases(),
+        outline.GetFileTypeKind(), outline.HasExplicitDeclaration(),
+        outline.IsAbstract(), outline.IsSealed(), outline.GetRange(), valid);
+    final VerifiedSyntaxTree tree = VerifiedSyntaxTree.Build(file);
+    return DefinitionResult.Build(declaration, tree, diagnostics, valid);
+  }
+
+  static func materialize(
+      DeclarationResult declaration, DeclarationOutline outline,
+      DefinitionParseState state): DeclarationSyntax throws StateError {
+    if (outline.GetKind() == DeclarationKind.kField) {
+      return materializeField(declaration, outline, state);
+    }
+    if (outline.GetKind() == DeclarationKind.kFunction) {
+      return materializeFunction(declaration, outline, state);
+    }
+    return materializeConstructor(declaration, outline, state);
+  }
+
+  static func materializeField(
+      DeclarationResult declaration, DeclarationOutline outline,
+      DefinitionParseState state): FieldSyntax throws StateError {
+    final int32 diagnosticBase = state.GetDiagnostics().GetCount();
+    bool valid = outline.IsValid();
+    bool parseInitializer = true;
+    if (outline.IsStatic() &&
+        !state.GetConstantBudget().AddDeclaration()) {
+      parseInitializer = false;
+      valid = false;
+      if (state.TakeDeclarationLimitDiagnostic()) {
+        add(state, ParseDiagnosticKind.kConstantDeclarationLimit,
+            outline.GetRange());
+      }
+    }
+    ExpressionId? initializer = null;
+    final TokenIndexRange? interval = outline.GetFieldInitializerTokens();
+    if (parseInitializer && interval != null && !interval.IsEmpty()) {
+      ConstantParseBudget? parseBudget = null;
+      if (outline.IsStatic()) { parseBudget = state.GetConstantBudget(); }
+      final ExpressionParseResult result = ExpressionParser.Parse(
+          declaration.GetSource(), declaration.GetTokens(), interval,
+          state.GetStorage(), state.GetDiagnostics(), outline.IsStatic(),
+          parseBudget);
+      initializer = result.GetRoot();
+      valid = valid && result.IsValid();
+    }
+    final TypeSyntax? type = outline.GetDeclaredType();
+    if (type == null) {
+      throw StateError("field outline has no declared type");
+    }
+    valid = valid && state.GetDiagnostics().GetCount() == diagnosticBase;
+    return FieldSyntax(type, outline.GetName(), outline.GetVisibility(),
+                       initializer, outline.IsFinal(), outline.IsStatic(),
+                       outline.GetRange(), valid);
+  }
+
+  static func materializeFunction(
+      DeclarationResult declaration, DeclarationOutline outline,
+      DefinitionParseState state): FunctionSyntax throws StateError {
+    final int32 diagnosticBase = state.GetDiagnostics().GetCount();
+    final TokenIndexRange? interval = outline.GetBodyTokens();
+    BlockId body;
+    bool valid = outline.IsValid();
+    if (interval != null) {
+      body = parseBody(declaration, interval, state);
+      valid = valid && state.GetStorage().GetBlock(body).IsValid();
+    } else {
+      final bool absentBody = outline.IsAbstract() ||
+          declaration.GetFile().GetFileTypeKind() == FileTypeKind.kInterface;
+      body = emptyBody(state.GetStorage(), outline.GetRange().GetEnd(), false);
+      valid = valid && absentBody;
+    }
+    valid = valid && state.GetDiagnostics().GetCount() == diagnosticBase;
+    return FunctionSyntax(
+        outline.GetName(), outline.GetVisibility(), outline.GetParameters(),
+        outline.GetDeclaredType(), body, outline.GetThrowsTypes(),
+        outline.HasExplicitThrows(), outline.IsStatic(), outline.IsOverride(),
+        outline.IsAbstract(), outline.IsFinal(), outline.GetRange(), valid);
+  }
+
+  static func materializeConstructor(
+      DeclarationResult declaration, DeclarationOutline outline,
+      DefinitionParseState state): ConstructorSyntax throws StateError {
+    final int32 diagnosticBase = state.GetDiagnostics().GetCount();
+    bool valid = outline.IsValid();
+    ConstructorInitializerSyntax? initializer = null;
+    final TokenIndexRange? initializerInterval =
+        outline.GetConstructorInitializerTokens();
+    if (initializerInterval != null) {
+      final ConstructorInitializerParseResult result =
+          ConstructorInitializerParser.Parse(
+              declaration.GetSource(), declaration.GetTokens(),
+              initializerInterval, state.GetStorage(), state.GetDiagnostics(),
+              null);
+      initializer = result.GetInitializer();
+      valid = valid && result.IsValid();
+    }
+    final TokenIndexRange? bodyInterval = outline.GetBodyTokens();
+    BlockId body;
+    if (bodyInterval == null) {
+      body = emptyBody(state.GetStorage(), outline.GetRange().GetEnd(), false);
+      valid = false;
+    } else {
+      body = parseBody(declaration, bodyInterval, state);
+      valid = valid && state.GetStorage().GetBlock(body).IsValid();
+    }
+    valid = valid && state.GetDiagnostics().GetCount() == diagnosticBase;
+    return ConstructorSyntax(
+        outline.GetName(), outline.GetVisibility(), outline.GetParameters(),
+        initializer, body, outline.GetThrowsTypes(),
+        outline.HasExplicitThrows(), outline.GetRange(), valid);
+  }
+
+  static func parseBody(
+      DeclarationResult declaration, TokenIndexRange interval,
+      DefinitionParseState state): BlockId throws StateError {
+    final TokenCursor cursor = TokenCursor.Build(
+        declaration.GetSource(), declaration.GetTokens()).Slice(interval);
+    return BlockParser.Parse(cursor, state.GetStorage(),
+                             state.GetDiagnostics());
+  }
+
+  static func emptyBody(SyntaxStorage storage, SourceLocation point,
+                        bool valid): BlockId throws StateError {
+    final var statements = StatementIdBuilder();
+    return storage.AddBlock(BlockNodeSyntax(
+        statements.Finish(), SourceRange.PointRange(point), valid));
+  }
+
+  static func seedDiagnostics(
+      DeclarationResult declaration,
+      DefinitionParseState state): void throws StateError {
+    for (int32 index = 0;
+         index < declaration.GetDiagnostics().GetCount(); index++) {
+      state.GetDiagnostics().Add(declaration.GetDiagnostics().Get(index));
+    }
+  }
+
+  static func add(DefinitionParseState state, ParseDiagnosticKind kind,
+                  SourceRange range): void throws StateError {
+    state.GetDiagnostics().Add(ParseDiagnostic(kind, range, null));
+  }
+}

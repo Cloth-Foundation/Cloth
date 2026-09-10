@@ -1,0 +1,73 @@
+import frontend.parser.expression::ExpressionParseFrameKind;
+import frontend.syntax::ExpressionId;
+import frontend.syntax.storage::ExpressionIdBuilder;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+
+class {
+  final ExpressionParseFrameKind kind;
+  final ExpressionParseFrame? previous;
+  final int32 depth;
+  final int32 diagnosticBase;
+  int32 state;
+  int32 minimumPrecedence;
+  ExpressionId? value;
+  Token? operation;
+  ExpressionIdBuilder? values;
+  TypeSyntax? type;
+  bool valid;
+
+  _ExpressionParseFrame(ExpressionParseFrameKind kind,
+                        ExpressionParseFrame? previous, int32 depth,
+                        int32 diagnosticBase, int32 minimumPrecedence) {
+    self.kind = kind;
+    self.previous = previous;
+    self.depth = depth;
+    self.diagnosticBase = diagnosticBase;
+    self.state = 0;
+    self.minimumPrecedence = minimumPrecedence;
+    self.value = null;
+    self.operation = null;
+    self.values = null;
+    self.type = null;
+    self.valid = true;
+  }
+
+  static func Expression(ExpressionParseFrame? previous,
+                         int32 minimumPrecedence, int32 depth,
+                         int32 diagnosticBase): ExpressionParseFrame {
+    return ExpressionParseFrame(ExpressionParseFrameKind.kExpression,
+                                previous, depth, diagnosticBase,
+                                minimumPrecedence);
+  }
+
+  static func Unary(ExpressionParseFrame? previous, int32 depth,
+                    int32 diagnosticBase): ExpressionParseFrame {
+    return ExpressionParseFrame(ExpressionParseFrameKind.kUnary, previous,
+                                depth, diagnosticBase, 0);
+  }
+
+  static func Primary(ExpressionParseFrame? previous, int32 depth,
+                      int32 diagnosticBase): ExpressionParseFrame {
+    return ExpressionParseFrame(ExpressionParseFrameKind.kPrimary, previous,
+                                depth, diagnosticBase, 0);
+  }
+
+  func GetKind(): ExpressionParseFrameKind { return self.kind; }
+  func GetPrevious(): ExpressionParseFrame? { return self.previous; }
+  func GetDepth(): int32 { return self.depth; }
+  func GetDiagnosticBase(): int32 { return self.diagnosticBase; }
+  func GetState(): int32 { return self.state; }
+  func SetState(int32 state) { self.state = state; }
+  func GetMinimumPrecedence(): int32 { return self.minimumPrecedence; }
+  func GetValue(): ExpressionId? { return self.value; }
+  func SetValue(ExpressionId value) { self.value = value; }
+  func GetOperation(): Token? { return self.operation; }
+  func SetOperation(Token operation) { self.operation = operation; }
+  func GetValues(): ExpressionIdBuilder? { return self.values; }
+  func SetValues(ExpressionIdBuilder values) { self.values = values; }
+  func GetType(): TypeSyntax? { return self.type; }
+  func SetType(TypeSyntax type) { self.type = type; }
+  func IsValid(): bool { return self.valid; }
+  func MarkInvalid() { self.valid = false; }
+}

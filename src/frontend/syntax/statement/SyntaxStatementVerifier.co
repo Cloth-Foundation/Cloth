@@ -50,10 +50,11 @@ class {
     return self.context.GetStorage().GetStatement(id).IsValid();
   }
 
-  func VerifyBlock(BlockId id,
-                   SourceRange parent): bool throws StateError {
+  func VerifyBlock(BlockId id, SourceRange parent,
+                   bool parentValid): bool throws StateError {
     self.requireIdle();
-    self.top = StatementVerificationFrame.Block(null, id, parent, false);
+    self.top = StatementVerificationFrame.Block(
+        null, id, parent, parentValid);
     self.run();
     return self.context.GetStorage().GetBlock(id).IsValid();
   }
@@ -74,7 +75,11 @@ class {
     final BlockId id = self.requireBlock(frame);
     final bool fresh = self.context.BeginBlock(id);
     final BlockSyntax block = self.context.GetStorage().GetBlock(id);
-    self.context.VerifyRange(block.GetRange(), frame.GetParent());
+    if (frame.IsParentValid() && block.IsValid()) {
+      self.context.VerifyRange(block.GetRange(), frame.GetParent());
+    } else {
+      self.context.VerifySourceRange(block.GetRange());
+    }
     self.context.VerifyChildValidity(frame.IsParentValid(), block.IsValid());
     final BlockNodeSyntax? value = block as BlockNodeSyntax?;
     if (value == null) {
@@ -94,7 +99,11 @@ class {
     final bool fresh = self.context.BeginStatement(id);
     final StatementSyntax statement =
         self.context.GetStorage().GetStatement(id);
-    self.context.VerifyRange(statement.GetRange(), frame.GetParent());
+    if (frame.IsParentValid() && statement.IsValid()) {
+      self.context.VerifyRange(statement.GetRange(), frame.GetParent());
+    } else {
+      self.context.VerifySourceRange(statement.GetRange());
+    }
     self.context.VerifyChildValidity(frame.IsParentValid(),
                                      statement.IsValid());
     if (!fresh) { return; }
@@ -223,7 +232,7 @@ class {
       self.verifyExpressions(arm, arm.GetLabels());
       self.context.VerifyChildValidity(statement.IsValid(), arm.IsValid());
     }
-    if (defaults > 1) {
+    if (defaults > 1 && statement.IsValid()) {
       throw StateError("switch syntax contains multiple default arms");
     }
     for (int32 index = arms.GetCount() - 1; index >= 0; index--) {

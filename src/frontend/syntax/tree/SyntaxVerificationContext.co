@@ -43,6 +43,14 @@ class {
 
   func VerifyRange(SourceRange range,
                    SourceRange parent): void throws StateError {
+    self.VerifySourceRange(range);
+    if (range.GetBegin().GetOffset() < parent.GetBegin().GetOffset() ||
+        range.GetEnd().GetOffset() > parent.GetEnd().GetOffset()) {
+      throw StateError("syntax range is outside its parent");
+    }
+  }
+
+  func VerifySourceRange(SourceRange range): void throws StateError {
     if (range.GetBegin().GetFile() != self.source.GetPath() ||
         range.GetEnd().GetFile() != self.source.GetPath() ||
         range.GetBegin().GetOffset() < 0 ||
@@ -52,10 +60,6 @@ class {
         range.GetBegin().GetColumn() == 0 ||
         range.GetEnd().GetLine() == 0 || range.GetEnd().GetColumn() == 0) {
       throw StateError("syntax range does not belong to its source");
-    }
-    if (range.GetBegin().GetOffset() < parent.GetBegin().GetOffset() ||
-        range.GetEnd().GetOffset() > parent.GetEnd().GetOffset()) {
-      throw StateError("syntax range is outside its parent");
     }
   }
 
@@ -74,9 +78,13 @@ class {
   }
 
   func VerifyType(TypeSyntax type,
-                  SourceRange parent): bool throws StateError {
+                   SourceRange parent): bool throws StateError {
     self.VerifyRange(type.GetRange(), parent);
-    self.VerifySpan(type.GetName(), type.GetRange(), !type.IsValid());
+    if (type.IsValid() ||
+        type.GetRange().GetBegin().GetOffset() !=
+            type.GetRange().GetEnd().GetOffset()) {
+      self.VerifySpan(type.GetName(), type.GetRange(), !type.IsValid());
+    }
     if (type.IsElementNullable() && !type.IsArray()) {
       throw StateError("only array syntax may have nullable elements");
     }

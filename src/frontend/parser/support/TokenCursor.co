@@ -1,0 +1,80 @@
+import frontend.parser.support::TokenBufferVerifier;
+import frontend.parser.support::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  final SourceFile source;
+  final TokenBuffer tokens;
+  final int32 begin;
+  final int32 limit;
+  int32 current;
+
+  _TokenCursor(SourceFile source, TokenBuffer tokens, int32 begin,
+               int32 limit) {
+    self.source = source;
+    self.tokens = tokens;
+    self.begin = begin;
+    self.limit = limit;
+    self.current = begin;
+  }
+
+  static func Build(SourceFile source,
+                    TokenBuffer tokens): TokenCursor throws StateError {
+    TokenBufferVerifier.Verify(source, tokens);
+    return TokenCursor(source, tokens, 0, tokens.GetCount() - 1);
+  }
+
+  func Slice(TokenIndexRange range): TokenCursor throws StateError {
+    if (range.GetBegin() < self.begin || range.GetEnd() > self.limit) {
+      throw StateError("token cursor slice is outside its parent");
+    }
+    return TokenCursor(self.source, self.tokens, range.GetBegin(),
+                       range.GetEnd());
+  }
+
+  func AtEnd(): bool { return self.current >= self.limit; }
+
+  func Current(): Token throws StateError { return self.Peek(0); }
+
+  func Peek(int32 lookahead): Token throws StateError {
+    if (lookahead < 0) {
+      throw StateError("token cursor lookahead is negative");
+    }
+    final int32 remaining = self.limit - self.current;
+    if (self.current >= self.limit || lookahead >= remaining) {
+      return self.tokens.Get(self.limit);
+    }
+    return self.tokens.Get(self.current + lookahead);
+  }
+
+  func Advance(): Token throws StateError {
+    final Token value = self.Current();
+    if (!self.AtEnd()) { self.current++; }
+    return value;
+  }
+
+  func Match(TokenKind kind): bool throws StateError {
+    if (self.Current().GetKind() != kind) { return false; }
+    self.Advance();
+    return true;
+  }
+
+  func RequireProgress(int32 previous): void throws StateError {
+    if (previous < self.begin || previous > self.limit ||
+        previous > self.current) {
+      throw StateError("token cursor progress checkpoint is invalid");
+    }
+    if (!self.AtEnd() && self.current == previous) {
+      throw StateError("token cursor did not make progress");
+    }
+  }
+
+  func GetBegin(): int32 { return self.begin; }
+  func GetIndex(): int32 { return self.current; }
+  func GetLimit(): int32 { return self.limit; }
+  func GetSource(): SourceFile { return self.source; }
+  func GetTokens(): TokenBuffer { return self.tokens; }
+}

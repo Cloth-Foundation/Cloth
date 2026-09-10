@@ -1,0 +1,411 @@
+import parity::SyntaxKindCode;
+import parity::TokenKindCode;
+import clothc.frontend.source::SourceSpan;
+import clothc.frontend.syntax::ExpressionId;
+import clothc.frontend.syntax::ExpressionIdSequence;
+import clothc.frontend.syntax::ExpressionSyntax;
+import clothc.frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import clothc.frontend.syntax.expression::ArrayLiteralExpressionSyntax;
+import clothc.frontend.syntax.expression::AssignmentExpressionSyntax;
+import clothc.frontend.syntax.expression::BinaryExpressionSyntax;
+import clothc.frontend.syntax.expression::CallExpressionSyntax;
+import clothc.frontend.syntax.expression::CheckedCastExpressionSyntax;
+import clothc.frontend.syntax.expression::ExpressionKind;
+import clothc.frontend.syntax.expression::IdentifierExpressionSyntax;
+import clothc.frontend.syntax.expression::IndexExpressionSyntax;
+import clothc.frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import clothc.frontend.syntax.expression::LiteralExpressionSyntax;
+import clothc.frontend.syntax.expression::MemberAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::MetaAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::NullAssertExpressionSyntax;
+import clothc.frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import clothc.frontend.syntax.expression::NumericConversionExpressionSyntax;
+import clothc.frontend.syntax.expression::ParenthesizedExpressionSyntax;
+import clothc.frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::SafeMetaAccessExpressionSyntax;
+import clothc.frontend.syntax.expression::ThrowExpressionSyntax;
+import clothc.frontend.syntax.expression::TypeTestExpressionSyntax;
+import clothc.frontend.syntax.expression::UnaryExpressionSyntax;
+import clothc.frontend.syntax.expression::UpdateExpressionSyntax;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+import clothc.frontend.syntax.tree::TypeSyntax;
+
+class {
+  static func Write(SyntaxStorage storage,
+                    ExpressionId id): void throws StateError {
+    final ExpressionSyntax expression = storage.GetExpression(id);
+    final ExpressionKind kind = expression.GetExpressionKind();
+    print("X|");
+    print(id.GetOrdinal());
+    print("|");
+    print(SyntaxKindCode.Expression(kind));
+    print("|");
+    print(flag(expression.IsValid()));
+    print("|");
+    print(expression.GetRange().GetBegin().GetOffset());
+    print("|");
+    print(expression.GetRange().GetEnd().GetOffset());
+    writePayload(kind, expression);
+    println();
+  }
+
+  static func writePayload(ExpressionKind kind,
+                           ExpressionSyntax expression): void throws StateError {
+    switch (kind) {
+      case ExpressionKind.kInvalid: { return; }
+      case ExpressionKind.kSuper: { return; }
+      case ExpressionKind.kIdentifier: {
+        final IdentifierExpressionSyntax value =
+            requireIdentifier(expression);
+        writeSpan(value.GetName());
+        return;
+      }
+      case ExpressionKind.kLiteral: {
+        final LiteralExpressionSyntax value = requireLiteral(expression);
+        print("|");
+        print(SyntaxKindCode.Literal(value.GetLiteralKind()));
+        writeSpan(value.GetLexeme());
+        return;
+      }
+      case ExpressionKind.kThrow: {
+        final ThrowExpressionSyntax value = requireThrow(expression);
+        writeId(value.GetOperand());
+        return;
+      }
+      case ExpressionKind.kUnary: {
+        final UnaryExpressionSyntax value = requireUnary(expression);
+        writeOperation(TokenKindCode.Get(value.GetOperation()));
+        writeId(value.GetOperand());
+        return;
+      }
+      case ExpressionKind.kUpdate: {
+        final UpdateExpressionSyntax value = requireUpdate(expression);
+        writeOperation(TokenKindCode.Get(value.GetOperation()));
+        writeId(value.GetOperand());
+        print("|");
+        print(flag(value.IsPostfix()));
+        return;
+      }
+      case ExpressionKind.kBinary: {
+        final BinaryExpressionSyntax value = requireBinary(expression);
+        writeId(value.GetLeft());
+        writeOperation(TokenKindCode.Get(value.GetOperation()));
+        writeId(value.GetRight());
+        return;
+      }
+      case ExpressionKind.kTypeTest: {
+        final TypeTestExpressionSyntax value = requireTypeTest(expression);
+        writeId(value.GetValue());
+        writeType(value.GetTarget());
+        return;
+      }
+      case ExpressionKind.kCheckedCast: {
+        final CheckedCastExpressionSyntax value = requireCheckedCast(expression);
+        writeId(value.GetValue());
+        writeType(value.GetTarget());
+        return;
+      }
+      case ExpressionKind.kNumericConversion: {
+        final NumericConversionExpressionSyntax value =
+            requireNumericConversion(expression);
+        writeType(value.GetTarget());
+        writeId(value.GetValue());
+        return;
+      }
+      case ExpressionKind.kIntegerConversion: {
+        final IntegerConversionExpressionSyntax value =
+            requireIntegerConversion(expression);
+        writeType(value.GetTarget());
+        writeSpan(value.GetOperation());
+        writeId(value.GetValue());
+        return;
+      }
+      case ExpressionKind.kAssignment: {
+        final AssignmentExpressionSyntax value = requireAssignment(expression);
+        writeId(value.GetTarget());
+        writeOperation(TokenKindCode.Get(value.GetOperation()));
+        writeId(value.GetValue());
+        return;
+      }
+      case ExpressionKind.kMemberAccess: {
+        final MemberAccessExpressionSyntax value = requireMember(expression);
+        writeId(value.GetObject());
+        writeSpan(value.GetMember());
+        return;
+      }
+      case ExpressionKind.kMetaAccess: {
+        final MetaAccessExpressionSyntax value = requireMeta(expression);
+        writeId(value.GetObject());
+        writeSpan(value.GetMeta());
+        return;
+      }
+      case ExpressionKind.kSafeMemberAccess: {
+        final SafeMemberAccessExpressionSyntax value =
+            requireSafeMember(expression);
+        writeId(value.GetObject());
+        writeSpan(value.GetMember());
+        return;
+      }
+      case ExpressionKind.kSafeMetaAccess: {
+        final SafeMetaAccessExpressionSyntax value = requireSafeMeta(expression);
+        writeId(value.GetObject());
+        writeSpan(value.GetMeta());
+        return;
+      }
+      case ExpressionKind.kNullCoalesce: {
+        final NullCoalesceExpressionSyntax value = requireCoalesce(expression);
+        writeId(value.GetNullable());
+        writeId(value.GetFallback());
+        return;
+      }
+      case ExpressionKind.kNullAssert: {
+        final NullAssertExpressionSyntax value = requireAssert(expression);
+        writeId(value.GetOperand());
+        return;
+      }
+      case ExpressionKind.kCall: {
+        final CallExpressionSyntax value = requireCall(expression);
+        writeId(value.GetCallee());
+        writeIds(value.GetArguments());
+        return;
+      }
+      case ExpressionKind.kArrayLiteral: {
+        final ArrayLiteralExpressionSyntax value = requireArray(expression);
+        writeIds(value.GetElements());
+        return;
+      }
+      case ExpressionKind.kArrayConstruction: {
+        final ArrayConstructionExpressionSyntax value =
+            requireArrayConstruction(expression);
+        writeType(value.GetElementType());
+        writeId(value.GetLength());
+        return;
+      }
+      case ExpressionKind.kIndex: {
+        final IndexExpressionSyntax value = requireIndex(expression);
+        writeId(value.GetObject());
+        writeId(value.GetIndex());
+        return;
+      }
+      case ExpressionKind.kParenthesized: {
+        final ParenthesizedExpressionSyntax value = requireGrouped(expression);
+        writeId(value.GetExpression());
+        return;
+      }
+    }
+  }
+
+  static func writeIds(ExpressionIdSequence values): void throws StateError {
+    print("|");
+    print(values.GetCount());
+    for (int32 index = 0; index < values.GetCount(); index++) {
+      writeId(values.Get(index));
+    }
+  }
+
+  static func writeId(ExpressionId value): void {
+    print("|");
+    print(value.GetOrdinal());
+  }
+
+  static func writeOperation(int32 value): void {
+    print("|");
+    print(value);
+  }
+
+  static func writeSpan(SourceSpan value): void {
+    print("|");
+    print(value.GetBeginOffset());
+    print("|");
+    print(value.GetEndOffset());
+  }
+
+  static func writeType(TypeSyntax value): void {
+    print("|T");
+    writeSpan(value.GetName());
+    print("|");
+    print(flag(value.IsPrimitive()));
+    print("|");
+    print(flag(value.IsArray()));
+    print("|");
+    print(flag(value.IsNullable()));
+    print("|");
+    print(flag(value.IsElementNullable()));
+    print("|");
+    print(flag(value.IsValid()));
+  }
+
+  static func flag(bool value): int32 {
+    if (value) { return 1; }
+    return 0;
+  }
+
+  static func requireIdentifier(
+      ExpressionSyntax value): IdentifierExpressionSyntax throws StateError {
+    final IdentifierExpressionSyntax? result =
+        value as IdentifierExpressionSyntax?;
+    if (result == null) { throw StateError("identifier kind mismatch"); }
+    return result;
+  }
+
+  static func requireLiteral(
+      ExpressionSyntax value): LiteralExpressionSyntax throws StateError {
+    final LiteralExpressionSyntax? result = value as LiteralExpressionSyntax?;
+    if (result == null) { throw StateError("literal kind mismatch"); }
+    return result;
+  }
+
+  static func requireThrow(
+      ExpressionSyntax value): ThrowExpressionSyntax throws StateError {
+    final ThrowExpressionSyntax? result = value as ThrowExpressionSyntax?;
+    if (result == null) { throw StateError("throw kind mismatch"); }
+    return result;
+  }
+
+  static func requireUnary(
+      ExpressionSyntax value): UnaryExpressionSyntax throws StateError {
+    final UnaryExpressionSyntax? result = value as UnaryExpressionSyntax?;
+    if (result == null) { throw StateError("unary kind mismatch"); }
+    return result;
+  }
+
+  static func requireUpdate(
+      ExpressionSyntax value): UpdateExpressionSyntax throws StateError {
+    final UpdateExpressionSyntax? result = value as UpdateExpressionSyntax?;
+    if (result == null) { throw StateError("update kind mismatch"); }
+    return result;
+  }
+
+  static func requireBinary(
+      ExpressionSyntax value): BinaryExpressionSyntax throws StateError {
+    final BinaryExpressionSyntax? result = value as BinaryExpressionSyntax?;
+    if (result == null) { throw StateError("binary kind mismatch"); }
+    return result;
+  }
+
+  static func requireTypeTest(
+      ExpressionSyntax value): TypeTestExpressionSyntax throws StateError {
+    final TypeTestExpressionSyntax? result =
+        value as TypeTestExpressionSyntax?;
+    if (result == null) { throw StateError("type-test kind mismatch"); }
+    return result;
+  }
+
+  static func requireCheckedCast(
+      ExpressionSyntax value): CheckedCastExpressionSyntax throws StateError {
+    final CheckedCastExpressionSyntax? result =
+        value as CheckedCastExpressionSyntax?;
+    if (result == null) { throw StateError("checked-cast kind mismatch"); }
+    return result;
+  }
+
+  static func requireNumericConversion(
+      ExpressionSyntax value): NumericConversionExpressionSyntax throws StateError {
+    final NumericConversionExpressionSyntax? result =
+        value as NumericConversionExpressionSyntax?;
+    if (result == null) { throw StateError("numeric-conversion kind mismatch"); }
+    return result;
+  }
+
+  static func requireIntegerConversion(
+      ExpressionSyntax value): IntegerConversionExpressionSyntax throws StateError {
+    final IntegerConversionExpressionSyntax? result =
+        value as IntegerConversionExpressionSyntax?;
+    if (result == null) { throw StateError("integer-conversion kind mismatch"); }
+    return result;
+  }
+
+  static func requireAssignment(
+      ExpressionSyntax value): AssignmentExpressionSyntax throws StateError {
+    final AssignmentExpressionSyntax? result =
+        value as AssignmentExpressionSyntax?;
+    if (result == null) { throw StateError("assignment kind mismatch"); }
+    return result;
+  }
+
+  static func requireMember(
+      ExpressionSyntax value): MemberAccessExpressionSyntax throws StateError {
+    final MemberAccessExpressionSyntax? result =
+        value as MemberAccessExpressionSyntax?;
+    if (result == null) { throw StateError("member kind mismatch"); }
+    return result;
+  }
+
+  static func requireMeta(
+      ExpressionSyntax value): MetaAccessExpressionSyntax throws StateError {
+    final MetaAccessExpressionSyntax? result =
+        value as MetaAccessExpressionSyntax?;
+    if (result == null) { throw StateError("meta kind mismatch"); }
+    return result;
+  }
+
+  static func requireSafeMember(
+      ExpressionSyntax value): SafeMemberAccessExpressionSyntax throws StateError {
+    final SafeMemberAccessExpressionSyntax? result =
+        value as SafeMemberAccessExpressionSyntax?;
+    if (result == null) { throw StateError("safe-member kind mismatch"); }
+    return result;
+  }
+
+  static func requireSafeMeta(
+      ExpressionSyntax value): SafeMetaAccessExpressionSyntax throws StateError {
+    final SafeMetaAccessExpressionSyntax? result =
+        value as SafeMetaAccessExpressionSyntax?;
+    if (result == null) { throw StateError("safe-meta kind mismatch"); }
+    return result;
+  }
+
+  static func requireCoalesce(
+      ExpressionSyntax value): NullCoalesceExpressionSyntax throws StateError {
+    final NullCoalesceExpressionSyntax? result =
+        value as NullCoalesceExpressionSyntax?;
+    if (result == null) { throw StateError("coalesce kind mismatch"); }
+    return result;
+  }
+
+  static func requireAssert(
+      ExpressionSyntax value): NullAssertExpressionSyntax throws StateError {
+    final NullAssertExpressionSyntax? result =
+        value as NullAssertExpressionSyntax?;
+    if (result == null) { throw StateError("null-assert kind mismatch"); }
+    return result;
+  }
+
+  static func requireCall(
+      ExpressionSyntax value): CallExpressionSyntax throws StateError {
+    final CallExpressionSyntax? result = value as CallExpressionSyntax?;
+    if (result == null) { throw StateError("call kind mismatch"); }
+    return result;
+  }
+
+  static func requireArray(
+      ExpressionSyntax value): ArrayLiteralExpressionSyntax throws StateError {
+    final ArrayLiteralExpressionSyntax? result =
+        value as ArrayLiteralExpressionSyntax?;
+    if (result == null) { throw StateError("array kind mismatch"); }
+    return result;
+  }
+
+  static func requireArrayConstruction(
+      ExpressionSyntax value): ArrayConstructionExpressionSyntax throws StateError {
+    final ArrayConstructionExpressionSyntax? result =
+        value as ArrayConstructionExpressionSyntax?;
+    if (result == null) { throw StateError("array-construction kind mismatch"); }
+    return result;
+  }
+
+  static func requireIndex(
+      ExpressionSyntax value): IndexExpressionSyntax throws StateError {
+    final IndexExpressionSyntax? result = value as IndexExpressionSyntax?;
+    if (result == null) { throw StateError("index kind mismatch"); }
+    return result;
+  }
+
+  static func requireGrouped(
+      ExpressionSyntax value): ParenthesizedExpressionSyntax throws StateError {
+    final ParenthesizedExpressionSyntax? result =
+        value as ParenthesizedExpressionSyntax?;
+    if (result == null) { throw StateError("parenthesized kind mismatch"); }
+    return result;
+  }
+}

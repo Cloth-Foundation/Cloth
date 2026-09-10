@@ -1,1 +1,3 @@
 /target/
+.idea/
+tests/self_host/target

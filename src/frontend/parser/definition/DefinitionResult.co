@@ -1,0 +1,32 @@
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.parser.declaration::DeclarationResult;
+import frontend.parser.definition::DefinitionResultVerifier;
+import frontend.syntax.tree::VerifiedSyntaxTree;
+
+class {
+  final DeclarationResult declaration;
+  final VerifiedSyntaxTree tree;
+  final ParseDiagnosticSequence diagnostics;
+  final bool valid;
+
+  _DefinitionResult(DeclarationResult declaration, VerifiedSyntaxTree tree,
+                    ParseDiagnosticSequence diagnostics, bool valid) {
+    self.declaration = declaration;
+    self.tree = tree;
+    self.diagnostics = diagnostics;
+    self.valid = valid;
+  }
+
+  static func Build(
+      DeclarationResult declaration, VerifiedSyntaxTree tree,
+      ParseDiagnosticSequence diagnostics,
+      bool valid): DefinitionResult throws StateError {
+    DefinitionResultVerifier.Verify(declaration, tree, diagnostics, valid);
+    return DefinitionResult(declaration, tree, diagnostics, valid);
+  }
+
+  func GetDeclaration(): DeclarationResult { return self.declaration; }
+  func GetTree(): VerifiedSyntaxTree { return self.tree; }
+  func GetDiagnostics(): ParseDiagnosticSequence { return self.diagnostics; }
+  func IsValid(): bool { return self.valid; }
+}

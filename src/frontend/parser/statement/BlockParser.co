@@ -1,0 +1,18 @@
+import frontend.parser.support::ParseDiagnosticCollector;
+import frontend.parser.statement::StatementParser;
+import frontend.parser.support::TokenCursor;
+import frontend.syntax::BlockId;
+import frontend.syntax.storage::SyntaxStorage;
+
+class {
+  static func Parse(TokenCursor cursor, SyntaxStorage storage,
+                    ParseDiagnosticCollector diagnostics): BlockId
+      throws StateError {
+    final var parser = StatementParser(cursor, storage, diagnostics);
+    final BlockId block = parser.ParseBlock();
+    if (!cursor.AtEnd()) {
+      throw StateError("block parser did not consume its bounded interval");
+    }
+    return block;
+  }
+}

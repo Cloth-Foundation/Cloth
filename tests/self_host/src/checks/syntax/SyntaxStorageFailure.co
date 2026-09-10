@@ -1,0 +1,54 @@
+import fixtures::ExpressionStorageProbe;
+import clothc.frontend.source::SourceLocation;
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.syntax::ExpressionId;
+import clothc.frontend.syntax.storage::ExpressionIdBuilder;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+
+class {
+  static func Run(string mode): int32 throws StateError {
+    if (mode == "sealed-append") { return sealedAppend(); }
+    if (mode == "foreign-read") { return foreignRead(); }
+    if (mode == "mixed-children") { return mixedChildren(); }
+    if (mode == "child-bounds") { return childBounds(); }
+    return 2;
+  }
+
+  static func sealedAppend(): int32 throws StateError {
+    final var storage = SyntaxStorage();
+    storage.Seal();
+    storage.AddExpression(ExpressionStorageProbe(0, checkRange()));
+    return 0;
+  }
+
+  static func foreignRead(): int32 throws StateError {
+    final var storage = SyntaxStorage();
+    final var other = SyntaxStorage();
+    final ExpressionId value =
+        other.AddExpression(ExpressionStorageProbe(0, checkRange()));
+    storage.GetExpression(value);
+    return 0;
+  }
+
+  static func mixedChildren(): int32 throws StateError {
+    final var storage = SyntaxStorage();
+    final var other = SyntaxStorage();
+    final var builder = ExpressionIdBuilder();
+    builder.Add(storage.AddExpression(
+        ExpressionStorageProbe(0, checkRange())));
+    builder.Add(other.AddExpression(
+        ExpressionStorageProbe(1, checkRange())));
+    return 0;
+  }
+
+  static func childBounds(): int32 throws StateError {
+    final var builder = ExpressionIdBuilder();
+    builder.Finish().Get(0);
+    return 0;
+  }
+
+  static func checkRange(): SourceRange {
+    final var location = SourceLocation("syntax-storage", 0, 1, 1);
+    return SourceRange.PointRange(location);
+  }
+}

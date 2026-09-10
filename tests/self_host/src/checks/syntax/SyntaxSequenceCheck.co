@@ -1,0 +1,72 @@
+import fixtures::ExpressionStorageProbe;
+import fixtures::StatementStorageProbe;
+import clothc.frontend.source::SourceLocation;
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.syntax::ExpressionId;
+import clothc.frontend.syntax::ExpressionIdSequence;
+import clothc.frontend.syntax::StatementId;
+import clothc.frontend.syntax::StatementIdSequence;
+import clothc.frontend.syntax.storage::ExpressionIdBuilder;
+import clothc.frontend.syntax.storage::StatementIdBuilder;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+
+class {
+  static func Run(): int32 throws StateError {
+    final var storage = SyntaxStorage();
+    final var expressionBuilder = ExpressionIdBuilder();
+    final SourceRange range = checkRange();
+    ExpressionId first = storage.AddExpression(
+        ExpressionStorageProbe(0, range));
+    expressionBuilder.Add(first);
+    for (int32 index = 1; index < 65; index++) {
+      expressionBuilder.Add(storage.AddExpression(
+          ExpressionStorageProbe(index, range)));
+    }
+    if (expressionBuilder.GetCount() != 65 ||
+        expressionBuilder.IsFinished()) {
+      return 310;
+    }
+
+    final ExpressionIdSequence expressions = expressionBuilder.Finish();
+    if (expressions.GetCount() != 65 || !expressionBuilder.IsFinished() ||
+        expressionBuilder.CanAdd(first)) {
+      return 311;
+    }
+    for (int32 index = 0; index < expressions.GetCount(); index++) {
+      if (expressions.Get(index).GetOrdinal() != index) { return 312; }
+    }
+
+    final var other = SyntaxStorage();
+    final ExpressionId foreign = other.AddExpression(
+        ExpressionStorageProbe(0, range));
+    final var ownerCheck = ExpressionIdBuilder();
+    ownerCheck.Add(first);
+    if (ownerCheck.CanAdd(foreign)) { return 313; }
+    ownerCheck.Finish();
+
+    final var emptyBuilder = ExpressionIdBuilder();
+    if (emptyBuilder.Finish().GetCount() != 0) { return 314; }
+
+    final StatementId statement = storage.AddStatement(
+        StatementStorageProbe(65, range));
+    final var statementBuilder = StatementIdBuilder();
+    for (int32 index = 0; index < 65; index++) {
+      statementBuilder.Add(statement);
+    }
+    final StatementIdSequence statements = statementBuilder.Finish();
+    if (statements.GetCount() != 65 ||
+        statements.Get(64).GetOrdinal() != 65) {
+      return 315;
+    }
+
+    storage.Seal();
+    if (!storage.IsSealed() || storage.GetPageCount() != 2) { return 316; }
+    return 0;
+  }
+
+  static func checkRange(): SourceRange {
+    final var begin = SourceLocation("syntax-sequence", 0, 1, 1);
+    final var end = SourceLocation("syntax-sequence", 1, 1, 2);
+    return SourceRange(begin, end);
+  }
+}

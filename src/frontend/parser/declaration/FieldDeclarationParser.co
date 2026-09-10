@@ -1,0 +1,54 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser.declaration::DeclarationOutline;
+import frontend.parser.declaration::DeclarationParseState;
+import frontend.parser.declaration::DeferredRegionLocator;
+import frontend.parser.support::SourceText;
+import frontend.parser.support::TokenIndexRange;
+import frontend.parser.support::TypeParser;
+import frontend.parser.storage::ParameterSyntaxBuilder;
+import frontend.parser.storage::TypeSyntaxBuilder;
+import frontend.source::SourceRange;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+import frontend.token::TokenKind;
+
+class {
+  static func Parse(DeclarationParseState state) throws StateError {
+    final int32 diagnosticCount = state.GetDiagnosticCount();
+    final int32 begin = state.GetIndex();
+    final bool staticMember = state.Match(TokenKind.kKwStatic);
+    final bool finalMember = state.Match(TokenKind.kKwFinal);
+    final TypeSyntax? declaredType = TypeParser.Parse(state);
+    if (declaredType == null) {
+      DeferredRegionLocator.SynchronizeMember(state);
+      return;
+    }
+    if (state.Current().GetKind() != TokenKind.kIdentifier) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFieldName,
+                          state.Current().GetRange(), null);
+      DeferredRegionLocator.SynchronizeMember(state);
+      return;
+    }
+    final Token name = state.Advance();
+
+    TokenIndexRange? initializer = null;
+    if (state.Match(TokenKind.kEqual)) {
+      initializer = DeferredRegionLocator.LocateFieldInitializer(state);
+    }
+    if (!state.Match(TokenKind.kSemicolon)) {
+      state.AddDiagnostic(ParseDiagnosticKind.kExpectedFieldTerminator,
+                          state.Current().GetRange(), null);
+    }
+
+    final SourceRange range = state.RangeFrom(begin, state.GetIndex());
+    final var parameters = ParameterSyntaxBuilder();
+    final var throwsTypes = TypeSyntaxBuilder();
+    state.AddMember(DeclarationOutline.Build(
+        DeclarationKind.kField, name.GetSpan(),
+        SourceText.VisibilityOfSpan(name.GetSpan()), declaredType,
+        parameters.Finish(), throwsTypes.Finish(), false, staticMember,
+        finalMember, false, false, begin, initializer, null, null, range,
+        state.GetDiagnosticCount() == diagnosticCount));
+  }
+}

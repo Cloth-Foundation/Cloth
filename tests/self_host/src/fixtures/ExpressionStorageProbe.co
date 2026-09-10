@@ -1,0 +1,23 @@
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.syntax::ExpressionSyntax;
+import clothc.frontend.syntax.expression::ExpressionKind;
+
+class is ExpressionSyntax {
+  final int32 value;
+  final SourceRange range;
+
+  ExpressionStorageProbe(int32 value, SourceRange range) {
+    self.value = value;
+    self.range = range;
+  }
+
+  override func GetRange(): SourceRange { return self.range; }
+  override func IsValid(): bool { return true; }
+  override func GetExpressionKind(): ExpressionKind {
+    return ExpressionKind.kInvalid;
+  }
+
+  func GetValue(): int32 {
+    return self.value;
+  }
+}

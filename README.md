@@ -20,7 +20,7 @@ You need a built `clothc` from `cCloth` and Shuttle. From this repository:
 
 ```sh
 shuttle check --manifest-path Shuttle.toml --compiler <path-to-clothc>
-shuttle run --manifest-path Shuttle.toml --compiler <path-to-clothc>
+shuttle build --manifest-path Shuttle.toml --compiler <path-to-clothc>
 ```
 
 To run Shuttle from the `cCloth` checkout instead of an installed binary:
@@ -34,16 +34,26 @@ On Windows, the compiler path normally ends in `clothc.exe`. Shuttle selects
 the compiler-paired standard library automatically; do not add the reserved
 `cloth` dependency to `Shuttle.toml`.
 
-The bootstrap package identity remains `clothc`, while its executable is named
-`cloth` (`cloth.exe` on Windows). The reserved package identity `cloth` remains
-exclusive to the standard library.
+The package and executable are both named `clothc`. After building, the current
+frontend driver accepts:
+
+```sh
+target/x86_64/clothc check path/to/Source.co
+target/x86_64/clothc --help
+target/x86_64/clothc --version
+```
+
+The reserved package identity `cloth` remains exclusive to the standard
+library.
 
 ## Source map
 
-The executable entry is [`src/Main.co`](src/Main.co). Compiler code is grouped
-under `src/frontend/` by source, token, diagnostic, and lexer responsibility.
-Read [`ARCHITECTURE.md`](ARCHITECTURE.md) before adding or moving a compiler
-component and follow [`STYLE.md`](STYLE.md) for Cloth source.
+The production entry is [`src/Main.co`](src/Main.co). Compiler code is grouped
+under `src/driver/` and `src/frontend/` by responsibility. Bootstrap checks,
+fixtures, failure probes, and parity adapters form the separate
+`tests/self_host` Shuttle package and are never compiled into `clothc`. Read
+[`ARCHITECTURE.md`](ARCHITECTURE.md) before adding or moving a compiler component
+and follow [`STYLE.md`](STYLE.md) for Cloth source.
 
 The active implementation order and accepted contracts live in the `cCloth`
 [`ROADMAP.md`] and [`TODO.md`]. This repository does not independently add

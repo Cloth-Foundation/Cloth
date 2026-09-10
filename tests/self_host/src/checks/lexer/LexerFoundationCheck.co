@@ -1,0 +1,267 @@
+import clothc.frontend.diagnostic::LexDiagnosticBuffer;
+import clothc.frontend.diagnostic::LexDiagnosticKind;
+import clothc.frontend.lexer::Lexer;
+import clothc.frontend.lexer::LexerResult;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.source::SourceLocation;
+import clothc.frontend.token::TokenBuffer;
+import clothc.frontend.token::TokenKind;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    final int32 emptyStatus = checkEmpty();
+    if (emptyStatus != 0) {
+      return emptyStatus;
+    }
+    final int32 foundationStatus = checkFoundation();
+    if (foundationStatus != 0) {
+      return foundationStatus;
+    }
+    final int32 recoveryStatus = checkRecovery();
+    if (recoveryStatus != 0) {
+      return recoveryStatus;
+    }
+    return checkTrackedSource();
+  }
+
+  static func checkEmpty(): int32 throws IoError, StateError {
+    final var source = SourceFile.Load("testdata/lexer/empty.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    if (source.GetLength() != 0 || result.GetDiagnostics().GetCount() != 0) {
+      return 1;
+    }
+    if (tokens.GetCount() != 1 || tokens.GetCapacity() != 1) {
+      return 2;
+    }
+
+    final var eof = tokens.Get(0);
+    final SourceLocation location = eof.GetRange().GetBegin();
+    if (eof.GetKind() != TokenKind.kEof || eof.GetSpan().GetLength() != 0 ||
+        location.GetOffset() != 0 || location.GetLine() != 1 ||
+        location.GetColumn() != 1) {
+      return 3;
+    }
+    return 0;
+  }
+
+  static func checkFoundation(): int32 throws IoError, StateError {
+    final var source = SourceFile.Load("testdata/lexer/foundation.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final var diagnostics = result.GetDiagnostics();
+    final TokenKind[] expected = expectedKinds();
+
+    if (diagnostics.GetCount() != 0) { return 10; }
+    if (tokens.GetCount() != expected::length + 1) { return 11; }
+    if (tokens.GetCapacity() != tokens.GetCount()) { return 12; }
+    if (diagnostics.GetCapacity() != 0) { return 13; }
+
+    for (int32 index = 0; index < expected::length; index++) {
+      if (tokens.Get(index).GetKind() != expected[index]) { return 14; }
+    }
+
+    final var firstSpan = tokens.Get(0).GetSpan();
+    if (firstSpan.GetLength() != 4 || firstSpan.GetByte(0) != 102 ||
+        firstSpan.GetByte(1) != 117 || firstSpan.GetByte(2) != 110 ||
+        firstSpan.GetByte(3) != 99) {
+      return 15;
+    }
+    final SourceLocation first = tokens.Get(0).GetRange().GetBegin();
+    if (first.GetOffset() != 0 || first.GetLine() != 1 ||
+        first.GetColumn() != 1) {
+      return 16;
+    }
+
+    final var lastToken = tokens.Get(expected::length - 1);
+    if (lastToken.GetSpan().GetLength() != 2 ||
+        lastToken.GetSpan().GetByte(0) != 94 ||
+        lastToken.GetSpan().GetByte(1) != 61) {
+      return 17;
+    }
+
+    final var eof = tokens.Get(tokens.GetCount() - 1);
+    if (eof.GetKind() != TokenKind.kEof || eof.GetSpan().GetLength() != 0 ||
+        eof.GetSpan().GetBeginOffset() != source.GetLength()) {
+      return 18;
+    }
+    final SourceLocation eofLocation = eof.GetRange().GetBegin();
+    if (eofLocation.GetLine() != 12 || eofLocation.GetColumn() != 1) {
+      return 19;
+    }
+    return 0;
+  }
+
+  static func checkRecovery(): int32 throws IoError, StateError {
+    final var source = SourceFile.Load("testdata/lexer/recovery.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
+
+    if (tokens.GetCount() != 1 ||
+        tokens.Get(0).GetKind() != TokenKind.kEof) {
+      return 20;
+    }
+    if (diagnostics.GetCount() != 2 ||
+        diagnostics.GetCapacity() != diagnostics.GetCount()) {
+      return 21;
+    }
+    if (diagnostics.Get(0).GetKind() != LexDiagnosticKind.kUnexpectedByte ||
+        diagnostics.Get(0).GetSpan().GetLength() != 1 ||
+        diagnostics.Get(0).GetSpan().GetByte(0) != 64) {
+      return 22;
+    }
+    if (diagnostics.Get(1).GetKind() !=
+        LexDiagnosticKind.kUnterminatedBlockComment) {
+      return 23;
+    }
+
+    final SourceLocation unexpected =
+        diagnostics.Get(0).GetRange().GetBegin();
+    final SourceLocation unterminated =
+        diagnostics.Get(1).GetRange().GetBegin();
+    if (unexpected.GetLine() != 1 || unexpected.GetColumn() != 1 ||
+        unterminated.GetLine() != 1 || unterminated.GetColumn() != 3) {
+      return 24;
+    }
+    final SourceLocation eof = tokens.Get(0).GetRange().GetBegin();
+    if (eof.GetLine() != 2 || eof.GetColumn() != 1) { return 25; }
+    return 0;
+  }
+
+  static func checkTrackedSource(): int32 throws IoError, StateError {
+    final var source =
+        SourceFile.Load("../../src/frontend/token/TokenKind.co");
+    final LexerResult result = Lexer.Lex(source);
+    final TokenBuffer tokens = result.GetTokens();
+    if (result.GetDiagnostics().GetCount() != 0) {
+      return 30;
+    }
+    if (tokens.GetCount() < 2 ||
+        tokens.Get(0).GetKind() != TokenKind.kKwEnum) {
+      return 31;
+    }
+
+    final var eof = tokens.Get(tokens.GetCount() - 1);
+    final SourceLocation location = eof.GetRange().GetBegin();
+    if (eof.GetKind() != TokenKind.kEof ||
+        eof.GetSpan().GetBeginOffset() != source.GetLength()) {
+      return 32;
+    }
+    if (location.GetLine() != 116 || location.GetColumn() != 1) {
+      return 33;
+    }
+    return 0;
+  }
+
+  static func expectedKinds(): TokenKind[] {
+    return [
+      TokenKind.kKwFunc,
+      TokenKind.kKwReturn,
+      TokenKind.kKwIf,
+      TokenKind.kKwElse,
+      TokenKind.kKwWhile,
+      TokenKind.kKwFor,
+      TokenKind.kKwIn,
+      TokenKind.kKwBreak,
+      TokenKind.kKwContinue,
+      TokenKind.kKwSwitch,
+      TokenKind.kKwCase,
+      TokenKind.kKwDefault,
+      TokenKind.kKwStruct,
+      TokenKind.kKwClass,
+      TokenKind.kKwInterface,
+      TokenKind.kKwAbstract,
+      TokenKind.kKwSealed,
+      TokenKind.kKwEnum,
+      TokenKind.kKwError,
+      TokenKind.kKwThrow,
+      TokenKind.kKwThrows,
+      TokenKind.kKwTrait,
+      TokenKind.kKwLet,
+      TokenKind.kKwVar,
+      TokenKind.kKwConst,
+      TokenKind.kKwFinal,
+      TokenKind.kKwStatic,
+      TokenKind.kKwOverride,
+      TokenKind.kKwSuper,
+      TokenKind.kKwTrue,
+      TokenKind.kKwFalse,
+      TokenKind.kKwNull,
+      TokenKind.kKwExtern,
+      TokenKind.kKwUnsafe,
+      TokenKind.kKwImport,
+      TokenKind.kKwIs,
+      TokenKind.kKwAs,
+      TokenKind.kKwMatch,
+      TokenKind.kKwInt,
+      TokenKind.kKwInt8,
+      TokenKind.kKwInt16,
+      TokenKind.kKwInt32,
+      TokenKind.kKwInt64,
+      TokenKind.kKwUint,
+      TokenKind.kKwUint8,
+      TokenKind.kKwUint16,
+      TokenKind.kKwUint32,
+      TokenKind.kKwUint64,
+      TokenKind.kKwFloat,
+      TokenKind.kKwFloat32,
+      TokenKind.kKwFloat64,
+      TokenKind.kKwBool,
+      TokenKind.kKwChar,
+      TokenKind.kKwByte,
+      TokenKind.kKwVoid,
+      TokenKind.kKwObject,
+      TokenKind.kIdentifier,
+      TokenKind.kIdentifier,
+      TokenKind.kIdentifier,
+      TokenKind.kLeftParen,
+      TokenKind.kRightParen,
+      TokenKind.kLeftBrace,
+      TokenKind.kRightBrace,
+      TokenKind.kLeftBracket,
+      TokenKind.kRightBracket,
+      TokenKind.kComma,
+      TokenKind.kSemicolon,
+      TokenKind.kColon,
+      TokenKind.kColonColon,
+      TokenKind.kDot,
+      TokenKind.kQuestion,
+      TokenKind.kQuestionDot,
+      TokenKind.kQuestionQuestion,
+      TokenKind.kPlus,
+      TokenKind.kMinus,
+      TokenKind.kStar,
+      TokenKind.kSlash,
+      TokenKind.kPercent,
+      TokenKind.kEqual,
+      TokenKind.kEqualEqual,
+      TokenKind.kBangEqual,
+      TokenKind.kLess,
+      TokenKind.kLessEqual,
+      TokenKind.kGreater,
+      TokenKind.kGreaterEqual,
+      TokenKind.kAmpersandAmpersand,
+      TokenKind.kPipePipe,
+      TokenKind.kBang,
+      TokenKind.kAmpersand,
+      TokenKind.kPipe,
+      TokenKind.kCaret,
+      TokenKind.kTilde,
+      TokenKind.kPlusPlus,
+      TokenKind.kMinusMinus,
+      TokenKind.kPlusEqual,
+      TokenKind.kMinusEqual,
+      TokenKind.kStarEqual,
+      TokenKind.kSlashEqual,
+      TokenKind.kPercentEqual,
+      TokenKind.kShiftLeft,
+      TokenKind.kShiftRight,
+      TokenKind.kShiftLeftEqual,
+      TokenKind.kShiftRightEqual,
+      TokenKind.kAmpersandEqual,
+      TokenKind.kPipeEqual,
+      TokenKind.kCaretEqual
+    ];
+  }
+}

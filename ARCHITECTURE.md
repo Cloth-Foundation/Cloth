@@ -8,14 +8,19 @@ behavior and checkpoint scope.
 
 ```text
 Main
-  -> frontend parser orchestration
+  -> compiler driver
+    -> frontend parser orchestration
        -> syntax storage and tree
             -> token and source data
        -> token and diagnostic data
-  -> frontend lexer orchestration
+    -> frontend lexer orchestration
        -> lexical scanners
        -> source, token, and diagnostic data
             -> no lexer or parser dependency
+
+self-host tests
+  -> public clothc package surface
+       -> no production dependency on test code
 ```
 
 Dependencies point downward. Source, token, and diagnostic types must remain
@@ -28,7 +33,7 @@ in cycles.
 ```text
 src/
   Main.co                    Process entry and compiler-driver composition
-  bootstrap/                 Temporary checkpoint acceptance checks
+  driver/                    CLI, compilation requests, and diagnostics
   frontend/
     source/                  Exact bytes, cursors, spans, and locations
     token/                   Token kinds and bounded token storage
@@ -42,10 +47,21 @@ src/
       statement/            Blocks, statements, loop and switch records
       storage/               Segmented arena and child-sequence construction
       tree/                  Root, types, imports, verification, and publication
-    parser/                  Declaration cursor, outlines, and publication
+    parser/                  Two-pass syntax orchestration
+      declaration/          File and member outline pass
+      definition/           Declaration materialization and publication
+      expression/           Precedence and postfix expression parsing
+      statement/            Blocks, statements, loops, and switches
+      support/              Shared cursors, facts, ranges, and budgets
       storage/               Typed segmented declaration construction
-  testdata/lexer/            Exact byte inputs used by bootstrap checks
-  testdata/parser/           Declaration grammar and recovery fixtures
+tests/
+  self_host/
+    Shuttle.toml             Isolated self-host test executable package
+    src/checks/              Lexer, parser, and syntax acceptance checks
+    src/fixtures/            Focused construction and lifetime fixtures
+    src/parity/              Canonical kind codes and record adapters
+    testdata/lexer/          Exact byte inputs used by lexer checks
+    testdata/parser/         Parser grammar and recovery inputs
 ```
 
 Directories and files are added when their scheduled checkpoint needs them;
@@ -107,18 +123,17 @@ syntax storage, and publishes one verified tree with combined diagnostics.
 ### `Main.co`
 
 Owns argument handling, phase composition, output selection, and process exit
-status. It does not implement a lexical rule or data structure.
+status through `driver/CompilerDriver.co`. It does not import tests, implement a
+lexical rule, or own a syntax data structure.
 
-### `bootstrap`
+### `tests/self_host`
 
-Owns temporary executable acceptance checks while the self-hosted compiler has
-no dedicated test runner. Check code may inspect public compiler results, but
-production frontend code cannot import `bootstrap`. Canonical kind-code and
-record writers in this directory are differential-test adapters, not compiler
-CLI or artifact contracts. These checks leave `Main` when a dedicated Cloth
-test target is available.
+Owns a separate `clothc-tests` package. Its bootstrap checks consume the public
+`clothc` package through a normal Shuttle dependency, so production sources
+cannot import test support accidentally. Canonical kind-code and record writers
+are differential-test adapters, not compiler CLI or artifact contracts.
 
-### `testdata`
+### `tests/self_host/testdata`
 
 Owns deterministic inputs that are loaded at runtime and are not compiled as
 package sources. A fixture covers one named boundary and contains no expected
@@ -136,12 +151,14 @@ create catch-all files named `Utils`, `Common`, `Misc`, or `Helpers`.
 
 ## Current stage boundary
 
-Stage 44 lexer parity, Stage 45 syntax foundations, and the complete Stage 46
-self-hosted declaration pass are the implemented frontend baseline. Stage 47.3
-adds the bounded self-hosted definition layer: explicit managed parse frames,
-all existing expression and statement forms, exact precedence, structured
-recovery, package constant budgets, and iterative verification. Declaration
-results retain verified immutable outlines and exact deferred definition
-ranges; the definition pass materializes them in source order, combines
-diagnostics, and publishes one verified tree. The C++ parser remains
-authoritative until the complete parser authority-transfer audit.
+Stage 44 lexer parity, Stage 45 syntax foundations, Stage 46 declarations, and
+Stage 47 definitions form the implemented self-hosted frontend baseline. The
+bounded definition layer uses explicit managed parse frames, covers all current
+expression and statement forms, preserves exact precedence and structured
+recovery, shares package constant budgets, and verifies complete trees
+iteratively. Its canonical full-tree records agree with the C++ oracle for all
+production compiler sources and the focused valid and malformed corpus. The
+C++ parser remains authoritative until the complete parser authority-transfer
+audit. The production `clothc` executable performs a single-file frontend
+check; all parity, depth, GC, and failure-injection commands live exclusively
+in the separate `clothc-tests` executable.
