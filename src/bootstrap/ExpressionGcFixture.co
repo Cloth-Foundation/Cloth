@@ -1,0 +1,20 @@
+import frontend.source::SourceFile;
+import frontend.syntax::ExpressionId;
+import frontend.syntax.storage::SyntaxStorage;
+
+class {
+  final SourceFile source;
+  final SyntaxStorage storage;
+  final ExpressionId root;
+
+  ExpressionGcFixture(SourceFile source, SyntaxStorage storage,
+                      ExpressionId root) {
+    self.source = source;
+    self.storage = storage;
+    self.root = root;
+  }
+
+  func GetSource(): SourceFile { return self.source; }
+  func GetStorage(): SyntaxStorage { return self.storage; }
+  func GetRoot(): ExpressionId { return self.root; }
+}

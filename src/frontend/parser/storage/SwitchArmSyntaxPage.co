@@ -1,0 +1,52 @@
+import frontend.syntax.statement::SwitchArmSyntax;
+
+class {
+  static final int32 pageCapacity = 64;
+
+  final SwitchArmSyntax?[] values;
+  int32 count;
+  SwitchArmSyntaxPage? next;
+  bool frozen;
+
+  SwitchArmSyntaxPage() {
+    self.values = SwitchArmSyntax?[:pageCapacity];
+    self.count = 0;
+    self.next = null;
+    self.frozen = false;
+  }
+
+  func Add(SwitchArmSyntax value): void throws StateError {
+    if (self.frozen) { throw StateError("switch arm page is sealed"); }
+    if (self.count >= self.values::length) {
+      throw StateError("switch arm page is full");
+    }
+    self.values[self.count] = value;
+    self.count++;
+  }
+
+  func Get(int32 index): SwitchArmSyntax throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("switch arm page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func Link(SwitchArmSyntaxPage next): void throws StateError {
+    if (self.frozen) { throw StateError("switch arm page is sealed"); }
+    if (self.next != null) {
+      throw StateError("switch arm page is already linked");
+    }
+    self.next = next;
+  }
+
+  func Seal(): void throws StateError {
+    if (self.frozen) {
+      throw StateError("switch arm page is already sealed");
+    }
+    self.frozen = true;
+  }
+
+  func IsFull(): bool { return self.count == self.values::length; }
+  func GetCount(): int32 { return self.count; }
+  func GetNext(): SwitchArmSyntaxPage? { return self.next; }
+}

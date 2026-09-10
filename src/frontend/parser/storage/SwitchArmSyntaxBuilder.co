@@ -1,0 +1,62 @@
+import frontend.parser.storage::SwitchArmSyntaxPage;
+import frontend.syntax.statement::SwitchArmSyntax;
+import frontend.syntax.statement::SwitchArmSyntaxSequence;
+
+class {
+  SwitchArmSyntaxPage? first;
+  SwitchArmSyntaxPage? last;
+  int32 count;
+  bool finished;
+
+  SwitchArmSyntaxBuilder() {
+    self.first = null;
+    self.last = null;
+    self.count = 0;
+    self.finished = false;
+  }
+
+  func Add(SwitchArmSyntax value): void throws StateError {
+    if (self.finished) {
+      throw StateError("switch arm builder is already finished");
+    }
+    if (self.count == 2147483647) {
+      throw StateError("switch arm count overflow");
+    }
+    if (self.last == null || self.last!.IsFull()) {
+      final SwitchArmSyntaxPage page = SwitchArmSyntaxPage();
+      if (self.last == null) {
+        self.first = page;
+      } else {
+        self.last!.Link(page);
+      }
+      self.last = page;
+    }
+    self.last!.Add(value);
+    self.count++;
+  }
+
+  func Finish(): SwitchArmSyntaxSequence throws StateError {
+    if (self.finished) {
+      throw StateError("switch arm builder is already finished");
+    }
+    self.finished = true;
+    final SwitchArmSyntax?[] values = SwitchArmSyntax?[:self.count];
+    SwitchArmSyntaxPage? current = self.first;
+    int32 output = 0;
+    while (current != null) {
+      final SwitchArmSyntaxPage page = current;
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        values[output] = page.Get(index);
+        output++;
+      }
+      current = page.GetNext();
+      page.Seal();
+    }
+    if (output != self.count) {
+      throw StateError("switch arm builder does not match its count");
+    }
+    return SwitchArmSyntaxSequence.Build(values);
+  }
+
+  func GetCount(): int32 { return self.count; }
+}

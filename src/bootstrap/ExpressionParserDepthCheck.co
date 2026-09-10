@@ -1,0 +1,188 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.parser::ConstantParseBudget;
+import frontend.parser::ExpressionParseResult;
+import frontend.parser::ExpressionParser;
+import frontend.parser::ParseDiagnosticCollector;
+import frontend.parser::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.source::SourceRange;
+import frontend.syntax.expression::SyntaxExpressionVerifier;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::SyntaxVerificationContext;
+
+class {
+  static func Run(): int32 throws StateError {
+    final int32 ordinaryStatus = checkOrdinaryDepth();
+    if (ordinaryStatus != 0) { return ordinaryStatus; }
+    final int32 constantStatus = checkConstantDepth();
+    if (constantStatus != 0) { return constantStatus; }
+    final int32 postfixStatus = checkConstantPostfixDepth();
+    if (postfixStatus != 0) { return postfixStatus; }
+    final int32 literalStatus = checkLiteralLimit();
+    if (literalStatus != 0) { return literalStatus; }
+    final int32 packageStatus = checkPackageNodeLimit();
+    if (packageStatus != 0) { return packageStatus; }
+    return checkInitializerNodeLimit();
+  }
+
+  static func checkOrdinaryDepth(): int32 throws StateError {
+    final int32 depth = 4096;
+    final SourceFile source = SourceFile.FromBytes(
+        "expression-depth", nestedExpression(depth));
+    final LexerResult lexer = Lexer.Lex(source);
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final ExpressionParseResult result = ExpressionParser.Parse(
+        source, lexer.GetTokens(), allTokens(lexer), storage, diagnostics,
+        false, null);
+    if (!result.IsValid() || diagnostics.GetCount() != 0 ||
+        storage.GetNodeCount() != depth + 1) {
+      return 560;
+    }
+    storage.Seal();
+    final SourceRange range = SourceRange(
+        lexer.GetTokens().Get(0).GetRange().GetBegin(),
+        lexer.GetTokens().Get(lexer.GetTokens().GetCount() - 1)
+            .GetRange().GetEnd());
+    final var verifier = SyntaxExpressionVerifier(
+        SyntaxVerificationContext(source, storage));
+    if (!verifier.Verify(result.GetRoot(), range)) { return 561; }
+    return 0;
+  }
+
+  static func checkConstantDepth(): int32 throws StateError {
+    final SourceFile source = SourceFile.FromBytes(
+        "constant-depth", nestedExpression(257));
+    final LexerResult lexer = Lexer.Lex(source);
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final var budget = ConstantParseBudget();
+    final ExpressionParseResult result = ExpressionParser.Parse(
+        source, lexer.GetTokens(), allTokens(lexer), storage, diagnostics,
+        true, budget);
+    final ParseDiagnosticSequence values = diagnostics.Finish();
+    if (result.IsValid() || values.GetCount() != 1 ||
+        values.Get(0).GetKind() !=
+            ParseDiagnosticKind.kConstantExpressionDepthLimit) {
+      return 562;
+    }
+    return 0;
+  }
+
+  static func checkLiteralLimit(): int32 throws StateError {
+    final byte[] bytes = byte[:4097];
+    for (int32 index = 0; index < bytes::length; index++) {
+      bytes[index] = byte(49);
+    }
+    return expectConstantLimit(
+        "constant-literal", bytes,
+        ParseDiagnosticKind.kConstantNumericLiteralLimit, 563);
+  }
+
+  static func checkConstantPostfixDepth(): int32 throws StateError {
+    return expectConstantLimit(
+        "constant-postfix-depth", nestedCall(255),
+        ParseDiagnosticKind.kConstantExpressionDepthLimit, 569);
+  }
+
+  static func checkPackageNodeLimit(): int32 throws StateError {
+    final var budget = ConstantParseBudget();
+    for (int32 index = 0; index < 1048576; index++) {
+      if (!budget.AddExpressionNode()) { return 564; }
+    }
+    if (budget.AddExpressionNode()) { return 565; }
+    final SourceFile source = SourceFile.FromBytes(
+        "package-node-limit", singleInteger());
+    final LexerResult lexer = Lexer.Lex(source);
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final ExpressionParseResult result = ExpressionParser.Parse(
+        source, lexer.GetTokens(), allTokens(lexer), storage, diagnostics,
+        true, budget);
+    final ParseDiagnosticSequence values = diagnostics.Finish();
+    if (result.IsValid() || values.GetCount() != 1 ||
+        values.Get(0).GetKind() !=
+            ParseDiagnosticKind.kPackageConstantExpressionNodeLimit) {
+      return 566;
+    }
+    return 0;
+  }
+
+  static func checkInitializerNodeLimit(): int32 throws StateError {
+    final int32 literalCount = 32769;
+    final byte[] bytes = byte[:literalCount * 2 - 1];
+    for (int32 index = 0; index < bytes::length; index++) {
+      if (index % 2 == 0) {
+        bytes[index] = byte(49);
+      } else {
+        bytes[index] = byte(43);
+      }
+    }
+    return expectConstantLimit(
+        "initializer-node-limit", bytes,
+        ParseDiagnosticKind.kConstantExpressionNodeLimit, 567);
+  }
+
+  static func expectConstantLimit(
+      string path, byte[] bytes, ParseDiagnosticKind expected,
+      int32 failure): int32 throws StateError {
+    final SourceFile source = SourceFile.FromBytes(path, bytes);
+    final LexerResult lexer = Lexer.Lex(source);
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final var budget = ConstantParseBudget();
+    final ExpressionParseResult result = ExpressionParser.Parse(
+        source, lexer.GetTokens(), allTokens(lexer), storage, diagnostics,
+        true, budget);
+    final ParseDiagnosticSequence values = diagnostics.Finish();
+    if (result.IsValid() || values.GetCount() != 1 ||
+        values.Get(0).GetKind() != expected) {
+      return failure;
+    }
+    return 0;
+  }
+
+  static func nestedExpression(int32 depth): byte[] {
+    final byte[] bytes = byte[:depth * 2 + 5];
+    for (int32 index = 0; index < depth; index++) {
+      bytes[index] = byte(40);
+      bytes[depth + 5 + index] = byte(41);
+    }
+    bytes[depth] = byte(118);
+    bytes[depth + 1] = byte(97);
+    bytes[depth + 2] = byte(108);
+    bytes[depth + 3] = byte(117);
+    bytes[depth + 4] = byte(101);
+    return bytes;
+  }
+
+  static func singleInteger(): byte[] {
+    final byte[] bytes = byte[:1];
+    bytes[0] = byte(49);
+    return bytes;
+  }
+
+  static func nestedCall(int32 depth): byte[] {
+    final byte[] bytes = byte[:depth * 2 + 7];
+    for (int32 index = 0; index < depth; index++) {
+      bytes[index] = byte(40);
+      bytes[depth + 7 + index] = byte(41);
+    }
+    bytes[depth] = byte(118);
+    bytes[depth + 1] = byte(97);
+    bytes[depth + 2] = byte(108);
+    bytes[depth + 3] = byte(117);
+    bytes[depth + 4] = byte(101);
+    bytes[depth + 5] = byte(40);
+    bytes[depth + 6] = byte(41);
+    return bytes;
+  }
+
+  static func allTokens(LexerResult lexer): TokenIndexRange
+      throws StateError {
+    return TokenIndexRange(0, lexer.GetTokens().GetCount() - 1);
+  }
+}

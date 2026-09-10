@@ -1,0 +1,1246 @@
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticKind;
+import frontend.parser::ConstantParseBudget;
+import frontend.parser::ExpressionParseFrame;
+import frontend.parser::ExpressionParseFrameKind;
+import frontend.parser::ExpressionParseResult;
+import frontend.parser::ParseDiagnosticCollector;
+import frontend.parser::ParserFacts;
+import frontend.parser::SourceText;
+import frontend.parser::TokenCursor;
+import frontend.parser::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import frontend.syntax.expression::ArrayLiteralExpressionSyntax;
+import frontend.syntax.expression::AssignmentExpressionSyntax;
+import frontend.syntax.expression::BinaryExpressionSyntax;
+import frontend.syntax.expression::CallExpressionSyntax;
+import frontend.syntax.expression::CheckedCastExpressionSyntax;
+import frontend.syntax.expression::IdentifierExpressionSyntax;
+import frontend.syntax.expression::IndexExpressionSyntax;
+import frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import frontend.syntax.expression::InvalidExpressionSyntax;
+import frontend.syntax.expression::LiteralExpressionSyntax;
+import frontend.syntax.expression::LiteralKind;
+import frontend.syntax.expression::MemberAccessExpressionSyntax;
+import frontend.syntax.expression::MetaAccessExpressionSyntax;
+import frontend.syntax.expression::NullAssertExpressionSyntax;
+import frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import frontend.syntax.expression::NumericConversionExpressionSyntax;
+import frontend.syntax.expression::ParenthesizedExpressionSyntax;
+import frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import frontend.syntax.expression::SafeMetaAccessExpressionSyntax;
+import frontend.syntax.expression::SuperExpressionSyntax;
+import frontend.syntax.expression::ThrowExpressionSyntax;
+import frontend.syntax.expression::TypeTestExpressionSyntax;
+import frontend.syntax.expression::UnaryExpressionSyntax;
+import frontend.syntax.expression::UpdateExpressionSyntax;
+import frontend.syntax.storage::ExpressionIdBuilder;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.token::Token;
+import frontend.token::TokenBuffer;
+import frontend.token::TokenKind;
+
+class {
+  final TokenCursor cursor;
+  final SyntaxStorage storage;
+  final ParseDiagnosticCollector diagnostics;
+  final bool constantContext;
+  final ConstantParseBudget? constantBudget;
+  final int32 expressionBase;
+  ExpressionParseFrame? top;
+  ExpressionId? completed;
+  ExpressionId? limitError;
+  bool resourceLimited;
+
+  ExpressionParser(TokenCursor cursor, SyntaxStorage storage,
+                   ParseDiagnosticCollector diagnostics, bool constantContext,
+                   ConstantParseBudget? constantBudget) {
+    self.cursor = cursor;
+    self.storage = storage;
+    self.diagnostics = diagnostics;
+    self.constantContext = constantContext;
+    self.constantBudget = constantBudget;
+    self.expressionBase = storage.GetNodeCount();
+    self.top = null;
+    self.completed = null;
+    self.limitError = null;
+    self.resourceLimited = false;
+  }
+
+  static func Parse(SourceFile source, TokenBuffer tokens,
+                    TokenIndexRange range, SyntaxStorage storage,
+                    ParseDiagnosticCollector diagnostics,
+                    bool constantContext,
+                    ConstantParseBudget? constantBudget): ExpressionParseResult
+      throws StateError {
+    final TokenCursor cursor = TokenCursor.Build(source, tokens).Slice(range);
+    final var parser = ExpressionParser(cursor, storage, diagnostics,
+                                        constantContext, constantBudget);
+    final int32 diagnosticBase = diagnostics.GetCount();
+    final ExpressionId root = parser.ParseOne();
+    if (!cursor.AtEnd()) {
+      parser.addDiagnostic(ParseDiagnosticKind.kUnexpectedExpressionToken,
+                           cursor.Current().GetRange());
+      parser.exhaust();
+    }
+    final bool valid = diagnostics.GetCount() == diagnosticBase &&
+                       storage.GetExpression(root).IsValid();
+    return ExpressionParseResult(root, cursor.GetIndex(), valid);
+  }
+
+  func ParseOne(): ExpressionId throws StateError {
+    if (self.top != null || self.completed != null) {
+      throw StateError("expression parser is already active");
+    }
+    self.startExpression(null, 1, 1);
+    while (self.top != null) {
+      final ExpressionParseFrame frame = self.top!;
+      if (frame.GetKind() == ExpressionParseFrameKind.kExpression) {
+        self.stepExpression(frame);
+        continue;
+      }
+      if (frame.GetKind() == ExpressionParseFrameKind.kUnary) {
+        self.stepUnary(frame);
+        continue;
+      }
+      self.stepPrimary(frame);
+    }
+    final ExpressionId? result = self.completed;
+    self.completed = null;
+    if (result == null) {
+      throw StateError("expression parser produced no result");
+    }
+    return result;
+  }
+
+  func GetCursor(): TokenCursor { return self.cursor; }
+
+  func stepExpression(ExpressionParseFrame frame): void throws StateError {
+    if (frame.GetState() == 0) {
+      frame.SetState(1);
+      self.startUnary(frame, frame.GetDepth());
+      return;
+    }
+    if (frame.GetState() == 1) {
+      frame.SetValue(self.takeCompleted());
+      frame.SetState(2);
+      return;
+    }
+    if (frame.GetState() == 2) {
+      final Token operation = self.cursor.Current();
+      final int32 precedence = binaryPrecedence(operation.GetKind());
+      if (precedence < frame.GetMinimumPrecedence()) {
+        self.finish(frame, self.requireValue(frame));
+        return;
+      }
+      self.cursor.Advance();
+      if (operation.GetKind() == TokenKind.kKwIs ||
+          operation.GetKind() == TokenKind.kKwAs) {
+        final ExpressionId left = self.requireValue(frame);
+        final TypeSyntax target = self.parseCheckedType();
+        final SourceRange range = SourceRange(
+            self.rangeOf(left).GetBegin(), target.GetRange().GetEnd());
+        ExpressionSyntax value;
+        if (operation.GetKind() == TokenKind.kKwIs) {
+          value = TypeTestExpressionSyntax(
+              left, target, range,
+              self.nodeValid(frame) && target.IsValid());
+        } else {
+          value = CheckedCastExpressionSyntax(
+              left, target, range,
+              self.nodeValid(frame) && target.IsValid());
+        }
+        frame.SetValue(self.addExpression(value));
+        return;
+      }
+      frame.SetOperation(operation);
+      frame.SetState(3);
+      int32 nextPrecedence = precedence + 1;
+      if (isRightAssociative(operation.GetKind())) {
+        nextPrecedence = precedence;
+      }
+      self.startExpression(frame, nextPrecedence, frame.GetDepth() + 1);
+      return;
+    }
+
+    final ExpressionId left = self.requireValue(frame);
+    final ExpressionId right = self.takeCompleted();
+    final Token operation = self.requireOperation(frame);
+    final SourceRange range = SourceRange(
+        self.rangeOf(left).GetBegin(), self.rangeOf(right).GetEnd());
+    final bool valid = self.nodeValid(frame) && self.isValid(left) &&
+                       self.isValid(right);
+    ExpressionSyntax value;
+    if (isAssignmentOperator(operation.GetKind())) {
+      value = AssignmentExpressionSyntax(left, operation.GetKind(), right,
+                                         range, valid);
+    } else {
+      if (operation.GetKind() == TokenKind.kQuestionQuestion) {
+        value = NullCoalesceExpressionSyntax(left, right, range, valid);
+      } else {
+        value = BinaryExpressionSyntax(left, operation.GetKind(), right, range,
+                                       valid);
+      }
+    }
+    frame.SetValue(self.addExpression(value));
+    frame.SetState(2);
+  }
+
+  func stepUnary(ExpressionParseFrame frame): void throws StateError {
+    if (frame.GetState() == 0) {
+      final Token token = self.cursor.Current();
+      if (token.GetKind() == TokenKind.kKwThrow) {
+        self.cursor.Advance();
+        if (self.atExpressionBoundary()) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedExpression,
+                             self.cursor.Current().GetRange());
+          self.finish(frame, self.makeInvalid(token.GetRange()));
+          return;
+        }
+        frame.SetOperation(token);
+        frame.SetState(1);
+        self.startExpression(frame, 1, frame.GetDepth() + 1);
+        return;
+      }
+      if (isPrefixOperator(token.GetKind())) {
+        self.cursor.Advance();
+        frame.SetOperation(token);
+        frame.SetState(2);
+        self.startUnary(frame, frame.GetDepth() + 1);
+        return;
+      }
+      frame.SetState(3);
+      self.startPrimary(frame, frame.GetDepth());
+      return;
+    }
+    if (frame.GetState() == 1 || frame.GetState() == 2) {
+      final ExpressionId operand = self.takeCompleted();
+      final Token operation = self.requireOperation(frame);
+      final SourceRange range = SourceRange(
+          operation.GetRange().GetBegin(), self.rangeOf(operand).GetEnd());
+      final bool valid = self.nodeValid(frame) && self.isValid(operand);
+      ExpressionSyntax value;
+      if (frame.GetState() == 1) {
+        value = ThrowExpressionSyntax(operand, range, valid);
+      } else {
+        if (operation.GetKind() == TokenKind.kPlusPlus ||
+            operation.GetKind() == TokenKind.kMinusMinus) {
+          value = UpdateExpressionSyntax(operation.GetKind(), operand, false,
+                                         range, valid);
+        } else {
+          value = UnaryExpressionSyntax(operation.GetKind(), operand, range,
+                                        valid);
+        }
+      }
+      self.finish(frame, self.addExpression(value));
+      return;
+    }
+    if (frame.GetState() == 3) {
+      frame.SetValue(self.takeCompleted());
+      frame.SetState(4);
+      return;
+    }
+    if (frame.GetState() == 4) {
+      self.stepPostfix(frame);
+      return;
+    }
+    if (frame.GetState() == 11) {
+      final ExpressionId argument = self.takeCompleted();
+      self.requireValues(frame).Add(argument);
+      if (!self.isValid(argument)) { frame.MarkInvalid(); }
+      frame.SetState(12);
+      return;
+    }
+    if (frame.GetState() == 12) {
+      if (self.cursor.Match(TokenKind.kComma)) {
+        if (self.cursor.Current().GetKind() == TokenKind.kRightParen) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedArgument,
+                             self.cursor.Current().GetRange());
+          frame.MarkInvalid();
+        }
+        frame.SetState(10);
+        return;
+      }
+      if (self.cursor.Current().GetKind() != TokenKind.kRightParen) {
+        if (!self.resourceLimited) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedArgumentSeparator,
+                             self.cursor.Current().GetRange());
+        }
+        frame.MarkInvalid();
+        self.synchronizeList(TokenKind.kRightParen);
+        if (self.cursor.Match(TokenKind.kComma)) {
+          frame.SetState(10);
+          return;
+        }
+      }
+      self.finishCall(frame);
+      return;
+    }
+    if (frame.GetState() == 10) {
+      if (self.cursor.Current().GetKind() == TokenKind.kRightParen ||
+          self.cursor.AtEnd()) {
+        self.finishCall(frame);
+        return;
+      }
+      frame.SetState(11);
+      self.startExpression(frame, 1, frame.GetDepth() + 1);
+      return;
+    }
+    if (frame.GetState() == 20) {
+      final ExpressionId index = self.takeCompleted();
+      final ExpressionId receiver = self.requireValue(frame);
+      SourceLocation end = self.rangeOf(index).GetEnd();
+      if (self.cursor.Match(TokenKind.kRightBracket)) {
+        end = self.previousToken().GetRange().GetEnd();
+      } else {
+        if (!self.resourceLimited) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedIndexClose,
+                             self.cursor.Current().GetRange());
+        }
+        frame.MarkInvalid();
+      }
+      final SourceRange range = SourceRange(
+          self.rangeOf(receiver).GetBegin(), end);
+      frame.SetValue(self.addExpression(IndexExpressionSyntax(
+          receiver, index, range, frame.IsValid() && self.isValid(index))));
+      frame.SetState(4);
+    }
+  }
+
+  func stepPostfix(ExpressionParseFrame frame): void throws StateError {
+    final TokenKind kind = self.cursor.Current().GetKind();
+    final bool safeMeta = kind == TokenKind.kQuestion &&
+        self.cursor.GetIndex() + 1 < self.cursor.GetLimit() &&
+        self.cursor.Peek(1).GetKind() == TokenKind.kColonColon;
+    final bool hasSuffix = kind == TokenKind.kLeftParen ||
+        kind == TokenKind.kLeftBracket || kind == TokenKind.kColonColon ||
+        kind == TokenKind.kDot || kind == TokenKind.kQuestionDot ||
+        kind == TokenKind.kBang || kind == TokenKind.kPlusPlus ||
+        kind == TokenKind.kMinusMinus || safeMeta;
+    if (hasSuffix && self.constantContext && frame.GetDepth() >= 256) {
+      self.addDiagnostic(ParseDiagnosticKind.kConstantExpressionDepthLimit,
+                         self.cursor.Current().GetRange());
+      self.resourceLimited = true;
+      self.exhaust();
+      self.finish(frame, self.makeInvalid(self.point(self.cursor.Current())));
+      return;
+    }
+    if (kind == TokenKind.kLeftParen) {
+      self.cursor.Advance();
+      frame.SetValues(ExpressionIdBuilder());
+      frame.SetState(10);
+      return;
+    }
+    if (kind == TokenKind.kLeftBracket) {
+      self.cursor.Advance();
+      if (self.cursor.Current().GetKind() == TokenKind.kRightBracket) {
+        self.addDiagnostic(ParseDiagnosticKind.kExpectedIndexExpression,
+                           self.cursor.Current().GetRange());
+        frame.MarkInvalid();
+        final ExpressionId invalid =
+            self.makeInvalid(self.point(self.cursor.Current()));
+        final ExpressionId receiver = self.requireValue(frame);
+        self.cursor.Advance();
+        frame.SetValue(self.addExpression(IndexExpressionSyntax(
+            receiver, invalid,
+            SourceRange(self.rangeOf(receiver).GetBegin(),
+                        self.previousToken().GetRange().GetEnd()), false)));
+        return;
+      }
+      frame.SetState(20);
+      self.startExpression(frame, 1, frame.GetDepth() + 1);
+      return;
+    }
+    if (safeMeta) {
+      self.cursor.Advance();
+      self.cursor.Advance();
+      if (self.cursor.Current().GetKind() != TokenKind.kIdentifier) {
+        self.addDiagnostic(ParseDiagnosticKind.kExpectedSafeMetaName,
+                           self.cursor.Current().GetRange());
+        self.finish(frame, self.requireValue(frame));
+        return;
+      }
+      final Token name = self.cursor.Advance();
+      final ExpressionId receiver = self.requireValue(frame);
+      frame.SetValue(self.addExpression(SafeMetaAccessExpressionSyntax(
+          receiver, name.GetSpan(),
+          SourceRange(self.rangeOf(receiver).GetBegin(),
+                      name.GetRange().GetEnd()), self.nodeValid(frame))));
+      return;
+    }
+    if (kind == TokenKind.kColonColon || kind == TokenKind.kDot ||
+        kind == TokenKind.kQuestionDot) {
+      self.cursor.Advance();
+      if (self.cursor.Current().GetKind() != TokenKind.kIdentifier) {
+        ParseDiagnosticKind expected = ParseDiagnosticKind.kExpectedMemberName;
+        if (kind == TokenKind.kColonColon) {
+          expected = ParseDiagnosticKind.kExpectedMetaName;
+        }
+        if (kind == TokenKind.kQuestionDot) {
+          expected = ParseDiagnosticKind.kExpectedSafeMemberName;
+        }
+        self.addDiagnostic(expected, self.cursor.Current().GetRange());
+        self.finish(frame, self.requireValue(frame));
+        return;
+      }
+      final Token name = self.cursor.Advance();
+      final ExpressionId receiver = self.requireValue(frame);
+      final SourceRange range = SourceRange(
+          self.rangeOf(receiver).GetBegin(), name.GetRange().GetEnd());
+      ExpressionSyntax value;
+      if (kind == TokenKind.kColonColon) {
+        value = MetaAccessExpressionSyntax(receiver, name.GetSpan(), range,
+                                           self.nodeValid(frame));
+      } else {
+        if (kind == TokenKind.kDot) {
+          value = MemberAccessExpressionSyntax(receiver, name.GetSpan(), range,
+                                               self.nodeValid(frame));
+        } else {
+          value = SafeMemberAccessExpressionSyntax(
+              receiver, name.GetSpan(), range, self.nodeValid(frame));
+        }
+      }
+      frame.SetValue(self.addExpression(value));
+      return;
+    }
+    if (kind == TokenKind.kBang || kind == TokenKind.kPlusPlus ||
+        kind == TokenKind.kMinusMinus) {
+      final Token operation = self.cursor.Advance();
+      final ExpressionId operand = self.requireValue(frame);
+      final SourceRange range = SourceRange(
+          self.rangeOf(operand).GetBegin(), operation.GetRange().GetEnd());
+      ExpressionSyntax value;
+      if (kind == TokenKind.kBang) {
+        value = NullAssertExpressionSyntax(operand, range,
+                                           self.nodeValid(frame));
+        frame.SetValue(self.addExpression(value));
+        return;
+      }
+      value = UpdateExpressionSyntax(kind, operand, true, range,
+                                     self.nodeValid(frame));
+      self.finish(frame, self.addExpression(value));
+      return;
+    }
+    self.finish(frame, self.requireValue(frame));
+  }
+
+  func finishCall(ExpressionParseFrame frame): void throws StateError {
+    final ExpressionId callee = self.requireValue(frame);
+    SourceLocation end = self.cursor.Current().GetRange().GetBegin();
+    if (self.cursor.Match(TokenKind.kRightParen)) {
+      end = self.previousToken().GetRange().GetEnd();
+    } else {
+      if (!self.resourceLimited) {
+        self.addDiagnostic(ParseDiagnosticKind.kExpectedCallClose,
+                           self.cursor.Current().GetRange());
+      }
+      frame.MarkInvalid();
+    }
+    final ExpressionIdSequence arguments = self.requireValues(frame).Finish();
+    frame.SetValue(self.addExpression(CallExpressionSyntax(
+        callee, arguments, SourceRange(self.rangeOf(callee).GetBegin(), end),
+        frame.IsValid() && self.isValid(callee))));
+    frame.SetState(4);
+  }
+
+  func stepPrimary(ExpressionParseFrame frame): void throws StateError {
+    if (frame.GetState() == 0) {
+      self.startPrimaryValue(frame);
+      return;
+    }
+    if (frame.GetState() == 1) {
+      final ExpressionId value = self.takeCompleted();
+      SourceLocation end = self.rangeOf(value).GetEnd();
+      if (self.cursor.Match(TokenKind.kRightParen)) {
+        end = self.previousToken().GetRange().GetEnd();
+      } else {
+        if (!self.resourceLimited) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedGroupClose,
+                             self.cursor.Current().GetRange());
+        }
+        frame.MarkInvalid();
+      }
+      final Token open = self.requireOperation(frame);
+      self.finish(frame, self.addExpression(ParenthesizedExpressionSyntax(
+          value, SourceRange(open.GetRange().GetBegin(), end),
+          frame.IsValid() && self.isValid(value))));
+      return;
+    }
+    if (frame.GetState() == 10) {
+      if (self.cursor.Current().GetKind() == TokenKind.kRightBracket ||
+          self.cursor.AtEnd()) {
+        self.finishArrayLiteral(frame);
+        return;
+      }
+      frame.SetState(11);
+      self.startExpression(frame, 1, frame.GetDepth() + 1);
+      return;
+    }
+    if (frame.GetState() == 11) {
+      final ExpressionId element = self.takeCompleted();
+      self.requireValues(frame).Add(element);
+      if (!self.isValid(element)) { frame.MarkInvalid(); }
+      frame.SetState(12);
+      return;
+    }
+    if (frame.GetState() == 12) {
+      if (self.cursor.Match(TokenKind.kComma)) {
+        if (self.cursor.Current().GetKind() == TokenKind.kRightBracket) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayElement,
+                             self.cursor.Current().GetRange());
+          frame.MarkInvalid();
+        }
+        frame.SetState(10);
+        return;
+      }
+      if (self.cursor.Current().GetKind() != TokenKind.kRightBracket) {
+        if (!self.resourceLimited) {
+          self.addDiagnostic(ParseDiagnosticKind.kExpectedArraySeparator,
+                             self.cursor.Current().GetRange());
+        }
+        frame.MarkInvalid();
+        self.synchronizeList(TokenKind.kRightBracket);
+        if (self.cursor.Match(TokenKind.kComma)) {
+          frame.SetState(10);
+          return;
+        }
+      }
+      self.finishArrayLiteral(frame);
+      return;
+    }
+    if (frame.GetState() == 20 || frame.GetState() == 30) {
+      frame.SetValue(self.takeCompleted());
+      frame.SetState(frame.GetState() + 1);
+      return;
+    }
+    if (frame.GetState() == 21 || frame.GetState() == 31) {
+      if (self.cursor.Match(TokenKind.kComma)) {
+        if (frame.GetState() == 21) {
+          self.addDiagnostic(ParseDiagnosticKind.kNumericConversionArity,
+                             self.previousToken().GetRange());
+          frame.SetState(22);
+        } else {
+          self.addDiagnostic(ParseDiagnosticKind.kIntegerConversionArity,
+                             self.previousToken().GetRange());
+          frame.SetState(32);
+        }
+        frame.MarkInvalid();
+        return;
+      }
+      self.finishConversion(frame);
+      return;
+    }
+    if (frame.GetState() == 22 || frame.GetState() == 32) {
+      if (self.cursor.Current().GetKind() == TokenKind.kRightParen ||
+          self.cursor.AtEnd()) {
+        self.finishConversion(frame);
+        return;
+      }
+      frame.SetState(frame.GetState() + 1);
+      self.startExpression(frame, 1, frame.GetDepth() + 1);
+      return;
+    }
+    if (frame.GetState() == 23 || frame.GetState() == 33) {
+      self.takeCompleted();
+      if (self.cursor.Match(TokenKind.kComma)) {
+        frame.SetState(frame.GetState() - 1);
+      } else {
+        self.finishConversion(frame);
+      }
+      return;
+    }
+    if (frame.GetState() == 40) {
+      final ExpressionId length = self.takeCompleted();
+      SourceLocation end = self.rangeOf(length).GetEnd();
+      if (self.cursor.Match(TokenKind.kRightBracket)) {
+        end = self.previousToken().GetRange().GetEnd();
+      } else {
+        if (!self.resourceLimited) {
+          self.addDiagnostic(
+              ParseDiagnosticKind.kExpectedArrayConstructionClose,
+              self.cursor.Current().GetRange());
+        }
+        frame.MarkInvalid();
+      }
+      final TypeSyntax type = self.requireType(frame);
+      final Token begin = self.requireOperation(frame);
+      self.finish(frame, self.addExpression(ArrayConstructionExpressionSyntax(
+          type, length, SourceRange(begin.GetRange().GetBegin(), end),
+          frame.IsValid() && type.IsValid() && self.isValid(length))));
+    }
+  }
+
+  func startPrimaryValue(ExpressionParseFrame frame): void throws StateError {
+    final Token token = self.cursor.Current();
+    if (token.GetKind() == TokenKind.kLeftParen) {
+      frame.SetOperation(self.cursor.Advance());
+      frame.SetState(1);
+      self.startExpression(frame, 1, frame.GetDepth() + 1);
+      return;
+    }
+    if (self.atArrayConstruction()) {
+      self.startArrayConstruction(frame);
+      return;
+    }
+    if (self.atPrimitiveParseTarget()) {
+      self.cursor.Advance();
+      self.finish(frame, self.addExpression(IdentifierExpressionSyntax(
+          token.GetSpan(), token.GetRange(), self.nodeValid(frame))));
+      return;
+    }
+    if (ParserFacts.IsPrimitiveType(token.GetKind()) &&
+        self.cursor.GetIndex() + 1 < self.cursor.GetLimit() &&
+        self.cursor.Peek(1).GetKind() == TokenKind.kColonColon) {
+      self.startIntegerConversion(frame);
+      return;
+    }
+    if (isNumericType(token.GetKind())) {
+      self.startNumericConversion(frame);
+      return;
+    }
+    if (token.GetKind() == TokenKind.kLeftBracket) {
+      frame.SetOperation(self.cursor.Advance());
+      frame.SetValues(ExpressionIdBuilder());
+      frame.SetState(10);
+      return;
+    }
+    self.finish(frame, self.parseAtom(frame));
+  }
+
+  func parseAtom(ExpressionParseFrame frame): ExpressionId throws StateError {
+    final Token token = self.cursor.Current();
+    if (self.cursor.AtEnd()) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedExpression,
+                         token.GetRange());
+      return self.makeInvalid(self.point(token));
+    }
+    if (self.constantContext &&
+        (token.GetKind() == TokenKind.kIntegerLiteral ||
+         token.GetKind() == TokenKind.kFloatLiteral) &&
+        token.GetSpan().GetLength() > 4096) {
+      self.addDiagnostic(ParseDiagnosticKind.kConstantNumericLiteralLimit,
+                         token.GetRange());
+      self.resourceLimited = true;
+      self.exhaust();
+      return self.makeInvalid(token.GetRange());
+    }
+    if (token.GetKind() == TokenKind.kIdentifier) {
+      self.cursor.Advance();
+      return self.addExpression(IdentifierExpressionSyntax(
+          token.GetSpan(), token.GetRange(), self.nodeValid(frame)));
+    }
+    if (token.GetKind() == TokenKind.kKwSuper) {
+      self.cursor.Advance();
+      return self.addExpression(
+          SuperExpressionSyntax(token.GetRange(), self.nodeValid(frame)));
+    }
+    LiteralKind literal = LiteralKind.kInteger;
+    final bool matched =
+        token.GetKind() == TokenKind.kIntegerLiteral ||
+        token.GetKind() == TokenKind.kFloatLiteral ||
+        token.GetKind() == TokenKind.kStringLiteral ||
+        token.GetKind() == TokenKind.kCharacterLiteral ||
+        token.GetKind() == TokenKind.kKwTrue ||
+        token.GetKind() == TokenKind.kKwFalse ||
+        token.GetKind() == TokenKind.kKwNull;
+    if (token.GetKind() == TokenKind.kIntegerLiteral) {
+      literal = LiteralKind.kInteger;
+    }
+    if (token.GetKind() == TokenKind.kFloatLiteral) {
+      literal = LiteralKind.kFloat;
+    }
+    if (token.GetKind() == TokenKind.kStringLiteral) {
+      literal = LiteralKind.kString;
+    }
+    if (token.GetKind() == TokenKind.kCharacterLiteral) {
+      literal = LiteralKind.kCharacter;
+    }
+    if (token.GetKind() == TokenKind.kKwTrue ||
+        token.GetKind() == TokenKind.kKwFalse) {
+      literal = LiteralKind.kBoolean;
+    }
+    if (token.GetKind() == TokenKind.kKwNull) {
+      literal = LiteralKind.kNull;
+    }
+    if (matched) {
+      self.cursor.Advance();
+      return self.addExpression(LiteralExpressionSyntax(
+          literal, token.GetSpan(), token.GetRange(), self.nodeValid(frame)));
+    }
+    self.addDiagnostic(ParseDiagnosticKind.kExpectedExpression,
+                       token.GetRange());
+    if (!self.isExpressionBoundary(token.GetKind())) { self.cursor.Advance(); }
+    return self.makeInvalid(token.GetRange());
+  }
+
+  func startNumericConversion(
+      ExpressionParseFrame frame): void throws StateError {
+    final Token target = self.cursor.Advance();
+    frame.SetOperation(target);
+    frame.SetType(self.simpleType(target));
+    if (!self.cursor.Match(TokenKind.kLeftParen)) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedNumericConversionOpen,
+                         self.cursor.Current().GetRange());
+      self.finish(frame, self.makeInvalid(target.GetRange()));
+      return;
+    }
+    if (self.cursor.Current().GetKind() == TokenKind.kRightParen) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedNumericConversionValue,
+                         self.cursor.Current().GetRange());
+      frame.MarkInvalid();
+      frame.SetValue(self.makeInvalid(self.point(self.cursor.Current())));
+      frame.SetState(21);
+      return;
+    }
+    frame.SetState(20);
+    self.startExpression(frame, 1, frame.GetDepth() + 1);
+  }
+
+  func startIntegerConversion(
+      ExpressionParseFrame frame): void throws StateError {
+    final Token target = self.cursor.Advance();
+    self.cursor.Advance();
+    frame.SetType(self.simpleType(target));
+    if (self.cursor.Current().GetKind() != TokenKind.kIdentifier) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedIntegerConversionMode,
+                         self.cursor.Current().GetRange());
+      self.finish(frame, self.makeInvalid(SourceRange(
+          target.GetRange().GetBegin(),
+          self.cursor.Current().GetRange().GetEnd())));
+      return;
+    }
+    final Token operation = self.cursor.Advance();
+    frame.SetOperation(operation);
+    if (!self.cursor.Match(TokenKind.kLeftParen)) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedIntegerConversionOpen,
+                         self.cursor.Current().GetRange());
+      self.finish(frame, self.makeInvalid(SourceRange(
+          target.GetRange().GetBegin(), operation.GetRange().GetEnd())));
+      return;
+    }
+    if (self.cursor.Current().GetKind() == TokenKind.kRightParen) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedIntegerConversionValue,
+                         self.cursor.Current().GetRange());
+      frame.MarkInvalid();
+      frame.SetValue(self.makeInvalid(self.point(self.cursor.Current())));
+      frame.SetState(31);
+      return;
+    }
+    frame.SetState(30);
+    self.startExpression(frame, 1, frame.GetDepth() + 1);
+  }
+
+  func finishConversion(ExpressionParseFrame frame): void throws StateError {
+    final bool integer = frame.GetState() >= 30;
+    final ExpressionId value = self.requireValue(frame);
+    SourceLocation end = self.rangeOf(value).GetEnd();
+    if (self.cursor.Match(TokenKind.kRightParen)) {
+      end = self.previousToken().GetRange().GetEnd();
+    } else {
+      ParseDiagnosticKind expected =
+          ParseDiagnosticKind.kExpectedNumericConversionClose;
+      if (integer) {
+        expected = ParseDiagnosticKind.kExpectedIntegerConversionClose;
+      }
+      if (!self.resourceLimited) {
+        self.addDiagnostic(expected, self.cursor.Current().GetRange());
+      }
+      frame.MarkInvalid();
+    }
+    final TypeSyntax type = self.requireType(frame);
+    final Token operation = self.requireOperation(frame);
+    final SourceLocation begin = type.GetRange().GetBegin();
+    ExpressionSyntax expression;
+    if (integer) {
+      expression = IntegerConversionExpressionSyntax(
+          type, operation.GetSpan(), value, SourceRange(begin, end),
+          frame.IsValid() && self.isValid(value));
+    } else {
+      expression = NumericConversionExpressionSyntax(
+          type, value, SourceRange(begin, end),
+          frame.IsValid() && self.isValid(value));
+    }
+    self.finish(frame, self.addExpression(expression));
+  }
+
+  func startArrayConstruction(
+      ExpressionParseFrame frame): void throws StateError {
+    final Token begin = self.cursor.Current();
+    frame.SetOperation(begin);
+    TypeSyntax type;
+    if (begin.GetKind() == TokenKind.kLeftBracket) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedType, begin.GetRange());
+      frame.MarkInvalid();
+      type = TypeSyntax(begin.GetSpan(), begin.GetRange(), false, false, false,
+                        false, false);
+    } else {
+      type = self.parseArrayConstructionType();
+      if (!type.IsValid()) { frame.MarkInvalid(); }
+    }
+    frame.SetType(type);
+    if (!self.cursor.Match(TokenKind.kLeftBracket)) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayConstructionOpen,
+                         self.cursor.Current().GetRange());
+      self.finish(frame, self.makeInvalid(SourceRange(
+          begin.GetRange().GetBegin(), type.GetRange().GetEnd())));
+      return;
+    }
+    if (!self.cursor.Match(TokenKind.kColon)) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayConstructionColon,
+                         self.cursor.Current().GetRange());
+      frame.MarkInvalid();
+    }
+    if (self.cursor.Current().GetKind() == TokenKind.kRightBracket ||
+        self.cursor.AtEnd()) {
+      self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayLength,
+                         self.cursor.Current().GetRange());
+      frame.MarkInvalid();
+      frame.SetValue(self.makeInvalid(self.point(self.cursor.Current())));
+      frame.SetState(40);
+      self.completed = frame.GetValue();
+      return;
+    }
+    frame.SetState(40);
+    self.startExpression(frame, 1, frame.GetDepth() + 1);
+  }
+
+  func finishArrayLiteral(ExpressionParseFrame frame): void throws StateError {
+    final Token open = self.requireOperation(frame);
+    SourceLocation end = self.cursor.Current().GetRange().GetBegin();
+    if (self.cursor.Match(TokenKind.kRightBracket)) {
+      end = self.previousToken().GetRange().GetEnd();
+    } else {
+      if (!self.resourceLimited) {
+        self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayLiteralClose,
+                           self.cursor.Current().GetRange());
+      }
+      frame.MarkInvalid();
+    }
+    self.finish(frame, self.addExpression(ArrayLiteralExpressionSyntax(
+        self.requireValues(frame).Finish(),
+        SourceRange(open.GetRange().GetBegin(), end), frame.IsValid())));
+  }
+
+  func parseCheckedType(): TypeSyntax throws StateError {
+    return self.parseType(ParseDiagnosticKind.kExpectedCheckedType);
+  }
+
+  func parseArrayConstructionType(): TypeSyntax throws StateError {
+    final Token token = self.cursor.Advance();
+    SourceLocation end = token.GetRange().GetEnd();
+    bool valid = true;
+    bool innerNullable = false;
+    while (!self.cursor.AtEnd() &&
+           (self.cursor.Current().GetKind() == TokenKind.kQuestion ||
+            self.cursor.Current().GetKind() == TokenKind.kQuestionQuestion)) {
+      final Token suffix = self.cursor.Advance();
+      if (innerNullable || suffix.GetKind() == TokenKind.kQuestionQuestion) {
+        self.addDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                           suffix.GetRange());
+        valid = false;
+      }
+      innerNullable = true;
+      end = suffix.GetRange().GetEnd();
+    }
+    bool array = false;
+    while (self.cursor.GetIndex() + 1 < self.cursor.GetLimit() &&
+           self.cursor.Current().GetKind() == TokenKind.kLeftBracket &&
+           self.cursor.Peek(1).GetKind() == TokenKind.kRightBracket) {
+      final Token open = self.cursor.Advance();
+      self.cursor.Advance();
+      if (array) {
+        self.addDiagnostic(ParseDiagnosticKind.kMultidimensionalArray,
+                           open.GetRange());
+        valid = false;
+      }
+      array = true;
+      end = self.previousToken().GetRange().GetEnd();
+    }
+    bool outerNullable = false;
+    if (array) {
+      while (!self.cursor.AtEnd() &&
+             (self.cursor.Current().GetKind() == TokenKind.kQuestion ||
+              self.cursor.Current().GetKind() == TokenKind.kQuestionQuestion)) {
+        final Token suffix = self.cursor.Advance();
+        if (outerNullable ||
+            suffix.GetKind() == TokenKind.kQuestionQuestion) {
+          self.addDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                             suffix.GetRange());
+          valid = false;
+        }
+        outerNullable = true;
+        end = suffix.GetRange().GetEnd();
+      }
+    }
+    bool nullable = innerNullable;
+    if (array) { nullable = outerNullable; }
+    return TypeSyntax(token.GetSpan(),
+                      SourceRange(token.GetRange().GetBegin(), end), valid,
+                      ParserFacts.IsPrimitiveType(token.GetKind()), array,
+                      nullable, array && innerNullable);
+  }
+
+  func parseType(ParseDiagnosticKind expected): TypeSyntax throws StateError {
+    final Token token = self.cursor.Current();
+    if (self.cursor.AtEnd() || !ParserFacts.CanStartType(token.GetKind())) {
+      self.addDiagnostic(expected, token.GetRange());
+      return TypeSyntax(token.GetSpan(), self.point(token), false, false,
+                        false, false, false);
+    }
+    self.cursor.Advance();
+    SourceLocation end = token.GetRange().GetEnd();
+    bool valid = true;
+    bool innerNullable = false;
+    while (!self.cursor.AtEnd() &&
+           (self.cursor.Current().GetKind() == TokenKind.kQuestion ||
+            self.cursor.Current().GetKind() == TokenKind.kQuestionQuestion)) {
+      final Token suffix = self.cursor.Advance();
+      if (innerNullable || suffix.GetKind() == TokenKind.kQuestionQuestion) {
+        self.addDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                           suffix.GetRange());
+        valid = false;
+      }
+      innerNullable = true;
+      end = suffix.GetRange().GetEnd();
+    }
+    bool array = false;
+    while (!self.cursor.AtEnd() &&
+           self.cursor.Current().GetKind() == TokenKind.kLeftBracket) {
+      final Token open = self.cursor.Advance();
+      if (array) {
+        self.addDiagnostic(ParseDiagnosticKind.kMultidimensionalArray,
+                           open.GetRange());
+        valid = false;
+      }
+      array = true;
+      if (self.cursor.Match(TokenKind.kRightBracket)) {
+        end = self.previousToken().GetRange().GetEnd();
+      } else {
+        self.addDiagnostic(ParseDiagnosticKind.kExpectedArrayClose,
+                           self.cursor.Current().GetRange());
+        valid = false;
+        break;
+      }
+    }
+    bool outerNullable = false;
+    if (array) {
+      while (!self.cursor.AtEnd() &&
+             (self.cursor.Current().GetKind() == TokenKind.kQuestion ||
+              self.cursor.Current().GetKind() == TokenKind.kQuestionQuestion)) {
+        final Token suffix = self.cursor.Advance();
+        if (outerNullable ||
+            suffix.GetKind() == TokenKind.kQuestionQuestion) {
+          self.addDiagnostic(ParseDiagnosticKind.kRepeatedNullability,
+                             suffix.GetRange());
+          valid = false;
+        }
+        outerNullable = true;
+        end = suffix.GetRange().GetEnd();
+      }
+    }
+    bool nullable = innerNullable;
+    if (array) { nullable = outerNullable; }
+    return TypeSyntax(token.GetSpan(),
+                      SourceRange(token.GetRange().GetBegin(), end), valid,
+                      ParserFacts.IsPrimitiveType(token.GetKind()), array,
+                      nullable, array && innerNullable);
+  }
+
+  func startExpression(ExpressionParseFrame? previous,
+                       int32 minimumPrecedence,
+                       int32 depth): void throws StateError {
+    if (!self.checkDepth(depth, previous)) { return; }
+    self.top = ExpressionParseFrame.Expression(
+        previous, minimumPrecedence, depth, self.diagnostics.GetCount());
+  }
+
+  func startUnary(ExpressionParseFrame previous,
+                  int32 depth): void throws StateError {
+    if (!self.checkDepth(depth, previous)) { return; }
+    self.top = ExpressionParseFrame.Unary(
+        previous, depth, self.diagnostics.GetCount());
+  }
+
+  func startPrimary(ExpressionParseFrame previous,
+                    int32 depth): void throws StateError {
+    self.top = ExpressionParseFrame.Primary(
+        previous, depth, self.diagnostics.GetCount());
+  }
+
+  func checkDepth(int32 depth,
+                  ExpressionParseFrame? previous): bool throws StateError {
+    if (!self.constantContext || depth <= 256) { return true; }
+    self.addDiagnostic(ParseDiagnosticKind.kConstantExpressionDepthLimit,
+                       self.cursor.Current().GetRange());
+    self.resourceLimited = true;
+    self.exhaust();
+    final ExpressionId invalid =
+        self.makeInvalid(self.point(self.cursor.Current()));
+    self.completed = invalid;
+    self.top = previous;
+    return false;
+  }
+
+  func finish(ExpressionParseFrame frame,
+              ExpressionId value): void throws StateError {
+    if (self.top != frame) {
+      throw StateError("expression parse frame completion is out of order");
+    }
+    self.completed = value;
+    self.top = frame.GetPrevious();
+  }
+
+  func takeCompleted(): ExpressionId throws StateError {
+    final ExpressionId? value = self.completed;
+    if (value == null) {
+      throw StateError("expression parse frame has no child result");
+    }
+    self.completed = null;
+    return value;
+  }
+
+  func addExpression(ExpressionSyntax value): ExpressionId throws StateError {
+    final ExpressionId? limited = self.limitError;
+    if (limited != null) { return limited; }
+    if (self.constantContext) {
+      ParseDiagnosticKind limit =
+          ParseDiagnosticKind.kConstantExpressionNodeLimit;
+      bool hasLimit = false;
+      if (self.storage.GetNodeCount() - self.expressionBase >= 65536) {
+        limit = ParseDiagnosticKind.kConstantExpressionNodeLimit;
+        hasLimit = true;
+      } else {
+        if (self.constantBudget != null &&
+            self.constantBudget!.GetExpressionNodeCount() >= 1048576) {
+          limit = ParseDiagnosticKind.kPackageConstantExpressionNodeLimit;
+          hasLimit = true;
+        }
+      }
+      if (hasLimit) {
+        self.addDiagnostic(limit, value.GetRange());
+        self.resourceLimited = true;
+        self.exhaust();
+        final ExpressionId limitId = self.storage.AddExpression(
+            InvalidExpressionSyntax(value.GetRange()));
+        self.limitError = limitId;
+        return limitId;
+      }
+      if (self.constantBudget != null &&
+          !self.constantBudget!.AddExpressionNode()) {
+        throw StateError("constant expression budget changed unexpectedly");
+      }
+    }
+    return self.storage.AddExpression(value);
+  }
+
+  func makeInvalid(SourceRange range): ExpressionId throws StateError {
+    return self.addExpression(InvalidExpressionSyntax(range));
+  }
+
+  func addDiagnostic(ParseDiagnosticKind kind,
+                     SourceRange range): void throws StateError {
+    self.diagnostics.Add(ParseDiagnostic(kind, range, null));
+  }
+
+  func exhaust(): void throws StateError {
+    while (!self.cursor.AtEnd()) { self.cursor.Advance(); }
+  }
+
+  func synchronizeList(TokenKind close): void throws StateError {
+    while (!self.cursor.AtEnd() &&
+           self.cursor.Current().GetKind() != TokenKind.kComma &&
+           self.cursor.Current().GetKind() != close) {
+      self.cursor.Advance();
+    }
+  }
+
+  func atPrimitiveParseTarget(): bool throws StateError {
+    if (self.cursor.GetIndex() + 2 >= self.cursor.GetLimit() ||
+        !ParserFacts.IsPrimitiveType(self.cursor.Current().GetKind()) ||
+        self.cursor.Peek(1).GetKind() != TokenKind.kColonColon ||
+        self.cursor.Peek(2).GetKind() != TokenKind.kIdentifier) {
+      return false;
+    }
+    return SourceText.Equals(self.cursor.Peek(2).GetSpan(), "parse") ||
+           SourceText.Equals(self.cursor.Peek(2).GetSpan(), "Parse");
+  }
+
+  func atArrayConstruction(): bool throws StateError {
+    if (self.cursor.Current().GetKind() == TokenKind.kLeftBracket) {
+      return self.cursor.GetIndex() + 1 < self.cursor.GetLimit() &&
+             self.cursor.Peek(1).GetKind() == TokenKind.kColon;
+    }
+    if (!ParserFacts.CanStartType(self.cursor.Current().GetKind())) {
+      return false;
+    }
+    final bool primitive =
+        ParserFacts.IsPrimitiveType(self.cursor.Current().GetKind());
+    int32 lookahead = self.cursor.GetIndex() + 1;
+    if (lookahead < self.cursor.GetLimit() &&
+        (self.cursor.GetTokens().Get(lookahead).GetKind() ==
+             TokenKind.kQuestion ||
+         self.cursor.GetTokens().Get(lookahead).GetKind() ==
+             TokenKind.kQuestionQuestion)) {
+      lookahead++;
+    }
+    while (lookahead + 1 < self.cursor.GetLimit() &&
+           self.cursor.GetTokens().Get(lookahead).GetKind() ==
+               TokenKind.kLeftBracket &&
+           self.cursor.GetTokens().Get(lookahead + 1).GetKind() ==
+               TokenKind.kRightBracket) {
+      lookahead += 2;
+    }
+    if (lookahead < self.cursor.GetLimit() &&
+        (self.cursor.GetTokens().Get(lookahead).GetKind() ==
+             TokenKind.kQuestion ||
+         self.cursor.GetTokens().Get(lookahead).GetKind() ==
+             TokenKind.kQuestionQuestion)) {
+      lookahead++;
+    }
+    if (lookahead >= self.cursor.GetLimit() ||
+        self.cursor.GetTokens().Get(lookahead).GetKind() !=
+            TokenKind.kLeftBracket) {
+      return false;
+    }
+    return primitive || (lookahead + 1 < self.cursor.GetLimit() &&
+        self.cursor.GetTokens().Get(lookahead + 1).GetKind() ==
+            TokenKind.kColon);
+  }
+
+  func rangeOf(ExpressionId id): SourceRange throws StateError {
+    return self.storage.GetExpression(id).GetRange();
+  }
+
+  func isValid(ExpressionId id): bool throws StateError {
+    return self.storage.GetExpression(id).IsValid();
+  }
+
+  func nodeValid(ExpressionParseFrame frame): bool {
+    return frame.IsValid() &&
+           self.diagnostics.GetCount() == frame.GetDiagnosticBase();
+  }
+
+  func requireValue(
+      ExpressionParseFrame frame): ExpressionId throws StateError {
+    final ExpressionId? value = frame.GetValue();
+    if (value == null) { throw StateError("expression frame has no value"); }
+    return value;
+  }
+
+  func requireOperation(ExpressionParseFrame frame): Token throws StateError {
+    final Token? value = frame.GetOperation();
+    if (value == null) {
+      throw StateError("expression frame has no operation");
+    }
+    return value;
+  }
+
+  func requireValues(
+      ExpressionParseFrame frame): ExpressionIdBuilder throws StateError {
+    final ExpressionIdBuilder? value = frame.GetValues();
+    if (value == null) {
+      throw StateError("expression frame has no value list");
+    }
+    return value;
+  }
+
+  func requireType(ExpressionParseFrame frame): TypeSyntax throws StateError {
+    final TypeSyntax? value = frame.GetType();
+    if (value == null) { throw StateError("expression frame has no type"); }
+    return value;
+  }
+
+  func previousToken(): Token throws StateError {
+    if (self.cursor.GetIndex() <= self.cursor.GetBegin()) {
+      throw StateError("expression cursor has no previous token");
+    }
+    return self.cursor.GetTokens().Get(self.cursor.GetIndex() - 1);
+  }
+
+  func point(Token token): SourceRange {
+    return SourceRange.PointRange(token.GetRange().GetBegin());
+  }
+
+  func simpleType(Token token): TypeSyntax {
+    return TypeSyntax(token.GetSpan(), token.GetRange(), true,
+                      ParserFacts.IsPrimitiveType(token.GetKind()), false,
+                      false, false);
+  }
+
+  func atExpressionBoundary(): bool throws StateError {
+    return self.cursor.AtEnd() ||
+           self.isExpressionBoundary(self.cursor.Current().GetKind());
+  }
+
+  func isExpressionBoundary(TokenKind kind): bool {
+    return kind == TokenKind.kSemicolon || kind == TokenKind.kComma ||
+           kind == TokenKind.kRightParen ||
+           kind == TokenKind.kRightBracket ||
+           kind == TokenKind.kRightBrace;
+  }
+
+  static func isPrefixOperator(TokenKind kind): bool {
+    return kind == TokenKind.kPlusPlus || kind == TokenKind.kMinusMinus ||
+           kind == TokenKind.kBang || kind == TokenKind.kMinus ||
+           kind == TokenKind.kPlus || kind == TokenKind.kTilde;
+  }
+
+  static func isNumericType(TokenKind kind): bool {
+    return kind == TokenKind.kKwInt || kind == TokenKind.kKwInt8 ||
+           kind == TokenKind.kKwInt16 || kind == TokenKind.kKwInt32 ||
+           kind == TokenKind.kKwInt64 || kind == TokenKind.kKwUint ||
+           kind == TokenKind.kKwUint8 || kind == TokenKind.kKwUint16 ||
+           kind == TokenKind.kKwUint32 || kind == TokenKind.kKwUint64 ||
+           kind == TokenKind.kKwFloat || kind == TokenKind.kKwFloat32 ||
+           kind == TokenKind.kKwFloat64 || kind == TokenKind.kKwByte;
+  }
+
+  static func binaryPrecedence(TokenKind kind): int32 {
+    if (isAssignmentOperator(kind)) { return 1; }
+    if (kind == TokenKind.kQuestionQuestion) { return 2; }
+    if (kind == TokenKind.kPipePipe) { return 3; }
+    if (kind == TokenKind.kAmpersandAmpersand) { return 4; }
+    if (kind == TokenKind.kPipe) { return 5; }
+    if (kind == TokenKind.kCaret) { return 6; }
+    if (kind == TokenKind.kAmpersand) { return 7; }
+    if (kind == TokenKind.kEqualEqual || kind == TokenKind.kBangEqual) {
+      return 8;
+    }
+    if (kind == TokenKind.kLess || kind == TokenKind.kLessEqual ||
+        kind == TokenKind.kGreater || kind == TokenKind.kGreaterEqual ||
+        kind == TokenKind.kKwIs || kind == TokenKind.kKwAs) {
+      return 9;
+    }
+    if (kind == TokenKind.kShiftLeft || kind == TokenKind.kShiftRight) {
+      return 10;
+    }
+    if (kind == TokenKind.kPlus || kind == TokenKind.kMinus) { return 11; }
+    if (kind == TokenKind.kStar || kind == TokenKind.kSlash ||
+        kind == TokenKind.kPercent) {
+      return 12;
+    }
+    return 0;
+  }
+
+  static func isAssignmentOperator(TokenKind kind): bool {
+    return kind == TokenKind.kEqual || kind == TokenKind.kPlusEqual ||
+           kind == TokenKind.kMinusEqual || kind == TokenKind.kStarEqual ||
+           kind == TokenKind.kSlashEqual || kind == TokenKind.kPercentEqual ||
+           kind == TokenKind.kShiftLeftEqual ||
+           kind == TokenKind.kShiftRightEqual ||
+           kind == TokenKind.kAmpersandEqual ||
+           kind == TokenKind.kPipeEqual || kind == TokenKind.kCaretEqual;
+  }
+
+  static func isRightAssociative(TokenKind kind): bool {
+    return isAssignmentOperator(kind) ||
+           kind == TokenKind.kQuestionQuestion;
+  }
+}

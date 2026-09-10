@@ -1,0 +1,255 @@
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.parser::ConstantParseBudget;
+import frontend.parser::ConstructorInitializerParseResult;
+import frontend.parser::ConstructorInitializerParser;
+import frontend.parser::DeclarationOutline;
+import frontend.parser::DeclarationParser;
+import frontend.parser::DeclarationResult;
+import frontend.parser::ExpressionParseResult;
+import frontend.parser::ExpressionParser;
+import frontend.parser::ParseDiagnosticCollector;
+import frontend.parser::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.expression::AssignmentExpressionSyntax;
+import frontend.syntax.expression::BinaryExpressionSyntax;
+import frontend.syntax.expression::CallExpressionSyntax;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import frontend.syntax.expression::MetaAccessExpressionSyntax;
+import frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import frontend.syntax.expression::SyntaxExpressionVerifier;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::SyntaxVerificationContext;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    final int32 validStatus = checkValidExpressions();
+    if (validStatus != 0) { return validStatus; }
+    final int32 recoveryStatus = checkRecovery();
+    if (recoveryStatus != 0) { return recoveryStatus; }
+    final int32 constructorStatus = checkConstructorInitializer();
+    if (constructorStatus != 0) { return constructorStatus; }
+    return checkDeclarationBudget();
+  }
+
+  static func checkValidExpressions(): int32 throws IoError, StateError {
+    final DeclarationResult declarations = parse(
+        "testdata/parser/expression_valid.txt", "ExpressionValid");
+    if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 34) {
+      return 510;
+    }
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final var budget = ConstantParseBudget();
+    final ExpressionId?[] roots = ExpressionId?[:34];
+    for (int32 index = 0; index < 34; index++) {
+      final DeclarationOutline member = declarations.GetMembers().Get(index);
+      final TokenIndexRange? interval = member.GetFieldInitializerTokens();
+      if (interval == null) { return 511; }
+      if (member.IsStatic() && !budget.AddDeclaration()) { return 512; }
+      final ExpressionParseResult result = ExpressionParser.Parse(
+          declarations.GetSource(), declarations.GetTokens(), interval,
+          storage, diagnostics, member.IsStatic(), budget);
+      if (!result.IsValid() || result.GetNextToken() != interval.GetEnd() ||
+          storage.GetExpression(result.GetRoot()).GetExpressionKind() !=
+              expectedKind(index)) {
+        return 513 + index;
+      }
+      roots[index] = result.GetRoot();
+    }
+    if (diagnostics.GetCount() != 0 || budget.GetDeclarationCount() != 1 ||
+        budget.GetExpressionNodeCount() != 5) {
+      return 546;
+    }
+    if (!checkPrecedence(storage, get(roots, 12), get(roots, 17),
+                         get(roots, 22)) ||
+        !checkSpecialShapes(storage, get(roots, 16), get(roots, 29),
+                            get(roots, 30))) {
+      return 547;
+    }
+    storage.Seal();
+    final var context =
+        SyntaxVerificationContext(declarations.GetSource(), storage);
+    final var verifier = SyntaxExpressionVerifier(context);
+    for (int32 index = 0; index < 34; index++) {
+      if (!verifier.Verify(get(roots, index),
+                           declarations.GetMembers().Get(index).GetRange())) {
+        return 548;
+      }
+    }
+    return 0;
+  }
+
+  static func checkRecovery(): int32 throws IoError, StateError {
+    final DeclarationResult declarations = parse(
+        "testdata/parser/expression_recovery.txt", "ExpressionRecovery");
+    if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 2) {
+      return 549;
+    }
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final TokenIndexRange first = requireInterval(
+        declarations.GetMembers().Get(0).GetFieldInitializerTokens());
+    final ExpressionParseResult broken = ExpressionParser.Parse(
+        declarations.GetSource(), declarations.GetTokens(), first, storage,
+        diagnostics, false, null);
+    if (broken.IsValid() || broken.GetNextToken() != first.GetEnd() ||
+        diagnostics.GetCount() == 0) {
+      return 550;
+    }
+    final int32 diagnosticCount = diagnostics.GetCount();
+    final TokenIndexRange second = requireInterval(
+        declarations.GetMembers().Get(1).GetFieldInitializerTokens());
+    final ExpressionParseResult recovered = ExpressionParser.Parse(
+        declarations.GetSource(), declarations.GetTokens(), second, storage,
+        diagnostics, false, null);
+    if (!recovered.IsValid() || recovered.GetNextToken() != second.GetEnd() ||
+        diagnostics.GetCount() != diagnosticCount ||
+        storage.GetExpression(recovered.GetRoot()).GetExpressionKind() !=
+            ExpressionKind.kLiteral) {
+      return 551;
+    }
+    return 0;
+  }
+
+  static func checkConstructorInitializer(): int32
+      throws IoError, StateError {
+    final DeclarationResult declarations = parse(
+        "testdata/parser/constructor_initializer.txt",
+        "ExpressionConstructor");
+    if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 1) {
+      return 552;
+    }
+    final TokenIndexRange interval = requireInterval(
+        declarations.GetMembers().Get(0).GetConstructorInitializerTokens());
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final ConstructorInitializerParseResult result =
+        ConstructorInitializerParser.Parse(
+            declarations.GetSource(), declarations.GetTokens(), interval,
+            storage, diagnostics, null);
+    final ConstructorInitializerSyntax initializer = result.GetInitializer();
+    if (!result.IsValid() || result.GetNextToken() != interval.GetEnd() ||
+        diagnostics.GetCount() != 0 ||
+        initializer.GetArguments().GetCount() != 2 ||
+        storage.GetExpression(initializer.GetArguments().Get(0))
+                .GetExpressionKind() != ExpressionKind.kBinary ||
+        storage.GetExpression(initializer.GetArguments().Get(1))
+                .GetExpressionKind() != ExpressionKind.kSafeMemberAccess) {
+      return 553;
+    }
+    return 0;
+  }
+
+  static func checkDeclarationBudget(): int32 {
+    final var budget = ConstantParseBudget();
+    for (int32 index = 0; index < 65536; index++) {
+      if (!budget.AddDeclaration()) { return 554; }
+    }
+    if (budget.AddDeclaration() || budget.GetDeclarationCount() != 65536) {
+      return 555;
+    }
+    return 0;
+  }
+
+  static func checkPrecedence(SyntaxStorage storage, ExpressionId arithmetic,
+                              ExpressionId assignment,
+                              ExpressionId coalesce): bool throws StateError {
+    final BinaryExpressionSyntax? sum =
+        storage.GetExpression(arithmetic) as BinaryExpressionSyntax?;
+    if (sum == null ||
+        !(storage.GetExpression(sum.GetRight()) is BinaryExpressionSyntax)) {
+      return false;
+    }
+    final AssignmentExpressionSyntax? assign =
+        storage.GetExpression(assignment) as AssignmentExpressionSyntax?;
+    if (assign == null || !(storage.GetExpression(assign.GetValue()) is
+                            AssignmentExpressionSyntax)) {
+      return false;
+    }
+    final NullCoalesceExpressionSyntax? nullValue =
+        storage.GetExpression(coalesce) as NullCoalesceExpressionSyntax?;
+    return nullValue != null &&
+        storage.GetExpression(nullValue.GetFallback()) is
+            NullCoalesceExpressionSyntax;
+  }
+
+  static func checkSpecialShapes(
+      SyntaxStorage storage, ExpressionId integerConversion,
+      ExpressionId primitiveParse,
+      ExpressionId postfixChain): bool throws StateError {
+    if (!(storage.GetExpression(integerConversion) is
+          IntegerConversionExpressionSyntax)) {
+      return false;
+    }
+    final CallExpressionSyntax? call =
+        storage.GetExpression(primitiveParse) as CallExpressionSyntax?;
+    if (call == null ||
+        !(storage.GetExpression(call.GetCallee()) is
+          MetaAccessExpressionSyntax)) {
+      return false;
+    }
+    final ExpressionSyntax chain = storage.GetExpression(postfixChain);
+    return chain.GetExpressionKind() == ExpressionKind.kMemberAccess;
+  }
+
+  static func expectedKind(int32 index): ExpressionKind throws StateError {
+    if (index == 0) { return ExpressionKind.kIdentifier; }
+    if (index >= 1 && index <= 6) { return ExpressionKind.kLiteral; }
+    if (index == 7) { return ExpressionKind.kSuper; }
+    if (index == 8) { return ExpressionKind.kThrow; }
+    if (index == 9) { return ExpressionKind.kUnary; }
+    if (index == 10 || index == 11) { return ExpressionKind.kUpdate; }
+    if (index == 12 || index == 31) { return ExpressionKind.kBinary; }
+    if (index == 13) { return ExpressionKind.kTypeTest; }
+    if (index == 14) { return ExpressionKind.kCheckedCast; }
+    if (index == 15) { return ExpressionKind.kNumericConversion; }
+    if (index == 16) { return ExpressionKind.kIntegerConversion; }
+    if (index == 17 || index == 33) { return ExpressionKind.kAssignment; }
+    if (index == 18 || index == 30) {
+      return ExpressionKind.kMemberAccess;
+    }
+    if (index == 19) { return ExpressionKind.kMetaAccess; }
+    if (index == 20) { return ExpressionKind.kSafeMemberAccess; }
+    if (index == 21) { return ExpressionKind.kSafeMetaAccess; }
+    if (index == 22) { return ExpressionKind.kNullCoalesce; }
+    if (index == 23) { return ExpressionKind.kNullAssert; }
+    if (index == 24 || index == 29) { return ExpressionKind.kCall; }
+    if (index == 25) { return ExpressionKind.kArrayLiteral; }
+    if (index == 26) { return ExpressionKind.kArrayConstruction; }
+    if (index == 27) { return ExpressionKind.kIndex; }
+    if (index == 28) { return ExpressionKind.kParenthesized; }
+    if (index == 32) { return ExpressionKind.kNullCoalesce; }
+    throw StateError("missing expected expression kind");
+  }
+
+  static func parse(string path,
+                    string fileName): DeclarationResult
+      throws IoError, StateError {
+    final SourceFile source = SourceFile.Load(path);
+    final LexerResult lexer = Lexer.Lex(source);
+    if (lexer.GetDiagnostics().GetCount() != 0) {
+      throw StateError("expression parser fixture has lexical diagnostics");
+    }
+    return DeclarationParser.Parse(source, lexer.GetTokens(), fileName,
+                                   "bootstrap.parser");
+  }
+
+  static func requireInterval(TokenIndexRange? value): TokenIndexRange
+      throws StateError {
+    if (value == null) { throw StateError("missing expression interval"); }
+    return value;
+  }
+
+  static func get(ExpressionId?[] values,
+                  int32 index): ExpressionId throws StateError {
+    final ExpressionId? value = values[index];
+    if (value == null) { throw StateError("missing expression root"); }
+    return value;
+  }
+}

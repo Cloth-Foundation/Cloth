@@ -1,0 +1,54 @@
+import bootstrap::ExpressionGcFixture;
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.parser::ExpressionParseResult;
+import frontend.parser::ExpressionParser;
+import frontend.parser::ParseDiagnosticCollector;
+import frontend.parser::TokenIndexRange;
+import frontend.source::SourceFile;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.storage::SyntaxStorage;
+
+class {
+  static func Run(): int32 throws StateError {
+    for (int32 iteration = 0; iteration < 128; iteration++) {
+      final ExpressionGcFixture fixture = parse();
+      final byte[] pressure = byte[:32768];
+      pressure[0] = byte(iteration);
+      if (!fixture.GetStorage().IsSealed() ||
+          fixture.GetStorage().GetExpression(fixture.GetRoot())
+                  .GetExpressionKind() != ExpressionKind.kParenthesized ||
+          fixture.GetSource().GetLength() != 1029 || pressure[0] > 255) {
+        return 568;
+      }
+    }
+    return 0;
+  }
+
+  static func parse(): ExpressionGcFixture throws StateError {
+    final int32 depth = 512;
+    final byte[] bytes = byte[:depth * 2 + 5];
+    for (int32 index = 0; index < depth; index++) {
+      bytes[index] = byte(40);
+      bytes[depth + 5 + index] = byte(41);
+    }
+    bytes[depth] = byte(118);
+    bytes[depth + 1] = byte(97);
+    bytes[depth + 2] = byte(108);
+    bytes[depth + 3] = byte(117);
+    bytes[depth + 4] = byte(101);
+    final SourceFile source = SourceFile.FromBytes("expression-gc", bytes);
+    final LexerResult lexer = Lexer.Lex(source);
+    final var storage = SyntaxStorage();
+    final var diagnostics = ParseDiagnosticCollector();
+    final ExpressionParseResult result = ExpressionParser.Parse(
+        source, lexer.GetTokens(),
+        TokenIndexRange(0, lexer.GetTokens().GetCount() - 1), storage,
+        diagnostics, false, null);
+    if (!result.IsValid() || diagnostics.GetCount() != 0) {
+      throw StateError("expression GC fixture did not parse");
+    }
+    storage.Seal();
+    return ExpressionGcFixture(source, storage, result.GetRoot());
+  }
+}

@@ -34,7 +34,8 @@ src/
     token/                   Token kinds and bounded token storage
     diagnostic/              Structured frontend diagnostics and storage
     lexer/                   Lexical orchestration and byte classification
-      scanners/              Identifier, trivia, operator, numeric, and text domains
+      scanners/              Identifier, trivia, operator, numeric, and text
+                             domains
     syntax/                  Managed abstract syntax-tree representation
       declaration/          Field, function, and constructor nodes
       expression/           Exact expression kinds and payloads
@@ -98,8 +99,10 @@ deferred initializer and body intervals, and publishes only fully verified
 immutable results. Typed 64-slot builders handle unknown declaration counts;
 stable sorting provides deterministic diagnostics and `O(D log D)` duplicate
 validation. The parser consumes source, token, diagnostic, and grammar-neutral
-syntax data without changing their ownership. Definition grammar and complete
-syntax-tree publication remain deferred.
+syntax data without changing their ownership. The definition pass consumes
+only those retained intervals, uses explicit managed frames for expression and
+statement nesting, materializes declarations in outline order, seals one
+syntax storage, and publishes one verified tree with combined diagnostics.
 
 ### `Main.co`
 
@@ -134,7 +137,11 @@ create catch-all files named `Utils`, `Common`, `Misc`, or `Helpers`.
 ## Current stage boundary
 
 Stage 44 lexer parity, Stage 45 syntax foundations, and the complete Stage 46
-self-hosted declaration pass are the current frontend baseline. Declaration
-results retain verified immutable outlines and exact deferred definition ranges.
-The C++ declaration pass remains authoritative until a separately approved
-definition pass and complete parser authority-transfer audit are complete.
+self-hosted declaration pass are the implemented frontend baseline. Stage 47.3
+adds the bounded self-hosted definition layer: explicit managed parse frames,
+all existing expression and statement forms, exact precedence, structured
+recovery, package constant budgets, and iterative verification. Declaration
+results retain verified immutable outlines and exact deferred definition
+ranges; the definition pass materializes them in source order, combines
+diagnostics, and publishes one verified tree. The C++ parser remains
+authoritative until the complete parser authority-transfer audit.

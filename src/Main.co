@@ -4,6 +4,13 @@ import bootstrap::DeclarationSubstrateGcCheck;
 import bootstrap::DeclarationGrammarCheck;
 import bootstrap::DeclarationGrammarGcCheck;
 import bootstrap::DeclarationRecordWriter;
+import bootstrap::DefinitionParserCheck;
+import bootstrap::DefinitionParserDepthCheck;
+import bootstrap::DefinitionParserGcCheck;
+import bootstrap::DefinitionRecordWriter;
+import bootstrap::ExpressionParserCheck;
+import bootstrap::ExpressionParserDepthCheck;
+import bootstrap::ExpressionParserGcCheck;
 import bootstrap::LexerFoundationCheck;
 import bootstrap::LexerLiteralCheck;
 import bootstrap::LexRecordWriter;
@@ -15,6 +22,29 @@ import bootstrap::SyntaxTreeFailure;
 import bootstrap::SyntaxTreeRecordWriter;
 
 static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length == 3 && args[0] == "--definition-records") {
+    return DefinitionRecordWriter.Run(args[1], args[2]);
+  }
+  if (args::length == 1 && args[0] == "--definition-depth-check") {
+    final int32 definitionDepthStatus = DefinitionParserDepthCheck.Run();
+    if (definitionDepthStatus != 0) { println(definitionDepthStatus); }
+    return definitionDepthStatus;
+  }
+  if (args::length == 1 && args[0] == "--definition-gc-check") {
+    final int32 definitionGcStatus = DefinitionParserGcCheck.Run();
+    if (definitionGcStatus != 0) { println(definitionGcStatus); }
+    return definitionGcStatus;
+  }
+  if (args::length == 1 && args[0] == "--expression-depth-check") {
+    final int32 depthStatus = ExpressionParserDepthCheck.Run();
+    if (depthStatus != 0) { println(depthStatus); }
+    return depthStatus;
+  }
+  if (args::length == 1 && args[0] == "--expression-gc-check") {
+    final int32 gcStatus = ExpressionParserGcCheck.Run();
+    if (gcStatus != 0) { println(gcStatus); }
+    return gcStatus;
+  }
   if (args::length == 3 && args[0] == "--declaration-records") {
     return DeclarationRecordWriter.Run(args[1], args[2]);
   }
@@ -71,6 +101,30 @@ static func Main(string[] args): int32 throws IoError, StateError {
   if (storageStatus != 0) {
     println(storageStatus);
     return storageStatus;
+  }
+
+  final int32 definitionStatus = DefinitionParserCheck.Run();
+  if (definitionStatus != 0) {
+    println(definitionStatus);
+    return definitionStatus;
+  }
+
+  final int32 definitionDepthStatus = DefinitionParserDepthCheck.Run();
+  if (definitionDepthStatus != 0) {
+    println(definitionDepthStatus);
+    return definitionDepthStatus;
+  }
+
+  final int32 definitionGcStatus = DefinitionParserGcCheck.Run();
+  if (definitionGcStatus != 0) {
+    println(definitionGcStatus);
+    return definitionGcStatus;
+  }
+
+  final int32 expressionStatus = ExpressionParserCheck.Run();
+  if (expressionStatus != 0) {
+    println(expressionStatus);
+    return expressionStatus;
   }
 
   final int32 treeStatus = SyntaxTreeCheck.Run();

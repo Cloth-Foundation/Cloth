@@ -1,0 +1,48 @@
+import frontend.source::SourceRange;
+import frontend.syntax::BlockId;
+import frontend.syntax::StatementId;
+import frontend.syntax.statement::StatementVerificationFrameKind;
+
+class {
+  final StatementVerificationFrameKind kind;
+  final StatementVerificationFrame? previous;
+  final StatementId? statement;
+  final BlockId? block;
+  final SourceRange parent;
+  final bool parentValid;
+
+  _StatementVerificationFrame(
+      StatementVerificationFrameKind kind,
+      StatementVerificationFrame? previous, StatementId? statement,
+      BlockId? block, SourceRange parent, bool parentValid) {
+    self.kind = kind;
+    self.previous = previous;
+    self.statement = statement;
+    self.block = block;
+    self.parent = parent;
+    self.parentValid = parentValid;
+  }
+
+  static func Statement(
+      StatementVerificationFrame? previous, StatementId statement,
+      SourceRange parent, bool parentValid): StatementVerificationFrame {
+    return StatementVerificationFrame(
+        StatementVerificationFrameKind.kStatement, previous, statement, null,
+        parent, parentValid);
+  }
+
+  static func Block(
+      StatementVerificationFrame? previous, BlockId block,
+      SourceRange parent, bool parentValid): StatementVerificationFrame {
+    return StatementVerificationFrame(
+        StatementVerificationFrameKind.kBlock, previous, null, block, parent,
+        parentValid);
+  }
+
+  func GetKind(): StatementVerificationFrameKind { return self.kind; }
+  func GetPrevious(): StatementVerificationFrame? { return self.previous; }
+  func GetStatement(): StatementId? { return self.statement; }
+  func GetBlock(): BlockId? { return self.block; }
+  func GetParent(): SourceRange { return self.parent; }
+  func IsParentValid(): bool { return self.parentValid; }
+}

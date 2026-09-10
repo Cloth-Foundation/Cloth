@@ -63,6 +63,120 @@ class {
     if (kind == ParseDiagnosticKind.kDuplicateCallableSignature) { return 52; }
     if (kind == ParseDiagnosticKind.kNestedTypeUnsupported) { return 53; }
     if (kind == ParseDiagnosticKind.kResourceLimit) { return 54; }
+    if (kind == ParseDiagnosticKind.kExpectedExpression) { return 55; }
+    if (kind == ParseDiagnosticKind.kUnexpectedExpressionToken) { return 56; }
+    if (kind == ParseDiagnosticKind.kExpectedCheckedType) { return 57; }
+    if (kind == ParseDiagnosticKind.kExpectedGroupClose) { return 58; }
+    if (kind == ParseDiagnosticKind.kExpectedArgument) { return 59; }
+    if (kind == ParseDiagnosticKind.kExpectedArgumentSeparator) { return 60; }
+    if (kind == ParseDiagnosticKind.kExpectedCallClose) { return 61; }
+    if (kind == ParseDiagnosticKind.kExpectedIndexExpression) { return 62; }
+    if (kind == ParseDiagnosticKind.kExpectedIndexClose) { return 63; }
+    if (kind == ParseDiagnosticKind.kExpectedMemberName) { return 64; }
+    if (kind == ParseDiagnosticKind.kExpectedMetaName) { return 65; }
+    if (kind == ParseDiagnosticKind.kExpectedSafeMemberName) { return 66; }
+    if (kind == ParseDiagnosticKind.kExpectedSafeMetaName) { return 67; }
+    if (kind == ParseDiagnosticKind.kExpectedArrayElement) { return 68; }
+    if (kind == ParseDiagnosticKind.kExpectedArraySeparator) { return 69; }
+    if (kind == ParseDiagnosticKind.kExpectedArrayLiteralClose) { return 70; }
+    if (kind == ParseDiagnosticKind.kExpectedArrayConstructionOpen) {
+      return 71;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedArrayConstructionColon) {
+      return 72;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedArrayLength) { return 73; }
+    if (kind == ParseDiagnosticKind.kExpectedArrayConstructionClose) {
+      return 74;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedNumericConversionOpen) {
+      return 75;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedNumericConversionValue) {
+      return 76;
+    }
+    if (kind == ParseDiagnosticKind.kNumericConversionArity) { return 77; }
+    if (kind == ParseDiagnosticKind.kExpectedNumericConversionClose) {
+      return 78;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedIntegerConversionMode) {
+      return 79;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedIntegerConversionOpen) {
+      return 80;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedIntegerConversionValue) {
+      return 81;
+    }
+    if (kind == ParseDiagnosticKind.kIntegerConversionArity) { return 82; }
+    if (kind == ParseDiagnosticKind.kExpectedIntegerConversionClose) {
+      return 83;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedConstructorInitializerType) {
+      return 84;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedConstructorInitializerOpen) {
+      return 85;
+    }
+    if (kind ==
+        ParseDiagnosticKind.kExpectedConstructorInitializerArgument) {
+      return 86;
+    }
+    if (kind ==
+        ParseDiagnosticKind.kExpectedConstructorInitializerSeparator) {
+      return 87;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedConstructorInitializerClose) {
+      return 88;
+    }
+    if (kind == ParseDiagnosticKind.kConstantDeclarationLimit) { return 89; }
+    if (kind == ParseDiagnosticKind.kConstantExpressionNodeLimit) { return 90; }
+    if (kind == ParseDiagnosticKind.kPackageConstantExpressionNodeLimit) {
+      return 91;
+    }
+    if (kind == ParseDiagnosticKind.kConstantExpressionDepthLimit) {
+      return 92;
+    }
+    if (kind == ParseDiagnosticKind.kConstantNumericLiteralLimit) { return 93; }
+    if (kind == ParseDiagnosticKind.kExpectedBlockOpen) { return 94; }
+    if (kind == ParseDiagnosticKind.kSwitchLabelOutsideSwitch) { return 95; }
+    if (kind == ParseDiagnosticKind.kExpectedLocalName) { return 96; }
+    if (kind == ParseDiagnosticKind.kExpectedLocalTerminator) { return 97; }
+    if (kind == ParseDiagnosticKind.kExpectedReturnTerminator) { return 98; }
+    if (kind == ParseDiagnosticKind.kExpectedIfOpen) { return 99; }
+    if (kind == ParseDiagnosticKind.kExpectedIfClose) { return 100; }
+    if (kind == ParseDiagnosticKind.kExpectedIfBody) { return 101; }
+    if (kind == ParseDiagnosticKind.kExpectedElseBody) { return 102; }
+    if (kind == ParseDiagnosticKind.kExpectedWhileOpen) { return 103; }
+    if (kind == ParseDiagnosticKind.kExpectedWhileClose) { return 104; }
+    if (kind == ParseDiagnosticKind.kExpectedWhileBody) { return 105; }
+    if (kind == ParseDiagnosticKind.kExpectedForOpen) { return 106; }
+    if (kind == ParseDiagnosticKind.kExpectedForInitializerTerminator) {
+      return 107;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedForConditionTerminator) {
+      return 108;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedForClose) { return 109; }
+    if (kind == ParseDiagnosticKind.kExpectedForBody) { return 110; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchOpen) { return 111; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchClose) { return 112; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchBody) { return 113; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchArm) { return 114; }
+    if (kind == ParseDiagnosticKind.kSwitchDefaultRepeated) { return 115; }
+    if (kind == ParseDiagnosticKind.kSwitchDefaultNotLast) { return 116; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchLabel) { return 117; }
+    if (kind == ParseDiagnosticKind.kSwitchLabelLimit) { return 118; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchColon) { return 119; }
+    if (kind == ParseDiagnosticKind.kExpectedSwitchArmBody) { return 120; }
+    if (kind == ParseDiagnosticKind.kSwitchArmLimit) { return 121; }
+    if (kind == ParseDiagnosticKind.kEmptySwitch) { return 122; }
+    if (kind == ParseDiagnosticKind.kExpectedLoopControlTerminator) {
+      return 123;
+    }
+    if (kind == ParseDiagnosticKind.kExpectedExpressionTerminator) {
+      return 124;
+    }
     throw StateError("unknown parse diagnostic kind");
   }
 }

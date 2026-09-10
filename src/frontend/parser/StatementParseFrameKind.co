@@ -1,0 +1,7 @@
+enum {
+  kBlock,
+  kIf,
+  kWhile,
+  kFor,
+  kSwitch,
+}

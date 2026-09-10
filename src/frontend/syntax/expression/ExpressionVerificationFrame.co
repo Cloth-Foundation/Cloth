@@ -1,0 +1,36 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+
+class {
+  final ExpressionId id;
+  final SourceRange parentRange;
+  final ExpressionVerificationFrame? previous;
+  ExpressionSyntax? expression;
+  int32 state;
+  int32 childIndex;
+  int32 childCount;
+
+  ExpressionVerificationFrame(ExpressionId id, SourceRange parentRange,
+                              ExpressionVerificationFrame? previous) {
+    self.id = id;
+    self.parentRange = parentRange;
+    self.previous = previous;
+    self.expression = null;
+    self.state = 0;
+    self.childIndex = 0;
+    self.childCount = 0;
+  }
+
+  func GetId(): ExpressionId { return self.id; }
+  func GetParentRange(): SourceRange { return self.parentRange; }
+  func GetPrevious(): ExpressionVerificationFrame? { return self.previous; }
+  func GetExpression(): ExpressionSyntax? { return self.expression; }
+  func GetState(): int32 { return self.state; }
+  func GetChildIndex(): int32 { return self.childIndex; }
+  func GetChildCount(): int32 { return self.childCount; }
+  func SetExpression(ExpressionSyntax value) { self.expression = value; }
+  func SetState(int32 value) { self.state = value; }
+  func SetChildCount(int32 value) { self.childCount = value; }
+  func AdvanceChild() { self.childIndex++; }
+}

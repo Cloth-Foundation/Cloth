@@ -1,0 +1,2 @@
+object Broken = target(1,, 2);
+object Recovered = 7;

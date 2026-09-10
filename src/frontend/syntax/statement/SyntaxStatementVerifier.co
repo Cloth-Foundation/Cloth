@@ -20,6 +20,8 @@ import frontend.syntax.statement::LocalVariableStatementSyntax;
 import frontend.syntax.statement::NestedBlockStatementSyntax;
 import frontend.syntax.statement::ReturnStatementSyntax;
 import frontend.syntax.statement::StatementKind;
+import frontend.syntax.statement::StatementVerificationFrame;
+import frontend.syntax.statement::StatementVerificationFrameKind;
 import frontend.syntax.statement::SwitchArmSyntax;
 import frontend.syntax.statement::SwitchArmSyntaxSequence;
 import frontend.syntax.statement::SwitchStatementSyntax;
@@ -30,109 +32,129 @@ import frontend.syntax.tree::TypeSyntax;
 class {
   final SyntaxVerificationContext context;
   final SyntaxExpressionVerifier expressions;
+  StatementVerificationFrame? top;
 
   SyntaxStatementVerifier(SyntaxVerificationContext context,
                           SyntaxExpressionVerifier expressions) {
     self.context = context;
     self.expressions = expressions;
+    self.top = null;
   }
 
   func VerifyStatement(StatementId id,
                        SourceRange parent): bool throws StateError {
-    final bool fresh = self.context.BeginStatement(id);
-    final StatementSyntax statement =
-        self.context.GetStorage().GetStatement(id);
-    self.context.VerifyRange(statement.GetRange(), parent);
-    if (!fresh) { return statement.IsValid(); }
-
-    switch (statement.GetStatementKind()) {
-      case StatementKind.kInvalid: {
-        if (!(statement is InvalidStatementSyntax) || statement.IsValid()) {
-          return self.kindMismatch();
-        }
-        return false;
-      }
-      case StatementKind.kLocalVariable: {
-        self.verifyLocal(statement);
-        return statement.IsValid();
-      }
-      case StatementKind.kReturn: {
-        final ReturnStatementSyntax? value =
-            statement as ReturnStatementSyntax?;
-        if (value == null) { return self.kindMismatch(); }
-        final ExpressionId? result = value.GetValue();
-        if (result != null) { self.verifyExpression(statement, result); }
-        return statement.IsValid();
-      }
-      case StatementKind.kExpression: {
-        final ExpressionStatementSyntax? value =
-            statement as ExpressionStatementSyntax?;
-        if (value == null) { return self.kindMismatch(); }
-        self.verifyExpression(statement, value.GetExpression());
-        return statement.IsValid();
-      }
-      case StatementKind.kIf: {
-        final IfStatementSyntax? value = statement as IfStatementSyntax?;
-        if (value == null) { return self.kindMismatch(); }
-        self.verifyExpression(statement, value.GetCondition());
-        self.verifyBlock(statement, value.GetThenBlock());
-        final BlockId? alternative = value.GetElseBlock();
-        if (alternative != null) { self.verifyBlock(statement, alternative); }
-        return statement.IsValid();
-      }
-      case StatementKind.kWhile: {
-        final WhileStatementSyntax? value = statement as WhileStatementSyntax?;
-        if (value == null) { return self.kindMismatch(); }
-        self.verifyExpression(statement, value.GetCondition());
-        self.verifyBlock(statement, value.GetBody());
-        return statement.IsValid();
-      }
-      case StatementKind.kForEach: {
-        self.verifyForEach(statement);
-        return statement.IsValid();
-      }
-      case StatementKind.kFor: {
-        self.verifyFor(statement);
-        return statement.IsValid();
-      }
-      case StatementKind.kSwitch: {
-        self.verifySwitch(statement);
-        return statement.IsValid();
-      }
-      case StatementKind.kBreak: {
-        self.requireMatch(statement is BreakStatementSyntax);
-        return statement.IsValid();
-      }
-      case StatementKind.kContinue: {
-        self.requireMatch(statement is ContinueStatementSyntax);
-        return statement.IsValid();
-      }
-      case StatementKind.kNestedBlock: {
-        final NestedBlockStatementSyntax? value =
-            statement as NestedBlockStatementSyntax?;
-        if (value == null) { return self.kindMismatch(); }
-        self.verifyBlock(statement, value.GetBlock());
-        return statement.IsValid();
-      }
-    }
+    self.requireIdle();
+    self.top = StatementVerificationFrame.Statement(
+        null, id, parent, false);
+    self.run();
+    return self.context.GetStorage().GetStatement(id).IsValid();
   }
 
   func VerifyBlock(BlockId id,
                    SourceRange parent): bool throws StateError {
+    self.requireIdle();
+    self.top = StatementVerificationFrame.Block(null, id, parent, false);
+    self.run();
+    return self.context.GetStorage().GetBlock(id).IsValid();
+  }
+
+  func run(): void throws StateError {
+    while (self.top != null) {
+      final StatementVerificationFrame frame = self.top!;
+      self.top = frame.GetPrevious();
+      if (frame.GetKind() == StatementVerificationFrameKind.kBlock) {
+        self.verifyBlock(frame);
+      } else {
+        self.verifyStatement(frame);
+      }
+    }
+  }
+
+  func verifyBlock(StatementVerificationFrame frame): void throws StateError {
+    final BlockId id = self.requireBlock(frame);
     final bool fresh = self.context.BeginBlock(id);
     final BlockSyntax block = self.context.GetStorage().GetBlock(id);
-    self.context.VerifyRange(block.GetRange(), parent);
+    self.context.VerifyRange(block.GetRange(), frame.GetParent());
+    self.context.VerifyChildValidity(frame.IsParentValid(), block.IsValid());
     final BlockNodeSyntax? value = block as BlockNodeSyntax?;
     if (value == null) {
       throw StateError("block handle does not contain a block node");
     }
-    if (!fresh) { return block.IsValid(); }
-    for (int32 index = 0; index < value.GetStatements().GetCount(); index++) {
-      final bool valid = self.VerifyStatement(
-          value.GetStatements().Get(index), block.GetRange());
-      self.context.VerifyChildValidity(block.IsValid(), valid);
+    if (!fresh) { return; }
+    for (int32 index = value.GetStatements().GetCount() - 1;
+         index >= 0; index--) {
+      self.pushStatement(value.GetStatements().Get(index), block.GetRange(),
+                         block.IsValid());
     }
-    return block.IsValid();
+  }
+
+  func verifyStatement(
+      StatementVerificationFrame frame): void throws StateError {
+    final StatementId id = self.requireStatement(frame);
+    final bool fresh = self.context.BeginStatement(id);
+    final StatementSyntax statement =
+        self.context.GetStorage().GetStatement(id);
+    self.context.VerifyRange(statement.GetRange(), frame.GetParent());
+    self.context.VerifyChildValidity(frame.IsParentValid(),
+                                     statement.IsValid());
+    if (!fresh) { return; }
+
+    switch (statement.GetStatementKind()) {
+      case StatementKind.kInvalid: {
+        if (!(statement is InvalidStatementSyntax) || statement.IsValid()) {
+          self.kindMismatch();
+        }
+      }
+      case StatementKind.kLocalVariable: { self.verifyLocal(statement); }
+      case StatementKind.kReturn: {
+        final ReturnStatementSyntax? value =
+            statement as ReturnStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        final ExpressionId? result = value.GetValue();
+        if (result != null) { self.verifyExpression(statement, result); }
+      }
+      case StatementKind.kExpression: {
+        final ExpressionStatementSyntax? value =
+            statement as ExpressionStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.verifyExpression(statement, value.GetExpression());
+      }
+      case StatementKind.kIf: {
+        final IfStatementSyntax? value = statement as IfStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.verifyExpression(statement, value.GetCondition());
+        final BlockId? alternative = value.GetElseBlock();
+        if (alternative != null) {
+          self.pushBlock(alternative, statement.GetRange(),
+                         statement.IsValid());
+        }
+        self.pushBlock(value.GetThenBlock(), statement.GetRange(),
+                       statement.IsValid());
+      }
+      case StatementKind.kWhile: {
+        final WhileStatementSyntax? value = statement as WhileStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.verifyExpression(statement, value.GetCondition());
+        self.pushBlock(value.GetBody(), statement.GetRange(),
+                       statement.IsValid());
+      }
+      case StatementKind.kForEach: { self.verifyForEach(statement); }
+      case StatementKind.kFor: { self.verifyFor(statement); }
+      case StatementKind.kSwitch: { self.verifySwitch(statement); }
+      case StatementKind.kBreak: {
+        if (!(statement is BreakStatementSyntax)) { self.kindMismatch(); }
+      }
+      case StatementKind.kContinue: {
+        if (!(statement is ContinueStatementSyntax)) { self.kindMismatch(); }
+      }
+      case StatementKind.kNestedBlock: {
+        final NestedBlockStatementSyntax? value =
+            statement as NestedBlockStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.pushBlock(value.GetBlock(), statement.GetRange(),
+                       statement.IsValid());
+      }
+    }
   }
 
   func verifyLocal(StatementSyntax statement): void throws StateError {
@@ -146,9 +168,6 @@ class {
     final ExpressionId? initializer = value.GetInitializer();
     if (initializer != null) {
       self.verifyExpression(statement, initializer);
-    }
-    if (statement.IsValid() && type == null && initializer == null) {
-      throw StateError("inferred local syntax requires an initializer");
     }
   }
 
@@ -167,7 +186,7 @@ class {
     }
     self.context.VerifyChildValidity(statement.IsValid(), variable.IsValid());
     self.verifyExpression(statement, value.GetIterable());
-    self.verifyBlock(statement, value.GetBody());
+    self.pushBlock(value.GetBody(), statement.GetRange(), statement.IsValid());
   }
 
   func verifyFor(StatementSyntax statement): void throws StateError {
@@ -175,19 +194,19 @@ class {
     if (value == null) { self.kindMismatch(); return; }
     final StatementId? initializer = value.GetInitializer();
     if (initializer != null) {
-      final bool valid = self.VerifyStatement(initializer, statement.GetRange());
       final StatementKind kind = self.context.GetStorage()
           .GetStatement(initializer).GetStatementKind();
       if (kind != StatementKind.kLocalVariable &&
           kind != StatementKind.kExpression) {
         throw StateError("for initializer has an invalid statement kind");
       }
-      self.context.VerifyChildValidity(statement.IsValid(), valid);
+      self.pushStatement(initializer, statement.GetRange(),
+                         statement.IsValid());
     }
     final ExpressionId? condition = value.GetCondition();
     if (condition != null) { self.verifyExpression(statement, condition); }
     self.verifyExpressions(statement, value.GetUpdates());
-    self.verifyBlock(statement, value.GetBody());
+    self.pushBlock(value.GetBody(), statement.GetRange(), statement.IsValid());
   }
 
   func verifySwitch(StatementSyntax statement): void throws StateError {
@@ -202,12 +221,14 @@ class {
       self.context.VerifyRange(arm.GetRange(), statement.GetRange());
       if (arm.IsDefault()) { defaults++; }
       self.verifyExpressions(arm, arm.GetLabels());
-      final bool bodyValid = self.VerifyBlock(arm.GetBody(), arm.GetRange());
-      self.context.VerifyChildValidity(arm.IsValid(), bodyValid);
       self.context.VerifyChildValidity(statement.IsValid(), arm.IsValid());
     }
     if (defaults > 1) {
       throw StateError("switch syntax contains multiple default arms");
+    }
+    for (int32 index = arms.GetCount() - 1; index >= 0; index--) {
+      final SwitchArmSyntax arm = arms.Get(index);
+      self.pushBlock(arm.GetBody(), arm.GetRange(), arm.IsValid());
     }
   }
 
@@ -226,23 +247,48 @@ class {
     self.context.VerifyChildValidity(parent.IsValid(), valid);
   }
 
-  func verifyBlock(StatementSyntax parent,
-                   BlockId id): void throws StateError {
-    final bool valid = self.VerifyBlock(id, parent.GetRange());
-    self.context.VerifyChildValidity(parent.IsValid(), valid);
-  }
-
   func verifyType(StatementSyntax parent,
                   TypeSyntax type): void throws StateError {
     final bool valid = self.context.VerifyType(type, parent.GetRange());
     self.context.VerifyChildValidity(parent.IsValid(), valid);
   }
 
-  func requireMatch(bool matches): void throws StateError {
-    if (!matches) { self.kindMismatch(); }
+  func pushStatement(StatementId id, SourceRange parent,
+                     bool parentValid): void {
+    self.top = StatementVerificationFrame.Statement(
+        self.top, id, parent, parentValid);
   }
 
-  func kindMismatch(): bool throws StateError {
+  func pushBlock(BlockId id, SourceRange parent, bool parentValid): void {
+    self.top = StatementVerificationFrame.Block(
+        self.top, id, parent, parentValid);
+  }
+
+  func requireIdle(): void throws StateError {
+    if (self.top != null) {
+      throw StateError("statement verifier is already active");
+    }
+  }
+
+  func requireStatement(
+      StatementVerificationFrame frame): StatementId throws StateError {
+    final StatementId? value = frame.GetStatement();
+    if (value == null) {
+      throw StateError("statement verification frame has no statement");
+    }
+    return value;
+  }
+
+  func requireBlock(
+      StatementVerificationFrame frame): BlockId throws StateError {
+    final BlockId? value = frame.GetBlock();
+    if (value == null) {
+      throw StateError("statement verification frame has no block");
+    }
+    return value;
+  }
+
+  func kindMismatch(): void throws StateError {
     throw StateError("statement kind does not match its node type");
   }
 }

@@ -1,0 +1,10 @@
+func Broken(): void {
+  value
+  return;
+  case 1: {}
+  while (value) {}
+}
+
+func Recovered(): void {
+  return;
+}

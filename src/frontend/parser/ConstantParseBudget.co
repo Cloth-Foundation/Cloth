@@ -1,0 +1,24 @@
+class {
+  int32 declarations;
+  int32 expressionNodes;
+
+  ConstantParseBudget() {
+    self.declarations = 0;
+    self.expressionNodes = 0;
+  }
+
+  func AddDeclaration(): bool {
+    if (self.declarations >= 65536) { return false; }
+    self.declarations++;
+    return true;
+  }
+
+  func AddExpressionNode(): bool {
+    if (self.expressionNodes >= 1048576) { return false; }
+    self.expressionNodes++;
+    return true;
+  }
+
+  func GetDeclarationCount(): int32 { return self.declarations; }
+  func GetExpressionNodeCount(): int32 { return self.expressionNodes; }
+}
