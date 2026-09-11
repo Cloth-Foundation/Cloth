@@ -1,0 +1,6 @@
+import self_host.parity::LexRecordWriter;
+
+static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length != 1) { return 2; }
+  return LexRecordWriter.Run(args[0]);
+}

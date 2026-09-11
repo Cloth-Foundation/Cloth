@@ -1,0 +1,11 @@
+import self_host.checks.parser::DefinitionParserGcCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, DefinitionParserGcCheck.Run(),
+                 "definition parser GC check status");
+  }
+}

@@ -1,3 +1,5 @@
 /target/
+/bazel-*
+/.bazelrc.user
 .idea/
 tests/self_host/target

@@ -1,0 +1,212 @@
+class {
+  static func True(bool condition, string context) throws TestFailure {
+    if (!condition) {
+      throw TestFailure("Assert.True failed: " + context);
+    }
+  }
+
+  static func False(bool condition, string context) throws TestFailure {
+    if (condition) {
+      throw TestFailure("Assert.False failed: " + context);
+    }
+  }
+
+  static func Equal(bool expected, bool actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(byte expected, byte actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(char expected, char actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(int8 expected, int8 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(int16 expected, int16 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(int32 expected, int32 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(int64 expected, int64 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(uint8 expected, uint8 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(uint16 expected, uint16 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(uint32 expected, uint32 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(uint64 expected, uint64 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(float32 expected, float32 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(float64 expected, float64 actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(string expected, string actual,
+                    string context) throws TestFailure {
+    checkEqual(expected == actual, expected, actual, context);
+  }
+
+  static func Equal(object? expected, object? actual,
+                    string context) throws TestFailure {
+    checkEqual(objectsEqual(expected, actual), expected, actual, context);
+  }
+
+  static func NotEqual(bool expected, bool actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(byte expected, byte actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(char expected, char actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(int8 expected, int8 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(int16 expected, int16 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(int32 expected, int32 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(int64 expected, int64 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(uint8 expected, uint8 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(uint16 expected, uint16 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(uint32 expected, uint32 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(uint64 expected, uint64 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(float32 expected, float32 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(float64 expected, float64 actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(string expected, string actual,
+                       string context) throws TestFailure {
+    checkNotEqual(expected != actual, expected, actual, context);
+  }
+
+  static func NotEqual(object? expected, object? actual,
+                       string context) throws TestFailure {
+    checkNotEqual(!objectsEqual(expected, actual), expected, actual, context);
+  }
+
+  static func Null(object? actual, string context) throws TestFailure {
+    if (actual != null) {
+      throw TestFailure(
+          "Assert.Null failed: " + context + "; actual " + describe(actual));
+    }
+  }
+
+  static func NotNull(object? actual, string context) throws TestFailure {
+    if (actual == null) {
+      throw TestFailure("Assert.NotNull failed: " + context + "; actual null");
+    }
+  }
+
+  static func Fail(string context) throws TestFailure {
+    throw TestFailure("Assert.Fail: " + context);
+  }
+
+  static func checkEqual(bool matches, object? expected, object? actual,
+                         string context) throws TestFailure {
+    if (!matches) {
+      throw comparisonFailure("Equal", expected, actual, context);
+    }
+  }
+
+  static func checkNotEqual(bool matches, object? expected, object? actual,
+                            string context) throws TestFailure {
+    if (!matches) {
+      throw comparisonFailure("NotEqual", expected, actual, context);
+    }
+  }
+
+  static func comparisonFailure(string operation, object? expected,
+                                object? actual,
+                                string context): TestFailure {
+    return TestFailure("Assert." + operation + " failed: " + context +
+                       "; expected " + describe(expected) + ", actual " +
+                       describe(actual));
+  }
+
+  static func objectsEqual(object? expected, object? actual): bool {
+    if (expected == null) { return actual == null; }
+    return expected.Equals(actual);
+  }
+
+  static func describe(object? value): string {
+    if (value == null) { return "null"; }
+    return value.ToString();
+  }
+}

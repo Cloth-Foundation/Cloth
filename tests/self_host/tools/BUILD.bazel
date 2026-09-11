@@ -1,0 +1,5 @@
+exports_files([
+    "cross_compiler_parity.py",
+    "failure_tests.bzl",
+    "shuttle_compatibility.py",
+])

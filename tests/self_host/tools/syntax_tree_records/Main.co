@@ -1,0 +1,5 @@
+import self_host.parity::SyntaxTreeRecordWriter;
+
+static func Main(): int32 throws StateError {
+  return SyntaxTreeRecordWriter.Run();
+}

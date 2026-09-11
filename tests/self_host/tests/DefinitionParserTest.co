@@ -1,0 +1,11 @@
+import self_host.checks.parser::DefinitionParserCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, DefinitionParserCheck.Run(),
+                 "definition parser check status");
+  }
+}

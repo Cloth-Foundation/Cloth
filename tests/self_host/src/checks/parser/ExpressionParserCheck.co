@@ -39,7 +39,8 @@ class {
 
   static func checkValidExpressions(): int32 throws IoError, StateError {
     final DeclarationResult declarations = parse(
-        "testdata/parser/expression_valid.txt", "ExpressionValid");
+        "tests/self_host/testdata/parser/expression_valid.txt",
+        "ExpressionValid");
     if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 34) {
       return 510;
     }
@@ -87,7 +88,8 @@ class {
 
   static func checkRecovery(): int32 throws IoError, StateError {
     final DeclarationResult declarations = parse(
-        "testdata/parser/expression_recovery.txt", "ExpressionRecovery");
+        "tests/self_host/testdata/parser/expression_recovery.txt",
+        "ExpressionRecovery");
     if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 2) {
       return 549;
     }
@@ -120,7 +122,7 @@ class {
   static func checkConstructorInitializer(): int32
       throws IoError, StateError {
     final DeclarationResult declarations = parse(
-        "testdata/parser/constructor_initializer.txt",
+        "tests/self_host/testdata/parser/constructor_initializer.txt",
         "ExpressionConstructor");
     if (!declarations.IsValid() || declarations.GetMembers().GetCount() != 1) {
       return 552;

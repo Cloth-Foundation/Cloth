@@ -1,0 +1,6 @@
+import self_host.parity::DefinitionRecordWriter;
+
+static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length != 2) { return 2; }
+  return DefinitionRecordWriter.Run(args[0], args[1]);
+}

@@ -6,7 +6,7 @@ version = "0.0.1"
 
 [executable]
 name = "clothc-tests"
-entry = "BootstrapMain.co"
+entry = "Main.co"
 
 [dependencies]
 clothc = { path = "../.." }

@@ -1,0 +1,202 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_test")
+
+_SUPPORT = {
+    "//tests/self_host/src:self_host_support": "self_host",
+}
+
+_TESTDATA = ["//tests/self_host:testdata"]
+
+cloth_test(
+    name = "lexer_foundation_test",
+    srcs = ["LexerFoundationTest.co"],
+    data = _TESTDATA + ["//src:token_kind_source"],
+    deps = _SUPPORT,
+    package_name = "clothc-lexer-foundation-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "LexerFoundationTest",
+)
+
+cloth_test(
+    name = "lexer_literal_test",
+    srcs = ["LexerLiteralTest.co"],
+    data = _TESTDATA + ["//tests/self_host/src:lexer_check_sources"],
+    deps = _SUPPORT,
+    package_name = "clothc-lexer-literal-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "LexerLiteralTest",
+)
+
+cloth_test(
+    name = "declaration_substrate_test",
+    srcs = ["DeclarationSubstrateTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-declaration-substrate-test",
+    size = "small",
+    tags = ["unit"],
+    test_class = "DeclarationSubstrateTest",
+)
+
+cloth_test(
+    name = "declaration_grammar_test",
+    srcs = ["DeclarationGrammarTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-declaration-grammar-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "DeclarationGrammarTest",
+)
+
+cloth_test(
+    name = "definition_parser_test",
+    srcs = ["DefinitionParserTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-definition-parser-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "DefinitionParserTest",
+)
+
+cloth_test(
+    name = "expression_parser_test",
+    srcs = ["ExpressionParserTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-expression-parser-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "ExpressionParserTest",
+)
+
+cloth_test(
+    name = "syntax_arena_test",
+    srcs = ["SyntaxArenaTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-syntax-arena-test",
+    size = "small",
+    tags = ["unit"],
+    test_class = "SyntaxArenaTest",
+)
+
+cloth_test(
+    name = "syntax_sequence_test",
+    srcs = ["SyntaxSequenceTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-syntax-sequence-test",
+    size = "small",
+    tags = ["unit"],
+    test_class = "SyntaxSequenceTest",
+)
+
+cloth_test(
+    name = "syntax_tree_test",
+    srcs = ["SyntaxTreeTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-syntax-tree-test",
+    size = "small",
+    tags = ["unit"],
+    test_class = "SyntaxTreeTest",
+)
+
+cloth_test(
+    name = "declaration_substrate_gc_test",
+    srcs = ["DeclarationSubstrateGcTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-declaration-substrate-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "DeclarationSubstrateGcTest",
+)
+
+cloth_test(
+    name = "declaration_grammar_gc_test",
+    srcs = ["DeclarationGrammarGcTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-declaration-grammar-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "DeclarationGrammarGcTest",
+)
+
+cloth_test(
+    name = "definition_parser_gc_test",
+    srcs = ["DefinitionParserGcTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-definition-parser-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "DefinitionParserGcTest",
+)
+
+cloth_test(
+    name = "expression_parser_gc_test",
+    srcs = ["ExpressionParserGcTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-expression-parser-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "ExpressionParserGcTest",
+)
+
+cloth_test(
+    name = "syntax_tree_gc_test",
+    srcs = ["SyntaxTreeGcTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-syntax-tree-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "SyntaxTreeGcTest",
+)
+
+cloth_test(
+    name = "definition_parser_depth_test",
+    srcs = ["DefinitionParserDepthTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-definition-parser-depth-test",
+    size = "small",
+    tags = ["resource"],
+    test_class = "DefinitionParserDepthTest",
+)
+
+cloth_test(
+    name = "expression_parser_depth_test",
+    srcs = ["ExpressionParserDepthTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-expression-parser-depth-test",
+    size = "small",
+    tags = ["resource"],
+    test_class = "ExpressionParserDepthTest",
+)
+
+test_suite(
+    name = "presubmit",
+    tests = [
+        ":declaration_grammar_test",
+        ":declaration_substrate_test",
+        ":definition_parser_test",
+        ":expression_parser_test",
+        ":lexer_foundation_test",
+        ":lexer_literal_test",
+        ":syntax_arena_test",
+        ":syntax_sequence_test",
+        ":syntax_tree_test",
+    ],
+)
+
+test_suite(
+    name = "extended",
+    tests = [
+        ":declaration_grammar_gc_test",
+        ":declaration_substrate_gc_test",
+        ":definition_parser_depth_test",
+        ":definition_parser_gc_test",
+        ":expression_parser_depth_test",
+        ":expression_parser_gc_test",
+        ":syntax_tree_gc_test",
+    ],
+)

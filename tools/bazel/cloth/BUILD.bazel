@@ -1,0 +1,33 @@
+load("//tools/bazel/cloth/private:rules.bzl", "cloth_standard_library")
+load("//tools/bazel/cloth/private:toolchain.bzl", "cloth_toolchain")
+
+toolchain_type(
+    name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+cloth_toolchain(
+    name = "bootstrap_toolchain_info",
+    compiler = "@cloth_bootstrap//:compiler",
+    compiler_runtime = "@cloth_bootstrap//:compiler_runtime",
+    descriptor = "@cloth_bootstrap//:descriptor",
+    driver = "//tools/bazel/cloth/private:protocol_driver.py",
+    interpreter = "@cloth_bootstrap//:python",
+    interpreter_runtime = "@cloth_bootstrap//:python_runtime",
+    shuttle = "@cloth_bootstrap//:shuttle",
+    shuttle_compiler = "@cloth_bootstrap//:shuttle_compiler",
+    shuttle_distribution = "@cloth_bootstrap//:shuttle_distribution",
+    standard_library = "@cloth_bootstrap//:standard_library",
+)
+
+toolchain(
+    name = "bootstrap_toolchain",
+    toolchain = ":bootstrap_toolchain_info",
+    toolchain_type = ":toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+cloth_standard_library(
+    name = "standard_library",
+    visibility = ["//tools/bazel/cloth/private:__pkg__"],
+)

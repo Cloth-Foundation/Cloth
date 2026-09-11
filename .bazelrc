@@ -1,0 +1,8 @@
+try-import %workspace%/.bazelrc.user
+
+common --announce_rc
+build --show_progress_rate_limit=1
+build --enable_runfiles
+build --verbose_failures
+test --test_output=errors
+test --test_summary=detailed

@@ -1,0 +1,10 @@
+import self_host.checks.lexer::LexerLiteralCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, LexerLiteralCheck.Run(), "lexer literal check status");
+  }
+}

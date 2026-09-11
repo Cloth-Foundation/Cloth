@@ -1,0 +1,13 @@
+import cloth.io::File;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, TestFailure {
+    final var bytes = File.ReadBytes("tests/smoke/testdata/runfile.txt");
+    Assert.Equal(6, bytes::length, "declared runfile length");
+    Assert.Equal(byte(99), bytes[0], "declared runfile first byte");
+    Assert.Equal(byte(10), bytes[5], "declared runfile final byte");
+  }
+}

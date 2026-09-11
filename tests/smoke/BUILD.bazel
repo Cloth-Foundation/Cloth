@@ -1,0 +1,32 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_test")
+
+cloth_test(
+    name = "assert_smoke_test",
+    srcs = [
+        "AssertSmokeTest.co",
+        "Type.co",
+    ],
+    package_name = "clothc-assert-smoke-test",
+    size = "small",
+    tags = ["unit"],
+    test_class = "AssertSmokeTest",
+)
+
+cloth_test(
+    name = "runfile_smoke_test",
+    srcs = ["RunfileSmokeTest.co"],
+    data = ["testdata/runfile.txt"],
+    package_name = "clothc-runfile-smoke-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "RunfileSmokeTest",
+)
+
+cloth_test(
+    name = "assert_failure_test",
+    srcs = ["AssertFailureTest.co"],
+    package_name = "clothc-assert-failure-test",
+    size = "small",
+    tags = ["manual", "negative", "unit"],
+    test_class = "AssertFailureTest",
+)

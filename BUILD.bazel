@@ -1,0 +1,5 @@
+filegroup(
+    name = "shuttle_manifest",
+    srcs = ["Shuttle.toml"],
+    visibility = ["//tests/self_host:__pkg__"],
+)

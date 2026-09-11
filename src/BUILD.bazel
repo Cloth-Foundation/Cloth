@@ -1,0 +1,22 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary")
+
+cloth_binary(
+    name = "clothc",
+    srcs = glob(["**/*.co"]),
+    entry = "Main.co",
+    package_name = "clothc",
+    package_version = "0.0.1",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "token_kind_source",
+    srcs = ["frontend/token/TokenKind.co"],
+    visibility = ["//tests/self_host:__subpackages__"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob(["**/*.co"]),
+    visibility = ["//tests/self_host:__pkg__"],
+)

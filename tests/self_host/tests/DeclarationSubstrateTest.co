@@ -1,0 +1,11 @@
+import self_host.checks.parser::DeclarationSubstrateCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws StateError, TestFailure {
+    Assert.Equal(0, DeclarationSubstrateCheck.Run(),
+                 "declaration substrate check status");
+  }
+}

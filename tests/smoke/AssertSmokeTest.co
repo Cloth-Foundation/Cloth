@@ -1,0 +1,16 @@
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws TestFailure {
+    Assert.True(true, "true value");
+    Assert.False(false, "false value");
+    Assert.Equal(42, 42, "equal int32 values");
+    Assert.NotEqual(42, 43, "different int32 values");
+    Assert.Equal("cloth", "cloth", "equal strings");
+    Assert.Equal(Type.FIRST, Type.FIRST, "equal enum values");
+    Assert.NotEqual(Type.FIRST, Type.SECOND, "different enum values");
+    Assert.Null(null, "null value");
+    Assert.NotNull("cloth", "non-null value");
+  }
+}

@@ -1,0 +1,44 @@
+load(
+    "//tools/bazel/cloth:defs.bzl",
+    "cloth_binary",
+)
+load("//tests/self_host/tools:failure_tests.bzl", "failure_tests")
+
+cloth_binary(
+    name = "declaration_failure",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-declaration-failure",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+_CASES = [
+    ("range", "invalid token index range"),
+    ("token-buffer", "parser token buffer is not immutable and complete"),
+    ("foreign-source", "parser token does not belong to its source"),
+    ("location", "parser token does not belong to its source"),
+    ("slice", "token cursor slice is outside its parent"),
+    ("slice-parent", "token cursor slice is outside its parent"),
+    ("lookahead", "token cursor lookahead is negative"),
+    ("progress", "token cursor did not make progress"),
+    ("progress-checkpoint", "token cursor progress checkpoint is invalid"),
+    ("diagnostic-order", "parse diagnostics must be added in source order"),
+    ("diagnostic-finished", "parse diagnostic builder is already finished"),
+    ("member-finished", "member outline builder is already finished"),
+    ("import-finished", "import syntax builder is already finished"),
+    ("type-finished", "type syntax builder is already finished"),
+    ("parameter-finished", "parameter syntax builder is already finished"),
+    ("enum-finished", "enum case syntax builder is already finished"),
+    ("diagnostic-bounds", "parse diagnostic sequence index is out of bounds"),
+    ("member-bounds", "member outline sequence index is out of bounds"),
+    ("result-validity", "declaration result validity is inconsistent"),
+    ("body-delimiter", "valid body token range is not brace delimited"),
+    ("body-bounds", "deferred token range is outside its declaration"),
+    ("visibility", "member outline token identity is inconsistent"),
+    ("file-range", "declaration file range does not cover its source"),
+]
+
+failure_tests(":declaration_failure", _CASES)

@@ -1,0 +1,20 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary", "output_test")
+
+cloth_binary(
+    name = "syntax_tree_records",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-syntax-tree-records",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+output_test(
+    name = "tree_test",
+    binary = ":syntax_tree_records",
+    expected_stdout = "tree.records",
+    size = "small",
+    tags = ["parity"],
+)

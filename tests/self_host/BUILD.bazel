@@ -1,0 +1,68 @@
+load(
+    "//tools/bazel/cloth:defs.bzl",
+    "cross_compiler_parity_test",
+    "shuttle_compatibility_test",
+    "timeout_probe_test",
+)
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "testdata/**/*.co",
+        "testdata/**/*.txt",
+    ]),
+    visibility = ["//tests/self_host:__subpackages__"],
+)
+
+filegroup(
+    name = "shuttle_sources",
+    srcs = ["Shuttle.toml"] + glob([
+        "testdata/**/*.co",
+        "testdata/**/*.txt",
+    ]),
+)
+
+shuttle_compatibility_test(
+    name = "shuttle_compatibility_test",
+    repository_files = [
+        "//:shuttle_manifest",
+        "//src:sources",
+        ":shuttle_sources",
+        "//tests/self_host/src:sources",
+    ],
+    size = "medium",
+    tags = ["integration", "shuttle"],
+)
+
+cross_compiler_parity_test(
+    name = "cross_compiler_parity_test",
+    compiler_inputs = ["//src:sources"],
+    declaration_corpus = ["@cloth_oracles//:declaration_corpus"],
+    declaration_oracle = "@cloth_oracles//:declaration",
+    declaration_records = "//tests/self_host/tools/declaration_records",
+    definition_corpus = ["@cloth_oracles//:definition_corpus"],
+    definition_fixtures = [
+        "testdata/parser/DefinitionValid.co",
+        "testdata/parser/definition_recovery.co",
+        "testdata/parser/expression_recovery.txt",
+        "testdata/parser/expression_valid.txt",
+    ],
+    definition_oracle = "@cloth_oracles//:definition",
+    definition_records = "//tests/self_host/tools/definition_records",
+    jobs = 8,
+    lexer_inputs = [
+        "//src:sources",
+        ":testdata",
+        "//tests/self_host/src:sources",
+    ],
+    lexer_oracle = "@cloth_oracles//:lexer",
+    lexer_records = "//tests/self_host/tools/lex_records",
+    size = "small",
+    tags = ["parity"],
+)
+
+timeout_probe_test(
+    name = "timeout_probe_test",
+    size = "small",
+    tags = ["audit", "manual"],
+)

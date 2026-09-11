@@ -24,7 +24,7 @@ class {
 
   static func parse(): DeclarationResult throws IoError, StateError {
     final SourceFile source =
-        SourceFile.Load("testdata/parser/implicit.co");
+        SourceFile.Load("tests/self_host/testdata/parser/implicit.co");
     final LexerResult lexer = Lexer.Lex(source);
     if (lexer.GetDiagnostics().GetCount() != 0) {
       throw StateError("declaration GC fixture has lexical diagnostics");

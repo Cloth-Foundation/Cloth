@@ -59,6 +59,26 @@ The active implementation order and accepted contracts live in the `cCloth`
 [`ROADMAP.md`] and [`TODO.md`]. This repository does not independently add
 language features ahead of that schedule.
 
+## Testing
+
+Bazel is authoritative for self-hosted compiler tests. The repository pins
+Bazel 9.2.0 through `.bazelversion` and uses Bzlmod. Tests are independently
+cacheable across lexer, parser, syntax, parity, GC, failure, depth, resource,
+and Shuttle compatibility boundaries. Configure the explicit bootstrap and
+oracle paths in [`tools/bazel/cloth/README.md`](tools/bazel/cloth/README.md),
+then run:
+
+```sh
+bazel test //tests:presubmit
+bazel test //tests:full
+bazel build //src:clothc
+```
+
+The `tests/self_host` Shuttle package is now a focused product-boundary fixture;
+its former argument dispatcher has been retired. The exhaustive migration map
+and audit commands are in [`tests/self_host/README.md`](tests/self_host/README.md).
+Shuttle remains Cloth's public package and build system.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Large language or compatibility

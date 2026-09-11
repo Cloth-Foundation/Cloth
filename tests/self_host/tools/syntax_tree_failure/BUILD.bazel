@@ -1,0 +1,31 @@
+load(
+    "//tools/bazel/cloth:defs.bzl",
+    "cloth_binary",
+)
+load("//tests/self_host/tools:failure_tests.bzl", "failure_tests")
+
+cloth_binary(
+    name = "syntax_tree_failure",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-syntax-tree-failure",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+_CASES = [
+    ("range", "syntax range is outside its parent"),
+    ("foreign-child", "syntax tree contains a foreign expression handle"),
+    ("foreign-statement", "syntax tree contains a foreign statement handle"),
+    ("foreign-block", "syntax tree contains a foreign block handle"),
+    ("kind-mismatch", "expression kind does not match its node type"),
+    ("statement-kind", "statement kind does not match its node type"),
+    ("block-kind", "block handle does not contain a block node"),
+    ("validity", "valid syntax node contains an invalid child"),
+    ("span-source", "syntax span belongs to another source"),
+    ("type-flags", "only array syntax may have nullable elements"),
+]
+
+failure_tests(":syntax_tree_failure", _CASES)

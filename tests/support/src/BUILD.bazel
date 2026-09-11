@@ -1,0 +1,11 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_library")
+
+cloth_library(
+    name = "test_support",
+    srcs = [
+        "Assert.co",
+        "TestFailure.co",
+    ],
+    package_name = "clothc-test-support",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,25 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary", "output_test")
+
+cloth_binary(
+    name = "declaration_records",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-declaration-records",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+output_test(
+    name = "interface_test",
+    binary = ":declaration_records",
+    expected_stdout = "interface.records",
+    process_args = [
+        "tests/self_host/testdata/parser/interface.co",
+        "Contract",
+    ],
+    size = "small",
+    tags = ["parity"],
+    test_data = ["//tests/self_host:testdata"],
+)

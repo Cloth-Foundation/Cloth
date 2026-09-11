@@ -44,10 +44,31 @@ shuttle run --manifest-path tests/self_host/Shuttle.toml \
   --compiler <path-to-clothc>
 ```
 
-Run the focused and coordinated tests required by the active checkpoint in the
-`cCloth` contract. Before review, also check formatting, documentation links,
-repository whitespace, both supported LLVM targets, and the sanitizer build
-when the changed boundary can execute natively.
+Stage 48 tests use Bazel 9.2.0. Configure the ignored `.bazelrc.user` described
+in [`tools/bazel/cloth/README.md`](tools/bazel/cloth/README.md), then prefer the
+narrowest applicable target:
+
+```sh
+bazel test //tests/smoke:assert_smoke_test
+bazel test //tests:presubmit
+bazel test //tests:full
+bazel build //src:clothc
+```
+
+Use `//tests:presubmit` for the normal edit loop and `//tests:full` for parity,
+GC, failure-injection, depth/resource, and Shuttle compatibility coverage.
+Shuttle remains the public project build system; Bazel compile and link actions
+do not invoke it.
+
+The full suite includes the declared C++/Cloth differential corpus and the
+x86-64/wasm32 Shuttle audit. See
+[`tests/self_host/README.md`](tests/self_host/README.md) for the migration map
+and the deliberately manual timeout probe.
+
+Run the focused and coordinated gates required by the active `cCloth` contract.
+Full C++, sanitizer, parity, and both-target matrices belong to checkpoints that
+name them; they are not the default edit loop. Before review, also check
+formatting, documentation links, and repository whitespace for touched files.
 
 ## Proposals and pull requests
 

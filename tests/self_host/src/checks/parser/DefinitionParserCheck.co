@@ -24,7 +24,8 @@ import clothc.frontend.syntax.tree::FileSyntax;
 class {
   static func Run(): int32 throws IoError, StateError {
     final DefinitionResult valid = parse(
-        "testdata/parser/DefinitionValid.co", "DefinitionValid");
+        "tests/self_host/testdata/parser/DefinitionValid.co",
+        "DefinitionValid");
     if (!valid.IsValid() || valid.GetDiagnostics().GetCount() != 0) {
       return 560;
     }
@@ -53,7 +54,7 @@ class {
     }
 
     final DefinitionResult abstractFile = parse(
-        "testdata/parser/explicit.co", "Explicit");
+        "tests/self_host/testdata/parser/explicit.co", "Explicit");
     final FunctionSyntax? abstractFunction = abstractFile.GetTree()
         .GetFile().GetDeclarations().Get(0) as FunctionSyntax?;
     if (!abstractFile.IsValid() || abstractFunction == null ||
@@ -68,14 +69,14 @@ class {
     }
 
     final DefinitionResult interfaceFile = parse(
-        "testdata/parser/interface.co", "Contract");
+        "tests/self_host/testdata/parser/interface.co", "Contract");
     if (!interfaceFile.IsValid() ||
         interfaceFile.GetTree().GetFile().GetDeclarations().GetCount() != 1) {
       return 565;
     }
 
     final DefinitionResult declarationFailure = parse(
-        "testdata/parser/enum_duplicate.co", "Color");
+        "tests/self_host/testdata/parser/enum_duplicate.co", "Color");
     if (declarationFailure.IsValid() ||
         declarationFailure.GetDiagnostics().GetCount() != 1 ||
         declarationFailure.GetDiagnostics().Get(0).GetKind() !=
@@ -86,7 +87,8 @@ class {
     }
 
     final DefinitionResult recovery = parse(
-        "testdata/parser/definition_recovery.co", "DefinitionRecovery");
+        "tests/self_host/testdata/parser/definition_recovery.co",
+        "DefinitionRecovery");
     if (recovery.IsValid() || recovery.GetDiagnostics().GetCount() < 2 ||
         recovery.GetTree().GetFile().GetDeclarations().GetCount() != 2 ||
         recovery.GetTree().GetFile().GetDeclarations().Get(1).IsValid() ==

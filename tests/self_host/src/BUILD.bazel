@@ -1,0 +1,28 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_library")
+
+cloth_library(
+    name = "self_host_support",
+    srcs = glob([
+        "checks/**/*.co",
+        "fixtures/**/*.co",
+        "parity/**/*.co",
+    ]),
+    deps = {
+        "//src:clothc": "clothc",
+    },
+    package_name = "clothc-self-host-support",
+    package_version = "0.0.1",
+    visibility = ["//tests/self_host:__subpackages__"],
+)
+
+filegroup(
+    name = "lexer_check_sources",
+    srcs = glob(["checks/lexer/**/*.co"]),
+    visibility = ["//tests/self_host:__subpackages__"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob(["**/*.co"]),
+    visibility = ["//tests/self_host:__pkg__"],
+)

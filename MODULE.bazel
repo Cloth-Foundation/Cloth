@@ -1,0 +1,18 @@
+module(
+    name = "cloth_compiler",
+    version = "0.0.0",
+)
+
+cloth_bootstrap = use_extension(
+    "//tools/bazel/cloth:extensions.bzl",
+    "cloth_bootstrap",
+)
+use_repo(cloth_bootstrap, "cloth_bootstrap")
+
+cloth_oracles = use_extension(
+    "//tools/bazel/cloth:extensions.bzl",
+    "cloth_oracles",
+)
+use_repo(cloth_oracles, "cloth_oracles")
+
+register_toolchains("//tools/bazel/cloth:bootstrap_toolchain")

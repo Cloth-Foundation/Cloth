@@ -1,0 +1,8 @@
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws TestFailure {
+    Assert.Equal(1, 2, "intentional failure");
+  }
+}

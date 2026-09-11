@@ -19,8 +19,9 @@ Main
             -> no lexer or parser dependency
 
 self-host tests
+  -> repository-private testing assertions
   -> public clothc package surface
-       -> no production dependency on test code
+       -> no production dependency on either test layer
 ```
 
 Dependencies point downward. Source, token, and diagnostic types must remain
@@ -55,13 +56,24 @@ src/
       support/              Shared cursors, facts, ranges, and budgets
       storage/               Typed segmented declaration construction
 tests/
+  support/src/                Repository-private assertions and typed failure
+  smoke/                      Focused Bazel rule and execution checks
   self_host/
-    Shuttle.toml             Isolated self-host test executable package
+    Shuttle.toml             Focused build-system compatibility package
     src/checks/              Lexer, parser, and syntax acceptance checks
     src/fixtures/            Focused construction and lifetime fixtures
     src/parity/              Canonical kind codes and record adapters
+    tests/                   Named Bazel assertion adapters
     testdata/lexer/          Exact byte inputs used by lexer checks
     testdata/parser/         Parser grammar and recovery inputs
+    tools/                   Parity emitters and failure-injection executables
+tools/
+  bazel/
+    cloth/
+      BUILD.bazel            Registered bootstrap toolchain
+      defs.bzl               BUILD-file rule entry points
+      extensions.bzl         Bzlmod bootstrap repository entry
+      private/               Private Bazel package with rule implementations
 ```
 
 Directories and files are added when their scheduled checkpoint needs them;
@@ -128,9 +140,12 @@ lexical rule, or own a syntax data structure.
 
 ### `tests/self_host`
 
-Owns a separate `clothc-tests` package. Its bootstrap checks consume the public
-`clothc` package through a normal Shuttle dependency, so production sources
-cannot import test support accidentally. Canonical kind-code and record writers
+Owns the self-hosted compiler checks. Bazel compiles their shared implementation
+as `clothc-self-host-support`, then gives each assertion, GC/depth invariant,
+failure mode, and parity adapter an independently named target and process.
+The no-op `clothc-tests` Shuttle package exercises the public build-system
+boundary through one explicit compatibility audit. Neither test graph can be
+imported by production compiler sources. Canonical kind-code and record writers
 are differential-test adapters, not compiler CLI or artifact contracts.
 
 ### `tests/self_host/testdata`
@@ -138,6 +153,26 @@ are differential-test adapters, not compiler CLI or artifact contracts.
 Owns deterministic inputs that are loaded at runtime and are not compiled as
 package sources. A fixture covers one named boundary and contains no expected
 results; expectations remain in the matching bootstrap check.
+
+### `tools/bazel/cloth`
+
+Owns repository-private Starlark integration for building and testing Cloth
+code. Compile and link actions consume the public compiler process protocol and
+do not reproduce or invoke Shuttle as a nested build system. One explicit test
+invokes Shuttle against a temporary staged repository to preserve its supported
+product boundary. The bootstrap repository validates and imports the frozen
+compiler distribution, compiler-paired standard library, action interpreter,
+and Windows host runtime. Rules stage only declared `.co` sources, validate
+protocol receipts, publish deterministic package closures, generate test
+entries, and expose declared fixture data through Bazel runfiles.
+
+### `tests/support` and `tests/smoke`
+
+`tests/support` owns the private `testing` package, typed `TestFailure`, and
+assertion diagnostics. `tests/smoke` verifies successful assertions, enum value
+comparison, declared runfiles, generated entries, and the explicit failed-test
+path. Compiler subsystem checks are exposed under `tests/self_host`, while
+`//tests:presubmit` and `//tests:full` define the repository entry points.
 
 ## Adding a component
 
@@ -152,13 +187,18 @@ create catch-all files named `Utils`, `Common`, `Misc`, or `Helpers`.
 ## Current stage boundary
 
 Stage 44 lexer parity, Stage 45 syntax foundations, Stage 46 declarations, and
-Stage 47 definitions form the implemented self-hosted frontend baseline. The
-bounded definition layer uses explicit managed parse frames, covers all current
-expression and statement forms, preserves exact precedence and structured
-recovery, shares package constant budgets, and verifies complete trees
-iteratively. Its canonical full-tree records agree with the C++ oracle for all
-production compiler sources and the focused valid and malformed corpus. The
+Stage 47 definitions form the implemented self-hosted frontend baseline. Stage
+48 establishes Bazel as the self-hosted repository's test authority with
+isolated tests, exact-output records, diagnostic-checked failure probes,
+explicit presubmit/full suites, exhaustive declared-input C++ parity, and one
+temporary-directory Shuttle compatibility audit. The bounded definition layer
+uses explicit managed parse frames,
+covers all current expression and statement forms, preserves exact precedence
+and structured recovery, shares package constant budgets, and verifies complete
+trees iteratively. Its canonical full-tree records agree with the C++ oracle for
+all production compiler sources and the focused valid and malformed corpus. The
 C++ parser remains authoritative until the complete parser authority-transfer
 audit. The production `clothc` executable performs a single-file frontend
-check; all parity, depth, GC, and failure-injection commands live exclusively
-in the separate `clothc-tests` executable.
+check. The legacy `clothc-tests` dispatcher and CMake bridge have been retired;
+the remaining Shuttle package has a no-op entry and exists only to validate the
+supported package/build boundary.

@@ -1,0 +1,10 @@
+import self_host.checks.syntax::SyntaxTreeGcCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws StateError, TestFailure {
+    Assert.Equal(0, SyntaxTreeGcCheck.Run(), "syntax tree GC check status");
+  }
+}

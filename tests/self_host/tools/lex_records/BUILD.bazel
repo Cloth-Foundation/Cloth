@@ -1,0 +1,22 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary", "output_test")
+
+cloth_binary(
+    name = "lex_records",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-lex-records",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+output_test(
+    name = "empty_test",
+    binary = ":lex_records",
+    expected_stdout = "empty.records",
+    process_args = ["tests/self_host/testdata/lexer/empty.co"],
+    size = "small",
+    tags = ["parity"],
+    test_data = ["//tests/self_host:testdata"],
+)

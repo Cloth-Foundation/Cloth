@@ -25,7 +25,8 @@ class {
   }
 
   static func checkEmpty(): int32 throws IoError, StateError {
-    final var source = SourceFile.Load("testdata/lexer/empty.co");
+    final var source =
+        SourceFile.Load("tests/self_host/testdata/lexer/empty.co");
     final LexerResult result = Lexer.Lex(source);
     final TokenBuffer tokens = result.GetTokens();
     if (source.GetLength() != 0 || result.GetDiagnostics().GetCount() != 0) {
@@ -46,7 +47,8 @@ class {
   }
 
   static func checkFoundation(): int32 throws IoError, StateError {
-    final var source = SourceFile.Load("testdata/lexer/foundation.co");
+    final var source =
+        SourceFile.Load("tests/self_host/testdata/lexer/foundation.co");
     final LexerResult result = Lexer.Lex(source);
     final TokenBuffer tokens = result.GetTokens();
     final var diagnostics = result.GetDiagnostics();
@@ -93,7 +95,8 @@ class {
   }
 
   static func checkRecovery(): int32 throws IoError, StateError {
-    final var source = SourceFile.Load("testdata/lexer/recovery.co");
+    final var source =
+        SourceFile.Load("tests/self_host/testdata/lexer/recovery.co");
     final LexerResult result = Lexer.Lex(source);
     final TokenBuffer tokens = result.GetTokens();
     final LexDiagnosticBuffer diagnostics = result.GetDiagnostics();
@@ -131,7 +134,7 @@ class {
 
   static func checkTrackedSource(): int32 throws IoError, StateError {
     final var source =
-        SourceFile.Load("../../src/frontend/token/TokenKind.co");
+        SourceFile.Load("src/frontend/token/TokenKind.co");
     final LexerResult result = Lexer.Lex(source);
     final TokenBuffer tokens = result.GetTokens();
     if (result.GetDiagnostics().GetCount() != 0) {

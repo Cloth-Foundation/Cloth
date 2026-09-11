@@ -1,0 +1,5 @@
+package(default_visibility = ["//tools/bazel/cloth:__pkg__"])
+
+exports_files([
+    "protocol_driver.py",
+])
