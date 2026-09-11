@@ -15,6 +15,12 @@ filegroup(
 )
 
 filegroup(
+    name = "empty_stdout",
+    srcs = ["testdata/lexer/empty.co"],
+    visibility = ["//tests/self_host:__subpackages__"],
+)
+
+filegroup(
     name = "shuttle_sources",
     srcs = ["Shuttle.toml"] + glob([
         "testdata/**/*.co",

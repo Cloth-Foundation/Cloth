@@ -14,9 +14,9 @@ from typing import Iterable, Sequence
 _EXPECTED_COUNTS = {
     "bounded declaration": 32,
     "bounded definition": 43,
-    "lexer": 599,
-    "real declaration": 177,
-    "real definition": 177,
+    "lexer": 614,
+    "real declaration": 188,
+    "real definition": 188,
 }
 
 

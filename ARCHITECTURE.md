@@ -9,11 +9,12 @@ behavior and checkpoint scope.
 ```text
 Main
   -> compiler driver
-    -> frontend parser orchestration
+    -> frontend package orchestration
+      -> frontend parser orchestration
        -> syntax storage and tree
             -> token and source data
        -> token and diagnostic data
-    -> frontend lexer orchestration
+      -> frontend lexer orchestration
        -> lexical scanners
        -> source, token, and diagnostic data
             -> no lexer or parser dependency
@@ -36,9 +37,11 @@ src/
   Main.co                    Process entry and compiler-driver composition
   driver/                    CLI, compilation requests, and diagnostics
   frontend/
+    package/                 Explicit package inputs, source identity,
+                             phase composition, and immutable results
     source/                  Exact bytes, cursors, spans, and locations
     token/                   Token kinds and bounded token storage
-    diagnostic/              Structured frontend diagnostics and storage
+    diagnostic/              Structured diagnostics, catalogs, and rendering
     lexer/                   Lexical orchestration and byte classification
       scanners/              Identifier, trivia, operator, numeric, and text
                              domains
@@ -94,8 +97,10 @@ refer to source spans; they do not copy arbitrary source text.
 
 ### `frontend/diagnostic`
 
-Owns structured diagnostic categories and ranges. CLI rendering is a driver
-concern and must not leak into scanners.
+Owns structured diagnostic categories and ranges, exhaustive message catalogs,
+semantic severity, and deterministic terminal-safe plain rendering. The driver
+selects the output stream and process status; scanners never manufacture
+presentation text.
 
 ### `frontend/lexer`
 
@@ -131,6 +136,16 @@ syntax data without changing their ownership. The definition pass consumes
 only those retained intervals, uses explicit managed frames for expression and
 statement nesting, materializes declarations in outline order, seals one
 syntax storage, and publishes one verified tree with combined diagnostics.
+
+### `frontend/package`
+
+Owns validated package identity, normalized package-relative logical paths,
+canonical ASCII byte ordering, immutable source sets, and production lexer-to-
+parser composition. A package result retains each source, token buffer,
+structured diagnostic collection, declaration outline, and verified syntax
+tree for as long as a downstream phase needs it. This layer receives declared
+sources; it does not discover directories, resolve imports, or perform semantic
+analysis.
 
 ### `Main.co`
 
@@ -196,9 +211,17 @@ uses explicit managed parse frames,
 covers all current expression and statement forms, preserves exact precedence
 and structured recovery, shares package constant budgets, and verifies complete
 trees iteratively. Its canonical full-tree records agree with the C++ oracle for
-all production compiler sources and the focused valid and malformed corpus. The
-C++ parser remains authoritative until the complete parser authority-transfer
-audit. The production `clothc` executable performs a single-file frontend
-check. The legacy `clothc-tests` dispatcher and CMake bridge have been retired;
-the remaining Shuttle package has a no-op entry and exists only to validate the
+all production compiler sources and the focused valid and malformed corpus.
+Stage 49.2 adds the production package coordinator with explicit immutable
+inputs, path-derived source and implicit-class identity, canonical ordering, per-file failure
+isolation, shared package constant budgets, and verified managed results. The
+production `clothc` executable now routes its direct single-file check through
+that coordinator. Stage 49.3 adds exhaustive diagnostic catalogs, typed
+severity, safe related-location rendering, stderr output, and exact process
+status behavior. The Stage 49.4 audit closes exhaustive differential,
+malformed, resource, GC, target, relocation, and Shuttle gates. The self-hosted
+package frontend is authoritative for lexing and parsing; the frozen C++
+implementation remains the bootstrap and declared differential oracle. The
+legacy `clothc-tests` dispatcher and CMake bridge have been retired; the
+remaining Shuttle package has a no-op entry and exists only to validate the
 supported package/build boundary.

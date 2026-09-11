@@ -1,0 +1,119 @@
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import frontend.package::PackageSource;
+
+class {
+  final PackageIdentity identity;
+  final PackageSource?[] sources;
+
+  _PackageFrontendInput(PackageIdentity identity,
+                        PackageSource?[] sources) {
+    self.identity = identity;
+    self.sources = sources;
+  }
+
+  static func Build(
+      PackageIdentity identity,
+      PackageSource?[] input): PackageFrontendInput throws StateError {
+    final PackageSource?[] values = PackageSource?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("package frontend input contains a null source");
+      }
+      values[index] = input[index];
+    }
+
+    final PackageSource?[] foldedOrder = sort(values, true);
+    for (int32 index = 1; index < foldedOrder::length; index++) {
+      final string previous = get(foldedOrder, index - 1).GetLogicalPath();
+      final string current = get(foldedOrder, index).GetLogicalPath();
+      if (!PackagePath.SameIgnoreCase(previous, current)) { continue; }
+      if (previous == current) {
+        throw StateError("package frontend input has a duplicate logical path");
+      }
+      throw StateError("package frontend input has an ASCII-case path collision");
+    }
+    return PackageFrontendInput(identity, sort(foldedOrder, false));
+  }
+
+  func GetIdentity(): PackageIdentity { return self.identity; }
+
+  func GetSource(int32 index): PackageSource throws StateError {
+    if (index < 0 || index >= self.sources::length) {
+      throw StateError("package frontend source index is out of bounds");
+    }
+    return self.sources[index]!;
+  }
+
+  func GetSourceCount(): int32 { return self.sources::length; }
+
+  static func sort(PackageSource?[] values,
+                   bool ignoreCase): PackageSource?[] throws StateError {
+    final int32 count = values::length;
+    PackageSource?[] source = values;
+    PackageSource?[] destination = PackageSource?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(source, destination, begin, middle, end, ignoreCase);
+        begin = end;
+      }
+      final PackageSource?[] swap = source;
+      source = destination;
+      destination = swap;
+      if (width > count / 2) {
+        width = count;
+      } else {
+        width *= 2;
+      }
+    }
+    return source;
+  }
+
+  static func merge(PackageSource?[] source, PackageSource?[] destination,
+                    int32 begin, int32 middle, int32 end,
+                    bool ignoreCase) throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    int32 output = begin;
+    while (output < end) {
+      if (right >= end ||
+          (left < middle &&
+           compare(get(source, left), get(source, right), ignoreCase) <= 0)) {
+        destination[output] = get(source, left);
+        left++;
+      } else {
+        destination[output] = get(source, right);
+        right++;
+      }
+      output++;
+    }
+  }
+
+  static func compare(PackageSource left, PackageSource right,
+                      bool ignoreCase): int32 throws StateError {
+    final string leftPath = left.GetLogicalPath();
+    final string rightPath = right.GetLogicalPath();
+    if (!ignoreCase) { return PackagePath.Compare(leftPath, rightPath); }
+    final int32 folded = PackagePath.CompareIgnoreCase(leftPath, rightPath);
+    if (folded != 0) { return folded; }
+    return PackagePath.Compare(leftPath, rightPath);
+  }
+
+  static func get(PackageSource?[] values,
+                  int32 index): PackageSource throws StateError {
+    final PackageSource? value = values[index];
+    if (value == null) {
+      throw StateError("package frontend source sorting lost a value");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

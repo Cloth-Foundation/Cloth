@@ -48,6 +48,9 @@ class {
     if (file.GetPackageName()::length != 0) {
       expected = file.GetPackageName() + "." + file.GetName();
     }
+    if (file.GetOwningPackageName()::length != 0) {
+      expected = file.GetOwningPackageName() + "." + expected;
+    }
     if (file.GetQualifiedName() != expected) {
       throw StateError("syntax tree file identity is inconsistent");
     }

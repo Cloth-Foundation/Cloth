@@ -67,7 +67,7 @@ class {
     final TypeSyntaxSequence interfaces = singleType(type);
     storage.Seal();
     final FileSyntax file = FileSyntax.Build(
-        source, "Fixture", "bootstrap", "bootstrap.Fixture",
+        source, "Fixture", "bootstrap", "", "bootstrap.Fixture",
         Visibility.kPublic, imports, storage, declarations, type, interfaces,
         cases, FileTypeKind.kClass, true, false, true, range, false);
     return SyntaxTreeFixture(

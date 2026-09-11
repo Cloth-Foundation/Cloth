@@ -27,8 +27,34 @@ import frontend.token::TokenKind;
 class {
   static func Parse(SourceFile source, TokenBuffer tokens, string fileName,
                     string packageName): DeclarationResult throws StateError {
-    if (fileName::length == 0 || packageName::length == 0) {
-      throw StateError("declaration parser requires file and package names");
+    string qualifiedName = fileName;
+    if (!packageName::isEmpty) {
+      qualifiedName = packageName + "." + fileName;
+    }
+    return parse(source, tokens, fileName, packageName, "", qualifiedName);
+  }
+
+  static func ParseWithIdentity(
+      SourceFile source, TokenBuffer tokens, string fileName,
+      string packageName,
+      string owningPackageName): DeclarationResult throws StateError {
+    string qualifiedName = fileName;
+    if (!packageName::isEmpty) {
+      qualifiedName = packageName + "." + qualifiedName;
+    }
+    if (!owningPackageName::isEmpty) {
+      qualifiedName = owningPackageName + "." + qualifiedName;
+    }
+    return parse(source, tokens, fileName, packageName, owningPackageName,
+                 qualifiedName);
+  }
+
+  static func parse(
+      SourceFile source, TokenBuffer tokens, string fileName,
+      string packageName, string owningPackageName,
+      string qualifiedName): DeclarationResult throws StateError {
+    if (fileName::isEmpty || qualifiedName::isEmpty) {
+      throw StateError("declaration parser requires a complete file identity");
     }
     final DeclarationParseState state =
         DeclarationParseState.Build(source, tokens, fileName, packageName);
@@ -84,7 +110,7 @@ class {
         MemberDuplicateValidator.Validate(state.FinishMembers(), state);
     final bool valid = state.IsValid();
     final FileDeclarationOutline file = FileDeclarationOutline(
-        fileName, packageName, packageName + "." + fileName,
+        fileName, packageName, owningPackageName, qualifiedName,
         SourceText.VisibilityOfString(fileName), imports, state.GetBaseClass(),
         interfaces, enumCases, state.GetFileTypeKind(),
         state.HasExplicitDeclaration(), state.IsAbstract(), state.IsSealed(),

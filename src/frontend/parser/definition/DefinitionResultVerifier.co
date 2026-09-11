@@ -19,6 +19,7 @@ class {
     final var outline = declaration.GetFile();
     if (file.GetName() != outline.GetName() ||
         file.GetPackageName() != outline.GetPackageName() ||
+        file.GetOwningPackageName() != outline.GetOwningPackageName() ||
         file.GetQualifiedName() != outline.GetQualifiedName() ||
         file.GetVisibility() != outline.GetVisibility() ||
         file.GetFileTypeKind() != outline.GetFileTypeKind() ||

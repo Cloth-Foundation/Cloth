@@ -190,7 +190,7 @@
   "moduleExtensions": {
     "//tools/bazel/cloth:extensions.bzl%cloth_bootstrap": {
       "general": {
-        "bzlTransitiveDigest": "STMuYVPvgAdrXws+bc/wJACj9cLdRl442pB4PlyvDIg=",
+        "bzlTransitiveDigest": "z1JkX+sdmVYv9AsgkfgXJanc8FYlXiddtz9ZTHKNHgE=",
         "usagesDigest": "qsF1fZXG2j2nuRiKG8VMilu4H7Ft04nr2ETR5kn1MOs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -203,7 +203,7 @@
     },
     "//tools/bazel/cloth:extensions.bzl%cloth_oracles": {
       "general": {
-        "bzlTransitiveDigest": "STMuYVPvgAdrXws+bc/wJACj9cLdRl442pB4PlyvDIg=",
+        "bzlTransitiveDigest": "z1JkX+sdmVYv9AsgkfgXJanc8FYlXiddtz9ZTHKNHgE=",
         "usagesDigest": "U8V0W0+PIEaFolc72wzQL9jMU74MlAFpcChxV5z6niA=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

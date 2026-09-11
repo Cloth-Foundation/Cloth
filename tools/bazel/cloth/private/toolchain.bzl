@@ -22,13 +22,13 @@ def _cloth_toolchain_impl(ctx):
         path_separator = ";" if executable_extension else ":",
         protocol = 2,
         receipt_schema = 1,
-        runtime_abi = 11,
+        runtime_abi = 12,
         shuttle = ctx.executable.shuttle,
         shuttle_compiler = ctx.executable.shuttle_compiler,
         shuttle_distribution = depset(ctx.files.shuttle_distribution),
         standard_library = depset(ctx.files.standard_library),
         standard_library_package = "cloth",
-        standard_library_version = "0.5.0",
+        standard_library_version = "0.6.0",
         target = "x86_64",
     )
     return [platform_common.ToolchainInfo(cloth = info)]

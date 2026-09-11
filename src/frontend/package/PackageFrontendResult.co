@@ -1,0 +1,52 @@
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendInput;
+
+class {
+  final PackageFrontendInput input;
+  final FileFrontendResult?[] files;
+  final bool valid;
+
+  _PackageFrontendResult(PackageFrontendInput input,
+                         FileFrontendResult?[] files, bool valid) {
+    self.input = input;
+    self.files = files;
+    self.valid = valid;
+  }
+
+  static func Build(
+      PackageFrontendInput input,
+      FileFrontendResult?[] values): PackageFrontendResult throws StateError {
+    if (values::length != input.GetSourceCount()) {
+      throw StateError("package frontend result count does not match its input");
+    }
+    final FileFrontendResult?[] files =
+        FileFrontendResult?[:values::length];
+    bool valid = true;
+    for (int32 index = 0; index < values::length; index++) {
+      final FileFrontendResult? value = values[index];
+      if (value == null) {
+        throw StateError("package frontend result contains a null file");
+      }
+      final FileFrontendResult file = value;
+      if (file.GetIdentity() != input.GetIdentity() ||
+          file.GetPackageSource() != input.GetSource(index)) {
+        throw StateError("package frontend result order is inconsistent");
+      }
+      files[index] = file;
+      if (!file.IsValid()) { valid = false; }
+    }
+    return PackageFrontendResult(input, files, valid);
+  }
+
+  func GetInput(): PackageFrontendInput { return self.input; }
+
+  func GetFile(int32 index): FileFrontendResult throws StateError {
+    if (index < 0 || index >= self.files::length) {
+      throw StateError("package frontend file index is out of bounds");
+    }
+    return self.files[index]!;
+  }
+
+  func GetFileCount(): int32 { return self.files::length; }
+  func IsValid(): bool { return self.valid; }
+}

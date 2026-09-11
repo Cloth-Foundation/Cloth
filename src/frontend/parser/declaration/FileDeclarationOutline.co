@@ -9,6 +9,7 @@ import frontend.syntax.tree::Visibility;
 class {
   final string name;
   final string packageName;
+  final string owningPackageName;
   final string qualifiedName;
   final Visibility visibility;
   final ImportSyntaxSequence imports;
@@ -23,14 +24,15 @@ class {
   final bool valid;
 
   FileDeclarationOutline(
-      string name, string packageName, string qualifiedName,
-      Visibility visibility, ImportSyntaxSequence imports,
+      string name, string packageName, string owningPackageName,
+      string qualifiedName, Visibility visibility, ImportSyntaxSequence imports,
       TypeSyntax? baseClass, TypeSyntaxSequence interfaces,
       EnumCaseSyntaxSequence enumCases, FileTypeKind kind,
       bool explicitDeclaration, bool abstractType, bool sealedType,
       SourceRange range, bool valid) {
     self.name = name;
     self.packageName = packageName;
+    self.owningPackageName = owningPackageName;
     self.qualifiedName = qualifiedName;
     self.visibility = visibility;
     self.imports = imports;
@@ -47,6 +49,7 @@ class {
 
   func GetName(): string { return self.name; }
   func GetPackageName(): string { return self.packageName; }
+  func GetOwningPackageName(): string { return self.owningPackageName; }
   func GetQualifiedName(): string { return self.qualifiedName; }
   func GetVisibility(): Visibility { return self.visibility; }
   func GetImports(): ImportSyntaxSequence { return self.imports; }

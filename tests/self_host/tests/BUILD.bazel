@@ -72,6 +72,26 @@ cloth_test(
 )
 
 cloth_test(
+    name = "frontend_coordinator_test",
+    srcs = ["FrontendCoordinatorTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-frontend-coordinator-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "FrontendCoordinatorTest",
+)
+
+cloth_test(
+    name = "diagnostic_renderer_test",
+    srcs = ["DiagnosticRendererTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-diagnostic-renderer-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "DiagnosticRendererTest",
+)
+
+cloth_test(
     name = "syntax_arena_test",
     srcs = ["SyntaxArenaTest.co"],
     deps = _SUPPORT,
@@ -154,6 +174,16 @@ cloth_test(
 )
 
 cloth_test(
+    name = "frontend_coordinator_gc_test",
+    srcs = ["FrontendCoordinatorGcTest.co"],
+    deps = _SUPPORT,
+    package_name = "clothc-frontend-coordinator-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "FrontendCoordinatorGcTest",
+)
+
+cloth_test(
     name = "definition_parser_depth_test",
     srcs = ["DefinitionParserDepthTest.co"],
     deps = _SUPPORT,
@@ -176,10 +206,12 @@ cloth_test(
 test_suite(
     name = "presubmit",
     tests = [
+        ":diagnostic_renderer_test",
         ":declaration_grammar_test",
         ":declaration_substrate_test",
         ":definition_parser_test",
         ":expression_parser_test",
+        ":frontend_coordinator_test",
         ":lexer_foundation_test",
         ":lexer_literal_test",
         ":syntax_arena_test",
@@ -197,6 +229,7 @@ test_suite(
         ":definition_parser_gc_test",
         ":expression_parser_depth_test",
         ":expression_parser_gc_test",
+        ":frontend_coordinator_gc_test",
         ":syntax_tree_gc_test",
     ],
 )

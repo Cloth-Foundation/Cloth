@@ -1,0 +1,74 @@
+import frontend.diagnostic::LexDiagnosticKind;
+
+class {
+  static func Get(LexDiagnosticKind kind): string {
+    switch (kind) {
+      case LexDiagnosticKind.kUnexpectedByte: {
+        return "unexpected byte in source text";
+      }
+      case LexDiagnosticKind.kUnterminatedBlockComment: {
+        return "unterminated block comment";
+      }
+      case LexDiagnosticKind.kInvalidNumericCore: {
+        return "invalid numeric literal";
+      }
+      case LexDiagnosticKind.kInvalidNumericSuffix: {
+        return "invalid numeric suffix";
+      }
+      case LexDiagnosticKind.kIntegerSuffixOnFloatingCore: {
+        return "integer suffix cannot follow a floating numeric literal";
+      }
+      case LexDiagnosticKind.kMissingBaseDigits: {
+        return "numeric base prefix requires digits";
+      }
+      case LexDiagnosticKind.kInvalidBaseDigit: {
+        return "invalid digit for numeric base";
+      }
+      case LexDiagnosticKind.kInvalidBasePrefix: {
+        return "numeric base prefix must be lowercase";
+      }
+      case LexDiagnosticKind.kUnknownBasePrefix: {
+        return "unknown numeric base prefix";
+      }
+      case LexDiagnosticKind.kInvalidDigitSeparator: {
+        return "invalid digit separator";
+      }
+      case LexDiagnosticKind.kMissingExponentDigits: {
+        return "numeric exponent requires digits";
+      }
+      case LexDiagnosticKind.kFloatingSuffixOnNonDecimalCore: {
+        return "floating suffix requires a decimal numeric literal";
+      }
+      case LexDiagnosticKind.kUnterminatedStringLiteral: {
+        return "unterminated string literal";
+      }
+      case LexDiagnosticKind.kUnterminatedCharacterLiteral: {
+        return "unterminated character literal";
+      }
+      case LexDiagnosticKind.kMalformedStringLiteral: {
+        return "malformed string literal";
+      }
+      case LexDiagnosticKind.kMalformedCharacterLiteral: {
+        return "malformed character literal";
+      }
+      case LexDiagnosticKind.kInvalidUtf8: {
+        return "literal is not valid UTF-8";
+      }
+      case LexDiagnosticKind.kUnknownEscape: {
+        return "unknown escape sequence";
+      }
+      case LexDiagnosticKind.kInvalidUnicodeEscape: {
+        return "invalid Unicode escape sequence";
+      }
+      case LexDiagnosticKind.kInvalidUnicodeScalar: {
+        return "Unicode escape does not name a scalar value";
+      }
+      case LexDiagnosticKind.kEmptyCharacterLiteral: {
+        return "empty character literal";
+      }
+      case LexDiagnosticKind.kMultipleCharacterLiteral: {
+        return "character literal must contain exactly one character";
+      }
+    }
+  }
+}

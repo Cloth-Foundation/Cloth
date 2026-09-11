@@ -2,6 +2,7 @@ test_suite(
     name = "presubmit",
     tests = [
         "//tests/self_host/tests:presubmit",
+        "//tests/self_host/tools/driver:tests",
         "//tests/smoke:assert_smoke_test",
         "//tests/smoke:runfile_smoke_test",
     ],
@@ -17,6 +18,7 @@ test_suite(
         "//tests/self_host/tools/declaration_failure:failure_tests",
         "//tests/self_host/tools/declaration_records:interface_test",
         "//tests/self_host/tools/definition_records:recovery_test",
+        "//tests/self_host/tools/frontend_failure:failure_tests",
         "//tests/self_host/tools/lex_records:empty_test",
         "//tests/self_host/tools/syntax_storage_failure:failure_tests",
         "//tests/self_host/tools/syntax_tree_failure:failure_tests",

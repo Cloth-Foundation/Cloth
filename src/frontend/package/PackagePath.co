@@ -1,0 +1,168 @@
+import frontend.package::PackageIdentity;
+
+class {
+  static func Validate(string path): void throws StateError {
+    if (path::isEmpty || path::byteLength != path::length ||
+        path[0] == '/' || path[path::length - 1] == '/' ||
+        path::length < 4 ||
+        path::slice(path::length - 3, path::length) != ".co") {
+      throw StateError("package source logical path is not normalized");
+    }
+    if (path::length >= 2 && path[1] == ':') {
+      throw StateError("package source logical path has a drive prefix");
+    }
+
+    int32 componentBegin = 0;
+    bool firstComponent = true;
+    for (int32 index = 0; index < path::length; index++) {
+      final char character = path[index];
+      if (asciiRank(character) < 0 || character == '\\') {
+        throw StateError("package source logical path contains an invalid byte");
+      }
+      if (character != '/') { continue; }
+      if (!isIdentifier(path, componentBegin, index)) {
+        throw StateError("package source logical path has an invalid directory");
+      }
+      if (firstComponent &&
+          equalsIgnoreCase(path, componentBegin, index, "cloth")) {
+        throw StateError("package source logical path uses the reserved cloth root");
+      }
+      firstComponent = false;
+      componentBegin = index + 1;
+    }
+    if (componentBegin >= path::length - 3) {
+      throw StateError("package source logical path has an empty file name");
+    }
+  }
+
+  static func FileName(string path): string {
+    final int32 slash = lastSlash(path);
+    return path::slice(slash + 1, path::length - 3);
+  }
+
+  static func SourcePackage(string path): string {
+    final int32 slash = lastSlash(path);
+    if (slash < 0) { return ""; }
+
+    string result = "";
+    int32 componentBegin = 0;
+    for (int32 index = 0; index <= slash; index++) {
+      if (index < slash && path[index] != '/') { continue; }
+      if (!result::isEmpty) { result = result + "."; }
+      result = result + path::slice(componentBegin, index);
+      componentBegin = index + 1;
+    }
+    return result;
+  }
+
+  static func QualifiedName(PackageIdentity identity, string sourcePackage,
+                            string fileName): string {
+    string localName = fileName;
+    if (!sourcePackage::isEmpty) {
+      localName = sourcePackage + "." + fileName;
+    }
+    if (identity.IsStandalone()) { return localName; }
+    return identity.GetName() + "." + localName;
+  }
+
+  static func Compare(string left,
+                      string right): int32 throws StateError {
+    return compare(left, right, false);
+  }
+
+  static func CompareIgnoreCase(string left,
+                                string right): int32 throws StateError {
+    return compare(left, right, true);
+  }
+
+  static func SameIgnoreCase(string left,
+                             string right): bool throws StateError {
+    return compare(left, right, true) == 0;
+  }
+
+  static func compare(string left, string right,
+                      bool ignoreCase): int32 throws StateError {
+    int32 shared = left::length;
+    if (right::length < shared) { shared = right::length; }
+    for (int32 index = 0; index < shared; index++) {
+      char leftCharacter = left[index];
+      char rightCharacter = right[index];
+      if (ignoreCase) {
+        leftCharacter = lowerAscii(leftCharacter);
+        rightCharacter = lowerAscii(rightCharacter);
+      }
+      final int32 leftRank = asciiRank(leftCharacter);
+      final int32 rightRank = asciiRank(rightCharacter);
+      if (leftRank < 0 || rightRank < 0) {
+        throw StateError("package source logical path is not printable ASCII");
+      }
+      if (leftRank < rightRank) { return -1; }
+      if (leftRank > rightRank) { return 1; }
+    }
+    if (left::length < right::length) { return -1; }
+    if (left::length > right::length) { return 1; }
+    return 0;
+  }
+
+  static func lastSlash(string path): int32 {
+    int32 result = -1;
+    for (int32 index = 0; index < path::length; index++) {
+      if (path[index] == '/') { result = index; }
+    }
+    return result;
+  }
+
+  static func isIdentifier(string path, int32 begin, int32 end): bool {
+    if (begin >= end || !isIdentifierStart(path[begin])) { return false; }
+    for (int32 index = begin + 1; index < end; index++) {
+      if (!isIdentifierContinue(path[index])) { return false; }
+    }
+    return true;
+  }
+
+  static func isIdentifierStart(char value): bool {
+    return contains("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_",
+                    value);
+  }
+
+  static func isIdentifierContinue(char value): bool {
+    return isIdentifierStart(value) || contains("0123456789", value);
+  }
+
+  static func equalsIgnoreCase(string value, int32 begin, int32 end,
+                               string expected): bool {
+    if (end - begin != expected::length) { return false; }
+    for (int32 index = 0; index < expected::length; index++) {
+      if (lowerAscii(value[begin + index]) != lowerAscii(expected[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func lowerAscii(char value): char {
+    final string uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    final string lowercase = "abcdefghijklmnopqrstuvwxyz";
+    for (int32 index = 0; index < uppercase::length; index++) {
+      if (uppercase[index] == value) { return lowercase[index]; }
+    }
+    return value;
+  }
+
+  static func asciiRank(char value): int32 {
+    final string printable =
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" +
+        "abcdefghijklmnopqrstuvwxyz{|}~";
+    for (int32 index = 0; index < printable::length; index++) {
+      if (printable[index] == value) { return index + 32; }
+    }
+    return -1;
+  }
+
+  static func contains(string values, char value): bool {
+    for (int32 index = 0; index < values::length; index++) {
+      if (values[index] == value) { return true; }
+    }
+    return false;
+  }
+}

@@ -1,0 +1,147 @@
+import clothc.frontend.diagnostic::ParseDiagnosticKind;
+import clothc.frontend.package::FileFrontendResult;
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+
+class {
+  static func Run(): int32 throws StateError {
+    final int32 emptyStatus = checkEmptyPackage();
+    if (emptyStatus != 0) { return emptyStatus; }
+    final int32 standaloneStatus = checkStandalone();
+    if (standaloneStatus != 0) { return standaloneStatus; }
+    final int32 invalidNameStatus = checkInvalidImplicitName();
+    if (invalidNameStatus != 0) { return invalidNameStatus; }
+    return checkMixedPackage();
+  }
+
+  static func BuildMixedResult(): PackageFrontendResult throws StateError {
+    final PackageIdentity identity =
+        PackageIdentity.Build("fib-core", "1.2.3-alpha.1+build-5");
+    final PackageSource?[] sources = PackageSource?[:4];
+    sources[0] = emptySource("zeta/Zed.co", "physical/zeta/Zed.co");
+    sources[1] = oneByteSource(
+        "api/BadParse.co", "physical/api/BadParse.co", byte(125));
+    sources[2] = emptySource("Main.co", "physical/Main.co");
+    sources[3] = oneByteSource(
+        "api/BadLex.co", "physical/api/BadLex.co", byte(64));
+    final PackageFrontendInput input =
+        PackageFrontendInput.Build(identity, sources);
+    if (sources[0]!.GetLogicalPath() != "zeta/Zed.co") {
+      throw StateError("package frontend input mutated the caller array");
+    }
+    sources[0] = null;
+    if (input.GetSource(3).GetLogicalPath() != "zeta/Zed.co") {
+      throw StateError("package frontend input retained the caller array");
+    }
+    return FrontendCoordinator.Check(input);
+  }
+
+  static func checkEmptyPackage(): int32 throws StateError {
+    final PackageIdentity identity = PackageIdentity.Build("empty", "0.0.0");
+    final PackageFrontendInput input = PackageFrontendInput.Build(
+        identity, PackageSource?[:0]);
+    final PackageFrontendResult result = FrontendCoordinator.Check(input);
+    if (!result.IsValid() || result.GetFileCount() != 0 ||
+        result.GetInput() != input || input.GetSourceCount() != 0) {
+      return 600;
+    }
+    return 0;
+  }
+
+  static func checkStandalone(): int32 throws StateError {
+    final PackageIdentity identity = PackageIdentity.Build("", "");
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = emptySource("Solo.co", "standalone/Solo.co");
+    final PackageFrontendResult result = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(identity, sources));
+    final FileFrontendResult file = result.GetFile(0);
+    if (!identity.IsStandalone() || !result.IsValid() || !file.IsValid() ||
+        file.GetSourcePackage() != "" || file.GetFileName() != "Solo" ||
+        file.GetQualifiedName() != "Solo" || file.GetDeclaration() == null ||
+        file.GetDefinition() == null) {
+      return 601;
+    }
+    return 0;
+  }
+
+  static func checkMixedPackage(): int32 throws StateError {
+    final PackageFrontendResult result = BuildMixedResult();
+    if (result.IsValid() || result.GetFileCount() != 4 ||
+        result.GetInput().GetIdentity().GetName() != "fib-core" ||
+        result.GetInput().GetIdentity().GetVersion() !=
+            "1.2.3-alpha.1+build-5") {
+      return 602;
+    }
+
+    final FileFrontendResult main = result.GetFile(0);
+    final FileFrontendResult lexical = result.GetFile(1);
+    final FileFrontendResult parser = result.GetFile(2);
+    final FileFrontendResult zed = result.GetFile(3);
+    if (main.GetPackageSource().GetLogicalPath() != "Main.co" ||
+        lexical.GetPackageSource().GetLogicalPath() != "api/BadLex.co" ||
+        parser.GetPackageSource().GetLogicalPath() != "api/BadParse.co" ||
+        zed.GetPackageSource().GetLogicalPath() != "zeta/Zed.co") {
+      return 603;
+    }
+    if (!main.IsValid() || main.GetSourcePackage() != "" ||
+        main.GetQualifiedName() != "fib-core.Main" ||
+        main.GetDeclaration() == null || main.GetDefinition() == null ||
+        main.GetDeclaration()!.GetFile().GetOwningPackageName() != "fib-core" ||
+        main.GetDefinition()!.GetTree().GetFile().GetOwningPackageName() !=
+            "fib-core" ||
+        lexical.IsValid() || lexical.GetLexer().GetDiagnostics().GetCount() != 1 ||
+        lexical.GetDeclaration() != null || lexical.GetDefinition() != null) {
+      return 604;
+    }
+    if (parser.IsValid() || parser.GetSourcePackage() != "api" ||
+        parser.GetQualifiedName() != "fib-core.api.BadParse" ||
+        parser.GetDeclaration() == null || parser.GetDefinition() == null ||
+        parser.GetDeclaration()!.GetFile().GetPackageName() != "api" ||
+        parser.GetDefinition()!.GetDiagnostics().GetCount() == 0 ||
+        !zed.IsValid() || zed.GetSourcePackage() != "zeta" ||
+        zed.GetQualifiedName() != "fib-core.zeta.Zed" ||
+        zed.GetDefinition()!.GetTree().GetFile().GetPackageName() != "zeta") {
+      return 605;
+    }
+    return 0;
+  }
+
+  static func checkInvalidImplicitName(): int32 throws StateError {
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = emptySource("bad-name.co", "physical/bad-name.co");
+    final PackageFrontendResult result = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(PackageIdentity.Build("sample", "1.0.0"),
+                                   sources));
+    final FileFrontendResult file = result.GetFile(0);
+    if (result.IsValid() || file.IsValid() ||
+        file.GetFileName() != "bad-name" ||
+        file.GetQualifiedName() != "sample.bad-name" ||
+        file.GetLexer().GetDiagnostics().GetCount() != 0 ||
+        file.GetDeclaration() == null || file.GetDefinition() == null ||
+        file.GetDefinition()!.GetDiagnostics().GetCount() != 1 ||
+        file.GetDefinition()!.GetDiagnostics().Get(0).GetKind() !=
+            ParseDiagnosticKind.kInvalidFileName) {
+      return 607;
+    }
+    return 0;
+  }
+
+  static func emptySource(string logicalPath,
+                          string diagnosticPath): PackageSource
+      throws StateError {
+    return PackageSource.Build(
+        logicalPath, SourceFile.FromBytes(diagnosticPath, byte[:0]));
+  }
+
+  static func oneByteSource(string logicalPath, string diagnosticPath,
+                            byte value): PackageSource throws StateError {
+    final byte[] bytes = byte[:1];
+    bytes[0] = value;
+    return PackageSource.Build(
+        logicalPath, SourceFile.FromBytes(diagnosticPath, bytes));
+  }
+}

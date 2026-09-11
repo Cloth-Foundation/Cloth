@@ -49,9 +49,10 @@ class {
         SourceLocation(source.GetPath(), 0, 1, 1),
         SourceLocation(source.GetPath(), 15, 2, 1));
     final var file = FileDeclarationOutline(
-        "Fixture", "bootstrap", "bootstrap.Fixture", Visibility.kPublic,
-        imports.Finish(), null, interfaces.Finish(), enumCases.Finish(),
-        FileTypeKind.kClass, false, false, false, fileRange, true);
+        "Fixture", "bootstrap", "", "bootstrap.Fixture",
+        Visibility.kPublic, imports.Finish(), null, interfaces.Finish(),
+        enumCases.Finish(), FileTypeKind.kClass, false, false, false,
+        fileRange, true);
     final var diagnostics = ParseDiagnosticBuilder();
     final DeclarationResult result = DeclarationResult.Build(
         source, tokens, file, memberValues, diagnostics.Finish(), true);

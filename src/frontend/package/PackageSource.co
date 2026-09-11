@@ -1,0 +1,21 @@
+import frontend.package::PackagePath;
+import frontend.source::SourceFile;
+
+class {
+  final string logicalPath;
+  final SourceFile source;
+
+  _PackageSource(string logicalPath, SourceFile source) {
+    self.logicalPath = logicalPath;
+    self.source = source;
+  }
+
+  static func Build(string logicalPath,
+                    SourceFile source): PackageSource throws StateError {
+    PackagePath.Validate(logicalPath);
+    return PackageSource(logicalPath, source);
+  }
+
+  func GetLogicalPath(): string { return self.logicalPath; }
+  func GetSource(): SourceFile { return self.source; }
+}

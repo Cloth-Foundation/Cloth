@@ -79,8 +79,8 @@ def _bootstrap_repository_impl(repository_ctx):
     library_value = descriptor_value.get("standard_library", {})
     if library_value.get("package") != "cloth":
         fail("bootstrap standard-library package must be 'cloth'")
-    if library_value.get("version") != "0.5.0":
-        fail("bootstrap standard-library version must be 0.5.0")
+    if library_value.get("version") != "0.6.0":
+        fail("bootstrap standard-library version must be 0.6.0")
 
     capability_environment = {}
     current_path = repository_ctx.os.environ.get("PATH", "")
@@ -114,7 +114,7 @@ def _bootstrap_repository_impl(repository_ctx):
     reported_library = capabilities.get("standard_library", {})
     if reported_library.get("package") != "cloth":
         fail("bootstrap compiler does not require the cloth standard library")
-    if reported_library.get("version") != "0.5.0":
+    if reported_library.get("version") != "0.6.0":
         fail("bootstrap compiler requires an unexpected library version")
 
     python_result = repository_ctx.execute(

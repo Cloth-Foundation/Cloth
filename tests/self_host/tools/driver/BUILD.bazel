@@ -1,0 +1,89 @@
+load("//tools/bazel/cloth:defs.bzl", "expected_failure_test", "output_test")
+
+output_test(
+    name = "check_success_test",
+    binary = "//src:clothc",
+    expected_stdout = "//tests/self_host:empty_stdout",
+    process_args = [
+        "check",
+        "tests/self_host/testdata/lexer/empty.co",
+    ],
+    size = "small",
+    tags = ["driver", "integration"],
+    test_data = ["//tests/self_host:testdata"],
+)
+
+expected_failure_test(
+    name = "check_lexer_failure_test",
+    binary = "//src:clothc",
+    expected_status = 1,
+    expected_stderr = "recovery.co:1:1: error: unexpected byte in source text",
+    failure_args = [
+        "check",
+        "tests/self_host/testdata/lexer/recovery.co",
+    ],
+    size = "small",
+    tags = ["driver", "integration"],
+    test_data = ["//tests/self_host:testdata"],
+)
+
+expected_failure_test(
+    name = "check_parser_failure_test",
+    binary = "//src:clothc",
+    expected_status = 1,
+    expected_stderr = "member_duplicate.co:3:1: error: duplicate callable signature",
+    failure_args = [
+        "check",
+        "tests/self_host/testdata/parser/member_duplicate.co",
+    ],
+    size = "small",
+    tags = ["driver", "integration"],
+    test_data = ["//tests/self_host:testdata"],
+)
+
+expected_failure_test(
+    name = "invalid_request_test",
+    binary = "//src:clothc",
+    expected_status = 2,
+    expected_stderr = "clothc: expected 'check",
+    size = "small",
+    tags = ["driver", "integration"],
+)
+
+expected_failure_test(
+    name = "invalid_source_path_test",
+    binary = "//src:clothc",
+    expected_status = 2,
+    expected_stderr = "clothc: source path must name a .co file",
+    failure_args = [
+        "check",
+        "invalid.txt",
+    ],
+    size = "small",
+    tags = ["driver", "integration"],
+)
+
+expected_failure_test(
+    name = "missing_source_test",
+    binary = "//src:clothc",
+    expected_status = 1,
+    expected_stderr = "IoError: could not open file",
+    failure_args = [
+        "check",
+        "missing.co",
+    ],
+    size = "small",
+    tags = ["driver", "integration"],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":check_lexer_failure_test",
+        ":check_parser_failure_test",
+        ":check_success_test",
+        ":invalid_request_test",
+        ":invalid_source_path_test",
+        ":missing_source_test",
+    ],
+)

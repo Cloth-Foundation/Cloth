@@ -1,0 +1,149 @@
+class {
+  final string name;
+  final string version;
+
+  _PackageIdentity(string name, string version) {
+    self.name = name;
+    self.version = version;
+  }
+
+  static func Build(string name,
+                    string version): PackageIdentity throws StateError {
+    if (name::isEmpty && version::isEmpty) {
+      return PackageIdentity(name, version);
+    }
+    if (name::isEmpty || version::isEmpty) {
+      throw StateError("package owner name and version must both be empty or present");
+    }
+    if (!isValidName(name)) {
+      throw StateError("package owner name is invalid");
+    }
+    if (!isValidVersion(version)) {
+      throw StateError("package owner version is invalid");
+    }
+    return PackageIdentity(name, version);
+  }
+
+  func GetName(): string { return self.name; }
+  func GetVersion(): string { return self.version; }
+  func IsStandalone(): bool { return self.name::isEmpty; }
+
+  static func isValidName(string value): bool {
+    if (value::length == 0 || value::length > 64 ||
+        value::byteLength != value::length ||
+        !isLowercase(value[0])) {
+      return false;
+    }
+    bool afterSeparator = false;
+    for (int32 index = 0; index < value::length; index++) {
+      final char character = value[index];
+      if (character == '-') {
+        if (afterSeparator) { return false; }
+        afterSeparator = true;
+      } else {
+        if (!isLowercase(character) && !isDigit(character)) { return false; }
+        afterSeparator = false;
+      }
+    }
+    return !afterSeparator;
+  }
+
+  static func isValidVersion(string value): bool {
+    if (value::isEmpty || value::byteLength != value::length) { return false; }
+    final int32 buildSeparator = find(value, '+', 0);
+    if (buildSeparator >= 0 &&
+        (buildSeparator + 1 >= value::length ||
+         find(value, '+', buildSeparator + 1) >= 0 ||
+         !validIdentifierList(value, buildSeparator + 1, value::length,
+                              false))) {
+      return false;
+    }
+
+    int32 versionEnd = value::length;
+    if (buildSeparator >= 0) { versionEnd = buildSeparator; }
+    int32 prereleaseSeparator = find(value, '-', 0);
+    if (prereleaseSeparator >= versionEnd) { prereleaseSeparator = -1; }
+    int32 coreEnd = versionEnd;
+    if (prereleaseSeparator >= 0) { coreEnd = prereleaseSeparator; }
+    if (prereleaseSeparator >= 0 &&
+        (prereleaseSeparator + 1 >= versionEnd ||
+         !validIdentifierList(value, prereleaseSeparator + 1, versionEnd,
+                              true))) {
+      return false;
+    }
+    return validCore(value, coreEnd);
+  }
+
+  static func validCore(string value, int32 end): bool {
+    int32 begin = 0;
+    int32 componentCount = 0;
+    for (int32 index = 0; index <= end; index++) {
+      if (index < end && value[index] != '.') { continue; }
+      if (!validNumericIdentifier(value, begin, index, true)) { return false; }
+      componentCount++;
+      begin = index + 1;
+    }
+    return componentCount == 3;
+  }
+
+  static func validIdentifierList(string value, int32 begin, int32 end,
+                                  bool rejectNumericLeadingZero): bool {
+    int32 componentBegin = begin;
+    for (int32 index = begin; index <= end; index++) {
+      if (index < end && value[index] != '.') { continue; }
+      if (componentBegin == index) { return false; }
+      bool numeric = true;
+      for (int32 current = componentBegin; current < index; current++) {
+        final char character = value[current];
+        if (!isLetter(character) && !isDigit(character) && character != '-') {
+          return false;
+        }
+        if (!isDigit(character)) { numeric = false; }
+      }
+      if (rejectNumericLeadingZero && numeric &&
+          !validNumericIdentifier(value, componentBegin, index, true)) {
+        return false;
+      }
+      componentBegin = index + 1;
+    }
+    return true;
+  }
+
+  static func validNumericIdentifier(string value, int32 begin, int32 end,
+                                     bool rejectLeadingZero): bool {
+    if (begin >= end ||
+        (rejectLeadingZero && end - begin > 1 && value[begin] == '0')) {
+      return false;
+    }
+    for (int32 index = begin; index < end; index++) {
+      if (!isDigit(value[index])) { return false; }
+    }
+    return true;
+  }
+
+  static func find(string value, char target, int32 begin): int32 {
+    for (int32 index = begin; index < value::length; index++) {
+      if (value[index] == target) { return index; }
+    }
+    return -1;
+  }
+
+  static func isLetter(char value): bool {
+    return isLowercase(value) || contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ", value);
+  }
+
+  static func isLowercase(char value): bool {
+    return contains("abcdefghijklmnopqrstuvwxyz", value);
+  }
+
+  static func isDigit(char value): bool {
+    return contains("0123456789", value);
+  }
+
+  static func contains(string values, char value): bool {
+    for (int32 index = 0; index < values::length; index++) {
+      if (values[index] == value) { return true; }
+    }
+    return false;
+  }
+}

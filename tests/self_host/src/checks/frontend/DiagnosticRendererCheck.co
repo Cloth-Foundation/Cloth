@@ -1,0 +1,81 @@
+import clothc.frontend.diagnostic::DiagnosticRenderer;
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import checks.frontend::FrontendCoordinatorCheck;
+
+class {
+  static func Run(): int32 throws StateError {
+    final string mixed = DiagnosticRenderer.Render(
+        FrontendCoordinatorCheck.BuildMixedResult());
+    final string expectedMixed =
+        "physical/api/BadLex.co:1:1: error: unexpected byte in source text\n" +
+        "physical/api/BadParse.co:1:1: error: " +
+        "expected a field, function, or constructor\n";
+    if (mixed != expectedMixed) { return 700; }
+
+    final PackageFrontendResult escaped = checkOne(
+        "Bad.co", "root\\bad\u{1B}name.co", oneByte(byte(64)));
+    if (DiagnosticRenderer.Render(escaped) !=
+        "root\\\\bad\\x1Bname.co:1:1: error: " +
+        "unexpected byte in source text\n") {
+      return 701;
+    }
+
+    final PackageFrontendResult related = checkOne(
+        "Enum.co", "related.co", enumDuplicate());
+    if (DiagnosticRenderer.Render(related) !=
+        "related.co:1:13: error: duplicate enum case\n" +
+        "related.co:1:8: note: previous enum case is here\n") {
+      return 702;
+    }
+
+    final PackageFrontendInput empty = PackageFrontendInput.Build(
+        PackageIdentity.Build("", ""), PackageSource?[:0]);
+    if (DiagnosticRenderer.Render(FrontendCoordinator.Check(empty)) != "") {
+      return 703;
+    }
+    return 0;
+  }
+
+  static func checkOne(string logicalPath, string diagnosticPath,
+                       byte[] bytes): PackageFrontendResult
+      throws StateError {
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = PackageSource.Build(
+        logicalPath, SourceFile.FromBytes(diagnosticPath, bytes));
+    return FrontendCoordinator.Check(PackageFrontendInput.Build(
+        PackageIdentity.Build("", ""), sources));
+  }
+
+  static func oneByte(byte value): byte[] {
+    final byte[] bytes = byte[:1];
+    bytes[0] = value;
+    return bytes;
+  }
+
+  static func enumDuplicate(): byte[] {
+    final byte[] bytes = byte[:17];
+    bytes[0] = byte(101);
+    bytes[1] = byte(110);
+    bytes[2] = byte(117);
+    bytes[3] = byte(109);
+    bytes[4] = byte(32);
+    bytes[5] = byte(123);
+    bytes[6] = byte(32);
+    bytes[7] = byte(79);
+    bytes[8] = byte(110);
+    bytes[9] = byte(101);
+    bytes[10] = byte(44);
+    bytes[11] = byte(32);
+    bytes[12] = byte(79);
+    bytes[13] = byte(110);
+    bytes[14] = byte(101);
+    bytes[15] = byte(32);
+    bytes[16] = byte(125);
+    return bytes;
+  }
+}

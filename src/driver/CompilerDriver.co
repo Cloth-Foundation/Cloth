@@ -1,9 +1,11 @@
-import frontend.lexer::Lexer;
-import frontend.lexer::LexerResult;
-import frontend.parser.declaration::DeclarationParser;
-import frontend.parser.declaration::DeclarationResult;
-import frontend.parser.definition::DefinitionParser;
-import frontend.parser.definition::DefinitionResult;
+import cloth.io::Console;
+
+import frontend.diagnostic::DiagnosticRenderer;
+import frontend.package::FrontendCoordinator;
+import frontend.package::PackageFrontendInput;
+import frontend.package::PackageFrontendResult;
+import frontend.package::PackageIdentity;
+import frontend.package::PackageSource;
 import frontend.source::SourceFile;
 
 class {
@@ -21,33 +23,26 @@ class {
       return checkFile(args[1]);
     }
 
-    println("clothc: expected 'check <file.co>'");
-    printUsage();
+    Console.WriteErrorLine("clothc: expected 'check <file.co>'");
+    printErrorUsage();
     return 2;
   }
 
   static func checkFile(string path): int32 throws IoError, StateError {
     final string name = fileName(path);
     if (name::isEmpty) {
-      println("clothc: source path must name a .co file");
+      Console.WriteErrorLine("clothc: source path must name a .co file");
       return 2;
     }
 
     final SourceFile source = SourceFile.Load(path);
-    final LexerResult lexed = Lexer.Lex(source);
-    if (lexed.GetDiagnostics().GetCount() != 0) {
-      println(path + ": error: lexical analysis failed");
-      println(lexed.GetDiagnostics().GetCount());
-      return 1;
-    }
-
-    final DeclarationResult declaration = DeclarationParser.Parse(
-        source, lexed.GetTokens(), name, "main");
-    final DefinitionResult definition =
-        DefinitionParser.Parse(declaration, null);
-    if (!definition.IsValid()) {
-      println(path + ": error: syntax analysis failed");
-      println(definition.GetDiagnostics().GetCount());
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = PackageSource.Build(name + ".co", source);
+    final PackageFrontendInput input = PackageFrontendInput.Build(
+        PackageIdentity.Build("", ""), sources);
+    final PackageFrontendResult result = FrontendCoordinator.Check(input);
+    if (!result.IsValid()) {
+      Console.WriteError(DiagnosticRenderer.Render(result));
       return 1;
     }
     return 0;
@@ -70,12 +65,30 @@ class {
       }
     }
     if (end <= begin) { return ""; }
-    return path::slice(begin, end);
+    final string name = path::slice(begin, end);
+    if (name::byteLength != name::length) { return ""; }
+    final string printable =
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" +
+        "abcdefghijklmnopqrstuvwxyz{|}~";
+    for (int32 index = 0; index < name::length; index++) {
+      bool found = false;
+      for (int32 rank = 0; rank < printable::length; rank++) {
+        if (name[index] == printable[rank]) { found = true; }
+      }
+      if (!found) { return ""; }
+    }
+    return name;
   }
 
   static func printUsage(): void {
     println("Usage: clothc check <file.co>");
     println("       clothc --help");
     println("       clothc --version");
+  }
+
+  static func printErrorUsage(): void {
+    Console.WriteErrorLine("Usage: clothc check <file.co>");
+    Console.WriteErrorLine("       clothc --help");
+    Console.WriteErrorLine("       clothc --version");
   }
 }

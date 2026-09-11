@@ -563,20 +563,30 @@ def _expected_failure_test_impl(ctx):
         _batch_safe(argument, "failure_args")
 
     binary = ctx.executable.binary
+    if ctx.attr.expected_status == 0 or ctx.attr.expected_status < -1:
+        fail("expected_status must be -1 or a positive process status")
     runner = ctx.actions.declare_file(ctx.label.name + ".bat")
+    binary_runfile = binary.short_path.replace("/", "\\")
     quoted_arguments = " ".join([
         "\"{}\"".format(argument)
         for argument in ctx.attr.failure_args
     ])
+    status_check = (
+        "if \"%status%\"==\"0\" goto unexpected"
+        if ctx.attr.expected_status == -1
+        else "if not \"%status%\"==\"{}\" goto unexpected".format(
+            ctx.attr.expected_status,
+        )
+    )
     ctx.actions.write(
         output = runner,
         content = """@echo off
 setlocal EnableExtensions DisableDelayedExpansion
 set "stdout=%%TEST_TMPDIR%%\\%s.stdout"
 set "stderr=%%TEST_TMPDIR%%\\%s.stderr"
-"%%~dp0%s" %s > "%%stdout%%" 2> "%%stderr%%"
+"%%RUNFILES_DIR%%\\_main\\%s" %s > "%%stdout%%" 2> "%%stderr%%"
 set "status=%%ERRORLEVEL%%"
-if "%%status%%"=="0" goto unexpected
+%s
 for %%%%A in ("%%stdout%%") do if not "%%%%~zA"=="0" goto unexpected
 %%SystemRoot%%\\System32\\findstr.exe /L /C:"%s" "%%stderr%%" >nul
 if errorlevel 1 goto unexpected
@@ -591,8 +601,9 @@ exit /b 1
 """ % (
             ctx.label.name,
             ctx.label.name,
-            binary.basename,
+            binary_runfile,
             quoted_arguments,
+            status_check,
             ctx.attr.expected_stderr,
             ctx.label,
             ctx.attr.expected_stderr,
@@ -600,8 +611,13 @@ exit /b 1
         is_executable = True,
     )
 
-    runfiles = ctx.runfiles(files = [binary])
+    files = [binary]
+    for target in ctx.attr.test_data:
+        files.extend(target[DefaultInfo].files.to_list())
+    runfiles = ctx.runfiles(files = files)
     runfiles = runfiles.merge(ctx.attr.binary[DefaultInfo].default_runfiles)
+    for target in ctx.attr.test_data:
+        runfiles = runfiles.merge(target[DefaultInfo].default_runfiles)
     return [DefaultInfo(executable = runner, runfiles = runfiles)]
 
 expected_failure_test = rule(
@@ -614,6 +630,8 @@ expected_failure_test = rule(
             mandatory = True,
         ),
         "expected_stderr": attr.string(mandatory = True),
+        "expected_status": attr.int(default = -1),
+        "test_data": attr.label_list(allow_files = True),
     },
     doc = "Passes only when an executable fails with the required diagnostic.",
     executable = True,
@@ -627,6 +645,7 @@ def _output_test_impl(ctx):
     binary = ctx.executable.binary
     expected = ctx.file.expected_stdout
     runner = ctx.actions.declare_file(ctx.label.name + ".bat")
+    binary_runfile = binary.short_path.replace("/", "\\")
     quoted_arguments = " ".join([
         "\"{}\"".format(argument)
         for argument in ctx.attr.process_args
@@ -639,7 +658,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 set "stdout=%%TEST_TMPDIR%%\\%s.stdout"
 set "stderr=%%TEST_TMPDIR%%\\%s.stderr"
 set "expected=%%RUNFILES_DIR%%\\_main\\%s"
-"%%~dp0%s" %s > "%%stdout%%" 2> "%%stderr%%"
+"%%RUNFILES_DIR%%\\_main\\%s" %s > "%%stdout%%" 2> "%%stderr%%"
 set "status=%%ERRORLEVEL%%"
 if not "%%status%%"=="0" goto unexpected
 for %%%%A in ("%%stderr%%") do if not "%%%%~zA"=="0" goto unexpected
@@ -657,7 +676,7 @@ exit /b 1
             ctx.label.name,
             ctx.label.name,
             expected_runfile,
-            binary.basename,
+            binary_runfile,
             quoted_arguments,
             ctx.label,
             expected.short_path,
@@ -730,7 +749,7 @@ set "PATH=%%main%%\\%s;%%PATH%%"
   --main-root "%%main%%" ^
   --manifest "%%main%%\\%s" ^
   --shuttle "%%main%%\\%s" ^
-  --stage "%%TEST_TMPDIR%%\\Shuttle Stage 48"
+  --stage "%%TEST_TMPDIR%%\\Shuttle Stage 49"
 exit /b %%ERRORLEVEL%%
 """ % (
             _windows_path(interpreter_directory),

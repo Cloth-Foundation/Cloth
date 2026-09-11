@@ -2,8 +2,8 @@
 
 This repository contains the compiler being written in Cloth. It is compiled
 with the production C++23 bootstrap compiler, [`cCloth`], and built as a
-project by [Shuttle]. The goal is to replace the bootstrap only after each
-frontend and backend boundary has exact behavioral coverage.
+project by [Shuttle]. The bootstrap is replaced one compiler boundary at a time
+only after exact behavioral coverage and an explicit authority audit.
 
 Cloth combines native compilation with garbage-collected memory safety,
 familiar object-oriented types, declared error effects, concise imports, and
@@ -13,6 +13,11 @@ nominal identity.
 
 > The self-hosted compiler is under active bootstrap development. Use `cCloth`
 > for supported compilation today.
+
+The self-hosted package frontend is authoritative for lexing and parsing as of
+the Stage 49.4 audit. `cCloth` remains the bootstrap for compiler phases that
+have not transferred to Cloth yet and a declared differential regression
+oracle for the frontend.
 
 ## Build and run
 
@@ -42,6 +47,11 @@ target/x86_64/clothc check path/to/Source.co
 target/x86_64/clothc --help
 target/x86_64/clothc --version
 ```
+
+`check` is silent when the source is valid. Diagnostics use standard error and
+status 1; invalid command usage uses standard error and status 2. Diagnostic
+paths, line and column numbers, primary errors, and related notes are emitted
+in deterministic order.
 
 The reserved package identity `cloth` remains exclusive to the standard
 library.

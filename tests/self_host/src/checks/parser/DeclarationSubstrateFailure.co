@@ -312,8 +312,8 @@ class {
     final FileDeclarationOutline original = result.GetFile();
     final var file = FileDeclarationOutline(
         original.GetName(), original.GetPackageName(),
-        original.GetQualifiedName(), original.GetVisibility(),
-        original.GetImports(), original.GetBaseClass(),
+        original.GetOwningPackageName(), original.GetQualifiedName(),
+        original.GetVisibility(), original.GetImports(), original.GetBaseClass(),
         original.GetInterfaces(), original.GetEnumCases(),
         original.GetFileTypeKind(), original.HasExplicitDeclaration(),
         original.IsAbstract(), original.IsSealed(),

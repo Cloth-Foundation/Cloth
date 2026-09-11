@@ -1,0 +1,6 @@
+import self_host.checks.frontend::FrontendCoordinatorFailure;
+
+static func Main(string[] args): int32 throws StateError {
+  if (args::length != 1) { return 2; }
+  return FrontendCoordinatorFailure.Run(args[0]);
+}

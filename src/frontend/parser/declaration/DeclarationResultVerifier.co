@@ -113,9 +113,7 @@ class {
   static func verifyFileIdentity(
       FileDeclarationOutline file): void throws StateError {
     if (file.GetName()::length == 0 ||
-        file.GetPackageName()::length == 0 ||
-        file.GetQualifiedName() !=
-            file.GetPackageName() + "." + file.GetName() ||
+        file.GetQualifiedName() != qualifiedName(file) ||
         file.GetVisibility() != visibilityOf(file.GetName())) {
       throw StateError("declaration file identity is inconsistent");
     }
@@ -385,6 +383,17 @@ class {
         }
       }
     }
+  }
+
+  static func qualifiedName(FileDeclarationOutline file): string {
+    string result = file.GetName();
+    if (!file.GetPackageName()::isEmpty) {
+      result = file.GetPackageName() + "." + result;
+    }
+    if (!file.GetOwningPackageName()::isEmpty) {
+      result = file.GetOwningPackageName() + "." + result;
+    }
+    return result;
   }
 
   static func verifyRange(SourceFile source, SourceRange parent,

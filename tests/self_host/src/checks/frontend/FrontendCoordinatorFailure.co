@@ -1,0 +1,77 @@
+import clothc.frontend.package::FileFrontendResult;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+
+class {
+  static func Run(string mode): int32 throws StateError {
+    if (mode == "duplicate-logical") { return duplicateLogical(); }
+    if (mode == "case-collision") { return caseCollision(); }
+    if (mode == "invalid-directory") { return invalidPath("bad-name/A.co"); }
+    if (mode == "parent-component") { return invalidPath("api/../A.co"); }
+    if (mode == "backslash") { return invalidPath("api\\A.co"); }
+    if (mode == "reserved-root") { return invalidPath("Cloth/lang/A.co"); }
+    if (mode == "invalid-owner") {
+      PackageIdentity.Build("Invalid", "1.0.0");
+      return 0;
+    }
+    if (mode == "invalid-version") {
+      PackageIdentity.Build("valid", "1.0");
+      return 0;
+    }
+    if (mode == "prerelease-leading-zero") {
+      PackageIdentity.Build("valid", "1.0.0-01");
+      return 0;
+    }
+    if (mode == "partial-owner") {
+      PackageIdentity.Build("", "1.0.0");
+      return 0;
+    }
+    if (mode == "null-source") { return nullSource(); }
+    if (mode == "result-count") { return resultCount(); }
+    return 2;
+  }
+
+  static func duplicateLogical(): int32 throws StateError {
+    final PackageSource?[] sources = PackageSource?[:2];
+    sources[0] = source("api/A.co");
+    sources[1] = source("api/A.co");
+    PackageFrontendInput.Build(PackageIdentity.Build("valid", "1.0.0"),
+                               sources);
+    return 0;
+  }
+
+  static func caseCollision(): int32 throws StateError {
+    final PackageSource?[] sources = PackageSource?[:2];
+    sources[0] = source("api/Data.co");
+    sources[1] = source("API/data.co");
+    PackageFrontendInput.Build(PackageIdentity.Build("valid", "1.0.0"),
+                               sources);
+    return 0;
+  }
+
+  static func invalidPath(string path): int32 throws StateError {
+    source(path);
+    return 0;
+  }
+
+  static func nullSource(): int32 throws StateError {
+    PackageFrontendInput.Build(PackageIdentity.Build("valid", "1.0.0"),
+                               PackageSource?[:1]);
+    return 0;
+  }
+
+  static func resultCount(): int32 throws StateError {
+    final PackageFrontendInput input = PackageFrontendInput.Build(
+        PackageIdentity.Build("valid", "1.0.0"), PackageSource?[:0]);
+    PackageFrontendResult.Build(input, FileFrontendResult?[:1]);
+    return 0;
+  }
+
+  static func source(string logicalPath): PackageSource throws StateError {
+    return PackageSource.Build(
+        logicalPath, SourceFile.FromBytes("failure.co", byte[:0]));
+  }
+}

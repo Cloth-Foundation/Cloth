@@ -226,8 +226,8 @@ class {
     final TypeSyntax?[] typeValues = TypeSyntax?[:0];
     final EnumCaseSyntax?[] caseValues = EnumCaseSyntax?[:0];
     return FileSyntax.Build(
-        source, "Fixture", "", "Fixture", Visibility.kPublic, imports,
-        storage, declarations, baseClass,
+        source, "Fixture", "", "", "Fixture", Visibility.kPublic,
+        imports, storage, declarations, baseClass,
         TypeSyntaxSequence.Build(typeValues),
         EnumCaseSyntaxSequence.Build(caseValues), FileTypeKind.kClass, false,
         false, false, rootRange, valid);

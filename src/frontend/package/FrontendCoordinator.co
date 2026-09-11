@@ -1,0 +1,53 @@
+import frontend.lexer::Lexer;
+import frontend.lexer::LexerResult;
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendInput;
+import frontend.package::PackageFrontendResult;
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import frontend.package::PackageSource;
+import frontend.parser.declaration::DeclarationParser;
+import frontend.parser.declaration::DeclarationResult;
+import frontend.parser.definition::DefinitionParser;
+import frontend.parser.definition::DefinitionResult;
+import frontend.parser.support::ConstantParseBudget;
+
+class {
+  static func Check(
+      PackageFrontendInput input): PackageFrontendResult throws StateError {
+    final FileFrontendResult?[] files =
+        FileFrontendResult?[:input.GetSourceCount()];
+    final ConstantParseBudget constantBudget = ConstantParseBudget();
+    for (int32 index = 0; index < input.GetSourceCount(); index++) {
+      files[index] = checkFile(input.GetIdentity(), input.GetSource(index),
+                               constantBudget);
+    }
+    return PackageFrontendResult.Build(input, files);
+  }
+
+  static func checkFile(
+      PackageIdentity identity, PackageSource packageSource,
+      ConstantParseBudget constantBudget): FileFrontendResult
+      throws StateError {
+    final string logicalPath = packageSource.GetLogicalPath();
+    final string sourcePackage = PackagePath.SourcePackage(logicalPath);
+    final string fileName = PackagePath.FileName(logicalPath);
+    final string qualifiedName =
+        PackagePath.QualifiedName(identity, sourcePackage, fileName);
+    final LexerResult lexer = Lexer.Lex(packageSource.GetSource());
+    if (lexer.GetDiagnostics().GetCount() != 0) {
+      return FileFrontendResult.Build(
+          identity, packageSource, sourcePackage, fileName, qualifiedName,
+          lexer, null, null);
+    }
+
+    final DeclarationResult declaration = DeclarationParser.ParseWithIdentity(
+        packageSource.GetSource(), lexer.GetTokens(), fileName, sourcePackage,
+        identity.GetName());
+    final DefinitionResult definition =
+        DefinitionParser.Parse(declaration, constantBudget);
+    return FileFrontendResult.Build(
+        identity, packageSource, sourcePackage, fileName, qualifiedName, lexer,
+        declaration, definition);
+  }
+}

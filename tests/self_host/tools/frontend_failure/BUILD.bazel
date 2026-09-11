@@ -1,0 +1,30 @@
+load("//tests/self_host/tools:failure_tests.bzl", "failure_tests")
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary")
+
+cloth_binary(
+    name = "frontend_failure",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-frontend-failure",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+_CASES = [
+    ("duplicate-logical", "duplicate logical path"),
+    ("case-collision", "ASCII-case path collision"),
+    ("invalid-directory", "invalid directory"),
+    ("parent-component", "invalid directory"),
+    ("backslash", "invalid byte"),
+    ("reserved-root", "reserved cloth root"),
+    ("invalid-owner", "package owner name is invalid"),
+    ("invalid-version", "package owner version is invalid"),
+    ("prerelease-leading-zero", "package owner version is invalid"),
+    ("partial-owner", "package owner name and version must both be empty or present"),
+    ("null-source", "package frontend input contains a null source"),
+    ("result-count", "package frontend result count does not match its input"),
+]
+
+failure_tests(":frontend_failure", _CASES)

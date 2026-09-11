@@ -1,0 +1,141 @@
+import frontend.diagnostic::DiagnosticSeverity;
+import frontend.diagnostic::LexDiagnostic;
+import frontend.diagnostic::LexDiagnosticBuffer;
+import frontend.diagnostic::LexDiagnosticText;
+import frontend.diagnostic::ParseDiagnostic;
+import frontend.diagnostic::ParseDiagnosticSequence;
+import frontend.diagnostic::ParseDiagnosticText;
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendResult;
+import frontend.parser.definition::DefinitionResult;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+
+class {
+  static func Render(PackageFrontendResult result): string throws StateError {
+    string output = "";
+    for (int32 fileIndex = 0;
+         fileIndex < result.GetFileCount(); fileIndex++) {
+      final FileFrontendResult file = result.GetFile(fileIndex);
+      final LexDiagnosticBuffer lexical = file.GetLexer().GetDiagnostics();
+      if (lexical.GetCount() != 0) {
+        for (int32 index = 0; index < lexical.GetCount(); index++) {
+          final LexDiagnostic diagnostic = lexical.Get(index);
+          output += renderLine(
+              diagnostic.GetRange(), DiagnosticSeverity.kError,
+              LexDiagnosticText.Get(diagnostic.GetKind()));
+        }
+        continue;
+      }
+
+      final DefinitionResult? definition = file.GetDefinition();
+      if (definition == null) {
+        throw StateError(
+            "diagnostic renderer received an incomplete frontend result");
+      }
+      final ParseDiagnosticSequence syntax = definition.GetDiagnostics();
+      for (int32 index = 0; index < syntax.GetCount(); index++) {
+        final ParseDiagnostic diagnostic = syntax.Get(index);
+        output += renderLine(
+            diagnostic.GetRange(), DiagnosticSeverity.kError,
+            ParseDiagnosticText.Get(diagnostic.GetKind()));
+        final SourceRange? related = diagnostic.GetRelatedRange();
+        if (related != null) {
+          output += renderLine(
+              related, DiagnosticSeverity.kNote,
+              ParseDiagnosticText.Related(diagnostic.GetKind()));
+        }
+      }
+    }
+    return output;
+  }
+
+  static func renderLine(SourceRange range, DiagnosticSeverity severity,
+                         string message): string {
+    final SourceLocation location = range.GetBegin();
+    return escapePath(location.GetFile()) + ":" +
+           decimal(location.GetLine()) + ":" +
+           decimal(location.GetColumn()) + ": " + severityText(severity) +
+           ": " + message + "\n";
+  }
+
+  static func severityText(DiagnosticSeverity severity): string {
+    switch (severity) {
+      case DiagnosticSeverity.kError: { return "error"; }
+      case DiagnosticSeverity.kWarning: { return "warning"; }
+      case DiagnosticSeverity.kNote: { return "note"; }
+    }
+  }
+
+  static func decimal(uint32 value): string {
+    if (value < 10) { return digit(value); }
+    return decimal(value / 10) + digit(value % 10);
+  }
+
+  static func digit(uint32 value): string {
+    if (value == 0) { return "0"; }
+    if (value == 1) { return "1"; }
+    if (value == 2) { return "2"; }
+    if (value == 3) { return "3"; }
+    if (value == 4) { return "4"; }
+    if (value == 5) { return "5"; }
+    if (value == 6) { return "6"; }
+    if (value == 7) { return "7"; }
+    if (value == 8) { return "8"; }
+    if (value == 9) { return "9"; }
+    if (value == 10) { return "A"; }
+    if (value == 11) { return "B"; }
+    if (value == 12) { return "C"; }
+    if (value == 13) { return "D"; }
+    if (value == 14) { return "E"; }
+    return "F";
+  }
+
+  static func escapePath(string value): string {
+    final string c0 =
+        "\u{0}\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}" +
+        "\u{8}\u{9}\u{A}\u{B}\u{C}\u{D}\u{E}\u{F}" +
+        "\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}" +
+        "\u{18}\u{19}\u{1A}\u{1B}\u{1C}\u{1D}\u{1E}\u{1F}";
+    final string c1 =
+        "\u{80}\u{81}\u{82}\u{83}\u{84}\u{85}\u{86}\u{87}" +
+        "\u{88}\u{89}\u{8A}\u{8B}\u{8C}\u{8D}\u{8E}\u{8F}" +
+        "\u{90}\u{91}\u{92}\u{93}\u{94}\u{95}\u{96}\u{97}" +
+        "\u{98}\u{99}\u{9A}\u{9B}\u{9C}\u{9D}\u{9E}\u{9F}";
+    string output = "";
+    for (int32 index = 0; index < value::length; index++) {
+      final char character = value[index];
+      final int32 c0Index = find(c0, character);
+      if (c0Index >= 0) {
+        output += hexEscape(uint32(c0Index));
+      } else {
+        if (character == '\u{7F}') {
+          output += hexEscape(127);
+        } else {
+          final int32 c1Index = find(c1, character);
+          if (c1Index >= 0) {
+            output += hexEscape(uint32(c1Index + 128));
+          } else {
+            if (character == '\\') {
+              output += "\\\\";
+            } else {
+              output += value::slice(index, index + 1);
+            }
+          }
+        }
+      }
+    }
+    return output;
+  }
+
+  static func hexEscape(uint32 value): string {
+    return "\\x" + digit(value / 16) + digit(value % 16);
+  }
+
+  static func find(string values, char value): int32 {
+    for (int32 index = 0; index < values::length; index++) {
+      if (values[index] == value) { return index; }
+    }
+    return -1;
+  }
+}

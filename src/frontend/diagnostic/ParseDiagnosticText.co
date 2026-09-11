@@ -1,0 +1,394 @@
+import frontend.diagnostic::ParseDiagnosticKind;
+
+class {
+  static func Get(ParseDiagnosticKind kind): string {
+    switch (kind) {
+      case ParseDiagnosticKind.kInvalidFileName: {
+        return "source file stem is not a valid Cloth type name";
+      }
+      case ParseDiagnosticKind.kExpectedDeclaration: {
+        return "expected a field, function, or constructor";
+      }
+      case ParseDiagnosticKind.kMisplacedImport: {
+        return "imports must appear before file members";
+      }
+      case ParseDiagnosticKind.kExpectedImportName: {
+        return "expected a package or type name after 'import'";
+      }
+      case ParseDiagnosticKind.kExpectedImportType: {
+        return "expected a type name after '::'";
+      }
+      case ParseDiagnosticKind.kExpectedImportPathContinuation: {
+        return "expected '::' or '.' to continue import path";
+      }
+      case ParseDiagnosticKind.kReservedStandardLibraryRoot: {
+        return "standard library root must be spelled 'cloth'";
+      }
+      case ParseDiagnosticKind.kReservedImportAlias: {
+        return "import alias cannot claim standard library root 'cloth'";
+      }
+      case ParseDiagnosticKind.kExpectedImportAlias: {
+        return "expected an alias name after 'as'";
+      }
+      case ParseDiagnosticKind.kWildcardImportAlias: {
+        return "wildcard imports cannot have an alias";
+      }
+      case ParseDiagnosticKind.kExpectedImportTerminator: {
+        return "expected ';' after import";
+      }
+      case ParseDiagnosticKind.kDuplicateFileModifier: {
+        return "duplicate file type modifier";
+      }
+      case ParseDiagnosticKind.kExpectedFileType: {
+        return "expected a file type after declaration modifiers";
+      }
+      case ParseDiagnosticKind.kInvalidFileModifier: {
+        return "this file type cannot be abstract or sealed";
+      }
+      case ParseDiagnosticKind.kRepeatedFileName: {
+        return "file type declarations do not repeat the implicit type name";
+      }
+      case ParseDiagnosticKind.kExpectedBaseType: {
+        return "expected a base class name after ':'";
+      }
+      case ParseDiagnosticKind.kExpectedInterfaceType: {
+        return "expected an interface name";
+      }
+      case ParseDiagnosticKind.kExpectedFileBody: {
+        return "expected '{' after file type declaration";
+      }
+      case ParseDiagnosticKind.kExpectedFileClose: {
+        return "expected '}' to close file type declaration";
+      }
+      case ParseDiagnosticKind.kExpectedFileEnd: {
+        return "expected end of file after file type declaration";
+      }
+      case ParseDiagnosticKind.kExpectedEnumCase: {
+        return "expected an enum case name";
+      }
+      case ParseDiagnosticKind.kDuplicateEnumCase: {
+        return "duplicate enum case";
+      }
+      case ParseDiagnosticKind.kEnumCaseLimit: {
+        return "enum exceeds the 65536-case limit";
+      }
+      case ParseDiagnosticKind.kEmptyEnum: {
+        return "enum must declare at least one case";
+      }
+      case ParseDiagnosticKind.kExpectedEnumSeparator: {
+        return "expected ',' or '}' after enum case";
+      }
+      case ParseDiagnosticKind.kExpectedType: {
+        return "expected a type";
+      }
+      case ParseDiagnosticKind.kRepeatedNullability: {
+        return "nullable qualification cannot be repeated";
+      }
+      case ParseDiagnosticKind.kMultidimensionalArray: {
+        return "multidimensional array types are not supported";
+      }
+      case ParseDiagnosticKind.kExpectedArrayClose: {
+        return "expected ']' in array type";
+      }
+      case ParseDiagnosticKind.kExpectedParameterOpen: {
+        return "expected '(' before parameter list";
+      }
+      case ParseDiagnosticKind.kExpectedParameterName: {
+        return "expected parameter name after type";
+      }
+      case ParseDiagnosticKind.kExpectedParameterSeparator: {
+        return "expected ',' or ')' after parameter";
+      }
+      case ParseDiagnosticKind.kExpectedParameter: {
+        return "expected parameter after ','";
+      }
+      case ParseDiagnosticKind.kExpectedParameterClose: {
+        return "expected ')' after parameter list";
+      }
+      case ParseDiagnosticKind.kExpectedFieldName: {
+        return "expected field name after type";
+      }
+      case ParseDiagnosticKind.kExpectedFieldInitializer: {
+        return "expected expression after '=' in field declaration";
+      }
+      case ParseDiagnosticKind.kExpectedFieldTerminator: {
+        return "expected ';' after field declaration";
+      }
+      case ParseDiagnosticKind.kDuplicateFunctionModifier: {
+        return "duplicate function modifier";
+      }
+      case ParseDiagnosticKind.kInvalidInterfaceFunctionModifier: {
+        return "interface function contracts do not accept modifiers";
+      }
+      case ParseDiagnosticKind.kExpectedFunc: {
+        return "expected 'func' after function modifiers";
+      }
+      case ParseDiagnosticKind.kExpectedFunctionName: {
+        return "expected function name after 'func'";
+      }
+      case ParseDiagnosticKind.kAbstractFunctionBody: {
+        return "abstract functions cannot have a body";
+      }
+      case ParseDiagnosticKind.kExpectedAbstractTerminator: {
+        return "expected ';' after abstract function declaration";
+      }
+      case ParseDiagnosticKind.kExpectedBody: {
+        return "expected '{' to begin callable body";
+      }
+      case ParseDiagnosticKind.kUnterminatedBody: {
+        return "unterminated callable body";
+      }
+      case ParseDiagnosticKind.kExpectedThrowsType: {
+        return "expected an error type after 'throws'";
+      }
+      case ParseDiagnosticKind.kExpectedThrowsSeparatorType: {
+        return "expected an error type after ',' in throws clause";
+      }
+      case ParseDiagnosticKind.kInvalidConstructorName: {
+        return "constructor must use a class-derived name";
+      }
+      case ParseDiagnosticKind.kInterfaceConstructor: {
+        return "interfaces cannot declare constructors";
+      }
+      case ParseDiagnosticKind.kInterfaceField: {
+        return "interfaces cannot declare fields";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializer: {
+        return "expected base constructor after ':'";
+      }
+      case ParseDiagnosticKind.kMemberConflict: {
+        return "member conflicts with a previous declaration";
+      }
+      case ParseDiagnosticKind.kDuplicateCallableSignature: {
+        return "duplicate callable signature";
+      }
+      case ParseDiagnosticKind.kNestedTypeUnsupported: {
+        return "nested type declarations are reserved for a future stage";
+      }
+      case ParseDiagnosticKind.kResourceLimit: {
+        return "parser resource limit exceeded";
+      }
+      case ParseDiagnosticKind.kExpectedExpression: {
+        return "expected expression";
+      }
+      case ParseDiagnosticKind.kUnexpectedExpressionToken: {
+        return "unexpected token in expression";
+      }
+      case ParseDiagnosticKind.kExpectedCheckedType: {
+        return "expected a type after checked type operator";
+      }
+      case ParseDiagnosticKind.kExpectedGroupClose: {
+        return "expected ')' after parenthesized expression";
+      }
+      case ParseDiagnosticKind.kExpectedArgument: {
+        return "expected argument after ','";
+      }
+      case ParseDiagnosticKind.kExpectedArgumentSeparator: {
+        return "expected ',' or ')' after argument";
+      }
+      case ParseDiagnosticKind.kExpectedCallClose: {
+        return "expected ')' after arguments";
+      }
+      case ParseDiagnosticKind.kExpectedIndexExpression: {
+        return "expected index expression after '['";
+      }
+      case ParseDiagnosticKind.kExpectedIndexClose: {
+        return "expected ']' after index expression";
+      }
+      case ParseDiagnosticKind.kExpectedMemberName: {
+        return "expected member name after '.'";
+      }
+      case ParseDiagnosticKind.kExpectedMetaName: {
+        return "expected meta query name after '::'";
+      }
+      case ParseDiagnosticKind.kExpectedSafeMemberName: {
+        return "expected member name after '?.'";
+      }
+      case ParseDiagnosticKind.kExpectedSafeMetaName: {
+        return "expected meta query name after '?::'";
+      }
+      case ParseDiagnosticKind.kExpectedArrayElement: {
+        return "expected array element after ','";
+      }
+      case ParseDiagnosticKind.kExpectedArraySeparator: {
+        return "expected ',' or ']' after array element";
+      }
+      case ParseDiagnosticKind.kExpectedArrayLiteralClose: {
+        return "expected ']' after array literal";
+      }
+      case ParseDiagnosticKind.kExpectedArrayConstructionOpen: {
+        return "expected '[' in array construction";
+      }
+      case ParseDiagnosticKind.kExpectedArrayConstructionColon: {
+        return "expected ':' after '[' in array construction";
+      }
+      case ParseDiagnosticKind.kExpectedArrayLength: {
+        return "expected length expression after ':'";
+      }
+      case ParseDiagnosticKind.kExpectedArrayConstructionClose: {
+        return "expected ']' after array length";
+      }
+      case ParseDiagnosticKind.kExpectedNumericConversionOpen: {
+        return "expected '(' after numeric conversion type";
+      }
+      case ParseDiagnosticKind.kExpectedNumericConversionValue: {
+        return "expected a value in numeric conversion";
+      }
+      case ParseDiagnosticKind.kNumericConversionArity: {
+        return "numeric conversion requires exactly one value";
+      }
+      case ParseDiagnosticKind.kExpectedNumericConversionClose: {
+        return "expected ')' after numeric conversion";
+      }
+      case ParseDiagnosticKind.kExpectedIntegerConversionMode: {
+        return "expected integer conversion mode after '::'";
+      }
+      case ParseDiagnosticKind.kExpectedIntegerConversionOpen: {
+        return "expected '(' after integer conversion mode";
+      }
+      case ParseDiagnosticKind.kExpectedIntegerConversionValue: {
+        return "expected a value in integer conversion";
+      }
+      case ParseDiagnosticKind.kIntegerConversionArity: {
+        return "integer conversion requires exactly one value";
+      }
+      case ParseDiagnosticKind.kExpectedIntegerConversionClose: {
+        return "expected ')' after integer conversion";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializerType: {
+        return "expected base class name in constructor initializer";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializerOpen: {
+        return "expected '(' after base class name in constructor initializer";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializerArgument: {
+        return "expected base constructor argument after ','";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializerSeparator: {
+        return "expected ',' or ')' after base constructor argument";
+      }
+      case ParseDiagnosticKind.kExpectedConstructorInitializerClose: {
+        return "expected ')' after base constructor arguments";
+      }
+      case ParseDiagnosticKind.kConstantDeclarationLimit: {
+        return "package exceeds 65536 static constants";
+      }
+      case ParseDiagnosticKind.kConstantExpressionNodeLimit: {
+        return "constant initializer exceeds 65536 expression nodes";
+      }
+      case ParseDiagnosticKind.kPackageConstantExpressionNodeLimit: {
+        return "package exceeds 1048576 constant expression nodes";
+      }
+      case ParseDiagnosticKind.kConstantExpressionDepthLimit: {
+        return "constant expression exceeds nesting depth 256";
+      }
+      case ParseDiagnosticKind.kConstantNumericLiteralLimit: {
+        return "constant numeric literal exceeds 4096 bytes";
+      }
+      case ParseDiagnosticKind.kExpectedBlockOpen: {
+        return "expected '{' to begin block";
+      }
+      case ParseDiagnosticKind.kSwitchLabelOutsideSwitch: {
+        return "switch labels are only valid directly inside a switch";
+      }
+      case ParseDiagnosticKind.kExpectedLocalName: {
+        return "expected a local variable name";
+      }
+      case ParseDiagnosticKind.kExpectedLocalTerminator: {
+        return "expected ';' after local variable declaration";
+      }
+      case ParseDiagnosticKind.kExpectedReturnTerminator: {
+        return "expected ';' after return statement";
+      }
+      case ParseDiagnosticKind.kExpectedIfOpen: {
+        return "expected '(' after 'if'";
+      }
+      case ParseDiagnosticKind.kExpectedIfClose: {
+        return "expected ')' after if condition";
+      }
+      case ParseDiagnosticKind.kExpectedIfBody: {
+        return "expected '{' to begin if body";
+      }
+      case ParseDiagnosticKind.kExpectedElseBody: {
+        return "expected '{' to begin else body";
+      }
+      case ParseDiagnosticKind.kExpectedWhileOpen: {
+        return "expected '(' after 'while'";
+      }
+      case ParseDiagnosticKind.kExpectedWhileClose: {
+        return "expected ')' after while condition";
+      }
+      case ParseDiagnosticKind.kExpectedWhileBody: {
+        return "expected '{' to begin while body";
+      }
+      case ParseDiagnosticKind.kExpectedForOpen: {
+        return "expected '(' after 'for'";
+      }
+      case ParseDiagnosticKind.kExpectedForInitializerTerminator: {
+        return "expected ';' after for initializer";
+      }
+      case ParseDiagnosticKind.kExpectedForConditionTerminator: {
+        return "expected ';' after for condition";
+      }
+      case ParseDiagnosticKind.kExpectedForClose: {
+        return "expected ')' after for clauses";
+      }
+      case ParseDiagnosticKind.kExpectedForBody: {
+        return "expected '{' to begin for body";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchOpen: {
+        return "expected '(' after 'switch'";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchClose: {
+        return "expected ')' after switch selector";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchBody: {
+        return "expected '{' before switch arms";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchArm: {
+        return "expected 'case' or 'default' in switch";
+      }
+      case ParseDiagnosticKind.kSwitchDefaultRepeated: {
+        return "switch may have only one default arm";
+      }
+      case ParseDiagnosticKind.kSwitchDefaultNotLast: {
+        return "default must be the last switch arm";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchLabel: {
+        return "expected case label without a trailing comma";
+      }
+      case ParseDiagnosticKind.kSwitchLabelLimit: {
+        return "switch exceeds 65536 value labels";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchColon: {
+        return "expected ':' after switch label";
+      }
+      case ParseDiagnosticKind.kExpectedSwitchArmBody: {
+        return "expected '{' before switch arm body";
+      }
+      case ParseDiagnosticKind.kSwitchArmLimit: {
+        return "switch exceeds 65537 arms";
+      }
+      case ParseDiagnosticKind.kEmptySwitch: {
+        return "switch requires at least one arm";
+      }
+      case ParseDiagnosticKind.kExpectedLoopControlTerminator: {
+        return "expected ';' after loop-control statement";
+      }
+      case ParseDiagnosticKind.kExpectedExpressionTerminator: {
+        return "expected ';' after expression statement";
+      }
+    }
+  }
+
+  static func Related(ParseDiagnosticKind kind): string throws StateError {
+    if (kind == ParseDiagnosticKind.kDuplicateEnumCase) {
+      return "previous enum case is here";
+    }
+    if (kind == ParseDiagnosticKind.kMemberConflict ||
+        kind == ParseDiagnosticKind.kDuplicateCallableSignature) {
+      return "previous declaration is here";
+    }
+    throw StateError("parse diagnostic kind cannot have a related location");
+  }
+}

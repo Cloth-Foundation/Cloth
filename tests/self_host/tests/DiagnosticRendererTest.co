@@ -1,0 +1,11 @@
+import self_host.checks.frontend::DiagnosticRendererCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws StateError, TestFailure {
+    Assert.Equal(0, DiagnosticRendererCheck.Run(),
+                 "diagnostic renderer check status");
+  }
+}

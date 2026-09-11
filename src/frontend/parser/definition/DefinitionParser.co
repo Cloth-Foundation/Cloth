@@ -60,9 +60,9 @@ class {
     storage.Seal();
     final FileSyntax file = FileSyntax.Build(
         declaration.GetSource(), outline.GetName(), outline.GetPackageName(),
-        outline.GetQualifiedName(), outline.GetVisibility(),
-        outline.GetImports(), storage, declarations, outline.GetBaseClass(),
-        outline.GetInterfaces(), outline.GetEnumCases(),
+        outline.GetOwningPackageName(), outline.GetQualifiedName(),
+        outline.GetVisibility(), outline.GetImports(), storage, declarations,
+        outline.GetBaseClass(), outline.GetInterfaces(), outline.GetEnumCases(),
         outline.GetFileTypeKind(), outline.HasExplicitDeclaration(),
         outline.IsAbstract(), outline.IsSealed(), outline.GetRange(), valid);
     final VerifiedSyntaxTree tree = VerifiedSyntaxTree.Build(file);

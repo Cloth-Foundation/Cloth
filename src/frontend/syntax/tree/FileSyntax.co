@@ -16,6 +16,7 @@ class is SyntaxNode {
   final SourceFile source;
   final string name;
   final string packageName;
+  final string owningPackageName;
   final string qualifiedName;
   final Visibility visibility;
   final ImportSyntaxSequence imports;
@@ -30,7 +31,8 @@ class is SyntaxNode {
   final bool sealedType;
 
   _FileSyntax(SourceFile source, string name, string packageName,
-              string qualifiedName, Visibility visibility,
+              string owningPackageName, string qualifiedName,
+              Visibility visibility,
               ImportSyntaxSequence imports, SyntaxStorage storage,
               DeclarationSyntaxSequence declarations, TypeSyntax? baseClass,
               TypeSyntaxSequence interfaces,
@@ -41,6 +43,7 @@ class is SyntaxNode {
     self.source = source;
     self.name = name;
     self.packageName = packageName;
+    self.owningPackageName = owningPackageName;
     self.qualifiedName = qualifiedName;
     self.visibility = visibility;
     self.imports = imports;
@@ -57,8 +60,9 @@ class is SyntaxNode {
 
   static func Build(
       SourceFile source, string name, string packageName,
-      string qualifiedName, Visibility visibility, ImportSyntaxSequence imports,
-      SyntaxStorage storage, DeclarationSyntaxSequence declarations,
+      string owningPackageName, string qualifiedName, Visibility visibility,
+      ImportSyntaxSequence imports, SyntaxStorage storage,
+      DeclarationSyntaxSequence declarations,
       TypeSyntax? baseClass, TypeSyntaxSequence interfaces,
       EnumCaseSyntaxSequence enumCases, FileTypeKind kind,
       bool explicitDeclaration, bool abstractType, bool sealedType,
@@ -71,15 +75,17 @@ class is SyntaxNode {
         !storage.IsSealed() || (valid && name::length == 0)) {
       throw StateError("invalid file syntax");
     }
-    return FileSyntax(source, name, packageName, qualifiedName, visibility,
-                      imports, storage, declarations, baseClass, interfaces,
-                      enumCases, kind, explicitDeclaration, abstractType,
-                      sealedType, range, valid);
+    return FileSyntax(source, name, packageName, owningPackageName,
+                      qualifiedName, visibility, imports, storage,
+                      declarations, baseClass, interfaces, enumCases, kind,
+                      explicitDeclaration, abstractType, sealedType, range,
+                      valid);
   }
 
   func GetSource(): SourceFile { return self.source; }
   func GetName(): string { return self.name; }
   func GetPackageName(): string { return self.packageName; }
+  func GetOwningPackageName(): string { return self.owningPackageName; }
   func GetQualifiedName(): string { return self.qualifiedName; }
   func GetVisibility(): Visibility { return self.visibility; }
   func GetImports(): ImportSyntaxSequence { return self.imports; }
