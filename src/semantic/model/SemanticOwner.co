@@ -1,0 +1,5 @@
+class {
+  _SemanticOwner() {}
+
+  static func Create(): SemanticOwner { return SemanticOwner(); }
+}

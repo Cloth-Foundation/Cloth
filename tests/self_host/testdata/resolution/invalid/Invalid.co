@@ -1,0 +1,27 @@
+import a::Missing as Gone;
+import a::_Private as Hidden;
+import a::Thing as Error;
+import a::Thing;
+import a::Thing as AliasThing;
+import a::Thing as Clash;
+import b::Other as Clash;
+import missing.*;
+import a.*;
+import b.*;
+
+Gone missingImport;
+Hidden privateImport;
+Clash conflictingImport;
+Shared wildcardConflict;
+MissingType unknownType;
+String wrongString;
+void invalidVoid;
+void[] invalidVoidArray;
+void? invalidVoidNullable;
+_RootPrivate privateType;
+
+func Use(Thing value): void {}
+func Use(AliasThing value): void {}
+
+Invalid(Thing value) {}
+invalid(AliasThing value) {}

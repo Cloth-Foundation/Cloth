@@ -1,0 +1,127 @@
+import frontend.package::FileFrontendResult;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::FileTypeKind;
+import semantic.identity::NominalIdentity;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticOwner;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::DependencyType;
+
+class {
+  final SemanticOwner owner;
+  final FileId id;
+  final NominalIdentity identity;
+  final FileTypeKind kind;
+  final TypeId type;
+  final SymbolId symbol;
+  final SymbolId selfSymbol;
+  final FileFrontendResult? frontend;
+  final DependencyType? dependency;
+  final SourceRange range;
+  bool valid;
+  final bool abstractType;
+  final bool sealedType;
+  final SymbolId?[] members;
+  int32 memberCount;
+
+  _FileRegistration(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, FileFrontendResult? frontend,
+      DependencyType? dependency, SourceRange range, bool valid,
+      bool abstractType, bool sealedType, int32 memberCapacity) {
+    self.owner = owner;
+    self.id = id;
+    self.identity = identity;
+    self.kind = kind;
+    self.type = type;
+    self.symbol = symbol;
+    self.selfSymbol = selfSymbol;
+    self.frontend = frontend;
+    self.dependency = dependency;
+    self.range = range;
+    self.valid = valid;
+    self.abstractType = abstractType;
+    self.sealedType = sealedType;
+    self.members = SymbolId?[:memberCapacity];
+    self.memberCount = 0;
+  }
+
+  static func Local(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, FileFrontendResult frontend,
+      SourceRange range, bool valid, bool abstractType, bool sealedType,
+      int32 memberCapacity): FileRegistration throws StateError {
+    if (memberCapacity < 0) {
+      throw StateError("local file member capacity is negative");
+    }
+    return FileRegistration(
+        owner, id, identity, kind, type, symbol, selfSymbol, frontend, null,
+        range, valid, abstractType, sealedType, memberCapacity);
+  }
+
+  static func Dependency(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol,
+      DependencyType dependency): FileRegistration {
+    return FileRegistration(
+        owner, id, identity, kind, type, symbol, selfSymbol, null, dependency,
+        dependency.GetRange(), true, dependency.IsAbstract(),
+        dependency.IsSealed(), 0);
+  }
+
+  func AddMember(SymbolId member): void throws StateError {
+    if (!member.BelongsTo(self.owner) ||
+        self.memberCount >= self.members::length) {
+      throw StateError("semantic file member capacity is exhausted");
+    }
+    self.members[self.memberCount] = member;
+    self.memberCount++;
+  }
+
+  func GetId(): FileId { return self.id; }
+  func GetIdentity(): NominalIdentity { return self.identity; }
+  func GetKind(): FileTypeKind { return self.kind; }
+  func GetType(): TypeId { return self.type; }
+  func GetSymbol(): SymbolId { return self.symbol; }
+  func GetSelfSymbol(): SymbolId { return self.selfSymbol; }
+  func GetFrontend(): FileFrontendResult? { return self.frontend; }
+  func GetRange(): SourceRange { return self.range; }
+  func IsValid(): bool { return self.valid; }
+  func MarkInvalid() { self.valid = false; }
+
+  func GetMember(int32 index): SymbolId throws StateError {
+    if (index < 0 || index >= self.memberCount) {
+      throw StateError("file registration member index is out of bounds");
+    }
+    final SymbolId? member = self.members[index];
+    if (member == null) {
+      throw StateError("file registration member is not initialized");
+    }
+    return member;
+  }
+
+  func Publish(): SemanticFile throws StateError {
+    if (self.memberCount != self.members::length) {
+      throw StateError("semantic file member registration is incomplete");
+    }
+    final FileFrontendResult? frontend = self.frontend;
+    if (frontend != null) {
+      return SemanticFile.BuildLocal(
+          self.owner, self.id, self.identity, self.kind, self.type, self.symbol,
+          self.selfSymbol, self.members, frontend, self.range, self.valid,
+          self.abstractType, self.sealedType);
+    }
+    final DependencyType? dependency = self.dependency;
+    if (dependency == null) {
+      throw StateError("semantic file registration has no source owner");
+    }
+    return SemanticFile.BuildDependency(
+        self.owner, self.id, self.identity, self.kind, self.type, self.symbol,
+        self.selfSymbol, self.members, dependency);
+  }
+}

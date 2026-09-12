@@ -1,0 +1,71 @@
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import semantic.identity::NominalKind;
+import semantic.identity::SemanticName;
+
+class {
+  final PackageIdentity package;
+  final string sourcePackage;
+  final string name;
+  final string qualifiedName;
+  final NominalKind kind;
+
+  _NominalIdentity(PackageIdentity package, string sourcePackage,
+                   string name, string qualifiedName, NominalKind kind) {
+    self.package = package;
+    self.sourcePackage = sourcePackage;
+    self.name = name;
+    self.qualifiedName = qualifiedName;
+    self.kind = kind;
+  }
+
+  static func Build(PackageIdentity package, string sourcePackage,
+                    string name,
+                    NominalKind kind): NominalIdentity throws StateError {
+    if (!SemanticName.IsSourcePackage(sourcePackage) ||
+        !SemanticName.IsIdentifierString(name)) {
+      throw StateError("nominal identity has an invalid source name");
+    }
+    return NominalIdentity(
+        package, sourcePackage, name,
+        PackagePath.QualifiedName(package, sourcePackage, name), kind);
+  }
+
+  func GetPackage(): PackageIdentity { return self.package; }
+  func GetSourcePackage(): string { return self.sourcePackage; }
+  func GetName(): string { return self.name; }
+  func GetQualifiedName(): string { return self.qualifiedName; }
+  func GetKind(): NominalKind { return self.kind; }
+
+  func Equals(NominalIdentity other): bool {
+    return self.package.GetName() == other.GetPackage().GetName() &&
+           self.package.GetVersion() == other.GetPackage().GetVersion() &&
+           self.sourcePackage == other.GetSourcePackage() &&
+           self.name == other.GetName() && self.kind == other.GetKind();
+  }
+
+  static func Compare(NominalIdentity left,
+                      NominalIdentity right): int32 throws StateError {
+    int32 order = PackagePath.Compare(
+        left.GetPackage().GetName(), right.GetPackage().GetName());
+    if (order != 0) { return order; }
+    order = PackagePath.Compare(
+        left.GetPackage().GetVersion(), right.GetPackage().GetVersion());
+    if (order != 0) { return order; }
+    order = PackagePath.Compare(left.GetSourcePackage(),
+                                right.GetSourcePackage());
+    if (order != 0) { return order; }
+    order = PackagePath.Compare(left.GetName(), right.GetName());
+    if (order != 0) { return order; }
+    return kindRank(left.GetKind()) - kindRank(right.GetKind());
+  }
+
+  static func kindRank(NominalKind kind): int32 {
+    switch (kind) {
+      case NominalKind.kClass: { return 0; }
+      case NominalKind.kInterface: { return 1; }
+      case NominalKind.kEnum: { return 2; }
+      case NominalKind.kStruct: { return 3; }
+    }
+  }
+}

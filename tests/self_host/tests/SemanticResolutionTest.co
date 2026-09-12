@@ -1,0 +1,11 @@
+import self_host.checks.resolution::SemanticResolutionCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, SemanticResolutionCheck.Run(),
+                 "semantic resolution check status");
+  }
+}

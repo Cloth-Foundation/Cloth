@@ -1,0 +1,140 @@
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageIdentity;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::FileTypeKind;
+import semantic.identity::NominalIdentity;
+import semantic.identity::NominalKind;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::DependencyType;
+
+class {
+  final FileId id;
+  final NominalIdentity identity;
+  final FileTypeKind kind;
+  final TypeId type;
+  final SymbolId symbol;
+  final SymbolId selfSymbol;
+  final SymbolId?[] members;
+  final FileFrontendResult? frontend;
+  final DependencyType? dependency;
+  final SourceRange range;
+  final bool valid;
+  final bool abstractType;
+  final bool sealedType;
+
+  _SemanticFile(
+      FileId id, NominalIdentity identity, FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, SymbolId?[] members,
+      FileFrontendResult? frontend, DependencyType? dependency,
+      SourceRange range, bool valid, bool abstractType, bool sealedType) {
+    self.id = id;
+    self.identity = identity;
+    self.kind = kind;
+    self.type = type;
+    self.symbol = symbol;
+    self.selfSymbol = selfSymbol;
+    self.members = members;
+    self.frontend = frontend;
+    self.dependency = dependency;
+    self.range = range;
+    self.valid = valid;
+    self.abstractType = abstractType;
+    self.sealedType = sealedType;
+  }
+
+  static func BuildLocal(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, SymbolId?[] input,
+      FileFrontendResult frontend, SourceRange range, bool valid,
+      bool abstractType, bool sealedType): SemanticFile throws StateError {
+    final PackageIdentity packageOwner = identity.GetPackage();
+    if (packageOwner.GetName() != frontend.GetIdentity().GetName() ||
+        packageOwner.GetVersion() != frontend.GetIdentity().GetVersion() ||
+        identity.GetSourcePackage() != frontend.GetSourcePackage() ||
+        identity.GetName() != frontend.GetFileName()) {
+      throw StateError("local semantic file identity is inconsistent");
+    }
+    return build(owner, id, identity, kind, type, symbol, selfSymbol, input,
+                 frontend, null, range, valid, abstractType, sealedType);
+  }
+
+  static func BuildDependency(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, SymbolId?[] input,
+      DependencyType dependency): SemanticFile throws StateError {
+    if (!identity.Equals(dependency.GetIdentity()) ||
+        kind != dependency.GetFileTypeKind()) {
+      throw StateError("dependency semantic file identity is inconsistent");
+    }
+    return build(owner, id, identity, kind, type, symbol, selfSymbol, input,
+                 null, dependency, dependency.GetRange(), true,
+                 dependency.IsAbstract(), dependency.IsSealed());
+  }
+
+  static func build(
+      SemanticOwner owner, FileId id, NominalIdentity identity,
+      FileTypeKind kind, TypeId type,
+      SymbolId symbol, SymbolId selfSymbol, SymbolId?[] input,
+      FileFrontendResult? frontend, DependencyType? dependency,
+      SourceRange range, bool valid, bool abstractType,
+      bool sealedType): SemanticFile throws StateError {
+    if ((frontend == null) == (dependency == null) ||
+        !id.BelongsTo(owner) || !type.BelongsTo(owner) ||
+        !symbol.BelongsTo(owner) || !selfSymbol.BelongsTo(owner) ||
+        !kindMatches(kind, identity.GetKind())) {
+      throw StateError("semantic file record is inconsistent");
+    }
+    final SymbolId?[] members = SymbolId?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final SymbolId? member = input[index];
+      if (member == null || !member.BelongsTo(owner)) {
+        throw StateError("semantic file has a null or foreign member handle");
+      }
+      members[index] = member;
+    }
+    return SemanticFile(
+        id, identity, kind, type, symbol, selfSymbol, members, frontend,
+        dependency, range, valid, abstractType, sealedType);
+  }
+
+  func GetId(): FileId { return self.id; }
+  func GetIdentity(): NominalIdentity { return self.identity; }
+  func GetFileTypeKind(): FileTypeKind { return self.kind; }
+  func GetType(): TypeId { return self.type; }
+  func GetSymbol(): SymbolId { return self.symbol; }
+  func GetSelfSymbol(): SymbolId { return self.selfSymbol; }
+  func GetFrontend(): FileFrontendResult? { return self.frontend; }
+  func GetDependency(): DependencyType? { return self.dependency; }
+  func GetRange(): SourceRange { return self.range; }
+  func IsValid(): bool { return self.valid; }
+  func IsAbstract(): bool { return self.abstractType; }
+  func IsSealed(): bool { return self.sealedType; }
+  func GetMemberCount(): int32 { return self.members::length; }
+
+  func GetMember(int32 index): SymbolId throws StateError {
+    if (index < 0 || index >= self.members::length) {
+      throw StateError("semantic file member index is out of bounds");
+    }
+    final SymbolId? member = self.members[index];
+    if (member == null) {
+      throw StateError("semantic file member storage contains null");
+    }
+    return member;
+  }
+
+  static func kindMatches(FileTypeKind kind, NominalKind nominal): bool {
+    if (kind == FileTypeKind.kClass || kind == FileTypeKind.kError) {
+      return nominal == NominalKind.kClass;
+    }
+    if (kind == FileTypeKind.kInterface) {
+      return nominal == NominalKind.kInterface;
+    }
+    if (kind == FileTypeKind.kEnum) { return nominal == NominalKind.kEnum; }
+    return kind == FileTypeKind.kStruct && nominal == NominalKind.kStruct;
+  }
+}

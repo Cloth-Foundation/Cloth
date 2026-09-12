@@ -1,0 +1,338 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::Visibility;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.identity::MemberIdentity;
+import semantic.identity::NominalIdentity;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticOwner;
+import semantic.model::SemanticSymbol;
+import semantic.model::SemanticType;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageInput;
+import semantic.resolution::ImportScope;
+import semantic.resolution::ImportScopeSequence;
+import semantic.resolution::PreludeTypeIndex;
+import semantic.resolution::TypeBinding;
+import semantic.resolution::TypeBindingSequence;
+import semantic.symbol::MemberIndex;
+import semantic.symbol::NominalTypeIndex;
+
+class {
+  final SemanticPackageInput input;
+  final SemanticOwner owner;
+  final SemanticType?[] types;
+  final SemanticSymbol?[] symbols;
+  final SemanticFile?[] files;
+  final SemanticDiagnosticSequence diagnostics;
+  final NominalTypeIndex nominalTypes;
+  final MemberIndex members;
+  final ImportScopeSequence scopes;
+  final PreludeTypeIndex prelude;
+  final TypeBindingSequence bindings;
+  final bool valid;
+
+  _SemanticPackageResult(
+      SemanticPackageInput input, SemanticOwner owner,
+      SemanticType?[] types, SemanticSymbol?[] symbols,
+      SemanticFile?[] files, SemanticDiagnosticSequence diagnostics,
+      NominalTypeIndex nominalTypes, MemberIndex members,
+      ImportScopeSequence scopes, PreludeTypeIndex prelude,
+      TypeBindingSequence bindings, bool valid) {
+    self.input = input;
+    self.owner = owner;
+    self.types = types;
+    self.symbols = symbols;
+    self.files = files;
+    self.diagnostics = diagnostics;
+    self.nominalTypes = nominalTypes;
+    self.members = members;
+    self.scopes = scopes;
+    self.prelude = prelude;
+    self.bindings = bindings;
+    self.valid = valid;
+  }
+
+  static func Build(
+      SemanticPackageInput input, SemanticOwner owner,
+      SemanticType?[] typeInput, SemanticSymbol?[] symbolInput,
+      SemanticFile?[] fileInput,
+      SemanticDiagnosticSequence diagnostics, ImportScopeSequence scopes,
+      PreludeTypeIndex prelude,
+      TypeBindingSequence bindings): SemanticPackageResult
+      throws StateError {
+    if (typeInput::length < CoreTypeCatalog.GetCount() ||
+        typeInput::length > SemanticLimits.MaxTypes() ||
+        symbolInput::length > SemanticLimits.MaxSymbols() ||
+        fileInput::length > SemanticLimits.MaxLocalFiles() +
+                            SemanticLimits.MaxDependencyTypes()) {
+      throw StateError("semantic package result exceeds its record limits");
+    }
+    final SemanticType?[] types = SemanticType?[:typeInput::length];
+    final SemanticSymbol?[] symbols =
+        SemanticSymbol?[:symbolInput::length];
+    final SemanticFile?[] files = SemanticFile?[:fileInput::length];
+    verifyTypes(owner, typeInput, types, fileInput::length);
+    verifySymbols(owner, symbolInput, symbols, typeInput::length,
+                  fileInput::length);
+    verifyFiles(owner, fileInput, files, types, symbols);
+    verifyResolution(scopes, prelude, bindings, files, types);
+    final NominalTypeIndex nominalTypes = NominalTypeIndex.Build(types);
+    final MemberIndex members = MemberIndex.Build(symbols);
+    bool valid = input.GetFrontend().IsValid() && diagnostics.GetCount() == 0;
+    for (int32 index = 0; index < files::length; index++) {
+      if (!files[index]!.IsValid()) { valid = false; }
+    }
+    return SemanticPackageResult(
+        input, owner, types, symbols, files, diagnostics, nominalTypes,
+        members, scopes, prelude, bindings, valid);
+  }
+
+  func GetInput(): SemanticPackageInput { return self.input; }
+  func GetDiagnostics(): SemanticDiagnosticSequence {
+    return self.diagnostics;
+  }
+  func GetTypeCount(): int32 { return self.types::length; }
+  func GetSymbolCount(): int32 { return self.symbols::length; }
+  func GetFileCount(): int32 { return self.files::length; }
+  func IsValid(): bool { return self.valid; }
+
+  func GetType(TypeId id): SemanticType throws StateError {
+    if (!id.BelongsTo(self.owner)) {
+      throw StateError("semantic handle belongs to another result");
+    }
+    if (id.GetIndex() >= self.types::length) {
+      throw StateError("semantic type id is out of bounds");
+    }
+    return self.types[id.GetIndex()]!;
+  }
+
+  func GetSymbol(SymbolId id): SemanticSymbol throws StateError {
+    if (!id.BelongsTo(self.owner)) {
+      throw StateError("semantic handle belongs to another result");
+    }
+    if (id.GetIndex() >= self.symbols::length) {
+      throw StateError("semantic symbol id is out of bounds");
+    }
+    return self.symbols[id.GetIndex()]!;
+  }
+
+  func GetFile(FileId id): SemanticFile throws StateError {
+    if (!id.BelongsTo(self.owner)) {
+      throw StateError("semantic handle belongs to another result");
+    }
+    if (id.GetIndex() >= self.files::length) {
+      throw StateError("semantic file id is out of bounds");
+    }
+    return self.files[id.GetIndex()]!;
+  }
+
+  func GetTypeAt(int32 index): SemanticType throws StateError {
+    return self.GetType(TypeId.Build(self.owner, index));
+  }
+
+  func GetSymbolAt(int32 index): SemanticSymbol throws StateError {
+    return self.GetSymbol(SymbolId.Build(self.owner, index));
+  }
+
+  func GetFileAt(int32 index): SemanticFile throws StateError {
+    return self.GetFile(FileId.Build(self.owner, index));
+  }
+
+  func FindCoreType(string name): TypeId? throws StateError {
+    final int32 index = CoreTypeCatalog.Find(name);
+    if (index < 0) { return null; }
+    return TypeId.Build(self.owner, index);
+  }
+
+  func FindNominalType(NominalIdentity identity): TypeId?
+      throws StateError {
+    return self.nominalTypes.Find(identity);
+  }
+
+  func FindMember(MemberIdentity identity): SymbolId? throws StateError {
+    return self.members.FindUnique(identity);
+  }
+
+  func GetNominalTypeCount(): int32 { return self.nominalTypes.GetCount(); }
+  func GetMemberIdentityCount(): int32 { return self.members.GetCount(); }
+  func GetImportBindingCount(): int32 { return self.scopes.GetBindingCount(); }
+  func GetPreludeTypeCount(): int32 { return self.prelude.GetCount(); }
+  func GetTypeBindingCount(): int32 { return self.bindings.GetCount(); }
+
+  func GetImportScope(FileId file): ImportScope? throws StateError {
+    return self.scopes.Get(file);
+  }
+
+  func GetTypeBinding(int32 index): TypeBinding throws StateError {
+    return self.bindings.Get(index);
+  }
+
+  func FindTypeBinding(
+      FileId file, TypeSyntax syntax): TypeBinding?
+      throws StateError {
+    if (!file.BelongsTo(self.owner)) {
+      throw StateError("declared type lookup uses a foreign file handle");
+    }
+    final FileFrontendResult? frontend = self.GetFile(file).GetFrontend();
+    if (frontend == null ||
+        syntax.GetName().GetSource() !=
+            frontend.GetPackageSource().GetSource()) {
+      throw StateError("declared type lookup uses foreign syntax");
+    }
+    return self.bindings.Find(file, syntax);
+  }
+
+  static func verifyResolution(
+      ImportScopeSequence scopes, PreludeTypeIndex prelude,
+      TypeBindingSequence bindings, SemanticFile?[] files,
+      SemanticType?[] types): void throws StateError {
+    if (scopes.GetFileCount() != files::length) {
+      throw StateError("semantic import scope table has the wrong size");
+    }
+    for (int32 index = 0; index < files::length; index++) {
+      final SemanticFile file = files[index]!;
+      final ImportScope? scope = scopes.Get(file.GetId());
+      if ((file.GetFrontend() == null) != (scope == null)) {
+        throw StateError("semantic import scope ownership is inconsistent");
+      }
+      if (scope != null && scope.GetFile().GetIndex() != index) {
+        throw StateError("semantic import scope has the wrong file");
+      }
+      if (scope != null) {
+        for (int32 bindingIndex = 0;
+             bindingIndex < scope.GetCount(); bindingIndex++) {
+          final FileId? target = scope.Get(bindingIndex).GetTarget();
+          if (target != null && target.GetIndex() >= files::length) {
+            throw StateError("semantic import scope has an invalid target");
+          }
+        }
+      }
+    }
+    for (int32 index = 0; index < prelude.GetCount(); index++) {
+      if (prelude.Get(index).GetFile().GetIndex() >= files::length) {
+        throw StateError("semantic prelude index has an invalid file");
+      }
+    }
+    for (int32 index = 0; index < bindings.GetCount(); index++) {
+      final TypeBinding binding = bindings.Get(index);
+      if (binding.GetFile().GetIndex() >= files::length ||
+          binding.GetType().GetIndex() >= types::length ||
+          files[binding.GetFile().GetIndex()]!.GetFrontend() == null) {
+        throw StateError("declared type binding has an invalid reference");
+      }
+    }
+  }
+
+  static func verifyTypes(
+      SemanticOwner owner, SemanticType?[] input,
+      SemanticType?[] output, int32 fileCount): void throws StateError {
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticType? type = input[index];
+      if (type == null || !type.GetId().BelongsTo(owner) ||
+          type.GetId().GetIndex() != index) {
+        throw StateError("semantic type table is inconsistent");
+      }
+      final FileId? file = type.GetFile();
+      final TypeId? element = type.GetElement();
+      if ((file != null &&
+           (!file.BelongsTo(owner) || file.GetIndex() >= fileCount)) ||
+          (element != null &&
+           (!element.BelongsTo(owner) ||
+            element.GetIndex() >= input::length))) {
+        throw StateError("semantic type table contains a foreign reference");
+      }
+      output[index] = type;
+    }
+  }
+
+  static func verifySymbols(
+      SemanticOwner owner, SemanticSymbol?[] input,
+      SemanticSymbol?[] output, int32 typeCount,
+      int32 fileCount): void throws StateError {
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticSymbol? symbol = input[index];
+      if (symbol == null || !symbol.GetId().BelongsTo(owner) ||
+          symbol.GetId().GetIndex() != index ||
+          !symbol.GetType().BelongsTo(owner) ||
+          symbol.GetType().GetIndex() >= typeCount) {
+        throw StateError("semantic symbol table is inconsistent");
+      }
+      final FileId? file = symbol.GetFile();
+      if (file != null &&
+          (!file.BelongsTo(owner) || file.GetIndex() >= fileCount)) {
+        throw StateError("semantic symbol table contains a foreign file");
+      }
+      output[index] = symbol;
+    }
+  }
+
+  static func verifyFiles(
+      SemanticOwner owner, SemanticFile?[] input,
+      SemanticFile?[] output, SemanticType?[] types,
+      SemanticSymbol?[] symbols): void throws StateError {
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticFile? file = input[index];
+      if (file == null || !file.GetId().BelongsTo(owner) ||
+          file.GetId().GetIndex() != index ||
+          !file.GetType().BelongsTo(owner) ||
+          file.GetType().GetIndex() >= types::length ||
+          !file.GetSymbol().BelongsTo(owner) ||
+          file.GetSymbol().GetIndex() >= symbols::length ||
+          !file.GetSelfSymbol().BelongsTo(owner) ||
+          file.GetSelfSymbol().GetIndex() >= symbols::length) {
+        throw StateError("semantic file table is inconsistent");
+      }
+      final SemanticType type = types[file.GetType().GetIndex()]!;
+      final SemanticSymbol fileSymbol = symbols[file.GetSymbol().GetIndex()]!;
+      final SemanticSymbol selfSymbol =
+          symbols[file.GetSelfSymbol().GetIndex()]!;
+      final FileId? typeFile = type.GetFile();
+      final FileId? symbolFile = fileSymbol.GetFile();
+      final FileId? selfFile = selfSymbol.GetFile();
+      if ((file.GetType().GetIndex() != 0 &&
+           (typeFile == null || typeFile.GetIndex() != index ||
+            type.GetIdentity().GetNominal() == null ||
+            !type.GetIdentity().GetNominal()!.Equals(file.GetIdentity()))) ||
+          symbolFile == null || symbolFile.GetIndex() != index ||
+          selfFile == null || selfFile.GetIndex() != index ||
+          fileSymbol.GetType().GetIndex() != file.GetType().GetIndex() ||
+          selfSymbol.GetType().GetIndex() != file.GetType().GetIndex() ||
+          fileSymbol.GetKind() != expectedSymbolKind(file.GetFileTypeKind()) ||
+          selfSymbol.GetKind() != SymbolKind.kSelf ||
+          selfSymbol.GetVisibility() != Visibility.kPrivate ||
+          !fileSymbol.GetName().EqualsString(file.GetIdentity().GetName()) ||
+          !selfSymbol.GetName().EqualsString("self")) {
+        throw StateError("semantic file records disagree with their symbols");
+      }
+      for (int32 member = 0; member < file.GetMemberCount(); member++) {
+        final SymbolId symbol = file.GetMember(member);
+        if (!symbol.BelongsTo(owner) || symbol.GetIndex() >= symbols::length) {
+          throw StateError("semantic file table contains a foreign member");
+        }
+        final SemanticSymbol declaration = symbols[symbol.GetIndex()]!;
+        final FileId? declarationFile = declaration.GetFile();
+        if (declarationFile == null || declarationFile.GetIndex() != index ||
+            declaration.GetDeclarationOrder() != member) {
+          throw StateError("semantic member ownership is inconsistent");
+        }
+      }
+      output[index] = file;
+    }
+  }
+
+  static func expectedSymbolKind(FileTypeKind kind): SymbolKind {
+    if (kind == FileTypeKind.kInterface) { return SymbolKind.kInterface; }
+    if (kind == FileTypeKind.kEnum) { return SymbolKind.kEnum; }
+    if (kind == FileTypeKind.kStruct) { return SymbolKind.kStruct; }
+    if (kind == FileTypeKind.kError) { return SymbolKind.kError; }
+    return SymbolKind.kFileClass;
+  }
+}

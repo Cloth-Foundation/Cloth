@@ -1,0 +1,109 @@
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import frontend.source::SourceSpan;
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.package::SemanticDependency;
+import semantic.package::SemanticPackageInput;
+import semantic.resolution::ImportPath;
+
+class {
+  final PackageIdentity package;
+  final SourceSpan? source;
+  final int32 begin;
+  final int32 end;
+  final string ownedSourcePackage;
+
+  _ResolutionPackage(
+      PackageIdentity package, SourceSpan? source, int32 begin, int32 end,
+      string ownedSourcePackage) {
+    self.package = package;
+    self.source = source;
+    self.begin = begin;
+    self.end = end;
+    self.ownedSourcePackage = ownedSourcePackage;
+  }
+
+  static func Current(NominalIdentity identity): ResolutionPackage {
+    return ResolutionPackage(
+        identity.GetPackage(), null, 0, 0, identity.GetSourcePackage());
+  }
+
+  static func Import(
+      SemanticPackageInput input, NominalIdentity current,
+      SourceSpan? path): ResolutionPackage throws StateError {
+    final int32 dependency = ImportPath.FindDependency(input, path);
+    if (dependency < 0) {
+      if (path == null) {
+        return ResolutionPackage(current.GetPackage(), null, 0, 0, "");
+      }
+      return ResolutionPackage(
+          current.GetPackage(), path, 0, path.GetLength(), "");
+    }
+    if (path == null) {
+      throw StateError("dependency import unexpectedly has no path");
+    }
+    final SemanticDependency edge = input.GetDependency(dependency);
+    int32 begin = edge.GetAlias()::length;
+    if (begin < path.GetLength()) { begin++; }
+    return ResolutionPackage(
+        edge.GetView().GetIdentity(), path, begin, path.GetLength(), "");
+  }
+
+  func Compare(NominalIdentity identity): int32 throws StateError {
+    int32 order = PackagePath.Compare(
+        self.package.GetName(), identity.GetPackage().GetName());
+    if (order != 0) { return order; }
+    order = PackagePath.Compare(
+        self.package.GetVersion(), identity.GetPackage().GetVersion());
+    if (order != 0) { return order; }
+    return self.compareSourcePackage(identity.GetSourcePackage());
+  }
+
+  static func CompareName(
+      SemanticName left, string right): int32 throws StateError {
+    int32 shared = left.GetLength();
+    if (right::length < shared) { shared = right::length; }
+    for (int32 index = 0; index < shared; index++) {
+      final byte leftByte = left.GetByte(index);
+      final byte rightByte = byte(asciiCode(right[index]));
+      if (leftByte < rightByte) { return -1; }
+      if (leftByte > rightByte) { return 1; }
+    }
+    if (left.GetLength() < right::length) { return -1; }
+    if (left.GetLength() > right::length) { return 1; }
+    return 0;
+  }
+
+  func compareSourcePackage(string other): int32 throws StateError {
+    final SourceSpan? source = self.source;
+    if (source == null) {
+      return PackagePath.Compare(self.ownedSourcePackage, other);
+    }
+    int32 shared = self.end - self.begin;
+    if (other::length < shared) { shared = other::length; }
+    for (int32 index = 0; index < shared; index++) {
+      final byte left = source.GetByte(self.begin + index);
+      final byte right = byte(asciiCode(other[index]));
+      if (left < right) { return -1; }
+      if (left > right) { return 1; }
+    }
+    if (self.end - self.begin < other::length) { return -1; }
+    if (self.end - self.begin > other::length) { return 1; }
+    return 0;
+  }
+
+  static func asciiCode(char value): int32 {
+    if (value == '.') { return 46; }
+    final string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    for (int32 index = 0; index < alphabet::length; index++) {
+      if (value != alphabet[index]) { continue; }
+      if (index < 26) { return 65 + index; }
+      if (index < 52) { return 97 + index - 26; }
+      if (index < 62) { return 48 + index - 52; }
+      return 95;
+    }
+    return -1;
+  }
+}

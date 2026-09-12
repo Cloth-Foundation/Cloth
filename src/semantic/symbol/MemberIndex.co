@@ -1,0 +1,125 @@
+import semantic.identity::MemberIdentity;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.symbol::MemberEntry;
+
+class {
+  final MemberEntry?[] entries;
+
+  _MemberIndex(MemberEntry?[] entries) { self.entries = entries; }
+
+  static func Build(SemanticSymbol?[] symbols): MemberIndex
+      throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < symbols::length; index++) {
+      final SemanticSymbol? symbol = symbols[index];
+      if (symbol == null) {
+        throw StateError("member index input contains null");
+      }
+      if (symbol.GetIdentity() != null) { count++; }
+    }
+    final MemberEntry?[] entries = MemberEntry?[:count];
+    int32 output = 0;
+    for (int32 index = 0; index < symbols::length; index++) {
+      final SemanticSymbol symbol = symbols[index]!;
+      final MemberIdentity? identity = symbol.GetIdentity();
+      if (identity == null) { continue; }
+      entries[output] = MemberEntry.Build(identity, symbol.GetId());
+      output++;
+    }
+    return MemberIndex(sort(entries));
+  }
+
+  func GetCount(): int32 { return self.entries::length; }
+
+  func Get(int32 index): MemberEntry throws StateError {
+    if (index < 0 || index >= self.entries::length) {
+      throw StateError("member index entry is out of bounds");
+    }
+    return get(self.entries, index);
+  }
+
+  func FindUnique(MemberIdentity identity): SymbolId? throws StateError {
+    int32 begin = 0;
+    int32 end = self.entries::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      if (MemberIdentity.Compare(
+              get(self.entries, middle).GetIdentity(), identity) < 0) {
+        begin = middle + 1;
+      } else {
+        end = middle;
+      }
+    }
+    if (begin >= self.entries::length ||
+        !get(self.entries, begin).GetIdentity().Equals(identity)) {
+      return null;
+    }
+    if (begin + 1 < self.entries::length &&
+        get(self.entries, begin + 1).GetIdentity().Equals(identity)) {
+      return null;
+    }
+    return get(self.entries, begin).GetSymbol();
+  }
+
+  static func sort(MemberEntry?[] values): MemberEntry?[]
+      throws StateError {
+    final int32 count = values::length;
+    MemberEntry?[] input = values;
+    MemberEntry?[] output = MemberEntry?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final MemberEntry?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(MemberEntry?[] input, MemberEntry?[] output,
+                    int32 begin, int32 middle,
+                    int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left), get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(MemberEntry left,
+                      MemberEntry right): int32 throws StateError {
+    final int32 order =
+        MemberIdentity.Compare(left.GetIdentity(), right.GetIdentity());
+    if (order != 0) { return order; }
+    return left.GetSymbol().GetIndex() - right.GetSymbol().GetIndex();
+  }
+
+  static func get(MemberEntry?[] values,
+                  int32 index): MemberEntry throws StateError {
+    final MemberEntry? value = values[index];
+    if (value == null) {
+      throw StateError("member index sorting lost an entry");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

@@ -1,0 +1,67 @@
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.identity::MemberIdentity;
+import semantic.identity::MemberKind;
+import semantic.model::FileId;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.package::PackageSymbolStorage;
+import semantic.symbol::MemberIndex;
+
+class {
+  static func Validate(
+      PackageSymbolStorage storage,
+      SemanticDiagnosticBuffer diagnostics): void throws StateError {
+    final MemberIndex members = MemberIndex.Build(storage.SnapshotSymbols());
+    int32 begin = 0;
+    while (begin < members.GetCount()) {
+      int32 end = begin + 1;
+      final MemberIdentity identity = members.Get(begin).GetIdentity();
+      while (end < members.GetCount() &&
+             identity.Equals(members.Get(end).GetIdentity())) {
+        end++;
+      }
+      if (end - begin > 1 && isCallable(identity.GetKind()) &&
+          allValid(members, begin, end, storage)) {
+        invalidateGroup(members, begin, end, storage, diagnostics);
+      }
+      begin = end;
+    }
+  }
+
+  static func invalidateGroup(
+      MemberIndex members, int32 begin, int32 end,
+      PackageSymbolStorage storage,
+      SemanticDiagnosticBuffer diagnostics): void throws StateError {
+    final SemanticSymbol first =
+        storage.GetSymbol(members.Get(begin).GetSymbol());
+    for (int32 index = begin; index < end; index++) {
+      final SymbolId id = members.Get(index).GetSymbol();
+      final SemanticSymbol symbol = storage.GetSymbol(id);
+      storage.InvalidateSymbol(id);
+      final FileId? file = symbol.GetFile();
+      if (file != null) { storage.InvalidateFile(file); }
+      if (index > begin) {
+        diagnostics.Add(
+            SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce,
+            symbol.GetRange(), first.GetRange());
+      }
+    }
+  }
+
+  static func allValid(
+      MemberIndex members, int32 begin, int32 end,
+      PackageSymbolStorage storage): bool throws StateError {
+    for (int32 index = begin; index < end; index++) {
+      if (!storage.GetSymbol(members.Get(index).GetSymbol()).IsValid()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func isCallable(MemberKind kind): bool {
+    return kind == MemberKind.kFunction ||
+           kind == MemberKind.kConstructor;
+  }
+}

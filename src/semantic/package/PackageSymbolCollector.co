@@ -1,0 +1,77 @@
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.identity::NominalIdentity;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::TypeId;
+import semantic.package::PackageSymbolStorage;
+import semantic.package::SemanticPackageInput;
+import semantic.package::SemanticPackagePreflight;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::DeclaredTypeBinder;
+import semantic.resolution::ImportScopeSequence;
+import semantic.resolution::PreludeTypeIndex;
+import semantic.resolution::ResolutionFileIndex;
+import semantic.resolution::TypeBindingBuffer;
+import semantic.symbol::CallableIdentityValidator;
+import semantic.symbol::DeclarationSymbolRegistrar;
+
+class {
+  static func Collect(
+      SemanticPackageInput input): SemanticPackageResult throws StateError {
+    final SemanticPackagePreflight preflight =
+        SemanticPackagePreflight.Build(input);
+    final SemanticOwner owner = SemanticOwner.Create();
+    final NominalIdentity? objectIdentity = preflight.GetObjectIdentity();
+    FileId? objectFile = null;
+    if (preflight.GetObjectFileIndex() >= 0) {
+      objectFile = FileId.Build(owner, preflight.GetObjectFileIndex());
+    }
+    final PackageSymbolStorage storage = PackageSymbolStorage.Create(
+        owner, preflight.GetTypeCapacity(), preflight.GetSymbolCount(),
+        preflight.GetFileCount());
+    final SemanticDiagnosticBuffer diagnostics =
+        SemanticDiagnosticBuffer.Create(preflight.GetDiagnosticCapacity());
+
+    installCoreTypes(storage, objectIdentity, objectFile);
+    DeclarationSymbolRegistrar.RegisterFiles(
+        input.GetFrontend(), preflight, storage, diagnostics);
+    final ResolutionFileIndex fileIndex =
+        ResolutionFileIndex.Build(storage);
+    final PreludeTypeIndex prelude =
+        PreludeTypeIndex.Build(storage, diagnostics);
+    final ImportScopeSequence scopes =
+        ImportScopeSequence.Build(input, storage, fileIndex, diagnostics);
+    DeclarationSymbolRegistrar.RegisterMembers(storage);
+    final TypeBindingBuffer bindings = TypeBindingBuffer.Create(
+        owner, preflight.GetTypeBindingCapacity());
+    DeclaredTypeBinder.Bind(
+        storage, fileIndex, scopes, prelude, bindings, diagnostics);
+    CallableIdentityValidator.Validate(storage, diagnostics);
+    if (storage.GetSymbolCount() != preflight.GetSymbolCount()) {
+      throw StateError("semantic symbol preflight count is inconsistent");
+    }
+    return storage.Publish(
+        input, diagnostics.Publish(), scopes, prelude, bindings.Publish());
+  }
+
+  static func installCoreTypes(
+      PackageSymbolStorage storage, NominalIdentity? objectIdentity,
+      FileId? objectFile): void throws StateError {
+    for (int32 index = 0; index < CoreTypeCatalog.GetCount(); index++) {
+      TypeId? element = null;
+      final int32 elementIndex = CoreTypeCatalog.GetElementIndex(index);
+      if (elementIndex >= 0) {
+        element = TypeId.Build(storage.GetOwner(), elementIndex);
+      }
+      FileId? file = null;
+      if (index == 18) { file = objectFile; }
+      final TypeId type = storage.AddType(
+          CoreTypeCatalog.GetKind(index), CoreTypeCatalog.GetName(index),
+          CoreTypeCatalog.GetIdentity(index, objectIdentity), file, element);
+      if (type.GetIndex() != index) {
+        throw StateError("core type registration order is inconsistent");
+      }
+    }
+  }
+}

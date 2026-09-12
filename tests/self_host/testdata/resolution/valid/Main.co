@@ -1,0 +1,30 @@
+import models::User;
+import models::Record as Data;
+import services.*;
+import dep.api::Remote as External;
+import dep.api::Remote;
+import dep.api.*;
+
+User?[]? Users;
+Data Record;
+External RemoteValue;
+Problem Failure;
+Main Self;
+
+static func Main(): void {
+  User?[] users = User?[:1];
+  object boxed = users;
+  bool matches = boxed is Data;
+  Data? restored = boxed as Data?;
+  External remote = External();
+  Remote wildcardRemote = Remote();
+  Worker worker = Worker();
+  int64 widened = int64(1);
+  int32 wrapped = int32::wrap(1);
+  for (User value in users) {}
+  for (Data index = restored; true; ) {}
+}
+
+func Build(User?[]? users, Data data): External? throws Problem {
+  return null;
+}

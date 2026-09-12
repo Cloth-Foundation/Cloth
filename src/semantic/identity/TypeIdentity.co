@@ -1,0 +1,204 @@
+import frontend.package::PackagePath;
+import semantic.identity::NominalIdentity;
+import semantic.identity::NominalKind;
+import semantic.model::TypeKind;
+
+class {
+  final TypeKind kind;
+  final string coreName;
+  final NominalIdentity? nominal;
+  final TypeIdentity? element;
+
+  _TypeIdentity(TypeKind kind, string coreName, NominalIdentity? nominal,
+                TypeIdentity? element) {
+    self.kind = kind;
+    self.coreName = coreName;
+    self.nominal = nominal;
+    self.element = element;
+  }
+
+  static func Core(TypeKind kind,
+                   string name): TypeIdentity throws StateError {
+    if (kind == TypeKind.kClass || kind == TypeKind.kInterface ||
+        kind == TypeKind.kEnum || kind == TypeKind.kStruct ||
+        kind == TypeKind.kArray ||
+        kind == TypeKind.kNullable || name::isEmpty) {
+      throw StateError("invalid core type identity");
+    }
+    return TypeIdentity(kind, name, null, null);
+  }
+
+  static func Nominal(TypeKind kind,
+                      NominalIdentity nominal): TypeIdentity throws StateError {
+    if (!isNominalKind(kind) || !kindMatches(kind, nominal.GetKind())) {
+      throw StateError("nominal semantic type kind is inconsistent");
+    }
+    return TypeIdentity(kind, "", nominal, null);
+  }
+
+  static func Object(NominalIdentity? nominal): TypeIdentity
+      throws StateError {
+    if (nominal == null) { return Core(TypeKind.kObject, "object"); }
+    if (nominal.GetKind() != NominalKind.kClass) {
+      throw StateError("Object nominal identity must be a class");
+    }
+    return TypeIdentity(TypeKind.kObject, "", nominal, null);
+  }
+
+  static func Array(TypeIdentity element): TypeIdentity throws StateError {
+    if (element.GetKind() == TypeKind.kVoid ||
+        element.GetKind() == TypeKind.kError ||
+        element.GetKind() == TypeKind.kBottom ||
+        element.GetKind() == TypeKind.kNull) {
+      throw StateError("invalid array element type identity");
+    }
+    return TypeIdentity(TypeKind.kArray, "", null, element);
+  }
+
+  static func Nullable(TypeIdentity element): TypeIdentity throws StateError {
+    if (element.GetKind() == TypeKind.kVoid ||
+        element.GetKind() == TypeKind.kError ||
+        element.GetKind() == TypeKind.kBottom ||
+        element.GetKind() == TypeKind.kNull ||
+        element.GetKind() == TypeKind.kNullable) {
+      throw StateError("invalid nullable type identity");
+    }
+    return TypeIdentity(TypeKind.kNullable, "", null, element);
+  }
+
+  func GetKind(): TypeKind { return self.kind; }
+  func GetCoreName(): string { return self.coreName; }
+  func GetNominal(): NominalIdentity? { return self.nominal; }
+  func GetElement(): TypeIdentity? { return self.element; }
+
+  func Equals(TypeIdentity other): bool throws StateError {
+    return same(self, other, false, 0);
+  }
+
+  func EqualsOverload(TypeIdentity other): bool throws StateError {
+    return same(self, other, true, 0);
+  }
+
+  static func Compare(TypeIdentity left,
+                      TypeIdentity right): int32 throws StateError {
+    return compare(left, right, false, 0);
+  }
+
+  static func CompareOverload(TypeIdentity left,
+                              TypeIdentity right): int32 throws StateError {
+    return compare(left, right, true, 0);
+  }
+
+  static func same(TypeIdentity left, TypeIdentity right,
+                   bool eraseNullable,
+                   int32 depth): bool throws StateError {
+    if (depth >= 256) {
+      throw StateError("type identity exceeds structural depth");
+    }
+    TypeIdentity leftValue = left;
+    TypeIdentity rightValue = right;
+    if (eraseNullable && leftValue.GetKind() == TypeKind.kNullable) {
+      leftValue = leftValue.GetElement()!;
+    }
+    if (eraseNullable && rightValue.GetKind() == TypeKind.kNullable) {
+      rightValue = rightValue.GetElement()!;
+    }
+    if (leftValue.GetKind() != rightValue.GetKind()) { return false; }
+    if (leftValue.GetNominal() != null || rightValue.GetNominal() != null) {
+      return leftValue.GetNominal() != null &&
+             rightValue.GetNominal() != null &&
+             leftValue.GetNominal()!.Equals(rightValue.GetNominal()!);
+    }
+    if (leftValue.GetElement() != null || rightValue.GetElement() != null) {
+      return leftValue.GetElement() != null &&
+             rightValue.GetElement() != null &&
+             same(leftValue.GetElement()!, rightValue.GetElement()!,
+                  eraseNullable, depth + 1);
+    }
+    return leftValue.GetCoreName() == rightValue.GetCoreName();
+  }
+
+  static func compare(TypeIdentity left, TypeIdentity right,
+                      bool eraseNullable,
+                      int32 depth): int32 throws StateError {
+    if (depth >= 256) {
+      throw StateError("type identity exceeds structural depth");
+    }
+    TypeIdentity leftValue = left;
+    TypeIdentity rightValue = right;
+    if (eraseNullable && leftValue.GetKind() == TypeKind.kNullable) {
+      leftValue = leftValue.GetElement()!;
+    }
+    if (eraseNullable && rightValue.GetKind() == TypeKind.kNullable) {
+      rightValue = rightValue.GetElement()!;
+    }
+    final int32 kindOrder = kindRank(leftValue.GetKind()) -
+                            kindRank(rightValue.GetKind());
+    if (kindOrder != 0) { return kindOrder; }
+    final NominalIdentity? leftNominal = leftValue.GetNominal();
+    final NominalIdentity? rightNominal = rightValue.GetNominal();
+    if (leftNominal != null || rightNominal != null) {
+      if (leftNominal == null) { return -1; }
+      if (rightNominal == null) { return 1; }
+      return NominalIdentity.Compare(leftNominal, rightNominal);
+    }
+    final TypeIdentity? leftElement = leftValue.GetElement();
+    final TypeIdentity? rightElement = rightValue.GetElement();
+    if (leftElement != null || rightElement != null) {
+      if (leftElement == null) { return -1; }
+      if (rightElement == null) { return 1; }
+      return compare(leftElement, rightElement, eraseNullable, depth + 1);
+    }
+    return PackagePath.Compare(leftValue.GetCoreName(),
+                               rightValue.GetCoreName());
+  }
+
+  static func isNominalKind(TypeKind kind): bool {
+    return kind == TypeKind.kObject || kind == TypeKind.kErrorClass ||
+           kind == TypeKind.kClass || kind == TypeKind.kInterface ||
+           kind == TypeKind.kEnum || kind == TypeKind.kStruct;
+  }
+
+  static func kindMatches(TypeKind kind, NominalKind nominal): bool {
+    if (kind == TypeKind.kClass || kind == TypeKind.kErrorClass ||
+        kind == TypeKind.kObject) {
+      return nominal == NominalKind.kClass;
+    }
+    if (kind == TypeKind.kInterface) {
+      return nominal == NominalKind.kInterface;
+    }
+    if (kind == TypeKind.kEnum) { return nominal == NominalKind.kEnum; }
+    return kind == TypeKind.kStruct && nominal == NominalKind.kStruct;
+  }
+
+  static func kindRank(TypeKind kind): int32 {
+    switch (kind) {
+      case TypeKind.kError: { return 0; }
+      case TypeKind.kBottom: { return 1; }
+      case TypeKind.kVoid: { return 2; }
+      case TypeKind.kNull: { return 3; }
+      case TypeKind.kBool: { return 4; }
+      case TypeKind.kChar: { return 5; }
+      case TypeKind.kByte: { return 6; }
+      case TypeKind.kInt8: { return 7; }
+      case TypeKind.kInt16: { return 8; }
+      case TypeKind.kInt32: { return 9; }
+      case TypeKind.kInt64: { return 10; }
+      case TypeKind.kUint8: { return 11; }
+      case TypeKind.kUint16: { return 12; }
+      case TypeKind.kUint32: { return 13; }
+      case TypeKind.kUint64: { return 14; }
+      case TypeKind.kFloat32: { return 15; }
+      case TypeKind.kFloat64: { return 16; }
+      case TypeKind.kString: { return 17; }
+      case TypeKind.kObject: { return 18; }
+      case TypeKind.kErrorClass: { return 19; }
+      case TypeKind.kClass: { return 20; }
+      case TypeKind.kInterface: { return 21; }
+      case TypeKind.kArray: { return 22; }
+      case TypeKind.kNullable: { return 23; }
+      case TypeKind.kEnum: { return 24; }
+      case TypeKind.kStruct: { return 25; }
+    }
+  }
+}

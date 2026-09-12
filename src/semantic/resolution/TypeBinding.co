@@ -1,0 +1,33 @@
+import frontend.syntax.tree::TypeSyntax;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::TypeId;
+
+class {
+  final FileId file;
+  final TypeSyntax syntax;
+  final TypeId type;
+  final bool resolved;
+
+  _TypeBinding(FileId file, TypeSyntax syntax, TypeId type, bool resolved) {
+    self.file = file;
+    self.syntax = syntax;
+    self.type = type;
+    self.resolved = resolved;
+  }
+
+  static func Build(
+      SemanticOwner owner, FileId file, TypeSyntax syntax, TypeId type,
+      bool resolved): TypeBinding throws StateError {
+    if (!file.BelongsTo(owner) || !type.BelongsTo(owner) ||
+        (resolved && type.GetIndex() == 0)) {
+      throw StateError("declared type binding has an invalid handle");
+    }
+    return TypeBinding(file, syntax, type, resolved);
+  }
+
+  func GetFile(): FileId { return self.file; }
+  func GetSyntax(): TypeSyntax { return self.syntax; }
+  func GetType(): TypeId { return self.type; }
+  func IsResolved(): bool { return self.resolved; }
+}

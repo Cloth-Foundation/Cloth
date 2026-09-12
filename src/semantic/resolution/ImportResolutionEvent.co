@@ -1,0 +1,47 @@
+import frontend.source::SourceRange;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.resolution::ImportBinding;
+
+class {
+  final ImportBinding? binding;
+  final bool hasDiagnostic;
+  final SemanticDiagnosticKind diagnostic;
+  final SourceRange range;
+  final SourceRange? relatedRange;
+
+  _ImportResolutionEvent(
+      ImportBinding? binding, bool hasDiagnostic,
+      SemanticDiagnosticKind diagnostic,
+      SourceRange range, SourceRange? relatedRange) {
+    self.binding = binding;
+    self.hasDiagnostic = hasDiagnostic;
+    self.diagnostic = diagnostic;
+    self.range = range;
+    self.relatedRange = relatedRange;
+  }
+
+  static func Binding(ImportBinding binding): ImportResolutionEvent {
+    return ImportResolutionEvent(
+        binding, false, SemanticDiagnosticKind.kCoreTypeConflict,
+        binding.GetRange(), null);
+  }
+
+  static func Diagnostic(
+      SemanticDiagnosticKind kind, SourceRange range,
+      SourceRange? relatedRange): ImportResolutionEvent {
+    return ImportResolutionEvent(null, true, kind, range, relatedRange);
+  }
+
+  static func BindingDiagnostic(
+      ImportBinding binding, SemanticDiagnosticKind kind,
+      SourceRange? relatedRange): ImportResolutionEvent {
+    return ImportResolutionEvent(
+        binding, true, kind, binding.GetRange(), relatedRange);
+  }
+
+  func GetBinding(): ImportBinding? { return self.binding; }
+  func HasDiagnostic(): bool { return self.hasDiagnostic; }
+  func GetDiagnostic(): SemanticDiagnosticKind { return self.diagnostic; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetRelatedRange(): SourceRange? { return self.relatedRange; }
+}

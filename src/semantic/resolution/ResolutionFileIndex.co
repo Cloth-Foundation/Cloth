@@ -1,0 +1,156 @@
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.resolution::ResolutionPackage;
+
+class {
+  final FileRegistration?[] files;
+
+  _ResolutionFileIndex(FileRegistration?[] files) { self.files = files; }
+
+  static func Build(
+      PackageSymbolStorage storage): ResolutionFileIndex throws StateError {
+    final FileRegistration?[] values =
+        FileRegistration?[:storage.GetFileCount()];
+    for (int32 index = 0; index < values::length; index++) {
+      values[index] = storage.GetRegistration(index);
+    }
+    final FileRegistration?[] sorted = sort(values);
+    for (int32 index = 1; index < sorted::length; index++) {
+      final NominalIdentity previous = get(sorted, index - 1).GetIdentity();
+      final NominalIdentity current = get(sorted, index).GetIdentity();
+      if (sameLookupKey(previous, current)) {
+        throw StateError("semantic resolution file identity is duplicated");
+      }
+    }
+    return ResolutionFileIndex(sorted);
+  }
+
+  func Find(
+      ResolutionPackage package,
+      SemanticName name): FileRegistration? throws StateError {
+    int32 begin = 0;
+    int32 end = self.files::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      final FileRegistration candidate = get(self.files, middle);
+      final int32 order = compareKey(package, name, candidate.GetIdentity());
+      if (order > 0) {
+        begin = middle + 1;
+      } else {
+        if (order < 0) { end = middle; } else { return candidate; }
+      }
+    }
+    return null;
+  }
+
+  func FindPackageBegin(ResolutionPackage package): int32
+      throws StateError {
+    int32 begin = 0;
+    int32 end = self.files::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      if (package.Compare(get(self.files, middle).GetIdentity()) > 0) {
+        begin = middle + 1;
+      } else {
+        end = middle;
+      }
+    }
+    return begin;
+  }
+
+  func FindPackageEnd(ResolutionPackage package): int32
+      throws StateError {
+    int32 begin = 0;
+    int32 end = self.files::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      if (package.Compare(get(self.files, middle).GetIdentity()) >= 0) {
+        begin = middle + 1;
+      } else {
+        end = middle;
+      }
+    }
+    return begin;
+  }
+
+  func Get(int32 index): FileRegistration throws StateError {
+    if (index < 0 || index >= self.files::length) {
+      throw StateError("semantic resolution file index is out of bounds");
+    }
+    return get(self.files, index);
+  }
+
+  static func compareKey(
+      ResolutionPackage package, SemanticName name,
+      NominalIdentity identity): int32 throws StateError {
+    final int32 packageOrder = package.Compare(identity);
+    if (packageOrder != 0) { return packageOrder; }
+    return ResolutionPackage.CompareName(name, identity.GetName());
+  }
+
+  static func sameLookupKey(
+      NominalIdentity left, NominalIdentity right): bool {
+    return left.GetPackage().GetName() == right.GetPackage().GetName() &&
+           left.GetPackage().GetVersion() == right.GetPackage().GetVersion() &&
+           left.GetSourcePackage() == right.GetSourcePackage() &&
+           left.GetName() == right.GetName();
+  }
+
+  static func sort(
+      FileRegistration?[] values): FileRegistration?[] throws StateError {
+    final int32 count = values::length;
+    FileRegistration?[] input = values;
+    FileRegistration?[] output = FileRegistration?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final FileRegistration?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      FileRegistration?[] input, FileRegistration?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && NominalIdentity.Compare(
+              get(input, left).GetIdentity(),
+              get(input, right).GetIdentity()) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func get(
+      FileRegistration?[] values,
+      int32 index): FileRegistration throws StateError {
+    final FileRegistration? value = values[index];
+    if (value == null) {
+      throw StateError("semantic resolution file sorting lost a value");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

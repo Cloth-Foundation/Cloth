@@ -1,0 +1,50 @@
+import semantic.identity::TypeIdentity;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+
+class {
+  final TypeId id;
+  final TypeKind kind;
+  final string name;
+  final TypeIdentity identity;
+  final FileId? file;
+  final TypeId? element;
+
+  _SemanticType(TypeId id, TypeKind kind, string name,
+                TypeIdentity identity, FileId? file, TypeId? element) {
+    self.id = id;
+    self.kind = kind;
+    self.name = name;
+    self.identity = identity;
+    self.file = file;
+    self.element = element;
+  }
+
+  static func Build(SemanticOwner owner, TypeId id, TypeKind kind, string name,
+                    TypeIdentity identity, FileId? file,
+                    TypeId? element): SemanticType throws StateError {
+    if (name::isEmpty || kind != identity.GetKind() ||
+        ((kind == TypeKind.kArray || kind == TypeKind.kNullable) !=
+         (element != null))) {
+      throw StateError("semantic type record is inconsistent");
+    }
+    if (file != null && identity.GetNominal() == null) {
+      throw StateError("file-owned semantic type lacks nominal identity");
+    }
+    if (!id.BelongsTo(owner) ||
+        (file != null && !file.BelongsTo(owner)) ||
+        (element != null && !element.BelongsTo(owner))) {
+      throw StateError("semantic type record has a foreign handle");
+    }
+    return SemanticType(id, kind, name, identity, file, element);
+  }
+
+  func GetId(): TypeId { return self.id; }
+  func GetKind(): TypeKind { return self.kind; }
+  func GetName(): string { return self.name; }
+  func GetIdentity(): TypeIdentity { return self.identity; }
+  func GetFile(): FileId? { return self.file; }
+  func GetElement(): TypeId? { return self.element; }
+}

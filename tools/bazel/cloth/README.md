@@ -18,6 +18,7 @@ common --repo_env=CLOTH_BOOTSTRAP_RUNTIME=C:/mingw64/bin
 common --repo_env=CLOTH_LEXER_ORACLE=D:/cCloth/build/dev/cloth_lexer_parity_oracle.exe
 common --repo_env=CLOTH_DECLARATION_ORACLE=D:/cCloth/build/dev/cloth_declaration_parity_oracle.exe
 common --repo_env=CLOTH_DEFINITION_ORACLE=D:/cCloth/build/dev/cloth_definition_parity_oracle.exe
+common --repo_env=CLOTH_SEMANTIC_ORACLE=D:/cCloth/build/dev/cloth_semantic_parity_oracle.exe
 common --repo_env=CLOTH_ORACLE_CORPUS=D:/cCloth/tests/integration
 common --repo_env=CLOTH_BAZEL_PYTHON=C:/Python313/python.exe
 common --repo_env=CLOTH_SHUTTLE=D:/cCloth/shuttle/target/debug/shuttle.exe
@@ -27,12 +28,12 @@ common --repo_env=CLOTH_SHUTTLE=D:/cCloth/shuttle/target/debug/shuttle.exe
 bootstrap compiler. Stage 48 audits Windows host execution; another host must
 pass the equivalent portability and hermeticity audit before registration. The
 configured compiler, descriptor, standard-library sources, action interpreter,
-host runtime, three C++ frontend oracles, oracle corpora, and Shuttle executable
+host runtime, four C++ frontend oracles, oracle corpora, and Shuttle executable
 become declared Bazel inputs.
 Configuration fails instead of searching `PATH` or guessing a neighboring
 checkout. Shuttle is used only by the explicit compatibility test; Cloth
 compile and link actions continue to use compiler protocol 2 directly.
-The four oracle settings are test-only and required by the exhaustive parity
+The five oracle settings are test-only and required by the exhaustive parity
 target in `//tests:full`; ordinary compiler builds do not load that repository.
 
 An optional startup setting can keep Bazel state outside the checkout:

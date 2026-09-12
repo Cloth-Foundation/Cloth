@@ -1,0 +1,85 @@
+import semantic.diagnostic::SemanticDiagnosticKind;
+
+class {
+  static func Message(SemanticDiagnosticKind kind): string {
+    switch (kind) {
+      case SemanticDiagnosticKind.kCoreTypeConflict: {
+        return "file type name conflicts with a compiler-owned core type";
+      }
+      case SemanticDiagnosticKind.kCanonicalObjectMustBeClass: {
+        return "canonical 'cloth.lang.Object' must be a class";
+      }
+      case SemanticDiagnosticKind.kCanonicalObjectDeclaredMoreThanOnce: {
+        return "canonical 'cloth.lang.Object' is declared more than once";
+      }
+      case SemanticDiagnosticKind.kNominalIdentityDeclaredMoreThanOnce: {
+        return "nominal type identity is declared more than once";
+      }
+      case SemanticDiagnosticKind.kAbstractSealedType: {
+        return "file type cannot be both abstract and sealed";
+      }
+      case SemanticDiagnosticKind.kUnknownImportedType: {
+        return "import names an unknown file type";
+      }
+      case SemanticDiagnosticKind.kImportedTypePrivate: {
+        return "imported file type is private";
+      }
+      case SemanticDiagnosticKind.kUnknownImportedPackage: {
+        return "wildcard import names an unknown source package";
+      }
+      case SemanticDiagnosticKind.kImportNameConflictsWithCore: {
+        return "import binding conflicts with a compiler-owned core type";
+      }
+      case SemanticDiagnosticKind.kImportNameAmbiguous: {
+        return "import binding is ambiguous";
+      }
+      case SemanticDiagnosticKind.kPreludeNameConflictsWithCore: {
+        return "standard-library prelude type conflicts with a core type";
+      }
+      case SemanticDiagnosticKind.kPreludeNameAmbiguous: {
+        return "standard-library prelude type name is ambiguous";
+      }
+      case SemanticDiagnosticKind.kUnknownType: {
+        return "declared type name is unknown";
+      }
+      case SemanticDiagnosticKind.kTypePrivate: {
+        return "declared type names a private file type";
+      }
+      case SemanticDiagnosticKind.kCapitalStringType: {
+        return "unknown type 'String'; use the built-in type 'string'";
+      }
+      case SemanticDiagnosticKind.kVoidArrayType: {
+        return "'void' cannot be an array element type";
+      }
+      case SemanticDiagnosticKind.kVoidNullableType: {
+        return "'void' cannot be nullable";
+      }
+      case SemanticDiagnosticKind.kVoidValueType: {
+        return "'void' is only valid as a function return type";
+      }
+      case SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce: {
+        return "callable overload identity is declared more than once";
+      }
+    }
+  }
+
+  static func Related(SemanticDiagnosticKind kind): string throws StateError {
+    if (kind == SemanticDiagnosticKind.kImportedTypePrivate ||
+        kind == SemanticDiagnosticKind.kTypePrivate) {
+      return "inaccessible declaration is here";
+    }
+    if (kind == SemanticDiagnosticKind.kImportNameAmbiguous) {
+      return "previous import binding is here";
+    }
+    if (kind == SemanticDiagnosticKind.kPreludeNameAmbiguous) {
+      return "previous standard-library declaration is here";
+    }
+    if (kind ==
+            SemanticDiagnosticKind.kNominalIdentityDeclaredMoreThanOnce ||
+        kind ==
+            SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce) {
+      return "previous declaration is here";
+    }
+    throw StateError("semantic diagnostic kind cannot have a related location");
+  }
+}

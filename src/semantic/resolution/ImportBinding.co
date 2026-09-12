@@ -1,0 +1,49 @@
+import frontend.source::SourceRange;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.resolution::ImportBindingKind;
+
+class {
+  final SemanticName name;
+  final FileId? target;
+  final ImportBindingKind kind;
+  final SourceRange range;
+  final bool ambiguous;
+
+  _ImportBinding(SemanticName name, FileId? target,
+                 ImportBindingKind kind, SourceRange range,
+                 bool ambiguous) {
+    self.name = name;
+    self.target = target;
+    self.kind = kind;
+    self.range = range;
+    self.ambiguous = ambiguous;
+  }
+
+  static func Resolved(
+      SemanticOwner owner, SemanticName name, FileId target,
+      ImportBindingKind kind, SourceRange range): ImportBinding
+      throws StateError {
+    if (!target.BelongsTo(owner)) {
+      throw StateError("import binding has a foreign target");
+    }
+    return ImportBinding(name, target, kind, range, false);
+  }
+
+  static func Ambiguous(SemanticName name, ImportBindingKind kind,
+                        SourceRange range): ImportBinding {
+    return ImportBinding(name, null, kind, range, true);
+  }
+
+  static func Invalid(SemanticName name, ImportBindingKind kind,
+                      SourceRange range): ImportBinding {
+    return ImportBinding(name, null, kind, range, false);
+  }
+
+  func GetName(): SemanticName { return self.name; }
+  func GetTarget(): FileId? { return self.target; }
+  func GetKind(): ImportBindingKind { return self.kind; }
+  func GetRange(): SourceRange { return self.range; }
+  func IsAmbiguous(): bool { return self.ambiguous; }
+}

@@ -1,0 +1,142 @@
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.identity::NominalIdentity;
+import clothc.semantic.identity::NominalKind;
+import clothc.semantic.package::DependencyType;
+import clothc.semantic.package::DependencyTypeView;
+import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticPackageInput;
+import clothc.semantic.package::SemanticPackageResult;
+import clothc.semantic.resolution::TypeBinding;
+
+import checks.semantic::SemanticPackageCheck;
+
+class {
+  static func Run(string mode): int32 throws IoError, StateError {
+    if (mode == "foreign-handle") {
+      final SemanticPackageResult left =
+          SemanticPackageCheck.BuildLocalResult();
+      final SemanticPackageResult right =
+          SemanticPackageCheck.BuildLocalResult();
+      left.GetType(right.GetTypeAt(0).GetId());
+      return 0;
+    }
+    if (mode == "foreign-scope") {
+      final SemanticPackageResult left =
+          SemanticPackageCheck.BuildLocalResult();
+      final SemanticPackageResult right =
+          SemanticPackageCheck.BuildLocalResult();
+      left.GetImportScope(right.GetFileAt(0).GetId());
+      return 0;
+    }
+    if (mode == "foreign-binding") {
+      final SemanticPackageResult left =
+          SemanticPackageCheck.BuildLocalResult();
+      final SemanticPackageResult right =
+          SemanticPackageCheck.BuildLocalResult();
+      final TypeBinding binding = left.GetTypeBinding(0);
+      left.FindTypeBinding(right.GetFileAt(0).GetId(), binding.GetSyntax());
+      return 0;
+    }
+    if (mode == "foreign-syntax") {
+      final SemanticPackageResult left =
+          SemanticPackageCheck.BuildLocalResult();
+      final SemanticPackageResult right =
+          SemanticPackageCheck.BuildLocalResult();
+      left.FindTypeBinding(
+          left.GetFileAt(0).GetId(), right.GetTypeBinding(0).GetSyntax());
+      return 0;
+    }
+    if (mode == "dependency-limit") {
+      SemanticPackageInput.Build(
+          emptyFrontend(), SemanticDependency?[:4097]);
+      return 0;
+    }
+    if (mode == "invalid-dependency-path") {
+      DependencyType.Build(
+          NominalIdentity.Build(
+              PackageIdentity.Build("library", "1.0.0"), "api", "Thing",
+              NominalKind.kClass),
+          FileTypeKind.kClass, Visibility.kPublic, "C:/cache/Thing.co", 1, 1,
+          false, false);
+      return 0;
+    }
+    if (mode == "canonical-object-kind") {
+      final PackageIdentity package = PackageIdentity.Build("cloth", "0.6.0");
+      final DependencyType?[] types = DependencyType?[:1];
+      types[0] = DependencyType.Build(
+          NominalIdentity.Build(
+              package, "lang", "Object", NominalKind.kInterface),
+          FileTypeKind.kInterface, Visibility.kPublic, "lang/Object.co", 1, 1,
+          false, false);
+      DependencyTypeView.Build(package, types);
+      return 0;
+    }
+    if (mode == "prelude-core-conflict") {
+      final PackageIdentity package = PackageIdentity.Build("cloth", "0.6.0");
+      final DependencyType?[] types = DependencyType?[:1];
+      types[0] = clothType(
+          package, "lang.errors", "Error", "lang/errors/Error.co");
+      DependencyTypeView.Build(package, types);
+      return 0;
+    }
+    if (mode == "prelude-ambiguity") {
+      final PackageIdentity package = PackageIdentity.Build("cloth", "0.6.0");
+      final DependencyType?[] types = DependencyType?[:2];
+      types[0] = clothType(
+          package, "lang.first", "Thing", "lang/first/Thing.co");
+      types[1] = clothType(
+          package, "lang.second", "Thing", "lang/second/Thing.co");
+      DependencyTypeView.Build(package, types);
+      return 0;
+    }
+    if (mode == "alias-collision") {
+      final PackageSource?[] sources = PackageSource?[:1];
+      sources[0] = PackageSource.Build(
+          "api/Main.co",
+          SourceFile.Load("tests/self_host/testdata/semantic/Empty.co"));
+      final PackageFrontendResult frontend = FrontendCoordinator.Check(
+          PackageFrontendInput.Build(
+              PackageIdentity.Build("application", "1.0.0"), sources));
+      final SemanticDependency?[] dependencies = SemanticDependency?[:1];
+      dependencies[0] = dependency("api");
+      SemanticPackageInput.Build(frontend, dependencies);
+      return 0;
+    }
+    throw StateError("unknown semantic package failure mode");
+  }
+
+  static func emptyFrontend(): PackageFrontendResult throws StateError {
+    return FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("application", "1.0.0"),
+            PackageSource?[:0]));
+  }
+
+  static func dependency(string alias): SemanticDependency throws StateError {
+    final PackageIdentity package = PackageIdentity.Build("library", "1.0.0");
+    final DependencyType?[] types = DependencyType?[:1];
+    types[0] = DependencyType.Build(
+        NominalIdentity.Build(
+            package, "api", "Thing", NominalKind.kClass),
+        FileTypeKind.kClass, Visibility.kPublic, "api/Thing.co", 1, 1,
+        false, false);
+    return SemanticDependency.Build(
+        alias, DependencyTypeView.Build(package, types));
+  }
+
+  static func clothType(
+      PackageIdentity package, string sourcePackage, string name,
+      string path): DependencyType throws StateError {
+    return DependencyType.Build(
+        NominalIdentity.Build(
+            package, sourcePackage, name, NominalKind.kClass),
+        FileTypeKind.kClass, Visibility.kPublic, path, 1, 1, false, false);
+  }
+}

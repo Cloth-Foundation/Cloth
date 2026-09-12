@@ -1,0 +1,203 @@
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendResult;
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import semantic.package::DependencyType;
+import semantic.package::SemanticDependency;
+import semantic.package::SemanticLimits;
+
+class {
+  final PackageFrontendResult frontend;
+  final SemanticDependency?[] dependencies;
+
+  _SemanticPackageInput(PackageFrontendResult frontend,
+                        SemanticDependency?[] dependencies) {
+    self.frontend = frontend;
+    self.dependencies = dependencies;
+  }
+
+  static func Build(
+      PackageFrontendResult frontend,
+      SemanticDependency?[] input): SemanticPackageInput throws StateError {
+    if (frontend.GetFileCount() > SemanticLimits.MaxLocalFiles() ||
+        input::length > SemanticLimits.MaxDirectDependencies()) {
+      throw StateError("semantic package input exceeds its file or dependency limit");
+    }
+    final SemanticDependency?[] values =
+        SemanticDependency?[:input::length];
+    int32 dependencyTypes = 0;
+    int32 nameBytes = identityBytes(frontend.GetInput().GetIdentity());
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult file = frontend.GetFile(index);
+      nameBytes = addNameBytes(nameBytes, file.GetSourcePackage());
+      nameBytes = addNameBytes(nameBytes, file.GetFileName());
+      nameBytes = addNameBytes(nameBytes, file.GetQualifiedName());
+      nameBytes = addNameBytes(
+          nameBytes, file.GetPackageSource().GetLogicalPath());
+    }
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticDependency? dependency = input[index];
+      if (dependency == null) {
+        throw StateError("semantic package input contains a null dependency");
+      }
+      dependencyTypes = checkedAdd(
+          dependencyTypes, dependency.GetView().GetTypeCount(),
+          SemanticLimits.MaxDependencyTypes(),
+          "semantic package input exceeds its dependency type limit");
+      nameBytes = addNameBytes(nameBytes, dependency.GetAlias());
+      nameBytes = checkedAdd(
+          nameBytes, identityBytes(dependency.GetView().GetIdentity()),
+          SemanticLimits.MaxNameBytes(),
+          "semantic package input exceeds its name byte limit");
+      for (int32 type = 0;
+           type < dependency.GetView().GetTypeCount(); type++) {
+        final DependencyType value = dependency.GetView().GetType(type);
+        nameBytes = addNameBytes(
+            nameBytes, value.GetIdentity().GetSourcePackage());
+        nameBytes = addNameBytes(nameBytes, value.GetIdentity().GetName());
+        nameBytes = addNameBytes(
+            nameBytes, value.GetIdentity().GetQualifiedName());
+        nameBytes = addNameBytes(nameBytes, value.GetPath());
+      }
+      verifyForeignOwner(frontend.GetInput().GetIdentity(), dependency);
+      verifyLocalAlias(frontend, dependency.GetAlias());
+      values[index] = dependency;
+    }
+    final SemanticDependency?[] sorted = sort(values);
+    for (int32 index = 1; index < sorted::length; index++) {
+      final SemanticDependency previous = get(sorted, index - 1);
+      final SemanticDependency current = get(sorted, index);
+      if (previous.GetAlias() == current.GetAlias()) {
+        throw StateError("semantic package input has a duplicate dependency alias");
+      }
+      final PackageIdentity previousPackage = previous.GetView().GetIdentity();
+      final PackageIdentity currentPackage = current.GetView().GetIdentity();
+      if (samePackage(previousPackage, currentPackage)) {
+        throw StateError("semantic package input binds one package more than once");
+      }
+    }
+    return SemanticPackageInput(frontend, sorted);
+  }
+
+  func GetFrontend(): PackageFrontendResult { return self.frontend; }
+  func GetDependencyCount(): int32 { return self.dependencies::length; }
+
+  func GetDependency(int32 index): SemanticDependency throws StateError {
+    if (index < 0 || index >= self.dependencies::length) {
+      throw StateError("semantic dependency index is out of bounds");
+    }
+    return self.dependencies[index]!;
+  }
+
+  static func verifyForeignOwner(
+      PackageIdentity local,
+      SemanticDependency dependency): void throws StateError {
+    if (samePackage(local, dependency.GetView().GetIdentity())) {
+      throw StateError("semantic dependency uses the local package identity");
+    }
+  }
+
+  static func verifyLocalAlias(
+      PackageFrontendResult frontend,
+      string alias): void throws StateError {
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult file = frontend.GetFile(index);
+      final string sourcePackage = file.GetSourcePackage();
+      int32 end = sourcePackage::length;
+      for (int32 offset = 0; offset < sourcePackage::length; offset++) {
+        if (sourcePackage[offset] != '.') { continue; }
+        end = offset;
+        break;
+      }
+      if (end > 0 && sourcePackage::slice(0, end) == alias) {
+        throw StateError(
+            "semantic dependency alias collides with a local source package");
+      }
+    }
+  }
+
+  static func samePackage(PackageIdentity left,
+                          PackageIdentity right): bool {
+    return left.GetName() == right.GetName() &&
+           left.GetVersion() == right.GetVersion();
+  }
+
+  static func checkedAdd(int32 left, int32 right, int32 limit,
+                         string message): int32 throws StateError {
+    if (right < 0 || left > limit - right) { throw StateError(message); }
+    return left + right;
+  }
+
+  static func identityBytes(PackageIdentity identity): int32
+      throws StateError {
+    return checkedAdd(
+        identity.GetName()::byteLength, identity.GetVersion()::byteLength,
+        SemanticLimits.MaxNameBytes(),
+        "semantic package input exceeds its name byte limit");
+  }
+
+  static func addNameBytes(int32 count,
+                           string value): int32 throws StateError {
+    return checkedAdd(
+        count, value::byteLength, SemanticLimits.MaxNameBytes(),
+        "semantic package input exceeds its name byte limit");
+  }
+
+  static func sort(SemanticDependency?[] values): SemanticDependency?[]
+      throws StateError {
+    final int32 count = values::length;
+    SemanticDependency?[] input = values;
+    SemanticDependency?[] output = SemanticDependency?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final SemanticDependency?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      SemanticDependency?[] input, SemanticDependency?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left), get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(SemanticDependency left,
+                      SemanticDependency right): int32 throws StateError {
+    return PackagePath.Compare(left.GetAlias(), right.GetAlias());
+  }
+
+  static func get(SemanticDependency?[] values,
+                  int32 index): SemanticDependency throws StateError {
+    final SemanticDependency? value = values[index];
+    if (value == null) {
+      throw StateError("semantic dependency sorting lost a value");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

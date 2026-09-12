@@ -1,0 +1,71 @@
+import frontend.package::PackagePath;
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::Visibility;
+import semantic.identity::NominalIdentity;
+import semantic.identity::NominalKind;
+
+class {
+  final NominalIdentity identity;
+  final FileTypeKind kind;
+  final Visibility visibility;
+  final string path;
+  final uint32 line;
+  final uint32 column;
+  final bool abstractType;
+  final bool sealedType;
+
+  _DependencyType(NominalIdentity identity, FileTypeKind kind,
+                  Visibility visibility,
+                  string path, uint32 line, uint32 column, bool abstractType,
+                  bool sealedType) {
+    self.identity = identity;
+    self.kind = kind;
+    self.visibility = visibility;
+    self.path = path;
+    self.line = line;
+    self.column = column;
+    self.abstractType = abstractType;
+    self.sealedType = sealedType;
+  }
+
+  static func Build(
+      NominalIdentity identity, FileTypeKind kind, Visibility visibility,
+      string path, uint32 line, uint32 column, bool abstractType,
+      bool sealedType): DependencyType throws StateError {
+    PackagePath.Validate(path);
+    if (path::isEmpty || line == 0 || column == 0 ||
+        (abstractType && sealedType) ||
+        PackagePath.SourcePackage(path) != identity.GetSourcePackage() ||
+        PackagePath.FileName(path) != identity.GetName() ||
+        !kindMatches(kind, identity.GetKind())) {
+      throw StateError("dependency type declaration is invalid");
+    }
+    return DependencyType(identity, kind, visibility, path, line, column,
+                          abstractType, sealedType);
+  }
+
+  func GetIdentity(): NominalIdentity { return self.identity; }
+  func GetFileTypeKind(): FileTypeKind { return self.kind; }
+  func GetVisibility(): Visibility { return self.visibility; }
+  func GetPath(): string { return self.path; }
+  func GetRange(): SourceRange {
+    final SourceLocation location = SourceLocation(
+        self.path, 0, self.line, self.column);
+    return SourceRange.PointRange(location);
+  }
+  func IsAbstract(): bool { return self.abstractType; }
+  func IsSealed(): bool { return self.sealedType; }
+
+  static func kindMatches(FileTypeKind kind, NominalKind nominal): bool {
+    if (kind == FileTypeKind.kClass || kind == FileTypeKind.kError) {
+      return nominal == NominalKind.kClass;
+    }
+    if (kind == FileTypeKind.kInterface) {
+      return nominal == NominalKind.kInterface;
+    }
+    if (kind == FileTypeKind.kEnum) { return nominal == NominalKind.kEnum; }
+    return kind == FileTypeKind.kStruct && nominal == NominalKind.kStruct;
+  }
+}

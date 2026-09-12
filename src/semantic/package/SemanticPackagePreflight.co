@@ -1,0 +1,296 @@
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendResult;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.tree::FileSyntax;
+import semantic.identity::NominalIdentity;
+import semantic.model::CoreTypeCatalog;
+import semantic.package::DependencyType;
+import semantic.package::DependencyTypeOrder;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageInput;
+import semantic.resolution::DefinitionTypeFacts;
+import semantic.symbol::DeclarationRegistrationFacts;
+
+class {
+  final int32 localFileCount;
+  final int32 fileCount;
+  final int32 symbolCount;
+  final int32 typeCapacity;
+  final int32 diagnosticCapacity;
+  final int32 typeBindingCapacity;
+  final DependencyType?[] dependencies;
+  final NominalIdentity? objectIdentity;
+  final int32 objectFileIndex;
+
+  _SemanticPackagePreflight(
+      int32 localFileCount, int32 fileCount, int32 symbolCount,
+      int32 typeCapacity, int32 diagnosticCapacity,
+      int32 typeBindingCapacity, DependencyType?[] dependencies,
+      NominalIdentity? objectIdentity, int32 objectFileIndex) {
+    self.localFileCount = localFileCount;
+    self.fileCount = fileCount;
+    self.symbolCount = symbolCount;
+    self.typeCapacity = typeCapacity;
+    self.diagnosticCapacity = diagnosticCapacity;
+    self.typeBindingCapacity = typeBindingCapacity;
+    self.dependencies = dependencies;
+    self.objectIdentity = objectIdentity;
+    self.objectFileIndex = objectFileIndex;
+  }
+
+  static func Build(
+      SemanticPackageInput input): SemanticPackagePreflight
+      throws StateError {
+    final PackageFrontendResult frontend = input.GetFrontend();
+    final int32 localFileCount = countLocalFiles(frontend);
+    final int32 memberCount = countLocalMembers(frontend);
+    final int32 importCount = countImports(frontend);
+    final int32 typeBindingCapacity = countTypeBindings(frontend);
+    final DependencyType?[] dependencies = DependencyTypeOrder.Build(input);
+    final int32 fileCount = checkedAdd(
+        localFileCount, dependencies::length,
+        SemanticLimits.MaxLocalFiles() + SemanticLimits.MaxDependencyTypes(),
+        "semantic file count exceeds its limit");
+    final int32 symbolCount = checkedAdd(
+        checkedDouble(fileCount, SemanticLimits.MaxSymbols(),
+                      "semantic symbol count exceeds its limit"),
+        memberCount, SemanticLimits.MaxSymbols(),
+        "semantic symbol count exceeds its limit");
+    final int32 nominalTypeCapacity = checkedAdd(
+        CoreTypeCatalog.GetCount(), fileCount, SemanticLimits.MaxTypes(),
+        "semantic type count exceeds its limit");
+    final int32 typeCapacity = boundedAdd(
+        nominalTypeCapacity, boundedTriple(
+            typeBindingCapacity, SemanticLimits.MaxTypes()),
+        SemanticLimits.MaxTypes());
+    int32 diagnosticCapacity = checkedDouble(
+        localFileCount, SemanticLimits.MaxDiagnostics(),
+        "semantic diagnostic count exceeds its limit");
+    diagnosticCapacity = boundedAdd(
+        diagnosticCapacity, typeBindingCapacity,
+        SemanticLimits.MaxDiagnostics());
+    diagnosticCapacity = boundedAdd(
+        diagnosticCapacity, importCount,
+        SemanticLimits.MaxDiagnostics());
+    diagnosticCapacity = boundedAdd(
+        diagnosticCapacity, fileCount + memberCount,
+        SemanticLimits.MaxDiagnostics());
+    final NominalIdentity? objectIdentity =
+        findCanonicalObject(frontend, dependencies);
+    final int32 objectFileIndex = findCanonicalObjectFileIndex(
+        frontend, dependencies, objectIdentity);
+    return SemanticPackagePreflight(
+        localFileCount, fileCount, symbolCount, typeCapacity,
+        diagnosticCapacity, typeBindingCapacity, dependencies, objectIdentity,
+        objectFileIndex);
+  }
+
+  func GetLocalFileCount(): int32 { return self.localFileCount; }
+  func GetFileCount(): int32 { return self.fileCount; }
+  func GetSymbolCount(): int32 { return self.symbolCount; }
+  func GetTypeCapacity(): int32 { return self.typeCapacity; }
+  func GetDiagnosticCapacity(): int32 { return self.diagnosticCapacity; }
+  func GetTypeBindingCapacity(): int32 {
+    return self.typeBindingCapacity;
+  }
+  func GetDependencyCount(): int32 { return self.dependencies::length; }
+  func GetObjectIdentity(): NominalIdentity? { return self.objectIdentity; }
+  func GetObjectFileIndex(): int32 { return self.objectFileIndex; }
+
+  func GetDependency(int32 index): DependencyType throws StateError {
+    if (index < 0 || index >= self.dependencies::length) {
+      throw StateError("ordered semantic dependency type is out of bounds");
+    }
+    return self.dependencies[index]!;
+  }
+
+  static func countLocalFiles(
+      PackageFrontendResult frontend): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      if (DeclarationRegistrationFacts.IsRegisterable(
+              frontend.GetFile(index))) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  static func countLocalMembers(
+      PackageFrontendResult frontend): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      count = checkedAdd(
+          count, DeclarationRegistrationFacts.CountMembers(file),
+          SemanticLimits.MaxSymbols(),
+          "semantic member count exceeds its limit");
+    }
+    return count;
+  }
+
+  static func countTypeBindings(
+      PackageFrontendResult frontend): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      count = checkedAdd(
+          count, DefinitionTypeFacts.Count(file.GetStorage()),
+          SemanticLimits.MaxTypeBindings(),
+          "declared type binding count exceeds its limit");
+      if (file.GetBaseClass() != null) {
+        count = addTypeBinding(count);
+      }
+      count = checkedAdd(
+          count, file.GetInterfaces().GetCount(),
+          SemanticLimits.MaxTypeBindings(),
+          "declared type binding count exceeds its limit");
+      count = countDeclarationTypes(count, file.GetDeclarations());
+    }
+    return count;
+  }
+
+  static func countImports(
+      PackageFrontendResult frontend): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      count = checkedAdd(
+          count, file.GetImports().GetCount(),
+          SemanticLimits.MaxImportBindings(),
+          "semantic import count exceeds its limit");
+    }
+    return count;
+  }
+
+  static func countDeclarationTypes(
+      int32 count, DeclarationSyntaxSequence declarations): int32
+      throws StateError {
+    int32 result = count;
+    for (int32 index = 0; index < declarations.GetCount(); index++) {
+      final DeclarationSyntax declaration = declarations.Get(index);
+      if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+        final FieldSyntax? field = declaration as FieldSyntax?;
+        if (field != null) { result = addTypeBinding(result); }
+        continue;
+      }
+      if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+        final FunctionSyntax? function = declaration as FunctionSyntax?;
+        if (function == null) { continue; }
+        result = addTypes(
+            result, function.GetParameters().GetCount(),
+            function.GetThrowsTypes().GetCount());
+        if (function.GetReturnType() != null) {
+          result = addTypeBinding(result);
+        }
+        continue;
+      }
+      final ConstructorSyntax? constructor = declaration as ConstructorSyntax?;
+      if (constructor == null) { continue; }
+      result = addTypes(
+          result, constructor.GetParameters().GetCount(),
+          constructor.GetThrowsTypes().GetCount());
+      if (constructor.GetInitializer() != null) {
+        result = addTypeBinding(result);
+      }
+    }
+    return result;
+  }
+
+  static func addTypes(int32 count, int32 parameters,
+                       int32 throwsTypes): int32 throws StateError {
+    return checkedAdd(
+        checkedAdd(
+            count, parameters, SemanticLimits.MaxTypeBindings(),
+            "declared type binding count exceeds its limit"),
+        throwsTypes, SemanticLimits.MaxTypeBindings(),
+        "declared type binding count exceeds its limit");
+  }
+
+  static func addTypeBinding(int32 count): int32 throws StateError {
+    return checkedAdd(
+        count, 1, SemanticLimits.MaxTypeBindings(),
+        "declared type binding count exceeds its limit");
+  }
+
+  static func findCanonicalObject(
+      PackageFrontendResult frontend,
+      DependencyType?[] dependencies): NominalIdentity? throws StateError {
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      final NominalIdentity identity = NominalIdentity.Build(
+          source.GetIdentity(), file.GetPackageName(), file.GetName(),
+          DeclarationRegistrationFacts.NominalKindOf(
+              file.GetFileTypeKind()));
+      if (DeclarationRegistrationFacts.IsCanonicalObject(identity)) {
+        return identity;
+      }
+    }
+    for (int32 index = 0; index < dependencies::length; index++) {
+      final NominalIdentity identity = dependencies[index]!.GetIdentity();
+      if (DeclarationRegistrationFacts.IsCanonicalObject(identity)) {
+        return identity;
+      }
+    }
+    return null;
+  }
+
+  static func findCanonicalObjectFileIndex(
+      PackageFrontendResult frontend, DependencyType?[] dependencies,
+      NominalIdentity? objectIdentity): int32 throws StateError {
+    if (objectIdentity == null) { return -1; }
+    int32 ordinal = 0;
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      final NominalIdentity identity = NominalIdentity.Build(
+          source.GetIdentity(), file.GetPackageName(), file.GetName(),
+          DeclarationRegistrationFacts.NominalKindOf(
+              file.GetFileTypeKind()));
+      if (identity.Equals(objectIdentity)) { return ordinal; }
+      ordinal++;
+    }
+    for (int32 index = 0; index < dependencies::length; index++) {
+      if (dependencies[index]!.GetIdentity().Equals(objectIdentity)) {
+        return ordinal + index;
+      }
+    }
+    throw StateError("canonical Object identity has no file registration");
+  }
+
+  static func checkedDouble(int32 value, int32 limit,
+                            string message): int32 throws StateError {
+    if (value < 0 || value > limit - value) { throw StateError(message); }
+    return value * 2;
+  }
+
+  static func checkedAdd(int32 left, int32 right, int32 limit,
+                         string message): int32 throws StateError {
+    if (right < 0 || left > limit - right) { throw StateError(message); }
+    return left + right;
+  }
+
+  static func boundedTriple(int32 value, int32 limit): int32 {
+    if (value > limit / 3) { return limit; }
+    return value * 3;
+  }
+
+  static func boundedAdd(int32 left, int32 right, int32 limit): int32 {
+    if (right > limit - left) { return limit; }
+    return left + right;
+  }
+}

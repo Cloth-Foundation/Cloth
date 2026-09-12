@@ -1,0 +1,129 @@
+import frontend.source::SourceRange;
+import frontend.syntax.tree::Visibility;
+import semantic.identity::MemberIdentity;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+
+class {
+  final SymbolId id;
+  final SymbolKind kind;
+  final SemanticName name;
+  final TypeId type;
+  final bool typeResolved;
+  final FileId? file;
+  final SourceRange range;
+  final Visibility visibility;
+  final MemberIdentity? identity;
+  final int32 declarationOrder;
+  final bool valid;
+  final bool finalSymbol;
+  final bool staticSymbol;
+  final bool overrideSymbol;
+  final bool abstractSymbol;
+  final int32 enumTag;
+
+  _SemanticSymbol(
+      SymbolId id, SymbolKind kind, SemanticName name, TypeId type,
+      bool typeResolved, FileId? file, SourceRange range,
+      Visibility visibility, MemberIdentity? identity,
+      int32 declarationOrder, bool valid, bool finalSymbol,
+      bool staticSymbol, bool overrideSymbol, bool abstractSymbol,
+      int32 enumTag) {
+    self.id = id;
+    self.kind = kind;
+    self.name = name;
+    self.type = type;
+    self.typeResolved = typeResolved;
+    self.file = file;
+    self.range = range;
+    self.visibility = visibility;
+    self.identity = identity;
+    self.declarationOrder = declarationOrder;
+    self.valid = valid;
+    self.finalSymbol = finalSymbol;
+    self.staticSymbol = staticSymbol;
+    self.overrideSymbol = overrideSymbol;
+    self.abstractSymbol = abstractSymbol;
+    self.enumTag = enumTag;
+  }
+
+  static func Build(
+      SemanticOwner owner, SymbolId id, SymbolKind kind, SemanticName name,
+      TypeId type,
+      bool typeResolved, FileId? file, SourceRange range,
+      Visibility visibility, MemberIdentity? identity,
+      int32 declarationOrder, bool valid, bool finalSymbol,
+      bool staticSymbol, bool overrideSymbol, bool abstractSymbol,
+      int32 enumTag): SemanticSymbol throws StateError {
+    if (!id.BelongsTo(owner) || !type.BelongsTo(owner) ||
+        declarationOrder < 0) {
+      throw StateError("semantic symbol record has an invalid handle");
+    }
+    if (file != null && !file.BelongsTo(owner)) {
+      throw StateError("semantic symbol record has a foreign file handle");
+    }
+    if (identity != null &&
+        kind != SymbolKind.kField && kind != SymbolKind.kFunction &&
+        kind != SymbolKind.kConstructor && kind != SymbolKind.kEnumCase) {
+      throw StateError("non-member semantic symbol has a member identity");
+    }
+    if ((kind == SymbolKind.kField || kind == SymbolKind.kEnumCase) &&
+        identity == null) {
+      throw StateError("persistent semantic member lacks an identity");
+    }
+    if ((kind == SymbolKind.kEnumCase) != (enumTag >= 0)) {
+      throw StateError("semantic enum case tag is inconsistent");
+    }
+    if (kind == SymbolKind.kEnumCase &&
+        (!finalSymbol || !staticSymbol ||
+         visibility != Visibility.kPublic || !typeResolved)) {
+      throw StateError("semantic enum case properties are inconsistent");
+    }
+    return SemanticSymbol(
+        id, kind, name, type, typeResolved, file, range, visibility,
+        identity, declarationOrder, valid, finalSymbol, staticSymbol,
+        overrideSymbol, abstractSymbol, enumTag);
+  }
+
+  func GetId(): SymbolId { return self.id; }
+  func GetKind(): SymbolKind { return self.kind; }
+  func GetName(): SemanticName { return self.name; }
+  func GetType(): TypeId { return self.type; }
+  func IsTypeResolved(): bool { return self.typeResolved; }
+  func GetFile(): FileId? { return self.file; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetVisibility(): Visibility { return self.visibility; }
+  func GetIdentity(): MemberIdentity? { return self.identity; }
+  func GetDeclarationOrder(): int32 { return self.declarationOrder; }
+  func IsValid(): bool { return self.valid; }
+  func IsFinal(): bool { return self.finalSymbol; }
+  func IsStatic(): bool { return self.staticSymbol; }
+  func IsOverride(): bool { return self.overrideSymbol; }
+  func IsAbstract(): bool { return self.abstractSymbol; }
+  func GetEnumTag(): int32 { return self.enumTag; }
+
+  func WithResolution(
+      SemanticOwner owner, TypeId type, bool typeResolved,
+      MemberIdentity? identity, bool valid): SemanticSymbol
+      throws StateError {
+    return Build(
+        owner, self.id, self.kind, self.name, type, typeResolved, self.file,
+        self.range, self.visibility, identity, self.declarationOrder,
+        self.valid && valid, self.finalSymbol, self.staticSymbol,
+        self.overrideSymbol, self.abstractSymbol, self.enumTag);
+  }
+
+  func WithValidity(SemanticOwner owner,
+                    bool valid): SemanticSymbol throws StateError {
+    return Build(
+        owner, self.id, self.kind, self.name, self.type, self.typeResolved,
+        self.file, self.range, self.visibility, self.identity,
+        self.declarationOrder, self.valid && valid, self.finalSymbol,
+        self.staticSymbol, self.overrideSymbol, self.abstractSymbol,
+        self.enumTag);
+  }
+}

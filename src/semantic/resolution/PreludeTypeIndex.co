@@ -1,0 +1,191 @@
+import frontend.syntax.tree::Visibility;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.resolution::PreludeTypeEntry;
+
+class {
+  final PreludeTypeEntry?[] entries;
+
+  _PreludeTypeIndex(PreludeTypeEntry?[] entries) { self.entries = entries; }
+
+  static func Build(
+      PackageSymbolStorage storage,
+      SemanticDiagnosticBuffer diagnostics): PreludeTypeIndex
+      throws StateError {
+    final SemanticOwner owner = storage.GetOwner();
+    final PreludeTypeEntry?[] candidates =
+        PreludeTypeEntry?[:storage.GetFileCount()];
+    int32 candidateCount = 0;
+    for (int32 index = 0; index < storage.GetFileCount(); index++) {
+      final FileRegistration file = storage.GetRegistration(index);
+      final NominalIdentity identity = file.GetIdentity();
+      if (!isPrelude(identity) || !file.IsValid() ||
+          file.GetType().GetIndex() == 0 ||
+          storage.GetSymbol(file.GetSymbol()).GetVisibility() !=
+              Visibility.kPublic) {
+        continue;
+      }
+      candidates[candidateCount] = PreludeTypeEntry.Build(
+          owner, SemanticName.FromString(identity.GetName()), file.GetId(),
+          file.GetRange());
+      candidateCount++;
+    }
+    final PreludeTypeEntry?[] values = PreludeTypeEntry?[:candidateCount];
+    for (int32 index = 0; index < candidateCount; index++) {
+      values[index] = candidates[index];
+    }
+    final PreludeTypeEntry?[] sorted = sort(values);
+    final PreludeTypeEntry?[] accepted = PreludeTypeEntry?[:candidateCount];
+    int32 acceptedCount = 0;
+    int32 begin = 0;
+    while (begin < sorted::length) {
+      int32 end = begin + 1;
+      while (end < sorted::length &&
+             get(sorted, begin).GetName().Equals(
+                 get(sorted, end).GetName())) {
+        end++;
+      }
+      final PreludeTypeEntry first = get(sorted, begin);
+      if (isCoreName(first.GetName())) {
+        for (int32 index = begin; index < end; index++) {
+          final PreludeTypeEntry entry = get(sorted, index);
+          diagnostics.Add(
+              SemanticDiagnosticKind.kPreludeNameConflictsWithCore,
+              entry.GetRange(), null);
+          storage.InvalidateFile(entry.GetFile());
+        }
+      } else {
+        if (end - begin > 1) {
+          diagnostics.Add(
+              SemanticDiagnosticKind.kPreludeNameAmbiguous,
+              get(sorted, begin + 1).GetRange(), first.GetRange());
+          for (int32 index = begin; index < end; index++) {
+            storage.InvalidateFile(get(sorted, index).GetFile());
+          }
+        } else {
+          accepted[acceptedCount] = first;
+          acceptedCount++;
+        }
+      }
+      begin = end;
+    }
+    final PreludeTypeEntry?[] result = PreludeTypeEntry?[:acceptedCount];
+    for (int32 index = 0; index < acceptedCount; index++) {
+      result[index] = accepted[index];
+    }
+    return PreludeTypeIndex(result);
+  }
+
+  func GetCount(): int32 { return self.entries::length; }
+
+  func Get(int32 index): PreludeTypeEntry throws StateError {
+    if (index < 0 || index >= self.entries::length) {
+      throw StateError("prelude type index is out of bounds");
+    }
+    return get(self.entries, index);
+  }
+
+  func FindFile(SemanticName name): FileId? throws StateError {
+    int32 begin = 0;
+    int32 end = self.entries::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      final PreludeTypeEntry entry = get(self.entries, middle);
+      final int32 order = SemanticName.Compare(entry.GetName(), name);
+      if (order < 0) {
+        begin = middle + 1;
+      } else {
+        if (order > 0) { end = middle; } else { return entry.GetFile(); }
+      }
+    }
+    return null;
+  }
+
+  static func isPrelude(NominalIdentity identity): bool {
+    final string sourcePackage = identity.GetSourcePackage();
+    return identity.GetPackage().GetName() == "cloth" &&
+           identity.GetPackage().GetVersion() == "0.6.0" &&
+           (sourcePackage == "lang" ||
+            (sourcePackage::length > 5 &&
+             sourcePackage::slice(0, 5) == "lang."));
+  }
+
+  static func isCoreName(SemanticName name): bool throws StateError {
+    if (name.EqualsString("int") || name.EqualsString("uint") ||
+        name.EqualsString("float")) {
+      return true;
+    }
+    for (int32 index = 2; index <= 20; index++) {
+      if (name.EqualsString(CoreTypeCatalog.GetName(index))) { return true; }
+    }
+    return false;
+  }
+
+  static func sort(PreludeTypeEntry?[] values): PreludeTypeEntry?[]
+      throws StateError {
+    final int32 count = values::length;
+    PreludeTypeEntry?[] input = values;
+    PreludeTypeEntry?[] output = PreludeTypeEntry?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final PreludeTypeEntry?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      PreludeTypeEntry?[] input, PreludeTypeEntry?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left),
+                                    get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(PreludeTypeEntry left,
+                      PreludeTypeEntry right): int32 throws StateError {
+    final int32 order = SemanticName.Compare(left.GetName(), right.GetName());
+    if (order != 0) { return order; }
+    return left.GetFile().GetIndex() - right.GetFile().GetIndex();
+  }
+
+  static func get(PreludeTypeEntry?[] values,
+                  int32 index): PreludeTypeEntry throws StateError {
+    final PreludeTypeEntry? value = values[index];
+    if (value == null) {
+      throw StateError("prelude type sorting lost an entry");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

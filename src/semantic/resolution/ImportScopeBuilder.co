@@ -1,0 +1,383 @@
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax.tree::ImportKind;
+import frontend.syntax.tree::ImportSyntax;
+import frontend.syntax.tree::ImportSyntaxSequence;
+import frontend.syntax.tree::Visibility;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.identity::SemanticName;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageInput;
+import semantic.resolution::ImportBinding;
+import semantic.resolution::ImportBindingKind;
+import semantic.resolution::ImportResolutionEvent;
+import semantic.resolution::ImportScope;
+import semantic.resolution::ResolutionFileIndex;
+import semantic.resolution::ResolutionPackage;
+
+class {
+  final SemanticPackageInput input;
+  final PackageSymbolStorage storage;
+  final ResolutionFileIndex files;
+  final FileRegistration current;
+  final SemanticDiagnosticBuffer diagnostics;
+  final ImportResolutionEvent?[] events;
+  int32 count;
+
+  _ImportScopeBuilder(
+      SemanticPackageInput input, PackageSymbolStorage storage,
+      ResolutionFileIndex files, FileRegistration current,
+      SemanticDiagnosticBuffer diagnostics, int32 capacity) {
+    self.input = input;
+    self.storage = storage;
+    self.files = files;
+    self.current = current;
+    self.diagnostics = diagnostics;
+    self.events = ImportResolutionEvent?[:capacity];
+    self.count = 0;
+  }
+
+  static func Build(
+      SemanticPackageInput input, PackageSymbolStorage storage,
+      ResolutionFileIndex files, FileRegistration current,
+      SemanticDiagnosticBuffer diagnostics): ImportScope throws StateError {
+    final ImportSyntaxSequence imports = current.GetFrontend()!
+        .GetDefinition()!.GetTree().GetFile().GetImports();
+    final ImportScopeBuilder builder = ImportScopeBuilder(
+        input, storage, files, current, diagnostics,
+        eventCapacity(input, files, current, imports));
+    builder.addCurrentPackage();
+    for (int32 index = 0; index < imports.GetCount(); index++) {
+      final ImportSyntax value = imports.Get(index);
+      if (value.IsValid() && value.GetKind() == ImportKind.kType) {
+        builder.addExplicit(value);
+      }
+    }
+    for (int32 index = 0; index < imports.GetCount(); index++) {
+      final ImportSyntax value = imports.Get(index);
+      if (value.IsValid() && value.GetKind() == ImportKind.kWildcard) {
+        builder.addWildcard(value);
+      }
+    }
+    return builder.finish();
+  }
+
+  func addCurrentPackage(): void throws StateError {
+    final ResolutionPackage package =
+        ResolutionPackage.Current(self.current.GetIdentity());
+    final int32 begin = self.files.FindPackageBegin(package);
+    final int32 end = self.files.FindPackageEnd(package);
+    for (int32 index = begin; index < end; index++) {
+      final FileRegistration target = self.files.Get(index);
+      if (target.GetType().GetIndex() == 0) { continue; }
+      final bool isCurrent = target.GetId().GetIndex() ==
+                             self.current.GetId().GetIndex();
+      if (!isCurrent &&
+          self.storage.GetSymbol(target.GetSymbol()).GetVisibility() !=
+              Visibility.kPublic) {
+        continue;
+      }
+      ImportBindingKind kind = ImportBindingKind.kCurrentPackage;
+      if (isCurrent) { kind = ImportBindingKind.kCurrentFile; }
+      self.addResolved(
+          SemanticName.FromString(target.GetIdentity().GetName()),
+          target.GetId(), kind, target.GetRange(), false);
+    }
+  }
+
+  func addExplicit(ImportSyntax value): void throws StateError {
+    final SourceSpan? typeName = value.GetTypeName();
+    if (typeName == null) {
+      throw StateError("verified exact import has no type name");
+    }
+    final SourceSpan? alias = value.GetAlias();
+    SemanticName localName = SemanticName.FromSource(typeName);
+    if (alias != null) { localName = SemanticName.FromSource(alias); }
+    final ResolutionPackage package = ResolutionPackage.Import(
+        self.input, self.current.GetIdentity(), value.GetPackageName());
+    final FileRegistration? target =
+        self.files.Find(package, SemanticName.FromSource(typeName));
+    if (target == null || target.GetType().GetIndex() == 0) {
+      self.addInvalid(
+          localName, value.GetRange(),
+          SemanticDiagnosticKind.kUnknownImportedType, null);
+      return;
+    }
+    if (target.GetId().GetIndex() != self.current.GetId().GetIndex() &&
+        self.storage.GetSymbol(target.GetSymbol()).GetVisibility() ==
+            Visibility.kPrivate) {
+      self.addInvalid(
+          localName, value.GetRange(),
+          SemanticDiagnosticKind.kImportedTypePrivate, target.GetRange());
+      return;
+    }
+    self.addResolved(
+        localName, target.GetId(), ImportBindingKind.kExplicit,
+        value.GetRange(), true);
+  }
+
+  func addWildcard(ImportSyntax value): void throws StateError {
+    final SourceSpan? path = value.GetPackageName();
+    if (path == null) {
+      throw StateError("verified wildcard import has no package path");
+    }
+    final ResolutionPackage package = ResolutionPackage.Import(
+        self.input, self.current.GetIdentity(), path);
+    final int32 begin = self.files.FindPackageBegin(package);
+    final int32 end = self.files.FindPackageEnd(package);
+    for (int32 index = begin; index < end; index++) {
+      final FileRegistration target = self.files.Get(index);
+      if (target.GetType().GetIndex() == 0 ||
+          self.storage.GetSymbol(target.GetSymbol()).GetVisibility() !=
+              Visibility.kPublic) {
+        continue;
+      }
+      self.addResolved(
+          SemanticName.FromString(target.GetIdentity().GetName()),
+          target.GetId(), ImportBindingKind.kWildcard, value.GetRange(),
+          true);
+    }
+    if (begin == end) {
+      self.addEvent(ImportResolutionEvent.Diagnostic(
+          SemanticDiagnosticKind.kUnknownImportedPackage,
+          value.GetRange(), null));
+    }
+  }
+
+  func addResolved(
+      SemanticName name, FileId target, ImportBindingKind kind,
+      SourceRange range, bool rejectCore): void throws StateError {
+    if (rejectCore && isCoreName(name)) {
+      self.addEvent(ImportResolutionEvent.Diagnostic(
+          SemanticDiagnosticKind.kImportNameConflictsWithCore, range, null));
+      return;
+    }
+    self.addEvent(ImportResolutionEvent.Binding(ImportBinding.Resolved(
+        self.storage.GetOwner(), name, target, kind, range)));
+  }
+
+  func addInvalid(
+      SemanticName name, SourceRange range, SemanticDiagnosticKind kind,
+      SourceRange? related): void throws StateError {
+    self.addEvent(ImportResolutionEvent.BindingDiagnostic(
+        ImportBinding.Invalid(name, ImportBindingKind.kExplicit, range),
+        kind, related));
+  }
+
+  func addEvent(ImportResolutionEvent event): void throws StateError {
+    if (self.count >= self.events::length) {
+      throw StateError("semantic import expansion exceeds its limit");
+    }
+    self.events[self.count] = event;
+    self.count++;
+  }
+
+  func finish(): ImportScope throws StateError {
+    int32 bindingCount = 0;
+    for (int32 index = 0; index < self.count; index++) {
+      if (self.events[index]!.GetBinding() != null) { bindingCount++; }
+    }
+    final ImportBinding?[] bindings = ImportBinding?[:bindingCount];
+    int32 output = 0;
+    for (int32 index = 0; index < self.count; index++) {
+      final ImportBinding? binding = self.events[index]!.GetBinding();
+      if (binding == null) { continue; }
+      bindings[output] = binding;
+      output++;
+    }
+    final ImportBinding?[] sorted = sort(bindings);
+    final ImportBinding?[] states = ImportBinding?[:bindingCount];
+    for (int32 index = 0; index < self.count; index++) {
+      final ImportResolutionEvent event = self.events[index]!;
+      if (event.HasDiagnostic()) {
+        self.report(
+            event.GetDiagnostic(), event.GetRange(), event.GetRelatedRange());
+      }
+      final ImportBinding? incoming = event.GetBinding();
+      if (incoming == null) { continue; }
+      final int32 slot = findFirst(sorted, incoming.GetName());
+      final ImportBinding? existing = states[slot];
+      if (existing == null) {
+        states[slot] = incoming;
+      } else {
+        states[slot] = self.combine(existing, incoming);
+      }
+    }
+    int32 uniqueCount = 0;
+    for (int32 index = 0; index < sorted::length; index++) {
+      if (index == 0 || !get(sorted, index - 1).GetName().Equals(
+                            get(sorted, index).GetName())) {
+        uniqueCount++;
+      }
+    }
+    final ImportBinding?[] result = ImportBinding?[:uniqueCount];
+    int32 resultIndex = 0;
+    for (int32 index = 0; index < sorted::length; index++) {
+      if (index > 0 && get(sorted, index - 1).GetName().Equals(
+                           get(sorted, index).GetName())) {
+        continue;
+      }
+      result[resultIndex] = states[index];
+      resultIndex++;
+    }
+    return ImportScope.Build(
+        self.storage.GetOwner(), self.current.GetId(), result);
+  }
+
+  func combine(
+      ImportBinding existing,
+      ImportBinding incoming): ImportBinding throws StateError {
+    final FileId? existingTarget = existing.GetTarget();
+    final FileId? incomingTarget = incoming.GetTarget();
+    if (existingTarget != null && incomingTarget != null &&
+        existingTarget.GetIndex() == incomingTarget.GetIndex()) {
+      return existing;
+    }
+    if (incoming.GetKind() == ImportBindingKind.kWildcard &&
+        existing.GetKind() != ImportBindingKind.kWildcard) {
+      return existing;
+    }
+    if (existingTarget == null && incomingTarget == null &&
+        !existing.IsAmbiguous() && !incoming.IsAmbiguous()) {
+      return existing;
+    }
+    self.report(
+        SemanticDiagnosticKind.kImportNameAmbiguous,
+        incoming.GetRange(), existing.GetRange());
+    return ImportBinding.Ambiguous(
+        existing.GetName(), existing.GetKind(), existing.GetRange());
+  }
+
+  func report(
+      SemanticDiagnosticKind kind, SourceRange range,
+      SourceRange? related): void throws StateError {
+    self.diagnostics.Add(kind, range, related);
+    self.storage.InvalidateFile(self.current.GetId());
+  }
+
+  static func eventCapacity(
+      SemanticPackageInput input, ResolutionFileIndex files,
+      FileRegistration current,
+      ImportSyntaxSequence imports): int32 throws StateError {
+    final ResolutionPackage currentPackage =
+        ResolutionPackage.Current(current.GetIdentity());
+    int32 capacity = files.FindPackageEnd(currentPackage) -
+                     files.FindPackageBegin(currentPackage);
+    capacity = checkedAdd(capacity, imports.GetCount());
+    for (int32 index = 0; index < imports.GetCount(); index++) {
+      final ImportSyntax value = imports.Get(index);
+      if (!value.IsValid() || value.GetKind() != ImportKind.kWildcard) {
+        continue;
+      }
+      final SourceSpan? path = value.GetPackageName();
+      if (path == null) {
+        throw StateError("verified wildcard import has no package path");
+      }
+      final ResolutionPackage package =
+          ResolutionPackage.Import(input, current.GetIdentity(), path);
+      capacity = checkedAdd(
+          capacity, files.FindPackageEnd(package) -
+                    files.FindPackageBegin(package));
+    }
+    return capacity;
+  }
+
+  static func checkedAdd(int32 left, int32 right): int32 throws StateError {
+    if (right < 0 || left > SemanticLimits.MaxImportBindings() - right) {
+      throw StateError("semantic import expansion exceeds its limit");
+    }
+    return left + right;
+  }
+
+  static func findFirst(
+      ImportBinding?[] values,
+      SemanticName name): int32 throws StateError {
+    int32 begin = 0;
+    int32 end = values::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      if (SemanticName.Compare(get(values, middle).GetName(), name) < 0) {
+        begin = middle + 1;
+      } else {
+        end = middle;
+      }
+    }
+    if (begin >= values::length ||
+        !get(values, begin).GetName().Equals(name)) {
+      throw StateError("semantic import event has no lookup slot");
+    }
+    return begin;
+  }
+
+  static func sort(ImportBinding?[] values): ImportBinding?[]
+      throws StateError {
+    final int32 count = values::length;
+    ImportBinding?[] input = values;
+    ImportBinding?[] output = ImportBinding?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final ImportBinding?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      ImportBinding?[] input, ImportBinding?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && SemanticName.Compare(
+              get(input, left).GetName(),
+              get(input, right).GetName()) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func get(
+      ImportBinding?[] values,
+      int32 index): ImportBinding throws StateError {
+    final ImportBinding? value = values[index];
+    if (value == null) {
+      throw StateError("semantic import binding sorting lost a value");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+
+  static func isCoreName(SemanticName name): bool throws StateError {
+    if (name.EqualsString("int") || name.EqualsString("uint") ||
+        name.EqualsString("float")) {
+      return true;
+    }
+    for (int32 index = 2; index <= 20; index++) {
+      if (name.EqualsString(CoreTypeCatalog.GetName(index))) { return true; }
+    }
+    return false;
+  }
+}

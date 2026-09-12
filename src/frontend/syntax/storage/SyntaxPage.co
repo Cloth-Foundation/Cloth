@@ -68,6 +68,13 @@ class {
     return self.count;
   }
 
+  func Get(int32 index): SyntaxNode throws StateError {
+    if (index < 0 || index >= self.count) {
+      throw StateError("syntax page index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
   func GetNext(): SyntaxPage? {
     return self.next;
   }

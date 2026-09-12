@@ -1,0 +1,113 @@
+import frontend.package::PackageIdentity;
+import frontend.package::PackagePath;
+import frontend.syntax.tree::Visibility;
+import semantic.model::CoreTypeCatalog;
+import semantic.package::DependencyType;
+
+class {
+  static func Validate(
+      PackageIdentity identity,
+      DependencyType?[] types): void throws StateError {
+    if (identity.GetName() != "cloth" ||
+        identity.GetVersion() != "0.6.0") {
+      return;
+    }
+    int32 count = 0;
+    for (int32 index = 0; index < types::length; index++) {
+      final DependencyType type = get(types, index);
+      if (isPublicPrelude(type)) { count++; }
+    }
+    final DependencyType?[] candidates = DependencyType?[:count];
+    int32 output = 0;
+    for (int32 index = 0; index < types::length; index++) {
+      final DependencyType type = get(types, index);
+      if (!isPublicPrelude(type)) { continue; }
+      candidates[output] = type;
+      output++;
+    }
+    final DependencyType?[] sorted = sort(candidates);
+    for (int32 index = 0; index < sorted::length; index++) {
+      final string name = get(sorted, index).GetIdentity().GetName();
+      if (CoreTypeCatalog.IsCoreName(name)) {
+        throw StateError(
+            "standard library prelude type conflicts with a core type");
+      }
+      if (index > 0 &&
+          get(sorted, index - 1).GetIdentity().GetName() == name) {
+        throw StateError(
+            "standard library prelude type name is ambiguous");
+      }
+    }
+  }
+
+  static func isPublicPrelude(DependencyType type): bool {
+    final string sourcePackage = type.GetIdentity().GetSourcePackage();
+    return type.GetVisibility() == Visibility.kPublic &&
+           (sourcePackage == "lang" ||
+            (sourcePackage::length > 5 &&
+             sourcePackage::slice(0, 5) == "lang."));
+  }
+
+  static func sort(DependencyType?[] values): DependencyType?[]
+      throws StateError {
+    final int32 count = values::length;
+    DependencyType?[] input = values;
+    DependencyType?[] output = DependencyType?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final DependencyType?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      DependencyType?[] input, DependencyType?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left),
+                                    get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(DependencyType left,
+                      DependencyType right): int32 throws StateError {
+    final int32 name = PackagePath.Compare(
+        left.GetIdentity().GetName(), right.GetIdentity().GetName());
+    if (name != 0) { return name; }
+    return PackagePath.Compare(left.GetIdentity().GetQualifiedName(),
+                               right.GetIdentity().GetQualifiedName());
+  }
+
+  static func get(DependencyType?[] values,
+                  int32 index): DependencyType throws StateError {
+    final DependencyType? value = values[index];
+    if (value == null) {
+      throw StateError("standard library prelude sorting lost a type");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

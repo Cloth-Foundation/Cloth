@@ -1,0 +1,14 @@
+enum {
+  kFileClass,
+  kField,
+  kFunction,
+  kConstructor,
+  kParameter,
+  kLocal,
+  kSelf,
+  kInterface,
+  kEnum,
+  kEnumCase,
+  kStruct,
+  kError,
+}

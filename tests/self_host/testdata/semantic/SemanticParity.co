@@ -1,0 +1,8 @@
+int Count;
+uint64 Total;
+string? Label;
+SemanticParity? Parent;
+
+func Convert(int value, uint16[] values): void {}
+
+SemanticParity(string? label) {}

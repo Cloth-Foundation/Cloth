@@ -1,0 +1,58 @@
+import frontend.source::SourceSpan;
+import semantic.package::SemanticPackageInput;
+
+class {
+  static func FindDependency(
+      SemanticPackageInput input, SourceSpan? path): int32
+      throws StateError {
+    if (path == null) { return -1; }
+    int32 end = path.GetLength();
+    for (int32 index = 0; index < path.GetLength(); index++) {
+      if (path.GetByte(index) != 46) { continue; }
+      end = index;
+      break;
+    }
+    int32 begin = 0;
+    int32 limit = input.GetDependencyCount();
+    while (begin < limit) {
+      final int32 middle = begin + (limit - begin) / 2;
+      final int32 order = compareSlice(
+          path, 0, end, input.GetDependency(middle).GetAlias());
+      if (order > 0) {
+        begin = middle + 1;
+      } else {
+        if (order < 0) { limit = middle; } else { return middle; }
+      }
+    }
+    return -1;
+  }
+
+  static func compareSlice(
+      SourceSpan span, int32 begin, int32 end,
+      string text): int32 throws StateError {
+    int32 shared = end - begin;
+    if (text::length < shared) { shared = text::length; }
+    for (int32 index = 0; index < shared; index++) {
+      final byte left = span.GetByte(begin + index);
+      final byte right = byte(asciiCode(text[index]));
+      if (left < right) { return -1; }
+      if (left > right) { return 1; }
+    }
+    if (end - begin < text::length) { return -1; }
+    if (end - begin > text::length) { return 1; }
+    return 0;
+  }
+
+  static func asciiCode(char value): int32 {
+    final string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    for (int32 index = 0; index < alphabet::length; index++) {
+      if (value != alphabet[index]) { continue; }
+      if (index < 26) { return 65 + index; }
+      if (index < 52) { return 97 + index - 26; }
+      if (index < 62) { return 48 + index - 52; }
+      return 95;
+    }
+    return -1;
+  }
+}

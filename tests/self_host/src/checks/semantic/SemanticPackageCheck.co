@@ -1,0 +1,377 @@
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.diagnostic::SemanticDiagnosticKind;
+import clothc.semantic.identity::MemberIdentity;
+import clothc.semantic.identity::MemberKind;
+import clothc.semantic.identity::NominalIdentity;
+import clothc.semantic.identity::NominalKind;
+import clothc.semantic.identity::SemanticName;
+import clothc.semantic.identity::TypeIdentity;
+import clothc.semantic.model::SemanticFile;
+import clothc.semantic.model::SemanticSymbol;
+import clothc.semantic.model::SemanticType;
+import clothc.semantic.model::SymbolKind;
+import clothc.semantic.model::TypeId;
+import clothc.semantic.model::TypeKind;
+import clothc.semantic.package::DependencyType;
+import clothc.semantic.package::DependencyTypeView;
+import clothc.semantic.package::PackageSymbolCollector;
+import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticPackageInput;
+import clothc.semantic.package::SemanticPackageResult;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    final int32 identityStatus = checkStructuralIdentities();
+    if (identityStatus != 0) { return identityStatus; }
+    final int32 localStatus = checkLocalPackage();
+    if (localStatus != 0) { return localStatus; }
+    final int32 dependencyStatus = checkDependencies();
+    if (dependencyStatus != 0) { return dependencyStatus; }
+    return checkDiagnostics();
+  }
+
+  static func BuildLocalResult(): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:5];
+    sources[0] = source("values/Pair.co", "Pair.co");
+    sources[1] = source("errors/Failure.co", "Failure.co");
+    sources[2] = source("Main.co", "Main.co");
+    sources[3] = source("contracts/Runner.co", "Runner.co");
+    sources[4] = source("colors/Color.co", "Color.co");
+    final PackageFrontendInput frontendInput = PackageFrontendInput.Build(
+        PackageIdentity.Build("sample", "1.2.3"), sources);
+    sources[0] = null;
+    final PackageFrontendResult frontend =
+        FrontendCoordinator.Check(frontendInput);
+    return PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
+  }
+
+  static func checkStructuralIdentities(): int32 throws StateError {
+    final PackageIdentity package = PackageIdentity.Build("sample", "1.2.3");
+    final NominalIdentity owner =
+        NominalIdentity.Build(package, "models", "User", NominalKind.kClass);
+    final TypeIdentity stringType =
+        TypeIdentity.Core(TypeKind.kString, "string");
+    final TypeIdentity nullableString = TypeIdentity.Nullable(stringType);
+    final TypeIdentity stringArray = TypeIdentity.Array(stringType);
+    if (!nullableString.Equals(TypeIdentity.Nullable(stringType)) ||
+        nullableString.Equals(stringType) ||
+        !nullableString.EqualsOverload(stringType) ||
+        TypeIdentity.CompareOverload(nullableString, stringType) != 0 ||
+        stringArray.GetElement() == null ||
+        !stringArray.GetElement()!.Equals(stringType)) {
+      return 700;
+    }
+    final TypeIdentity?[] plainParameters = TypeIdentity?[:1];
+    plainParameters[0] = stringType;
+    final TypeIdentity?[] nullableParameters = TypeIdentity?[:1];
+    nullableParameters[0] = nullableString;
+    final MemberIdentity plain = MemberIdentity.Build(
+        owner, MemberKind.kFunction, SemanticName.FromString("Open"),
+        plainParameters);
+    final MemberIdentity nullable = MemberIdentity.Build(
+        owner, MemberKind.kFunction, SemanticName.FromString("Open"),
+        nullableParameters);
+    if (!plain.Equals(nullable) || MemberIdentity.Compare(plain, nullable) != 0 ||
+        owner.GetPackage().GetVersion() != "1.2.3") {
+      return 701;
+    }
+    return 0;
+  }
+
+  static func checkLocalPackage(): int32 throws IoError, StateError {
+    final SemanticPackageResult result = BuildLocalResult();
+    if (!result.IsValid() || result.GetDiagnostics().GetCount() != 0 ||
+        result.GetFileCount() != 5 || result.GetTypeCount() != 27 ||
+        result.GetSymbolCount() != 22 ||
+        result.GetNominalTypeCount() != 5 ||
+        result.GetMemberIdentityCount() != 12 ||
+        result.GetImportBindingCount() != 5 ||
+        result.GetTypeBindingCount() != 12) {
+      return 702;
+    }
+    final TypeId? nullableErrorElement = result.GetTypeAt(21).GetElement();
+    if (result.GetTypeAt(0).GetKind() != TypeKind.kError ||
+        result.GetTypeAt(0).GetName() != "<error>" ||
+        result.GetTypeAt(18).GetKind() != TypeKind.kObject ||
+        result.GetTypeAt(21).GetKind() != TypeKind.kNullable ||
+        nullableErrorElement == null ||
+        nullableErrorElement.GetIndex() != 19) {
+      return 703;
+    }
+    final TypeId? integer = result.FindCoreType("int");
+    final TypeId? unsigned = result.FindCoreType("uint");
+    final TypeId? floating = result.FindCoreType("float");
+    if (integer == null || integer.GetIndex() != 9 || unsigned == null ||
+        unsigned.GetIndex() != 13 || floating == null ||
+        floating.GetIndex() != 15 || result.FindCoreType("User") != null) {
+      return 704;
+    }
+
+    final SemanticFile main = result.GetFileAt(0);
+    final SemanticFile color = result.GetFileAt(1);
+    final SemanticFile runner = result.GetFileAt(2);
+    final SemanticFile failure = result.GetFileAt(3);
+    final SemanticFile pair = result.GetFileAt(4);
+    if (main.GetIdentity().GetQualifiedName() != "sample.Main" ||
+        main.GetType().GetIndex() != 22 || main.GetMemberCount() != 5 ||
+        color.GetFileTypeKind() != FileTypeKind.kEnum ||
+        color.GetType().GetIndex() != 23 || color.GetMemberCount() != 2 ||
+        runner.GetFileTypeKind() != FileTypeKind.kInterface ||
+        runner.GetType().GetIndex() != 24 || runner.GetMemberCount() != 1 ||
+        failure.GetFileTypeKind() != FileTypeKind.kError ||
+        failure.GetType().GetIndex() != 25 || failure.GetMemberCount() != 0 ||
+        pair.GetFileTypeKind() != FileTypeKind.kStruct ||
+        pair.GetType().GetIndex() != 26 || pair.GetMemberCount() != 4) {
+      return 705;
+    }
+
+    final SemanticSymbol count = result.GetSymbol(main.GetMember(0));
+    final SemanticSymbol constructor = result.GetSymbol(main.GetMember(2));
+    final SemanticSymbol create = result.GetSymbol(main.GetMember(3));
+    final SemanticSymbol lowerCase = result.GetSymbol(color.GetMember(1));
+    if (count.GetKind() != SymbolKind.kField || !count.IsStatic() ||
+        !count.IsFinal() || !count.IsTypeResolved() ||
+        count.GetType().GetIndex() != 9 ||
+        count.GetIdentity() == null ||
+        constructor.GetKind() != SymbolKind.kConstructor ||
+        !constructor.IsTypeResolved() ||
+        constructor.GetType().GetIndex() != main.GetType().GetIndex() ||
+        constructor.GetIdentity() == null ||
+        create.GetKind() != SymbolKind.kFunction ||
+        !create.IsTypeResolved() || create.GetIdentity() == null ||
+        lowerCase.GetVisibility() != Visibility.kPublic ||
+        !lowerCase.IsStatic() || !lowerCase.IsFinal() ||
+        !lowerCase.GetName().EqualsString("green")) {
+      return 706;
+    }
+    final MemberIdentity? countIdentity = count.GetIdentity();
+    if (countIdentity == null) { return 707; }
+    final var found = result.FindMember(countIdentity);
+    if (found == null || found.GetIndex() != count.GetId().GetIndex()) {
+      return 707;
+    }
+    final NominalIdentity pairIdentity = NominalIdentity.Build(
+        PackageIdentity.Build("sample", "1.2.3"), "values", "Pair",
+        NominalKind.kStruct);
+    final TypeId? pairType = result.FindNominalType(pairIdentity);
+    if (pairType == null || pairType.GetIndex() != 26 ||
+        result.GetType(pairType).GetKind() != TypeKind.kStruct) {
+      return 708;
+    }
+    return 0;
+  }
+
+  static func checkDependencies(): int32 throws StateError {
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("application", "1.0.0"),
+            PackageSource?[:0]));
+    final SemanticDependency?[] dependencies = SemanticDependency?[:3];
+    dependencies[0] = dependency(
+        "a", "zeta-lib", "3.0.0", zetaTypes());
+    dependencies[1] = dependency(
+        "cloth", "cloth", "0.6.0", clothTypes());
+    dependencies[2] = dependency(
+        "z", "alpha-lib", "2.0.0", alphaTypes());
+    final SemanticPackageInput input =
+        SemanticPackageInput.Build(frontend, dependencies);
+    dependencies[0] = null;
+    if (input.GetDependency(0).GetAlias() != "a" ||
+        input.GetDependency(1).GetAlias() != "cloth" ||
+        input.GetDependency(2).GetAlias() != "z") {
+      return 709;
+    }
+    final SemanticPackageResult result = PackageSymbolCollector.Collect(input);
+    if (!result.IsValid() || result.GetFileCount() != 4 ||
+        result.GetTypeCount() != 25 || result.GetSymbolCount() != 8 ||
+        result.GetNominalTypeCount() != 4) {
+      return 710;
+    }
+    final var objectFile = result.GetTypeAt(18).GetFile();
+    if (result.GetFileAt(0).GetIdentity().GetPackage().GetName() !=
+            "alpha-lib" ||
+        result.GetFileAt(0).GetIdentity().GetName() != "Alpha" ||
+        result.GetFileAt(1).GetIdentity().GetName() != "Zed" ||
+        result.GetFileAt(2).GetIdentity().GetQualifiedName() !=
+            "cloth.lang.Object" ||
+        result.GetFileAt(2).GetType().GetIndex() != 18 ||
+        objectFile == null || objectFile.GetIndex() != 2 ||
+        result.GetFileAt(3).GetIdentity().GetPackage().GetName() !=
+            "zeta-lib") {
+      return 711;
+    }
+    final SemanticType objectType = result.GetTypeAt(18);
+    if (objectType.GetIdentity().GetNominal() == null ||
+        objectType.GetIdentity().GetNominal()!.GetPackage().GetVersion() !=
+            "0.6.0" ||
+        result.GetSymbol(result.GetFileAt(1).GetSymbol()).GetVisibility() !=
+            Visibility.kPrivate) {
+      return 712;
+    }
+    final SemanticPackageResult shuffled = buildDependencyResult(true);
+    if (shuffled.GetFileCount() != result.GetFileCount() ||
+        shuffled.GetTypeCount() != result.GetTypeCount()) {
+      return 717;
+    }
+    for (int32 index = 0; index < result.GetFileCount(); index++) {
+      if (!shuffled.GetFileAt(index).GetIdentity().Equals(
+              result.GetFileAt(index).GetIdentity()) ||
+          shuffled.GetFileAt(index).GetType().GetIndex() !=
+              result.GetFileAt(index).GetType().GetIndex()) {
+        return 718;
+      }
+    }
+    return 0;
+  }
+
+  static func buildDependencyResult(bool reverse): SemanticPackageResult
+      throws StateError {
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("application", "1.0.0"),
+            PackageSource?[:0]));
+    final SemanticDependency?[] dependencies = SemanticDependency?[:3];
+    if (reverse) {
+      dependencies[0] = dependency(
+          "z", "alpha-lib", "2.0.0", alphaTypes());
+      dependencies[1] = dependency(
+          "cloth", "cloth", "0.6.0", clothTypes());
+      dependencies[2] = dependency(
+          "a", "zeta-lib", "3.0.0", zetaTypes());
+    } else {
+      dependencies[0] = dependency(
+          "a", "zeta-lib", "3.0.0", zetaTypes());
+      dependencies[1] = dependency(
+          "cloth", "cloth", "0.6.0", clothTypes());
+      dependencies[2] = dependency(
+          "z", "alpha-lib", "2.0.0", alphaTypes());
+    }
+    return PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, dependencies));
+  }
+
+  static func checkDiagnostics(): int32 throws IoError, StateError {
+    final SemanticPackageResult coreConflict = collectSingle(
+        PackageIdentity.Build("sample", "1.0.0"), "int32.co", "Empty.co");
+    if (coreConflict.IsValid() || coreConflict.GetFileCount() != 1 ||
+        coreConflict.GetTypeCount() != 22 ||
+        coreConflict.GetFileAt(0).GetType().GetIndex() != 0 ||
+        coreConflict.GetDiagnostics().GetCount() != 1 ||
+        coreConflict.GetDiagnostics().Get(0).GetKind() !=
+            SemanticDiagnosticKind.kCoreTypeConflict) {
+      return 713;
+    }
+    final SemanticPackageResult wrongObject = collectSingle(
+        PackageIdentity.Build("cloth", "0.6.0"), "lang/Object.co",
+        "ObjectInterface.co");
+    if (wrongObject.IsValid() || wrongObject.GetFileCount() != 1 ||
+        wrongObject.GetFileAt(0).GetType().GetIndex() != 0 ||
+        wrongObject.GetDiagnostics().GetCount() != 1 ||
+        wrongObject.GetDiagnostics().Get(0).GetKind() !=
+            SemanticDiagnosticKind.kCanonicalObjectMustBeClass) {
+      return 714;
+    }
+    final SemanticPackageResult abstractSealed = collectSingle(
+        PackageIdentity.Build("sample", "1.0.0"), "AbstractSealed.co",
+        "AbstractSealed.co");
+    if (abstractSealed.IsValid() || abstractSealed.GetFileCount() != 1 ||
+        abstractSealed.GetFileAt(0).GetType().GetIndex() != 22 ||
+        abstractSealed.GetDiagnostics().GetCount() != 1 ||
+        abstractSealed.GetDiagnostics().Get(0).GetKind() !=
+            SemanticDiagnosticKind.kAbstractSealedType) {
+      return 716;
+    }
+    final SemanticPackageResult duplicate = collectSingle(
+        PackageIdentity.Build("sample", "1.0.0"), "Color.co",
+        "DuplicateColor.co");
+    final SemanticSymbol firstCase =
+        duplicate.GetSymbol(duplicate.GetFileAt(0).GetMember(0));
+    final MemberIdentity? duplicateIdentity = firstCase.GetIdentity();
+    if (duplicate.IsValid() || duplicate.GetFileAt(0).GetMemberCount() != 3 ||
+        duplicateIdentity == null ||
+        duplicate.FindMember(duplicateIdentity) != null) {
+      return 719;
+    }
+    return 0;
+  }
+
+  static func collectSingle(
+      PackageIdentity identity, string logicalPath,
+      string fileName): SemanticPackageResult throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = source(logicalPath, fileName);
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(identity, sources));
+    return PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
+  }
+
+  static func dependency(
+      string alias, string packageName, string version,
+      DependencyType?[] types): SemanticDependency throws StateError {
+    return SemanticDependency.Build(
+        alias, DependencyTypeView.Build(
+                   PackageIdentity.Build(packageName, version), types));
+  }
+
+  static func alphaTypes(): DependencyType?[] throws StateError {
+    final PackageIdentity package =
+        PackageIdentity.Build("alpha-lib", "2.0.0");
+    final DependencyType?[] types = DependencyType?[:2];
+    types[0] = dependencyType(
+        package, "zoo", "Zed", NominalKind.kClass, FileTypeKind.kClass,
+        Visibility.kPrivate);
+    types[1] = dependencyType(
+        package, "", "Alpha", NominalKind.kStruct, FileTypeKind.kStruct,
+        Visibility.kPublic);
+    return types;
+  }
+
+  static func zetaTypes(): DependencyType?[] throws StateError {
+    final PackageIdentity package =
+        PackageIdentity.Build("zeta-lib", "3.0.0");
+    final DependencyType?[] types = DependencyType?[:1];
+    types[0] = dependencyType(
+        package, "contracts", "Last", NominalKind.kInterface,
+        FileTypeKind.kInterface, Visibility.kPublic);
+    return types;
+  }
+
+  static func clothTypes(): DependencyType?[] throws StateError {
+    final PackageIdentity package = PackageIdentity.Build("cloth", "0.6.0");
+    final DependencyType?[] types = DependencyType?[:1];
+    types[0] = dependencyType(
+        package, "lang", "Object", NominalKind.kClass,
+        FileTypeKind.kClass, Visibility.kPublic);
+    return types;
+  }
+
+  static func dependencyType(
+      PackageIdentity package, string sourcePackage, string name,
+      NominalKind nominalKind, FileTypeKind fileKind,
+      Visibility visibility): DependencyType throws StateError {
+    string path = name + ".co";
+    if (!sourcePackage::isEmpty) {
+      path = sourcePackage + "/" + path;
+    }
+    return DependencyType.Build(
+        NominalIdentity.Build(package, sourcePackage, name, nominalKind),
+        fileKind, visibility, path, 1, 1, false, false);
+  }
+
+  static func source(string logicalPath,
+                     string fileName): PackageSource throws IoError, StateError {
+    return PackageSource.Build(
+        logicalPath,
+        SourceFile.Load("tests/self_host/testdata/semantic/" + fileName));
+  }
+}

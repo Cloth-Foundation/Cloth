@@ -1,0 +1,22 @@
+import semantic.model::SemanticOwner;
+
+struct {
+  final SemanticOwner owner;
+  final int32 index;
+
+  _FileId(SemanticOwner owner, int32 index) {
+    self.owner = owner;
+    self.index = index;
+  }
+
+  static func Build(SemanticOwner owner,
+                    int32 index): FileId throws StateError {
+    if (index < 0) { throw StateError("file id is negative"); }
+    return FileId(owner, index);
+  }
+
+  func BelongsTo(SemanticOwner candidate): bool {
+    return self.owner == candidate;
+  }
+  func GetIndex(): int32 { return self.index; }
+}

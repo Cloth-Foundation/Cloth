@@ -1,0 +1,99 @@
+import frontend.package::FileFrontendResult;
+import frontend.parser.definition::DefinitionResult;
+import frontend.source::SourceSpan;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import semantic.identity::NominalIdentity;
+import semantic.identity::NominalKind;
+import semantic.identity::SemanticName;
+import semantic.model::SymbolKind;
+import semantic.model::TypeKind;
+
+class {
+  static func IsRegisterable(
+      FileFrontendResult source): bool throws StateError {
+    final DefinitionResult? definition = source.GetDefinition();
+    if (definition == null) { return false; }
+    final FileSyntax file = definition.GetTree().GetFile();
+    return SemanticName.IsIdentifierString(file.GetName()) &&
+           SemanticName.IsSourcePackage(file.GetPackageName());
+  }
+
+  static func CountMembers(FileSyntax file): int32 throws StateError {
+    int32 count = 0;
+    final DeclarationSyntaxSequence declarations = file.GetDeclarations();
+    for (int32 index = 0; index < declarations.GetCount(); index++) {
+      if (HasValidName(declarations.Get(index))) { count++; }
+    }
+    final EnumCaseSyntaxSequence cases = file.GetEnumCases();
+    for (int32 index = 0; index < cases.GetCount(); index++) {
+      if (SemanticName.IsIdentifierSource(cases.Get(index).GetName())) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  static func HasValidName(
+      DeclarationSyntax declaration): bool throws StateError {
+    SourceSpan? name = null;
+    if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+      final FieldSyntax? value = declaration as FieldSyntax?;
+      if (value != null) { name = value.GetName(); }
+    } else {
+      if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+        final FunctionSyntax? value = declaration as FunctionSyntax?;
+        if (value != null) { name = value.GetName(); }
+      } else {
+        final ConstructorSyntax? value = declaration as ConstructorSyntax?;
+        if (value != null) { name = value.GetName(); }
+      }
+    }
+    if (name == null) { return false; }
+    return SemanticName.IsIdentifierSource(name);
+  }
+
+  static func ClaimsCanonicalObject(NominalIdentity identity): bool {
+    return identity.GetPackage().GetName() == "cloth" &&
+           identity.GetPackage().GetVersion() == "0.6.0" &&
+           identity.GetSourcePackage() == "lang" &&
+           identity.GetName() == "Object";
+  }
+
+  static func IsCanonicalObject(NominalIdentity identity): bool {
+    return ClaimsCanonicalObject(identity) &&
+           identity.GetKind() == NominalKind.kClass;
+  }
+
+  static func NominalKindOf(FileTypeKind kind): NominalKind {
+    if (kind == FileTypeKind.kInterface) {
+      return NominalKind.kInterface;
+    }
+    if (kind == FileTypeKind.kEnum) { return NominalKind.kEnum; }
+    if (kind == FileTypeKind.kStruct) { return NominalKind.kStruct; }
+    return NominalKind.kClass;
+  }
+
+  static func TypeKindOf(FileTypeKind kind): TypeKind {
+    if (kind == FileTypeKind.kInterface) { return TypeKind.kInterface; }
+    if (kind == FileTypeKind.kEnum) { return TypeKind.kEnum; }
+    if (kind == FileTypeKind.kStruct) { return TypeKind.kStruct; }
+    if (kind == FileTypeKind.kError) { return TypeKind.kErrorClass; }
+    return TypeKind.kClass;
+  }
+
+  static func SymbolKindOf(FileTypeKind kind): SymbolKind {
+    if (kind == FileTypeKind.kInterface) { return SymbolKind.kInterface; }
+    if (kind == FileTypeKind.kEnum) { return SymbolKind.kEnum; }
+    if (kind == FileTypeKind.kStruct) { return SymbolKind.kStruct; }
+    if (kind == FileTypeKind.kError) { return SymbolKind.kError; }
+    return SymbolKind.kFileClass;
+  }
+}

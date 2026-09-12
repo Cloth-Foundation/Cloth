@@ -1,0 +1,31 @@
+import clothc.semantic.model::SemanticFile;
+import clothc.semantic.package::SemanticPackageResult;
+import clothc.semantic.resolution::ImportScope;
+import clothc.semantic.resolution::TypeBinding;
+
+import checks.semantic::SemanticPackageCheck;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    for (int32 iteration = 0; iteration < 64; iteration++) {
+      final SemanticPackageResult result =
+          SemanticPackageCheck.BuildLocalResult();
+      final byte[] pressure = byte[:16384];
+      pressure[0] = byte(iteration);
+      final SemanticFile main = result.GetFileAt(0);
+      final ImportScope? scope = result.GetImportScope(main.GetId());
+      final TypeBinding binding = result.GetTypeBinding(0);
+      if (!result.IsValid() || result.GetTypeCount() != 27 ||
+          main.GetIdentity().GetQualifiedName() != "sample.Main" ||
+          scope == null || scope.GetCount() != 1 ||
+          result.GetTypeBindingCount() != 12 || !binding.IsResolved() ||
+          binding.GetSyntax().GetName().GetSource().GetLength() == 0 ||
+          !result.GetSymbol(main.GetMember(0)).GetName().EqualsString("Count") ||
+          result.GetInput().GetFrontend().GetFile(0).GetDefinition() == null ||
+          pressure[0] != byte(iteration)) {
+        return 715;
+      }
+    }
+    return 0;
+  }
+}

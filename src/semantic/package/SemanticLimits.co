@@ -1,0 +1,12 @@
+class {
+  static func MaxLocalFiles(): int32 { return 65536; }
+  static func MaxDirectDependencies(): int32 { return 4096; }
+  static func MaxDependencyTypes(): int32 { return 262144; }
+  static func MaxTypes(): int32 { return 524288; }
+  static func MaxSymbols(): int32 { return 1048576; }
+  static func MaxDiagnostics(): int32 { return 262144; }
+  static func MaxImportBindings(): int32 { return 1048576; }
+  static func MaxTypeBindings(): int32 { return 1048576; }
+  static func MaxNameBytes(): int32 { return 16777216; }
+  static func MaxStructuralDepth(): int32 { return 256; }
+}

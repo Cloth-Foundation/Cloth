@@ -1,0 +1,32 @@
+import semantic.diagnostic::SemanticDiagnostic;
+
+class {
+  final SemanticDiagnostic?[] values;
+
+  _SemanticDiagnosticSequence(SemanticDiagnostic?[] values) {
+    self.values = values;
+  }
+
+  static func Build(
+      SemanticDiagnostic?[] input): SemanticDiagnosticSequence
+      throws StateError {
+    final SemanticDiagnostic?[] values =
+        SemanticDiagnostic?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("semantic diagnostic sequence contains null");
+      }
+      values[index] = input[index];
+    }
+    return SemanticDiagnosticSequence(values);
+  }
+
+  func Get(int32 index): SemanticDiagnostic throws StateError {
+    if (index < 0 || index >= self.values::length) {
+      throw StateError("semantic diagnostic index is out of bounds");
+    }
+    return self.values[index]!;
+  }
+
+  func GetCount(): int32 { return self.values::length; }
+}

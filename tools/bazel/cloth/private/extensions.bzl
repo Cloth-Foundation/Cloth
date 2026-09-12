@@ -6,6 +6,7 @@ _DECLARATION_ORACLE_ENV = "CLOTH_DECLARATION_ORACLE"
 _DESCRIPTOR_ENV = "CLOTH_BOOTSTRAP_DESCRIPTOR"
 _DEFINITION_ORACLE_ENV = "CLOTH_DEFINITION_ORACLE"
 _LEXER_ORACLE_ENV = "CLOTH_LEXER_ORACLE"
+_SEMANTIC_ORACLE_ENV = "CLOTH_SEMANTIC_ORACLE"
 _ORACLE_CORPUS_ENV = "CLOTH_ORACLE_CORPUS"
 _PYTHON_ENV = "CLOTH_BAZEL_PYTHON"
 _SHUTTLE_ENV = "CLOTH_SHUTTLE"
@@ -264,6 +265,7 @@ def _oracle_repository_impl(repository_ctx):
     declaration = _required_path(repository_ctx, _DECLARATION_ORACLE_ENV)
     definition = _required_path(repository_ctx, _DEFINITION_ORACLE_ENV)
     lexer = _required_path(repository_ctx, _LEXER_ORACLE_ENV)
+    semantic = _required_path(repository_ctx, _SEMANTIC_ORACLE_ENV)
     corpus = _required_path(
         repository_ctx,
         _ORACLE_CORPUS_ENV,
@@ -277,6 +279,7 @@ def _oracle_repository_impl(repository_ctx):
     repository_ctx.symlink(declaration, "bin/declaration.exe")
     repository_ctx.symlink(definition, "bin/definition.exe")
     repository_ctx.symlink(lexer, "bin/lexer.exe")
+    repository_ctx.symlink(semantic, "bin/semantic.exe")
     repository_ctx.symlink(corpus, "corpus")
     repository_ctx.file(
         "BUILD.bazel",
@@ -286,6 +289,7 @@ exports_files([
     "bin/declaration.exe",
     "bin/definition.exe",
     "bin/lexer.exe",
+    "bin/semantic.exe",
 ])
 
 alias(
@@ -301,6 +305,11 @@ alias(
 alias(
     name = "lexer",
     actual = ":bin/lexer.exe",
+)
+
+alias(
+    name = "semantic",
+    actual = ":bin/semantic.exe",
 )
 
 filegroup(
@@ -321,6 +330,7 @@ _oracle_repository = repository_rule(
         _DECLARATION_ORACLE_ENV,
         _DEFINITION_ORACLE_ENV,
         _LEXER_ORACLE_ENV,
+        _SEMANTIC_ORACLE_ENV,
         _ORACLE_CORPUS_ENV,
     ],
     local = True,

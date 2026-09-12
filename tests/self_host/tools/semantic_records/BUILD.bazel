@@ -1,0 +1,12 @@
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary")
+
+cloth_binary(
+    name = "semantic_records",
+    srcs = ["Main.co"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-semantic-records",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)

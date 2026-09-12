@@ -1,0 +1,129 @@
+import semantic.identity::NominalIdentity;
+import semantic.model::SemanticType;
+import semantic.model::TypeId;
+import semantic.symbol::NominalTypeEntry;
+
+class {
+  final NominalTypeEntry?[] entries;
+
+  _NominalTypeIndex(NominalTypeEntry?[] entries) {
+    self.entries = entries;
+  }
+
+  static func Build(SemanticType?[] types): NominalTypeIndex
+      throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < types::length; index++) {
+      final SemanticType? type = types[index];
+      if (type == null) {
+        throw StateError("nominal type index input contains null");
+      }
+      if (type.GetIdentity().GetNominal() != null) { count++; }
+    }
+    final NominalTypeEntry?[] entries = NominalTypeEntry?[:count];
+    int32 output = 0;
+    for (int32 index = 0; index < types::length; index++) {
+      final SemanticType type = types[index]!;
+      final NominalIdentity? identity = type.GetIdentity().GetNominal();
+      if (identity == null) { continue; }
+      entries[output] = NominalTypeEntry.Build(identity, type.GetId());
+      output++;
+    }
+    final NominalTypeEntry?[] sorted = sort(entries);
+    for (int32 index = 1; index < sorted::length; index++) {
+      if (get(sorted, index - 1).GetIdentity().Equals(
+              get(sorted, index).GetIdentity())) {
+        throw StateError("nominal type index contains a duplicate identity");
+      }
+    }
+    return NominalTypeIndex(sorted);
+  }
+
+  func GetCount(): int32 { return self.entries::length; }
+
+  func Get(int32 index): NominalTypeEntry throws StateError {
+    if (index < 0 || index >= self.entries::length) {
+      throw StateError("nominal type index entry is out of bounds");
+    }
+    return get(self.entries, index);
+  }
+
+  func Find(NominalIdentity identity): TypeId? throws StateError {
+    int32 begin = 0;
+    int32 end = self.entries::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      final NominalTypeEntry entry = get(self.entries, middle);
+      final int32 order =
+          NominalIdentity.Compare(entry.GetIdentity(), identity);
+      if (order < 0) {
+        begin = middle + 1;
+      } else {
+        if (order > 0) {
+          end = middle;
+        } else {
+          return entry.GetType();
+        }
+      }
+    }
+    return null;
+  }
+
+  static func sort(NominalTypeEntry?[] values): NominalTypeEntry?[]
+      throws StateError {
+    final int32 count = values::length;
+    NominalTypeEntry?[] input = values;
+    NominalTypeEntry?[] output = NominalTypeEntry?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final NominalTypeEntry?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      NominalTypeEntry?[] input, NominalTypeEntry?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left), get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(NominalTypeEntry left,
+                      NominalTypeEntry right): int32 throws StateError {
+    return NominalIdentity.Compare(left.GetIdentity(), right.GetIdentity());
+  }
+
+  static func get(NominalTypeEntry?[] values,
+                  int32 index): NominalTypeEntry throws StateError {
+    final NominalTypeEntry? value = values[index];
+    if (value == null) {
+      throw StateError("nominal type index sorting lost an entry");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

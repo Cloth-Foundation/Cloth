@@ -1,0 +1,161 @@
+import frontend.source::SourceRange;
+import frontend.syntax.tree::Visibility;
+import frontend.syntax.tree::TypeSyntax;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.identity::SemanticName;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::TypeId;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.resolution::ImportBinding;
+import semantic.resolution::ImportScope;
+import semantic.resolution::PreludeTypeIndex;
+import semantic.resolution::ResolutionFileIndex;
+import semantic.resolution::ResolutionPackage;
+import semantic.resolution::TypeBindingBuffer;
+
+class {
+  final PackageSymbolStorage storage;
+  final ResolutionFileIndex files;
+  final FileRegistration file;
+  final ImportScope scope;
+  final PreludeTypeIndex prelude;
+  final TypeBindingBuffer bindings;
+  final SemanticDiagnosticBuffer diagnostics;
+
+  TypeResolver(
+      PackageSymbolStorage storage, ResolutionFileIndex files,
+      FileRegistration file,
+      ImportScope scope, PreludeTypeIndex prelude,
+      TypeBindingBuffer bindings, SemanticDiagnosticBuffer diagnostics) {
+    self.storage = storage;
+    self.files = files;
+    self.file = file;
+    self.scope = scope;
+    self.prelude = prelude;
+    self.bindings = bindings;
+    self.diagnostics = diagnostics;
+  }
+
+  func Bind(TypeSyntax syntax, bool allowVoid): TypeId throws StateError {
+    final TypeId recoveryType = TypeId.Build(self.storage.GetOwner(), 0);
+    if (!syntax.IsValid()) {
+      self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+      return recoveryType;
+    }
+    final SemanticName name = SemanticName.FromSource(syntax.GetName());
+    TypeId? baseType = null;
+    final ImportBinding? visible = self.scope.Find(name);
+    if (visible != null) {
+      final FileId? target = visible.GetTarget();
+      if (target == null) {
+        self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+        return recoveryType;
+      }
+      baseType = self.storage.GetRegistration(target.GetIndex()).GetType();
+    }
+    if (baseType == null) {
+      final FileId? target = self.prelude.FindFile(name);
+      if (target != null) {
+        baseType = self.storage.GetRegistration(target.GetIndex()).GetType();
+      }
+    }
+    if (baseType == null) { baseType = self.findCore(name); }
+    if (baseType == null) {
+      if (name.EqualsString("String")) {
+        self.report(SemanticDiagnosticKind.kCapitalStringType,
+                    syntax.GetRange(), null);
+      } else {
+        final FileRegistration? inaccessible = self.findInaccessible(name);
+        if (inaccessible != null) {
+          self.report(SemanticDiagnosticKind.kTypePrivate, syntax.GetRange(),
+                      inaccessible.GetRange());
+        } else {
+          self.report(SemanticDiagnosticKind.kUnknownType,
+                      syntax.GetRange(), null);
+        }
+      }
+      self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+      return recoveryType;
+    }
+    if (baseType.GetIndex() == 2) {
+      if (syntax.IsArray()) {
+        self.report(SemanticDiagnosticKind.kVoidArrayType,
+                    syntax.GetRange(), null);
+        self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+        return recoveryType;
+      }
+      if (syntax.IsNullable() || syntax.IsElementNullable()) {
+        self.report(SemanticDiagnosticKind.kVoidNullableType,
+                    syntax.GetRange(), null);
+        self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+        return recoveryType;
+      }
+      if (!allowVoid) {
+        self.report(SemanticDiagnosticKind.kVoidValueType,
+                    syntax.GetRange(), null);
+        self.bindings.Add(self.file.GetId(), syntax, recoveryType, false);
+        return recoveryType;
+      }
+    }
+    final TypeId type = self.applyShape(syntax, baseType);
+    self.bindings.Add(self.file.GetId(), syntax, type, true);
+    return type;
+  }
+
+  func applyShape(TypeSyntax syntax,
+                  TypeId baseType): TypeId throws StateError {
+    TypeId type = baseType;
+    if (syntax.IsElementNullable()) {
+      type = self.storage.GetOrAddNullableType(type);
+    }
+    if (syntax.IsArray()) {
+      type = self.storage.GetOrAddArrayType(type);
+    }
+    if (syntax.IsNullable()) {
+      type = self.storage.GetOrAddNullableType(type);
+    }
+    return type;
+  }
+
+  func findCore(SemanticName name): TypeId? throws StateError {
+    if (name.EqualsString("int")) {
+      return TypeId.Build(self.storage.GetOwner(), 9);
+    }
+    if (name.EqualsString("uint")) {
+      return TypeId.Build(self.storage.GetOwner(), 13);
+    }
+    if (name.EqualsString("float")) {
+      return TypeId.Build(self.storage.GetOwner(), 15);
+    }
+    for (int32 index = 2; index <= 20; index++) {
+      if (name.EqualsString(CoreTypeCatalog.GetName(index))) {
+        return TypeId.Build(self.storage.GetOwner(), index);
+      }
+    }
+    return null;
+  }
+
+  func findInaccessible(
+      SemanticName name): FileRegistration? throws StateError {
+    final ResolutionPackage package =
+        ResolutionPackage.Current(self.file.GetIdentity());
+    final FileRegistration? candidate = self.files.Find(package, name);
+    if (candidate == null ||
+        candidate.GetId().GetIndex() == self.file.GetId().GetIndex() ||
+        self.storage.GetSymbol(candidate.GetSymbol()).GetVisibility() !=
+            Visibility.kPrivate) {
+      return null;
+    }
+    return candidate;
+  }
+
+  func report(SemanticDiagnosticKind kind, SourceRange range,
+              SourceRange? related): void throws StateError {
+    self.diagnostics.Add(kind, range, related);
+    self.storage.InvalidateFile(self.file.GetId());
+  }
+
+}

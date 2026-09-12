@@ -37,7 +37,7 @@ shuttle_compatibility_test(
         "//tests/self_host/src:sources",
     ],
     size = "medium",
-    tags = ["integration", "shuttle"],
+    tags = ["exclusive", "integration", "shuttle"],
 )
 
 cross_compiler_parity_test(
@@ -52,6 +52,10 @@ cross_compiler_parity_test(
         "testdata/parser/definition_recovery.co",
         "testdata/parser/expression_recovery.txt",
         "testdata/parser/expression_valid.txt",
+        "testdata/resolution/invalid/Invalid.co",
+        "testdata/resolution/valid/Main.co",
+        "testdata/resolution/valid/Record.co",
+        "testdata/resolution/valid/User.co",
     ],
     definition_oracle = "@cloth_oracles//:definition",
     definition_records = "//tests/self_host/tools/definition_records",
@@ -63,8 +67,14 @@ cross_compiler_parity_test(
     ],
     lexer_oracle = "@cloth_oracles//:lexer",
     lexer_records = "//tests/self_host/tools/lex_records",
-    size = "small",
-    tags = ["parity"],
+    semantic_corpus = [
+        "testdata/semantic/SemanticParity.co",
+        "testdata/semantic/SemanticParityInvalid.co",
+    ],
+    semantic_oracle = "@cloth_oracles//:semantic",
+    semantic_records = "//tests/self_host/tools/semantic_records",
+    size = "medium",
+    tags = ["exclusive", "parity"],
 )
 
 timeout_probe_test(

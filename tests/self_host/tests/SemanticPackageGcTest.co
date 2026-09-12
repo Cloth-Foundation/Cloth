@@ -1,0 +1,11 @@
+import self_host.checks.semantic::SemanticPackageGcCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, SemanticPackageGcCheck.Run(),
+                 "semantic package GC check status");
+  }
+}

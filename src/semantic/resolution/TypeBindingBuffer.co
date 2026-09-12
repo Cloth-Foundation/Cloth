@@ -1,0 +1,48 @@
+import frontend.syntax.tree::TypeSyntax;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.model::TypeId;
+import semantic.package::SemanticLimits;
+import semantic.resolution::TypeBinding;
+import semantic.resolution::TypeBindingSequence;
+
+class {
+  final SemanticOwner owner;
+  final TypeBinding?[] values;
+  int32 count;
+
+  _TypeBindingBuffer(SemanticOwner owner, int32 capacity) {
+    self.owner = owner;
+    self.values = TypeBinding?[:capacity];
+    self.count = 0;
+  }
+
+  static func Create(
+      SemanticOwner owner, int32 capacity): TypeBindingBuffer
+      throws StateError {
+    if (capacity < 0 || capacity > SemanticLimits.MaxTypeBindings()) {
+      throw StateError("declared type binding capacity exceeds its limit");
+    }
+    return TypeBindingBuffer(owner, capacity);
+  }
+
+  func Add(FileId file, TypeSyntax syntax, TypeId type,
+           bool resolved): void throws StateError {
+    if (self.count >= self.values::length) {
+      throw StateError("declared type binding capacity is exhausted");
+    }
+    self.values[self.count] =
+        TypeBinding.Build(self.owner, file, syntax, type, resolved);
+    self.count++;
+  }
+
+  func GetCount(): int32 { return self.count; }
+
+  func Publish(): TypeBindingSequence throws StateError {
+    final TypeBinding?[] result = TypeBinding?[:self.count];
+    for (int32 index = 0; index < self.count; index++) {
+      result[index] = self.values[index];
+    }
+    return TypeBindingSequence.Build(self.owner, result);
+  }
+}

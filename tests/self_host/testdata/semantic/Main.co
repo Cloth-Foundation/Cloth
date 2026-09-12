@@ -1,0 +1,14 @@
+static final int32 Count = 1;
+string value;
+
+Main(string initial) {
+  self.value = initial;
+}
+
+static func Create(): Main {
+  return Main("");
+}
+
+func Read(): string {
+  return self.value;
+}

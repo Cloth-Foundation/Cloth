@@ -1,0 +1,7 @@
+enum {
+  kFunction,
+  kConstructor,
+  kStaticField,
+  kInstanceField,
+  kEnumCase,
+}

@@ -1,12 +1,16 @@
 import cloth.io::Console;
 
-import frontend.diagnostic::DiagnosticRenderer;
 import frontend.package::FrontendCoordinator;
 import frontend.package::PackageFrontendInput;
 import frontend.package::PackageFrontendResult;
 import frontend.package::PackageIdentity;
 import frontend.package::PackageSource;
 import frontend.source::SourceFile;
+import semantic.diagnostic::SemanticDiagnosticRenderer;
+import semantic.package::PackageSymbolCollector;
+import semantic.package::SemanticDependency;
+import semantic.package::SemanticPackageInput;
+import semantic.package::SemanticPackageResult;
 
 class {
   static func Run(string[] args): int32 throws IoError, StateError {
@@ -40,9 +44,11 @@ class {
     sources[0] = PackageSource.Build(name + ".co", source);
     final PackageFrontendInput input = PackageFrontendInput.Build(
         PackageIdentity.Build("", ""), sources);
-    final PackageFrontendResult result = FrontendCoordinator.Check(input);
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(input);
+    final SemanticPackageResult result = PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
     if (!result.IsValid()) {
-      Console.WriteError(DiagnosticRenderer.Render(result));
+      Console.WriteError(SemanticDiagnosticRenderer.Render(result));
       return 1;
     }
     return 0;

@@ -9,6 +9,12 @@ behavior and checkpoint scope.
 ```text
 Main
   -> compiler driver
+    -> semantic package orchestration
+      -> deterministic declaration registration and indexes
+      -> immutable import scopes and declared type bindings
+      -> result-owned handles and persistent identities
+      -> verified dependency declaration views
+      -> frontend package results
     -> frontend package orchestration
       -> frontend parser orchestration
        -> syntax storage and tree
@@ -58,17 +64,25 @@ src/
       statement/            Blocks, statements, loops, and switches
       support/              Shared cursors, facts, ranges, and budgets
       storage/               Typed segmented declaration construction
+  semantic/
+    identity/                Persistent nominal, structural, and member identity
+    model/                   Result-owned handles and immutable semantic records
+    package/                 Inputs, bounded registration, results, and coordination
+    symbol/                  Canonically sorted nominal and member indexes
+    resolution/              Import scopes, prelude lookup, and type binding
+    diagnostic/              Structured registration diagnostics and messages
 tests/
   support/src/                Repository-private assertions and typed failure
   smoke/                      Focused Bazel rule and execution checks
   self_host/
     Shuttle.toml             Focused build-system compatibility package
-    src/checks/              Lexer, parser, and syntax acceptance checks
+    src/checks/              Lexer, parser, syntax, and semantic checks
     src/fixtures/            Focused construction and lifetime fixtures
     src/parity/              Canonical kind codes and record adapters
     tests/                   Named Bazel assertion adapters
     testdata/lexer/          Exact byte inputs used by lexer checks
     testdata/parser/         Parser grammar and recovery inputs
+    testdata/semantic/       Package-symbol and identity inputs
     tools/                   Parity emitters and failure-injection executables
 tools/
   bazel/
@@ -83,7 +97,7 @@ Directories and files are added when their scheduled checkpoint needs them;
 empty placeholders are not architecture. Each `.co` file defines one primary
 implicit type with the same name as the file stem.
 
-## Frontend ownership
+## Component ownership
 
 ### `frontend/source`
 
@@ -146,6 +160,30 @@ structured diagnostic collection, declaration outline, and verified syntax
 tree for as long as a downstream phase needs it. This layer receives declared
 sources; it does not discover directories, resolve imports, or perform semantic
 analysis.
+
+### `semantic`
+
+Stage 50 established semantic code under `src/semantic/`. `identity/` owns
+persistent nominal, structural, and member identity; `model/` owns checked result-local
+handles and immutable records; `package/` owns semantic inputs, results, and
+coordination; `symbol/` owns declaration registration and indexes;
+`resolution/` owns file import scopes and declared type-name binding; and
+`diagnostic/` owns exhaustive semantic diagnostic kinds and messages.
+
+The identity, model, package, symbol, resolution, and diagnostic components are
+authoritative for the Stage 50 boundary. Handles expose checked result
+membership without exposing their owner token. Package collection installs the
+fixed core catalog,
+registers all local and detached nominal types before members, builds immutable
+file scopes, binds every declared type position, finalizes callable identities,
+and publishes canonical indexes. Import and type lookup use sorted indexes and
+bounded binary searches; invalid bindings remain explicit recovery records.
+
+Semantic construction consumes `frontend/package` results and already verified
+dependency declaration views. It cannot discover sources, decode untrusted
+artifacts, read manifests, or place semantic state in the driver. Dependencies
+between semantic directories point from package coordination through symbol and
+resolution services into identity and model values, never back into parsing.
 
 ### `Main.co`
 
@@ -213,10 +251,11 @@ and structured recovery, shares package constant budgets, and verifies complete
 trees iteratively. Its canonical full-tree records agree with the C++ oracle for
 all production compiler sources and the focused valid and malformed corpus.
 Stage 49.2 adds the production package coordinator with explicit immutable
-inputs, path-derived source and implicit-class identity, canonical ordering, per-file failure
-isolation, shared package constant budgets, and verified managed results. The
-production `clothc` executable now routes its direct single-file check through
-that coordinator. Stage 49.3 adds exhaustive diagnostic catalogs, typed
+inputs, path-derived source and implicit-class identity, canonical ordering,
+per-file failure isolation, shared package constant budgets, and verified
+managed results. The production `clothc` executable now routes its direct
+single-file check through that coordinator. Stage 49.3 adds exhaustive
+diagnostic catalogs, typed
 severity, safe related-location rendering, stderr output, and exact process
 status behavior. The Stage 49.4 audit closes exhaustive differential,
 malformed, resource, GC, target, relocation, and Shuttle gates. The self-hosted
@@ -224,4 +263,16 @@ package frontend is authoritative for lexing and parsing; the frozen C++
 implementation remains the bootstrap and declared differential oracle. The
 legacy `clothc-tests` dispatcher and CMake bridge have been retired; the
 remaining Shuttle package has a no-op entry and exists only to validate the
-supported package/build boundary.
+supported package/build boundary. Stage 50.1 freezes the package-semantic
+contract. Stage 50.2 implements result-owned handles, canonical type/member
+identity, immutable semantic package inputs/results, the compiler-owned core
+catalog, local and detached nominal registration, file/self/member symbols,
+bounded diagnostics, and deterministic indexes. Stage 50.3 adds file import
+scopes, recursive standard-library prelude lookup, exhaustive declared
+`TypeSyntax` binding, structural type interning, resolved callable identities,
+deterministic recovery, and retained semantic source ownership. Stage 50.4
+routes production checks through this semantic package boundary and transfers
+authority for package symbols, canonical semantic type identity, import
+binding, and declared type-name resolution. The driver remains orchestration
+rather than semantic storage. Expression typing, HIR, and later boundaries
+remain with the frozen C++ bootstrap and differential oracle.

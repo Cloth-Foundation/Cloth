@@ -11,6 +11,9 @@ import sys
 from typing import Sequence
 
 
+_COMMAND_TIMEOUT_SECONDS = 180
+
+
 class AuditError(Exception):
     """Reports a Shuttle compatibility contract failure."""
 
@@ -40,7 +43,7 @@ def _run(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=120,
+            timeout=_COMMAND_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise AuditError(f"{description} could not complete: {error}") from error

@@ -1,0 +1,31 @@
+import semantic.identity::SemanticName;
+import semantic.package::DependencyTypeView;
+
+class {
+  final string alias;
+  final DependencyTypeView view;
+
+  _SemanticDependency(string alias, DependencyTypeView view) {
+    self.alias = alias;
+    self.view = view;
+  }
+
+  static func Build(string alias,
+                    DependencyTypeView view): SemanticDependency
+      throws StateError {
+    if (!SemanticName.IsIdentifierString(alias)) {
+      throw StateError("semantic dependency alias is invalid");
+    }
+    final string packageName = view.GetIdentity().GetName();
+    final string packageVersion = view.GetIdentity().GetVersion();
+    if ((alias == "cloth" || packageName == "cloth") &&
+        (alias != "cloth" || packageName != "cloth" ||
+         packageVersion != "0.6.0")) {
+      throw StateError("standard library semantic dependency is invalid");
+    }
+    return SemanticDependency(alias, view);
+  }
+
+  func GetAlias(): string { return self.alias; }
+  func GetView(): DependencyTypeView { return self.view; }
+}

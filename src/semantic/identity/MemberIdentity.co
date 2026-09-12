@@ -1,0 +1,100 @@
+import semantic.identity::MemberKind;
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.identity::TypeIdentity;
+
+class {
+  final NominalIdentity owner;
+  final MemberKind kind;
+  final SemanticName name;
+  final TypeIdentity?[] parameters;
+
+  _MemberIdentity(NominalIdentity owner, MemberKind kind, SemanticName name,
+                  TypeIdentity?[] parameters) {
+    self.owner = owner;
+    self.kind = kind;
+    self.name = name;
+    self.parameters = parameters;
+  }
+
+  static func Build(
+      NominalIdentity owner, MemberKind kind, SemanticName name,
+      TypeIdentity?[] input): MemberIdentity throws StateError {
+    if ((kind == MemberKind.kStaticField ||
+         kind == MemberKind.kInstanceField ||
+         kind == MemberKind.kEnumCase) && input::length != 0) {
+      throw StateError("non-callable member identity has parameters");
+    }
+    if (kind == MemberKind.kConstructor &&
+        !name.EqualsString(owner.GetName())) {
+      throw StateError("constructor identity name does not match its owner");
+    }
+    final TypeIdentity?[] parameters = TypeIdentity?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("member identity contains a null parameter type");
+      }
+      parameters[index] = input[index];
+    }
+    return MemberIdentity(owner, kind, name, parameters);
+  }
+
+  func GetOwner(): NominalIdentity { return self.owner; }
+  func GetKind(): MemberKind { return self.kind; }
+  func GetName(): SemanticName { return self.name; }
+  func GetParameterCount(): int32 { return self.parameters::length; }
+
+  func GetParameter(int32 index): TypeIdentity throws StateError {
+    if (index < 0 || index >= self.parameters::length) {
+      throw StateError("member identity parameter index is out of bounds");
+    }
+    return self.parameters[index]!;
+  }
+
+  func Equals(MemberIdentity other): bool throws StateError {
+    if (!self.owner.Equals(other.GetOwner()) || self.kind != other.GetKind() ||
+        !self.name.Equals(other.GetName()) ||
+        self.GetParameterCount() != other.GetParameterCount()) {
+      return false;
+    }
+    for (int32 index = 0; index < self.GetParameterCount(); index++) {
+      if (!self.GetParameter(index).EqualsOverload(
+              other.GetParameter(index))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func Compare(MemberIdentity left,
+                      MemberIdentity right): int32 throws StateError {
+    int32 order = NominalIdentity.Compare(left.GetOwner(), right.GetOwner());
+    if (order != 0) { return order; }
+    order = kindRank(left.GetKind()) - kindRank(right.GetKind());
+    if (order != 0) { return order; }
+    order = SemanticName.Compare(left.GetName(), right.GetName());
+    if (order != 0) { return order; }
+    int32 shared = left.GetParameterCount();
+    if (right.GetParameterCount() < shared) {
+      shared = right.GetParameterCount();
+    }
+    for (int32 index = 0; index < shared; index++) {
+      order = TypeIdentity.CompareOverload(left.GetParameter(index),
+                                           right.GetParameter(index));
+      if (order != 0) { return order; }
+    }
+    if (left.GetParameterCount() < right.GetParameterCount()) { return -1; }
+    if (left.GetParameterCount() > right.GetParameterCount()) { return 1; }
+    return 0;
+  }
+
+  static func kindRank(MemberKind kind): int32 {
+    switch (kind) {
+      case MemberKind.kInstanceField: { return 0; }
+      case MemberKind.kStaticField: { return 1; }
+      case MemberKind.kFunction: { return 2; }
+      case MemberKind.kConstructor: { return 3; }
+      case MemberKind.kEnumCase: { return 4; }
+    }
+  }
+}

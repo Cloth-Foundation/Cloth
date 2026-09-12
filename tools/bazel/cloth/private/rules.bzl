@@ -814,6 +814,7 @@ def _cross_compiler_parity_test_impl(ctx):
     entries.extend(_manifest_entries("declaration", ctx.files.declaration_corpus))
     entries.extend(_manifest_entries("definition", ctx.files.definition_corpus))
     entries.extend(_manifest_entries("fixture", ctx.files.definition_fixtures))
+    entries.extend(_manifest_entries("semantic", ctx.files.semantic_corpus))
     ctx.actions.write(manifest, "\n".join(entries) + "\n")
 
     interpreter_directory = toolchain.interpreter.short_path[
@@ -842,7 +843,9 @@ set "PATH=%%main%%\\%s;%%PATH%%"
   --declaration-oracle "%%main%%\\%s" ^
   --declaration-records "%%main%%\\%s" ^
   --definition-oracle "%%main%%\\%s" ^
-  --definition-records "%%main%%\\%s"
+  --definition-records "%%main%%\\%s" ^
+  --semantic-oracle "%%main%%\\%s" ^
+  --semantic-records "%%main%%\\%s"
 exit /b %%ERRORLEVEL%%
 """ % (
             _windows_path(interpreter_directory),
@@ -857,6 +860,8 @@ exit /b %%ERRORLEVEL%%
             _windows_path(ctx.executable.declaration_records.short_path),
             _windows_path(ctx.executable.definition_oracle.short_path),
             _windows_path(ctx.executable.definition_records.short_path),
+            _windows_path(ctx.executable.semantic_oracle.short_path),
+            _windows_path(ctx.executable.semantic_records.short_path),
         ),
         is_executable = True,
     )
@@ -865,18 +870,21 @@ exit /b %%ERRORLEVEL%%
         ctx.executable.declaration_records,
         ctx.executable.definition_records,
         ctx.executable.lexer_records,
+        ctx.executable.semantic_records,
         ctx.file._parity_script,
         manifest,
         ctx.executable.declaration_oracle,
         ctx.executable.definition_oracle,
         toolchain.interpreter,
         ctx.executable.lexer_oracle,
+        ctx.executable.semantic_oracle,
     ]
     files.extend(ctx.files.compiler_inputs)
     files.extend(ctx.files.declaration_corpus)
     files.extend(ctx.files.definition_corpus)
     files.extend(ctx.files.definition_fixtures)
     files.extend(ctx.files.lexer_inputs)
+    files.extend(ctx.files.semantic_corpus)
     files.extend(toolchain.compiler_runtime.to_list())
     files.extend(toolchain.interpreter_runtime.to_list())
     runfiles = ctx.runfiles(files = files)
@@ -884,6 +892,7 @@ exit /b %%ERRORLEVEL%%
         ctx.attr.declaration_records,
         ctx.attr.definition_records,
         ctx.attr.lexer_records,
+        ctx.attr.semantic_records,
     ]:
         runfiles = runfiles.merge(target[DefaultInfo].default_runfiles)
     return [DefaultInfo(executable = runner, runfiles = runfiles)]
@@ -949,8 +958,23 @@ cross_compiler_parity_test = rule(
             executable = True,
             mandatory = True,
         ),
+        "semantic_corpus": attr.label_list(
+            allow_files = [".co"],
+            mandatory = True,
+        ),
+        "semantic_oracle": attr.label(
+            allow_single_file = True,
+            cfg = "exec",
+            executable = True,
+            mandatory = True,
+        ),
+        "semantic_records": attr.label(
+            cfg = "target",
+            executable = True,
+            mandatory = True,
+        ),
     },
-    doc = "Compares exhaustive declared frontend records with C++ oracles.",
+    doc = "Compares declared frontend and semantic records with C++ oracles.",
     executable = True,
     test = True,
     toolchains = [_TOOLCHAIN_TYPE],

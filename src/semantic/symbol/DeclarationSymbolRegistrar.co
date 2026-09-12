@@ -1,0 +1,250 @@
+import frontend.package::FileFrontendResult;
+import frontend.package::PackageFrontendResult;
+import frontend.source::SourceRange;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.tree::EnumCaseSyntax;
+import frontend.syntax.tree::EnumCaseSyntaxSequence;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import frontend.syntax.tree::Visibility;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.identity::MemberIdentity;
+import semantic.identity::MemberKind;
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.identity::TypeIdentity;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::DependencyType;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.package::SemanticPackagePreflight;
+import semantic.symbol::DeclarationRegistrationFacts;
+
+class {
+  static func RegisterFiles(
+      PackageFrontendResult frontend, SemanticPackagePreflight preflight,
+      PackageSymbolStorage storage,
+      SemanticDiagnosticBuffer diagnostics): void throws StateError {
+    registerLocalFiles(frontend, storage, diagnostics);
+    registerDependencyFiles(preflight, storage);
+  }
+
+  static func RegisterMembers(PackageSymbolStorage storage): void
+      throws StateError {
+    for (int32 index = 0; index < storage.GetFileCount(); index++) {
+      final FileRegistration registration = storage.GetRegistration(index);
+      final FileFrontendResult? frontend = registration.GetFrontend();
+      if (frontend == null) { continue; }
+      final FileSyntax file = frontend.GetDefinition()!.GetTree().GetFile();
+      int32 order = 0;
+      final DeclarationSyntaxSequence declarations = file.GetDeclarations();
+      for (int32 member = 0; member < declarations.GetCount(); member++) {
+        final DeclarationSyntax declaration = declarations.Get(member);
+        if (!DeclarationRegistrationFacts.HasValidName(declaration)) {
+          continue;
+        }
+        final SymbolId symbol = registerDeclaration(
+            storage, registration, declaration, order);
+        registration.AddMember(symbol);
+        order++;
+      }
+      final EnumCaseSyntaxSequence cases = file.GetEnumCases();
+      for (int32 enumTag = 0; enumTag < cases.GetCount(); enumTag++) {
+        final EnumCaseSyntax value = cases.Get(enumTag);
+        if (!SemanticName.IsIdentifierSource(value.GetName())) { continue; }
+        final SemanticName name = SemanticName.FromSource(value.GetName());
+        final MemberIdentity identity = MemberIdentity.Build(
+            registration.GetIdentity(), MemberKind.kEnumCase, name,
+            TypeIdentity?[:0]);
+        final SymbolId symbol = storage.AddSymbol(
+            SymbolKind.kEnumCase, name, registration.GetType(), true,
+            registration.GetId(), value.GetRange(), Visibility.kPublic,
+            identity, order, value.IsValid(), true, true, false, false,
+            enumTag);
+        registration.AddMember(symbol);
+        order++;
+      }
+    }
+  }
+
+  static func registerLocalFiles(
+      PackageFrontendResult frontend, PackageSymbolStorage storage,
+      SemanticDiagnosticBuffer diagnostics): void throws StateError {
+    for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+      final FileFrontendResult source = frontend.GetFile(index);
+      if (!DeclarationRegistrationFacts.IsRegisterable(source)) { continue; }
+      final FileSyntax file = source.GetDefinition()!.GetTree().GetFile();
+      final NominalIdentity identity = NominalIdentity.Build(
+          source.GetIdentity(), file.GetPackageName(), file.GetName(),
+          DeclarationRegistrationFacts.NominalKindOf(
+              file.GetFileTypeKind()));
+      final FileId fileId =
+          FileId.Build(storage.GetOwner(), storage.GetFileCount());
+      bool identityValid = true;
+      TypeId type = TypeId.Build(storage.GetOwner(), 0);
+      if (DeclarationRegistrationFacts.ClaimsCanonicalObject(identity) &&
+          file.GetFileTypeKind() != FileTypeKind.kClass) {
+        diagnostics.Add(
+            SemanticDiagnosticKind.kCanonicalObjectMustBeClass,
+            file.GetRange(), null);
+        identityValid = false;
+      } else {
+        if (CoreTypeCatalog.IsCoreName(file.GetName())) {
+          diagnostics.Add(
+              SemanticDiagnosticKind.kCoreTypeConflict,
+              SourceRange.PointRange(file.GetRange().GetBegin()), null);
+          identityValid = false;
+        } else {
+          if (DeclarationRegistrationFacts.IsCanonicalObject(identity)) {
+            type = TypeId.Build(storage.GetOwner(), 18);
+          } else {
+            final TypeId? existing = storage.FindNominalType(identity);
+            if (existing != null) {
+              final FileRegistration? previous =
+                  storage.FindNominalFile(identity);
+              SourceRange? related = null;
+              if (previous != null) { related = previous.GetRange(); }
+              diagnostics.Add(
+                  SemanticDiagnosticKind.kNominalIdentityDeclaredMoreThanOnce,
+                  file.GetRange(), related);
+              identityValid = false;
+            } else {
+              final TypeKind kind =
+                  DeclarationRegistrationFacts.TypeKindOf(
+                      file.GetFileTypeKind());
+              type = storage.AddType(
+                  kind, identity.GetQualifiedName(),
+                  TypeIdentity.Nominal(kind, identity), fileId, null);
+            }
+          }
+        }
+      }
+      final SymbolId symbol = addFileSymbol(
+          storage, fileId, identity, file.GetFileTypeKind(), type,
+          file.GetVisibility(), file.GetRange(), identityValid);
+      final SymbolId selfSymbol = storage.AddSymbol(
+          SymbolKind.kSelf, SemanticName.FromString("self"), type,
+          identityValid, fileId,
+          SourceRange.PointRange(file.GetRange().GetBegin()),
+          Visibility.kPrivate, null, 0, identityValid, false, false, false,
+          false, -1);
+      bool fileValid = source.IsValid() && identityValid;
+      if (file.IsAbstract() && file.IsSealed()) {
+        diagnostics.Add(
+            SemanticDiagnosticKind.kAbstractSealedType, file.GetRange(), null);
+        fileValid = false;
+      }
+      storage.AddRegistration(FileRegistration.Local(
+          storage.GetOwner(), fileId, identity, file.GetFileTypeKind(), type,
+          symbol, selfSymbol, source, file.GetRange(), fileValid,
+          file.IsAbstract(), file.IsSealed(),
+          DeclarationRegistrationFacts.CountMembers(file)));
+    }
+  }
+
+  static func registerDependencyFiles(
+      SemanticPackagePreflight preflight,
+      PackageSymbolStorage storage): void throws StateError {
+    for (int32 index = 0;
+         index < preflight.GetDependencyCount(); index++) {
+      final DependencyType dependency = preflight.GetDependency(index);
+      final NominalIdentity identity = dependency.GetIdentity();
+      final FileId fileId =
+          FileId.Build(storage.GetOwner(), storage.GetFileCount());
+      TypeId type = TypeId.Build(storage.GetOwner(), 18);
+      if (!DeclarationRegistrationFacts.IsCanonicalObject(identity)) {
+        if (storage.FindNominalType(identity) != null) {
+          throw StateError("verified dependency type identity is duplicated");
+        }
+        final TypeKind kind = DeclarationRegistrationFacts.TypeKindOf(
+            dependency.GetFileTypeKind());
+        type = storage.AddType(
+            kind, identity.GetQualifiedName(),
+            TypeIdentity.Nominal(kind, identity), fileId, null);
+      }
+      final SymbolId symbol = addFileSymbol(
+          storage, fileId, identity, dependency.GetFileTypeKind(), type,
+          dependency.GetVisibility(), dependency.GetRange(), true);
+      final SymbolId selfSymbol = storage.AddSymbol(
+          SymbolKind.kSelf, SemanticName.FromString("self"), type, true,
+          fileId, dependency.GetRange(), Visibility.kPrivate, null, 0, true,
+          false, false, false, false, -1);
+      storage.AddRegistration(FileRegistration.Dependency(
+          storage.GetOwner(), fileId, identity,
+          dependency.GetFileTypeKind(), type, symbol, selfSymbol, dependency));
+    }
+  }
+
+  static func addFileSymbol(
+      PackageSymbolStorage storage, FileId file, NominalIdentity identity,
+      FileTypeKind kind, TypeId type, Visibility visibility,
+      SourceRange range, bool valid): SymbolId throws StateError {
+    return storage.AddSymbol(
+        DeclarationRegistrationFacts.SymbolKindOf(kind),
+        SemanticName.FromString(identity.GetName()), type, valid, file, range,
+        visibility, null, 0, valid, false, false, false, false, -1);
+  }
+
+  static func registerDeclaration(
+      PackageSymbolStorage storage, FileRegistration registration,
+      DeclarationSyntax declaration,
+      int32 order): SymbolId throws StateError {
+    if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+      final FieldSyntax? field = declaration as FieldSyntax?;
+      if (field == null) {
+        throw StateError("field declaration has an inconsistent runtime type");
+      }
+      final SemanticName name = SemanticName.FromSource(field.GetName());
+      MemberKind kind = MemberKind.kInstanceField;
+      if (field.IsStatic()) { kind = MemberKind.kStaticField; }
+      final MemberIdentity identity = MemberIdentity.Build(
+          registration.GetIdentity(), kind, name, TypeIdentity?[:0]);
+      return storage.AddSymbol(
+          SymbolKind.kField, name, TypeId.Build(storage.GetOwner(), 0),
+          false, registration.GetId(), field.GetRange(), field.GetVisibility(),
+          identity, order, field.IsValid(), field.IsFinal(), field.IsStatic(),
+          false, false, -1);
+    }
+    if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+      final FunctionSyntax? function = declaration as FunctionSyntax?;
+      if (function == null) {
+        throw StateError(
+            "function declaration has an inconsistent runtime type");
+      }
+      TypeId returnType = TypeId.Build(storage.GetOwner(), 0);
+      bool typeResolved = false;
+      if (function.GetReturnType() == null) {
+        returnType = TypeId.Build(storage.GetOwner(), 2);
+        typeResolved = true;
+      }
+      return storage.AddSymbol(
+          SymbolKind.kFunction, SemanticName.FromSource(function.GetName()),
+          returnType, typeResolved, registration.GetId(), function.GetRange(),
+          function.GetVisibility(), null, order, function.IsValid(),
+          function.IsFinal(), function.IsStatic(), function.IsOverride(),
+          function.IsAbstract(), -1);
+    }
+    final ConstructorSyntax? constructor = declaration as ConstructorSyntax?;
+    if (constructor == null) {
+      throw StateError(
+          "constructor declaration has an inconsistent runtime type");
+    }
+    return storage.AddSymbol(
+        SymbolKind.kConstructor,
+        SemanticName.FromSource(constructor.GetName()), registration.GetType(),
+        true, registration.GetId(), constructor.GetRange(),
+        constructor.GetVisibility(), null, order, constructor.IsValid(), false,
+        false, false, false, -1);
+  }
+}

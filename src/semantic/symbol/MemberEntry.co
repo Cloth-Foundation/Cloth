@@ -1,0 +1,19 @@
+import semantic.identity::MemberIdentity;
+import semantic.model::SymbolId;
+
+class {
+  final MemberIdentity identity;
+  final SymbolId symbol;
+
+  _MemberEntry(MemberIdentity identity, SymbolId symbol) {
+    self.identity = identity;
+    self.symbol = symbol;
+  }
+
+  static func Build(MemberIdentity identity, SymbolId symbol): MemberEntry {
+    return MemberEntry(identity, symbol);
+  }
+
+  func GetIdentity(): MemberIdentity { return self.identity; }
+  func GetSymbol(): SymbolId { return self.symbol; }
+}

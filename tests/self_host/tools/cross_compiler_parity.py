@@ -6,6 +6,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Iterable, Sequence
@@ -13,10 +14,11 @@ from typing import Iterable, Sequence
 
 _EXPECTED_COUNTS = {
     "bounded declaration": 32,
-    "bounded definition": 43,
-    "lexer": 614,
-    "real declaration": 188,
-    "real definition": 188,
+    "bounded definition": 47,
+    "lexer": 697,
+    "real declaration": 248,
+    "real definition": 248,
+    "semantic": 2,
 }
 
 
@@ -32,6 +34,8 @@ class Tools:
     definition_records: Path
     lexer_oracle: Path
     lexer_records: Path
+    semantic_oracle: Path
+    semantic_records: Path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -47,12 +51,19 @@ def _parser() -> argparse.ArgumentParser:
         "definition-records",
         "lexer-oracle",
         "lexer-records",
+        "semantic-oracle",
+        "semantic-records",
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
     return parser
 
 
-def _run(command: Sequence[str], description: str) -> bytes:
+def _run(
+    command: Sequence[str],
+    description: str,
+    working_directory: Path | None = None,
+    timeout: int = 60,
+) -> bytes:
     try:
         result = subprocess.run(
             command,
@@ -60,7 +71,8 @@ def _run(command: Sequence[str], description: str) -> bytes:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=30,
+            timeout=timeout,
+            cwd=working_directory,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise AuditError(f"{description} could not complete: {error}") from error
@@ -110,6 +122,9 @@ def _compare(kind: str, path: Path, tools: Tools) -> None:
     elif kind == "definition":
         oracle_command = [str(tools.definition_oracle), str(path)]
         cloth_command = [str(tools.definition_records), str(path), name]
+    elif kind == "semantic":
+        oracle_command = [str(tools.semantic_oracle), str(path)]
+        cloth_command = [str(tools.semantic_records), str(path), name]
     else:
         raise AuditError(f"unknown parity kind: {kind}")
 
@@ -152,6 +167,91 @@ def _generate(oracle: Path, directory: Path, description: str) -> list[Path]:
     return _deduplicate(path for path in directory.iterdir() if path.is_file())
 
 
+def _package_check(
+    tool: Path,
+    paths: Sequence[Path],
+    root: Path,
+    description: str,
+    timeout: int = 60,
+) -> bytes:
+    relative = [path.relative_to(root).as_posix() for path in paths]
+    return _run(
+        [str(tool), "package-check", *relative],
+        description,
+        working_directory=root,
+        timeout=timeout,
+    )
+
+
+def _audit_production_semantics(
+    compiler: Sequence[Path],
+    main_root: Path,
+    tools: Tools,
+) -> None:
+    summary = _package_check(
+        tools.semantic_records,
+        compiler,
+        main_root,
+        "production semantic package",
+        timeout=300,
+    )
+    expected_prefix = f"P|{len(compiler)}|".encode()
+    if not summary.startswith(expected_prefix):
+        raise AuditError(
+            "production semantic package published an unexpected summary: "
+            f"{summary.decode('utf-8', errors='replace')}"
+        )
+    print(
+        "production semantic audit: "
+        f"{len(compiler)} files accepted as one package",
+        flush=True,
+    )
+
+
+def _audit_semantic_determinism(
+    paths: Sequence[Path],
+    main_root: Path,
+    temporary_root: Path,
+    tools: Tools,
+    jobs: int,
+) -> None:
+    parallel_runs = min(jobs, 4)
+    for path in paths:
+        command = [str(tools.semantic_records), str(path), path.stem]
+        baseline = _run(command, f"semantic records for {path}")
+        root = temporary_root / path.stem
+        relocated = root / path.name
+        relocated.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, relocated)
+        variants = [
+            _run(command, f"repeated semantic records for {path}"),
+            _run(
+                [str(tools.semantic_records), str(relocated), path.stem],
+                f"relocated semantic records for {path}",
+            ),
+        ]
+        with ThreadPoolExecutor(max_workers=parallel_runs) as executor:
+            variants.extend(
+                executor.map(
+                    lambda index: _run(
+                        command, f"parallel semantic records {index + 1}"
+                    ),
+                    range(parallel_runs),
+                )
+            )
+        for index, candidate in enumerate(variants):
+            if candidate != baseline:
+                raise AuditError(
+                    f"semantic records for {path} are nondeterministic in "
+                    f"run {index + 2}: {_first_mismatch(baseline, candidate)}"
+                )
+    print(
+        "semantic determinism audit: "
+        f"{len(paths)} inputs, repeated, relocated, and parallel records",
+        flush=True,
+    )
+
+
 def main() -> int:
     args = _parser().parse_args()
     try:
@@ -169,6 +269,8 @@ def main() -> int:
             definition_records=args.definition_records,
             lexer_oracle=args.lexer_oracle,
             lexer_records=args.lexer_records,
+            semantic_oracle=args.semantic_oracle,
+            semantic_records=args.semantic_records,
         )
         temporary_root = args.temporary_root.resolve()
         generated_lexer = _generate(
@@ -224,6 +326,19 @@ def main() -> int:
             tools,
             args.jobs,
         )
+        semantic = _deduplicate(groups["semantic"])
+        _run_phase(
+            "semantic",
+            "semantic",
+            semantic,
+            tools,
+            args.jobs,
+        )
+        _audit_semantic_determinism(
+            semantic, main_root, temporary_root / "semantic-determinism",
+            tools, args.jobs
+        )
+        _audit_production_semantics(compiler, main_root, tools)
         print("cross-compiler parity audit passed", flush=True)
         return 0
     except (AuditError, KeyError, OSError, ValueError) as error:

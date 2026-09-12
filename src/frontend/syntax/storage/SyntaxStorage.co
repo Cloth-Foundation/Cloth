@@ -14,6 +14,7 @@ class {
   final SyntaxOwner owner;
   SyntaxPage? first;
   SyntaxPage? last;
+  SyntaxNode?[] publishedNodes;
   int32 nodeCount;
   int32 pageCount;
   bool published;
@@ -22,6 +23,7 @@ class {
     self.owner = SyntaxOwner();
     self.first = null;
     self.last = null;
+    self.publishedNodes = SyntaxNode?[:0];
     self.nodeCount = 0;
     self.pageCount = 0;
     self.published = false;
@@ -92,19 +94,24 @@ class {
     if (self.published) {
       throw StateError("syntax storage is already sealed");
     }
+    final SyntaxNode?[] nodes = SyntaxNode?[:self.nodeCount];
     SyntaxPage? current = self.first;
     int32 visitedPages = 0;
     int32 visitedNodes = 0;
     while (current != null) {
       final SyntaxPage page = current;
       visitedPages++;
-      visitedNodes += page.GetCount();
+      for (int32 index = 0; index < page.GetCount(); index++) {
+        nodes[visitedNodes] = page.Get(index);
+        visitedNodes++;
+      }
       current = page.GetNext();
       page.Seal();
     }
     if (visitedPages != self.pageCount || visitedNodes != self.nodeCount) {
       throw StateError("syntax storage page chain is inconsistent");
     }
+    self.publishedNodes = nodes;
     self.published = true;
   }
 
@@ -112,6 +119,16 @@ class {
   func IsSealed(): bool { return self.published; }
   func GetNodeCount(): int32 { return self.nodeCount; }
   func GetPageCount(): int32 { return self.pageCount; }
+
+  func GetNode(int32 ordinal): SyntaxNode throws StateError {
+    if (!self.published) {
+      throw StateError("syntax storage is not sealed");
+    }
+    if (ordinal < 0 || ordinal >= self.publishedNodes::length) {
+      throw StateError("syntax node ordinal is out of bounds");
+    }
+    return self.publishedNodes[ordinal]!;
+  }
 
   func placeNode(SyntaxNode value): SyntaxPlacement throws StateError {
     if (self.published) { throw StateError("syntax storage is sealed"); }

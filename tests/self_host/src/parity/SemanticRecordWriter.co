@@ -1,0 +1,335 @@
+import cloth.io::Console;
+
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.source::SourceRange;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.diagnostic::SemanticDiagnostic;
+import clothc.semantic.diagnostic::SemanticDiagnosticKind;
+import clothc.semantic.diagnostic::SemanticDiagnosticRenderer;
+import clothc.semantic.diagnostic::SemanticDiagnosticSequence;
+import clothc.semantic.identity::MemberIdentity;
+import clothc.semantic.identity::NominalIdentity;
+import clothc.semantic.identity::NominalKind;
+import clothc.semantic.identity::SemanticName;
+import clothc.semantic.identity::TypeIdentity;
+import clothc.semantic.model::SemanticFile;
+import clothc.semantic.model::SemanticSymbol;
+import clothc.semantic.model::SymbolKind;
+import clothc.semantic.model::TypeKind;
+import clothc.semantic.package::PackageSymbolCollector;
+import clothc.semantic.package::DependencyType;
+import clothc.semantic.package::DependencyTypeView;
+import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticPackageInput;
+import clothc.semantic.package::SemanticPackageResult;
+
+class {
+  static func Run(string path, string name): int32
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = PackageSource.Build(
+        name + ".co", SourceFile.Load(path));
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("", ""), sources));
+    final SemanticPackageResult result = PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
+    if (!frontend.IsValid() || result.GetFileCount() != 1) {
+      Console.WriteErrorLine(
+          "semantic parity input is not a valid standalone file");
+      return 1;
+    }
+    if (!result.IsValid()) { return writeDiagnostics(result); }
+
+    final SemanticFile file = result.GetFileAt(0);
+    final SemanticSymbol fileSymbol = result.GetSymbol(file.GetSymbol());
+    print("F|");
+    print(fileKindCode(file.GetFileTypeKind()));
+    print("|");
+    print(visibilityCode(fileSymbol.GetVisibility()));
+    print("|");
+    writeFlag(file.IsValid());
+    print("|");
+    writeFlag(file.IsAbstract());
+    print("|");
+    writeFlag(file.IsSealed());
+    print("|");
+    writeNominal(file.GetIdentity());
+    println();
+
+    for (int32 index = 0; index < file.GetMemberCount(); index++) {
+      final SemanticSymbol symbol = result.GetSymbol(file.GetMember(index));
+      writeSymbol(symbolKindCode(symbol.GetKind()), symbol, result);
+    }
+    return 0;
+  }
+
+  static func RunPackage(string[] args): int32 throws IoError, StateError {
+    if (args::length < 2) { return 2; }
+    final PackageSource?[] sources = PackageSource?[:args::length - 1];
+    for (int32 index = 1; index < args::length; index++) {
+      final string path = args[index];
+      if (path::length < 5 || path::slice(0, 4) != "src/") {
+        Console.WriteErrorLine(
+            "semantic package audit requires paths beneath src");
+        return 2;
+      }
+      sources[index - 1] = PackageSource.Build(
+          path::slice(4, path::length), SourceFile.Load(path));
+    }
+
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("clothc", "0.0.1"), sources));
+    final SemanticDependency?[] dependencies = SemanticDependency?[:1];
+    dependencies[0] = standardLibrary();
+    final SemanticPackageResult result = PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, dependencies));
+    if (!result.IsValid()) {
+      Console.WriteError(SemanticDiagnosticRenderer.Render(result));
+      return 1;
+    }
+    print("P|");
+    print(sources::length);
+    print("|");
+    print(result.GetFileCount());
+    print("|");
+    print(result.GetTypeCount());
+    print("|");
+    println(result.GetSymbolCount());
+    return 0;
+  }
+
+  static func standardLibrary(): SemanticDependency throws StateError {
+    final PackageIdentity identity = PackageIdentity.Build("cloth", "0.6.0");
+    final DependencyType?[] types = DependencyType?[:5];
+    types[0] = dependencyType(
+        identity, "lang", "Object", FileTypeKind.kClass);
+    types[1] = dependencyType(
+        identity, "lang.errors", "IoError", FileTypeKind.kError);
+    types[2] = dependencyType(
+        identity, "lang.errors", "StateError", FileTypeKind.kError);
+    types[3] = dependencyType(
+        identity, "io", "Console", FileTypeKind.kClass);
+    types[4] = dependencyType(
+        identity, "io", "File", FileTypeKind.kClass);
+    return SemanticDependency.Build(
+        "cloth", DependencyTypeView.Build(identity, types));
+  }
+
+  static func dependencyType(
+      PackageIdentity package, string sourcePackage, string name,
+      FileTypeKind kind): DependencyType throws StateError {
+    string path = "";
+    if (!sourcePackage::isEmpty) {
+      for (int32 index = 0; index < sourcePackage::length; index++) {
+        if (sourcePackage[index] == '.') {
+          path += "/";
+        } else {
+          path += sourcePackage::slice(index, index + 1);
+        }
+      }
+      path += "/";
+    }
+    path += name + ".co";
+    NominalKind nominalKind = NominalKind.kClass;
+    if (kind == FileTypeKind.kInterface) {
+      nominalKind = NominalKind.kInterface;
+    } else {
+      if (kind == FileTypeKind.kEnum) {
+        nominalKind = NominalKind.kEnum;
+      } else {
+        if (kind == FileTypeKind.kStruct) {
+          nominalKind = NominalKind.kStruct;
+        }
+      }
+    }
+    return DependencyType.Build(
+        NominalIdentity.Build(package, sourcePackage, name, nominalKind),
+        kind, Visibility.kPublic, path, 1, 1, false, false);
+  }
+
+  static func writeDiagnostics(SemanticPackageResult result): int32
+      throws StateError {
+    final SemanticDiagnosticSequence diagnostics = result.GetDiagnostics();
+    if (diagnostics.GetCount() == 0) {
+      Console.WriteErrorLine(
+          "semantic parity input has no semantic diagnostics");
+      return 1;
+    }
+    for (int32 index = 0; index < diagnostics.GetCount(); index++) {
+      final SemanticDiagnostic diagnostic = diagnostics.Get(index);
+      print("D|");
+      print(diagnosticKindCode(diagnostic.GetKind()));
+      print("|");
+      print(diagnostic.GetRange().GetBegin().GetLine());
+      print("|");
+      print(diagnostic.GetRange().GetBegin().GetColumn());
+      final SourceRange? related = diagnostic.GetRelatedRange();
+      if (related == null) {
+        println("|0|0");
+      } else {
+        print("|");
+        print(related.GetBegin().GetLine());
+        print("|");
+        println(related.GetBegin().GetColumn());
+      }
+    }
+    return 0;
+  }
+
+  static func diagnosticKindCode(SemanticDiagnosticKind value): int32
+      throws StateError {
+    if (value == SemanticDiagnosticKind.kUnknownType) { return 0; }
+    if (value == SemanticDiagnosticKind.kCapitalStringType) { return 1; }
+    if (value == SemanticDiagnosticKind.kVoidValueType) { return 2; }
+    if (value == SemanticDiagnosticKind.kVoidArrayType) { return 3; }
+    if (value == SemanticDiagnosticKind.kVoidNullableType) { return 4; }
+    throw StateError("semantic parity encountered an unsupported diagnostic");
+  }
+
+  static func writeSymbol(
+      int32 kind, SemanticSymbol value,
+      SemanticPackageResult result): void throws StateError {
+    print("M|");
+    print(kind);
+    print("|");
+    writeName(value.GetName());
+    print("|");
+    writeType(result.GetType(value.GetType()).GetIdentity());
+    print("|");
+    print(visibilityCode(value.GetVisibility()));
+    print("|");
+    writeFlag(value.IsValid());
+    print("|");
+    writeFlag(value.IsFinal());
+    print("|");
+    writeFlag(value.IsStatic());
+    print("|");
+    writeFlag(value.IsOverride());
+    print("|");
+    writeFlag(value.IsAbstract());
+    final MemberIdentity? identity = value.GetIdentity();
+    int32 parameters = 0;
+    if (identity != null) { parameters = identity.GetParameterCount(); }
+    print("|");
+    print(parameters);
+    for (int32 index = 0; index < parameters; index++) {
+      print("|");
+      writeType(identity!.GetParameter(index));
+    }
+    println();
+  }
+
+  static func writeNominal(NominalIdentity value): void throws StateError {
+    print("N(");
+    writeStringBytes(value.GetPackage().GetName());
+    print(";");
+    writeStringBytes(value.GetPackage().GetVersion());
+    print(";");
+    writeStringBytes(value.GetSourcePackage());
+    print(";");
+    writeStringBytes(value.GetName());
+    print(";");
+    print(nominalKindCode(value.GetKind()));
+    print(")");
+  }
+
+  static func writeType(TypeIdentity value): void throws StateError {
+    final TypeKind kind = value.GetKind();
+    if (kind == TypeKind.kArray) {
+      print("A(");
+      writeType(value.GetElement()!);
+      print(")");
+      return;
+    }
+    if (kind == TypeKind.kNullable) {
+      print("Q(");
+      writeType(value.GetElement()!);
+      print(")");
+      return;
+    }
+    final NominalIdentity? nominal = value.GetNominal();
+    if (nominal != null) {
+      writeNominal(nominal);
+      return;
+    }
+    print("C(");
+    writeStringBytes(value.GetCoreName());
+    print(")");
+  }
+
+  static func writeName(SemanticName value): void throws StateError {
+    if (value.GetLength() == 0) {
+      print("-");
+      return;
+    }
+    for (int32 index = 0; index < value.GetLength(); index++) {
+      if (index != 0) { print(","); }
+      print(uint32(value.GetByte(index)));
+    }
+  }
+
+  static func writeStringBytes(string value): void {
+    if (value::isEmpty) {
+      print("-");
+      return;
+    }
+    for (int32 index = 0; index < value::length; index++) {
+      if (index != 0) { print(","); }
+      print(uint32(asciiCode(value[index])));
+    }
+  }
+
+  static func asciiCode(char value): int32 {
+    final string printable =
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" +
+        "abcdefghijklmnopqrstuvwxyz{|}~";
+    for (int32 index = 0; index < printable::length; index++) {
+      if (value == printable[index]) { return 32 + index; }
+    }
+    return -1;
+  }
+
+  static func writeFlag(bool value): void {
+    if (value) { print(1); } else { print(0); }
+  }
+
+  static func visibilityCode(Visibility value): int32 {
+    if (value == Visibility.kPrivate) { return 0; }
+    return 1;
+  }
+
+  static func nominalKindCode(NominalKind value): int32 {
+    switch (value) {
+      case NominalKind.kClass: { return 0; }
+      case NominalKind.kInterface: { return 1; }
+      case NominalKind.kEnum: { return 2; }
+      case NominalKind.kStruct: { return 3; }
+    }
+  }
+
+  static func fileKindCode(FileTypeKind value): int32 {
+    switch (value) {
+      case FileTypeKind.kClass: { return 0; }
+      case FileTypeKind.kInterface: { return 1; }
+      case FileTypeKind.kEnum: { return 2; }
+      case FileTypeKind.kStruct: { return 3; }
+      case FileTypeKind.kError: { return 4; }
+    }
+  }
+
+  static func symbolKindCode(SymbolKind value): int32 throws StateError {
+    if (value == SymbolKind.kField) { return 0; }
+    if (value == SymbolKind.kFunction) { return 1; }
+    if (value == SymbolKind.kConstructor) { return 2; }
+    throw StateError("semantic parity encountered a non-member symbol");
+  }
+
+}

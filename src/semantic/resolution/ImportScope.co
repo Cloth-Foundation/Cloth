@@ -1,0 +1,133 @@
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.resolution::ImportBinding;
+
+class {
+  final FileId file;
+  final ImportBinding?[] bindings;
+
+  _ImportScope(FileId file, ImportBinding?[] bindings) {
+    self.file = file;
+    self.bindings = bindings;
+  }
+
+  static func Build(
+      SemanticOwner owner, FileId file,
+      ImportBinding?[] input): ImportScope throws StateError {
+    if (!file.BelongsTo(owner)) {
+      throw StateError("import scope has a foreign file handle");
+    }
+    final ImportBinding?[] bindings = ImportBinding?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final ImportBinding? binding = input[index];
+      if (binding == null) {
+        throw StateError("import scope contains a null binding");
+      }
+      final FileId? target = binding.GetTarget();
+      if (target != null && !target.BelongsTo(owner)) {
+        throw StateError("import scope contains a foreign target");
+      }
+      bindings[index] = binding;
+    }
+    final ImportBinding?[] sorted = sort(bindings);
+    for (int32 index = 1; index < sorted::length; index++) {
+      if (get(sorted, index - 1).GetName().Equals(
+              get(sorted, index).GetName())) {
+        throw StateError("import scope contains a duplicate lookup name");
+      }
+    }
+    return ImportScope(file, sorted);
+  }
+
+  func GetFile(): FileId { return self.file; }
+  func GetCount(): int32 { return self.bindings::length; }
+
+  func Get(int32 index): ImportBinding throws StateError {
+    if (index < 0 || index >= self.bindings::length) {
+      throw StateError("import scope binding index is out of bounds");
+    }
+    return get(self.bindings, index);
+  }
+
+  func FindFile(SemanticName name): FileId? throws StateError {
+    final ImportBinding? binding = self.Find(name);
+    if (binding == null) { return null; }
+    return binding.GetTarget();
+  }
+
+  func Find(SemanticName name): ImportBinding? throws StateError {
+    int32 begin = 0;
+    int32 end = self.bindings::length;
+    while (begin < end) {
+      final int32 middle = begin + (end - begin) / 2;
+      final ImportBinding binding = get(self.bindings, middle);
+      final int32 order = SemanticName.Compare(binding.GetName(), name);
+      if (order < 0) {
+        begin = middle + 1;
+      } else {
+        if (order > 0) { end = middle; } else { return binding; }
+      }
+    }
+    return null;
+  }
+
+  static func sort(ImportBinding?[] values): ImportBinding?[]
+      throws StateError {
+    final int32 count = values::length;
+    ImportBinding?[] input = values;
+    ImportBinding?[] output = ImportBinding?[:count];
+    int32 width = 1;
+    while (width < count) {
+      int32 begin = 0;
+      while (begin < count) {
+        final int32 middle = boundedAdd(begin, width, count);
+        final int32 end = boundedAdd(middle, width, count);
+        merge(input, output, begin, middle, end);
+        begin = end;
+      }
+      final ImportBinding?[] swap = input;
+      input = output;
+      output = swap;
+      if (width > count / 2) { width = count; } else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func merge(
+      ImportBinding?[] input, ImportBinding?[] output,
+      int32 begin, int32 middle, int32 end): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compare(get(input, left),
+                                    get(input, right)) <= 0)) {
+        output[destination] = get(input, left);
+        left++;
+      } else {
+        output[destination] = get(input, right);
+        right++;
+      }
+    }
+  }
+
+  static func compare(ImportBinding left,
+                      ImportBinding right): int32 throws StateError {
+    return SemanticName.Compare(left.GetName(), right.GetName());
+  }
+
+  static func get(ImportBinding?[] values,
+                  int32 index): ImportBinding throws StateError {
+    final ImportBinding? value = values[index];
+    if (value == null) {
+      throw StateError("import scope sorting lost a binding");
+    }
+    return value;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

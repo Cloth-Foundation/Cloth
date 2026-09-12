@@ -1,0 +1,6 @@
+enum {
+  kClass,
+  kInterface,
+  kEnum,
+  kStruct,
+}

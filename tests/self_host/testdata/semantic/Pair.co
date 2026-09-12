@@ -1,0 +1,13 @@
+struct {
+  int32 Left;
+  int32 Right;
+
+  Pair(int32 left, int32 right) {
+    self.Left = left;
+    self.Right = right;
+  }
+
+  func Sum(): int32 {
+    return self.Left + self.Right;
+  }
+}

@@ -1,0 +1,179 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::TypeSyntaxSequence;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.identity::MemberIdentity;
+import semantic.identity::MemberKind;
+import semantic.identity::SemanticName;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.resolution::DefinitionTypeBinder;
+import semantic.resolution::ImportScope;
+import semantic.resolution::ImportScopeSequence;
+import semantic.resolution::PreludeTypeIndex;
+import semantic.resolution::ResolutionFileIndex;
+import semantic.resolution::ResolvedParameterTypes;
+import semantic.resolution::TypeBindingBuffer;
+import semantic.resolution::TypeResolver;
+import semantic.symbol::DeclarationRegistrationFacts;
+
+class {
+  static func Bind(
+      PackageSymbolStorage storage, ResolutionFileIndex files,
+      ImportScopeSequence scopes,
+      PreludeTypeIndex prelude, TypeBindingBuffer bindings,
+      SemanticDiagnosticBuffer diagnostics): void throws StateError {
+    for (int32 index = 0; index < storage.GetFileCount(); index++) {
+      final FileRegistration registration = storage.GetRegistration(index);
+      final FileFrontendResult? frontend = registration.GetFrontend();
+      if (frontend == null) { continue; }
+      final ImportScope? scope = scopes.Get(registration.GetId());
+      if (scope == null) {
+        throw StateError("local semantic file has no import scope");
+      }
+      final TypeResolver resolver = TypeResolver(
+          storage, files, registration, scope, prelude, bindings,
+          diagnostics);
+      final FileSyntax file = frontend.GetDefinition()!.GetTree().GetFile();
+      bindFileHeader(file, resolver);
+      bindDeclarations(file.GetDeclarations(), registration, storage,
+                       resolver);
+      DefinitionTypeBinder.Bind(file.GetStorage(), resolver);
+    }
+  }
+
+  static func bindFileHeader(
+      FileSyntax file, TypeResolver resolver): void throws StateError {
+    final TypeSyntax? baseClass = file.GetBaseClass();
+    if (baseClass != null) { resolver.Bind(baseClass, false); }
+    final TypeSyntaxSequence interfaces = file.GetInterfaces();
+    for (int32 index = 0; index < interfaces.GetCount(); index++) {
+      resolver.Bind(interfaces.Get(index), false);
+    }
+  }
+
+  static func bindDeclarations(
+      DeclarationSyntaxSequence declarations,
+      FileRegistration registration, PackageSymbolStorage storage,
+      TypeResolver resolver): void throws StateError {
+    int32 memberIndex = 0;
+    for (int32 index = 0; index < declarations.GetCount(); index++) {
+      final DeclarationSyntax declaration = declarations.Get(index);
+      SymbolId? symbol = null;
+      if (DeclarationRegistrationFacts.HasValidName(declaration)) {
+        symbol = registration.GetMember(memberIndex);
+        memberIndex++;
+      }
+      if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+        bindField(declaration, symbol, storage, resolver);
+      } else {
+        if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+          bindFunction(declaration, symbol, registration, storage, resolver);
+        } else {
+          bindConstructor(declaration, symbol, registration, storage,
+                          resolver);
+        }
+      }
+    }
+  }
+
+  static func bindField(
+      DeclarationSyntax declaration, SymbolId? symbol,
+      PackageSymbolStorage storage,
+      TypeResolver resolver): void throws StateError {
+    final FieldSyntax? field = declaration as FieldSyntax?;
+    if (field == null) {
+      throw StateError("field declaration has an inconsistent runtime type");
+    }
+    final TypeId type = resolver.Bind(field.GetType(), false);
+    if (symbol == null) { return; }
+    storage.ResolveSymbol(
+        symbol, type, type.GetIndex() != 0,
+        storage.GetSymbol(symbol).GetIdentity(), type.GetIndex() != 0);
+  }
+
+  static func bindFunction(
+      DeclarationSyntax declaration, SymbolId? symbol,
+      FileRegistration registration, PackageSymbolStorage storage,
+      TypeResolver resolver): void throws StateError {
+    final FunctionSyntax? function = declaration as FunctionSyntax?;
+    if (function == null) {
+      throw StateError(
+          "function declaration has an inconsistent runtime type");
+    }
+    final ResolvedParameterTypes parameters = ResolvedParameterTypes.Bind(
+        function.GetParameters(), resolver, storage);
+    TypeId returnType = TypeId.Build(storage.GetOwner(), 2);
+    bool returnValid = true;
+    final TypeSyntax? returnSyntax = function.GetReturnType();
+    if (returnSyntax != null) {
+      returnType = resolver.Bind(returnSyntax, true);
+      returnValid = returnType.GetIndex() != 0;
+    }
+    final bool throwsValid = bindTypes(function.GetThrowsTypes(), resolver);
+    if (symbol == null) { return; }
+    MemberIdentity? identity = null;
+    if (parameters.IsValid()) {
+      identity = MemberIdentity.Build(
+          registration.GetIdentity(), MemberKind.kFunction,
+          SemanticName.FromSource(function.GetName()),
+          parameters.GetIdentities());
+    }
+    storage.ResolveSymbol(
+        symbol, returnType, returnValid, identity,
+        parameters.IsValid() && returnValid && throwsValid);
+  }
+
+  static func bindConstructor(
+      DeclarationSyntax declaration, SymbolId? symbol,
+      FileRegistration registration, PackageSymbolStorage storage,
+      TypeResolver resolver): void throws StateError {
+    final ConstructorSyntax? constructor = declaration as ConstructorSyntax?;
+    if (constructor == null) {
+      throw StateError(
+          "constructor declaration has an inconsistent runtime type");
+    }
+    final ResolvedParameterTypes parameters = ResolvedParameterTypes.Bind(
+        constructor.GetParameters(), resolver, storage);
+    bool signatureValid = bindTypes(
+        constructor.GetThrowsTypes(), resolver);
+    final ConstructorInitializerSyntax? initializer =
+        constructor.GetInitializer();
+    if (initializer != null &&
+        resolver.Bind(initializer.GetBaseType(), false).GetIndex() == 0) {
+      signatureValid = false;
+    }
+    if (symbol == null) { return; }
+    MemberIdentity? identity = null;
+    if (parameters.IsValid()) {
+      identity = MemberIdentity.Build(
+          registration.GetIdentity(), MemberKind.kConstructor,
+          SemanticName.FromString(registration.GetIdentity().GetName()),
+          parameters.GetIdentities());
+    }
+    storage.ResolveSymbol(
+        symbol, registration.GetType(), true, identity,
+        parameters.IsValid() && signatureValid);
+  }
+
+  static func bindTypes(TypeSyntaxSequence types,
+                        TypeResolver resolver): bool throws StateError {
+    bool valid = true;
+    for (int32 index = 0; index < types.GetCount(); index++) {
+      if (resolver.Bind(types.Get(index), false).GetIndex() == 0) {
+        valid = false;
+      }
+    }
+    return valid;
+  }
+}

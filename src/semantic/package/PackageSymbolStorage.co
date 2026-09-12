@@ -1,0 +1,228 @@
+import frontend.source::SourceRange;
+import frontend.syntax.tree::Visibility;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.identity::MemberIdentity;
+import semantic.identity::NominalIdentity;
+import semantic.identity::SemanticName;
+import semantic.identity::TypeIdentity;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticOwner;
+import semantic.model::SemanticSymbol;
+import semantic.model::SemanticType;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::FileRegistration;
+import semantic.package::SemanticPackageInput;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::ImportScopeSequence;
+import semantic.resolution::PreludeTypeIndex;
+import semantic.resolution::TypeBindingSequence;
+
+class {
+  final SemanticOwner owner;
+  final SemanticType?[] types;
+  final TypeId?[] arrayTypes;
+  final TypeId?[] nullableTypes;
+  final SemanticSymbol?[] symbols;
+  final FileRegistration?[] registrations;
+  int32 typeCount;
+  int32 symbolCount;
+  int32 registrationCount;
+
+  _PackageSymbolStorage(SemanticOwner owner, int32 typeCapacity,
+                        int32 symbolCapacity, int32 fileCapacity) {
+    self.owner = owner;
+    self.types = SemanticType?[:typeCapacity];
+    self.arrayTypes = TypeId?[:typeCapacity];
+    self.nullableTypes = TypeId?[:typeCapacity];
+    self.symbols = SemanticSymbol?[:symbolCapacity];
+    self.registrations = FileRegistration?[:fileCapacity];
+    self.typeCount = 0;
+    self.symbolCount = 0;
+    self.registrationCount = 0;
+  }
+
+  static func Create(SemanticOwner owner, int32 typeCapacity,
+                     int32 symbolCapacity,
+                     int32 fileCapacity): PackageSymbolStorage
+      throws StateError {
+    if (typeCapacity < 0 || symbolCapacity < 0 || fileCapacity < 0) {
+      throw StateError("semantic symbol storage capacity is negative");
+    }
+    return PackageSymbolStorage(
+        owner, typeCapacity, symbolCapacity, fileCapacity);
+  }
+
+  func AddType(TypeKind kind, string name, TypeIdentity identity,
+               FileId? file, TypeId? element): TypeId throws StateError {
+    if (self.typeCount >= self.types::length) {
+      throw StateError("semantic type storage capacity is exhausted");
+    }
+    final TypeId id = TypeId.Build(self.owner, self.typeCount);
+    self.types[self.typeCount] =
+        SemanticType.Build(self.owner, id, kind, name, identity, file, element);
+    if (element != null && kind == TypeKind.kArray) {
+      self.arrayTypes[element.GetIndex()] = id;
+    }
+    if (element != null && kind == TypeKind.kNullable) {
+      self.nullableTypes[element.GetIndex()] = id;
+    }
+    self.typeCount++;
+    return id;
+  }
+
+  func AddSymbol(
+      SymbolKind kind, SemanticName name, TypeId type, bool typeResolved,
+      FileId? file, SourceRange range, Visibility visibility,
+      MemberIdentity? identity, int32 declarationOrder, bool valid,
+      bool finalSymbol, bool staticSymbol, bool overrideSymbol,
+      bool abstractSymbol, int32 enumTag): SymbolId throws StateError {
+    if (self.symbolCount >= self.symbols::length) {
+      throw StateError("semantic symbol storage capacity is exhausted");
+    }
+    final SymbolId id = SymbolId.Build(self.owner, self.symbolCount);
+    self.symbols[self.symbolCount] = SemanticSymbol.Build(
+        self.owner, id, kind, name, type, typeResolved, file, range,
+        visibility, identity,
+        declarationOrder, valid, finalSymbol, staticSymbol, overrideSymbol,
+        abstractSymbol, enumTag);
+    self.symbolCount++;
+    return id;
+  }
+
+  func AddRegistration(FileRegistration registration): void
+      throws StateError {
+    if (self.registrationCount >= self.registrations::length ||
+        registration.GetId().GetIndex() != self.registrationCount ||
+        !registration.GetId().BelongsTo(self.owner)) {
+      throw StateError("semantic file registration order is inconsistent");
+    }
+    self.registrations[self.registrationCount] = registration;
+    self.registrationCount++;
+  }
+
+  func GetTypeCount(): int32 { return self.typeCount; }
+  func GetSymbolCount(): int32 { return self.symbolCount; }
+  func GetFileCount(): int32 { return self.registrationCount; }
+  func GetOwner(): SemanticOwner { return self.owner; }
+
+  func GetType(TypeId id): SemanticType throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.typeCount) {
+      throw StateError("semantic type does not belong to symbol storage");
+    }
+    return self.types[id.GetIndex()]!;
+  }
+
+  func GetSymbol(SymbolId id): SemanticSymbol throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.symbolCount) {
+      throw StateError("semantic symbol does not belong to symbol storage");
+    }
+    return self.symbols[id.GetIndex()]!;
+  }
+
+  func GetRegistration(int32 index): FileRegistration throws StateError {
+    if (index < 0 || index >= self.registrationCount) {
+      throw StateError("semantic file registration index is out of bounds");
+    }
+    return self.registrations[index]!;
+  }
+
+  func ResolveSymbol(
+      SymbolId id, TypeId type, bool typeResolved,
+      MemberIdentity? identity, bool valid): void throws StateError {
+    final SemanticSymbol symbol = self.GetSymbol(id);
+    if (!type.BelongsTo(self.owner) || type.GetIndex() >= self.typeCount) {
+      throw StateError("resolved semantic symbol has an invalid type");
+    }
+    self.symbols[id.GetIndex()] = symbol.WithResolution(
+        self.owner, type, typeResolved, identity, valid);
+  }
+
+  func InvalidateSymbol(SymbolId id): void throws StateError {
+    final SemanticSymbol symbol = self.GetSymbol(id);
+    self.symbols[id.GetIndex()] = symbol.WithValidity(self.owner, false);
+  }
+
+  func InvalidateFile(FileId id): void throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.registrationCount) {
+      throw StateError("semantic file does not belong to symbol storage");
+    }
+    self.registrations[id.GetIndex()]!.MarkInvalid();
+  }
+
+  func GetOrAddArrayType(TypeId element): TypeId throws StateError {
+    final SemanticType elementType = self.GetType(element);
+    final TypeId? existing = self.arrayTypes[element.GetIndex()];
+    if (existing != null) { return existing; }
+    return self.AddType(
+        TypeKind.kArray, elementType.GetName() + "[]",
+        TypeIdentity.Array(elementType.GetIdentity()), null, element);
+  }
+
+  func GetOrAddNullableType(TypeId element): TypeId throws StateError {
+    final SemanticType elementType = self.GetType(element);
+    final TypeId? existing = self.nullableTypes[element.GetIndex()];
+    if (existing != null) { return existing; }
+    return self.AddType(
+        TypeKind.kNullable, elementType.GetName() + "?",
+        TypeIdentity.Nullable(elementType.GetIdentity()), null, element);
+  }
+
+  func FindNominalType(NominalIdentity identity): TypeId?
+      throws StateError {
+    for (int32 index = 0; index < self.typeCount; index++) {
+      final SemanticType type = self.types[index]!;
+      final NominalIdentity? candidate = type.GetIdentity().GetNominal();
+      if (candidate != null && candidate.Equals(identity)) {
+        return type.GetId();
+      }
+    }
+    return null;
+  }
+
+  func FindNominalFile(NominalIdentity identity): FileRegistration?
+      throws StateError {
+    for (int32 index = 0; index < self.registrationCount; index++) {
+      final FileRegistration registration = self.registrations[index]!;
+      if (registration.GetIdentity().Equals(identity)) { return registration; }
+    }
+    return null;
+  }
+
+  func SnapshotSymbols(): SemanticSymbol?[] {
+    final SemanticSymbol?[] result = SemanticSymbol?[:self.symbolCount];
+    for (int32 index = 0; index < self.symbolCount; index++) {
+      result[index] = self.symbols[index];
+    }
+    return result;
+  }
+
+  func Publish(
+      SemanticPackageInput input,
+      SemanticDiagnosticSequence diagnostics, ImportScopeSequence scopes,
+      PreludeTypeIndex prelude,
+      TypeBindingSequence bindings): SemanticPackageResult
+      throws StateError {
+    if (self.registrationCount != self.registrations::length) {
+      throw StateError("semantic file registration is incomplete");
+    }
+    final SemanticType?[] types = SemanticType?[:self.typeCount];
+    final SemanticSymbol?[] symbols = SemanticSymbol?[:self.symbolCount];
+    final SemanticFile?[] files = SemanticFile?[:self.registrationCount];
+    for (int32 index = 0; index < self.typeCount; index++) {
+      types[index] = self.types[index];
+    }
+    for (int32 index = 0; index < self.symbolCount; index++) {
+      symbols[index] = self.symbols[index];
+    }
+    for (int32 index = 0; index < self.registrationCount; index++) {
+      files[index] = self.registrations[index]!.Publish();
+    }
+    return SemanticPackageResult.Build(
+        input, self.owner, types, symbols, files, diagnostics, scopes,
+        prelude, bindings);
+  }
+}

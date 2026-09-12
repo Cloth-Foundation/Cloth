@@ -1,0 +1,28 @@
+import frontend.diagnostic::DiagnosticRenderer;
+import frontend.diagnostic::DiagnosticSeverity;
+import frontend.source::SourceRange;
+import semantic.diagnostic::SemanticDiagnostic;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.diagnostic::SemanticDiagnosticText;
+import semantic.package::SemanticPackageResult;
+
+class {
+  static func Render(SemanticPackageResult result): string throws StateError {
+    string output = DiagnosticRenderer.Render(
+        result.GetInput().GetFrontend());
+    final SemanticDiagnosticSequence diagnostics = result.GetDiagnostics();
+    for (int32 index = 0; index < diagnostics.GetCount(); index++) {
+      final SemanticDiagnostic diagnostic = diagnostics.Get(index);
+      output += DiagnosticRenderer.RenderLine(
+          diagnostic.GetRange(), DiagnosticSeverity.kError,
+          SemanticDiagnosticText.Message(diagnostic.GetKind()));
+      final SourceRange? related = diagnostic.GetRelatedRange();
+      if (related != null) {
+        output += DiagnosticRenderer.RenderLine(
+            related, DiagnosticSeverity.kNote,
+            SemanticDiagnosticText.Related(diagnostic.GetKind()));
+      }
+    }
+    return output;
+  }
+}

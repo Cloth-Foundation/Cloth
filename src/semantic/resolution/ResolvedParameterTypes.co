@@ -1,0 +1,49 @@
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import semantic.identity::TypeIdentity;
+import semantic.model::TypeId;
+import semantic.package::PackageSymbolStorage;
+import semantic.resolution::TypeResolver;
+
+class {
+  final TypeIdentity?[] identities;
+  final bool valid;
+
+  _ResolvedParameterTypes(TypeIdentity?[] identities, bool valid) {
+    self.identities = identities;
+    self.valid = valid;
+  }
+
+  static func Bind(
+      ParameterSyntaxSequence parameters, TypeResolver resolver,
+      PackageSymbolStorage storage): ResolvedParameterTypes
+      throws StateError {
+    final TypeIdentity?[] identities =
+        TypeIdentity?[:parameters.GetCount()];
+    bool valid = true;
+    for (int32 index = 0; index < parameters.GetCount(); index++) {
+      final ParameterSyntax parameter = parameters.Get(index);
+      final TypeId type = resolver.Bind(parameter.GetType(), false);
+      if (type.GetIndex() == 0) {
+        valid = false;
+      } else {
+        identities[index] = storage.GetType(type).GetIdentity();
+      }
+    }
+    return ResolvedParameterTypes(identities, valid);
+  }
+
+  func IsValid(): bool { return self.valid; }
+  func GetCount(): int32 { return self.identities::length; }
+
+  func GetIdentities(): TypeIdentity?[] throws StateError {
+    if (!self.valid) {
+      throw StateError("invalid parameter types have no callable identity");
+    }
+    final TypeIdentity?[] result = TypeIdentity?[:self.identities::length];
+    for (int32 index = 0; index < self.identities::length; index++) {
+      result[index] = self.identities[index];
+    }
+    return result;
+  }
+}

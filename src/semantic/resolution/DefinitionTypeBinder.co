@@ -1,0 +1,15 @@
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+import semantic.resolution::DefinitionTypeFacts;
+import semantic.resolution::TypeResolver;
+
+class {
+  static func Bind(SyntaxStorage storage,
+                   TypeResolver resolver): void throws StateError {
+    for (int32 ordinal = 0; ordinal < storage.GetNodeCount(); ordinal++) {
+      final TypeSyntax? type =
+          DefinitionTypeFacts.GetType(storage.GetNode(ordinal));
+      if (type != null) { resolver.Bind(type, false); }
+    }
+  }
+}

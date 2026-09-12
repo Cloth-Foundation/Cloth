@@ -1,0 +1,9 @@
+import self_host.parity::SemanticRecordWriter;
+
+static func Main(string[] args): int32 throws IoError, StateError {
+  if (args::length >= 1 && args[0] == "package-check") {
+    return SemanticRecordWriter.RunPackage(args);
+  }
+  if (args::length != 2) { return 2; }
+  return SemanticRecordWriter.Run(args[0], args[1]);
+}

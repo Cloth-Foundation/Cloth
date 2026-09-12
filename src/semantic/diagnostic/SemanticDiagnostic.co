@@ -1,0 +1,24 @@
+import frontend.source::SourceRange;
+import semantic.diagnostic::SemanticDiagnosticKind;
+
+class {
+  final SemanticDiagnosticKind kind;
+  final SourceRange range;
+  final SourceRange? relatedRange;
+
+  _SemanticDiagnostic(SemanticDiagnosticKind kind, SourceRange range,
+                      SourceRange? relatedRange) {
+    self.kind = kind;
+    self.range = range;
+    self.relatedRange = relatedRange;
+  }
+
+  static func Build(SemanticDiagnosticKind kind, SourceRange range,
+                    SourceRange? relatedRange): SemanticDiagnostic {
+    return SemanticDiagnostic(kind, range, relatedRange);
+  }
+
+  func GetKind(): SemanticDiagnosticKind { return self.kind; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetRelatedRange(): SourceRange? { return self.relatedRange; }
+}

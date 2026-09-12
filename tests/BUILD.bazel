@@ -20,6 +20,7 @@ test_suite(
         "//tests/self_host/tools/definition_records:recovery_test",
         "//tests/self_host/tools/frontend_failure:failure_tests",
         "//tests/self_host/tools/lex_records:empty_test",
+        "//tests/self_host/tools/semantic_failure:failure_tests",
         "//tests/self_host/tools/syntax_storage_failure:failure_tests",
         "//tests/self_host/tools/syntax_tree_failure:failure_tests",
         "//tests/self_host/tools/syntax_tree_records:tree_test",

@@ -184,6 +184,39 @@ cloth_test(
 )
 
 cloth_test(
+    name = "semantic_package_test",
+    srcs = ["SemanticPackageTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-semantic-package-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "SemanticPackageTest",
+)
+
+cloth_test(
+    name = "semantic_package_gc_test",
+    srcs = ["SemanticPackageGcTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-semantic-package-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "SemanticPackageGcTest",
+)
+
+cloth_test(
+    name = "semantic_resolution_test",
+    srcs = ["SemanticResolutionTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-semantic-resolution-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "SemanticResolutionTest",
+)
+
+cloth_test(
     name = "definition_parser_depth_test",
     srcs = ["DefinitionParserDepthTest.co"],
     deps = _SUPPORT,
@@ -214,6 +247,8 @@ test_suite(
         ":frontend_coordinator_test",
         ":lexer_foundation_test",
         ":lexer_literal_test",
+        ":semantic_package_test",
+        ":semantic_resolution_test",
         ":syntax_arena_test",
         ":syntax_sequence_test",
         ":syntax_tree_test",
@@ -230,6 +265,7 @@ test_suite(
         ":expression_parser_depth_test",
         ":expression_parser_gc_test",
         ":frontend_coordinator_gc_test",
+        ":semantic_package_gc_test",
         ":syntax_tree_gc_test",
     ],
 )

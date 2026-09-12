@@ -1,0 +1,61 @@
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+import semantic.package::FileRegistration;
+import semantic.package::PackageSymbolStorage;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageInput;
+import semantic.resolution::ImportScope;
+import semantic.resolution::ImportScopeBuilder;
+import semantic.resolution::ResolutionFileIndex;
+
+class {
+  final SemanticOwner owner;
+  final ImportScope?[] scopes;
+  final int32 bindingCount;
+
+  _ImportScopeSequence(
+      SemanticOwner owner, ImportScope?[] scopes, int32 bindingCount) {
+    self.owner = owner;
+    self.scopes = scopes;
+    self.bindingCount = bindingCount;
+  }
+
+  static func Build(
+      SemanticPackageInput input, PackageSymbolStorage storage,
+      ResolutionFileIndex files,
+      SemanticDiagnosticBuffer diagnostics): ImportScopeSequence
+      throws StateError {
+    final ImportScope?[] scopes = ImportScope?[:storage.GetFileCount()];
+    int32 bindingCount = 0;
+    for (int32 index = 0; index < storage.GetFileCount(); index++) {
+      final FileRegistration file = storage.GetRegistration(index);
+      if (file.GetFrontend() == null) { continue; }
+      final ImportScope scope =
+          ImportScopeBuilder.Build(input, storage, files, file, diagnostics);
+      scopes[index] = scope;
+      bindingCount = checkedAdd(
+          bindingCount, scope.GetCount(),
+          SemanticLimits.MaxImportBindings());
+    }
+    return ImportScopeSequence(storage.GetOwner(), scopes, bindingCount);
+  }
+
+  func GetFileCount(): int32 { return self.scopes::length; }
+  func GetBindingCount(): int32 { return self.bindingCount; }
+
+  func Get(FileId file): ImportScope? throws StateError {
+    if (!file.BelongsTo(self.owner) || file.GetIndex() >= self.scopes::length) {
+      throw StateError("import scope handle belongs to another result");
+    }
+    return self.scopes[file.GetIndex()];
+  }
+
+  static func checkedAdd(int32 left, int32 right,
+                         int32 limit): int32 throws StateError {
+    if (right < 0 || left > limit - right) {
+      throw StateError("semantic import expansion exceeds its limit");
+    }
+    return left + right;
+  }
+}

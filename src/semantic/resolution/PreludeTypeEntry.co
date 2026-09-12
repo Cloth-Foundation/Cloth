@@ -1,0 +1,29 @@
+import frontend.source::SourceRange;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticOwner;
+
+class {
+  final SemanticName name;
+  final FileId file;
+  final SourceRange range;
+
+  _PreludeTypeEntry(SemanticName name, FileId file, SourceRange range) {
+    self.name = name;
+    self.file = file;
+    self.range = range;
+  }
+
+  static func Build(
+      SemanticOwner owner, SemanticName name, FileId file,
+      SourceRange range): PreludeTypeEntry throws StateError {
+    if (!file.BelongsTo(owner)) {
+      throw StateError("prelude type entry has a foreign file handle");
+    }
+    return PreludeTypeEntry(name, file, range);
+  }
+
+  func GetName(): SemanticName { return self.name; }
+  func GetFile(): FileId { return self.file; }
+  func GetRange(): SourceRange { return self.range; }
+}

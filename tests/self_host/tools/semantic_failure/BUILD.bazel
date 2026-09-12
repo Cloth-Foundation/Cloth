@@ -1,0 +1,41 @@
+load("//tests/self_host/tools:failure_tests.bzl", "failure_tests")
+load("//tools/bazel/cloth:defs.bzl", "cloth_binary")
+
+cloth_binary(
+    name = "semantic_failure",
+    srcs = ["Main.co"],
+    data = ["//tests/self_host:testdata"],
+    deps = {
+        "//tests/self_host/src:self_host_support": "self_host",
+    },
+    package_name = "clothc-semantic-failure",
+    package_version = "0.0.1",
+    visibility = ["//tests:__subpackages__"],
+)
+
+_CASES = [
+    ("foreign-handle", "semantic handle belongs to another result"),
+    (
+        "foreign-scope",
+        "import scope handle belongs to another result",
+    ),
+    (
+        "foreign-binding",
+        "declared type lookup uses a foreign file handle",
+    ),
+    ("foreign-syntax", "declared type lookup uses foreign syntax"),
+    ("dependency-limit", "file or dependency limit"),
+    ("invalid-dependency-path", "logical path has a drive prefix"),
+    ("canonical-object-kind", "canonical dependency Object must be a class"),
+    (
+        "prelude-core-conflict",
+        "standard library prelude type conflicts with a core type",
+    ),
+    (
+        "prelude-ambiguity",
+        "standard library prelude type name is ambiguous",
+    ),
+    ("alias-collision", "collides with a local source package"),
+]
+
+failure_tests(":semantic_failure", _CASES)

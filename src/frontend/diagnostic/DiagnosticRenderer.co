@@ -21,7 +21,7 @@ class {
       if (lexical.GetCount() != 0) {
         for (int32 index = 0; index < lexical.GetCount(); index++) {
           final LexDiagnostic diagnostic = lexical.Get(index);
-          output += renderLine(
+          output += RenderLine(
               diagnostic.GetRange(), DiagnosticSeverity.kError,
               LexDiagnosticText.Get(diagnostic.GetKind()));
         }
@@ -36,12 +36,12 @@ class {
       final ParseDiagnosticSequence syntax = definition.GetDiagnostics();
       for (int32 index = 0; index < syntax.GetCount(); index++) {
         final ParseDiagnostic diagnostic = syntax.Get(index);
-        output += renderLine(
+        output += RenderLine(
             diagnostic.GetRange(), DiagnosticSeverity.kError,
             ParseDiagnosticText.Get(diagnostic.GetKind()));
         final SourceRange? related = diagnostic.GetRelatedRange();
         if (related != null) {
-          output += renderLine(
+          output += RenderLine(
               related, DiagnosticSeverity.kNote,
               ParseDiagnosticText.Related(diagnostic.GetKind()));
         }
@@ -50,7 +50,7 @@ class {
     return output;
   }
 
-  static func renderLine(SourceRange range, DiagnosticSeverity severity,
+  static func RenderLine(SourceRange range, DiagnosticSeverity severity,
                          string message): string {
     final SourceLocation location = range.GetBegin();
     return escapePath(location.GetFile()) + ":" +

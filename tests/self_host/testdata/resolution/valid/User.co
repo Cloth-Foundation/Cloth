@@ -1,0 +1,6 @@
+import models::Record as Data;
+import services::Worker;
+
+class: Data is Worker {
+  User(Data value): Data(value) {}
+}

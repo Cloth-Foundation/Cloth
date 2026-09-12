@@ -42,6 +42,20 @@ expected_failure_test(
 )
 
 expected_failure_test(
+    name = "check_semantic_failure_test",
+    binary = "//src:clothc",
+    expected_status = 1,
+    expected_stderr = "DriverUnknownType.co:1:1: error: declared type name is unknown",
+    failure_args = [
+        "check",
+        "tests/self_host/tools/driver/DriverUnknownType.co",
+    ],
+    size = "small",
+    tags = ["driver", "integration", "semantic"],
+    test_data = ["DriverUnknownType.co"],
+)
+
+expected_failure_test(
     name = "invalid_request_test",
     binary = "//src:clothc",
     expected_status = 2,
@@ -81,6 +95,7 @@ test_suite(
     tests = [
         ":check_lexer_failure_test",
         ":check_parser_failure_test",
+        ":check_semantic_failure_test",
         ":check_success_test",
         ":invalid_request_test",
         ":invalid_source_path_test",

@@ -1,0 +1,108 @@
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import frontend.syntax.expression::CheckedCastExpressionSyntax;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import frontend.syntax.expression::NumericConversionExpressionSyntax;
+import frontend.syntax.expression::TypeTestExpressionSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.statement::StatementKind;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+
+class {
+  static func Count(SyntaxStorage storage): int32 throws StateError {
+    int32 count = 0;
+    for (int32 ordinal = 0; ordinal < storage.GetNodeCount(); ordinal++) {
+      if (GetType(storage.GetNode(ordinal)) != null) { count++; }
+    }
+    return count;
+  }
+
+  static func GetType(SyntaxNode node): TypeSyntax? throws StateError {
+    final ExpressionSyntax? expression = node as ExpressionSyntax?;
+    if (expression != null) { return getExpressionType(expression); }
+    final StatementSyntax? statement = node as StatementSyntax?;
+    if (statement != null) { return getStatementType(statement); }
+    return null;
+  }
+
+  static func getExpressionType(
+      ExpressionSyntax expression): TypeSyntax? throws StateError {
+    final ExpressionKind kind = expression.GetExpressionKind();
+    switch (kind) {
+      case ExpressionKind.kTypeTest: {
+        final TypeTestExpressionSyntax? value =
+            expression as TypeTestExpressionSyntax?;
+        if (value == null) {
+          throw StateError("type-test expression has the wrong runtime type");
+        }
+        return value.GetTarget();
+      }
+      case ExpressionKind.kCheckedCast: {
+        final CheckedCastExpressionSyntax? value =
+            expression as CheckedCastExpressionSyntax?;
+        if (value == null) {
+          throw StateError("checked-cast expression has the wrong runtime type");
+        }
+        return value.GetTarget();
+      }
+      case ExpressionKind.kNumericConversion: {
+        final NumericConversionExpressionSyntax? value =
+            expression as NumericConversionExpressionSyntax?;
+        if (value == null) {
+          throw StateError(
+              "numeric-conversion expression has the wrong runtime type");
+        }
+        return value.GetTarget();
+      }
+      case ExpressionKind.kIntegerConversion: {
+        final IntegerConversionExpressionSyntax? value =
+            expression as IntegerConversionExpressionSyntax?;
+        if (value == null) {
+          throw StateError(
+              "integer-conversion expression has the wrong runtime type");
+        }
+        return value.GetTarget();
+      }
+      case ExpressionKind.kArrayConstruction: {
+        final ArrayConstructionExpressionSyntax? value =
+            expression as ArrayConstructionExpressionSyntax?;
+        if (value == null) {
+          throw StateError(
+              "array-construction expression has the wrong runtime type");
+        }
+        return value.GetElementType();
+      }
+      default: { return null; }
+    }
+  }
+
+  static func getStatementType(
+      StatementSyntax statement): TypeSyntax? throws StateError {
+    final StatementKind kind = statement.GetStatementKind();
+    switch (kind) {
+      case StatementKind.kLocalVariable: {
+        final LocalVariableStatementSyntax? value =
+            statement as LocalVariableStatementSyntax?;
+        if (value == null) {
+          throw StateError(
+              "local-variable statement has the wrong runtime type");
+        }
+        return value.GetType();
+      }
+      case StatementKind.kForEach: {
+        final ForEachStatementSyntax? value =
+            statement as ForEachStatementSyntax?;
+        if (value == null) {
+          throw StateError("foreach statement has the wrong runtime type");
+        }
+        return value.GetVariable().GetType();
+      }
+      default: { return null; }
+    }
+  }
+}

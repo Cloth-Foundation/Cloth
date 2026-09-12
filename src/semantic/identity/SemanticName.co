@@ -1,0 +1,139 @@
+import frontend.package::PackagePath;
+import frontend.source::SourceSpan;
+
+class {
+  final SourceSpan? source;
+  final string text;
+
+  _SemanticName(SourceSpan? source, string text) {
+    self.source = source;
+    self.text = text;
+  }
+
+  static func FromSource(SourceSpan source): SemanticName throws StateError {
+    if (!IsIdentifierSource(source)) {
+      throw StateError("semantic source name is not an identifier");
+    }
+    return SemanticName(source, "");
+  }
+
+  static func FromString(string text): SemanticName throws StateError {
+    if (!IsIdentifierString(text)) {
+      throw StateError("semantic owned name is not an identifier");
+    }
+    return SemanticName(null, text);
+  }
+
+  func GetLength(): int32 {
+    final SourceSpan? source = self.source;
+    if (source != null) { return source.GetLength(); }
+    return self.text::length;
+  }
+
+  func GetByte(int32 index): byte throws StateError {
+    if (index < 0 || index >= self.GetLength()) {
+      throw StateError("semantic name index is out of bounds");
+    }
+    final SourceSpan? source = self.source;
+    if (source != null) { return source.GetByte(index); }
+    return byte(asciiCode(self.text[index]));
+  }
+
+  func GetSource(): SourceSpan? { return self.source; }
+
+  func Equals(SemanticName other): bool throws StateError {
+    return Compare(self, other) == 0;
+  }
+
+  func EqualsString(string other): bool throws StateError {
+    if (self.GetLength() != other::length ||
+        other::length != other::byteLength) {
+      return false;
+    }
+    for (int32 index = 0; index < other::length; index++) {
+      if (self.GetByte(index) != byte(asciiCode(other[index]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func Compare(SemanticName left,
+                      SemanticName right): int32 throws StateError {
+    int32 shared = left.GetLength();
+    if (right.GetLength() < shared) { shared = right.GetLength(); }
+    for (int32 index = 0; index < shared; index++) {
+      final byte leftByte = left.GetByte(index);
+      final byte rightByte = right.GetByte(index);
+      if (leftByte < rightByte) { return -1; }
+      if (leftByte > rightByte) { return 1; }
+    }
+    if (left.GetLength() < right.GetLength()) { return -1; }
+    if (left.GetLength() > right.GetLength()) { return 1; }
+    return 0;
+  }
+
+  static func IsIdentifierSource(SourceSpan value): bool throws StateError {
+    if (value.GetLength() == 0 || !isIdentifierStart(value.GetByte(0))) {
+      return false;
+    }
+    for (int32 index = 1; index < value.GetLength(); index++) {
+      if (!isIdentifierContinue(value.GetByte(index))) { return false; }
+    }
+    return true;
+  }
+
+  static func IsIdentifierString(string value): bool {
+    if (value::isEmpty || value::byteLength != value::length ||
+        !isIdentifierStart(byte(asciiCode(value[0])))) {
+      return false;
+    }
+    for (int32 index = 1; index < value::length; index++) {
+      if (!isIdentifierContinue(byte(asciiCode(value[index])))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func IsSourcePackage(string value): bool {
+    if (value::isEmpty) { return true; }
+    int32 begin = 0;
+    for (int32 index = 0; index <= value::length; index++) {
+      if (index < value::length && value[index] != '.') { continue; }
+      if (begin == index ||
+          !IsIdentifierString(value::slice(begin, index))) {
+        return false;
+      }
+      begin = index + 1;
+    }
+    return true;
+  }
+
+  static func CompareString(string left,
+                            string right): int32 throws StateError {
+    return PackagePath.Compare(left, right);
+  }
+
+  static func isIdentifierStart(byte value): bool {
+    return (value >= 65 && value <= 90) ||
+           (value >= 97 && value <= 122) || value == 95;
+  }
+
+  static func isIdentifierContinue(byte value): bool {
+    return isIdentifierStart(value) || (value >= 48 && value <= 57);
+  }
+
+  static func asciiCode(char value): int32 {
+    final string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    for (int32 index = 0; index < alphabet::length; index++) {
+      if (value != alphabet[index]) { continue; }
+      if (index < 26) { return 65 + index; }
+      if (index < 52) { return 97 + index - 26; }
+      if (index < 62) { return 48 + index - 52; }
+      return 95;
+    }
+    return -1;
+  }
+}

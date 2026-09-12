@@ -14,10 +14,11 @@ nominal identity.
 > The self-hosted compiler is under active bootstrap development. Use `cCloth`
 > for supported compilation today.
 
-The self-hosted package frontend is authoritative for lexing and parsing as of
-the Stage 49.4 audit. `cCloth` remains the bootstrap for compiler phases that
-have not transferred to Cloth yet and a declared differential regression
-oracle for the frontend.
+The self-hosted compiler is authoritative for lexing and parsing as of Stage
+49.4, and for package symbols, canonical semantic type identity, import
+binding, and declared type-name resolution as of Stage 50.4. `cCloth` remains
+the bootstrap and declared differential oracle for compiler boundaries that
+have not transferred to Cloth yet.
 
 ## Build and run
 
@@ -59,8 +60,8 @@ library.
 ## Source map
 
 The production entry is [`src/Main.co`](src/Main.co). Compiler code is grouped
-under `src/driver/` and `src/frontend/` by responsibility. Bootstrap checks,
-fixtures, failure probes, and parity adapters form the separate
+under `src/driver/`, `src/frontend/`, and `src/semantic/` by responsibility.
+Bootstrap checks, fixtures, failure probes, and parity adapters form the separate
 `tests/self_host` Shuttle package and are never compiled into `clothc`. Read
 [`ARCHITECTURE.md`](ARCHITECTURE.md) before adding or moving a compiler component
 and follow [`STYLE.md`](STYLE.md) for Cloth source.

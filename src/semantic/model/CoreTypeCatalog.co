@@ -1,0 +1,125 @@
+import semantic.identity::NominalIdentity;
+import semantic.identity::TypeIdentity;
+import semantic.model::TypeKind;
+
+class {
+  static func GetCount(): int32 { return 22; }
+
+  static func GetKind(int32 index): TypeKind throws StateError {
+    switch (index) {
+      case 0: { return TypeKind.kError; }
+      case 1: { return TypeKind.kBottom; }
+      case 2: { return TypeKind.kVoid; }
+      case 3: { return TypeKind.kNull; }
+      case 4: { return TypeKind.kBool; }
+      case 5: { return TypeKind.kChar; }
+      case 6: { return TypeKind.kByte; }
+      case 7: { return TypeKind.kInt8; }
+      case 8: { return TypeKind.kInt16; }
+      case 9: { return TypeKind.kInt32; }
+      case 10: { return TypeKind.kInt64; }
+      case 11: { return TypeKind.kUint8; }
+      case 12: { return TypeKind.kUint16; }
+      case 13: { return TypeKind.kUint32; }
+      case 14: { return TypeKind.kUint64; }
+      case 15: { return TypeKind.kFloat32; }
+      case 16: { return TypeKind.kFloat64; }
+      case 17: { return TypeKind.kString; }
+      case 18: { return TypeKind.kObject; }
+      case 19: { return TypeKind.kErrorClass; }
+      case 20: { return TypeKind.kErrorClass; }
+      case 21: { return TypeKind.kNullable; }
+    }
+    throw StateError("core type index is out of bounds");
+  }
+
+  static func GetName(int32 index): string throws StateError {
+    switch (index) {
+      case 0: { return "<error>"; }
+      case 1: { return "<bottom>"; }
+      case 2: { return "void"; }
+      case 3: { return "null"; }
+      case 4: { return "bool"; }
+      case 5: { return "char"; }
+      case 6: { return "byte"; }
+      case 7: { return "int8"; }
+      case 8: { return "int16"; }
+      case 9: { return "int32"; }
+      case 10: { return "int64"; }
+      case 11: { return "uint8"; }
+      case 12: { return "uint16"; }
+      case 13: { return "uint32"; }
+      case 14: { return "uint64"; }
+      case 15: { return "float32"; }
+      case 16: { return "float64"; }
+      case 17: { return "string"; }
+      case 18: { return "object"; }
+      case 19: { return "Error"; }
+      case 20: { return "DivisionByZero"; }
+      case 21: { return "Error?"; }
+    }
+    throw StateError("core type index is out of bounds");
+  }
+
+  static func GetIdentity(int32 index,
+                          NominalIdentity? objectIdentity): TypeIdentity
+      throws StateError {
+    if (index == 18) { return TypeIdentity.Object(objectIdentity); }
+    if (index == 21) {
+      return TypeIdentity.Nullable(
+          TypeIdentity.Core(TypeKind.kErrorClass, "Error"));
+    }
+    return TypeIdentity.Core(GetKind(index), GetName(index));
+  }
+
+  static func GetElementIndex(int32 index): int32 {
+    if (index == 21) { return 19; }
+    return -1;
+  }
+
+  static func IsCoreName(string name): bool {
+    return name == "void" || name == "null" || name == "bool" ||
+           name == "char" || name == "byte" || name == "int8" ||
+           name == "int16" || name == "int32" || name == "int64" ||
+           name == "uint8" || name == "uint16" || name == "uint32" ||
+           name == "uint64" || name == "float32" || name == "float64" ||
+           name == "string" || name == "object" || name == "Error" ||
+           name == "DivisionByZero" || name == "int" || name == "uint" ||
+           name == "float";
+  }
+
+  static func Find(string name): int32 {
+    if (name == "int") { return 9; }
+    if (name == "uint") { return 13; }
+    if (name == "float") { return 15; }
+    for (int32 index = 2; index <= 20; index++) {
+      if (name == coreLookupName(index)) { return index; }
+    }
+    return -1;
+  }
+
+  static func coreLookupName(int32 index): string {
+    switch (index) {
+      case 2: { return "void"; }
+      case 3: { return "null"; }
+      case 4: { return "bool"; }
+      case 5: { return "char"; }
+      case 6: { return "byte"; }
+      case 7: { return "int8"; }
+      case 8: { return "int16"; }
+      case 9: { return "int32"; }
+      case 10: { return "int64"; }
+      case 11: { return "uint8"; }
+      case 12: { return "uint16"; }
+      case 13: { return "uint32"; }
+      case 14: { return "uint64"; }
+      case 15: { return "float32"; }
+      case 16: { return "float64"; }
+      case 17: { return "string"; }
+      case 18: { return "object"; }
+      case 19: { return "Error"; }
+      case 20: { return "DivisionByZero"; }
+    }
+    return "";
+  }
+}

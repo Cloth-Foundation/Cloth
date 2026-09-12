@@ -1,0 +1,43 @@
+import frontend.source::SourceRange;
+import semantic.diagnostic::SemanticDiagnostic;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.package::SemanticLimits;
+
+class {
+  final SemanticDiagnostic?[] values;
+  int32 count;
+
+  _SemanticDiagnosticBuffer(int32 capacity) {
+    self.values = SemanticDiagnostic?[:capacity];
+    self.count = 0;
+  }
+
+  static func Create(int32 capacity): SemanticDiagnosticBuffer
+      throws StateError {
+    if (capacity < 0 || capacity > SemanticLimits.MaxDiagnostics()) {
+      throw StateError("semantic diagnostic capacity exceeds its limit");
+    }
+    return SemanticDiagnosticBuffer(capacity);
+  }
+
+  func Add(SemanticDiagnosticKind kind, SourceRange range,
+           SourceRange? relatedRange): void throws StateError {
+    if (self.count >= self.values::length) {
+      throw StateError("semantic diagnostic capacity is exhausted");
+    }
+    self.values[self.count] =
+        SemanticDiagnostic.Build(kind, range, relatedRange);
+    self.count++;
+  }
+
+  func Publish(): SemanticDiagnosticSequence throws StateError {
+    final SemanticDiagnostic?[] result = SemanticDiagnostic?[:self.count];
+    for (int32 index = 0; index < self.count; index++) {
+      result[index] = self.values[index];
+    }
+    return SemanticDiagnosticSequence.Build(result);
+  }
+
+  func GetCount(): int32 { return self.count; }
+}

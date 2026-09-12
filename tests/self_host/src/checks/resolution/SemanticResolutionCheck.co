@@ -1,0 +1,465 @@
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageFrontendResult;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.diagnostic::SemanticDiagnosticKind;
+import clothc.semantic.identity::MemberIdentity;
+import clothc.semantic.identity::NominalIdentity;
+import clothc.semantic.identity::NominalKind;
+import clothc.semantic.identity::SemanticName;
+import clothc.semantic.identity::TypeIdentity;
+import clothc.semantic.model::FileId;
+import clothc.semantic.model::SemanticFile;
+import clothc.semantic.model::SemanticSymbol;
+import clothc.semantic.model::SymbolKind;
+import clothc.semantic.model::TypeKind;
+import clothc.semantic.package::DependencyType;
+import clothc.semantic.package::DependencyTypeView;
+import clothc.semantic.package::PackageSymbolCollector;
+import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticPackageInput;
+import clothc.semantic.package::SemanticPackageResult;
+import clothc.semantic.resolution::ImportBinding;
+import clothc.semantic.resolution::ImportBindingKind;
+import clothc.semantic.resolution::ImportScope;
+import clothc.semantic.resolution::TypeBinding;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    final SemanticPackageResult valid = buildValid(false);
+    final int32 validStatus = checkValid(valid);
+    if (validStatus != 0) { return validStatus; }
+    final int32 stableStatus = checkStable(valid, buildValid(true));
+    if (stableStatus != 0) { return stableStatus; }
+    return checkInvalid();
+  }
+
+  static func checkValid(SemanticPackageResult result): int32
+      throws StateError {
+    if (!result.IsValid()) {
+      final PackageFrontendResult frontend = result.GetInput().GetFrontend();
+      for (int32 index = 0; index < frontend.GetFileCount(); index++) {
+        if (!frontend.GetFile(index).IsValid()) { return 850 + index; }
+      }
+      return 800;
+    }
+    if (result.GetDiagnostics().GetCount() != 0) { return 801; }
+    if (result.GetFileCount() != 9) { return 802; }
+    if (result.GetTypeCount() != 35) { return 803; }
+    if (result.GetSymbolCount() != 27) { return 804; }
+    if (result.GetNominalTypeCount() != 9) { return 805; }
+    if (result.GetMemberIdentityCount() != 9) { return 806; }
+    if (result.GetImportBindingCount() != 16) { return 807; }
+    if (result.GetPreludeTypeCount() != 2) { return 808; }
+    if (result.GetTypeBindingCount() != 31) { return 809; }
+    final SemanticFile main = findFile(result, "", "Main");
+    final ImportScope? scopeValue = result.GetImportScope(main.GetId());
+    if (scopeValue == null) { return 801; }
+    final ImportScope scope = scopeValue;
+    if (scope.GetCount() != 6 ||
+        !bindingMatches(result, scope, "User", "models", "User",
+                        ImportBindingKind.kExplicit) ||
+        !bindingMatches(result, scope, "Data", "models", "Record",
+                        ImportBindingKind.kExplicit) ||
+        !bindingMatches(result, scope, "Worker", "services", "Worker",
+                        ImportBindingKind.kWildcard) ||
+        !bindingMatches(result, scope, "External", "api", "Remote",
+                        ImportBindingKind.kExplicit) ||
+        !bindingMatches(result, scope, "Remote", "api", "Remote",
+                        ImportBindingKind.kExplicit)) {
+      return 802;
+    }
+    final SemanticFile user = findFile(result, "models", "User");
+    final ImportScope? userScopeValue = result.GetImportScope(user.GetId());
+    if (userScopeValue == null) { return 829; }
+    final ImportScope userScope = userScopeValue;
+    if (userScope.GetCount() != 4 ||
+        !bindingMatches(
+            result, userScope, "User", "models", "User",
+            ImportBindingKind.kCurrentFile) ||
+        !bindingMatches(
+            result, userScope, "Record", "models", "Record",
+            ImportBindingKind.kCurrentPackage) ||
+        !bindingMatches(
+            result, userScope, "Data", "models", "Record",
+            ImportBindingKind.kExplicit)) {
+      return 829;
+    }
+    final SemanticSymbol build = findMember(result, main, "Build");
+    final MemberIdentity? identity = build.GetIdentity();
+    if (build.GetKind() != SymbolKind.kFunction || !build.IsValid() ||
+        !build.IsTypeResolved() || identity == null ||
+        identity.GetParameterCount() != 2 ||
+        !isUserArray(identity.GetParameter(0)) ||
+        !isNominal(identity.GetParameter(1), "sample", "models", "Record") ||
+        result.GetType(build.GetType()).GetKind() != TypeKind.kNullable ||
+        !isNullableNominal(result.GetType(build.GetType()).GetIdentity(),
+                           "remote-lib", "api", "Remote")) {
+      return 803;
+    }
+    final SemanticSymbol constructor = findConstructor(result, user);
+    final MemberIdentity? constructorIdentity = constructor.GetIdentity();
+    if (constructorIdentity == null ||
+        !constructorIdentity.GetName().EqualsString("User") ||
+        constructorIdentity.GetParameterCount() != 1 ||
+        !isNominal(constructorIdentity.GetParameter(0),
+                   "sample", "models", "Record")) {
+      return 804;
+    }
+    if (!checkBindings(result, main.GetId())) { return 805; }
+    if (result.GetImportScope(findFile(result, "api", "Remote").GetId()) !=
+        null) {
+      return 806;
+    }
+    return 0;
+  }
+
+  static func checkBindings(
+      SemanticPackageResult result, FileId main): bool throws StateError {
+    int32 resolved = 0;
+    int32 user = 0;
+    int32 data = 0;
+    int32 external = 0;
+    int32 problem = 0;
+    for (int32 index = 0; index < result.GetTypeBindingCount(); index++) {
+      final TypeBinding binding = result.GetTypeBinding(index);
+      if (!binding.IsResolved()) { return false; }
+      resolved++;
+      if (binding.GetFile().GetIndex() != main.GetIndex()) { continue; }
+      final SemanticName name =
+          SemanticName.FromSource(binding.GetSyntax().GetName());
+      final TypeIdentity type =
+          result.GetType(binding.GetType()).GetIdentity();
+      if (name.EqualsString("User")) { user++; }
+      if (name.EqualsString("Data")) { data++; }
+      if (name.EqualsString("External")) { external++; }
+      if (name.EqualsString("Problem")) { problem++; }
+      if (name.EqualsString("User") &&
+          !isUnderlyingNominal(type, "sample", "models", "User")) {
+        return false;
+      }
+      if (name.EqualsString("Data") &&
+          !isUnderlyingNominal(type, "sample", "models", "Record")) {
+        return false;
+      }
+      if ((name.EqualsString("External") || name.EqualsString("Remote")) &&
+          !isUnderlyingNominal(type, "remote-lib", "api", "Remote")) {
+        return false;
+      }
+      if (name.EqualsString("Problem") &&
+          !isUnderlyingNominal(
+              type, "cloth", "lang.errors", "Problem")) {
+        return false;
+      }
+      if (name.EqualsString("Worker") &&
+          !isUnderlyingNominal(type, "sample", "services", "Worker")) {
+        return false;
+      }
+      if (name.EqualsString("object") &&
+          !isUnderlyingNominal(type, "cloth", "lang", "Object")) {
+        return false;
+      }
+      if (name.EqualsString("int64") && type.GetKind() != TypeKind.kInt64) {
+        return false;
+      }
+      if (name.EqualsString("int32") && type.GetKind() != TypeKind.kInt32) {
+        return false;
+      }
+      final TypeBinding? found =
+          result.FindTypeBinding(binding.GetFile(), binding.GetSyntax());
+      if (found == null ||
+          found.GetType().GetIndex() != binding.GetType().GetIndex()) {
+        return false;
+      }
+    }
+    return resolved == 31 && user == 5 && data == 6 && external == 3 &&
+           problem == 2;
+  }
+
+  static func checkStable(
+      SemanticPackageResult left,
+      SemanticPackageResult right): int32 throws StateError {
+    if (!right.IsValid() ||
+        left.GetFileCount() != right.GetFileCount() ||
+        left.GetTypeCount() != right.GetTypeCount() ||
+        left.GetTypeBindingCount() != right.GetTypeBindingCount() ||
+        left.GetImportBindingCount() != right.GetImportBindingCount()) {
+      return 807;
+    }
+    for (int32 index = 0; index < left.GetFileCount(); index++) {
+      if (!left.GetFileAt(index).GetIdentity().Equals(
+              right.GetFileAt(index).GetIdentity())) {
+        return 808;
+      }
+    }
+    for (int32 index = 0; index < left.GetTypeBindingCount(); index++) {
+      final TypeBinding leftBinding = left.GetTypeBinding(index);
+      final TypeBinding rightBinding = right.GetTypeBinding(index);
+      if (leftBinding.GetFile().GetIndex() !=
+              rightBinding.GetFile().GetIndex() ||
+          !left.GetType(leftBinding.GetType()).GetIdentity().Equals(
+              right.GetType(rightBinding.GetType()).GetIdentity())) {
+        return 809;
+      }
+    }
+    return 0;
+  }
+
+  static func checkInvalid(): int32 throws IoError, StateError {
+    final SemanticPackageResult result = buildInvalid();
+    if (result.IsValid() || result.GetFileCount() != 7 ||
+        result.GetTypeCount() != 29 || result.GetSymbolCount() != 28 ||
+        result.GetImportBindingCount() != 21 ||
+        result.GetTypeBindingCount() != 16 ||
+        result.GetDiagnostics().GetCount() != 14) {
+      return 810;
+    }
+    for (int32 index = 0; index < 14; index++) {
+      if (result.GetDiagnostics().Get(index).GetKind() !=
+          expectedKind(index)) {
+        return 811 + index;
+      }
+    }
+    final SemanticFile invalid = findFile(result, "", "Invalid");
+    final ImportScope? scopeValue = result.GetImportScope(invalid.GetId());
+    if (scopeValue == null || scopeValue.GetCount() != 8) { return 824; }
+    final ImportBinding? gone =
+        scopeValue.Find(SemanticName.FromString("Gone"));
+    final ImportBinding? clash =
+        scopeValue.Find(SemanticName.FromString("Clash"));
+    final ImportBinding? shared =
+        scopeValue.Find(SemanticName.FromString("Shared"));
+    if (gone == null || gone.GetTarget() != null || gone.IsAmbiguous() ||
+        clash == null || !clash.IsAmbiguous() ||
+        shared == null || !shared.IsAmbiguous()) {
+      return 825;
+    }
+    int32 unresolved = 0;
+    for (int32 index = 0; index < result.GetTypeBindingCount(); index++) {
+      if (!result.GetTypeBinding(index).IsResolved()) { unresolved++; }
+    }
+    if (unresolved != 10) { return 826; }
+    final SemanticSymbol first = findMember(result, invalid, "Use");
+    final MemberIdentity? duplicate = first.GetIdentity();
+    if (duplicate == null || first.IsValid() ||
+        result.FindMember(duplicate) != null) {
+      return 827;
+    }
+    final SemanticSymbol constructor = findConstructor(result, invalid);
+    final MemberIdentity? constructorIdentity = constructor.GetIdentity();
+    if (constructorIdentity == null || constructor.IsValid() ||
+        result.FindMember(constructorIdentity) != null) {
+      return 828;
+    }
+    return 0;
+  }
+
+  static func expectedKind(int32 index): SemanticDiagnosticKind
+      throws StateError {
+    switch (index) {
+      case 0: { return SemanticDiagnosticKind.kUnknownImportedType; }
+      case 1: { return SemanticDiagnosticKind.kImportedTypePrivate; }
+      case 2: { return SemanticDiagnosticKind.kImportNameConflictsWithCore; }
+      case 3: { return SemanticDiagnosticKind.kImportNameAmbiguous; }
+      case 4: { return SemanticDiagnosticKind.kUnknownImportedPackage; }
+      case 5: { return SemanticDiagnosticKind.kImportNameAmbiguous; }
+      case 6: { return SemanticDiagnosticKind.kUnknownType; }
+      case 7: { return SemanticDiagnosticKind.kCapitalStringType; }
+      case 8: { return SemanticDiagnosticKind.kVoidValueType; }
+      case 9: { return SemanticDiagnosticKind.kVoidArrayType; }
+      case 10: { return SemanticDiagnosticKind.kVoidNullableType; }
+      case 11: { return SemanticDiagnosticKind.kTypePrivate; }
+      case 12: {
+        return SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce;
+      }
+      case 13: {
+        return SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce;
+      }
+    }
+    throw StateError("semantic diagnostic expectation is out of bounds");
+  }
+
+  static func buildValid(bool reverse): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:5];
+    if (reverse) {
+      sources[0] = validSource("services/User.co", "ShadowUser.co");
+      sources[1] = validSource("services/Worker.co", "Worker.co");
+      sources[2] = validSource("models/Record.co", "Record.co");
+      sources[3] = validSource("models/User.co", "User.co");
+      sources[4] = validSource("Main.co", "Main.co");
+    } else {
+      sources[0] = validSource("Main.co", "Main.co");
+      sources[1] = validSource("models/User.co", "User.co");
+      sources[2] = validSource("models/Record.co", "Record.co");
+      sources[3] = validSource("services/Worker.co", "Worker.co");
+      sources[4] = validSource("services/User.co", "ShadowUser.co");
+    }
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("sample", "1.0.0"), sources));
+    final SemanticDependency?[] dependencies = SemanticDependency?[:2];
+    if (reverse) {
+      dependencies[0] = clothDependency();
+      dependencies[1] = remoteDependency();
+    } else {
+      dependencies[0] = remoteDependency();
+      dependencies[1] = clothDependency();
+    }
+    return PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, dependencies));
+  }
+
+  static func buildInvalid(): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:7];
+    sources[0] = invalidSource("Invalid.co", "Invalid.co");
+    sources[1] = invalidSource("_RootPrivate.co", "Empty.co");
+    sources[2] = invalidSource("a/_Private.co", "Empty.co");
+    sources[3] = invalidSource("a/Shared.co", "Empty.co");
+    sources[4] = invalidSource("a/Thing.co", "Empty.co");
+    sources[5] = invalidSource("b/Other.co", "Empty.co");
+    sources[6] = invalidSource("b/Shared.co", "Empty.co");
+    final PackageFrontendResult frontend = FrontendCoordinator.Check(
+        PackageFrontendInput.Build(
+            PackageIdentity.Build("invalid", "1.0.0"), sources));
+    return PackageSymbolCollector.Collect(
+        SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
+  }
+
+  static func bindingMatches(
+      SemanticPackageResult result, ImportScope scope, string localName,
+      string sourcePackage, string typeName,
+      ImportBindingKind kind): bool throws StateError {
+    final ImportBinding? binding =
+        scope.Find(SemanticName.FromString(localName));
+    if (binding == null || binding.GetKind() != kind) { return false; }
+    final FileId? target = binding.GetTarget();
+    if (target == null) { return false; }
+    final NominalIdentity identity = result.GetFile(target).GetIdentity();
+    return identity.GetSourcePackage() == sourcePackage &&
+           identity.GetName() == typeName;
+  }
+
+  static func findFile(
+      SemanticPackageResult result, string sourcePackage,
+      string name): SemanticFile throws StateError {
+    for (int32 index = 0; index < result.GetFileCount(); index++) {
+      final SemanticFile file = result.GetFileAt(index);
+      if (file.GetIdentity().GetSourcePackage() == sourcePackage &&
+          file.GetIdentity().GetName() == name) {
+        return file;
+      }
+    }
+    throw StateError("semantic resolution check could not find a file");
+  }
+
+  static func findMember(
+      SemanticPackageResult result, SemanticFile file,
+      string name): SemanticSymbol throws StateError {
+    for (int32 index = 0; index < file.GetMemberCount(); index++) {
+      final SemanticSymbol member = result.GetSymbol(file.GetMember(index));
+      if (member.GetName().EqualsString(name)) { return member; }
+    }
+    throw StateError("semantic resolution check could not find a member");
+  }
+
+  static func findConstructor(
+      SemanticPackageResult result,
+      SemanticFile file): SemanticSymbol throws StateError {
+    for (int32 index = 0; index < file.GetMemberCount(); index++) {
+      final SemanticSymbol member = result.GetSymbol(file.GetMember(index));
+      if (member.GetKind() == SymbolKind.kConstructor) { return member; }
+    }
+    throw StateError("semantic resolution check could not find constructor");
+  }
+
+  static func isUserArray(TypeIdentity type): bool throws StateError {
+    if (type.GetKind() != TypeKind.kNullable) { return false; }
+    final TypeIdentity array = type.GetElement()!;
+    if (array.GetKind() != TypeKind.kArray) { return false; }
+    final TypeIdentity element = array.GetElement()!;
+    return element.GetKind() == TypeKind.kNullable &&
+           isNominal(element.GetElement()!, "sample", "models", "User");
+  }
+
+  static func isNullableNominal(
+      TypeIdentity type, string packageName, string sourcePackage,
+      string name): bool throws StateError {
+    return type.GetKind() == TypeKind.kNullable &&
+           isNominal(type.GetElement()!, packageName, sourcePackage, name);
+  }
+
+  static func isUnderlyingNominal(
+      TypeIdentity type, string packageName, string sourcePackage,
+      string name): bool throws StateError {
+    TypeIdentity current = type;
+    while (current.GetElement() != null) {
+      current = current.GetElement()!;
+    }
+    return isNominal(current, packageName, sourcePackage, name);
+  }
+
+  static func isNominal(
+      TypeIdentity type, string packageName, string sourcePackage,
+      string name): bool throws StateError {
+    final NominalIdentity? nominal = type.GetNominal();
+    return nominal != null && nominal.GetPackage().GetName() == packageName &&
+           nominal.GetSourcePackage() == sourcePackage &&
+           nominal.GetName() == name;
+  }
+
+  static func remoteDependency(): SemanticDependency throws StateError {
+    final PackageIdentity package =
+        PackageIdentity.Build("remote-lib", "2.0.0");
+    final DependencyType?[] types = DependencyType?[:1];
+    types[0] = dependencyType(
+        package, "api", "Remote", "api/Remote.co", Visibility.kPublic);
+    return SemanticDependency.Build(
+        "dep", DependencyTypeView.Build(package, types));
+  }
+
+  static func clothDependency(): SemanticDependency throws StateError {
+    final PackageIdentity package = PackageIdentity.Build("cloth", "0.6.0");
+    final DependencyType?[] types = DependencyType?[:3];
+    types[0] = dependencyType(
+        package, "lang", "Object", "lang/Object.co", Visibility.kPublic);
+    types[1] = dependencyType(
+        package, "lang.errors", "Problem", "lang/errors/Problem.co",
+        Visibility.kPublic);
+    types[2] = dependencyType(
+        package, "lang.internal", "_Hidden", "lang/internal/_Hidden.co",
+        Visibility.kPrivate);
+    return SemanticDependency.Build(
+        "cloth", DependencyTypeView.Build(package, types));
+  }
+
+  static func dependencyType(
+      PackageIdentity package, string sourcePackage, string name,
+      string path, Visibility visibility): DependencyType throws StateError {
+    return DependencyType.Build(
+        NominalIdentity.Build(
+            package, sourcePackage, name, NominalKind.kClass),
+        FileTypeKind.kClass, visibility, path, 1, 1, false, false);
+  }
+
+  static func validSource(
+      string logicalPath, string fileName): PackageSource
+      throws IoError, StateError {
+    return PackageSource.Build(
+        logicalPath, SourceFile.Load(
+            "tests/self_host/testdata/resolution/valid/" + fileName));
+  }
+
+  static func invalidSource(
+      string logicalPath, string fileName): PackageSource
+      throws IoError, StateError {
+    return PackageSource.Build(
+        logicalPath, SourceFile.Load(
+            "tests/self_host/testdata/resolution/invalid/" + fileName));
+  }
+}
