@@ -5,6 +5,7 @@ import frontend.syntax.tree::Visibility;
 import semantic.diagnostic::SemanticDiagnosticSequence;
 import semantic.identity::MemberIdentity;
 import semantic.identity::NominalIdentity;
+import semantic.identity::TypeIdentity;
 import semantic.model::CoreTypeCatalog;
 import semantic.model::FileId;
 import semantic.model::SemanticFile;
@@ -96,6 +97,7 @@ class {
   }
 
   func GetInput(): SemanticPackageInput { return self.input; }
+  func GetOwner(): SemanticOwner { return self.owner; }
   func GetDiagnostics(): SemanticDiagnosticSequence {
     return self.diagnostics;
   }
@@ -155,6 +157,15 @@ class {
   func FindNominalType(NominalIdentity identity): TypeId?
       throws StateError {
     return self.nominalTypes.Find(identity);
+  }
+
+  func FindTypeIdentity(TypeIdentity identity): TypeId?
+      throws StateError {
+    for (int32 index = 0; index < self.types::length; index++) {
+      final SemanticType type = self.types[index]!;
+      if (type.GetIdentity().Equals(identity)) { return type.GetId(); }
+    }
+    return null;
   }
 
   func FindMember(MemberIdentity identity): SymbolId? throws StateError {

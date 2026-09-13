@@ -9,11 +9,9 @@ test_suite(
 )
 
 test_suite(
-    name = "full",
+    name = "stage",
     tests = [
         ":presubmit",
-        "//tests/self_host:cross_compiler_parity_test",
-        "//tests/self_host:shuttle_compatibility_test",
         "//tests/self_host/tests:extended",
         "//tests/self_host/tools/declaration_failure:failure_tests",
         "//tests/self_host/tools/declaration_records:interface_test",
@@ -24,5 +22,14 @@ test_suite(
         "//tests/self_host/tools/syntax_storage_failure:failure_tests",
         "//tests/self_host/tools/syntax_tree_failure:failure_tests",
         "//tests/self_host/tools/syntax_tree_records:tree_test",
+    ],
+)
+
+test_suite(
+    name = "full",
+    tests = [
+        ":stage",
+        "//tests/self_host:cross_compiler_parity_test",
+        "//tests/self_host:shuttle_compatibility_test",
     ],
 )

@@ -1,0 +1,356 @@
+import frontend.package::FileFrontendResult;
+import frontend.source::SourceRange;
+import frontend.source::SourceSpan;
+import frontend.syntax::BlockId;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::ParameterSyntax;
+import frontend.syntax.declaration::ParameterSyntaxSequence;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::ForStatementSyntax;
+import frontend.syntax.statement::ForVariableSyntax;
+import frontend.syntax.statement::IfStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.statement::NestedBlockStatementSyntax;
+import frontend.syntax.statement::StatementKind;
+import frontend.syntax.statement::SwitchArmSyntax;
+import frontend.syntax.statement::SwitchArmSyntaxSequence;
+import frontend.syntax.statement::SwitchStatementSyntax;
+import frontend.syntax.statement::WhileStatementSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::TypeSyntax;
+import semantic.executable::ExecutableSemanticPreflight;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.executable::ExecutableSemanticStorage;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::TypeBinding;
+import semantic.symbol::DeclarationRegistrationFacts;
+import semantic.value::ScopeId;
+import semantic.value::ScopeKind;
+import semantic.value::ValueKind;
+
+class {
+  final SemanticPackageResult semantic;
+  final ExecutableSemanticStorage storage;
+  int32 declarationOrder;
+
+  _ValueScopeCollector(SemanticPackageResult semantic,
+                       ExecutableSemanticStorage storage) {
+    self.semantic = semantic;
+    self.storage = storage;
+    self.declarationOrder = 0;
+  }
+
+  static func Collect(
+      SemanticPackageResult semantic): ExecutableSemanticResult
+      throws StateError {
+    final ExecutableSemanticPreflight preflight =
+        ExecutableSemanticPreflight.Build(semantic);
+    final ExecutableSemanticStorage storage =
+        ExecutableSemanticStorage.Create(semantic, preflight);
+    final ValueScopeCollector collector =
+        ValueScopeCollector(semantic, storage);
+    collector.collectFiles();
+    return storage.Publish();
+  }
+
+  func collectFiles(): void throws StateError {
+    for (int32 fileIndex = 0;
+         fileIndex < self.semantic.GetFileCount(); fileIndex++) {
+      final SemanticFile file = self.semantic.GetFileAt(fileIndex);
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend == null) { continue; }
+      final FileSyntax syntax = frontend.GetDefinition()!.GetTree().GetFile();
+      self.collectDeclarations(file, syntax);
+    }
+  }
+
+  func collectDeclarations(SemanticFile file,
+                           FileSyntax syntax): void throws StateError {
+    final DeclarationSyntaxSequence declarations = syntax.GetDeclarations();
+    int32 memberIndex = 0;
+    for (int32 index = 0; index < declarations.GetCount(); index++) {
+      final DeclarationSyntax declaration = declarations.Get(index);
+      if (!DeclarationRegistrationFacts.HasValidName(declaration)) {
+        continue;
+      }
+      final SymbolId symbol = file.GetMember(memberIndex);
+      memberIndex++;
+      if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+        final FieldSyntax? field = declaration as FieldSyntax?;
+        if (field == null) {
+          throw StateError("field declaration has an inconsistent type");
+        }
+        if (field.GetInitializer() != null) {
+          final ScopeId root = self.storage.AddScope(
+              ScopeKind.kInitializer, null, file.GetId(), symbol,
+              field.GetRange(), 0);
+          self.storage.BindCallable(symbol, root);
+        }
+      } else {
+        if (declaration.GetDeclarationKind() == DeclarationKind.kFunction ||
+            declaration.GetDeclarationKind() ==
+                DeclarationKind.kConstructor) {
+          self.collectCallable(
+              file, syntax.GetStorage(), declaration, symbol);
+        }
+      }
+    }
+  }
+
+  func collectCallable(
+      SemanticFile file, SyntaxStorage syntax,
+      DeclarationSyntax declaration,
+      SymbolId callable): void throws StateError {
+    self.declarationOrder = 0;
+    final ScopeId root = self.storage.AddScope(
+        ScopeKind.kCallable, null, file.GetId(), callable,
+        declaration.GetRange(), 0);
+    self.storage.BindCallable(callable, root);
+
+    BlockId body;
+    ParameterSyntaxSequence parameters;
+    bool hasSelf = true;
+    if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+      final FunctionSyntax? function = declaration as FunctionSyntax?;
+      if (function == null) {
+        throw StateError("function declaration has an inconsistent type");
+      }
+      body = function.GetBody();
+      parameters = function.GetParameters();
+      hasSelf = !function.IsStatic();
+    } else {
+      final ConstructorSyntax? constructor = declaration as ConstructorSyntax?;
+      if (constructor == null) {
+        throw StateError("constructor declaration has an inconsistent type");
+      }
+      body = constructor.GetBody();
+      parameters = constructor.GetParameters();
+    }
+
+    if (hasSelf) {
+      final SemanticSymbol selfSymbol =
+          self.semantic.GetSymbol(file.GetSelfSymbol());
+      self.storage.AddValue(
+          ValueKind.kSelf, selfSymbol.GetName(), file.GetType(),
+          selfSymbol.IsTypeResolved(), file.GetId(), callable, root,
+          SourceRange.PointRange(declaration.GetRange().GetBegin()),
+          declaration.GetRange().GetBegin().GetOffset(),
+          self.nextDeclarationOrder(), false, selfSymbol.IsValid());
+    }
+    for (int32 index = 0; index < parameters.GetCount(); index++) {
+      final ParameterSyntax parameter = parameters.Get(index);
+      final TypeBinding? binding =
+          self.semantic.FindTypeBinding(file.GetId(), parameter.GetType());
+      TypeId type = self.semantic.GetTypeAt(0).GetId();
+      bool typeResolved = false;
+      if (binding != null) {
+        type = binding.GetType();
+        typeResolved = binding.IsResolved();
+      }
+      self.storage.AddValue(
+          ValueKind.kParameter, SemanticName.FromSource(parameter.GetName()),
+          type, typeResolved, file.GetId(), callable, root,
+          parameter.GetRange(), declaration.GetRange().GetBegin().GetOffset(),
+          self.nextDeclarationOrder(), !parameter.IsFinal(),
+          parameter.IsValid());
+    }
+    self.collectRootBlock(file.GetId(), callable, syntax, body, root);
+  }
+
+  func collectRootBlock(
+      FileId file, SymbolId callable, SyntaxStorage syntax, BlockId block,
+      ScopeId scope): void throws StateError {
+    self.storage.BindBlock(file, block, scope);
+    final BlockNodeSyntax? value = syntax.GetBlock(block) as BlockNodeSyntax?;
+    if (value == null) {
+      throw StateError("callable body does not contain a block node");
+    }
+    self.collectStatements(file, callable, syntax, value.GetStatements(),
+                           scope, 0);
+  }
+
+  func collectBlock(
+      FileId file, SymbolId callable, SyntaxStorage syntax, BlockId block,
+      ScopeId parent, int32 depth): void throws StateError {
+    final BlockNodeSyntax? value = syntax.GetBlock(block) as BlockNodeSyntax?;
+    if (value == null) {
+      throw StateError("block handle does not contain a block node");
+    }
+    final ScopeId scope = self.storage.AddScope(
+        ScopeKind.kBlock, parent, file, callable, value.GetRange(), depth);
+    self.storage.BindBlock(file, block, scope);
+    self.collectStatements(file, callable, syntax, value.GetStatements(),
+                           scope, depth);
+  }
+
+  func collectStatements(
+      FileId file, SymbolId callable, SyntaxStorage syntax,
+      StatementIdSequence statements, ScopeId scope,
+      int32 depth): void throws StateError {
+    for (int32 index = 0; index < statements.GetCount(); index++) {
+      self.collectStatement(
+          file, callable, syntax, statements.Get(index), scope, depth);
+    }
+  }
+
+  func collectStatement(
+      FileId file, SymbolId callable, SyntaxStorage syntax,
+      StatementId id, ScopeId scope,
+      int32 depth): void throws StateError {
+    final StatementSyntax statement = syntax.GetStatement(id);
+    if (statement.GetStatementKind() == StatementKind.kFor) {
+      self.collectFor(file, callable, syntax, id, statement, scope, depth);
+      return;
+    }
+    if (statement.GetStatementKind() == StatementKind.kForEach) {
+      self.collectForEach(
+          file, callable, syntax, id, statement, scope, depth);
+      return;
+    }
+    self.storage.BindStatement(file, id, scope, scope);
+    switch (statement.GetStatementKind()) {
+      case StatementKind.kLocalVariable: {
+        self.collectLocal(file, callable, statement, scope);
+      }
+      case StatementKind.kIf: {
+        final IfStatementSyntax? value = statement as IfStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.collectBlock(file, callable, syntax, value.GetThenBlock(), scope,
+                          depth + 1);
+        final BlockId? alternative = value.GetElseBlock();
+        if (alternative != null) {
+          self.collectBlock(file, callable, syntax, alternative, scope,
+                            depth + 1);
+        }
+      }
+      case StatementKind.kWhile: {
+        final WhileStatementSyntax? value = statement as WhileStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.collectBlock(file, callable, syntax, value.GetBody(), scope,
+                          depth + 1);
+      }
+      case StatementKind.kSwitch: {
+        final SwitchStatementSyntax? value =
+            statement as SwitchStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        final SwitchArmSyntaxSequence arms = value.GetArms();
+        for (int32 index = 0; index < arms.GetCount(); index++) {
+          final SwitchArmSyntax arm = arms.Get(index);
+          self.collectBlock(file, callable, syntax, arm.GetBody(), scope,
+                            depth + 1);
+        }
+      }
+      case StatementKind.kNestedBlock: {
+        final NestedBlockStatementSyntax? value =
+            statement as NestedBlockStatementSyntax?;
+        if (value == null) { self.kindMismatch(); return; }
+        self.collectBlock(file, callable, syntax, value.GetBlock(), scope,
+                          depth + 1);
+      }
+      default: {}
+    }
+  }
+
+  func collectFor(
+      FileId file, SymbolId callable, SyntaxStorage syntax,
+      StatementId id, StatementSyntax statement, ScopeId parent,
+      int32 depth): void throws StateError {
+    final ForStatementSyntax? value = statement as ForStatementSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    final ScopeId loop = self.storage.AddScope(
+        ScopeKind.kLoop, parent, file, callable, statement.GetRange(),
+        depth + 1);
+    self.storage.BindStatement(file, id, parent, loop);
+    final StatementId? initializer = value.GetInitializer();
+    if (initializer != null) {
+      final StatementSyntax initial = syntax.GetStatement(initializer);
+      self.storage.BindStatement(file, initializer, loop, loop);
+      if (initial.GetStatementKind() == StatementKind.kLocalVariable) {
+        self.collectLocal(file, callable, initial, loop);
+      }
+    }
+    self.collectBlock(file, callable, syntax, value.GetBody(), loop,
+                      depth + 2);
+  }
+
+  func collectForEach(
+      FileId file, SymbolId callable, SyntaxStorage syntax,
+      StatementId id, StatementSyntax statement, ScopeId parent,
+      int32 depth): void throws StateError {
+    final ForEachStatementSyntax? value =
+        statement as ForEachStatementSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    final ScopeId loop = self.storage.AddScope(
+        ScopeKind.kLoop, parent, file, callable, statement.GetRange(),
+        depth + 1);
+    self.storage.BindStatement(file, id, parent, loop);
+    final ForVariableSyntax variable = value.GetVariable();
+    self.addDeclaredValue(
+        ValueKind.kIteration, file, callable, loop, variable.GetType(),
+        variable.GetName(), variable.GetRange(),
+        variable.GetRange().GetEnd().GetOffset(), !variable.IsFinal(),
+        variable.IsValid());
+    self.collectBlock(file, callable, syntax, value.GetBody(), loop,
+                      depth + 2);
+  }
+
+  func collectLocal(FileId file, SymbolId callable,
+                    StatementSyntax statement,
+                    ScopeId scope): void throws StateError {
+    final LocalVariableStatementSyntax? value =
+        statement as LocalVariableStatementSyntax?;
+    if (value == null) { self.kindMismatch(); return; }
+    self.addDeclaredValue(
+        ValueKind.kLocal, file, callable, scope, value.GetType(),
+        value.GetName(), value.GetRange(),
+        value.GetRange().GetEnd().GetOffset(), !value.IsFinal(),
+        value.IsValid());
+  }
+
+  func addDeclaredValue(
+      ValueKind kind, FileId file, SymbolId callable, ScopeId scope,
+      TypeSyntax? typeSyntax, SourceSpan name,
+      SourceRange range, int32 visibleFrom, bool mutableValue,
+      bool valid): void throws StateError {
+    TypeId type = self.semantic.GetTypeAt(0).GetId();
+    bool typeResolved = false;
+    if (typeSyntax != null) {
+      final TypeBinding? binding =
+          self.semantic.FindTypeBinding(file, typeSyntax);
+      if (binding != null) {
+        type = binding.GetType();
+        typeResolved = binding.IsResolved();
+      }
+    }
+    self.storage.AddValue(
+        kind, SemanticName.FromSource(name), type, typeResolved, file,
+        callable, scope, range, visibleFrom, self.nextDeclarationOrder(),
+        mutableValue, valid);
+  }
+
+  func nextDeclarationOrder(): int32 {
+    final int32 result = self.declarationOrder;
+    self.declarationOrder++;
+    return result;
+  }
+
+  func kindMismatch(): void throws StateError {
+    throw StateError("statement kind does not match its node type");
+  }
+}

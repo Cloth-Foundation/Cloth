@@ -1,0 +1,58 @@
+import frontend.syntax::BlockId;
+import frontend.syntax::StatementId;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.executable::ExecutableFileScopes;
+import semantic.model::FileId;
+import semantic.value::ExecutableOwner;
+import semantic.value::ScopeId;
+import semantic.value::StatementScopes;
+
+class {
+  final ExecutableOwner owner;
+  final FileId file;
+  final SyntaxStorage syntax;
+  final ScopeId?[] blocks;
+  final StatementScopes?[] statements;
+
+  _ExecutableFileScopeBuilder(ExecutableOwner owner, FileId file,
+                              SyntaxStorage syntax) {
+    self.owner = owner;
+    self.file = file;
+    self.syntax = syntax;
+    self.blocks = ScopeId?[:syntax.GetNodeCount()];
+    self.statements = StatementScopes?[:syntax.GetNodeCount()];
+  }
+
+  static func Create(ExecutableOwner owner, FileId file,
+                     SyntaxStorage syntax): ExecutableFileScopeBuilder
+      throws StateError {
+    if (!syntax.IsSealed()) {
+      throw StateError("executable file scope builder needs sealed syntax");
+    }
+    return ExecutableFileScopeBuilder(owner, file, syntax);
+  }
+
+  func BindBlock(BlockId block, ScopeId scope): void throws StateError {
+    if (!self.syntax.OwnsBlock(block) || !scope.BelongsTo(self.owner) ||
+        self.blocks[block.GetOrdinal()] != null) {
+      throw StateError("block has an invalid or duplicate scope binding");
+    }
+    self.blocks[block.GetOrdinal()] = scope;
+  }
+
+  func BindStatement(StatementId statement, ScopeId entry,
+                     ScopeId continuation): void throws StateError {
+    if (!self.syntax.OwnsStatement(statement) ||
+        self.statements[statement.GetOrdinal()] != null) {
+      throw StateError("statement has an invalid or duplicate scope binding");
+    }
+    self.statements[statement.GetOrdinal()] =
+        StatementScopes.Build(self.owner, entry, continuation);
+  }
+
+  func Publish(int32 scopeCount): ExecutableFileScopes throws StateError {
+    return ExecutableFileScopes.Build(
+        self.owner, self.file, self.syntax, self.blocks, self.statements,
+        scopeCount);
+  }
+}

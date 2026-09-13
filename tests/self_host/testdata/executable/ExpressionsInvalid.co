@@ -1,0 +1,14 @@
+static func Narrow(int8 value): int8 {
+  return value;
+}
+
+static func Main() {
+  int32 value = "wrong";
+  value = null;
+  value::length;
+  unknown(1);
+  int8 tooLarge = 128i8;
+  uint8 negative = -1u8;
+  Narrow(128);
+  Narrow(128i8);
+}

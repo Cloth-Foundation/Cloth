@@ -1,0 +1,197 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax::ExpressionId;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.expression::ExpressionFact;
+import semantic.expression::ExpressionFileFacts;
+import semantic.expression::ExpressionTypeSequence;
+import semantic.invocation::ConstructorInvocationFact;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SemanticType;
+import semantic.model::FileId;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.value::ValueId;
+
+class {
+  final ExecutableSemanticResult executable;
+  final ExpressionTypeSequence types;
+  final ExpressionFileFacts?[] files;
+  final TypeId?[] valueTypes;
+  final ConstructorInvocationFact?[] constructorInvocations;
+  final SemanticDiagnosticSequence diagnostics;
+  final int32 factCount;
+  final bool valid;
+
+  _ExpressionSemanticResult(
+      ExecutableSemanticResult executable, ExpressionTypeSequence types,
+      ExpressionFileFacts?[] files, TypeId?[] valueTypes,
+      ConstructorInvocationFact?[] constructorInvocations,
+      SemanticDiagnosticSequence diagnostics, int32 factCount,
+      bool valid) {
+    self.executable = executable;
+    self.types = types;
+    self.files = files;
+    self.valueTypes = valueTypes;
+    self.constructorInvocations = constructorInvocations;
+    self.diagnostics = diagnostics;
+    self.factCount = factCount;
+    self.valid = valid;
+  }
+
+  static func Build(
+      ExecutableSemanticResult executable, ExpressionTypeSequence types,
+      ExpressionFileFacts?[] input, TypeId?[] valueInput,
+      ConstructorInvocationFact?[] constructorInput,
+      SemanticDiagnosticSequence diagnostics,
+      int32 factCount): ExpressionSemanticResult throws StateError {
+    if (input::length != executable.GetSemantic().GetFileCount() ||
+        valueInput::length != executable.GetValueCount() ||
+        constructorInput::length !=
+            executable.GetSemantic().GetSymbolCount() ||
+        factCount < 0) {
+      throw StateError("expression semantic result has the wrong size");
+    }
+    final ExpressionFileFacts?[] files =
+        ExpressionFileFacts?[:input::length];
+    int32 verifiedFacts = 0;
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticFile file = executable.GetSemantic().GetFileAt(index);
+      final ExpressionFileFacts? facts = input[index];
+      if ((file.GetFrontend() == null) != (facts == null) ||
+          (facts != null && facts.GetFile().GetIndex() != index)) {
+        throw StateError("expression fact file ownership is inconsistent");
+      }
+      if (facts != null) {
+        final FileFrontendResult frontend = file.GetFrontend()!;
+        final var syntax =
+            frontend.GetDefinition()!.GetTree().GetFile().GetStorage();
+        for (int32 ordinal = 0;
+             ordinal < syntax.GetNodeCount(); ordinal++) {
+          final ExpressionFact? fact = facts.GetAt(ordinal);
+          if (fact != null) {
+            verifyFact(executable, types, file, fact);
+            verifiedFacts++;
+          }
+        }
+      }
+      files[index] = facts;
+    }
+    if (verifiedFacts != factCount) {
+      throw StateError("expression fact count is inconsistent");
+    }
+    final TypeId?[] valueTypes = TypeId?[:valueInput::length];
+    for (int32 index = 0; index < valueInput::length; index++) {
+      final TypeId? type = valueInput[index];
+      if (type == null) {
+        throw StateError("resolved value type table is incomplete");
+      }
+      types.Get(type);
+      valueTypes[index] = type;
+    }
+    final ConstructorInvocationFact?[] constructorInvocations =
+        ConstructorInvocationFact?[:constructorInput::length];
+    for (int32 index = 0; index < constructorInput::length; index++) {
+      final ConstructorInvocationFact? invocation = constructorInput[index];
+      if (invocation != null) {
+        final SemanticSymbol owner =
+            executable.GetSemantic().GetSymbol(invocation.GetOwner());
+        if (owner.GetKind() != SymbolKind.kConstructor ||
+            owner.GetId().GetIndex() != index) {
+          throw StateError("base constructor fact has the wrong owner");
+        }
+        types.Get(invocation.GetBaseType());
+        final var selected = invocation.GetConstructor();
+        if (selected != null) {
+          executable.GetSemantic().GetSymbol(selected);
+        }
+      }
+      constructorInvocations[index] = invocation;
+    }
+    return ExpressionSemanticResult(
+        executable, types, files, valueTypes, constructorInvocations,
+        diagnostics, factCount,
+        executable.IsValid() && diagnostics.GetCount() == 0);
+  }
+
+  func GetExecutable(): ExecutableSemanticResult { return self.executable; }
+  func GetTypes(): ExpressionTypeSequence { return self.types; }
+  func GetDiagnostics(): SemanticDiagnosticSequence {
+    return self.diagnostics;
+  }
+  func GetFactCount(): int32 { return self.factCount; }
+  func IsValid(): bool { return self.valid; }
+
+  func GetType(TypeId id): SemanticType throws StateError {
+    return self.types.Get(id);
+  }
+
+  func GetValueType(ValueId value): TypeId throws StateError {
+    self.executable.GetValue(value);
+    final TypeId? result = self.valueTypes[value.GetIndex()];
+    if (result == null) {
+      throw StateError("resolved value type table contains null");
+    }
+    return result;
+  }
+
+  func FindConstructorInvocation(SymbolId constructor):
+      ConstructorInvocationFact? throws StateError {
+    final SemanticSymbol symbol =
+        self.executable.GetSemantic().GetSymbol(constructor);
+    if (symbol.GetKind() != SymbolKind.kConstructor) {
+      throw StateError("base constructor lookup owner is not a constructor");
+    }
+    return self.constructorInvocations[constructor.GetIndex()];
+  }
+
+  func FindFact(FileId file,
+                ExpressionId expression): ExpressionFact?
+      throws StateError {
+    self.executable.GetSemantic().GetFile(file);
+    final ExpressionFileFacts? facts = self.files[file.GetIndex()];
+    if (facts == null) {
+      throw StateError("dependency file has no expression facts");
+    }
+    return facts.Find(expression);
+  }
+
+  func GetFactAt(FileId file, int32 ordinal): ExpressionFact?
+      throws StateError {
+    self.executable.GetSemantic().GetFile(file);
+    final ExpressionFileFacts? facts = self.files[file.GetIndex()];
+    if (facts == null) {
+      throw StateError("dependency file has no expression facts");
+    }
+    return facts.GetAt(ordinal);
+  }
+
+  static func verifyFact(
+      ExecutableSemanticResult executable, ExpressionTypeSequence types,
+      SemanticFile file, ExpressionFact fact): void throws StateError {
+    if (fact.GetFile().GetIndex() != file.GetId().GetIndex()) {
+      throw StateError("expression fact references another file");
+    }
+    types.Get(fact.GetType());
+    final TypeId? contextual = fact.GetContextualLiteralType();
+    if (contextual != null) { types.Get(contextual); }
+    final SemanticSymbol owner =
+        executable.GetSemantic().GetSymbol(fact.GetOwner());
+    final SymbolKind ownerKind = owner.GetKind();
+    if (ownerKind != SymbolKind.kField &&
+        ownerKind != SymbolKind.kFunction &&
+        ownerKind != SymbolKind.kConstructor) {
+      throw StateError("expression fact owner is not executable");
+    }
+    final var ownerFile = owner.GetFile();
+    if (ownerFile == null || ownerFile.GetIndex() != file.GetId().GetIndex()) {
+      throw StateError("expression fact owner belongs to another file");
+    }
+    final ValueId? value = fact.GetSelectedValue();
+    if (value != null) { executable.GetValue(value); }
+    final var member = fact.GetSelectedMember();
+    if (member != null) { executable.GetSemantic().GetSymbol(member); }
+  }
+}

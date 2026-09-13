@@ -8,7 +8,9 @@ import frontend.syntax.declaration::FieldSyntax;
 import frontend.syntax.declaration::FunctionSyntax;
 import frontend.syntax.tree::FileSyntax;
 import semantic.identity::NominalIdentity;
+import semantic.identity::TypeIdentity;
 import semantic.model::CoreTypeCatalog;
+import semantic.package::DependencyMember;
 import semantic.package::DependencyType;
 import semantic.package::DependencyTypeOrder;
 import semantic.package::SemanticLimits;
@@ -48,10 +50,14 @@ class {
       throws StateError {
     final PackageFrontendResult frontend = input.GetFrontend();
     final int32 localFileCount = countLocalFiles(frontend);
-    final int32 memberCount = countLocalMembers(frontend);
+    final int32 localMemberCount = countLocalMembers(frontend);
     final int32 importCount = countImports(frontend);
     final int32 typeBindingCapacity = countTypeBindings(frontend);
     final DependencyType?[] dependencies = DependencyTypeOrder.Build(input);
+    final int32 dependencyMemberCount = countDependencyMembers(dependencies);
+    final int32 memberCount = checkedAdd(
+        localMemberCount, dependencyMemberCount, SemanticLimits.MaxSymbols(),
+        "semantic member count exceeds its limit");
     final int32 fileCount = checkedAdd(
         localFileCount, dependencies::length,
         SemanticLimits.MaxLocalFiles() + SemanticLimits.MaxDependencyTypes(),
@@ -64,9 +70,12 @@ class {
     final int32 nominalTypeCapacity = checkedAdd(
         CoreTypeCatalog.GetCount(), fileCount, SemanticLimits.MaxTypes(),
         "semantic type count exceeds its limit");
-    final int32 typeCapacity = boundedAdd(
+    int32 typeCapacity = boundedAdd(
         nominalTypeCapacity, boundedTriple(
             typeBindingCapacity, SemanticLimits.MaxTypes()),
+        SemanticLimits.MaxTypes());
+    typeCapacity = boundedAdd(
+        typeCapacity, countDependencyStructuralTypes(dependencies),
         SemanticLimits.MaxTypes());
     int32 diagnosticCapacity = checkedDouble(
         localFileCount, SemanticLimits.MaxDiagnostics(),
@@ -134,6 +143,59 @@ class {
           "semantic member count exceeds its limit");
     }
     return count;
+  }
+
+  static func countDependencyMembers(
+      DependencyType?[] dependencies): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < dependencies::length; index++) {
+      count = checkedAdd(
+          count, dependencies[index]!.GetMemberCount(),
+          SemanticLimits.MaxSymbols(),
+          "semantic dependency member count exceeds its limit");
+    }
+    return count;
+  }
+
+  static func countDependencyStructuralTypes(
+      DependencyType?[] dependencies): int32 throws StateError {
+    int32 count = 0;
+    for (int32 index = 0; index < dependencies::length; index++) {
+      final DependencyType type = dependencies[index]!;
+      final TypeIdentity? base = type.GetBaseType();
+      if (base != null) { count = addIdentityNodes(count, base, 0); }
+      for (int32 item = 0; item < type.GetInterfaceCount(); item++) {
+        count = addIdentityNodes(count, type.GetInterface(item), 0);
+      }
+      for (int32 member = 0; member < type.GetMemberCount(); member++) {
+        final DependencyMember signature = type.GetMember(member);
+        count = addIdentityNodes(count, signature.GetType(), 0);
+        final var identity = signature.GetIdentity();
+        for (int32 parameter = 0;
+             parameter < identity.GetParameterCount(); parameter++) {
+          count = addIdentityNodes(
+              count, identity.GetParameter(parameter), 0);
+        }
+      }
+    }
+    return count;
+  }
+
+  static func addIdentityNodes(
+      int32 count, TypeIdentity identity,
+      int32 depth): int32 throws StateError {
+    if (depth > SemanticLimits.MaxStructuralDepth()) {
+      throw StateError("dependency type identity exceeds structural depth");
+    }
+    int32 result = count;
+    final TypeIdentity? element = identity.GetElement();
+    if (element != null) {
+      result = checkedAdd(
+          result, 1, SemanticLimits.MaxTypes(),
+          "semantic type count exceeds its limit");
+      result = addIdentityNodes(result, element, depth + 1);
+    }
+    return result;
   }
 
   static func countTypeBindings(

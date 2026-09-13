@@ -1,0 +1,69 @@
+import frontend.syntax::ExpressionId;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.expression::ExpressionFact;
+import semantic.expression::ExpressionFileFacts;
+import semantic.model::FileId;
+
+class {
+  final FileId file;
+  final SyntaxStorage syntax;
+  final ExpressionFact?[] facts;
+  int32 count;
+
+  _ExpressionFileFactBuilder(FileId file, SyntaxStorage syntax) {
+    self.file = file;
+    self.syntax = syntax;
+    self.facts = ExpressionFact?[:syntax.GetNodeCount()];
+    self.count = 0;
+  }
+
+  static func Create(FileId file,
+                     SyntaxStorage syntax): ExpressionFileFactBuilder
+      throws StateError {
+    if (!syntax.IsSealed()) {
+      throw StateError("expression fact builder requires sealed syntax");
+    }
+    return ExpressionFileFactBuilder(file, syntax);
+  }
+
+  func Add(ExpressionFact fact): void throws StateError {
+    final ExpressionId expression = fact.GetExpression();
+    if (fact.GetFile().GetIndex() != self.file.GetIndex() ||
+        !self.syntax.OwnsExpression(expression) ||
+        self.facts[expression.GetOrdinal()] != null) {
+      throw StateError("expression fact is foreign or duplicated");
+    }
+    self.facts[expression.GetOrdinal()] = fact;
+    self.count++;
+  }
+
+  func Has(ExpressionId expression): bool throws StateError {
+    if (!self.syntax.OwnsExpression(expression)) {
+      throw StateError("expression fact query uses foreign syntax");
+    }
+    return self.facts[expression.GetOrdinal()] != null;
+  }
+
+  func Get(ExpressionId expression): ExpressionFact? throws StateError {
+    if (!self.syntax.OwnsExpression(expression)) {
+      throw StateError("expression fact query uses foreign syntax");
+    }
+    return self.facts[expression.GetOrdinal()];
+  }
+
+  func Replace(ExpressionFact fact): void throws StateError {
+    final ExpressionId expression = fact.GetExpression();
+    if (fact.GetFile().GetIndex() != self.file.GetIndex() ||
+        !self.syntax.OwnsExpression(expression) ||
+        self.facts[expression.GetOrdinal()] == null) {
+      throw StateError("replacement expression fact is missing or foreign");
+    }
+    self.facts[expression.GetOrdinal()] = fact;
+  }
+
+  func GetCount(): int32 { return self.count; }
+
+  func Publish(): ExpressionFileFacts throws StateError {
+    return ExpressionFileFacts.Build(self.file, self.syntax, self.facts);
+  }
+}

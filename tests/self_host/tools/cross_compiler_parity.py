@@ -6,6 +6,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -15,9 +16,10 @@ from typing import Iterable, Sequence
 _EXPECTED_COUNTS = {
     "bounded declaration": 32,
     "bounded definition": 47,
-    "lexer": 697,
-    "real declaration": 248,
-    "real definition": 248,
+    "expression": 2,
+    "lexer": 747,
+    "real declaration": 287,
+    "real definition": 287,
     "semantic": 2,
 }
 
@@ -28,10 +30,12 @@ class AuditError(Exception):
 
 @dataclass(frozen=True)
 class Tools:
+    bootstrap_compiler: Path
     declaration_oracle: Path
     declaration_records: Path
     definition_oracle: Path
     definition_records: Path
+    expression_compiler: Path
     lexer_oracle: Path
     lexer_records: Path
     semantic_oracle: Path
@@ -44,6 +48,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--temporary-root", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=8)
+    parser.add_argument("--bootstrap-compiler", type=Path, required=True)
+    parser.add_argument("--expression-compiler", type=Path, required=True)
     for name in (
         "declaration-oracle",
         "declaration-records",
@@ -93,6 +99,48 @@ def _load_manifest(main_root: Path, manifest: Path) -> dict[str, list[Path]]:
             raise AuditError(f"declared {kind} input is unavailable: {relative}")
         groups.setdefault(kind, []).append(path)
     return groups
+
+
+def _run_outcome(
+    command: Sequence[str],
+    description: str,
+    working_directory: Path | None = None,
+) -> tuple[int, bytes, bytes]:
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            cwd=working_directory,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise AuditError(f"{description} could not complete: {error}") from error
+    if result.returncode not in (0, 1):
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise AuditError(
+            f"{description} returned status {result.returncode}:\n{stderr}"
+        )
+    return (
+        result.returncode,
+        result.stdout.replace(b"\r\n", b"\n"),
+        result.stderr.replace(b"\r\n", b"\n"),
+    )
+
+
+def _normalize_source_path(
+    outcome: tuple[int, bytes, bytes], path: Path
+) -> tuple[int, bytes, bytes]:
+    prefix = re.compile(
+        rb"(?m)^.*?" + re.escape(path.name.encode("utf-8")) + rb":"
+    )
+    return (
+        outcome[0],
+        prefix.sub(b"<source>:", outcome[1]),
+        prefix.sub(b"<source>:", outcome[2]),
+    )
 
 
 def _first_mismatch(left: bytes, right: bytes) -> str:
@@ -208,6 +256,80 @@ def _audit_production_semantics(
     )
 
 
+def _audit_expression_semantics(
+    paths: Sequence[Path],
+    temporary_root: Path,
+    tools: Tools,
+    jobs: int,
+) -> None:
+    _check_count("expression", paths)
+    outcomes: set[int] = set()
+    parallel_runs = min(jobs, 4)
+    for path in paths:
+        bootstrap = _run_outcome(
+            [str(tools.bootstrap_compiler), "--check", str(path)],
+            f"C++ expression check for {path}",
+        )
+        command = [str(tools.expression_compiler), "check", str(path)]
+        baseline = _normalize_source_path(
+            _run_outcome(command, f"Cloth expression check for {path}"),
+            path,
+        )
+        if bootstrap[0] != baseline[0]:
+            raise AuditError(
+                f"expression acceptance differs for {path}: "
+                f"C++ returned {bootstrap[0]}, Cloth returned {baseline[0]}"
+            )
+        outcomes.add(baseline[0])
+
+        relocated = temporary_root / path.name
+        relocated.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, relocated)
+        variants = [
+            _normalize_source_path(
+                _run_outcome(
+                    command, f"repeated Cloth expression check for {path}"
+                ),
+                path,
+            ),
+            _normalize_source_path(
+                _run_outcome(
+                    [str(tools.expression_compiler), "check", str(relocated)],
+                    f"relocated Cloth expression check for {path}",
+                ),
+                relocated,
+            ),
+        ]
+        with ThreadPoolExecutor(max_workers=parallel_runs) as executor:
+            variants.extend(
+                executor.map(
+                    lambda index: _normalize_source_path(
+                        _run_outcome(
+                            command,
+                            f"parallel Cloth expression check {index + 1}",
+                        ),
+                        path,
+                    ),
+                    range(parallel_runs),
+                )
+            )
+        for index, candidate in enumerate(variants):
+            if candidate != baseline:
+                raise AuditError(
+                    f"production expression check for {path} is "
+                    f"nondeterministic in run {index + 2}"
+                )
+    if outcomes != {0, 1}:
+        raise AuditError(
+            "expression corpus must contain accepted and rejected inputs"
+        )
+    print(
+        "expression authority audit: 2 inputs accepted identically by C++ "
+        "and Cloth; Cloth output repeated, relocated, and parallel",
+        flush=True,
+    )
+
+
 def _audit_semantic_determinism(
     paths: Sequence[Path],
     main_root: Path,
@@ -263,10 +385,12 @@ def main() -> int:
 
         groups = _load_manifest(main_root, args.manifest)
         tools = Tools(
+            bootstrap_compiler=args.bootstrap_compiler,
             declaration_oracle=args.declaration_oracle,
             declaration_records=args.declaration_records,
             definition_oracle=args.definition_oracle,
             definition_records=args.definition_records,
+            expression_compiler=args.expression_compiler,
             lexer_oracle=args.lexer_oracle,
             lexer_records=args.lexer_records,
             semantic_oracle=args.semantic_oracle,
@@ -337,6 +461,13 @@ def main() -> int:
         _audit_semantic_determinism(
             semantic, main_root, temporary_root / "semantic-determinism",
             tools, args.jobs
+        )
+        expression = _deduplicate(groups["expression"])
+        _audit_expression_semantics(
+            expression,
+            temporary_root / "expression-determinism",
+            tools,
+            args.jobs,
         )
         _audit_production_semantics(compiler, main_root, tools)
         print("cross-compiler parity audit passed", flush=True)

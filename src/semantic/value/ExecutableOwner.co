@@ -1,0 +1,5 @@
+class {
+  _ExecutableOwner() {}
+
+  static func Create(): ExecutableOwner { return ExecutableOwner(); }
+}

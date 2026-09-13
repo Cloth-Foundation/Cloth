@@ -1,0 +1,6 @@
+import Worker;
+
+static func Main(): int32 {
+  Worker worker = Worker(3);
+  return worker.Double();
+}

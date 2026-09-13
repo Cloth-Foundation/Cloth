@@ -1,0 +1,125 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax::BlockSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::ForStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.tree::FileSyntax;
+import semantic.model::SemanticFile;
+import semantic.executable::ExecutableSemanticLimits;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+import semantic.symbol::DeclarationRegistrationFacts;
+
+class {
+  final int32 scopeCapacity;
+  final int32 valueCapacity;
+
+  _ExecutableSemanticPreflight(int32 scopeCapacity,
+                               int32 valueCapacity) {
+    self.scopeCapacity = scopeCapacity;
+    self.valueCapacity = valueCapacity;
+  }
+
+  static func Build(
+      SemanticPackageResult semantic): ExecutableSemanticPreflight
+      throws StateError {
+    int32 scopes = 0;
+    int32 values = 0;
+    for (int32 fileIndex = 0;
+         fileIndex < semantic.GetFileCount(); fileIndex++) {
+      final SemanticFile file = semantic.GetFileAt(fileIndex);
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend == null) { continue; }
+      final FileSyntax syntax = frontend.GetDefinition()!.GetTree().GetFile();
+      final DeclarationSyntaxSequence declarations = syntax.GetDeclarations();
+      for (int32 index = 0; index < declarations.GetCount(); index++) {
+        final DeclarationSyntax declaration = declarations.Get(index);
+        if (!DeclarationRegistrationFacts.HasValidName(declaration)) {
+          continue;
+        }
+        if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+          final FunctionSyntax? functionValue =
+              declaration as FunctionSyntax?;
+          if (functionValue == null) {
+            throw StateError("function declaration has an inconsistent type");
+          }
+          final FunctionSyntax function = functionValue;
+          scopes = add(scopes, 1, SemanticLimits.MaxExecutableScopes(),
+                       "executable scope limit exceeded");
+          values = add(values, function.GetParameters().GetCount(),
+                       SemanticLimits.MaxValues(),
+                       "executable value limit exceeded");
+          if (!function.IsStatic()) {
+            values = add(values, 1, SemanticLimits.MaxValues(),
+                         "executable value limit exceeded");
+          }
+        } else {
+          if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+            final FieldSyntax? fieldValue = declaration as FieldSyntax?;
+            if (fieldValue == null) {
+              throw StateError(
+                  "field declaration has an inconsistent type");
+            }
+            if (fieldValue.GetInitializer() != null) {
+              scopes = add(scopes, 1,
+                           SemanticLimits.MaxExecutableScopes(),
+                           "executable scope limit exceeded");
+            }
+            continue;
+          }
+          if (declaration.GetDeclarationKind() ==
+              DeclarationKind.kConstructor) {
+            final ConstructorSyntax? constructorValue =
+                declaration as ConstructorSyntax?;
+            if (constructorValue == null) {
+              throw StateError(
+                  "constructor declaration has an inconsistent type");
+            }
+            final ConstructorSyntax constructor = constructorValue;
+            scopes = add(scopes, 1, SemanticLimits.MaxExecutableScopes(),
+                         "executable scope limit exceeded");
+            values = add(values,
+                         constructor.GetParameters().GetCount() + 1,
+                         SemanticLimits.MaxValues(),
+                         "executable value limit exceeded");
+          }
+        }
+      }
+      for (int32 ordinal = 0;
+           ordinal < syntax.GetStorage().GetNodeCount(); ordinal++) {
+        final SyntaxNode node = syntax.GetStorage().GetNode(ordinal);
+        if (node is BlockSyntax) {
+          scopes = add(scopes, 1, SemanticLimits.MaxExecutableScopes(),
+                       "executable scope limit exceeded");
+        }
+        if (node is ForStatementSyntax || node is ForEachStatementSyntax) {
+          scopes = add(scopes, 1, SemanticLimits.MaxExecutableScopes(),
+                       "executable scope limit exceeded");
+        }
+        if (node is LocalVariableStatementSyntax ||
+            node is ForEachStatementSyntax) {
+          values = add(values, 1, SemanticLimits.MaxValues(),
+                       "executable value limit exceeded");
+        }
+      }
+    }
+    ExecutableSemanticLimits.ValidateCounts(values, scopes);
+    return ExecutableSemanticPreflight(scopes, values);
+  }
+
+  func GetScopeCapacity(): int32 { return self.scopeCapacity; }
+  func GetValueCapacity(): int32 { return self.valueCapacity; }
+
+  static func add(int32 value, int32 amount, int32 limit,
+                  string message): int32 throws StateError {
+    if (amount < 0 || value > limit - amount) { throw StateError(message); }
+    return value + amount;
+  }
+}

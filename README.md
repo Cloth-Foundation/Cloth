@@ -15,10 +15,11 @@ nominal identity.
 > for supported compilation today.
 
 The self-hosted compiler is authoritative for lexing and parsing as of Stage
-49.4, and for package symbols, canonical semantic type identity, import
-binding, and declared type-name resolution as of Stage 50.4. `cCloth` remains
-the bootstrap and declared differential oracle for compiler boundaries that
-have not transferred to Cloth yet.
+49.4; package symbols, canonical semantic type identity, imports, and declared
+type names as of Stage 50.4; and executable value binding and expression typing
+as of Stage 51.4. `cCloth` remains the bootstrap and declared differential
+oracle for compiler boundaries that have not transferred to Cloth yet. Stage
+51 added no language syntax.
 
 ## Build and run
 
@@ -81,9 +82,13 @@ then run:
 
 ```sh
 bazel test //tests:presubmit
+bazel test //tests:stage
 bazel test //tests:full
 bazel build //src:clothc
 ```
+
+Use `presubmit` during normal development, `stage` at implementation
+checkpoints, and `full` only for authority-transfer or release audits.
 
 The `tests/self_host` Shuttle package is now a focused product-boundary fixture;
 its former argument dispatcher has been retired. The exhaustive migration map

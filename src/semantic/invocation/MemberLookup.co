@@ -1,0 +1,174 @@
+import frontend.syntax.tree::Visibility;
+import semantic.identity::MemberIdentity;
+import semantic.identity::MemberKind;
+import semantic.identity::SemanticName;
+import semantic.invocation::MemberLookupResult;
+import semantic.invocation::TypeRelationTable;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SemanticType;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+
+class {
+  static func Find(
+      SemanticPackageResult semantic, TypeRelationTable relations,
+      TypeId receiver, FileId accessingFile, SemanticName name,
+      bool staticAccess, bool constructors): MemberLookupResult
+      throws StateError {
+    int32 capacity = semantic.GetSymbolCount();
+    if (capacity > SemanticLimits.MaxInvocationCandidates()) {
+      throw StateError("invocation candidate limit exceeded");
+    }
+    final SymbolId?[] storage = SymbolId?[:capacity];
+    int32 count = findLevel(
+        semantic, receiver, accessingFile, name, staticAccess, constructors,
+        storage, 0);
+    if (!constructors && count == 0) {
+      TypeId? current = relations.GetBase(receiver);
+      int32 visits = 0;
+      while (current != null && count == 0) {
+        count = findLevel(
+            semantic, current, accessingFile, name, staticAccess, false,
+            storage, 0);
+        if (count != 0) { break; }
+        current = relations.GetBase(current);
+        visits++;
+        if (visits > semantic.GetFileCount()) {
+          throw StateError("member lookup hierarchy contains a cycle");
+        }
+      }
+    }
+    if (!constructors && count == 0) {
+      final bool[] visited = bool[:semantic.GetFileCount()];
+      TypeId? current = receiver;
+      int32 visits = 0;
+      while (current != null && count == 0) {
+        count = findInterfaces(
+            semantic, relations, current, accessingFile, name, staticAccess,
+            storage, count, visited, 0);
+        current = relations.GetBase(current);
+        visits++;
+        if (visits > semantic.GetFileCount()) {
+          throw StateError("member lookup hierarchy contains a cycle");
+        }
+      }
+    }
+    final SymbolId?[] result = SymbolId?[:count];
+    for (int32 index = 0; index < count; index++) {
+      result[index] = storage[index];
+    }
+    sort(semantic, result);
+    return MemberLookupResult.Build(result);
+  }
+
+  static func findLevel(
+      SemanticPackageResult semantic, TypeId receiver, FileId accessingFile,
+      SemanticName name, bool staticAccess, bool constructors,
+      SymbolId?[] output, int32 count): int32 throws StateError {
+    final SemanticType type = semantic.GetType(receiver);
+    final FileId? fileId = type.GetFile();
+    if (fileId == null) { return count; }
+    final SemanticFile file = semantic.GetFile(fileId);
+    int32 result = count;
+    for (int32 index = 0; index < file.GetMemberCount(); index++) {
+      final SemanticSymbol member = semantic.GetSymbol(file.GetMember(index));
+      if (!member.IsValid() || (!constructors &&
+          !member.GetName().Equals(name)) ||
+          !isAccessible(member, accessingFile)) {
+        continue;
+      }
+      final MemberIdentity? identity = member.GetIdentity();
+      if (identity == null) { continue; }
+      if (constructors) {
+        if (identity.GetKind() != MemberKind.kConstructor) { continue; }
+      } else {
+        if (identity.GetKind() == MemberKind.kConstructor) { continue; }
+        if (staticAccess != member.IsStatic()) { continue; }
+      }
+      if (result >= output::length) {
+        throw StateError("invocation candidate limit exceeded");
+      }
+      output[result] = member.GetId();
+      result++;
+    }
+    return result;
+  }
+
+  static func findInterfaces(
+      SemanticPackageResult semantic, TypeRelationTable relations,
+      TypeId receiver, FileId accessingFile, SemanticName name,
+      bool staticAccess, SymbolId?[] output, int32 count, bool[] visited,
+      int32 depth): int32 throws StateError {
+    if (depth > semantic.GetFileCount()) {
+      throw StateError("interface member lookup hierarchy contains a cycle");
+    }
+    int32 result = count;
+    for (int32 index = 0;
+         index < relations.GetInterfaceCount(receiver); index++) {
+      final TypeId candidate = relations.GetInterface(receiver, index);
+      final SemanticType type = semantic.GetType(candidate);
+      final FileId? file = type.GetFile();
+      if (file == null || visited[file.GetIndex()]) { continue; }
+      visited[file.GetIndex()] = true;
+      final int32 before = result;
+      result = findLevel(
+          semantic, candidate, accessingFile, name, staticAccess, false,
+          output, result);
+      if (result == before) {
+        result = findInterfaces(
+            semantic, relations, candidate, accessingFile, name,
+            staticAccess, output, result, visited, depth + 1);
+      }
+    }
+    return result;
+  }
+
+  static func isAccessible(
+      SemanticSymbol member, FileId accessingFile): bool {
+    if (member.GetVisibility() == Visibility.kPublic) { return true; }
+    final FileId? owner = member.GetFile();
+    return owner != null && owner.GetIndex() == accessingFile.GetIndex();
+  }
+
+  static func sort(SemanticPackageResult semantic,
+                   SymbolId?[] values): void throws StateError {
+    for (int32 index = 1; index < values::length; index++) {
+      final SymbolId? keyValue = values[index];
+      if (keyValue == null) {
+        throw StateError("member candidate sort contains null");
+      }
+      final SymbolId key = keyValue;
+      final MemberIdentity? keyIdentityValue =
+          semantic.GetSymbol(key).GetIdentity();
+      if (keyIdentityValue == null) {
+        throw StateError("member candidate has no identity");
+      }
+      final MemberIdentity keyIdentity = keyIdentityValue;
+      int32 position = index;
+      while (position > 0) {
+        final SymbolId? previousValue = values[position - 1];
+        if (previousValue == null) {
+          throw StateError("member candidate sort contains null");
+        }
+        final SymbolId previous = previousValue;
+        final MemberIdentity? previousIdentityValue =
+            semantic.GetSymbol(previous).GetIdentity();
+        if (previousIdentityValue == null) {
+          throw StateError("member candidate has no identity");
+        }
+        final MemberIdentity previousIdentity = previousIdentityValue;
+        if (MemberIdentity.Compare(previousIdentity, keyIdentity) <= 0) {
+          break;
+        }
+        values[position] = previous;
+        position--;
+      }
+      values[position] = key;
+    }
+  }
+}

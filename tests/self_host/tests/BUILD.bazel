@@ -217,6 +217,50 @@ cloth_test(
 )
 
 cloth_test(
+    name = "value_scope_test",
+    srcs = ["ValueScopeTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-value-scope-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "ValueScopeTest",
+)
+
+cloth_test(
+    name = "value_scope_gc_test",
+    srcs = ["ValueScopeGcTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-value-scope-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "ValueScopeGcTest",
+)
+
+cloth_test(
+    name = "expression_semantic_test",
+    srcs = ["ExpressionSemanticTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-expression-semantic-test",
+    size = "small",
+    tags = ["integration"],
+    test_class = "ExpressionSemanticTest",
+)
+
+cloth_test(
+    name = "expression_semantic_gc_test",
+    srcs = ["ExpressionSemanticGcTest.co"],
+    data = _TESTDATA,
+    deps = _SUPPORT,
+    package_name = "clothc-expression-semantic-gc-test",
+    size = "small",
+    tags = ["gc"],
+    test_class = "ExpressionSemanticGcTest",
+)
+
+cloth_test(
     name = "definition_parser_depth_test",
     srcs = ["DefinitionParserDepthTest.co"],
     deps = _SUPPORT,
@@ -240,6 +284,7 @@ test_suite(
     name = "presubmit",
     tests = [
         ":diagnostic_renderer_test",
+        ":expression_semantic_test",
         ":declaration_grammar_test",
         ":declaration_substrate_test",
         ":definition_parser_test",
@@ -252,6 +297,7 @@ test_suite(
         ":syntax_arena_test",
         ":syntax_sequence_test",
         ":syntax_tree_test",
+        ":value_scope_test",
     ],
 )
 
@@ -264,8 +310,10 @@ test_suite(
         ":definition_parser_gc_test",
         ":expression_parser_depth_test",
         ":expression_parser_gc_test",
+        ":expression_semantic_gc_test",
         ":frontend_coordinator_gc_test",
         ":semantic_package_gc_test",
         ":syntax_tree_gc_test",
+        ":value_scope_gc_test",
     ],
 )

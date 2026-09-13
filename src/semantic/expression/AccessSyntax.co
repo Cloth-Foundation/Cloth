@@ -1,0 +1,15 @@
+import frontend.source::SourceSpan;
+import frontend.syntax::ExpressionId;
+
+class {
+  final ExpressionId receiver;
+  final SourceSpan name;
+
+  AccessSyntax(ExpressionId receiver, SourceSpan name) {
+    self.receiver = receiver;
+    self.name = name;
+  }
+
+  func GetReceiver(): ExpressionId { return self.receiver; }
+  func GetName(): SourceSpan { return self.name; }
+}

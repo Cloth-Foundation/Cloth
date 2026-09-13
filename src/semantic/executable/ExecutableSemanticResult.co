@@ -1,0 +1,394 @@
+import frontend.package::FileFrontendResult;
+import frontend.source::SourceRange;
+import frontend.syntax::BlockId;
+import frontend.syntax::StatementId;
+import semantic.diagnostic::SemanticDiagnosticSequence;
+import semantic.executable::ExecutableFileScopes;
+import semantic.executable::ExecutableSemanticLimits;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.package::SemanticPackageResult;
+import semantic.value::ExecutableOwner;
+import semantic.value::LexicalScope;
+import semantic.value::ScopeId;
+import semantic.value::ScopeKind;
+import semantic.value::StatementScopes;
+import semantic.value::ValueId;
+import semantic.value::ValueSymbol;
+
+class {
+  final SemanticPackageResult semantic;
+  final ExecutableOwner owner;
+  final ValueSymbol?[] values;
+  final LexicalScope?[] scopes;
+  final ScopeId?[] callableScopes;
+  final ExecutableFileScopes?[] fileScopes;
+  final int32[] scopedValues;
+  final int32[] scopeOffsets;
+  final SemanticDiagnosticSequence diagnostics;
+  final bool valid;
+
+  _ExecutableSemanticResult(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      ValueSymbol?[] values, LexicalScope?[] scopes,
+      ScopeId?[] callableScopes, ExecutableFileScopes?[] fileScopes,
+      int32[] scopedValues, int32[] scopeOffsets,
+      SemanticDiagnosticSequence diagnostics, bool valid) {
+    self.semantic = semantic;
+    self.owner = owner;
+    self.values = values;
+    self.scopes = scopes;
+    self.callableScopes = callableScopes;
+    self.fileScopes = fileScopes;
+    self.scopedValues = scopedValues;
+    self.scopeOffsets = scopeOffsets;
+    self.diagnostics = diagnostics;
+    self.valid = valid;
+  }
+
+  static func Build(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      ValueSymbol?[] valueInput, LexicalScope?[] scopeInput,
+      ScopeId?[] callableInput, ExecutableFileScopes?[] fileInput,
+      SemanticDiagnosticSequence diagnostics): ExecutableSemanticResult
+      throws StateError {
+    ExecutableSemanticLimits.ValidateCounts(
+        valueInput::length, scopeInput::length);
+    final ValueSymbol?[] values = ValueSymbol?[:valueInput::length];
+    final LexicalScope?[] scopes = LexicalScope?[:scopeInput::length];
+    verifyScopes(semantic, owner, scopeInput, scopes);
+    verifyValues(semantic, owner, valueInput, values, scopes);
+    final ScopeId?[] callableScopes = verifyCallables(
+        semantic, owner, callableInput, scopes);
+    final ExecutableFileScopes?[] fileScopes = verifyFiles(
+        semantic, fileInput, scopes);
+    final int32[] scopedValues = orderValues(values);
+    final int32[] offsets = buildScopeOffsets(scopes::length, scopedValues,
+                                              values);
+    return ExecutableSemanticResult(
+        semantic, owner, values, scopes, callableScopes, fileScopes,
+        scopedValues, offsets, diagnostics,
+        semantic.IsValid() && diagnostics.GetCount() == 0);
+  }
+
+  func GetSemantic(): SemanticPackageResult { return self.semantic; }
+  func GetDiagnostics(): SemanticDiagnosticSequence {
+    return self.diagnostics;
+  }
+  func GetValueCount(): int32 { return self.values::length; }
+  func GetScopeCount(): int32 { return self.scopes::length; }
+  func IsValid(): bool { return self.valid; }
+
+  func GetValue(ValueId id): ValueSymbol throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.values::length) {
+      throw StateError("value handle belongs to another result");
+    }
+    return self.values[id.GetIndex()]!;
+  }
+
+  func GetScope(ScopeId id): LexicalScope throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.scopes::length) {
+      throw StateError("scope handle belongs to another result");
+    }
+    return self.scopes[id.GetIndex()]!;
+  }
+
+  func GetValueAt(int32 index): ValueSymbol throws StateError {
+    return self.GetValue(ValueId.Build(self.owner, index));
+  }
+
+  func GetScopeAt(int32 index): LexicalScope throws StateError {
+    return self.GetScope(ScopeId.Build(self.owner, index));
+  }
+
+  func FindCallableScope(SymbolId callable): ScopeId? throws StateError {
+    self.semantic.GetSymbol(callable);
+    return self.callableScopes[callable.GetIndex()];
+  }
+
+  func FindBlockScope(FileId file,
+                      BlockId block): ScopeId? throws StateError {
+    final ExecutableFileScopes? index = self.getFileScopes(file);
+    if (index == null) {
+      throw StateError("dependency file has no executable syntax scopes");
+    }
+    return index.FindBlock(block);
+  }
+
+  func FindStatementScopes(
+      FileId file, StatementId statement): StatementScopes?
+      throws StateError {
+    final ExecutableFileScopes? index = self.getFileScopes(file);
+    if (index == null) {
+      throw StateError("dependency file has no executable syntax scopes");
+    }
+    return index.FindStatement(statement);
+  }
+
+  func FindValue(ScopeId start, SemanticName name,
+                 int32 sourceOffset): ValueId? throws StateError {
+    final LexicalScope startingScope = self.GetScope(start);
+    final SemanticFile startingFile =
+        self.semantic.GetFile(startingScope.GetFile());
+    final int32 sourceLength = startingFile.GetFrontend()!
+        .GetPackageSource().GetSource().GetLength();
+    if (sourceOffset < 0 || sourceOffset > sourceLength) {
+      throw StateError("lexical value lookup offset is out of bounds");
+    }
+    ScopeId? current = startingScope.GetId();
+    int32 visits = 0;
+    while (current != null) {
+      final LexicalScope scope = self.GetScope(current);
+      final int32 begin = self.scopeOffsets[current.GetIndex()];
+      final int32 end = self.scopeOffsets[current.GetIndex() + 1];
+      ValueId? found = null;
+      for (int32 index = begin; index < end; index++) {
+        final ValueId candidate =
+            ValueId.Build(self.owner, self.scopedValues[index]);
+        final ValueSymbol value = self.GetValue(candidate);
+        if (value.GetVisibleFrom() <= sourceOffset &&
+            value.GetName().Equals(name)) {
+          found = candidate;
+        }
+      }
+      if (found != null) { return found; }
+      current = scope.GetParent();
+      visits++;
+      if (visits > self.scopes::length) {
+        throw StateError("lexical scope parent chain contains a cycle");
+      }
+    }
+    return null;
+  }
+
+  func getFileScopes(FileId file): ExecutableFileScopes?
+      throws StateError {
+    self.semantic.GetFile(file);
+    return self.fileScopes[file.GetIndex()];
+  }
+
+  static func verifyScopes(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      LexicalScope?[] input,
+      LexicalScope?[] output): void throws StateError {
+    for (int32 index = 0; index < input::length; index++) {
+      final LexicalScope? scope = input[index];
+      if (scope == null || !scope.GetId().BelongsTo(owner) ||
+          scope.GetId().GetIndex() != index) {
+        throw StateError("lexical scope table is inconsistent");
+      }
+      final SemanticFile file = semantic.GetFile(scope.GetFile());
+      final SemanticSymbol callable = semantic.GetSymbol(scope.GetCallable());
+      if (callable.GetKind() != SymbolKind.kFunction &&
+          callable.GetKind() != SymbolKind.kConstructor &&
+          callable.GetKind() != SymbolKind.kField) {
+        throw StateError("lexical scope owner is not executable");
+      }
+      final FileId? callableFile = callable.GetFile();
+      if (callableFile == null ||
+          callableFile.GetIndex() != file.GetId().GetIndex()) {
+        throw StateError("lexical scope file disagrees with its callable");
+      }
+      final ScopeId? parent = scope.GetParent();
+      if (parent == null) {
+        if ((scope.GetKind() != ScopeKind.kCallable &&
+             scope.GetKind() != ScopeKind.kInitializer) ||
+            scope.GetDepth() != 0) {
+          throw StateError("executable root scope is inconsistent");
+        }
+      } else {
+        if (!parent.BelongsTo(owner) || parent.GetIndex() >= index) {
+          throw StateError("lexical scope parent is invalid");
+        }
+        final LexicalScope? parentScope = output[parent.GetIndex()];
+        if (parentScope == null ||
+            parentScope.GetFile().GetIndex() != file.GetId().GetIndex() ||
+            parentScope.GetCallable().GetIndex() !=
+                callable.GetId().GetIndex() ||
+            scope.GetDepth() != parentScope.GetDepth() + 1) {
+          throw StateError("lexical scope parentage is inconsistent");
+        }
+      }
+      verifyRange(file, scope.GetRange());
+      output[index] = scope;
+    }
+  }
+
+  static func verifyValues(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      ValueSymbol?[] input, ValueSymbol?[] output,
+      LexicalScope?[] scopes): void throws StateError {
+    for (int32 index = 0; index < input::length; index++) {
+      final ValueSymbol? value = input[index];
+      if (value == null || !value.GetId().BelongsTo(owner) ||
+          value.GetId().GetIndex() != index ||
+          !value.GetScope().BelongsTo(owner) ||
+          value.GetScope().GetIndex() >= scopes::length) {
+        throw StateError("value symbol table is inconsistent");
+      }
+      final SemanticFile file = semantic.GetFile(value.GetFile());
+      final SemanticSymbol callable =
+          semantic.GetSymbol(value.GetCallable());
+      semantic.GetType(value.GetType());
+      final LexicalScope scope = scopes[value.GetScope().GetIndex()]!;
+      if (scope.GetFile().GetIndex() != file.GetId().GetIndex() ||
+          scope.GetCallable().GetIndex() != callable.GetId().GetIndex()) {
+        throw StateError("value ownership disagrees with its lexical scope");
+      }
+      if (value.GetVisibleFrom() >
+          file.GetFrontend()!.GetPackageSource().GetSource().GetLength()) {
+        throw StateError("value visibility offset is out of bounds");
+      }
+      verifyRange(file, value.GetRange());
+      output[index] = value;
+    }
+  }
+
+  static func verifyCallables(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      ScopeId?[] input, LexicalScope?[] scopes): ScopeId?[]
+      throws StateError {
+    if (input::length != semantic.GetSymbolCount()) {
+      throw StateError("callable scope index has the wrong size");
+    }
+    final ScopeId?[] output = ScopeId?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final ScopeId? scope = input[index];
+      if (scope != null) {
+        if (!scope.BelongsTo(owner) || scope.GetIndex() >= scopes::length ||
+            (scopes[scope.GetIndex()]!.GetKind() != ScopeKind.kCallable &&
+             scopes[scope.GetIndex()]!.GetKind() !=
+                 ScopeKind.kInitializer) ||
+            scopes[scope.GetIndex()]!.GetCallable().GetIndex() != index) {
+          throw StateError("callable scope index is inconsistent");
+        }
+      }
+      output[index] = scope;
+    }
+    return output;
+  }
+
+  static func verifyFiles(
+      SemanticPackageResult semantic,
+      ExecutableFileScopes?[] input,
+      LexicalScope?[] lexicalScopes): ExecutableFileScopes?[]
+      throws StateError {
+    if (input::length != semantic.GetFileCount()) {
+      throw StateError("executable file scope index has the wrong size");
+    }
+    final ExecutableFileScopes?[] output =
+        ExecutableFileScopes?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticFile file = semantic.GetFileAt(index);
+      final ExecutableFileScopes? scopes = input[index];
+      if ((file.GetFrontend() == null) != (scopes == null) ||
+          (scopes != null && scopes.GetFile().GetIndex() != index)) {
+        throw StateError("executable file scope ownership is inconsistent");
+      }
+      if (scopes != null) { scopes.VerifyScopes(lexicalScopes); }
+      output[index] = scopes;
+    }
+    return output;
+  }
+
+  static func verifyRange(SemanticFile file,
+                          SourceRange range): void throws StateError {
+    final FileFrontendResult? frontend = file.GetFrontend();
+    if (frontend == null ||
+        range.GetBegin().GetFile() !=
+            frontend.GetPackageSource().GetSource().GetPath() ||
+        range.GetEnd().GetFile() != range.GetBegin().GetFile() ||
+        range.GetBegin().GetOffset() < 0 ||
+        range.GetBegin().GetOffset() > range.GetEnd().GetOffset() ||
+        range.GetEnd().GetOffset() >
+            frontend.GetPackageSource().GetSource().GetLength()) {
+      throw StateError("executable semantic record has a foreign range");
+    }
+  }
+
+  static func orderValues(
+      ValueSymbol?[] values): int32[] throws StateError {
+    final int32[] ids = int32[:values::length];
+    for (int32 index = 0; index < values::length; index++) {
+      ids[index] = index;
+    }
+    int32[] input = ids;
+    int32[] output = int32[:ids::length];
+    int32 width = 1;
+    while (width < ids::length) {
+      int32 begin = 0;
+      while (begin < ids::length) {
+        final int32 middle = boundedAdd(begin, width, ids::length);
+        final int32 end = boundedAdd(middle, width, ids::length);
+        mergeValues(input, output, begin, middle, end, values);
+        begin = end;
+      }
+      final int32[] swap = input;
+      input = output;
+      output = swap;
+      if (width > ids::length / 2) { width = ids::length; }
+      else { width *= 2; }
+    }
+    return input;
+  }
+
+  static func mergeValues(
+      int32[] input, int32[] output, int32 begin, int32 middle,
+      int32 end, ValueSymbol?[] values): void throws StateError {
+    int32 left = begin;
+    int32 right = middle;
+    for (int32 destination = begin; destination < end; destination++) {
+      if (right >= end ||
+          (left < middle && compareValues(
+              input[left], input[right], values) <= 0)) {
+        output[destination] = input[left];
+        left++;
+      } else {
+        output[destination] = input[right];
+        right++;
+      }
+    }
+  }
+
+  static func compareValues(
+      int32 left, int32 right,
+      ValueSymbol?[] values): int32 {
+    final ValueSymbol leftValue = values[left]!;
+    final ValueSymbol rightValue = values[right]!;
+    if (leftValue.GetScope().GetIndex() <
+        rightValue.GetScope().GetIndex()) { return -1; }
+    if (leftValue.GetScope().GetIndex() >
+        rightValue.GetScope().GetIndex()) { return 1; }
+    if (leftValue.GetDeclarationOrder() <
+        rightValue.GetDeclarationOrder()) { return -1; }
+    if (leftValue.GetDeclarationOrder() >
+        rightValue.GetDeclarationOrder()) { return 1; }
+    return 0;
+  }
+
+  static func buildScopeOffsets(
+      int32 scopeCount, int32[] ordered,
+      ValueSymbol?[] values): int32[] {
+    final int32[] offsets = int32[:scopeCount + 1];
+    int32 valueIndex = 0;
+    for (int32 scope = 0; scope < scopeCount; scope++) {
+      offsets[scope] = valueIndex;
+      while (valueIndex < ordered::length &&
+             values[ordered[valueIndex]]!
+                 .GetScope().GetIndex() == scope) {
+        valueIndex++;
+      }
+    }
+    offsets[scopeCount] = valueIndex;
+    return offsets;
+  }
+
+  static func boundedAdd(int32 value, int32 amount, int32 limit): int32 {
+    if (amount > limit - value) { return limit; }
+    return value + amount;
+  }
+}

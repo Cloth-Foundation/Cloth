@@ -60,6 +60,60 @@ class {
       case SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce: {
         return "callable overload identity is declared more than once";
       }
+      case SemanticDiagnosticKind.kValueNameDeclaredMoreThanOnce: {
+        return "value name is declared more than once in this scope";
+      }
+      case SemanticDiagnosticKind.kUnknownValueName: {
+        return "expression name is unknown in this scope";
+      }
+      case SemanticDiagnosticKind.kValueExpressionExpected: {
+        return "expression does not produce a value";
+      }
+      case SemanticDiagnosticKind.kWritableLocationExpected: {
+        return "expression is not a writable location";
+      }
+      case SemanticDiagnosticKind.kExpressionTypeMismatch: {
+        return "expression type is not compatible with its context";
+      }
+      case SemanticDiagnosticKind.kOperatorNotApplicable: {
+        return "operator is not defined for these operand types";
+      }
+      case SemanticDiagnosticKind.kUnknownMember: {
+        return "member name is unknown for this receiver type";
+      }
+      case SemanticDiagnosticKind.kMemberAccessMismatch: {
+        return "member access does not match static or instance ownership";
+      }
+      case SemanticDiagnosticKind.kNoMatchingCallable: {
+        return "no callable overload accepts these arguments";
+      }
+      case SemanticDiagnosticKind.kAmbiguousCallable: {
+        return "callable overload selection is ambiguous";
+      }
+      case SemanticDiagnosticKind.kInvalidExplicitConversion: {
+        return "explicit conversion is not defined for these types";
+      }
+      case SemanticDiagnosticKind.kInvalidArrayExpression: {
+        return "array expression has incompatible element or index types";
+      }
+      case SemanticDiagnosticKind.kConditionMustBeBool: {
+        return "condition expression must have type 'bool'";
+      }
+      case SemanticDiagnosticKind.kVoidValueConsumed: {
+        return "void expression cannot be consumed as a value";
+      }
+      case SemanticDiagnosticKind.kSuperUnavailable: {
+        return "'super' is unavailable in this executable context";
+      }
+      case SemanticDiagnosticKind.kInvalidMetaOperation: {
+        return "meta operation is not defined for this receiver type";
+      }
+      case SemanticDiagnosticKind.kBaseConstructorMismatch: {
+        return "constructor initializer must name the direct base class";
+      }
+      case SemanticDiagnosticKind.kNumericLiteralOutOfRange: {
+        return "numeric literal is outside its resolved type range";
+      }
     }
   }
 
@@ -79,6 +133,9 @@ class {
         kind ==
             SemanticDiagnosticKind.kCallableIdentityDeclaredMoreThanOnce) {
       return "previous declaration is here";
+    }
+    if (kind == SemanticDiagnosticKind.kValueNameDeclaredMoreThanOnce) {
+      return "previous value declaration is here";
     }
     throw StateError("semantic diagnostic kind cannot have a related location");
   }

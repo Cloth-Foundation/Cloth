@@ -1,0 +1,21 @@
+import checks.executable::ExpressionSemanticCheck;
+import clothc.semantic.executable::ExpressionSemanticResult;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    for (int32 iteration = 0; iteration < 64; iteration++) {
+      final ExpressionSemanticResult result =
+          ExpressionSemanticCheck.BuildValidResult();
+      if (!result.IsValid() || result.GetFactCount() == 0) { return 1020; }
+      final ExpressionSemanticResult dependency =
+          ExpressionSemanticCheck.BuildDependencyResult();
+      if (!dependency.IsValid() || dependency.GetFactCount() == 0) {
+        return 1021;
+      }
+      final ExpressionSemanticResult package =
+          ExpressionSemanticCheck.BuildPackageResult();
+      if (!package.IsValid() || package.GetFactCount() == 0) { return 1022; }
+    }
+    return 0;
+  }
+}

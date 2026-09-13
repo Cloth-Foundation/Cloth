@@ -7,6 +7,8 @@ import frontend.package::PackageIdentity;
 import frontend.package::PackageSource;
 import frontend.source::SourceFile;
 import semantic.diagnostic::SemanticDiagnosticRenderer;
+import semantic.executable::ExecutableExpressionAnalyzer;
+import semantic.executable::ExpressionSemanticResult;
 import semantic.package::PackageSymbolCollector;
 import semantic.package::SemanticDependency;
 import semantic.package::SemanticPackageInput;
@@ -45,10 +47,17 @@ class {
     final PackageFrontendInput input = PackageFrontendInput.Build(
         PackageIdentity.Build("", ""), sources);
     final PackageFrontendResult frontend = FrontendCoordinator.Check(input);
-    final SemanticPackageResult result = PackageSymbolCollector.Collect(
+    final SemanticPackageResult semantic = PackageSymbolCollector.Collect(
         SemanticPackageInput.Build(frontend, SemanticDependency?[:0]));
-    if (!result.IsValid()) {
-      Console.WriteError(SemanticDiagnosticRenderer.Render(result));
+    if (!semantic.IsValid()) {
+      Console.WriteError(SemanticDiagnosticRenderer.Render(semantic));
+      return 1;
+    }
+    final ExpressionSemanticResult expressions =
+        ExecutableExpressionAnalyzer.Analyze(semantic);
+    if (!expressions.IsValid()) {
+      Console.WriteError(
+          SemanticDiagnosticRenderer.RenderExpressions(expressions));
       return 1;
     }
     return 0;

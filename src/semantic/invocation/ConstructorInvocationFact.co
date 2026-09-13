@@ -1,0 +1,67 @@
+import frontend.source::SourceRange;
+import semantic.expression::ConversionKind;
+import semantic.identity::MemberIdentity;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+
+class {
+  final SymbolId owner;
+  final TypeId baseType;
+  final SymbolId? constructor;
+  final MemberIdentity? identity;
+  final ConversionKind?[] conversions;
+  final SourceRange range;
+  final bool valid;
+
+  _ConstructorInvocationFact(
+      SymbolId owner, TypeId baseType, SymbolId? constructor,
+      MemberIdentity? identity, ConversionKind?[] conversions,
+      SourceRange range, bool valid) {
+    self.owner = owner;
+    self.baseType = baseType;
+    self.constructor = constructor;
+    self.identity = identity;
+    self.conversions = conversions;
+    self.range = range;
+    self.valid = valid;
+  }
+
+  static func Build(
+      SymbolId owner, TypeId baseType, SymbolId? constructor,
+      MemberIdentity? identity, ConversionKind?[] input,
+      SourceRange range, bool valid): ConstructorInvocationFact
+      throws StateError {
+    if (valid != (constructor != null && identity != null)) {
+      throw StateError("base constructor selection is inconsistent");
+    }
+    final ConversionKind?[] conversions =
+        ConversionKind?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null ||
+          input[index] == ConversionKind.kInvalid) {
+        throw StateError("base constructor conversion is invalid");
+      }
+      conversions[index] = input[index];
+    }
+    return ConstructorInvocationFact(
+        owner, baseType, constructor, identity, conversions, range, valid);
+  }
+
+  func GetOwner(): SymbolId { return self.owner; }
+  func GetBaseType(): TypeId { return self.baseType; }
+  func GetConstructor(): SymbolId? { return self.constructor; }
+  func GetIdentity(): MemberIdentity? { return self.identity; }
+  func GetArgumentCount(): int32 { return self.conversions::length; }
+  func GetRange(): SourceRange { return self.range; }
+  func IsValid(): bool { return self.valid; }
+
+  func GetConversion(int32 index): ConversionKind throws StateError {
+    if (index < 0 || index >= self.conversions::length) {
+      throw StateError("base constructor conversion index is out of bounds");
+    }
+    if (self.conversions[index] == null) {
+      throw StateError("base constructor conversion contains null");
+    }
+    return self.conversions[index]!;
+  }
+}

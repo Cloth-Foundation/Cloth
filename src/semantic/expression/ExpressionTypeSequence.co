@@ -1,0 +1,66 @@
+import semantic.identity::TypeIdentity;
+import semantic.model::SemanticOwner;
+import semantic.model::SemanticType;
+import semantic.model::TypeId;
+import semantic.package::SemanticPackageResult;
+
+class {
+  final SemanticPackageResult semantic;
+  final SemanticOwner owner;
+  final SemanticType?[] additions;
+
+  _ExpressionTypeSequence(
+      SemanticPackageResult semantic, SemanticOwner owner,
+      SemanticType?[] additions) {
+    self.semantic = semantic;
+    self.owner = owner;
+    self.additions = additions;
+  }
+
+  static func Build(
+      SemanticPackageResult semantic, SemanticOwner owner,
+      SemanticType?[] input): ExpressionTypeSequence throws StateError {
+    if (owner != semantic.GetOwner()) {
+      throw StateError("expression type sequence uses another owner");
+    }
+    final SemanticType?[] additions = SemanticType?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final SemanticType? type = input[index];
+      final int32 expected = semantic.GetTypeCount() + index;
+      if (type == null || !type.GetId().BelongsTo(owner) ||
+          type.GetId().GetIndex() != expected || type.GetFile() != null) {
+        throw StateError("expression type extension is inconsistent");
+      }
+      final TypeId? element = type.GetElement();
+      if (element == null || element.GetIndex() >= expected) {
+        throw StateError("expression type extension has an invalid element");
+      }
+      additions[index] = type;
+    }
+    return ExpressionTypeSequence(semantic, owner, additions);
+  }
+
+  func GetCount(): int32 {
+    return self.semantic.GetTypeCount() + self.additions::length;
+  }
+
+  func Get(TypeId id): SemanticType throws StateError {
+    if (!id.BelongsTo(self.owner) || id.GetIndex() >= self.GetCount()) {
+      throw StateError("expression type handle belongs to another result");
+    }
+    if (id.GetIndex() < self.semantic.GetTypeCount()) {
+      return self.semantic.GetType(id);
+    }
+    return self.additions[id.GetIndex() - self.semantic.GetTypeCount()]!;
+  }
+
+  func Find(TypeIdentity identity): TypeId? throws StateError {
+    final TypeId? base = self.semantic.FindTypeIdentity(identity);
+    if (base != null) { return base; }
+    for (int32 index = 0; index < self.additions::length; index++) {
+      final SemanticType type = self.additions[index]!;
+      if (type.GetIdentity().Equals(identity)) { return type.GetId(); }
+    }
+    return null;
+  }
+}

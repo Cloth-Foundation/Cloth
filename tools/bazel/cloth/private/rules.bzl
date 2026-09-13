@@ -814,6 +814,7 @@ def _cross_compiler_parity_test_impl(ctx):
     entries.extend(_manifest_entries("declaration", ctx.files.declaration_corpus))
     entries.extend(_manifest_entries("definition", ctx.files.definition_corpus))
     entries.extend(_manifest_entries("fixture", ctx.files.definition_fixtures))
+    entries.extend(_manifest_entries("expression", ctx.files.expression_corpus))
     entries.extend(_manifest_entries("semantic", ctx.files.semantic_corpus))
     ctx.actions.write(manifest, "\n".join(entries) + "\n")
 
@@ -844,6 +845,8 @@ set "PATH=%%main%%\\%s;%%PATH%%"
   --declaration-records "%%main%%\\%s" ^
   --definition-oracle "%%main%%\\%s" ^
   --definition-records "%%main%%\\%s" ^
+  --bootstrap-compiler "%%main%%\\%s" ^
+  --expression-compiler "%%main%%\\%s" ^
   --semantic-oracle "%%main%%\\%s" ^
   --semantic-records "%%main%%\\%s"
 exit /b %%ERRORLEVEL%%
@@ -860,6 +863,8 @@ exit /b %%ERRORLEVEL%%
             _windows_path(ctx.executable.declaration_records.short_path),
             _windows_path(ctx.executable.definition_oracle.short_path),
             _windows_path(ctx.executable.definition_records.short_path),
+            _windows_path(toolchain.compiler.short_path),
+            _windows_path(ctx.executable.expression_compiler.short_path),
             _windows_path(ctx.executable.semantic_oracle.short_path),
             _windows_path(ctx.executable.semantic_records.short_path),
         ),
@@ -869,10 +874,12 @@ exit /b %%ERRORLEVEL%%
     files = [
         ctx.executable.declaration_records,
         ctx.executable.definition_records,
+        ctx.executable.expression_compiler,
         ctx.executable.lexer_records,
         ctx.executable.semantic_records,
         ctx.file._parity_script,
         manifest,
+        toolchain.compiler,
         ctx.executable.declaration_oracle,
         ctx.executable.definition_oracle,
         toolchain.interpreter,
@@ -883,6 +890,7 @@ exit /b %%ERRORLEVEL%%
     files.extend(ctx.files.declaration_corpus)
     files.extend(ctx.files.definition_corpus)
     files.extend(ctx.files.definition_fixtures)
+    files.extend(ctx.files.expression_corpus)
     files.extend(ctx.files.lexer_inputs)
     files.extend(ctx.files.semantic_corpus)
     files.extend(toolchain.compiler_runtime.to_list())
@@ -891,6 +899,7 @@ exit /b %%ERRORLEVEL%%
     for target in [
         ctx.attr.declaration_records,
         ctx.attr.definition_records,
+        ctx.attr.expression_compiler,
         ctx.attr.lexer_records,
         ctx.attr.semantic_records,
     ]:
@@ -940,6 +949,15 @@ cross_compiler_parity_test = rule(
         "definition_records": attr.label(
             cfg = "target",
             executable = True,
+            mandatory = True,
+        ),
+        "expression_compiler": attr.label(
+            cfg = "target",
+            executable = True,
+            mandatory = True,
+        ),
+        "expression_corpus": attr.label_list(
+            allow_files = [".co"],
             mandatory = True,
         ),
         "jobs": attr.int(default = 8),

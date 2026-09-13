@@ -1,0 +1,1519 @@
+import frontend.parser.support::SourceText;
+import frontend.source::SourceSpan;
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax.expression::ArrayConstructionExpressionSyntax;
+import frontend.syntax.expression::ArrayLiteralExpressionSyntax;
+import frontend.syntax.expression::AssignmentExpressionSyntax;
+import frontend.syntax.expression::BinaryExpressionSyntax;
+import frontend.syntax.expression::CallExpressionSyntax;
+import frontend.syntax.expression::CheckedCastExpressionSyntax;
+import frontend.syntax.expression::ExpressionKind;
+import frontend.syntax.expression::IdentifierExpressionSyntax;
+import frontend.syntax.expression::IndexExpressionSyntax;
+import frontend.syntax.expression::IntegerConversionExpressionSyntax;
+import frontend.syntax.expression::LiteralExpressionSyntax;
+import frontend.syntax.expression::LiteralKind;
+import frontend.syntax.expression::MemberAccessExpressionSyntax;
+import frontend.syntax.expression::MetaAccessExpressionSyntax;
+import frontend.syntax.expression::NullAssertExpressionSyntax;
+import frontend.syntax.expression::NullCoalesceExpressionSyntax;
+import frontend.syntax.expression::NumericConversionExpressionSyntax;
+import frontend.syntax.expression::ParenthesizedExpressionSyntax;
+import frontend.syntax.expression::SafeMemberAccessExpressionSyntax;
+import frontend.syntax.expression::SafeMetaAccessExpressionSyntax;
+import frontend.syntax.expression::ThrowExpressionSyntax;
+import frontend.syntax.expression::TypeTestExpressionSyntax;
+import frontend.syntax.expression::UnaryExpressionSyntax;
+import frontend.syntax.expression::UpdateExpressionSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::TypeSyntax;
+import frontend.syntax.tree::Visibility;
+import frontend.token::TokenKind;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.executable::ExpressionSemanticStorage;
+import semantic.expression::ConversionKind;
+import semantic.expression::AccessSyntax;
+import semantic.expression::ExpressionCategory;
+import semantic.expression::ExpressionFact;
+import semantic.expression::ExpressionTypeStorage;
+import semantic.expression::LiteralTyping;
+import semantic.expression::MetaOperationKind;
+import semantic.identity::MemberIdentity;
+import semantic.identity::SemanticName;
+import semantic.invocation::ConversionClassifier;
+import semantic.invocation::ConstructorInvocationFact;
+import semantic.invocation::DispatchKind;
+import semantic.invocation::InvocationSelection;
+import semantic.invocation::MemberLookup;
+import semantic.invocation::MemberLookupResult;
+import semantic.invocation::OverloadResolver;
+import semantic.invocation::TypeRelationTable;
+import semantic.model::CoreTypeCatalog;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SemanticType;
+import semantic.model::SymbolId;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::ImportScope;
+import semantic.resolution::TypeBinding;
+import semantic.value::ScopeId;
+import semantic.value::ValueId;
+import semantic.value::ValueSymbol;
+
+class {
+  final ExecutableSemanticResult executable;
+  final ExpressionSemanticStorage output;
+  final TypeRelationTable relations;
+  final SemanticPackageResult semantic;
+  final ExpressionTypeStorage types;
+  final SemanticFile file;
+  final SyntaxStorage syntax;
+  final SymbolId owner;
+
+  ExpressionChecker(
+      ExecutableSemanticResult executable, ExpressionSemanticStorage output,
+      TypeRelationTable relations, SemanticFile file, SyntaxStorage syntax,
+      SymbolId owner) {
+    self.executable = executable;
+    self.output = output;
+    self.relations = relations;
+    self.semantic = executable.GetSemantic();
+    self.types = output.GetTypes();
+    self.file = file;
+    self.syntax = syntax;
+    self.owner = owner;
+  }
+
+  func Check(ExpressionId id, ScopeId scope, TypeId? expected,
+             bool consumed): ExpressionFact throws StateError {
+    return self.check(id, scope, expected, consumed, 0);
+  }
+
+  func CheckBaseConstructor(
+      TypeId baseType, ExpressionIdSequence arguments, ScopeId scope,
+      SourceRange range): ConstructorInvocationFact throws StateError {
+    final TypeId?[] argumentTypes = TypeId?[:arguments.GetCount()];
+    final LiteralExpressionSyntax?[] contextual =
+        LiteralExpressionSyntax?[:arguments.GetCount()];
+    self.checkArguments(arguments, scope, 0, argumentTypes, contextual);
+    final MemberLookupResult candidates = MemberLookup.Find(
+        self.semantic, self.relations, baseType, self.file.GetId(),
+        self.constructorName(baseType), false, true);
+    final InvocationSelection selection = OverloadResolver.Select(
+        self.semantic, self.types, self.relations, candidates, argumentTypes,
+        contextual);
+    final SymbolId? selected = selection.GetCallable();
+    if (selected == null) {
+      SemanticDiagnosticKind diagnostic =
+          SemanticDiagnosticKind.kNoMatchingCallable;
+      if (selection.IsAmbiguous()) {
+        diagnostic = SemanticDiagnosticKind.kAmbiguousCallable;
+      }
+      self.output.AddDiagnostic(diagnostic, range);
+      return ConstructorInvocationFact.Build(
+          self.owner, baseType, null, null, ConversionKind?[:0], range,
+          false);
+    }
+    final SemanticSymbol symbol = self.semantic.GetSymbol(selected);
+    final MemberIdentity? identity = symbol.GetIdentity();
+    if (identity == null) {
+      throw StateError("base constructor target has no identity");
+    }
+    final ConversionKind?[] conversions =
+        ConversionKind?[:selection.GetArgumentCount()];
+    for (int32 index = 0; index < selection.GetArgumentCount(); index++) {
+      conversions[index] = selection.GetConversion(index);
+      final TypeId? parameter = self.types.Find(identity.GetParameter(index));
+      if (parameter != null) {
+        self.check(arguments.Get(index), scope, parameter, true, 1);
+      }
+    }
+    return ConstructorInvocationFact.Build(
+        self.owner, baseType, selected, identity, conversions, range, true);
+  }
+
+  func check(ExpressionId id, ScopeId scope, TypeId? expected,
+             bool consumed, int32 depth): ExpressionFact throws StateError {
+    if (depth > SemanticLimits.MaxStructuralDepth()) {
+      throw StateError("expression semantic nesting limit exceeded");
+    }
+    final ExpressionFact? previous = self.output.FindFact(self.file.GetId(), id);
+    if (previous != null) {
+      return self.applyContext(previous, expected, consumed);
+    }
+    final ExpressionSyntax expression = self.syntax.GetExpression(id);
+    ExpressionFact fact;
+    if (!expression.IsValid() ||
+        expression.GetExpressionKind() == ExpressionKind.kInvalid) {
+      fact = self.invalid(id, expression);
+    } else {
+      fact = self.checkKind(id, expression, scope, expected, depth);
+    }
+    fact = self.applyContext(fact, expected, consumed);
+    self.output.AddFact(fact);
+    return fact;
+  }
+
+  func checkKind(ExpressionId id, ExpressionSyntax expression,
+                 ScopeId scope, TypeId? expected,
+                 int32 depth): ExpressionFact throws StateError {
+    final ExpressionKind kind = expression.GetExpressionKind();
+    if (kind == ExpressionKind.kIdentifier) {
+      return self.checkIdentifier(id, expression, scope);
+    }
+    if (kind == ExpressionKind.kLiteral) {
+      return self.checkLiteral(id, expression, expected);
+    }
+    if (kind == ExpressionKind.kSuper) {
+      return self.checkSuper(id, expression, scope);
+    }
+    if (kind == ExpressionKind.kThrow) {
+      return self.checkThrow(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kUnary) {
+      return self.checkUnary(id, expression, scope, expected, depth);
+    }
+    if (kind == ExpressionKind.kUpdate) {
+      return self.checkUpdate(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kBinary) {
+      return self.checkBinary(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kTypeTest) {
+      return self.checkTypeTest(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kCheckedCast) {
+      return self.checkCast(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kNumericConversion) {
+      return self.checkNumericConversion(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kIntegerConversion) {
+      return self.checkIntegerConversion(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kAssignment) {
+      return self.checkAssignment(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kMemberAccess) {
+      return self.checkMember(id, expression, scope, false, depth);
+    }
+    if (kind == ExpressionKind.kSafeMemberAccess) {
+      return self.checkMember(id, expression, scope, true, depth);
+    }
+    if (kind == ExpressionKind.kMetaAccess) {
+      return self.checkMeta(id, expression, scope, false, depth);
+    }
+    if (kind == ExpressionKind.kSafeMetaAccess) {
+      return self.checkMeta(id, expression, scope, true, depth);
+    }
+    if (kind == ExpressionKind.kNullCoalesce) {
+      return self.checkCoalesce(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kNullAssert) {
+      return self.checkNullAssert(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kCall) {
+      return self.checkCall(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kArrayLiteral) {
+      return self.checkArrayLiteral(id, expression, scope, expected, depth);
+    }
+    if (kind == ExpressionKind.kArrayConstruction) {
+      return self.checkArrayConstruction(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kIndex) {
+      return self.checkIndex(id, expression, scope, depth);
+    }
+    if (kind == ExpressionKind.kParenthesized) {
+      return self.checkParenthesized(
+          id, expression, scope, expected, depth);
+    }
+    throw StateError("expression kind is not exhaustively handled");
+  }
+
+  func checkIdentifier(ExpressionId id, ExpressionSyntax expression,
+                       ScopeId scope): ExpressionFact throws StateError {
+    final IdentifierExpressionSyntax? identifier =
+        expression as IdentifierExpressionSyntax?;
+    if (identifier == null) { self.kindMismatch(); }
+    final SemanticName name = SemanticName.FromSource(identifier!.GetName());
+    final ValueId? value = self.executable.FindValue(
+        scope, name, expression.GetRange().GetBegin().GetOffset());
+    if (value != null) {
+      final ValueSymbol symbol = self.executable.GetValue(value);
+      ExpressionCategory category = ExpressionCategory.kReadOnlyLocation;
+      if (symbol.IsMutable()) {
+        category = ExpressionCategory.kMutableLocation;
+      }
+      return self.fact(id, expression, self.output.GetValueType(value),
+                       category, value, null, null, DispatchKind.kNone,
+                       ConversionKind.kExact, null, MetaOperationKind.kNone);
+    }
+    final int32 sourceOffset = expression.GetRange().GetBegin().GetOffset();
+    final SemanticSymbol? member =
+        self.findUnqualifiedField(name, scope, sourceOffset);
+    if (member != null) {
+      ExpressionCategory category = ExpressionCategory.kMutableLocation;
+      if (member.IsFinal()) {
+        category = ExpressionCategory.kReadOnlyLocation;
+      }
+      return self.fact(id, expression, member.GetType(), category, null,
+                       member.GetId(), null, DispatchKind.kNone,
+                       ConversionKind.kExact, null, MetaOperationKind.kNone);
+    }
+    if (self.hasUnqualifiedFunction(name, scope, sourceOffset)) {
+      return self.fact(id, expression, self.errorType(),
+                       ExpressionCategory.kCallableSet, null, null, null,
+                       DispatchKind.kNone, ConversionKind.kExact, null,
+                       MetaOperationKind.kNone);
+    }
+    final TypeId? namedType = self.findNamedType(name);
+    if (namedType != null) {
+      return self.fact(id, expression, namedType, ExpressionCategory.kType,
+                       null, null, null, DispatchKind.kNone,
+                       ConversionKind.kExact, null, MetaOperationKind.kNone);
+    }
+    if (name.EqualsString("print") || name.EqualsString("println")) {
+      return self.fact(id, expression, self.voidType(),
+                       ExpressionCategory.kCallableSet, null, null, null,
+                       DispatchKind.kNone, ConversionKind.kExact, null,
+                       MetaOperationKind.kNone);
+    }
+    self.diagnostic(SemanticDiagnosticKind.kUnknownValueName, expression);
+    return self.invalid(id, expression);
+  }
+
+  func checkLiteral(ExpressionId id, ExpressionSyntax expression,
+                    TypeId? expected): ExpressionFact throws StateError {
+    final LiteralExpressionSyntax? literal =
+        expression as LiteralExpressionSyntax?;
+    if (literal == null) { self.kindMismatch(); }
+    TypeId type = LiteralTyping.DefaultType(self.semantic, literal!);
+    ConversionKind conversion = ConversionKind.kExact;
+    TypeId? contextual = null;
+    if (expected != null && LiteralTyping.CanCommit(
+            self.types, literal, expected)) {
+      type = expected;
+      conversion = ConversionKind.kContextualLiteral;
+      contextual = expected;
+    }
+    if (contextual == null &&
+        !LiteralTyping.IsValidDefault(self.semantic, literal)) {
+      self.diagnostic(
+          SemanticDiagnosticKind.kNumericLiteralOutOfRange, expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, type, ExpressionCategory.kValue,
+                     null, null, null, DispatchKind.kNone, conversion,
+                     contextual, MetaOperationKind.kNone);
+  }
+
+  func checkSuper(ExpressionId id, ExpressionSyntax expression,
+                  ScopeId scope): ExpressionFact throws StateError {
+    final SemanticSymbol executable = self.semantic.GetSymbol(self.owner);
+    final ValueId? selfValue = self.executable.FindValue(
+        scope, SemanticName.FromString("self"),
+        expression.GetRange().GetBegin().GetOffset());
+    final TypeId? base = self.relations.GetBase(self.file.GetType());
+    if (selfValue == null || base == null ||
+        executable.GetKind() == SymbolKind.kField) {
+      self.diagnostic(SemanticDiagnosticKind.kSuperUnavailable, expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, base,
+                     ExpressionCategory.kSuperReceiver, null, null, null,
+                     DispatchKind.kNone, ConversionKind.kExact, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkThrow(ExpressionId id, ExpressionSyntax expression,
+                  ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final ThrowExpressionSyntax? value = expression as ThrowExpressionSyntax?;
+    if (value == null) { self.kindMismatch(); }
+    final ExpressionFact operand =
+        self.check(value!.GetOperand(), scope, null, true, depth + 1);
+    if (!operand.IsValid()) { return self.invalid(id, expression); }
+    final SemanticType operandType = self.types.Get(operand.GetType());
+    bool valid = operandType.GetKind() == TypeKind.kErrorClass;
+    if (!valid && TypeRelationTable.IsReferenceKind(operandType.GetKind())) {
+      valid = self.relations.IsSubtype(operand.GetType(),
+                                       self.semantic.GetTypeAt(19).GetId());
+    }
+    if (!valid) {
+      self.diagnostic(SemanticDiagnosticKind.kExpressionTypeMismatch,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, self.bottomType(),
+                     ExpressionCategory.kValue, null, null, null,
+                     DispatchKind.kNone, ConversionKind.kExact, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkUnary(ExpressionId id, ExpressionSyntax expression,
+                  ScopeId scope, TypeId? expected,
+                  int32 depth): ExpressionFact throws StateError {
+    final UnaryExpressionSyntax? unary = expression as UnaryExpressionSyntax?;
+    if (unary == null) { self.kindMismatch(); }
+    TypeId? operandExpected = null;
+    if (unary!.GetOperation() == TokenKind.kPlus ||
+        unary.GetOperation() == TokenKind.kMinus) {
+      operandExpected = expected;
+    }
+    final ExpressionSyntax operandSyntax =
+        self.syntax.GetExpression(unary.GetOperand());
+    final LiteralExpressionSyntax? literal =
+        operandSyntax as LiteralExpressionSyntax?;
+    TypeId? negatedMinimum = null;
+    if (unary.GetOperation() == TokenKind.kMinus && literal != null) {
+      negatedMinimum = LiteralTyping.FindNegatedMinimumType(
+          self.semantic, self.types, literal, expected);
+    }
+    ExpressionFact operand;
+    if (negatedMinimum != null) {
+      final ExpressionFact? previous =
+          self.output.FindFact(self.file.GetId(), unary.GetOperand());
+      if (previous != null) {
+        operand = previous;
+      } else {
+        ConversionKind conversion = ConversionKind.kExact;
+        TypeId? contextual = null;
+        if (LiteralTyping.IsContextualNumeric(literal!)) {
+          conversion = ConversionKind.kContextualLiteral;
+          contextual = negatedMinimum;
+        }
+        operand = self.fact(
+            unary.GetOperand(), operandSyntax, negatedMinimum,
+            ExpressionCategory.kValue, null, null, null, DispatchKind.kNone,
+            conversion, contextual, MetaOperationKind.kNone);
+        self.output.AddFact(operand);
+      }
+    } else {
+      operand = self.check(
+          unary.GetOperand(), scope, operandExpected, true, depth + 1);
+    }
+    if (!operand.IsValid()) { return self.invalid(id, expression); }
+    final TypeKind kind = self.types.Get(operand.GetType()).GetKind();
+    if (unary.GetOperation() == TokenKind.kMinus && literal != null &&
+        LiteralTyping.IsForbiddenUnsignedNegation(literal, kind)) {
+      self.diagnostic(
+          SemanticDiagnosticKind.kNumericLiteralOutOfRange, expression);
+      return self.invalid(id, expression);
+    }
+    bool valid = false;
+    if (unary.GetOperation() == TokenKind.kBang) {
+      valid = kind == TypeKind.kBool;
+    } else {
+      if (unary.GetOperation() == TokenKind.kTilde) {
+        valid = ConversionClassifier.IsInteger(kind);
+      } else {
+        valid = ConversionClassifier.IsNumeric(kind);
+      }
+    }
+    if (!valid) {
+      self.diagnostic(SemanticDiagnosticKind.kOperatorNotApplicable,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    TypeId result = operand.GetType();
+    if (unary.GetOperation() == TokenKind.kBang) { result = self.boolType(); }
+    return self.fact(id, expression, result, ExpressionCategory.kValue,
+                     null, null, null, DispatchKind.kNone,
+                     ConversionKind.kExact, null, MetaOperationKind.kNone);
+  }
+
+  func checkUpdate(ExpressionId id, ExpressionSyntax expression,
+                   ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final UpdateExpressionSyntax? update =
+        expression as UpdateExpressionSyntax?;
+    if (update == null) { self.kindMismatch(); }
+    final ExpressionFact operand =
+        self.check(update!.GetOperand(), scope, null, true, depth + 1);
+    if (!operand.IsValid()) { return self.invalid(id, expression); }
+    if (operand.GetCategory() != ExpressionCategory.kMutableLocation) {
+      self.diagnostic(SemanticDiagnosticKind.kWritableLocationExpected,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    if (!ConversionClassifier.IsNumeric(
+            self.types.Get(operand.GetType()).GetKind())) {
+      self.diagnostic(SemanticDiagnosticKind.kOperatorNotApplicable,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, operand.GetType(),
+                     ExpressionCategory.kValue, null, null, null,
+                     DispatchKind.kNone, ConversionKind.kExact, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkBinary(ExpressionId id, ExpressionSyntax expression,
+                   ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final BinaryExpressionSyntax? binary =
+        expression as BinaryExpressionSyntax?;
+    if (binary == null) { self.kindMismatch(); }
+    final TokenKind operation = binary!.GetOperation();
+    if (operation == TokenKind.kAmpersandAmpersand ||
+        operation == TokenKind.kPipePipe) {
+      final ExpressionFact left = self.check(
+          binary.GetLeft(), scope, self.boolType(), true, depth + 1);
+      final ExpressionFact right = self.check(
+          binary.GetRight(), scope, self.boolType(), true, depth + 1);
+      if (!left.IsValid() || !right.IsValid()) {
+        return self.invalid(id, expression);
+      }
+      return self.valueFact(id, expression, self.boolType());
+    }
+    ExpressionFact left =
+        self.check(binary.GetLeft(), scope, null, true, depth + 1);
+    ExpressionFact right = self.check(
+        binary.GetRight(), scope, left.GetType(), true, depth + 1);
+    if (!left.IsValid() || !right.IsValid()) {
+      return self.invalid(id, expression);
+    }
+    if (left.GetType().GetIndex() != right.GetType().GetIndex()) {
+      final ExpressionSyntax leftSyntax =
+          self.syntax.GetExpression(binary.GetLeft());
+      final LiteralExpressionSyntax? literal =
+          leftSyntax as LiteralExpressionSyntax?;
+      if (literal != null &&
+          LiteralTyping.CanCommit(self.types, literal, right.GetType())) {
+        left = self.commitLiteral(binary.GetLeft(), leftSyntax, literal,
+                                  right.GetType());
+      }
+    }
+    final TypeKind leftKind = self.types.Get(left.GetType()).GetKind();
+    final TypeKind rightKind = self.types.Get(right.GetType()).GetKind();
+    final bool same = left.GetType().GetIndex() == right.GetType().GetIndex();
+    if (isEquality(operation)) {
+      if (!same && ConversionClassifier.Classify(
+              self.types, self.relations, right.GetType(),
+              left.GetType()) == ConversionKind.kInvalid &&
+          ConversionClassifier.Classify(
+              self.types, self.relations, left.GetType(),
+              right.GetType()) == ConversionKind.kInvalid) {
+        self.diagnostic(SemanticDiagnosticKind.kOperatorNotApplicable,
+                        expression);
+        return self.invalid(id, expression);
+      }
+      return self.valueFact(id, expression, self.boolType());
+    }
+    bool valid = (isArithmetic(operation) || isComparison(operation)) &&
+                 same && ConversionClassifier.IsNumeric(leftKind);
+    if (isBitwise(operation)) {
+      valid = same && ConversionClassifier.IsInteger(leftKind);
+    }
+    if (isShift(operation)) {
+      valid = ConversionClassifier.IsInteger(leftKind) &&
+              ConversionClassifier.IsInteger(rightKind);
+    }
+    if (operation == TokenKind.kPlus &&
+        leftKind == TypeKind.kString && rightKind == TypeKind.kString) {
+      valid = true;
+    }
+    if (!valid) {
+      self.diagnostic(SemanticDiagnosticKind.kOperatorNotApplicable,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    if (isComparison(operation)) {
+      return self.valueFact(id, expression, self.boolType());
+    }
+    return self.valueFact(id, expression, left.GetType());
+  }
+
+  func checkTypeTest(ExpressionId id, ExpressionSyntax expression,
+                     ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final TypeTestExpressionSyntax? test =
+        expression as TypeTestExpressionSyntax?;
+    if (test == null) { self.kindMismatch(); }
+    final ExpressionFact value =
+        self.check(test!.GetValue(), scope, null, true, depth + 1);
+    final TypeId? target = self.resolve(test.GetTarget());
+    if (!value.IsValid() || target == null ||
+        !self.isReferenceLike(value.GetType()) ||
+        !self.isReferenceLike(target)) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidExplicitConversion,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.valueFact(id, expression, self.boolType());
+  }
+
+  func checkCast(ExpressionId id, ExpressionSyntax expression,
+                 ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final CheckedCastExpressionSyntax? cast =
+        expression as CheckedCastExpressionSyntax?;
+    if (cast == null) { self.kindMismatch(); }
+    final ExpressionFact value =
+        self.check(cast!.GetValue(), scope, null, true, depth + 1);
+    final TypeId? target = self.resolve(cast.GetTarget());
+    if (!value.IsValid() || target == null ||
+        !self.isReferenceLike(value.GetType()) ||
+        !self.isReferenceLike(target)) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidExplicitConversion,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    TypeId result = target;
+    if (self.types.Get(target).GetKind() != TypeKind.kNullable) {
+      result = self.types.GetOrAddNullable(target);
+    }
+    return self.valueFact(id, expression, result);
+  }
+
+  func checkNumericConversion(
+      ExpressionId id, ExpressionSyntax expression, ScopeId scope,
+      int32 depth): ExpressionFact throws StateError {
+    final NumericConversionExpressionSyntax? conversion =
+        expression as NumericConversionExpressionSyntax?;
+    if (conversion == null) { self.kindMismatch(); }
+    final ExpressionFact value = self.check(
+        conversion!.GetValue(), scope, null, true, depth + 1);
+    final TypeId? target = self.resolve(conversion.GetTarget());
+    if (!value.IsValid() || target == null ||
+        !ConversionClassifier.IsNumeric(
+            self.types.Get(value.GetType()).GetKind()) ||
+        !ConversionClassifier.IsNumeric(self.types.Get(target).GetKind())) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidExplicitConversion,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, target, ExpressionCategory.kValue,
+                     null, null, null, DispatchKind.kNone,
+                     ConversionKind.kCheckedNumeric, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkIntegerConversion(
+      ExpressionId id, ExpressionSyntax expression, ScopeId scope,
+      int32 depth): ExpressionFact throws StateError {
+    final IntegerConversionExpressionSyntax? conversion =
+        expression as IntegerConversionExpressionSyntax?;
+    if (conversion == null) { self.kindMismatch(); }
+    final ExpressionFact value = self.check(
+        conversion!.GetValue(), scope, null, true, depth + 1);
+    final TypeId? target = self.resolve(conversion.GetTarget());
+    if (!value.IsValid() || target == null ||
+        !ConversionClassifier.IsInteger(
+            self.types.Get(value.GetType()).GetKind()) ||
+        !ConversionClassifier.IsInteger(self.types.Get(target).GetKind())) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidExplicitConversion,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    ConversionKind kind = ConversionKind.kWrappingInteger;
+    MetaOperationKind meta = MetaOperationKind.kWrap;
+    if (SourceText.Equals(conversion.GetOperation(), "sat")) {
+      kind = ConversionKind.kSaturatingInteger;
+      meta = MetaOperationKind.kSat;
+    }
+    return self.fact(id, expression, target, ExpressionCategory.kValue,
+                     null, null, null, DispatchKind.kIntrinsic, kind, null,
+                     meta);
+  }
+
+  func checkAssignment(ExpressionId id, ExpressionSyntax expression,
+                       ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final AssignmentExpressionSyntax? assignment =
+        expression as AssignmentExpressionSyntax?;
+    if (assignment == null) { self.kindMismatch(); }
+    final ExpressionFact target = self.check(
+        assignment!.GetTarget(), scope, null, true, depth + 1);
+    if (!target.IsValid()) {
+      self.check(assignment.GetValue(), scope, null, true, depth + 1);
+      return self.invalid(id, expression);
+    }
+    final ExpressionFact value = self.check(
+        assignment.GetValue(), scope, target.GetType(), true, depth + 1);
+    if (target.GetCategory() != ExpressionCategory.kMutableLocation) {
+      self.diagnostic(SemanticDiagnosticKind.kWritableLocationExpected,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    if (!value.IsValid()) { return self.invalid(id, expression); }
+    if (assignment.GetOperation() != TokenKind.kEqual &&
+        !self.compoundValid(assignment.GetOperation(), target.GetType())) {
+      self.diagnostic(SemanticDiagnosticKind.kOperatorNotApplicable,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.valueFact(id, expression, target.GetType());
+  }
+
+  func checkMember(ExpressionId id, ExpressionSyntax expression,
+                   ScopeId scope, bool safe, int32 depth): ExpressionFact
+      throws StateError {
+    final AccessSyntax access = self.memberAccess(expression, safe);
+    final ExpressionId receiverId = access.GetReceiver();
+    final SourceSpan nameSpan = access.GetName();
+    final ExpressionFact receiver =
+        self.check(receiverId, scope, null, false, depth + 1);
+    if (!receiver.IsValid()) { return self.invalid(id, expression); }
+    TypeId receiverType = receiver.GetType();
+    if (safe) {
+      final SemanticType nullable = self.types.Get(receiverType);
+      final TypeId? element = nullable.GetElement();
+      if (nullable.GetKind() != TypeKind.kNullable || element == null) {
+        self.diagnostic(SemanticDiagnosticKind.kMemberAccessMismatch,
+                        expression);
+        return self.invalid(id, expression);
+      }
+      receiverType = element;
+    } else {
+      if (self.types.Get(receiverType).GetKind() == TypeKind.kNullable) {
+        self.diagnostic(SemanticDiagnosticKind.kMemberAccessMismatch,
+                        expression);
+        return self.invalid(id, expression);
+      }
+    }
+    final bool staticAccess = receiver.GetCategory() == ExpressionCategory.kType;
+    final MemberLookupResult members = MemberLookup.Find(
+        self.semantic, self.relations, receiverType, self.file.GetId(),
+        SemanticName.FromSource(nameSpan), staticAccess, false);
+    if (members.GetCount() == 0) {
+      final MemberLookupResult mismatched = MemberLookup.Find(
+          self.semantic, self.relations, receiverType, self.file.GetId(),
+          SemanticName.FromSource(nameSpan), !staticAccess, false);
+      if (mismatched.GetCount() == 0) {
+        self.diagnostic(SemanticDiagnosticKind.kUnknownMember, expression);
+      } else {
+        self.diagnostic(
+            SemanticDiagnosticKind.kMemberAccessMismatch, expression);
+      }
+      return self.invalid(id, expression);
+    }
+    SemanticSymbol? field = null;
+    bool callable = false;
+    for (int32 index = 0; index < members.GetCount(); index++) {
+      final SemanticSymbol candidate =
+          self.semantic.GetSymbol(members.Get(index));
+      if (candidate.GetKind() == SymbolKind.kFunction) { callable = true; }
+      if (candidate.GetKind() == SymbolKind.kField ||
+          candidate.GetKind() == SymbolKind.kEnumCase) {
+        field = candidate;
+      }
+    }
+    if (field == null) {
+      if (!callable) { return self.invalid(id, expression); }
+      return self.fact(id, expression, receiverType,
+                       ExpressionCategory.kCallableSet, null, null, null,
+                       DispatchKind.kNone, ConversionKind.kExact, null,
+                       MetaOperationKind.kNone);
+    }
+    TypeId resultType = field.GetType();
+    if (safe) { resultType = self.liftNullable(resultType); }
+    ExpressionCategory category = ExpressionCategory.kReadOnlyLocation;
+    if (!safe && !field.IsFinal() &&
+        field.GetKind() == SymbolKind.kField) {
+      category = ExpressionCategory.kMutableLocation;
+    }
+    ConversionKind conversion = ConversionKind.kExact;
+    if (safe) { conversion = ConversionKind.kNullableLift; }
+    return self.fact(id, expression, resultType, category, null,
+                     field.GetId(), null, DispatchKind.kNone,
+                     conversion,
+                     null, MetaOperationKind.kNone);
+  }
+
+  func checkMeta(ExpressionId id, ExpressionSyntax expression,
+                 ScopeId scope, bool safe,
+                 int32 depth): ExpressionFact throws StateError {
+    final AccessSyntax access = self.metaAccess(expression, safe);
+    final ExpressionId receiverId = access.GetReceiver();
+    final SourceSpan name = access.GetName();
+    final ExpressionFact receiver =
+        self.check(receiverId, scope, null, false, depth + 1);
+    if (!receiver.IsValid()) { return self.invalid(id, expression); }
+    TypeId receiverType = receiver.GetType();
+    if (safe) {
+      final SemanticType nullable = self.types.Get(receiverType);
+      final TypeId? element = nullable.GetElement();
+      if (nullable.GetKind() != TypeKind.kNullable || element == null) {
+        self.diagnostic(SemanticDiagnosticKind.kInvalidMetaOperation,
+                        expression);
+        return self.invalid(id, expression);
+      }
+      receiverType = element;
+    }
+    final TypeKind kind = self.types.Get(receiverType).GetKind();
+    TypeId result = self.errorType();
+    MetaOperationKind operation = MetaOperationKind.kNone;
+    ExpressionCategory category = ExpressionCategory.kReadOnlyLocation;
+    if (SourceText.Equals(name, "length") &&
+        (kind == TypeKind.kString || kind == TypeKind.kArray)) {
+      result = self.intType();
+      operation = MetaOperationKind.kLength;
+    } else {
+      if (SourceText.Equals(name, "byteLength") &&
+          kind == TypeKind.kString) {
+        result = self.intType();
+        operation = MetaOperationKind.kByteLength;
+      } else {
+        if (SourceText.Equals(name, "isEmpty") &&
+            kind == TypeKind.kString) {
+          result = self.boolType();
+          operation = MetaOperationKind.kIsEmpty;
+        } else {
+          if (SourceText.Equals(name, "typeName") &&
+              receiver.GetCategory() != ExpressionCategory.kType) {
+            result = self.stringType();
+            operation = MetaOperationKind.kTypeName;
+          } else {
+            if (SourceText.Equals(name, "parse") && !safe &&
+                receiver.GetCategory() == ExpressionCategory.kType &&
+                self.isParseType(kind)) {
+              result = receiverType;
+              operation = MetaOperationKind.kParse;
+              category = ExpressionCategory.kCallableSet;
+            } else {
+              if (SourceText.Equals(name, "slice") && !safe &&
+                  kind == TypeKind.kString &&
+                  receiver.GetCategory() != ExpressionCategory.kType) {
+                result = self.stringType();
+                operation = MetaOperationKind.kSlice;
+                category = ExpressionCategory.kCallableSet;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (operation == MetaOperationKind.kNone) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidMetaOperation,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    if (safe) { result = self.liftNullable(result); }
+    ConversionKind conversion = ConversionKind.kExact;
+    if (safe) { conversion = ConversionKind.kNullableLift; }
+    return self.fact(id, expression, result, category, null, null, null,
+                     DispatchKind.kNone, conversion,
+                     null, operation);
+  }
+
+  func checkCoalesce(ExpressionId id, ExpressionSyntax expression,
+                     ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final NullCoalesceExpressionSyntax? coalesce =
+        expression as NullCoalesceExpressionSyntax?;
+    if (coalesce == null) { self.kindMismatch(); }
+    final ExpressionFact nullable = self.check(
+        coalesce!.GetNullable(), scope, null, true, depth + 1);
+    if (!nullable.IsValid()) {
+      self.check(coalesce.GetFallback(), scope, null, true, depth + 1);
+      return self.invalid(id, expression);
+    }
+    final SemanticType nullableType = self.types.Get(nullable.GetType());
+    final TypeId? element = nullableType.GetElement();
+    if (nullableType.GetKind() != TypeKind.kNullable || element == null) {
+      self.diagnostic(SemanticDiagnosticKind.kExpressionTypeMismatch,
+                      expression);
+      self.check(coalesce.GetFallback(), scope, null, true, depth + 1);
+      return self.invalid(id, expression);
+    }
+    final ExpressionFact fallback = self.check(
+        coalesce.GetFallback(), scope, element, true, depth + 1);
+    if (!fallback.IsValid()) { return self.invalid(id, expression); }
+    return self.valueFact(id, expression, element);
+  }
+
+  func checkNullAssert(ExpressionId id, ExpressionSyntax expression,
+                       ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final NullAssertExpressionSyntax? assertion =
+        expression as NullAssertExpressionSyntax?;
+    if (assertion == null) { self.kindMismatch(); }
+    final ExpressionFact operand = self.check(
+        assertion!.GetOperand(), scope, null, true, depth + 1);
+    if (!operand.IsValid()) { return self.invalid(id, expression); }
+    final SemanticType nullable = self.types.Get(operand.GetType());
+    final TypeId? element = nullable.GetElement();
+    if (nullable.GetKind() != TypeKind.kNullable || element == null) {
+      self.diagnostic(SemanticDiagnosticKind.kExpressionTypeMismatch,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.valueFact(id, expression, element);
+  }
+
+  func checkCall(ExpressionId id, ExpressionSyntax expression,
+                 ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final CallExpressionSyntax? call = expression as CallExpressionSyntax?;
+    if (call == null) { self.kindMismatch(); }
+    final ExpressionFact callee = self.check(
+        call!.GetCallee(), scope, null, false, depth + 1);
+    if (callee.IsValid() &&
+        callee.GetCategory() == ExpressionCategory.kCallableSet &&
+        callee.GetMetaOperation() != MetaOperationKind.kNone) {
+      return self.checkMetaCall(id, expression, call, callee, scope, depth);
+    }
+    final ExpressionSyntax calleeSyntax =
+        self.syntax.GetExpression(call.GetCallee());
+    final IdentifierExpressionSyntax? identifier =
+        calleeSyntax as IdentifierExpressionSyntax?;
+    if (identifier != null &&
+        (SourceText.Equals(identifier.GetName(), "print") ||
+         SourceText.Equals(identifier.GetName(), "println")) &&
+        callee.GetCategory() == ExpressionCategory.kCallableSet) {
+      return self.checkOutputCall(id, expression, call, identifier, scope,
+                                  depth);
+    }
+    final TypeId?[] argumentTypes = TypeId?[:call.GetArguments().GetCount()];
+    final LiteralExpressionSyntax?[] contextual =
+        LiteralExpressionSyntax?[:call.GetArguments().GetCount()];
+    self.checkArguments(call.GetArguments(), scope, depth, argumentTypes,
+                        contextual);
+    if (!callee.IsValid()) { return self.invalid(id, expression); }
+    MemberLookupResult candidates;
+    TypeId resultType = self.errorType();
+    bool constructor = callee.GetCategory() == ExpressionCategory.kType;
+    bool safe = false;
+    TypeId receiverType = callee.GetType();
+    if (constructor) {
+      candidates = MemberLookup.Find(
+          self.semantic, self.relations, callee.GetType(), self.file.GetId(),
+          self.constructorName(callee.GetType()),
+          false, true);
+      resultType = callee.GetType();
+    } else {
+      candidates = self.callCandidates(
+          call.GetCallee(), calleeSyntax, callee, scope);
+      safe = calleeSyntax.GetExpressionKind() ==
+             ExpressionKind.kSafeMemberAccess;
+    }
+    final InvocationSelection selection = OverloadResolver.Select(
+        self.semantic, self.types, self.relations, candidates, argumentTypes,
+        contextual);
+    final SymbolId? selected = selection.GetCallable();
+    if (selected == null) {
+      SemanticDiagnosticKind diagnostic =
+          SemanticDiagnosticKind.kNoMatchingCallable;
+      if (selection.IsAmbiguous()) {
+        diagnostic = SemanticDiagnosticKind.kAmbiguousCallable;
+      }
+      self.diagnostic(diagnostic, expression);
+      return self.invalid(id, expression);
+    }
+    final SemanticSymbol symbol = self.semantic.GetSymbol(selected);
+    final MemberIdentity? identity = symbol.GetIdentity();
+    if (identity == null) {
+      throw StateError("selected call target has no persistent identity");
+    }
+    for (int32 index = 0; index < call.GetArguments().GetCount(); index++) {
+      final TypeId? parameter = self.types.Find(identity.GetParameter(index));
+      if (parameter != null) {
+        self.check(call.GetArguments().Get(index), scope, parameter, true,
+                   depth + 1);
+      }
+    }
+    if (!constructor) { resultType = symbol.GetType(); }
+    if (safe && resultType.GetIndex() != self.voidType().GetIndex()) {
+      resultType = self.liftNullable(resultType);
+    }
+    DispatchKind dispatch =
+        self.dispatch(symbol, constructor, receiverType);
+    if (self.isSuperCall(calleeSyntax)) { dispatch = DispatchKind.kDirect; }
+    return self.fact(id, expression, resultType, ExpressionCategory.kValue,
+                     null, selected, identity, dispatch,
+                     ConversionKind.kExact, null, MetaOperationKind.kNone);
+  }
+
+  func checkMetaCall(
+      ExpressionId id, ExpressionSyntax expression, CallExpressionSyntax call,
+      ExpressionFact callee, ScopeId scope,
+      int32 depth): ExpressionFact throws StateError {
+    final MetaOperationKind operation = callee.GetMetaOperation();
+    if (operation == MetaOperationKind.kParse) {
+      if (call.GetArguments().GetCount() != 1) {
+        self.checkArgumentsDiscard(call.GetArguments(), scope, depth);
+        self.diagnostic(SemanticDiagnosticKind.kNoMatchingCallable,
+                        expression);
+        return self.invalid(id, expression);
+      }
+      final ExpressionFact argument = self.check(
+          call.GetArguments().Get(0), scope, self.stringType(), true,
+          depth + 1);
+      if (!argument.IsValid()) { return self.invalid(id, expression); }
+      return self.fact(id, expression, callee.GetType(),
+                       ExpressionCategory.kValue, null, null, null,
+                       DispatchKind.kIntrinsic, ConversionKind.kExact, null,
+                       operation);
+    }
+    if (operation == MetaOperationKind.kSlice) {
+      if (call.GetArguments().GetCount() != 2) {
+        self.checkArgumentsDiscard(call.GetArguments(), scope, depth);
+        self.diagnostic(SemanticDiagnosticKind.kNoMatchingCallable,
+                        expression);
+        return self.invalid(id, expression);
+      }
+      final ExpressionFact begin = self.check(
+          call.GetArguments().Get(0), scope, self.intType(), true, depth + 1);
+      final ExpressionFact end = self.check(
+          call.GetArguments().Get(1), scope, self.intType(), true, depth + 1);
+      if (!begin.IsValid() || !end.IsValid()) {
+        return self.invalid(id, expression);
+      }
+      return self.fact(id, expression, self.stringType(),
+                       ExpressionCategory.kValue, null, null, null,
+                       DispatchKind.kIntrinsic, ConversionKind.kExact, null,
+                       operation);
+    }
+    self.diagnostic(SemanticDiagnosticKind.kNoMatchingCallable, expression);
+    return self.invalid(id, expression);
+  }
+
+  func checkOutputCall(
+      ExpressionId id, ExpressionSyntax expression, CallExpressionSyntax call,
+      IdentifierExpressionSyntax name, ScopeId scope,
+      int32 depth): ExpressionFact throws StateError {
+    final bool println = SourceText.Equals(name.GetName(), "println");
+    final int32 count = call.GetArguments().GetCount();
+    if (count > 1 || (!println && count != 1)) {
+      self.checkArgumentsDiscard(call.GetArguments(), scope, depth);
+      self.diagnostic(SemanticDiagnosticKind.kNoMatchingCallable, expression);
+      return self.invalid(id, expression);
+    }
+    if (count == 1) {
+      final ExpressionFact argument = self.check(
+          call.GetArguments().Get(0), scope, null, true, depth + 1);
+      if (!argument.IsValid()) { return self.invalid(id, expression); }
+    }
+    return self.fact(id, expression, self.voidType(),
+                     ExpressionCategory.kValue, null, null, null,
+                     DispatchKind.kIntrinsic, ConversionKind.kExact, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkArrayLiteral(
+      ExpressionId id, ExpressionSyntax expression, ScopeId scope,
+      TypeId? expected, int32 depth): ExpressionFact throws StateError {
+    final ArrayLiteralExpressionSyntax? array =
+        expression as ArrayLiteralExpressionSyntax?;
+    if (array == null) { self.kindMismatch(); }
+    TypeId? element = null;
+    if (expected != null &&
+        self.types.Get(expected).GetKind() == TypeKind.kArray) {
+      element = self.types.Get(expected).GetElement();
+    }
+    if (array!.GetElements().GetCount() == 0 && element == null) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidArrayExpression,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    for (int32 index = 0; index < array.GetElements().GetCount(); index++) {
+      final ExpressionFact item = self.check(
+          array.GetElements().Get(index), scope, element, true, depth + 1);
+      if (!item.IsValid()) { return self.invalid(id, expression); }
+      if (element == null) { element = item.GetType(); }
+    }
+    if (element == null) { return self.invalid(id, expression); }
+    final TypeId type = self.types.GetOrAddArray(element);
+    return self.valueFact(id, expression, type);
+  }
+
+  func checkArrayConstruction(
+      ExpressionId id, ExpressionSyntax expression, ScopeId scope,
+      int32 depth): ExpressionFact throws StateError {
+    final ArrayConstructionExpressionSyntax? array =
+        expression as ArrayConstructionExpressionSyntax?;
+    if (array == null) { self.kindMismatch(); }
+    final TypeId? element = self.resolve(array!.GetElementType());
+    final ExpressionFact length = self.check(
+        array.GetLength(), scope, self.intType(), true, depth + 1);
+    if (element == null || !length.IsValid()) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidArrayExpression,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.valueFact(id, expression, self.types.GetOrAddArray(element));
+  }
+
+  func checkIndex(ExpressionId id, ExpressionSyntax expression,
+                  ScopeId scope, int32 depth): ExpressionFact
+      throws StateError {
+    final IndexExpressionSyntax? index = expression as IndexExpressionSyntax?;
+    if (index == null) { self.kindMismatch(); }
+    final ExpressionFact receiver = self.check(
+        index!.GetObject(), scope, null, true, depth + 1);
+    final ExpressionFact offset = self.check(
+        index.GetIndex(), scope, self.intType(), true, depth + 1);
+    if (!receiver.IsValid() || !offset.IsValid()) {
+      return self.invalid(id, expression);
+    }
+    final SemanticType receiverType = self.types.Get(receiver.GetType());
+    if (receiverType.GetKind() == TypeKind.kString) {
+      return self.fact(id, expression, self.charType(),
+                       ExpressionCategory.kReadOnlyLocation, null, null, null,
+                       DispatchKind.kNone, ConversionKind.kExact, null,
+                       MetaOperationKind.kNone);
+    }
+    final TypeId? element = receiverType.GetElement();
+    if (receiverType.GetKind() != TypeKind.kArray || element == null) {
+      self.diagnostic(SemanticDiagnosticKind.kInvalidArrayExpression,
+                      expression);
+      return self.invalid(id, expression);
+    }
+    return self.fact(id, expression, element,
+                     ExpressionCategory.kMutableLocation, null, null, null,
+                     DispatchKind.kNone, ConversionKind.kExact, null,
+                     MetaOperationKind.kNone);
+  }
+
+  func checkParenthesized(
+      ExpressionId id, ExpressionSyntax expression, ScopeId scope,
+      TypeId? expected, int32 depth): ExpressionFact throws StateError {
+    final ParenthesizedExpressionSyntax? grouped =
+        expression as ParenthesizedExpressionSyntax?;
+    if (grouped == null) { self.kindMismatch(); }
+    final ExpressionFact inner = self.check(
+        grouped!.GetExpression(), scope, expected, true, depth + 1);
+    if (!inner.IsValid()) { return self.invalid(id, expression); }
+    return self.fact(
+        id, expression, inner.GetType(), inner.GetCategory(),
+        inner.GetSelectedValue(), inner.GetSelectedMember(),
+        inner.GetSelectedCallable(), inner.GetDispatch(),
+        inner.GetConversion(), inner.GetContextualLiteralType(),
+        inner.GetMetaOperation());
+  }
+
+  func applyContext(ExpressionFact fact, TypeId? expected,
+                    bool consumed): ExpressionFact throws StateError {
+    if (!fact.IsValid()) { return fact; }
+    if (consumed &&
+        (fact.GetCategory() == ExpressionCategory.kType ||
+         fact.GetCategory() == ExpressionCategory.kCallableSet ||
+         fact.GetCategory() == ExpressionCategory.kSuperReceiver)) {
+      self.output.AddDiagnostic(
+          SemanticDiagnosticKind.kValueExpressionExpected, fact.GetRange());
+      return self.replaceContext(self.invalid(
+          fact.GetExpression(),
+          self.syntax.GetExpression(fact.GetExpression())));
+    }
+    if (consumed && fact.GetType().GetIndex() == self.voidType().GetIndex()) {
+      self.output.AddDiagnostic(SemanticDiagnosticKind.kVoidValueConsumed,
+                                fact.GetRange());
+      return self.replaceContext(self.invalid(
+          fact.GetExpression(),
+          self.syntax.GetExpression(fact.GetExpression())));
+    }
+    if (expected == null ||
+        fact.GetCategory() == ExpressionCategory.kType ||
+        fact.GetCategory() == ExpressionCategory.kCallableSet ||
+        fact.GetCategory() == ExpressionCategory.kSuperReceiver) {
+      return fact;
+    }
+    final ExpressionSyntax syntax =
+        self.syntax.GetExpression(fact.GetExpression());
+    final LiteralExpressionSyntax? literal =
+        syntax as LiteralExpressionSyntax?;
+    if (literal != null &&
+        LiteralTyping.CanCommit(self.types, literal, expected)) {
+      return self.commitLiteral(
+          fact.GetExpression(), syntax, literal, expected);
+    }
+    final ConversionKind conversion = ConversionClassifier.Classify(
+        self.types, self.relations, fact.GetType(), expected);
+    if (conversion == ConversionKind.kInvalid) {
+      SemanticDiagnosticKind diagnostic =
+          SemanticDiagnosticKind.kExpressionTypeMismatch;
+      if (expected.GetIndex() == self.boolType().GetIndex()) {
+        diagnostic = SemanticDiagnosticKind.kConditionMustBeBool;
+      }
+      self.output.AddDiagnostic(diagnostic, fact.GetRange());
+      return self.replaceContext(self.invalid(
+          fact.GetExpression(),
+          self.syntax.GetExpression(fact.GetExpression())));
+    }
+    if (conversion == ConversionKind.kExact ||
+        fact.GetConversion() == ConversionKind.kContextualLiteral) {
+      return fact;
+    }
+    return self.replaceContext(ExpressionFact.Build(
+        fact.GetExpression(), fact.GetFile(), fact.GetOwner(), fact.GetType(),
+        fact.GetCategory(), fact.GetSelectedValue(),
+        fact.GetSelectedMember(), fact.GetSelectedCallable(),
+        fact.GetDispatch(), conversion, fact.GetContextualLiteralType(),
+        fact.GetMetaOperation(), fact.GetRange(), true));
+  }
+
+  func replaceContext(ExpressionFact fact): ExpressionFact
+      throws StateError {
+    if (self.output.HasFact(self.file.GetId(), fact.GetExpression())) {
+      self.output.ReplaceFact(fact);
+    }
+    return fact;
+  }
+
+  func checkArguments(
+      ExpressionIdSequence arguments, ScopeId scope, int32 depth,
+      TypeId?[] types,
+      LiteralExpressionSyntax?[] contextual): void throws StateError {
+    for (int32 index = 0; index < arguments.GetCount(); index++) {
+      final ExpressionId argument = arguments.Get(index);
+      final ExpressionFact fact =
+          self.check(argument, scope, null, true, depth + 1);
+      if (!fact.IsValid()) { continue; }
+      types[index] = fact.GetType();
+      final LiteralExpressionSyntax? literal =
+          self.syntax.GetExpression(argument) as LiteralExpressionSyntax?;
+      if (literal != null && LiteralTyping.IsContextualNumeric(literal)) {
+        contextual[index] = literal;
+      }
+    }
+  }
+
+  func checkArgumentsDiscard(ExpressionIdSequence arguments, ScopeId scope,
+                             int32 depth): void throws StateError {
+    for (int32 index = 0; index < arguments.GetCount(); index++) {
+      self.check(arguments.Get(index), scope, null, true, depth + 1);
+    }
+  }
+
+  func callCandidates(
+      ExpressionId calleeId, ExpressionSyntax calleeSyntax,
+      ExpressionFact callee, ScopeId scope): MemberLookupResult
+      throws StateError {
+    if (calleeSyntax.GetExpressionKind() == ExpressionKind.kIdentifier) {
+      final IdentifierExpressionSyntax? identifier =
+          calleeSyntax as IdentifierExpressionSyntax?;
+      if (identifier == null) { self.kindMismatch(); }
+      final SemanticName name =
+          SemanticName.FromSource(identifier!.GetName());
+      final MemberLookupResult statics = MemberLookup.Find(
+          self.semantic, self.relations, self.file.GetType(),
+          self.file.GetId(), name, true, false);
+      if (!self.hasSelf(scope, calleeSyntax.GetRange().GetBegin().GetOffset())) {
+        return statics;
+      }
+      final MemberLookupResult instances = MemberLookup.Find(
+          self.semantic, self.relations, self.file.GetType(),
+          self.file.GetId(), name, false, false);
+      return self.combine(statics, instances);
+    }
+    bool safe = calleeSyntax.GetExpressionKind() ==
+                ExpressionKind.kSafeMemberAccess;
+    if (!safe && calleeSyntax.GetExpressionKind() !=
+        ExpressionKind.kMemberAccess) {
+      return MemberLookupResult.Build(SymbolId?[:0]);
+    }
+    final AccessSyntax access = self.memberAccess(calleeSyntax, safe);
+    final ExpressionId receiverId = access.GetReceiver();
+    final SourceSpan nameSpan = access.GetName();
+    final ExpressionFact? receiver =
+        self.output.FindFact(self.file.GetId(), receiverId);
+    if (receiver == null) {
+      throw StateError("callable member receiver has no expression fact");
+    }
+    TypeId receiverType = receiver.GetType();
+    if (safe) {
+      final TypeId? element = self.types.Get(receiverType).GetElement();
+      if (element == null) { return MemberLookupResult.Build(SymbolId?[:0]); }
+      receiverType = element;
+    }
+    return MemberLookup.Find(
+        self.semantic, self.relations, receiverType, self.file.GetId(),
+        SemanticName.FromSource(nameSpan),
+        receiver.GetCategory() == ExpressionCategory.kType, false);
+  }
+
+  func isSuperCall(ExpressionSyntax callee): bool throws StateError {
+    if (callee.GetExpressionKind() != ExpressionKind.kMemberAccess) {
+      return false;
+    }
+    final MemberAccessExpressionSyntax? member =
+        callee as MemberAccessExpressionSyntax?;
+    if (member == null) { self.kindMismatch(); }
+    final ExpressionFact? receiver =
+        self.output.FindFact(self.file.GetId(), member!.GetObject());
+    return receiver != null &&
+           receiver.GetCategory() == ExpressionCategory.kSuperReceiver;
+  }
+
+  func combine(MemberLookupResult left,
+               MemberLookupResult right): MemberLookupResult
+      throws StateError {
+    final SymbolId?[] values =
+        SymbolId?[:left.GetCount() + right.GetCount()];
+    for (int32 index = 0; index < left.GetCount(); index++) {
+      values[index] = left.Get(index);
+    }
+    for (int32 index = 0; index < right.GetCount(); index++) {
+      values[left.GetCount() + index] = right.Get(index);
+    }
+    return MemberLookupResult.Build(values);
+  }
+
+  func memberAccess(ExpressionSyntax expression,
+                    bool safe): AccessSyntax throws StateError {
+    if (safe) {
+      final SafeMemberAccessExpressionSyntax? member =
+          expression as SafeMemberAccessExpressionSyntax?;
+      if (member == null) { self.kindMismatch(); }
+      return AccessSyntax(member!.GetObject(), member.GetMember());
+    }
+    final MemberAccessExpressionSyntax? member =
+        expression as MemberAccessExpressionSyntax?;
+    if (member == null) { self.kindMismatch(); }
+    return AccessSyntax(member!.GetObject(), member.GetMember());
+  }
+
+  func metaAccess(ExpressionSyntax expression,
+                  bool safe): AccessSyntax throws StateError {
+    if (safe) {
+      final SafeMetaAccessExpressionSyntax? meta =
+          expression as SafeMetaAccessExpressionSyntax?;
+      if (meta == null) { self.kindMismatch(); }
+      return AccessSyntax(meta!.GetObject(), meta.GetMeta());
+    }
+    final MetaAccessExpressionSyntax? meta =
+        expression as MetaAccessExpressionSyntax?;
+    if (meta == null) { self.kindMismatch(); }
+    return AccessSyntax(meta!.GetObject(), meta.GetMeta());
+  }
+
+  func findUnqualifiedField(SemanticName name, ScopeId scope,
+                            int32 sourceOffset): SemanticSymbol?
+      throws StateError {
+    final bool selfAvailable = self.hasSelf(scope, sourceOffset);
+    for (int32 index = 0; index < self.file.GetMemberCount(); index++) {
+      final SemanticSymbol member =
+          self.semantic.GetSymbol(self.file.GetMember(index));
+      if ((member.GetKind() == SymbolKind.kField ||
+           member.GetKind() == SymbolKind.kEnumCase) &&
+          member.GetName().Equals(name) &&
+          (member.IsStatic() || selfAvailable)) {
+        return member;
+      }
+    }
+    return null;
+  }
+
+  func hasUnqualifiedFunction(SemanticName name, ScopeId scope,
+                              int32 sourceOffset): bool throws StateError {
+    final bool selfAvailable = self.hasSelf(scope, sourceOffset);
+    for (int32 index = 0; index < self.file.GetMemberCount(); index++) {
+      final SemanticSymbol member =
+          self.semantic.GetSymbol(self.file.GetMember(index));
+      if (member.GetKind() == SymbolKind.kFunction &&
+          member.GetName().Equals(name) &&
+          (member.IsStatic() || selfAvailable)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  func findNamedType(SemanticName name): TypeId? throws StateError {
+    for (int32 index = 2; index <= 20; index++) {
+      if (name.EqualsString(CoreTypeCatalog.GetName(index))) {
+        return self.semantic.GetTypeAt(index).GetId();
+      }
+    }
+    if (name.EqualsString("int")) { return self.intType(); }
+    if (name.EqualsString("uint")) {
+      return self.semantic.GetTypeAt(13).GetId();
+    }
+    if (name.EqualsString("float")) {
+      return self.semantic.GetTypeAt(15).GetId();
+    }
+    final ImportScope? imports =
+        self.semantic.GetImportScope(self.file.GetId());
+    if (imports == null) { return null; }
+    final FileId? target = imports.FindFile(name);
+    if (target == null) { return null; }
+    return self.semantic.GetFile(target).GetType();
+  }
+
+  func constructorName(TypeId type): SemanticName throws StateError {
+    final FileId? file = self.types.Get(type).GetFile();
+    if (file == null) {
+      throw StateError("constructed semantic type has no file identity");
+    }
+    return SemanticName.FromString(
+        self.semantic.GetFile(file).GetIdentity().GetName());
+  }
+
+  func resolve(TypeSyntax syntax): TypeId?
+      throws StateError {
+    final TypeBinding? binding =
+        self.semantic.FindTypeBinding(self.file.GetId(), syntax);
+    if (binding == null || !binding.IsResolved()) { return null; }
+    return binding.GetType();
+  }
+
+  func commitLiteral(
+      ExpressionId id, ExpressionSyntax expression,
+      LiteralExpressionSyntax literal, TypeId target): ExpressionFact
+      throws StateError {
+    final ExpressionFact fact = self.fact(
+        id, expression, target, ExpressionCategory.kValue, null, null, null,
+        DispatchKind.kNone, ConversionKind.kContextualLiteral, target,
+        MetaOperationKind.kNone);
+    if (self.output.HasFact(self.file.GetId(), id)) {
+      self.output.ReplaceFact(fact);
+    }
+    return fact;
+  }
+
+  func dispatch(SemanticSymbol symbol, bool constructor,
+                TypeId receiver): DispatchKind throws StateError {
+    if (constructor) { return DispatchKind.kConstructor; }
+    if (symbol.IsStatic() ||
+        symbol.GetVisibility() == Visibility.kPrivate) {
+      return DispatchKind.kDirect;
+    }
+    if (self.types.Get(receiver).GetKind() == TypeKind.kInterface) {
+      return DispatchKind.kInterface;
+    }
+    return DispatchKind.kVirtual;
+  }
+
+  func applyExpected(ExpressionFact fact, TypeId target): bool
+      throws StateError {
+    return ConversionClassifier.Classify(
+        self.types, self.relations, fact.GetType(), target) !=
+        ConversionKind.kInvalid;
+  }
+
+  func compoundValid(TokenKind operation, TypeId type): bool
+      throws StateError {
+    final TypeKind kind = self.types.Get(type).GetKind();
+    if (operation == TokenKind.kPlusEqual && kind == TypeKind.kString) {
+      return true;
+    }
+    if (operation == TokenKind.kAmpersandEqual ||
+        operation == TokenKind.kPipeEqual ||
+        operation == TokenKind.kCaretEqual ||
+        operation == TokenKind.kShiftLeftEqual ||
+        operation == TokenKind.kShiftRightEqual) {
+      return ConversionClassifier.IsInteger(kind);
+    }
+    return ConversionClassifier.IsNumeric(kind);
+  }
+
+  func liftNullable(TypeId type): TypeId throws StateError {
+    final TypeKind kind = self.types.Get(type).GetKind();
+    if (kind == TypeKind.kNullable || kind == TypeKind.kVoid) { return type; }
+    return self.types.GetOrAddNullable(type);
+  }
+
+  func isReferenceLike(TypeId type): bool throws StateError {
+    final TypeKind kind = self.types.Get(type).GetKind();
+    return kind == TypeKind.kNullable ||
+           TypeRelationTable.IsReferenceKind(kind);
+  }
+
+  func isParseType(TypeKind kind): bool {
+    return kind == TypeKind.kBool || kind == TypeKind.kChar ||
+           ConversionClassifier.IsNumeric(kind);
+  }
+
+  func hasSelf(ScopeId scope, int32 offset): bool throws StateError {
+    return self.executable.FindValue(
+        scope, SemanticName.FromString("self"), offset) != null;
+  }
+
+  static func isEquality(TokenKind operation): bool {
+    return operation == TokenKind.kEqualEqual ||
+           operation == TokenKind.kBangEqual;
+  }
+
+  static func isComparison(TokenKind operation): bool {
+    return operation == TokenKind.kLess || operation == TokenKind.kLessEqual ||
+           operation == TokenKind.kGreater ||
+           operation == TokenKind.kGreaterEqual;
+  }
+
+  static func isArithmetic(TokenKind operation): bool {
+    return operation == TokenKind.kPlus || operation == TokenKind.kMinus ||
+           operation == TokenKind.kStar || operation == TokenKind.kSlash ||
+           operation == TokenKind.kPercent;
+  }
+
+  static func isBitwise(TokenKind operation): bool {
+    return operation == TokenKind.kAmpersand || operation == TokenKind.kPipe ||
+           operation == TokenKind.kCaret;
+  }
+
+  static func isShift(TokenKind operation): bool {
+    return operation == TokenKind.kShiftLeft ||
+           operation == TokenKind.kShiftRight;
+  }
+
+  func fact(
+      ExpressionId id, ExpressionSyntax expression, TypeId type,
+      ExpressionCategory category, ValueId? value, SymbolId? member,
+      MemberIdentity? callable, DispatchKind dispatch,
+      ConversionKind conversion, TypeId? contextual,
+      MetaOperationKind meta): ExpressionFact throws StateError {
+    return ExpressionFact.Build(
+        id, self.file.GetId(), self.owner, type, category, value, member,
+        callable, dispatch, conversion, contextual, meta,
+        expression.GetRange(), true);
+  }
+
+  func valueFact(ExpressionId id, ExpressionSyntax expression,
+                 TypeId type): ExpressionFact throws StateError {
+    return self.fact(id, expression, type, ExpressionCategory.kValue, null,
+                     null, null, DispatchKind.kNone, ConversionKind.kExact,
+                     null, MetaOperationKind.kNone);
+  }
+
+  func invalid(ExpressionId id,
+               ExpressionSyntax expression): ExpressionFact
+      throws StateError {
+    return ExpressionFact.Build(
+        id, self.file.GetId(), self.owner, self.errorType(),
+        ExpressionCategory.kInvalid, null, null, null, DispatchKind.kNone,
+        ConversionKind.kInvalid, null, MetaOperationKind.kNone,
+        expression.GetRange(), false);
+  }
+
+  func diagnostic(SemanticDiagnosticKind kind,
+                  ExpressionSyntax expression): void throws StateError {
+    self.output.AddDiagnostic(kind, expression.GetRange());
+  }
+
+  func errorType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(0).GetId();
+  }
+  func bottomType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(1).GetId();
+  }
+  func voidType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(2).GetId();
+  }
+  func boolType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(4).GetId();
+  }
+  func charType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(5).GetId();
+  }
+  func intType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(9).GetId();
+  }
+  func stringType(): TypeId throws StateError {
+    return self.semantic.GetTypeAt(17).GetId();
+  }
+
+  func kindMismatch(): void throws StateError {
+    throw StateError("expression kind has the wrong runtime type");
+  }
+}

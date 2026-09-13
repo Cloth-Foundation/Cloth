@@ -1,0 +1,9 @@
+int32 value;
+
+Worker(int32 input) {
+  value = input;
+}
+
+func Double(): int32 {
+  return value + value;
+}

@@ -1,0 +1,68 @@
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.expression::ExpressionFact;
+import semantic.model::FileId;
+
+class {
+  final FileId file;
+  final SyntaxStorage syntax;
+  final ExpressionFact?[] facts;
+
+  _ExpressionFileFacts(FileId file, SyntaxStorage syntax,
+                       ExpressionFact?[] facts) {
+    self.file = file;
+    self.syntax = syntax;
+    self.facts = facts;
+  }
+
+  static func Build(FileId file, SyntaxStorage syntax,
+                    ExpressionFact?[] input): ExpressionFileFacts
+      throws StateError {
+    if (!syntax.IsSealed() || input::length != syntax.GetNodeCount()) {
+      throw StateError("expression fact index has the wrong size");
+    }
+    final ExpressionFact?[] facts = ExpressionFact?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      final SyntaxNode node = syntax.GetNode(index);
+      final ExpressionFact? fact = input[index];
+      if (node is ExpressionSyntax) {
+        if (fact == null || fact.GetExpression().GetOrdinal() != index ||
+            !syntax.OwnsExpression(fact.GetExpression())) {
+          throw StateError("expression syntax has no matching fact");
+        }
+      } else {
+        if (fact != null) {
+          throw StateError("non-expression syntax owns an expression fact");
+        }
+      }
+      facts[index] = fact;
+    }
+    return ExpressionFileFacts(file, syntax, facts);
+  }
+
+  func GetFile(): FileId { return self.file; }
+
+  func GetCount(): int32 {
+    int32 count = 0;
+    for (int32 index = 0; index < self.facts::length; index++) {
+      if (self.facts[index] != null) { count++; }
+    }
+    return count;
+  }
+
+  func GetAt(int32 ordinal): ExpressionFact? throws StateError {
+    if (ordinal < 0 || ordinal >= self.facts::length) {
+      throw StateError("expression fact ordinal is out of bounds");
+    }
+    return self.facts[ordinal];
+  }
+
+  func Find(ExpressionId expression): ExpressionFact? throws StateError {
+    if (!self.syntax.OwnsExpression(expression)) {
+      throw StateError("expression fact lookup uses foreign syntax");
+    }
+    return self.facts[expression.GetOrdinal()];
+  }
+}

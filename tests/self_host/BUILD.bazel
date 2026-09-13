@@ -59,6 +59,11 @@ cross_compiler_parity_test(
     ],
     definition_oracle = "@cloth_oracles//:definition",
     definition_records = "//tests/self_host/tools/definition_records",
+    expression_compiler = "//src:clothc",
+    expression_corpus = [
+        "testdata/executable/Expressions.co",
+        "testdata/executable/ExpressionsInvalid.co",
+    ],
     jobs = 8,
     lexer_inputs = [
         "//src:sources",

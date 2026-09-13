@@ -1,0 +1,24 @@
+import semantic.value::ExecutableOwner;
+import semantic.value::ScopeId;
+
+class {
+  final ScopeId entry;
+  final ScopeId continuation;
+
+  _StatementScopes(ScopeId entry, ScopeId continuation) {
+    self.entry = entry;
+    self.continuation = continuation;
+  }
+
+  static func Build(ExecutableOwner owner, ScopeId entry,
+                    ScopeId continuation): StatementScopes
+      throws StateError {
+    if (!entry.BelongsTo(owner) || !continuation.BelongsTo(owner)) {
+      throw StateError("statement scope binding has a foreign scope");
+    }
+    return StatementScopes(entry, continuation);
+  }
+
+  func GetEntry(): ScopeId { return self.entry; }
+  func GetContinuation(): ScopeId { return self.continuation; }
+}

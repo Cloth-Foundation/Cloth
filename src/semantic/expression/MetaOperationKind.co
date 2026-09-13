@@ -1,0 +1,11 @@
+enum {
+  kNone,
+  kLength,
+  kByteLength,
+  kIsEmpty,
+  kTypeName,
+  kParse,
+  kSlice,
+  kWrap,
+  kSat,
+}

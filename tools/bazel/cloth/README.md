@@ -75,13 +75,15 @@ The public suites are:
 
 ```sh
 bazel test //tests:presubmit
+bazel test //tests:stage
 bazel test //tests:full
 ```
 
-`presubmit` runs deterministic unit and bounded integration tests. `full` adds
-exhaustive C++ parity, focused parity records, GC, depth/resource checks, every
-expected-failure diagnostic, and the isolated Shuttle compatibility audit for
-x86-64 and wasm32. Useful focused commands include:
+`presubmit` runs deterministic unit and bounded integration tests. `stage` adds
+self-hosted GC, depth/resource, record, and expected-failure diagnostics.
+`full` adds exhaustive C++ frontend-record parity, focused C++/Cloth expression
+acceptance parity, and the isolated Shuttle compatibility audit for x86-64 and
+wasm32. Useful focused commands include:
 
 ```sh
 bazel test //tests/smoke:assert_smoke_test

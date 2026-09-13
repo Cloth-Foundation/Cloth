@@ -1,0 +1,103 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import semantic.expression::ConversionKind;
+import semantic.expression::ExpressionCategory;
+import semantic.expression::MetaOperationKind;
+import semantic.identity::MemberIdentity;
+import semantic.invocation::DispatchKind;
+import semantic.model::FileId;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.value::ValueId;
+
+class {
+  final ExpressionId expression;
+  final FileId file;
+  final SymbolId owner;
+  final TypeId type;
+  final ExpressionCategory category;
+  final ValueId? selectedValue;
+  final SymbolId? selectedMember;
+  final MemberIdentity? selectedCallable;
+  final DispatchKind dispatch;
+  final ConversionKind conversion;
+  final TypeId? contextualLiteralType;
+  final MetaOperationKind metaOperation;
+  final SourceRange range;
+  final bool valid;
+
+  _ExpressionFact(
+      ExpressionId expression, FileId file, SymbolId owner, TypeId type,
+      ExpressionCategory category, ValueId? selectedValue,
+      SymbolId? selectedMember, MemberIdentity? selectedCallable,
+      DispatchKind dispatch, ConversionKind conversion,
+      TypeId? contextualLiteralType, MetaOperationKind metaOperation,
+      SourceRange range, bool valid) {
+    self.expression = expression;
+    self.file = file;
+    self.owner = owner;
+    self.type = type;
+    self.category = category;
+    self.selectedValue = selectedValue;
+    self.selectedMember = selectedMember;
+    self.selectedCallable = selectedCallable;
+    self.dispatch = dispatch;
+    self.conversion = conversion;
+    self.contextualLiteralType = contextualLiteralType;
+    self.metaOperation = metaOperation;
+    self.range = range;
+    self.valid = valid;
+  }
+
+  static func Build(
+      ExpressionId expression, FileId file, SymbolId owner, TypeId type,
+      ExpressionCategory category, ValueId? selectedValue,
+      SymbolId? selectedMember, MemberIdentity? selectedCallable,
+      DispatchKind dispatch, ConversionKind conversion,
+      TypeId? contextualLiteralType, MetaOperationKind metaOperation,
+      SourceRange range,
+      bool valid): ExpressionFact throws StateError {
+    if (valid == (category == ExpressionCategory.kInvalid)) {
+      throw StateError("expression fact validity and category disagree");
+    }
+    if (!valid && (selectedValue != null || selectedMember != null ||
+                   selectedCallable != null ||
+                   dispatch != DispatchKind.kNone)) {
+      throw StateError("invalid expression fact selects a semantic target");
+    }
+    if (selectedCallable != null && selectedMember == null) {
+      throw StateError("selected callable has no member symbol");
+    }
+    if (dispatch != DispatchKind.kNone &&
+        dispatch != DispatchKind.kIntrinsic && selectedCallable == null) {
+      throw StateError("expression dispatch has no selected callable");
+    }
+    if (contextualLiteralType != null &&
+        conversion != ConversionKind.kContextualLiteral) {
+      throw StateError("contextual literal fact has the wrong conversion");
+    }
+    return ExpressionFact(
+        expression, file, owner, type, category, selectedValue,
+        selectedMember, selectedCallable, dispatch, conversion,
+        contextualLiteralType, metaOperation, range, valid);
+  }
+
+  func GetExpression(): ExpressionId { return self.expression; }
+  func GetFile(): FileId { return self.file; }
+  func GetOwner(): SymbolId { return self.owner; }
+  func GetType(): TypeId { return self.type; }
+  func GetCategory(): ExpressionCategory { return self.category; }
+  func GetSelectedValue(): ValueId? { return self.selectedValue; }
+  func GetSelectedMember(): SymbolId? { return self.selectedMember; }
+  func GetSelectedCallable(): MemberIdentity? {
+    return self.selectedCallable;
+  }
+  func GetDispatch(): DispatchKind { return self.dispatch; }
+  func GetConversion(): ConversionKind { return self.conversion; }
+  func GetContextualLiteralType(): TypeId? {
+    return self.contextualLiteralType;
+  }
+  func GetMetaOperation(): MetaOperationKind { return self.metaOperation; }
+  func GetRange(): SourceRange { return self.range; }
+  func IsValid(): bool { return self.valid; }
+}

@@ -1,0 +1,5 @@
+static func Run(int32 value) {
+  int32 value = 1;
+  int32 repeated = 2;
+  int32 repeated = 3;
+}

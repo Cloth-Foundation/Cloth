@@ -1,0 +1,20 @@
+import semantic.package::SemanticLimits;
+
+class {
+  static func ValidateCounts(int32 valueCount,
+                             int32 scopeCount): void throws StateError {
+    if (valueCount < 0 || valueCount > SemanticLimits.MaxValues()) {
+      throw StateError("executable value limit exceeded");
+    }
+    if (scopeCount < 0 ||
+        scopeCount > SemanticLimits.MaxExecutableScopes()) {
+      throw StateError("executable scope limit exceeded");
+    }
+  }
+
+  static func ValidateDepth(int32 depth): void throws StateError {
+    if (depth < 0 || depth > SemanticLimits.MaxStructuralDepth()) {
+      throw StateError("executable scope nesting limit exceeded");
+    }
+  }
+}

@@ -1,0 +1,24 @@
+int32 Count;
+
+Scopes(int32 initial) {
+  int32 value = initial;
+  {
+    int32 value = 1;
+    final int32 fixed = 2;
+  }
+  for (int32 index = 0; index < 1; index++) {
+    int32 copiedIndex = index;
+  }
+  int32[] items = int32[:1];
+  for (var item in items) {
+    int32 copiedItem = item;
+  }
+}
+
+static func Static(int32 argument) {
+  var inferred = argument;
+}
+
+func Instance(final int32 argument) {
+  int32 local = argument;
+}

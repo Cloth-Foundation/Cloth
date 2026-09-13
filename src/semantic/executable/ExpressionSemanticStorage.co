@@ -1,0 +1,158 @@
+import frontend.source::SourceRange;
+import frontend.syntax::ExpressionId;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.executable::ExpressionSemanticPreflight;
+import semantic.executable::ExpressionSemanticResult;
+import semantic.expression::ExpressionFact;
+import semantic.expression::ExpressionFileFactBuilder;
+import semantic.expression::ExpressionFileFacts;
+import semantic.expression::ExpressionTypeStorage;
+import semantic.invocation::ConstructorInvocationFact;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SymbolKind;
+import semantic.model::TypeId;
+import semantic.package::SemanticLimits;
+import semantic.value::ValueId;
+
+class {
+  final ExecutableSemanticResult executable;
+  final ExpressionTypeStorage types;
+  final ExpressionFileFactBuilder?[] files;
+  final TypeId?[] valueTypes;
+  final ConstructorInvocationFact?[] constructorInvocations;
+  final SemanticDiagnosticBuffer diagnostics;
+  final int32 factCapacity;
+  int32 factCount;
+
+  _ExpressionSemanticStorage(
+      ExecutableSemanticResult executable, ExpressionTypeStorage types,
+      int32 factCapacity, SemanticDiagnosticBuffer diagnostics) {
+    self.executable = executable;
+    self.types = types;
+    self.files = ExpressionFileFactBuilder?[
+        :executable.GetSemantic().GetFileCount()];
+    self.valueTypes = TypeId?[:executable.GetValueCount()];
+    self.constructorInvocations = ConstructorInvocationFact?[
+        :executable.GetSemantic().GetSymbolCount()];
+    self.diagnostics = diagnostics;
+    self.factCapacity = factCapacity;
+    self.factCount = 0;
+  }
+
+  static func Create(
+      ExecutableSemanticResult executable,
+      ExpressionSemanticPreflight preflight): ExpressionSemanticStorage
+      throws StateError {
+    int32 diagnostics = preflight.GetFactCapacity();
+    if (diagnostics > SemanticLimits.MaxDiagnostics()) {
+      diagnostics = SemanticLimits.MaxDiagnostics();
+    }
+    final ExpressionSemanticStorage storage = ExpressionSemanticStorage(
+        executable,
+        ExpressionTypeStorage.Create(executable.GetSemantic(),
+                                     preflight.GetFactCapacity()),
+        preflight.GetFactCapacity(),
+        SemanticDiagnosticBuffer.Create(diagnostics));
+    storage.initialize();
+    return storage;
+  }
+
+  func GetExecutable(): ExecutableSemanticResult { return self.executable; }
+  func GetTypes(): ExpressionTypeStorage { return self.types; }
+
+  func AddFact(ExpressionFact fact): void throws StateError {
+    if (self.factCount >= self.factCapacity) {
+      throw StateError("expression fact storage capacity is exhausted");
+    }
+    self.getFile(fact.GetFile()).Add(fact);
+    self.factCount++;
+  }
+
+  func FindFact(FileId file,
+                ExpressionId expression): ExpressionFact?
+      throws StateError {
+    return self.getFile(file).Get(expression);
+  }
+
+  func HasFact(FileId file,
+               ExpressionId expression): bool
+      throws StateError {
+    return self.getFile(file).Has(expression);
+  }
+
+  func ReplaceFact(ExpressionFact fact): void throws StateError {
+    self.getFile(fact.GetFile()).Replace(fact);
+  }
+
+  func SetValueType(ValueId value, TypeId type): void throws StateError {
+    self.executable.GetValue(value);
+    self.types.Get(type);
+    self.valueTypes[value.GetIndex()] = type;
+  }
+
+  func GetValueType(ValueId value): TypeId throws StateError {
+    self.executable.GetValue(value);
+    final TypeId? result = self.valueTypes[value.GetIndex()];
+    if (result == null) {
+      throw StateError("resolved value type is not initialized");
+    }
+    return result;
+  }
+
+  func SetConstructorInvocation(
+      ConstructorInvocationFact fact): void throws StateError {
+    final var owner = self.executable.GetSemantic().GetSymbol(fact.GetOwner());
+    if (owner.GetKind() != SymbolKind.kConstructor ||
+        self.constructorInvocations[fact.GetOwner().GetIndex()] != null) {
+      throw StateError("base constructor fact is foreign or duplicated");
+    }
+    self.types.Get(fact.GetBaseType());
+    self.constructorInvocations[fact.GetOwner().GetIndex()] = fact;
+  }
+
+  func AddDiagnostic(SemanticDiagnosticKind kind, SourceRange range): void
+      throws StateError {
+    self.diagnostics.Add(kind, range, null);
+  }
+
+  func Publish(): ExpressionSemanticResult throws StateError {
+    final ExpressionFileFacts?[] published =
+        ExpressionFileFacts?[:self.files::length];
+    for (int32 index = 0; index < self.files::length; index++) {
+      final ExpressionFileFactBuilder? file = self.files[index];
+      if (file != null) { published[index] = file.Publish(); }
+    }
+    return ExpressionSemanticResult.Build(
+        self.executable, self.types.Publish(), published, self.valueTypes,
+        self.constructorInvocations, self.diagnostics.Publish(),
+        self.factCount);
+  }
+
+  func initialize(): void throws StateError {
+    for (int32 index = 0; index < self.executable.GetValueCount(); index++) {
+      self.valueTypes[index] = self.executable.GetValueAt(index).GetType();
+    }
+    for (int32 index = 0;
+         index < self.executable.GetSemantic().GetFileCount(); index++) {
+      final SemanticFile file = self.executable.GetSemantic().GetFileAt(index);
+      if (file.GetFrontend() == null) { continue; }
+      final SyntaxStorage syntax =
+          file.GetFrontend()!.GetDefinition()!.GetTree().GetFile().GetStorage();
+      self.files[index] =
+          ExpressionFileFactBuilder.Create(file.GetId(), syntax);
+    }
+  }
+
+  func getFile(FileId file): ExpressionFileFactBuilder throws StateError {
+    self.executable.GetSemantic().GetFile(file);
+    final ExpressionFileFactBuilder? result = self.files[file.GetIndex()];
+    if (result == null) {
+      throw StateError("dependency file has no expression fact storage");
+    }
+    return result;
+  }
+}

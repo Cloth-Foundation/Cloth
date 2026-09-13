@@ -1,0 +1,89 @@
+import semantic.expression::ExpressionTypeSequence;
+import semantic.identity::TypeIdentity;
+import semantic.model::SemanticOwner;
+import semantic.model::SemanticType;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+
+class {
+  final SemanticPackageResult semantic;
+  final SemanticOwner owner;
+  final SemanticType?[] additions;
+  int32 count;
+
+  _ExpressionTypeStorage(
+      SemanticPackageResult semantic, int32 capacity) {
+    self.semantic = semantic;
+    self.owner = semantic.GetOwner();
+    self.additions = SemanticType?[:capacity];
+    self.count = 0;
+  }
+
+  static func Create(
+      SemanticPackageResult semantic,
+      int32 capacity): ExpressionTypeStorage throws StateError {
+    if (capacity < 0 ||
+        capacity > SemanticLimits.MaxTypes() - semantic.GetTypeCount()) {
+      throw StateError("expression type extension capacity is invalid");
+    }
+    return ExpressionTypeStorage(semantic, capacity);
+  }
+
+  func Get(TypeId id): SemanticType throws StateError {
+    if (!id.BelongsTo(self.owner) ||
+        id.GetIndex() >= self.semantic.GetTypeCount() + self.count) {
+      throw StateError("expression type does not belong to storage");
+    }
+    if (id.GetIndex() < self.semantic.GetTypeCount()) {
+      return self.semantic.GetType(id);
+    }
+    return self.additions[id.GetIndex() - self.semantic.GetTypeCount()]!;
+  }
+
+  func Find(TypeIdentity identity): TypeId? throws StateError {
+    final TypeId? base = self.semantic.FindTypeIdentity(identity);
+    if (base != null) { return base; }
+    for (int32 index = 0; index < self.count; index++) {
+      final SemanticType type = self.additions[index]!;
+      if (type.GetIdentity().Equals(identity)) { return type.GetId(); }
+    }
+    return null;
+  }
+
+  func GetOrAddArray(TypeId element): TypeId throws StateError {
+    final SemanticType value = self.Get(element);
+    return getOrAdd(TypeKind.kArray, value.GetName() + "[]",
+                    TypeIdentity.Array(value.GetIdentity()), element);
+  }
+
+  func GetOrAddNullable(TypeId element): TypeId throws StateError {
+    final SemanticType value = self.Get(element);
+    return getOrAdd(TypeKind.kNullable, value.GetName() + "?",
+                    TypeIdentity.Nullable(value.GetIdentity()), element);
+  }
+
+  func Publish(): ExpressionTypeSequence throws StateError {
+    final SemanticType?[] values = SemanticType?[:self.count];
+    for (int32 index = 0; index < self.count; index++) {
+      values[index] = self.additions[index];
+    }
+    return ExpressionTypeSequence.Build(self.semantic, self.owner, values);
+  }
+
+  func getOrAdd(TypeKind kind, string name, TypeIdentity identity,
+                TypeId element): TypeId throws StateError {
+    final TypeId? existing = self.Find(identity);
+    if (existing != null) { return existing; }
+    if (self.count >= self.additions::length) {
+      throw StateError("expression type extension capacity is exhausted");
+    }
+    final TypeId id = TypeId.Build(
+        self.owner, self.semantic.GetTypeCount() + self.count);
+    self.additions[self.count] = SemanticType.Build(
+        self.owner, id, kind, name, identity, null, element);
+    self.count++;
+    return id;
+  }
+}

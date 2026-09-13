@@ -1,0 +1,242 @@
+import frontend.source::SourceSpan;
+import frontend.syntax.expression::LiteralExpressionSyntax;
+import frontend.syntax.expression::LiteralKind;
+import semantic.expression::ExpressionTypeStorage;
+import semantic.invocation::ConversionClassifier;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::SemanticPackageResult;
+
+class {
+  static func DefaultType(
+      SemanticPackageResult semantic,
+      LiteralExpressionSyntax literal): TypeId throws StateError {
+    final LiteralKind kind = literal.GetLiteralKind();
+    if (kind == LiteralKind.kInteger) {
+      return semantic.GetTypeAt(integerTypeIndex(literal.GetLexeme())).GetId();
+    }
+    if (kind == LiteralKind.kFloat) {
+      return semantic.GetTypeAt(floatTypeIndex(literal.GetLexeme())).GetId();
+    }
+    if (kind == LiteralKind.kString) {
+      return semantic.GetTypeAt(17).GetId();
+    }
+    if (kind == LiteralKind.kCharacter) {
+      return semantic.GetTypeAt(5).GetId();
+    }
+    if (kind == LiteralKind.kBoolean) {
+      return semantic.GetTypeAt(4).GetId();
+    }
+    if (kind == LiteralKind.kNull) {
+      return semantic.GetTypeAt(3).GetId();
+    }
+    return semantic.GetTypeAt(0).GetId();
+  }
+
+  static func CanCommit(
+      ExpressionTypeStorage types, LiteralExpressionSyntax literal,
+      TypeId target): bool throws StateError {
+    if (hasSuffix(literal.GetLexeme())) { return false; }
+    final TypeKind targetKind = types.Get(target).GetKind();
+    if (literal.GetLiteralKind() == LiteralKind.kInteger) {
+      if (!ConversionClassifier.IsInteger(targetKind)) {
+        return false;
+      }
+      final uint64? value = parseUnsigned(literal.GetLexeme());
+      if (value == null) { return false; }
+      return fits(value, targetKind);
+    }
+    return literal.GetLiteralKind() == LiteralKind.kFloat &&
+           (targetKind == TypeKind.kFloat32 ||
+            targetKind == TypeKind.kFloat64);
+  }
+
+  static func IsValidDefault(
+      SemanticPackageResult semantic,
+      LiteralExpressionSyntax literal): bool throws StateError {
+    if (literal.GetLiteralKind() != LiteralKind.kInteger) { return true; }
+    final uint64? value = parseUnsigned(literal.GetLexeme());
+    if (value == null) { return false; }
+    return fits(
+        value, semantic.GetType(
+            DefaultType(semantic, literal)).GetKind());
+  }
+
+  static func FindNegatedMinimumType(
+      SemanticPackageResult semantic, ExpressionTypeStorage types,
+      LiteralExpressionSyntax literal, TypeId? expected): TypeId?
+      throws StateError {
+    if (literal.GetLiteralKind() != LiteralKind.kInteger) { return null; }
+    TypeId target = DefaultType(semantic, literal);
+    if (!hasSuffix(literal.GetLexeme()) && expected != null) {
+      target = expected;
+    }
+    final TypeKind kind = types.Get(target).GetKind();
+    final uint64? value = parseUnsigned(literal.GetLexeme());
+    if (value == null || !isSigned(kind) ||
+        value != minimumMagnitude(kind)) {
+      return null;
+    }
+    return target;
+  }
+
+  static func IsForbiddenUnsignedNegation(
+      LiteralExpressionSyntax literal,
+      TypeKind kind): bool throws StateError {
+    if (literal.GetLiteralKind() != LiteralKind.kInteger ||
+        !isUnsigned(kind)) {
+      return false;
+    }
+    final uint64? value = parseUnsigned(literal.GetLexeme());
+    return value != null && value != 0u64;
+  }
+
+  static func IsContextualNumeric(
+      LiteralExpressionSyntax literal): bool throws StateError {
+    return !hasSuffix(literal.GetLexeme()) &&
+           (literal.GetLiteralKind() == LiteralKind.kInteger ||
+            literal.GetLiteralKind() == LiteralKind.kFloat);
+  }
+
+  static func integerTypeIndex(SourceSpan span): int32 throws StateError {
+    if (endsWith(span, "i8")) { return 7; }
+    if (endsWith(span, "i16")) { return 8; }
+    if (endsWith(span, "i32")) { return 9; }
+    if (endsWith(span, "i64")) { return 10; }
+    if (endsWith(span, "u8")) { return 11; }
+    if (endsWith(span, "u16")) { return 12; }
+    if (endsWith(span, "u32")) { return 13; }
+    if (endsWith(span, "u64")) { return 14; }
+    return 9;
+  }
+
+  static func floatTypeIndex(SourceSpan span): int32 throws StateError {
+    if (endsWith(span, "f32")) { return 15; }
+    return 16;
+  }
+
+  static func hasSuffix(SourceSpan span): bool throws StateError {
+    return endsWith(span, "i8") || endsWith(span, "i16") ||
+           endsWith(span, "i32") || endsWith(span, "i64") ||
+           endsWith(span, "u8") || endsWith(span, "u16") ||
+           endsWith(span, "u32") || endsWith(span, "u64") ||
+           endsWith(span, "f32") || endsWith(span, "f64");
+  }
+
+  static func endsWith(SourceSpan span, string text): bool throws StateError {
+    if (span.GetLength() < text::length) { return false; }
+    final int32 begin = span.GetLength() - text::length;
+    for (int32 index = 0; index < text::length; index++) {
+      if (span.GetByte(begin + index) != byte(asciiCode(text[index]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static func parseUnsigned(SourceSpan span): uint64? throws StateError {
+    final int32 end = span.GetLength() - suffixLength(span);
+    int32 base = 10;
+    int32 begin = 0;
+    if (end >= 2 && span.GetByte(0) == 48) {
+      final byte marker = span.GetByte(1);
+      if (marker == 120 || marker == 88) { base = 16; begin = 2; }
+      if (marker == 98 || marker == 66) { base = 2; begin = 2; }
+      if (marker == 111 || marker == 79) { base = 8; begin = 2; }
+    }
+    uint64 value = 0;
+    bool sawDigit = false;
+    uint64 threshold = 1844674407370955161u64;
+    int32 finalDigit = 5;
+    if (base == 16) {
+      threshold = 0x0FFFFFFFFFFFFFFFu64;
+      finalDigit = 15;
+    }
+    if (base == 8) {
+      threshold = 0x1FFFFFFFFFFFFFFFu64;
+      finalDigit = 7;
+    }
+    if (base == 2) {
+      threshold = 0x7FFFFFFFFFFFFFFFu64;
+      finalDigit = 1;
+    }
+    for (int32 index = begin; index < end; index++) {
+      final byte character = span.GetByte(index);
+      if (character == 95) { continue; }
+      final int32 digit = digitValue(character);
+      if (digit < 0 || digit >= base) { return null; }
+      if (value > threshold ||
+          (value == threshold && digit > finalDigit)) {
+        return null;
+      }
+      value = value * uint64(base) + uint64(digit);
+      sawDigit = true;
+    }
+    if (!sawDigit) { return null; }
+    return value;
+  }
+
+  static func fits(uint64 value, TypeKind kind): bool {
+    if (kind == TypeKind.kByte || kind == TypeKind.kUint8) {
+      return value <= 255u64;
+    }
+    if (kind == TypeKind.kUint16) { return value <= 65535u64; }
+    if (kind == TypeKind.kUint32) { return value <= 4294967295u64; }
+    if (kind == TypeKind.kUint64) { return true; }
+    if (kind == TypeKind.kInt8) { return value <= 127u64; }
+    if (kind == TypeKind.kInt16) { return value <= 32767u64; }
+    if (kind == TypeKind.kInt32) { return value <= 2147483647u64; }
+    return kind == TypeKind.kInt64 &&
+           value <= 9223372036854775807u64;
+  }
+
+  static func suffixLength(SourceSpan span): int32 throws StateError {
+    if (endsWith(span, "i8") || endsWith(span, "u8")) { return 2; }
+    if (endsWith(span, "i16") || endsWith(span, "i32") ||
+        endsWith(span, "i64") || endsWith(span, "u16") ||
+        endsWith(span, "u32") || endsWith(span, "u64") ||
+        endsWith(span, "f32") || endsWith(span, "f64")) {
+      return 3;
+    }
+    return 0;
+  }
+
+  static func isSigned(TypeKind kind): bool {
+    return kind == TypeKind.kInt8 || kind == TypeKind.kInt16 ||
+           kind == TypeKind.kInt32 || kind == TypeKind.kInt64;
+  }
+
+  static func isUnsigned(TypeKind kind): bool {
+    return kind == TypeKind.kByte || kind == TypeKind.kUint8 ||
+           kind == TypeKind.kUint16 || kind == TypeKind.kUint32 ||
+           kind == TypeKind.kUint64;
+  }
+
+  static func minimumMagnitude(TypeKind kind): uint64 {
+    if (kind == TypeKind.kInt8) { return 128u64; }
+    if (kind == TypeKind.kInt16) { return 32768u64; }
+    if (kind == TypeKind.kInt32) { return 2147483648u64; }
+    if (kind == TypeKind.kInt64) { return 9223372036854775808u64; }
+    return 0u64;
+  }
+
+  static func digitValue(byte value): int32 {
+    if (value >= 48 && value <= 57) { return int32(value - 48); }
+    if (value >= 65 && value <= 70) { return int32(value - 65 + 10); }
+    if (value >= 97 && value <= 102) { return int32(value - 97 + 10); }
+    return -1;
+  }
+
+  static func asciiCode(char value): int32 {
+    if (value == 'i') { return 105; }
+    if (value == 'u') { return 117; }
+    if (value == 'f') { return 102; }
+    if (value == '1') { return 49; }
+    if (value == '2') { return 50; }
+    if (value == '3') { return 51; }
+    if (value == '6') { return 54; }
+    if (value == '4') { return 52; }
+    if (value == '8') { return 56; }
+    return -1;
+  }
+}

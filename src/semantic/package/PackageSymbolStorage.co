@@ -183,6 +183,37 @@ class {
     return null;
   }
 
+  func FindTypeIdentity(TypeIdentity identity): TypeId?
+      throws StateError {
+    for (int32 index = 0; index < self.typeCount; index++) {
+      final SemanticType type = self.types[index]!;
+      if (type.GetIdentity().Equals(identity)) { return type.GetId(); }
+    }
+    return null;
+  }
+
+  func ResolveOrAddTypeIdentity(TypeIdentity identity,
+                                int32 depth): TypeId throws StateError {
+    if (depth > 256) {
+      throw StateError("dependency type identity exceeds structural depth");
+    }
+    final TypeId? existing = self.FindTypeIdentity(identity);
+    if (existing != null) { return existing; }
+    final TypeIdentity? elementIdentity = identity.GetElement();
+    if (elementIdentity == null) {
+      throw StateError("dependency signature names an unknown type");
+    }
+    final TypeId element =
+        self.ResolveOrAddTypeIdentity(elementIdentity, depth + 1);
+    if (identity.GetKind() == TypeKind.kArray) {
+      return self.GetOrAddArrayType(element);
+    }
+    if (identity.GetKind() == TypeKind.kNullable) {
+      return self.GetOrAddNullableType(element);
+    }
+    throw StateError("dependency signature has an invalid type identity");
+  }
+
   func FindNominalFile(NominalIdentity identity): FileRegistration?
       throws StateError {
     for (int32 index = 0; index < self.registrationCount; index++) {

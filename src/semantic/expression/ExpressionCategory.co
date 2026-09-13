@@ -1,0 +1,9 @@
+enum {
+  kInvalid,
+  kValue,
+  kMutableLocation,
+  kReadOnlyLocation,
+  kType,
+  kCallableSet,
+  kSuperReceiver,
+}

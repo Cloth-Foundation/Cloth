@@ -1,0 +1,48 @@
+import frontend.source::SourceRange;
+import semantic.model::FileId;
+import semantic.model::SymbolId;
+import semantic.value::ExecutableOwner;
+import semantic.value::ScopeId;
+import semantic.value::ScopeKind;
+
+class {
+  final ScopeId id;
+  final ScopeKind kind;
+  final ScopeId? parent;
+  final FileId file;
+  final SymbolId callable;
+  final SourceRange range;
+  final int32 depth;
+
+  _LexicalScope(ScopeId id, ScopeKind kind, ScopeId? parent, FileId file,
+                SymbolId callable, SourceRange range, int32 depth) {
+    self.id = id;
+    self.kind = kind;
+    self.parent = parent;
+    self.file = file;
+    self.callable = callable;
+    self.range = range;
+    self.depth = depth;
+  }
+
+  static func Build(
+      ExecutableOwner owner, ScopeId id, ScopeKind kind, ScopeId? parent,
+      FileId file, SymbolId callable, SourceRange range,
+      int32 depth): LexicalScope throws StateError {
+    if (!id.BelongsTo(owner) || depth < 0 ||
+        (parent == null) != (kind == ScopeKind.kCallable ||
+                             kind == ScopeKind.kInitializer) ||
+        (parent != null && !parent.BelongsTo(owner))) {
+      throw StateError("lexical scope record is inconsistent");
+    }
+    return LexicalScope(id, kind, parent, file, callable, range, depth);
+  }
+
+  func GetId(): ScopeId { return self.id; }
+  func GetKind(): ScopeKind { return self.kind; }
+  func GetParent(): ScopeId? { return self.parent; }
+  func GetFile(): FileId { return self.file; }
+  func GetCallable(): SymbolId { return self.callable; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetDepth(): int32 { return self.depth; }
+}

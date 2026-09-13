@@ -1,0 +1,339 @@
+import clothc.frontend.package::FrontendCoordinator;
+import clothc.frontend.package::PackageFrontendInput;
+import clothc.frontend.package::PackageIdentity;
+import clothc.frontend.package::PackageSource;
+import clothc.frontend.source::SourceFile;
+import clothc.frontend.syntax::ExpressionId;
+import clothc.frontend.syntax::StatementId;
+import clothc.frontend.syntax.declaration::FieldSyntax;
+import clothc.frontend.syntax.declaration::FunctionSyntax;
+import clothc.frontend.syntax.expression::CallExpressionSyntax;
+import clothc.frontend.syntax.expression::LiteralExpressionSyntax;
+import clothc.frontend.syntax.expression::MetaAccessExpressionSyntax;
+import clothc.frontend.syntax.statement::BlockNodeSyntax;
+import clothc.frontend.syntax.statement::LocalVariableStatementSyntax;
+import clothc.frontend.syntax.storage::SyntaxStorage;
+import clothc.frontend.syntax.tree::FileSyntax;
+import clothc.frontend.syntax.tree::FileTypeKind;
+import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.executable::ExecutableExpressionAnalyzer;
+import clothc.semantic.executable::ExpressionSemanticPreflight;
+import clothc.semantic.executable::ExpressionSemanticResult;
+import clothc.semantic.expression::ConversionKind;
+import clothc.semantic.expression::ExpressionCategory;
+import clothc.semantic.expression::ExpressionFact;
+import clothc.semantic.expression::MetaOperationKind;
+import clothc.semantic.identity::MemberIdentity;
+import clothc.semantic.identity::MemberKind;
+import clothc.semantic.identity::NominalIdentity;
+import clothc.semantic.identity::NominalKind;
+import clothc.semantic.identity::SemanticName;
+import clothc.semantic.identity::TypeIdentity;
+import clothc.semantic.invocation::DispatchKind;
+import clothc.semantic.invocation::ConstructorInvocationFact;
+import clothc.semantic.model::SemanticFile;
+import clothc.semantic.model::SemanticSymbol;
+import clothc.semantic.model::SymbolKind;
+import clothc.semantic.model::TypeKind;
+import clothc.semantic.package::PackageSymbolCollector;
+import clothc.semantic.package::DependencyMember;
+import clothc.semantic.package::DependencyType;
+import clothc.semantic.package::DependencyTypeView;
+import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticLimits;
+import clothc.semantic.package::SemanticPackageInput;
+import clothc.semantic.package::SemanticPackageResult;
+import clothc.semantic.value::ValueKind;
+import clothc.semantic.value::ValueSymbol;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    ExpressionSemanticPreflight.ValidateCounts(
+        SemanticLimits.MaxExpressionFacts(),
+        SemanticLimits.MaxInvocationArguments());
+    final SemanticPackageResult semantic = buildSemantic("Expressions.co");
+    final int32 expectedFacts =
+        ExpressionSemanticPreflight.Build(semantic).GetFactCapacity();
+    final ExpressionSemanticResult result =
+        ExecutableExpressionAnalyzer.Analyze(semantic);
+    if (result.GetDiagnostics().GetCount() != 0) {
+      return 2000 + result.GetDiagnostics().Get(0).GetRange()
+          .GetBegin().GetOffset();
+    }
+    if (!result.IsValid()) { return 1000; }
+    if (result.GetFactCount() != expectedFacts) { return 1200; }
+    if (expectedFacts < 30) { return 1300 + expectedFacts; }
+    final int32 shape = checkFacts(result);
+    if (shape != 0) { return shape; }
+    final int32 inferred = checkInferredArray(result);
+    if (inferred != 0) { return inferred; }
+    final ExpressionSemanticResult invalid =
+        ExecutableExpressionAnalyzer.Analyze(
+            buildSemantic("ExpressionsInvalid.co"));
+    if (invalid.IsValid() || invalid.GetDiagnostics().GetCount() < 9 ||
+        invalid.GetFactCount() == 0) {
+      return 1008;
+    }
+    final ExpressionSemanticResult again =
+        ExecutableExpressionAnalyzer.Analyze(buildSemantic("Expressions.co"));
+    if (again.GetFactCount() != result.GetFactCount() ||
+        again.GetTypes().GetCount() != result.GetTypes().GetCount()) {
+      return 1009;
+    }
+    final ExpressionSemanticResult dependency =
+        ExecutableExpressionAnalyzer.Analyze(buildDependencySemantic());
+    if (!dependency.IsValid() || dependency.GetDiagnostics().GetCount() != 0 ||
+        dependency.GetExecutable().GetSemantic().GetFileCount() != 4 ||
+        dependency.GetExecutable().GetSemantic().GetFileAt(1)
+            .GetMemberCount() != 1 ||
+        dependency.GetExecutable().GetSemantic().GetFileAt(2)
+            .GetMemberCount() != 1 ||
+        dependency.GetExecutable().GetSemantic().GetFileAt(3)
+            .GetMemberCount() != 3) {
+      return 1012;
+    }
+    final SemanticFile dependencyFile =
+        dependency.GetExecutable().GetSemantic().GetFileAt(0);
+    ConstructorInvocationFact? baseCall = null;
+    for (int32 index = 0;
+         index < dependencyFile.GetMemberCount(); index++) {
+      final SemanticSymbol member = dependency.GetExecutable().GetSemantic()
+          .GetSymbol(dependencyFile.GetMember(index));
+      if (member.GetKind() == SymbolKind.kConstructor) {
+        baseCall = dependency.FindConstructorInvocation(member.GetId());
+      }
+    }
+    if (baseCall == null || !baseCall.IsValid() ||
+        baseCall.GetArgumentCount() != 0) {
+      return 1013;
+    }
+    final int32 dispatchShape = checkDependencyFacts(dependency);
+    if (dispatchShape != 0) { return dispatchShape; }
+    final ExpressionSemanticResult package =
+        ExecutableExpressionAnalyzer.Analyze(buildPackageSemantic());
+    if (!package.IsValid() || package.GetDiagnostics().GetCount() != 0 ||
+        package.GetExecutable().GetSemantic().GetFileCount() != 2 ||
+        package.GetFactCount() < 8) {
+      return 1015;
+    }
+    return 0;
+  }
+
+  static func BuildValidResult(): ExpressionSemanticResult
+      throws IoError, StateError {
+    return ExecutableExpressionAnalyzer.Analyze(buildSemantic("Expressions.co"));
+  }
+
+  static func BuildDependencyResult(): ExpressionSemanticResult
+      throws IoError, StateError {
+    return ExecutableExpressionAnalyzer.Analyze(buildDependencySemantic());
+  }
+
+  static func BuildPackageResult(): ExpressionSemanticResult
+      throws IoError, StateError {
+    return ExecutableExpressionAnalyzer.Analyze(buildPackageSemantic());
+  }
+
+  static func checkFacts(ExpressionSemanticResult result): int32
+      throws StateError {
+    final SemanticFile file = result.GetExecutable().GetSemantic().GetFileAt(0);
+    final FileSyntax syntax =
+        file.GetFrontend()!.GetDefinition()!.GetTree().GetFile();
+    final FieldSyntax? field = syntax.GetDeclarations().Get(0) as FieldSyntax?;
+    final FunctionSyntax? main =
+        syntax.GetDeclarations().Get(4) as FunctionSyntax?;
+    if (field == null || main == null || field.GetInitializer() == null) {
+      return 1001;
+    }
+    final ExpressionId? initializer = field.GetInitializer();
+    if (initializer == null) { return 1002; }
+    final ExpressionFact? fieldFact =
+        result.FindFact(file.GetId(), initializer);
+    if (fieldFact == null || !fieldFact.IsValid() ||
+        fieldFact.GetType().GetIndex() != 10 ||
+        fieldFact.GetConversion() != ConversionKind.kContextualLiteral ||
+        fieldFact.GetContextualLiteralType() == null) {
+      return 1003;
+    }
+    final SyntaxStorage storage = syntax.GetStorage();
+    final BlockNodeSyntax? body =
+        storage.GetBlock(main.GetBody()) as BlockNodeSyntax?;
+    if (body == null || body.GetStatements().GetCount() != 9) { return 1004; }
+    final LocalVariableStatementSyntax? count = storage.GetStatement(
+        body.GetStatements().Get(5)) as LocalVariableStatementSyntax?;
+    if (count == null || count.GetInitializer() == null) { return 1005; }
+    final ExpressionId? countInitializer = count.GetInitializer();
+    if (countInitializer == null) { return 1006; }
+    final ExpressionFact? meta =
+        result.FindFact(file.GetId(), countInitializer);
+    if (meta == null || meta.GetMetaOperation() != MetaOperationKind.kLength ||
+        meta.GetCategory() != ExpressionCategory.kReadOnlyLocation ||
+        result.GetType(meta.GetType()).GetKind() != TypeKind.kInt32) {
+      return 1007;
+    }
+    return 0;
+  }
+
+  static func checkInferredArray(ExpressionSemanticResult result): int32
+      throws StateError {
+    bool found = false;
+    for (int32 index = 0;
+         index < result.GetExecutable().GetValueCount(); index++) {
+      final ValueSymbol value = result.GetExecutable().GetValueAt(index);
+      if (value.GetKind() == ValueKind.kLocal &&
+          value.GetName().EqualsString("values")) {
+        found = true;
+        if (result.GetType(result.GetValueType(value.GetId())).GetKind() !=
+            TypeKind.kArray) {
+          return 1010;
+        }
+      }
+    }
+    if (!found) { return 1011; }
+    return 0;
+  }
+
+  static func checkDependencyFacts(ExpressionSemanticResult result): int32
+      throws StateError {
+    final SemanticFile file = result.GetExecutable().GetSemantic().GetFileAt(0);
+    final int32 nodes = file.GetFrontend()!.GetDefinition()!.GetTree()
+        .GetFile().GetStorage().GetNodeCount();
+    bool direct = false;
+    bool interfaceDispatch = false;
+    bool constructor = false;
+    bool intrinsic = false;
+    bool wrapping = false;
+    bool saturating = false;
+    bool nullableLift = false;
+    for (int32 ordinal = 0; ordinal < nodes; ordinal++) {
+      final ExpressionFact? fact = result.GetFactAt(file.GetId(), ordinal);
+      if (fact == null || !fact.IsValid()) { continue; }
+      if (fact.GetDispatch() == DispatchKind.kDirect) { direct = true; }
+      if (fact.GetDispatch() == DispatchKind.kInterface) {
+        interfaceDispatch = true;
+      }
+      if (fact.GetDispatch() == DispatchKind.kConstructor) {
+        constructor = true;
+      }
+      if (fact.GetDispatch() == DispatchKind.kIntrinsic) { intrinsic = true; }
+      if (fact.GetConversion() == ConversionKind.kWrappingInteger) {
+        wrapping = true;
+      }
+      if (fact.GetConversion() == ConversionKind.kSaturatingInteger) {
+        saturating = true;
+      }
+      if (fact.GetConversion() == ConversionKind.kNullableLift) {
+        nullableLift = true;
+      }
+    }
+    if (!direct || !interfaceDispatch || !constructor || !intrinsic ||
+        !wrapping || !saturating || !nullableLift) {
+      return 1014;
+    }
+    return 0;
+  }
+
+  static func buildSemantic(string fileName): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = PackageSource.Build(
+        fileName, SourceFile.Load(
+            "tests/self_host/testdata/executable/" + fileName));
+    return PackageSymbolCollector.Collect(SemanticPackageInput.Build(
+        FrontendCoordinator.Check(PackageFrontendInput.Build(
+            PackageIdentity.Build("expression-test", "1.0.0"), sources)),
+        SemanticDependency?[:0]));
+  }
+
+  static func buildDependencySemantic(): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageIdentity dependencyIdentity =
+        PackageIdentity.Build("remote-lib", "2.0.0");
+    final NominalIdentity choice = NominalIdentity.Build(
+        dependencyIdentity, "api", "Choice", NominalKind.kEnum);
+    final NominalIdentity readable = NominalIdentity.Build(
+        dependencyIdentity, "api", "Readable", NominalKind.kInterface);
+    final NominalIdentity remote = NominalIdentity.Build(
+        dependencyIdentity, "api", "Remote", NominalKind.kClass);
+    final TypeIdentity choiceType =
+        TypeIdentity.Nominal(TypeKind.kEnum, choice);
+    final TypeIdentity readableType =
+        TypeIdentity.Nominal(TypeKind.kInterface, readable);
+    final TypeIdentity remoteType =
+        TypeIdentity.Nominal(TypeKind.kClass, remote);
+    final TypeIdentity intType = TypeIdentity.Core(TypeKind.kInt32, "int32");
+    final TypeIdentity longType = TypeIdentity.Core(TypeKind.kInt64, "int64");
+    final DependencyMember?[] choiceMembers = DependencyMember?[:1];
+    choiceMembers[0] = DependencyMember.Build(
+        MemberIdentity.Build(
+            choice, MemberKind.kEnumCase, SemanticName.FromString("One"),
+            TypeIdentity?[:0]),
+        choiceType, Visibility.kPublic, "api/Choice.co", 1, 1, true, true,
+        false, false, 0);
+    final DependencyMember?[] readableMembers = DependencyMember?[:1];
+    readableMembers[0] = DependencyMember.Build(
+        MemberIdentity.Build(
+            readable, MemberKind.kFunction, SemanticName.FromString("Read"),
+            TypeIdentity?[:0]),
+        intType, Visibility.kPublic, "api/Readable.co", 1, 1, false, false,
+        false, true, -1);
+    final TypeIdentity?[] makeParameters = TypeIdentity?[:1];
+    makeParameters[0] = intType;
+    final DependencyMember?[] remoteMembers = DependencyMember?[:3];
+    remoteMembers[0] = DependencyMember.Build(
+        MemberIdentity.Build(
+            remote, MemberKind.kFunction, SemanticName.FromString("Make"),
+            makeParameters),
+        longType, Visibility.kPublic, "api/Remote.co", 1, 1, false, true,
+        false, false, -1);
+    remoteMembers[1] = DependencyMember.Build(
+        MemberIdentity.Build(
+            remote, MemberKind.kFunction, SemanticName.FromString("Touch"),
+            TypeIdentity?[:0]),
+        intType, Visibility.kPublic, "api/Remote.co", 2, 1, false, false,
+        false, false, -1);
+    remoteMembers[2] = DependencyMember.Build(
+        MemberIdentity.Build(
+            remote, MemberKind.kConstructor,
+            SemanticName.FromString("Remote"), TypeIdentity?[:0]),
+        remoteType, Visibility.kPublic, "api/Remote.co", 3, 1, false, false,
+        false, false, -1);
+    final DependencyType?[] dependencyTypes = DependencyType?[:3];
+    dependencyTypes[0] = DependencyType.BuildDetailed(
+        choice, FileTypeKind.kEnum, Visibility.kPublic, "api/Choice.co", 1,
+        1, false, false, null, TypeIdentity?[:0], choiceMembers);
+    dependencyTypes[1] = DependencyType.BuildDetailed(
+        readable, FileTypeKind.kInterface, Visibility.kPublic,
+        "api/Readable.co", 1, 1, false, false, null,
+        TypeIdentity?[:0], readableMembers);
+    dependencyTypes[2] = DependencyType.BuildDetailed(
+        remote, FileTypeKind.kClass, Visibility.kPublic, "api/Remote.co", 1,
+        1, false, false, null, TypeIdentity?[:0], remoteMembers);
+    final SemanticDependency?[] dependencies = SemanticDependency?[:1];
+    dependencies[0] = SemanticDependency.Build(
+        "dep", DependencyTypeView.Build(dependencyIdentity, dependencyTypes));
+    final PackageSource?[] sources = PackageSource?[:1];
+    sources[0] = PackageSource.Build(
+        "DependencyExpressions.co", SourceFile.Load(
+            "tests/self_host/testdata/executable/DependencyExpressions.co"));
+    return PackageSymbolCollector.Collect(SemanticPackageInput.Build(
+        FrontendCoordinator.Check(PackageFrontendInput.Build(
+            PackageIdentity.Build("expression-test", "1.0.0"), sources)),
+        dependencies));
+  }
+
+  static func buildPackageSemantic(): SemanticPackageResult
+      throws IoError, StateError {
+    final PackageSource?[] sources = PackageSource?[:2];
+    sources[0] = PackageSource.Build(
+        "Main.co", SourceFile.Load(
+            "tests/self_host/testdata/executable/package/Main.co"));
+    sources[1] = PackageSource.Build(
+        "Worker.co", SourceFile.Load(
+            "tests/self_host/testdata/executable/package/Worker.co"));
+    return PackageSymbolCollector.Collect(SemanticPackageInput.Build(
+        FrontendCoordinator.Check(PackageFrontendInput.Build(
+            PackageIdentity.Build("expression-package", "1.0.0"), sources)),
+        SemanticDependency?[:0]));
+  }
+}

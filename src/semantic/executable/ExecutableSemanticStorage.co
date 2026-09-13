@@ -1,0 +1,191 @@
+import frontend.source::SourceRange;
+import frontend.syntax::BlockId;
+import frontend.syntax::StatementId;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.diagnostic::SemanticDiagnosticBuffer;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.executable::ExecutableFileScopeBuilder;
+import semantic.executable::ExecutableFileScopes;
+import semantic.executable::ExecutableSemanticPreflight;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.executable::ExecutableSemanticLimits;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+import semantic.value::ExecutableOwner;
+import semantic.value::LexicalScope;
+import semantic.value::ScopeId;
+import semantic.value::ScopeKind;
+import semantic.value::ValueId;
+import semantic.value::ValueKind;
+import semantic.value::ValueSymbol;
+
+class {
+  final SemanticPackageResult semantic;
+  final ExecutableOwner owner;
+  final ValueSymbol?[] values;
+  final LexicalScope?[] scopes;
+  final ScopeId?[] callableScopes;
+  final ExecutableFileScopeBuilder?[] fileBuilders;
+  final int32[] lastValueByScope;
+  final int32[] previousValueByValue;
+  final SemanticDiagnosticBuffer diagnostics;
+  int32 valueCount;
+  int32 scopeCount;
+
+  _ExecutableSemanticStorage(
+      SemanticPackageResult semantic, ExecutableOwner owner,
+      int32 valueCapacity, int32 scopeCapacity,
+      SemanticDiagnosticBuffer diagnostics) {
+    self.semantic = semantic;
+    self.owner = owner;
+    self.values = ValueSymbol?[:valueCapacity];
+    self.scopes = LexicalScope?[:scopeCapacity];
+    self.callableScopes = ScopeId?[:semantic.GetSymbolCount()];
+    self.fileBuilders =
+        ExecutableFileScopeBuilder?[:semantic.GetFileCount()];
+    self.lastValueByScope = int32[:scopeCapacity];
+    self.previousValueByValue = int32[:valueCapacity];
+    self.diagnostics = diagnostics;
+    self.valueCount = 0;
+    self.scopeCount = 0;
+  }
+
+  static func Create(
+      SemanticPackageResult semantic,
+      ExecutableSemanticPreflight preflight): ExecutableSemanticStorage
+      throws StateError {
+    int32 diagnosticCapacity = preflight.GetValueCapacity();
+    if (diagnosticCapacity > SemanticLimits.MaxDiagnostics()) {
+      diagnosticCapacity = SemanticLimits.MaxDiagnostics();
+    }
+    final ExecutableSemanticStorage storage = ExecutableSemanticStorage(
+        semantic, ExecutableOwner.Create(), preflight.GetValueCapacity(),
+        preflight.GetScopeCapacity(),
+        SemanticDiagnosticBuffer.Create(diagnosticCapacity));
+    storage.initializeFiles();
+    return storage;
+  }
+
+  func AddScope(ScopeKind kind, ScopeId? parent, FileId file,
+                SymbolId callable, SourceRange range,
+                int32 depth): ScopeId throws StateError {
+    if (self.scopeCount >= self.scopes::length) {
+      throw StateError("executable scope storage capacity is exhausted");
+    }
+    ExecutableSemanticLimits.ValidateDepth(depth);
+    final ScopeId id = ScopeId.Build(self.owner, self.scopeCount);
+    self.scopes[self.scopeCount] = LexicalScope.Build(
+        self.owner, id, kind, parent, file, callable, range, depth);
+    self.scopeCount++;
+    return id;
+  }
+
+  func AddValue(
+      ValueKind kind, SemanticName name, TypeId type, bool typeResolved,
+      FileId file, SymbolId callable, ScopeId scope, SourceRange range,
+      int32 visibleFrom, int32 declarationOrder, bool mutableValue,
+      bool valid): ValueId throws StateError {
+    if (self.valueCount >= self.values::length) {
+      throw StateError("executable value storage capacity is exhausted");
+    }
+    if (!scope.BelongsTo(self.owner) ||
+        scope.GetIndex() >= self.scopeCount) {
+      throw StateError("value symbol uses an invalid lexical scope");
+    }
+    SourceRange? previous = null;
+    int32 candidateIndex = self.lastValueByScope[scope.GetIndex()] - 1;
+    while (candidateIndex >= 0) {
+      final ValueSymbol candidate = self.values[candidateIndex]!;
+      if (candidate.GetName().Equals(name)) {
+        previous = candidate.GetRange();
+        break;
+      }
+      candidateIndex = self.previousValueByValue[candidateIndex] - 1;
+    }
+    if (previous != null) {
+      self.diagnostics.Add(
+          SemanticDiagnosticKind.kValueNameDeclaredMoreThanOnce,
+          range, previous);
+      valid = false;
+    }
+    final ValueId id = ValueId.Build(self.owner, self.valueCount);
+    self.values[self.valueCount] = ValueSymbol.Build(
+        self.owner, id, kind, name, type, typeResolved, file, callable,
+        scope, range, visibleFrom, declarationOrder, mutableValue, valid);
+    self.previousValueByValue[self.valueCount] =
+        self.lastValueByScope[scope.GetIndex()];
+    self.lastValueByScope[scope.GetIndex()] = self.valueCount + 1;
+    self.valueCount++;
+    return id;
+  }
+
+  func BindCallable(SymbolId callable, ScopeId scope): void
+      throws StateError {
+    self.semantic.GetSymbol(callable);
+    if (!scope.BelongsTo(self.owner) ||
+        self.callableScopes[callable.GetIndex()] != null) {
+      throw StateError("callable has an invalid or duplicate root scope");
+    }
+    self.callableScopes[callable.GetIndex()] = scope;
+  }
+
+  func BindBlock(FileId file, BlockId block,
+                 ScopeId scope): void throws StateError {
+    self.getFileBuilder(file).BindBlock(block, scope);
+  }
+
+  func BindStatement(FileId file, StatementId statement, ScopeId entry,
+                     ScopeId continuation): void throws StateError {
+    self.getFileBuilder(file).BindStatement(
+        statement, entry, continuation);
+  }
+
+  func Publish(): ExecutableSemanticResult throws StateError {
+    final ValueSymbol?[] publishedValues = ValueSymbol?[:self.valueCount];
+    final LexicalScope?[] publishedScopes = LexicalScope?[:self.scopeCount];
+    for (int32 index = 0; index < self.valueCount; index++) {
+      publishedValues[index] = self.values[index];
+    }
+    for (int32 index = 0; index < self.scopeCount; index++) {
+      publishedScopes[index] = self.scopes[index];
+    }
+    final ExecutableFileScopes?[] publishedFiles =
+        ExecutableFileScopes?[:self.fileBuilders::length];
+    for (int32 index = 0; index < self.fileBuilders::length; index++) {
+      final ExecutableFileScopeBuilder? builder = self.fileBuilders[index];
+      if (builder != null) {
+        publishedFiles[index] = builder.Publish(self.scopeCount);
+      }
+    }
+    return ExecutableSemanticResult.Build(
+        self.semantic, self.owner, publishedValues, publishedScopes,
+        self.callableScopes, publishedFiles, self.diagnostics.Publish());
+  }
+
+  func initializeFiles(): void throws StateError {
+    for (int32 index = 0; index < self.semantic.GetFileCount(); index++) {
+      final SemanticFile file = self.semantic.GetFileAt(index);
+      if (file.GetFrontend() == null) { continue; }
+      final SyntaxStorage syntax =
+          file.GetFrontend()!.GetDefinition()!.GetTree().GetFile().GetStorage();
+      self.fileBuilders[index] = ExecutableFileScopeBuilder.Create(
+          self.owner, file.GetId(), syntax);
+    }
+  }
+
+  func getFileBuilder(
+      FileId file): ExecutableFileScopeBuilder throws StateError {
+    self.semantic.GetFile(file);
+    final ExecutableFileScopeBuilder? builder =
+        self.fileBuilders[file.GetIndex()];
+    if (builder == null) {
+      throw StateError("dependency file has no executable scope builder");
+    }
+    return builder;
+  }
+}

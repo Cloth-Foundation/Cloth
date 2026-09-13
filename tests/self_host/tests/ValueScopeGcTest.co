@@ -1,0 +1,10 @@
+import self_host.checks.executable::ValueScopeGcCheck;
+
+import testing::Assert;
+import testing::TestFailure;
+
+class {
+  static func Run() throws IoError, StateError, TestFailure {
+    Assert.Equal(0, ValueScopeGcCheck.Run(), "value scope GC check status");
+  }
+}

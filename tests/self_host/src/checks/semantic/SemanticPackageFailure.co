@@ -4,17 +4,29 @@ import clothc.frontend.package::PackageFrontendResult;
 import clothc.frontend.package::PackageIdentity;
 import clothc.frontend.package::PackageSource;
 import clothc.frontend.source::SourceFile;
+import clothc.frontend.syntax.declaration::FieldSyntax;
 import clothc.frontend.syntax.tree::FileTypeKind;
 import clothc.frontend.syntax.tree::Visibility;
+import clothc.semantic.executable::ExpressionSemanticPreflight;
+import clothc.semantic.executable::ExpressionSemanticResult;
+import clothc.semantic.executable::ExecutableSemanticLimits;
+import clothc.semantic.executable::ExecutableSemanticResult;
+import clothc.semantic.expression::ExpressionTypeStorage;
 import clothc.semantic.identity::NominalIdentity;
 import clothc.semantic.identity::NominalKind;
+import clothc.semantic.identity::TypeIdentity;
+import clothc.semantic.model::TypeId;
+import clothc.semantic.model::TypeKind;
 import clothc.semantic.package::DependencyType;
 import clothc.semantic.package::DependencyTypeView;
 import clothc.semantic.package::SemanticDependency;
+import clothc.semantic.package::SemanticLimits;
 import clothc.semantic.package::SemanticPackageInput;
 import clothc.semantic.package::SemanticPackageResult;
 import clothc.semantic.resolution::TypeBinding;
 
+import checks.executable::ExpressionSemanticCheck;
+import checks.executable::ValueScopeCheck;
 import checks.semantic::SemanticPackageCheck;
 
 class {
@@ -51,6 +63,74 @@ class {
           SemanticPackageCheck.BuildLocalResult();
       left.FindTypeBinding(
           left.GetFileAt(0).GetId(), right.GetTypeBinding(0).GetSyntax());
+      return 0;
+    }
+    if (mode == "foreign-value") {
+      final ExecutableSemanticResult left =
+          ValueScopeCheck.BuildValidResult();
+      final ExecutableSemanticResult right =
+          ValueScopeCheck.BuildValidResult();
+      left.GetValue(right.GetValueAt(0).GetId());
+      return 0;
+    }
+    if (mode == "foreign-executable-scope") {
+      final ExecutableSemanticResult left =
+          ValueScopeCheck.BuildValidResult();
+      final ExecutableSemanticResult right =
+          ValueScopeCheck.BuildValidResult();
+      left.GetScope(right.GetScopeAt(0).GetId());
+      return 0;
+    }
+    if (mode == "foreign-expression") {
+      final ExpressionSemanticResult left =
+          ExpressionSemanticCheck.BuildValidResult();
+      final ExpressionSemanticResult right =
+          ExpressionSemanticCheck.BuildValidResult();
+      final FieldSyntax? field = right.GetExecutable().GetSemantic()
+          .GetFileAt(0).GetFrontend()!.GetDefinition()!.GetTree().GetFile()
+          .GetDeclarations().Get(0) as FieldSyntax?;
+      if (field == null || field.GetInitializer() == null) {
+        throw StateError("failure fixture has no field initializer");
+      }
+      left.FindFact(
+          left.GetExecutable().GetSemantic().GetFileAt(0).GetId(),
+          field.GetInitializer()!);
+      return 0;
+    }
+    if (mode == "expression-type-limit") {
+      final SemanticPackageResult semantic =
+          SemanticPackageCheck.BuildLocalResult();
+      final TypeId? intType = semantic.FindTypeIdentity(
+          TypeIdentity.Core(TypeKind.kInt32, "int32"));
+      if (intType == null) {
+        throw StateError("failure fixture has no int32 type");
+      }
+      final ExpressionTypeStorage types =
+          ExpressionTypeStorage.Create(semantic, 1);
+      types.GetOrAddArray(intType);
+      types.GetOrAddNullable(intType);
+      return 0;
+    }
+    if (mode == "expression-fact-limit") {
+      ExpressionSemanticPreflight.ValidateCounts(
+          SemanticLimits.MaxExpressionFacts() + 1, 0);
+      return 0;
+    }
+    if (mode == "invocation-argument-limit") {
+      ExpressionSemanticPreflight.ValidateCounts(
+          0, SemanticLimits.MaxInvocationArguments() + 1);
+      return 0;
+    }
+    if (mode == "executable-value-limit") {
+      ExecutableSemanticLimits.ValidateCounts(1048577, 0);
+      return 0;
+    }
+    if (mode == "executable-scope-limit") {
+      ExecutableSemanticLimits.ValidateCounts(0, 1048577);
+      return 0;
+    }
+    if (mode == "executable-depth-limit") {
+      ExecutableSemanticLimits.ValidateDepth(257);
       return 0;
     }
     if (mode == "dependency-limit") {

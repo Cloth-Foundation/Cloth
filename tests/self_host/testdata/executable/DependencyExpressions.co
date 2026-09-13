@@ -1,0 +1,52 @@
+import dep.api::Remote;
+import dep.api::Readable;
+import dep.api::Choice;
+
+class: Remote is Readable {
+  int32 Value = 1;
+
+  DependencyExpressions(): Remote() {}
+
+  override func Read(): int32 {
+    return super.Touch();
+  }
+
+  static func Raise(Error failure): void {
+    throw failure;
+  }
+
+  static func Main() {
+    int32 number = 2;
+    number++;
+    --number;
+    int32 arithmetic = (-number + 4) * 2;
+    int32 bits = (~number & 3) | (number << 1);
+    bool condition = !(number == 0) && number < 10;
+    int64 converted = int64(number);
+    int8 wrapped = int8::wrap(number);
+    int8 saturated = int8::sat(number);
+    int8 minimum = -128;
+    int8 typedMinimum = -128i8;
+    int32[] allocated = int32[:number];
+    object? arrayObject = allocated;
+    int32 grouped = (number);
+
+    DependencyExpressions? maybe = null;
+    int32? safeValue = maybe?.Value;
+    int32 present = (safeValue)!;
+    int32 viaSafeCall = maybe?.Read() ?? 0;
+    bool sameType = maybe is DependencyExpressions;
+    DependencyExpressions? restored = maybe as DependencyExpressions?;
+
+    string? maybeText = "cloth";
+    int32 safeLength = (maybeText?::length)!;
+    int32 parsed = int32::parse("3");
+
+    Choice choice = Choice.One;
+    Readable reader = DependencyExpressions();
+    int32 read = reader.Read();
+    int64 value = Remote.Make(1);
+    Remote remote = Remote();
+    println(value + converted);
+  }
+}

@@ -1,0 +1,22 @@
+import semantic.value::ExecutableOwner;
+
+struct {
+  final ExecutableOwner owner;
+  final int32 index;
+
+  _ValueId(ExecutableOwner owner, int32 index) {
+    self.owner = owner;
+    self.index = index;
+  }
+
+  static func Build(ExecutableOwner owner,
+                    int32 index): ValueId throws StateError {
+    if (index < 0) { throw StateError("value id is negative"); }
+    return ValueId(owner, index);
+  }
+
+  func BelongsTo(ExecutableOwner candidate): bool {
+    return self.owner == candidate;
+  }
+  func GetIndex(): int32 { return self.index; }
+}

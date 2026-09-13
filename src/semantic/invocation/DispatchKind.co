@@ -1,0 +1,8 @@
+enum {
+  kNone,
+  kDirect,
+  kVirtual,
+  kInterface,
+  kIntrinsic,
+  kConstructor,
+}

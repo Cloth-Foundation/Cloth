@@ -10,6 +10,8 @@ behavior and checkpoint scope.
 Main
   -> compiler driver
     -> semantic package orchestration
+      -> immutable expression facts and invocation decisions
+      -> executable value and lexical-scope results
       -> deterministic declaration registration and indexes
       -> immutable import scopes and declared type bindings
       -> result-owned handles and persistent identities
@@ -71,6 +73,10 @@ src/
     symbol/                  Canonically sorted nominal and member indexes
     resolution/              Import scopes, prelude lookup, and type binding
     diagnostic/              Structured registration diagnostics and messages
+    value/                   Result-owned local values and lexical scope records
+    expression/              Expression types, categories, and operator facts
+    invocation/              Conversions, member lookup, overloads, and dispatch
+    executable/              Bounded analysis coordination and publication
 tests/
   support/src/                Repository-private assertions and typed failure
   smoke/                      Focused Bazel rule and execution checks
@@ -179,6 +185,14 @@ file scopes, binds every declared type position, finalizes callable identities,
 and publishes canonical indexes. Import and type lookup use sorted indexes and
 bounded binary searches; invalid bindings remain explicit recovery records.
 
+Stage 51 adds `value/`, `expression/`, `invocation/`, and `executable/`.
+Result-owned values and lexical scopes feed exhaustive expression facts without
+mutating Stage 50. Expression checking owns categories, contextual literals,
+operators, arrays, null and meta operations. Invocation services own canonical
+conversions, member and constructor lookup, overload selection, and dispatch
+classification. Detached dependency declarations carry the verified hierarchy
+and member signatures required for lookup without reopening dependency source.
+
 Semantic construction consumes `frontend/package` results and already verified
 dependency declaration views. It cannot discover sources, decode untrusted
 artifacts, read manifests, or place semantic state in the driver. Dependencies
@@ -224,8 +238,10 @@ entries, and expose declared fixture data through Bazel runfiles.
 `tests/support` owns the private `testing` package, typed `TestFailure`, and
 assertion diagnostics. `tests/smoke` verifies successful assertions, enum value
 comparison, declared runfiles, generated entries, and the explicit failed-test
-path. Compiler subsystem checks are exposed under `tests/self_host`, while
-`//tests:presubmit` and `//tests:full` define the repository entry points.
+path. Compiler subsystem checks are exposed under `tests/self_host`.
+`//tests:presubmit` is the normal edit loop, `//tests:stage` is the self-hosted
+checkpoint gate, and `//tests:full` adds C++ parity and Shuttle for authority or
+release audits.
 
 ## Adding a component
 
@@ -276,3 +292,38 @@ authority for package symbols, canonical semantic type identity, import
 binding, and declared type-name resolution. The driver remains orchestration
 rather than semantic storage. Expression typing, HIR, and later boundaries
 remain with the frozen C++ bootstrap and differential oracle.
+
+Stage 51.1 defines the next production boundary: result-owned local values,
+lexical scopes, expression types and categories, member and constructor lookup,
+conversions, and invocation selection. Stage 51 results extend rather than
+mutate the immutable Stage 50 package. HIR, flow, effects, and lowering remain
+separate later boundaries. Normal development uses focused tests and
+`//tests:presubmit`; self-hosted checkpoints use `//tests:stage`; C++ parity and
+Shuttle package-scale work remain exclusive to `//tests:full` authority and
+release audits.
+
+Stage 51.2 implements the value and scope portion of that boundary. The
+executable collector consumes and retains an immutable Stage 50 result, then
+publishes independently owned value/scope handles and verified direct indexes
+for callables, blocks, and statements. Parameters share the callable body
+scope; nested blocks and loop headers receive child scopes. Explicit value
+types reuse Stage 50 bindings, while `var` remained unresolved at that
+checkpoint. Production code owns these records under
+`semantic/value` and `semantic/executable`; test adapters only inspect them.
+
+Stage 51.3 adds immutable expression facts and a verified type-extension view
+without mutating Stage 50. `semantic/expression` owns categories, contextual
+literal typing, operators, arrays, null behavior, and meta operations;
+`semantic/invocation` owns conversions, class/interface member lookup,
+overload selection, constructors, and dispatch classification. Dependency
+views carry detached member and hierarchy signatures, so lookup never opens
+dependency source. Every local expression receives one valid or recovery fact.
+
+Stage 51.4 routes production `check` requests through executable expression
+analysis and structured diagnostic rendering. Multi-file local packages,
+detached dependencies, malformed recovery, deterministic relocated and
+parallel runs, named limits, and retained-result GC are covered by the
+self-hosted gates. The full-only audit preserves focused C++ acceptance parity
+and Shuttle x86-64/wasm32 compatibility. The self-hosted compiler is now
+authoritative for executable value binding and expression typing; flow,
+effects, HIR, and lowering remain later boundaries.

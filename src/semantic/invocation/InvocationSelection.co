@@ -1,0 +1,50 @@
+import semantic.expression::ConversionKind;
+import semantic.model::SymbolId;
+
+class {
+  final SymbolId? callable;
+  final ConversionKind?[] conversions;
+  final bool ambiguous;
+
+  _InvocationSelection(SymbolId? callable,
+                       ConversionKind?[] conversions,
+                       bool ambiguous) {
+    self.callable = callable;
+    self.conversions = conversions;
+    self.ambiguous = ambiguous;
+  }
+
+  static func NoMatch(): InvocationSelection {
+    return InvocationSelection(null, ConversionKind?[:0], false);
+  }
+
+  static func Ambiguous(): InvocationSelection {
+    return InvocationSelection(null, ConversionKind?[:0], true);
+  }
+
+  static func Selected(
+      SymbolId callable,
+      ConversionKind?[] input): InvocationSelection throws StateError {
+    final ConversionKind?[] conversions =
+        ConversionKind?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null ||
+          input[index] == ConversionKind.kInvalid) {
+        throw StateError("selected invocation has an invalid conversion");
+      }
+      conversions[index] = input[index];
+    }
+    return InvocationSelection(callable, conversions, false);
+  }
+
+  func GetCallable(): SymbolId? { return self.callable; }
+  func IsAmbiguous(): bool { return self.ambiguous; }
+  func GetArgumentCount(): int32 { return self.conversions::length; }
+
+  func GetConversion(int32 index): ConversionKind throws StateError {
+    if (index < 0 || index >= self.conversions::length) {
+      throw StateError("invocation conversion index is out of bounds");
+    }
+    return self.conversions[index]!;
+  }
+}

@@ -1,0 +1,28 @@
+import clothc.semantic.executable::ExecutableSemanticResult;
+import clothc.semantic.identity::SemanticName;
+import clothc.semantic.value::ScopeId;
+
+import checks.executable::ValueScopeCheck;
+
+class {
+  static func Run(): int32 throws IoError, StateError {
+    for (int32 iteration = 0; iteration < 64; iteration++) {
+      final ExecutableSemanticResult result =
+          ValueScopeCheck.BuildValidResult();
+      final byte[] pressure = byte[:16384];
+      pressure[0] = byte(iteration);
+      final ScopeId? root = result.FindCallableScope(
+          result.GetSemantic().GetFileAt(0).GetMember(1));
+      if (!result.IsValid() || root == null ||
+          result.FindValue(root, SemanticName.FromString("initial"),
+                           result.GetSemantic().GetFileAt(0).GetFrontend()!
+                               .GetPackageSource().GetSource().GetLength()) ==
+              null ||
+          result.GetValueCount() != 15 || result.GetScopeCount() != 8 ||
+          pressure[0] != byte(iteration)) {
+        return 920;
+      }
+    }
+    return 0;
+  }
+}

@@ -1,0 +1,132 @@
+import semantic.expression::ConversionKind;
+import semantic.expression::ExpressionTypeStorage;
+import semantic.invocation::TypeRelationTable;
+import semantic.model::SemanticType;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+
+class {
+  static func Classify(
+      ExpressionTypeStorage types, TypeRelationTable relations,
+      TypeId source, TypeId target): ConversionKind throws StateError {
+    final SemanticType sourceType = types.Get(source);
+    final SemanticType targetType = types.Get(target);
+    if (sourceType.GetKind() == TypeKind.kError ||
+        targetType.GetKind() == TypeKind.kError) {
+      return ConversionKind.kExact;
+    }
+    if (source.GetIndex() == target.GetIndex()) {
+      return ConversionKind.kExact;
+    }
+    if (sourceType.GetKind() == TypeKind.kBottom) {
+      return ConversionKind.kReferenceWidening;
+    }
+    if (sourceType.GetKind() == TypeKind.kNull &&
+        targetType.GetKind() == TypeKind.kNullable) {
+      return ConversionKind.kNullLiteral;
+    }
+    if (isNumericWidening(sourceType.GetKind(), targetType.GetKind())) {
+      return ConversionKind.kNumericWidening;
+    }
+    if (targetType.GetKind() == TypeKind.kObject &&
+        (TypeRelationTable.IsReferenceKind(sourceType.GetKind()) ||
+         isBoxable(sourceType.GetKind()))) {
+      return ConversionKind.kReferenceWidening;
+    }
+    if (targetType.GetKind() == TypeKind.kNullable) {
+      final TypeId? targetElement = targetType.GetElement();
+      if (targetElement == null) {
+        throw StateError("nullable target type has no element");
+      }
+      final TypeId element = targetElement;
+      if (source.GetIndex() == element.GetIndex()) {
+        return ConversionKind.kNullableLift;
+      }
+      final SemanticType elementType = types.Get(element);
+      if (TypeRelationTable.IsReferenceKind(sourceType.GetKind()) &&
+          TypeRelationTable.IsReferenceKind(elementType.GetKind()) &&
+          isSubtype(types, relations, source, element)) {
+        return ConversionKind.kNullableLift;
+      }
+      if (sourceType.GetKind() == TypeKind.kNullable) {
+        final TypeId? nullableElement = sourceType.GetElement();
+        if (nullableElement == null) {
+          throw StateError("nullable source type has no element");
+        }
+        final TypeId sourceElement = nullableElement;
+        if (sourceElement.GetIndex() == element.GetIndex() ||
+            isSubtype(types, relations, sourceElement, element)) {
+          return ConversionKind.kReferenceWidening;
+        }
+      }
+    }
+    if (TypeRelationTable.IsReferenceKind(sourceType.GetKind()) &&
+        TypeRelationTable.IsReferenceKind(targetType.GetKind()) &&
+        isSubtype(types, relations, source, target)) {
+      return ConversionKind.kReferenceWidening;
+    }
+    return ConversionKind.kInvalid;
+  }
+
+  static func IsNumeric(TypeKind kind): bool {
+    return IsInteger(kind) || kind == TypeKind.kFloat32 ||
+           kind == TypeKind.kFloat64;
+  }
+
+  static func IsInteger(TypeKind kind): bool {
+    return kind == TypeKind.kByte || kind == TypeKind.kInt8 ||
+           kind == TypeKind.kInt16 || kind == TypeKind.kInt32 ||
+           kind == TypeKind.kInt64 || kind == TypeKind.kUint8 ||
+           kind == TypeKind.kUint16 || kind == TypeKind.kUint32 ||
+           kind == TypeKind.kUint64;
+  }
+
+  static func isNumericWidening(TypeKind source, TypeKind target): bool {
+    if (source == TypeKind.kFloat32 && target == TypeKind.kFloat64) {
+      return true;
+    }
+    if (!IsInteger(source) || !IsInteger(target)) { return false; }
+    final int32 sourceWidth = width(source);
+    final int32 targetWidth = width(target);
+    if (isSigned(source) == isSigned(target)) {
+      return sourceWidth < targetWidth;
+    }
+    return !isSigned(source) && isSigned(target) &&
+           sourceWidth < targetWidth;
+  }
+
+  static func isBoxable(TypeKind kind): bool {
+    return kind == TypeKind.kBool || kind == TypeKind.kChar ||
+           IsNumeric(kind) || kind == TypeKind.kEnum ||
+           kind == TypeKind.kStruct;
+  }
+
+  static func isSubtype(
+      ExpressionTypeStorage types, TypeRelationTable relations,
+      TypeId source, TypeId target): bool throws StateError {
+    if (source.GetIndex() == target.GetIndex()) { return true; }
+    final TypeKind sourceKind = types.Get(source).GetKind();
+    final TypeKind targetKind = types.Get(target).GetKind();
+    if (targetKind == TypeKind.kObject &&
+        TypeRelationTable.IsReferenceKind(sourceKind)) {
+      return true;
+    }
+    if (sourceKind == TypeKind.kArray || targetKind == TypeKind.kArray) {
+      return false;
+    }
+    return relations.IsSubtype(source, target);
+  }
+
+  static func isSigned(TypeKind kind): bool {
+    return kind == TypeKind.kInt8 || kind == TypeKind.kInt16 ||
+           kind == TypeKind.kInt32 || kind == TypeKind.kInt64;
+  }
+
+  static func width(TypeKind kind): int32 {
+    if (kind == TypeKind.kByte || kind == TypeKind.kInt8 ||
+        kind == TypeKind.kUint8) { return 8; }
+    if (kind == TypeKind.kInt16 || kind == TypeKind.kUint16) { return 16; }
+    if (kind == TypeKind.kInt32 || kind == TypeKind.kUint32) { return 32; }
+    return 64;
+  }
+}

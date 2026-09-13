@@ -26,6 +26,7 @@ import semantic.model::SymbolKind;
 import semantic.model::TypeId;
 import semantic.model::TypeKind;
 import semantic.package::DependencyType;
+import semantic.package::DependencyMember;
 import semantic.package::FileRegistration;
 import semantic.package::PackageSymbolStorage;
 import semantic.package::SemanticPackagePreflight;
@@ -45,7 +46,10 @@ class {
     for (int32 index = 0; index < storage.GetFileCount(); index++) {
       final FileRegistration registration = storage.GetRegistration(index);
       final FileFrontendResult? frontend = registration.GetFrontend();
-      if (frontend == null) { continue; }
+      if (frontend == null) {
+        registerDependencyMembers(storage, registration);
+        continue;
+      }
       final FileSyntax file = frontend.GetDefinition()!.GetTree().GetFile();
       int32 order = 0;
       final DeclarationSyntaxSequence declarations = file.GetDeclarations();
@@ -75,6 +79,32 @@ class {
         registration.AddMember(symbol);
         order++;
       }
+    }
+  }
+
+  static func registerDependencyMembers(
+      PackageSymbolStorage storage,
+      FileRegistration registration): void throws StateError {
+    final DependencyType? dependency = registration.GetDependency();
+    if (dependency == null) {
+      throw StateError("dependency registration has no signature view");
+    }
+    for (int32 order = 0;
+         order < dependency.GetMemberCount(); order++) {
+      final DependencyMember member = dependency.GetMember(order);
+      final MemberIdentity identity = member.GetIdentity();
+      for (int32 parameter = 0;
+           parameter < identity.GetParameterCount(); parameter++) {
+        storage.ResolveOrAddTypeIdentity(identity.GetParameter(parameter), 0);
+      }
+      final TypeId type =
+          storage.ResolveOrAddTypeIdentity(member.GetType(), 0);
+      final SymbolId symbol = storage.AddSymbol(
+          member.GetSymbolKind(), identity.GetName(), type, true,
+          registration.GetId(), member.GetRange(), member.GetVisibility(),
+          identity, order, true, member.IsFinal(), member.IsStatic(),
+          member.IsOverride(), member.IsAbstract(), member.GetEnumTag());
+      registration.AddMember(symbol);
     }
   }
 

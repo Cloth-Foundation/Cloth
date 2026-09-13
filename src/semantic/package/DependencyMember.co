@@ -1,0 +1,85 @@
+import frontend.source::SourceLocation;
+import frontend.source::SourceRange;
+import frontend.syntax.tree::Visibility;
+import semantic.identity::MemberIdentity;
+import semantic.identity::MemberKind;
+import semantic.identity::TypeIdentity;
+import semantic.model::SymbolKind;
+
+class {
+  final MemberIdentity identity;
+  final TypeIdentity type;
+  final Visibility visibility;
+  final string path;
+  final uint32 line;
+  final uint32 column;
+  final bool finalMember;
+  final bool staticMember;
+  final bool overrideMember;
+  final bool abstractMember;
+  final int32 enumTag;
+
+  _DependencyMember(
+      MemberIdentity identity, TypeIdentity type, Visibility visibility,
+      string path, uint32 line, uint32 column, bool finalMember,
+      bool staticMember, bool overrideMember, bool abstractMember,
+      int32 enumTag) {
+    self.identity = identity;
+    self.type = type;
+    self.visibility = visibility;
+    self.path = path;
+    self.line = line;
+    self.column = column;
+    self.finalMember = finalMember;
+    self.staticMember = staticMember;
+    self.overrideMember = overrideMember;
+    self.abstractMember = abstractMember;
+    self.enumTag = enumTag;
+  }
+
+  static func Build(
+      MemberIdentity identity, TypeIdentity type, Visibility visibility,
+      string path, uint32 line, uint32 column, bool finalMember,
+      bool staticMember, bool overrideMember, bool abstractMember,
+      int32 enumTag): DependencyMember throws StateError {
+    final MemberKind kind = identity.GetKind();
+    final bool enumCase = kind == MemberKind.kEnumCase;
+    final bool field = kind == MemberKind.kInstanceField ||
+                       kind == MemberKind.kStaticField;
+    if (path::isEmpty || line == 0 || column == 0 ||
+        enumCase != (enumTag >= 0) ||
+        (enumCase && (!finalMember || !staticMember ||
+                      visibility != Visibility.kPublic)) ||
+        (kind == MemberKind.kStaticField) != (field && staticMember) ||
+        (kind == MemberKind.kInstanceField && staticMember) ||
+        (kind == MemberKind.kConstructor &&
+         (staticMember || overrideMember || abstractMember))) {
+      throw StateError("dependency member signature is invalid");
+    }
+    return DependencyMember(
+        identity, type, visibility, path, line, column, finalMember,
+        staticMember, overrideMember, abstractMember, enumTag);
+  }
+
+  func GetIdentity(): MemberIdentity { return self.identity; }
+  func GetType(): TypeIdentity { return self.type; }
+  func GetVisibility(): Visibility { return self.visibility; }
+  func GetRange(): SourceRange {
+    final SourceLocation location =
+        SourceLocation(self.path, 0, self.line, self.column);
+    return SourceRange.PointRange(location);
+  }
+  func IsFinal(): bool { return self.finalMember; }
+  func IsStatic(): bool { return self.staticMember; }
+  func IsOverride(): bool { return self.overrideMember; }
+  func IsAbstract(): bool { return self.abstractMember; }
+  func GetEnumTag(): int32 { return self.enumTag; }
+
+  func GetSymbolKind(): SymbolKind {
+    final MemberKind kind = self.identity.GetKind();
+    if (kind == MemberKind.kConstructor) { return SymbolKind.kConstructor; }
+    if (kind == MemberKind.kFunction) { return SymbolKind.kFunction; }
+    if (kind == MemberKind.kEnumCase) { return SymbolKind.kEnumCase; }
+    return SymbolKind.kField;
+  }
+}

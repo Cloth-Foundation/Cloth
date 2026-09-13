@@ -4,13 +4,27 @@ import frontend.source::SourceRange;
 import semantic.diagnostic::SemanticDiagnostic;
 import semantic.diagnostic::SemanticDiagnosticSequence;
 import semantic.diagnostic::SemanticDiagnosticText;
+import semantic.executable::ExpressionSemanticResult;
 import semantic.package::SemanticPackageResult;
 
 class {
   static func Render(SemanticPackageResult result): string throws StateError {
-    string output = DiagnosticRenderer.Render(
-        result.GetInput().GetFrontend());
-    final SemanticDiagnosticSequence diagnostics = result.GetDiagnostics();
+    return renderDiagnostics(
+        DiagnosticRenderer.Render(result.GetInput().GetFrontend()),
+        result.GetDiagnostics());
+  }
+
+  static func RenderExpressions(ExpressionSemanticResult result): string
+      throws StateError {
+    return renderDiagnostics(
+        DiagnosticRenderer.Render(
+            result.GetExecutable().GetSemantic().GetInput().GetFrontend()),
+        result.GetDiagnostics());
+  }
+
+  static func renderDiagnostics(
+      string output, SemanticDiagnosticSequence diagnostics): string
+      throws StateError {
     for (int32 index = 0; index < diagnostics.GetCount(); index++) {
       final SemanticDiagnostic diagnostic = diagnostics.Get(index);
       output += DiagnosticRenderer.RenderLine(

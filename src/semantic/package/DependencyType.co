@@ -5,6 +5,11 @@ import frontend.syntax.tree::FileTypeKind;
 import frontend.syntax.tree::Visibility;
 import semantic.identity::NominalIdentity;
 import semantic.identity::NominalKind;
+import semantic.identity::MemberIdentity;
+import semantic.identity::TypeIdentity;
+import semantic.model::TypeKind;
+import semantic.package::DependencyMember;
+import semantic.package::SemanticLimits;
 
 class {
   final NominalIdentity identity;
@@ -15,11 +20,16 @@ class {
   final uint32 column;
   final bool abstractType;
   final bool sealedType;
+  final TypeIdentity? baseType;
+  final TypeIdentity?[] interfaces;
+  final DependencyMember?[] members;
 
   _DependencyType(NominalIdentity identity, FileTypeKind kind,
                   Visibility visibility,
                   string path, uint32 line, uint32 column, bool abstractType,
-                  bool sealedType) {
+                  bool sealedType, TypeIdentity? baseType,
+                  TypeIdentity?[] interfaces,
+                  DependencyMember?[] members) {
     self.identity = identity;
     self.kind = kind;
     self.visibility = visibility;
@@ -28,6 +38,9 @@ class {
     self.column = column;
     self.abstractType = abstractType;
     self.sealedType = sealedType;
+    self.baseType = baseType;
+    self.interfaces = interfaces;
+    self.members = members;
   }
 
   static func Build(
@@ -42,8 +55,20 @@ class {
         !kindMatches(kind, identity.GetKind())) {
       throw StateError("dependency type declaration is invalid");
     }
-    return DependencyType(identity, kind, visibility, path, line, column,
-                          abstractType, sealedType);
+    return build(identity, kind, visibility, path, line, column,
+                 abstractType, sealedType, null, TypeIdentity?[:0],
+                 DependencyMember?[:0]);
+  }
+
+  static func BuildDetailed(
+      NominalIdentity identity, FileTypeKind kind, Visibility visibility,
+      string path, uint32 line, uint32 column, bool abstractType,
+      bool sealedType, TypeIdentity? baseType,
+      TypeIdentity?[] interfaceInput,
+      DependencyMember?[] memberInput): DependencyType throws StateError {
+    return build(identity, kind, visibility, path, line, column,
+                 abstractType, sealedType, baseType, interfaceInput,
+                 memberInput);
   }
 
   func GetIdentity(): NominalIdentity { return self.identity; }
@@ -57,6 +82,85 @@ class {
   }
   func IsAbstract(): bool { return self.abstractType; }
   func IsSealed(): bool { return self.sealedType; }
+  func GetBaseType(): TypeIdentity? { return self.baseType; }
+  func GetInterfaceCount(): int32 { return self.interfaces::length; }
+  func GetMemberCount(): int32 { return self.members::length; }
+
+  func GetInterface(int32 index): TypeIdentity throws StateError {
+    if (index < 0 || index >= self.interfaces::length) {
+      throw StateError("dependency interface index is out of bounds");
+    }
+    return self.interfaces[index]!;
+  }
+
+  func GetMember(int32 index): DependencyMember throws StateError {
+    if (index < 0 || index >= self.members::length) {
+      throw StateError("dependency member index is out of bounds");
+    }
+    return self.members[index]!;
+  }
+
+  static func build(
+      NominalIdentity identity, FileTypeKind kind, Visibility visibility,
+      string path, uint32 line, uint32 column, bool abstractType,
+      bool sealedType, TypeIdentity? baseType,
+      TypeIdentity?[] interfaceInput,
+      DependencyMember?[] memberInput): DependencyType throws StateError {
+    PackagePath.Validate(path);
+    if (path::isEmpty || line == 0 || column == 0 ||
+        (abstractType && sealedType) ||
+        PackagePath.SourcePackage(path) != identity.GetSourcePackage() ||
+        PackagePath.FileName(path) != identity.GetName() ||
+        !kindMatches(kind, identity.GetKind())) {
+      throw StateError("dependency type declaration is invalid");
+    }
+    final TypeIdentity?[] interfaces =
+        TypeIdentity?[:interfaceInput::length];
+    if (interfaceInput::length > SemanticLimits.MaxDependencyTypes() ||
+        memberInput::length > SemanticLimits.MaxSymbols()) {
+      throw StateError("dependency signature view exceeds its limits");
+    }
+    if (baseType != null &&
+        baseType.GetKind() != TypeKind.kClass &&
+        baseType.GetKind() != TypeKind.kObject &&
+        baseType.GetKind() != TypeKind.kErrorClass) {
+      throw StateError("dependency base signature is not a class type");
+    }
+    for (int32 index = 0; index < interfaceInput::length; index++) {
+      final TypeIdentity? value = interfaceInput[index];
+      if (value == null || value.GetKind() != TypeKind.kInterface) {
+        throw StateError("dependency interface signature is invalid");
+      }
+      interfaces[index] = value;
+      if (index > 0) {
+        final TypeIdentity? previous = interfaces[index - 1];
+        if (previous == null ||
+            TypeIdentity.Compare(previous, value) >= 0) {
+          throw StateError("dependency interfaces are not canonical");
+        }
+      }
+    }
+    final DependencyMember?[] members =
+        DependencyMember?[:memberInput::length];
+    for (int32 index = 0; index < memberInput::length; index++) {
+      final DependencyMember? value = memberInput[index];
+      if (value == null ||
+          !value.GetIdentity().GetOwner().Equals(identity)) {
+        throw StateError("dependency member owner is inconsistent");
+      }
+      members[index] = value;
+      if (index > 0) {
+        final DependencyMember? previous = members[index - 1];
+        if (previous == null || MemberIdentity.Compare(
+                previous.GetIdentity(), value.GetIdentity()) >= 0) {
+          throw StateError("dependency members are not canonical");
+        }
+      }
+    }
+    return DependencyType(identity, kind, visibility, path, line, column,
+                          abstractType, sealedType, baseType, interfaces,
+                          members);
+  }
 
   static func kindMatches(FileTypeKind kind, NominalKind nominal): bool {
     if (kind == FileTypeKind.kClass || kind == FileTypeKind.kError) {

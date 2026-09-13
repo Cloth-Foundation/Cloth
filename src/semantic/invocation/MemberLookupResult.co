@@ -1,0 +1,32 @@
+import semantic.model::SymbolId;
+
+class {
+  final SymbolId?[] symbols;
+
+  _MemberLookupResult(SymbolId?[] symbols) { self.symbols = symbols; }
+
+  static func Build(SymbolId?[] input): MemberLookupResult
+      throws StateError {
+    final SymbolId?[] symbols = SymbolId?[:input::length];
+    for (int32 index = 0; index < input::length; index++) {
+      if (input[index] == null) {
+        throw StateError("member lookup result contains null");
+      }
+      symbols[index] = input[index];
+    }
+    return MemberLookupResult(symbols);
+  }
+
+  func GetCount(): int32 { return self.symbols::length; }
+
+  func Get(int32 index): SymbolId throws StateError {
+    if (index < 0 || index >= self.symbols::length) {
+      throw StateError("member lookup result index is out of bounds");
+    }
+    final SymbolId? result = self.symbols[index];
+    if (result == null) {
+      throw StateError("member lookup result contains null");
+    }
+    return result;
+  }
+}

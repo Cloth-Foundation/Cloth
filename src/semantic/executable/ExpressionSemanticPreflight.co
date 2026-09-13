@@ -1,0 +1,69 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax::ExpressionSyntax;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.expression::CallExpressionSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.model::SemanticFile;
+import semantic.package::SemanticLimits;
+import semantic.package::SemanticPackageResult;
+
+class {
+  final int32 factCapacity;
+  final int32 argumentCount;
+
+  _ExpressionSemanticPreflight(int32 factCapacity, int32 argumentCount) {
+    self.factCapacity = factCapacity;
+    self.argumentCount = argumentCount;
+  }
+
+  static func Build(
+      SemanticPackageResult semantic): ExpressionSemanticPreflight
+      throws StateError {
+    int32 facts = 0;
+    int32 arguments = 0;
+    for (int32 fileIndex = 0;
+         fileIndex < semantic.GetFileCount(); fileIndex++) {
+      final SemanticFile file = semantic.GetFileAt(fileIndex);
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend == null) { continue; }
+      final SyntaxStorage syntax =
+          frontend.GetDefinition()!.GetTree().GetFile().GetStorage();
+      for (int32 ordinal = 0;
+           ordinal < syntax.GetNodeCount(); ordinal++) {
+        final SyntaxNode node = syntax.GetNode(ordinal);
+        if (node is ExpressionSyntax) {
+          facts = add(facts, 1, SemanticLimits.MaxExpressionFacts(),
+                      "expression fact limit exceeded");
+        }
+        final CallExpressionSyntax? call = node as CallExpressionSyntax?;
+        if (call != null) {
+          arguments = add(
+              arguments, call.GetArguments().GetCount(),
+              SemanticLimits.MaxInvocationArguments(),
+              "invocation argument limit exceeded");
+        }
+      }
+    }
+    return ExpressionSemanticPreflight(facts, arguments);
+  }
+
+  func GetFactCapacity(): int32 { return self.factCapacity; }
+  func GetArgumentCount(): int32 { return self.argumentCount; }
+
+  static func ValidateCounts(int32 facts, int32 arguments): void
+      throws StateError {
+    if (facts < 0 || facts > SemanticLimits.MaxExpressionFacts()) {
+      throw StateError("expression fact limit exceeded");
+    }
+    if (arguments < 0 ||
+        arguments > SemanticLimits.MaxInvocationArguments()) {
+      throw StateError("invocation argument limit exceeded");
+    }
+  }
+
+  static func add(int32 value, int32 amount, int32 limit,
+                  string message): int32 throws StateError {
+    if (amount < 0 || value > limit - amount) { throw StateError(message); }
+    return value + amount;
+  }
+}

@@ -1,0 +1,180 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax.tree::FileSyntax;
+import frontend.syntax.tree::FileTypeKind;
+import semantic.identity::TypeIdentity;
+import semantic.model::FileId;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticType;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::DependencyType;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::TypeBinding;
+
+class {
+  final SemanticPackageResult semantic;
+  final TypeId?[] bases;
+  final TypeId?[] interfaces;
+  final int32[] interfaceOffsets;
+
+  _TypeRelationTable(
+      SemanticPackageResult semantic, TypeId?[] bases,
+      TypeId?[] interfaces, int32[] interfaceOffsets) {
+    self.semantic = semantic;
+    self.bases = bases;
+    self.interfaces = interfaces;
+    self.interfaceOffsets = interfaceOffsets;
+  }
+
+  static func Build(
+      SemanticPackageResult semantic): TypeRelationTable throws StateError {
+    int32 interfaceCount = 0;
+    for (int32 index = 0; index < semantic.GetFileCount(); index++) {
+      final SemanticFile file = semantic.GetFileAt(index);
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend != null) {
+        interfaceCount += frontend.GetDefinition()!.GetTree().GetFile()
+            .GetInterfaces().GetCount();
+      } else {
+        interfaceCount += file.GetDependency()!.GetInterfaceCount();
+      }
+    }
+    final TypeId?[] bases = TypeId?[:semantic.GetFileCount()];
+    final TypeId?[] interfaces = TypeId?[:interfaceCount];
+    final int32[] offsets = int32[:semantic.GetFileCount() + 1];
+    int32 next = 0;
+    for (int32 index = 0; index < semantic.GetFileCount(); index++) {
+      final SemanticFile file = semantic.GetFileAt(index);
+      offsets[index] = next;
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend != null) {
+        final FileSyntax syntax =
+            frontend.GetDefinition()!.GetTree().GetFile();
+        if (syntax.GetBaseClass() != null) {
+          final TypeBinding? binding = semantic.FindTypeBinding(
+              file.GetId(), syntax.GetBaseClass()!);
+          if (binding != null && binding.IsResolved()) {
+            bases[index] = binding.GetType();
+          }
+        } else {
+          bases[index] = defaultBase(semantic, file);
+        }
+        for (int32 item = 0;
+             item < syntax.GetInterfaces().GetCount(); item++) {
+          final TypeBinding? binding = semantic.FindTypeBinding(
+              file.GetId(), syntax.GetInterfaces().Get(item));
+          if (binding != null && binding.IsResolved()) {
+            interfaces[next] = binding.GetType();
+          }
+          next++;
+        }
+      } else {
+        final DependencyType dependency = file.GetDependency()!;
+        final TypeIdentity? base = dependency.GetBaseType();
+        if (base != null) {
+          bases[index] = semantic.FindTypeIdentity(base);
+        } else {
+          bases[index] = defaultBase(semantic, file);
+        }
+        for (int32 item = 0;
+             item < dependency.GetInterfaceCount(); item++) {
+          interfaces[next] =
+              semantic.FindTypeIdentity(dependency.GetInterface(item));
+          next++;
+        }
+      }
+    }
+    offsets[semantic.GetFileCount()] = next;
+    return TypeRelationTable(semantic, bases, interfaces, offsets);
+  }
+
+  func GetBase(TypeId type): TypeId? throws StateError {
+    final SemanticType value = self.semantic.GetType(type);
+    final FileId? file = value.GetFile();
+    if (file == null) { return null; }
+    return self.bases[file.GetIndex()];
+  }
+
+  func GetInterfaceCount(TypeId type): int32 throws StateError {
+    final SemanticType value = self.semantic.GetType(type);
+    final FileId? file = value.GetFile();
+    if (file == null) { return 0; }
+    return self.interfaceOffsets[file.GetIndex() + 1] -
+           self.interfaceOffsets[file.GetIndex()];
+  }
+
+  func GetInterface(TypeId type, int32 index): TypeId throws StateError {
+    final SemanticType value = self.semantic.GetType(type);
+    final FileId? file = value.GetFile();
+    if (file == null || index < 0 ||
+        index >= self.GetInterfaceCount(type)) {
+      throw StateError("direct interface index is out of bounds");
+    }
+    final TypeId? result =
+        self.interfaces[self.interfaceOffsets[file.GetIndex()] + index];
+    if (result == null) {
+      throw StateError("direct interface type is unresolved");
+    }
+    return result;
+  }
+
+  func IsSubtype(TypeId source, TypeId target): bool throws StateError {
+    self.semantic.GetType(source);
+    self.semantic.GetType(target);
+    if (source.GetIndex() == target.GetIndex()) { return true; }
+    final bool[] visited = bool[:self.semantic.GetFileCount()];
+    return isSubtype(source, target, visited, 0);
+  }
+
+  static func IsReferenceKind(TypeKind kind): bool {
+    return kind == TypeKind.kString || kind == TypeKind.kObject ||
+           kind == TypeKind.kErrorClass || kind == TypeKind.kClass ||
+           kind == TypeKind.kInterface || kind == TypeKind.kArray;
+  }
+
+  static func defaultBase(
+      SemanticPackageResult semantic, SemanticFile file): TypeId?
+      throws StateError {
+    if (file.GetFileTypeKind() == FileTypeKind.kError) {
+      return semantic.GetTypeAt(19).GetId();
+    }
+    if (file.GetFileTypeKind() == FileTypeKind.kClass &&
+        file.GetType().GetIndex() != 18) {
+      return semantic.GetTypeAt(18).GetId();
+    }
+    return null;
+  }
+
+  func isSubtype(TypeId source, TypeId target, bool[] visited,
+                 int32 depth): bool throws StateError {
+    if (depth > self.semantic.GetFileCount()) {
+      throw StateError("semantic type hierarchy contains a cycle");
+    }
+    if (source.GetIndex() == target.GetIndex()) { return true; }
+    final SemanticType sourceType = self.semantic.GetType(source);
+    final SemanticType targetType = self.semantic.GetType(target);
+    if (targetType.GetKind() == TypeKind.kObject &&
+        IsReferenceKind(sourceType.GetKind())) {
+      return true;
+    }
+    final FileId? file = sourceType.GetFile();
+    if (file == null) { return false; }
+    if (visited[file.GetIndex()]) { return false; }
+    visited[file.GetIndex()] = true;
+    final TypeId? base = self.bases[file.GetIndex()];
+    if (base != null && self.isSubtype(base, target, visited, depth + 1)) {
+      return true;
+    }
+    final int32 begin = self.interfaceOffsets[file.GetIndex()];
+    final int32 end = self.interfaceOffsets[file.GetIndex() + 1];
+    for (int32 index = begin; index < end; index++) {
+      final TypeId? candidate = self.interfaces[index];
+      if (candidate != null &&
+          self.isSubtype(candidate, target, visited, depth + 1)) {
+        return true;
+      }
+    }
+    visited[file.GetIndex()] = false;
+    return false;
+  }
+}

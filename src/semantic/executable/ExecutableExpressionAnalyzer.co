@@ -1,0 +1,378 @@
+import frontend.package::FileFrontendResult;
+import frontend.syntax::BlockId;
+import frontend.syntax::ExpressionId;
+import frontend.syntax::ExpressionIdSequence;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementIdSequence;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax.declaration::ConstructorInitializerSyntax;
+import frontend.syntax.declaration::ConstructorSyntax;
+import frontend.syntax.declaration::DeclarationKind;
+import frontend.syntax.declaration::DeclarationSyntax;
+import frontend.syntax.declaration::DeclarationSyntaxSequence;
+import frontend.syntax.declaration::FieldSyntax;
+import frontend.syntax.declaration::FunctionSyntax;
+import frontend.syntax.statement::BlockNodeSyntax;
+import frontend.syntax.statement::ExpressionStatementSyntax;
+import frontend.syntax.statement::ForEachStatementSyntax;
+import frontend.syntax.statement::ForStatementSyntax;
+import frontend.syntax.statement::IfStatementSyntax;
+import frontend.syntax.statement::LocalVariableStatementSyntax;
+import frontend.syntax.statement::NestedBlockStatementSyntax;
+import frontend.syntax.statement::ReturnStatementSyntax;
+import frontend.syntax.statement::StatementKind;
+import frontend.syntax.statement::SwitchArmSyntax;
+import frontend.syntax.statement::SwitchStatementSyntax;
+import frontend.syntax.statement::WhileStatementSyntax;
+import frontend.syntax.storage::SyntaxStorage;
+import frontend.syntax.tree::FileSyntax;
+import semantic.diagnostic::SemanticDiagnosticKind;
+import semantic.executable::ExecutableSemanticResult;
+import semantic.executable::ExpressionSemanticPreflight;
+import semantic.executable::ExpressionSemanticResult;
+import semantic.executable::ExpressionSemanticStorage;
+import semantic.executable::ValueScopeCollector;
+import semantic.expression::ConversionKind;
+import semantic.expression::ExpressionCategory;
+import semantic.expression::ExpressionFact;
+import semantic.expression::ExpressionChecker;
+import semantic.identity::SemanticName;
+import semantic.invocation::ConversionClassifier;
+import semantic.invocation::ConstructorInvocationFact;
+import semantic.invocation::TypeRelationTable;
+import semantic.model::SemanticFile;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.model::TypeKind;
+import semantic.package::SemanticPackageResult;
+import semantic.resolution::TypeBinding;
+import semantic.symbol::DeclarationRegistrationFacts;
+import semantic.value::ScopeId;
+import semantic.value::StatementScopes;
+import semantic.value::ValueId;
+
+class {
+  final ExecutableSemanticResult executable;
+  final ExpressionSemanticStorage storage;
+  final TypeRelationTable relations;
+
+  _ExecutableExpressionAnalyzer(
+      ExecutableSemanticResult executable, ExpressionSemanticStorage storage,
+      TypeRelationTable relations) {
+    self.executable = executable;
+    self.storage = storage;
+    self.relations = relations;
+  }
+
+  static func Analyze(
+      SemanticPackageResult semantic): ExpressionSemanticResult
+      throws StateError {
+    final ExecutableSemanticResult executable =
+        ValueScopeCollector.Collect(semantic);
+    final ExpressionSemanticStorage storage = ExpressionSemanticStorage.Create(
+        executable, ExpressionSemanticPreflight.Build(semantic));
+    final ExecutableExpressionAnalyzer analyzer =
+        ExecutableExpressionAnalyzer(
+            executable, storage, TypeRelationTable.Build(semantic));
+    analyzer.analyzeFiles();
+    return storage.Publish();
+  }
+
+  func analyzeFiles(): void throws StateError {
+    final SemanticPackageResult semantic = self.executable.GetSemantic();
+    for (int32 fileIndex = 0;
+         fileIndex < semantic.GetFileCount(); fileIndex++) {
+      final SemanticFile file = semantic.GetFileAt(fileIndex);
+      final FileFrontendResult? frontend = file.GetFrontend();
+      if (frontend == null) { continue; }
+      self.analyzeDeclarations(
+          file, frontend.GetDefinition()!.GetTree().GetFile());
+    }
+  }
+
+  func analyzeDeclarations(SemanticFile file,
+                           FileSyntax syntax): void throws StateError {
+    final DeclarationSyntaxSequence declarations = syntax.GetDeclarations();
+    int32 memberIndex = 0;
+    for (int32 index = 0; index < declarations.GetCount(); index++) {
+      final DeclarationSyntax declaration = declarations.Get(index);
+      if (!DeclarationRegistrationFacts.HasValidName(declaration)) {
+        continue;
+      }
+      final SymbolId owner = file.GetMember(memberIndex);
+      memberIndex++;
+      final ScopeId? root = self.executable.FindCallableScope(owner);
+      if (declaration.GetDeclarationKind() == DeclarationKind.kField) {
+        final FieldSyntax? field = declaration as FieldSyntax?;
+        if (field == null) { self.kindMismatch(); return; }
+        final ExpressionId? initializer = field.GetInitializer();
+        if (initializer != null && root != null) {
+          final SemanticSymbol symbol =
+              self.executable.GetSemantic().GetSymbol(owner);
+          self.checker(file, syntax.GetStorage(), owner).Check(
+              initializer, root, symbol.GetType(), true);
+        }
+        continue;
+      }
+      if (root == null) { continue; }
+      final ExpressionChecker checker =
+          self.checker(file, syntax.GetStorage(), owner);
+      if (declaration.GetDeclarationKind() == DeclarationKind.kFunction) {
+        final FunctionSyntax? function = declaration as FunctionSyntax?;
+        if (function == null) { self.kindMismatch(); return; }
+        self.analyzeBlock(file, syntax.GetStorage(), function.GetBody(), owner,
+                          root, checker,
+                          self.executable.GetSemantic().GetSymbol(owner)
+                              .GetType());
+        continue;
+      }
+      final ConstructorSyntax? constructor =
+          declaration as ConstructorSyntax?;
+      if (constructor == null) { self.kindMismatch(); return; }
+      final ConstructorInitializerSyntax? initializer =
+          constructor.GetInitializer();
+      if (initializer != null) {
+        final TypeBinding? baseBinding = self.executable.GetSemantic()
+            .FindTypeBinding(file.GetId(), initializer.GetBaseType());
+        if (baseBinding != null && baseBinding.IsResolved()) {
+          final TypeId? directBase = self.relations.GetBase(file.GetType());
+          if (directBase != null && directBase.GetIndex() ==
+              baseBinding.GetType().GetIndex()) {
+            final ConstructorInvocationFact invocation =
+                checker.CheckBaseConstructor(
+                    baseBinding.GetType(), initializer.GetArguments(), root,
+                    initializer.GetRange());
+            self.storage.SetConstructorInvocation(invocation);
+          } else {
+            self.analyzeExpressions(
+                initializer.GetArguments(), root, checker, null, true);
+            self.storage.AddDiagnostic(
+                SemanticDiagnosticKind.kBaseConstructorMismatch,
+                initializer.GetRange());
+            self.storage.SetConstructorInvocation(
+                ConstructorInvocationFact.Build(
+                    owner, baseBinding.GetType(), null, null,
+                    ConversionKind?[:0], initializer.GetRange(), false));
+          }
+        } else {
+          self.analyzeExpressions(
+              initializer.GetArguments(), root, checker, null, true);
+          self.storage.SetConstructorInvocation(
+              ConstructorInvocationFact.Build(
+                  owner, self.executable.GetSemantic().GetTypeAt(0).GetId(),
+                  null, null, ConversionKind?[:0], initializer.GetRange(),
+                  false));
+        }
+      }
+      self.analyzeBlock(file, syntax.GetStorage(), constructor.GetBody(),
+                        owner, root, checker,
+                        self.executable.GetSemantic().GetTypeAt(2).GetId());
+    }
+  }
+
+  func analyzeBlock(
+      SemanticFile file, SyntaxStorage syntax, BlockId block,
+      SymbolId owner, ScopeId scope, ExpressionChecker checker,
+      TypeId returnType): void throws StateError {
+    final BlockNodeSyntax? node = syntax.GetBlock(block) as BlockNodeSyntax?;
+    if (node == null) {
+      throw StateError("executable block has an inconsistent runtime type");
+    }
+    self.analyzeStatements(file, syntax, node.GetStatements(), owner, scope,
+                           checker, returnType);
+  }
+
+  func analyzeStatements(
+      SemanticFile file, SyntaxStorage syntax, StatementIdSequence statements,
+      SymbolId owner, ScopeId scope, ExpressionChecker checker,
+      TypeId returnType): void throws StateError {
+    for (int32 index = 0; index < statements.GetCount(); index++) {
+      self.analyzeStatement(file, syntax, statements.Get(index), owner, scope,
+                            checker, returnType);
+    }
+  }
+
+  func analyzeStatement(
+      SemanticFile file, SyntaxStorage syntax, StatementId id,
+      SymbolId owner, ScopeId scope, ExpressionChecker checker,
+      TypeId returnType): void throws StateError {
+    final StatementSyntax statement = syntax.GetStatement(id);
+    final StatementScopes? scopeFacts =
+        self.executable.FindStatementScopes(file.GetId(), id);
+    ScopeId entry = scope;
+    ScopeId continuation = scope;
+    if (scopeFacts != null) {
+      entry = scopeFacts.GetEntry();
+      continuation = scopeFacts.GetContinuation();
+    }
+    final StatementKind kind = statement.GetStatementKind();
+    if (kind == StatementKind.kLocalVariable) {
+      final LocalVariableStatementSyntax? local =
+          statement as LocalVariableStatementSyntax?;
+      if (local == null) { self.kindMismatch(); return; }
+      final ExpressionId? initializer = local.GetInitializer();
+      TypeId? expected = null;
+      if (local.GetType() != null) {
+        final TypeBinding? binding = self.executable.GetSemantic()
+            .FindTypeBinding(file.GetId(), local.GetType()!);
+        if (binding != null && binding.IsResolved()) {
+          expected = binding.GetType();
+        }
+      }
+      if (initializer != null) {
+        final ExpressionFact fact =
+            checker.Check(initializer, entry, expected, true);
+        final ValueId? value = self.executable.FindValue(
+            continuation,
+            SemanticName.FromSource(local.GetName()),
+            statement.GetRange().GetEnd().GetOffset());
+        if (value != null && local.GetType() == null && fact.IsValid() &&
+            fact.GetType().GetIndex() != 2 &&
+            fact.GetType().GetIndex() != 3) {
+          self.storage.SetValueType(value, fact.GetType());
+        }
+      } else {
+        if (local.GetType() == null) {
+          self.storage.AddDiagnostic(
+              SemanticDiagnosticKind.kExpressionTypeMismatch,
+              statement.GetRange());
+        }
+      }
+      return;
+    }
+    if (kind == StatementKind.kExpression) {
+      final ExpressionStatementSyntax? value =
+          statement as ExpressionStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      checker.Check(value.GetExpression(), entry, null, false);
+      return;
+    }
+    if (kind == StatementKind.kReturn) {
+      final ReturnStatementSyntax? value = statement as ReturnStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      final ExpressionId? result = value.GetValue();
+      if (result != null) { checker.Check(result, entry, returnType, true); }
+      return;
+    }
+    if (kind == StatementKind.kIf) {
+      final IfStatementSyntax? value = statement as IfStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      self.checkCondition(checker, value.GetCondition(), entry);
+      self.analyzeNestedBlock(file, syntax, value.GetThenBlock(), owner,
+                              checker, returnType);
+      final BlockId? alternative = value.GetElseBlock();
+      if (alternative != null) {
+        self.analyzeNestedBlock(file, syntax, alternative, owner, checker,
+                                returnType);
+      }
+      return;
+    }
+    if (kind == StatementKind.kWhile) {
+      final WhileStatementSyntax? value = statement as WhileStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      self.checkCondition(checker, value.GetCondition(), entry);
+      self.analyzeNestedBlock(file, syntax, value.GetBody(), owner, checker,
+                              returnType);
+      return;
+    }
+    if (kind == StatementKind.kFor) {
+      final ForStatementSyntax? value = statement as ForStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      final StatementId? initializer = value.GetInitializer();
+      if (initializer != null) {
+        self.analyzeStatement(file, syntax, initializer, owner, continuation,
+                              checker, returnType);
+      }
+      final ExpressionId? condition = value.GetCondition();
+      if (condition != null) {
+        self.checkCondition(checker, condition, continuation);
+      }
+      self.analyzeExpressions(
+          value.GetUpdates(), continuation, checker, null, false);
+      self.analyzeNestedBlock(file, syntax, value.GetBody(), owner, checker,
+                              returnType);
+      return;
+    }
+    if (kind == StatementKind.kForEach) {
+      final ForEachStatementSyntax? value =
+          statement as ForEachStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      final ExpressionFact iterable =
+          checker.Check(value.GetIterable(), entry, null, true);
+      final var iterableType = self.storage.GetTypes().Get(iterable.GetType());
+      final ValueId? iteration = self.executable.FindValue(
+          continuation,
+          SemanticName.FromSource(
+              value.GetVariable().GetName()),
+          value.GetVariable().GetRange().GetEnd().GetOffset());
+      if (iteration != null &&
+          iterableType.GetKind() == TypeKind.kArray) {
+        final TypeId? element = iterableType.GetElement();
+        if (element != null) { self.storage.SetValueType(iteration, element); }
+      }
+      self.analyzeNestedBlock(file, syntax, value.GetBody(), owner, checker,
+                              returnType);
+      return;
+    }
+    if (kind == StatementKind.kSwitch) {
+      final SwitchStatementSyntax? value =
+          statement as SwitchStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      final ExpressionFact selector =
+          checker.Check(value.GetSelector(), entry, null, true);
+      for (int32 index = 0; index < value.GetArms().GetCount(); index++) {
+        final SwitchArmSyntax arm = value.GetArms().Get(index);
+        self.analyzeExpressions(
+            arm.GetLabels(), entry, checker, selector.GetType(), true);
+        self.analyzeNestedBlock(file, syntax, arm.GetBody(), owner, checker,
+                                returnType);
+      }
+      return;
+    }
+    if (kind == StatementKind.kNestedBlock) {
+      final NestedBlockStatementSyntax? value =
+          statement as NestedBlockStatementSyntax?;
+      if (value == null) { self.kindMismatch(); return; }
+      self.analyzeNestedBlock(file, syntax, value.GetBlock(), owner, checker,
+                              returnType);
+    }
+  }
+
+  func analyzeNestedBlock(
+      SemanticFile file, SyntaxStorage syntax, BlockId block,
+      SymbolId owner, ExpressionChecker checker,
+      TypeId returnType): void throws StateError {
+    final ScopeId? scope =
+        self.executable.FindBlockScope(file.GetId(), block);
+    if (scope == null) {
+      throw StateError("nested executable block has no lexical scope");
+    }
+    self.analyzeBlock(file, syntax, block, owner, scope, checker, returnType);
+  }
+
+  func analyzeExpressions(
+      ExpressionIdSequence expressions, ScopeId scope,
+      ExpressionChecker checker, TypeId? expected,
+      bool consumed): void throws StateError {
+    for (int32 index = 0; index < expressions.GetCount(); index++) {
+      checker.Check(expressions.Get(index), scope, expected, consumed);
+    }
+  }
+
+  func checkCondition(ExpressionChecker checker, ExpressionId expression,
+                      ScopeId scope): void throws StateError {
+    checker.Check(expression, scope,
+                  self.executable.GetSemantic().GetTypeAt(4).GetId(), true);
+  }
+
+  func checker(SemanticFile file, SyntaxStorage syntax,
+               SymbolId owner): ExpressionChecker {
+    return ExpressionChecker(
+        self.executable, self.storage, self.relations, file, syntax, owner);
+  }
+
+  func kindMismatch(): void throws StateError {
+    throw StateError("statement or declaration kind has the wrong runtime type");
+  }
+}

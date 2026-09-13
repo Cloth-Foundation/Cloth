@@ -1,0 +1,126 @@
+import frontend.syntax.expression::LiteralExpressionSyntax;
+import semantic.expression::ConversionKind;
+import semantic.expression::ExpressionTypeStorage;
+import semantic.expression::LiteralTyping;
+import semantic.identity::MemberIdentity;
+import semantic.invocation::ConversionClassifier;
+import semantic.invocation::InvocationSelection;
+import semantic.invocation::MemberLookupResult;
+import semantic.invocation::TypeRelationTable;
+import semantic.model::SemanticSymbol;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.package::SemanticPackageResult;
+
+class {
+  static func Select(
+      SemanticPackageResult semantic, ExpressionTypeStorage types,
+      TypeRelationTable relations, MemberLookupResult candidates,
+      TypeId?[] arguments,
+      LiteralExpressionSyntax?[] contextualLiterals): InvocationSelection
+      throws StateError {
+    if (arguments::length != contextualLiterals::length) {
+      throw StateError("invocation argument facts have the wrong size");
+    }
+    SymbolId? exact = null;
+    int32 exactCount = 0;
+    SymbolId? compatible = null;
+    int32 compatibleCount = 0;
+    for (int32 index = 0; index < candidates.GetCount(); index++) {
+      final SymbolId candidate = candidates.Get(index);
+      final SemanticSymbol symbol = semantic.GetSymbol(candidate);
+      final MemberIdentity? identity = symbol.GetIdentity();
+      if (identity == null ||
+          identity.GetParameterCount() != arguments::length) {
+        continue;
+      }
+      bool valid = true;
+      bool allExact = true;
+      for (int32 argument = 0; argument < arguments::length; argument++) {
+        final TypeId? argumentType = arguments[argument];
+        final TypeId? parameterType =
+            types.Find(identity.GetParameter(argument));
+        if (argumentType == null || parameterType == null) {
+          valid = false;
+          break;
+        }
+        ConversionKind conversion = ConversionClassifier.Classify(
+            types, relations, argumentType, parameterType);
+        final LiteralExpressionSyntax? literal =
+            contextualLiterals[argument];
+        if (conversion == ConversionKind.kInvalid && literal != null &&
+            LiteralTyping.CanCommit(types, literal, parameterType)) {
+          conversion = ConversionKind.kContextualLiteral;
+        }
+        if (conversion == ConversionKind.kInvalid) {
+          valid = false;
+          break;
+        }
+        if (conversion != ConversionKind.kExact) { allExact = false; }
+      }
+      if (!valid) { continue; }
+      if (allExact) {
+        exact = candidate;
+        exactCount++;
+      } else {
+        compatible = candidate;
+        compatibleCount++;
+      }
+    }
+    if (exactCount > 1) { return InvocationSelection.Ambiguous(); }
+    if (exactCount == 1) {
+      final SymbolId? selectedExact = exact;
+      if (selectedExact == null) {
+        throw StateError("exact invocation selection is missing");
+      }
+      return selected(semantic, types, relations, selectedExact, arguments,
+                      contextualLiterals);
+    }
+    if (compatibleCount > 1) { return InvocationSelection.Ambiguous(); }
+    if (compatibleCount == 1) {
+      final SymbolId? selectedCompatible = compatible;
+      if (selectedCompatible == null) {
+        throw StateError("compatible invocation selection is missing");
+      }
+      return selected(semantic, types, relations, selectedCompatible,
+                      arguments,
+                      contextualLiterals);
+    }
+    return InvocationSelection.NoMatch();
+  }
+
+  static func selected(
+      SemanticPackageResult semantic, ExpressionTypeStorage types,
+      TypeRelationTable relations, SymbolId symbol, TypeId?[] arguments,
+      LiteralExpressionSyntax?[] contextualLiterals): InvocationSelection
+      throws StateError {
+    final MemberIdentity? identityValue =
+        semantic.GetSymbol(symbol).GetIdentity();
+    if (identityValue == null) {
+      throw StateError("selected invocation has no identity");
+    }
+    final MemberIdentity identity = identityValue;
+    final ConversionKind?[] conversions =
+        ConversionKind?[:arguments::length];
+    for (int32 index = 0; index < arguments::length; index++) {
+      final TypeId? argumentValue = arguments[index];
+      final TypeId? parameterValue =
+          types.Find(identity.GetParameter(index));
+      if (argumentValue == null || parameterValue == null) {
+        throw StateError("selected invocation has an unresolved type");
+      }
+      final TypeId argument = argumentValue;
+      final TypeId parameter = parameterValue;
+      ConversionKind conversion = ConversionClassifier.Classify(
+          types, relations, argument, parameter);
+      final LiteralExpressionSyntax? literal = contextualLiterals[index];
+      if (conversion == ConversionKind.kInvalid && literal != null &&
+          LiteralTyping.CanCommit(types, literal, parameter)) {
+        conversion = ConversionKind.kContextualLiteral;
+      }
+      conversions[index] = conversion;
+    }
+    return InvocationSelection.Selected(symbol, conversions);
+  }
+
+}

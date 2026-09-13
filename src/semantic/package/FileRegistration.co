@@ -71,7 +71,7 @@ class {
     return FileRegistration(
         owner, id, identity, kind, type, symbol, selfSymbol, null, dependency,
         dependency.GetRange(), true, dependency.IsAbstract(),
-        dependency.IsSealed(), 0);
+        dependency.IsSealed(), dependency.GetMemberCount());
   }
 
   func AddMember(SymbolId member): void throws StateError {
@@ -90,6 +90,7 @@ class {
   func GetSymbol(): SymbolId { return self.symbol; }
   func GetSelfSymbol(): SymbolId { return self.selfSymbol; }
   func GetFrontend(): FileFrontendResult? { return self.frontend; }
+  func GetDependency(): DependencyType? { return self.dependency; }
   func GetRange(): SourceRange { return self.range; }
   func IsValid(): bool { return self.valid; }
   func MarkInvalid() { self.valid = false; }

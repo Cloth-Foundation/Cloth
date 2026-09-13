@@ -1,0 +1,6 @@
+enum {
+  kCallable,
+  kInitializer,
+  kBlock,
+  kLoop,
+}

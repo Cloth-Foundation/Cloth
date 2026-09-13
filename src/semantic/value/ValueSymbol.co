@@ -1,0 +1,79 @@
+import frontend.source::SourceRange;
+import semantic.identity::SemanticName;
+import semantic.model::FileId;
+import semantic.model::SymbolId;
+import semantic.model::TypeId;
+import semantic.value::ExecutableOwner;
+import semantic.value::ScopeId;
+import semantic.value::ValueId;
+import semantic.value::ValueKind;
+
+class {
+  final ValueId id;
+  final ValueKind kind;
+  final SemanticName name;
+  final TypeId type;
+  final bool typeResolved;
+  final FileId file;
+  final SymbolId callable;
+  final ScopeId scope;
+  final SourceRange range;
+  final int32 visibleFrom;
+  final int32 declarationOrder;
+  final bool mutableValue;
+  final bool valid;
+
+  _ValueSymbol(
+      ValueId id, ValueKind kind, SemanticName name, TypeId type,
+      bool typeResolved, FileId file, SymbolId callable, ScopeId scope,
+      SourceRange range, int32 visibleFrom, int32 declarationOrder,
+      bool mutableValue, bool valid) {
+    self.id = id;
+    self.kind = kind;
+    self.name = name;
+    self.type = type;
+    self.typeResolved = typeResolved;
+    self.file = file;
+    self.callable = callable;
+    self.scope = scope;
+    self.range = range;
+    self.visibleFrom = visibleFrom;
+    self.declarationOrder = declarationOrder;
+    self.mutableValue = mutableValue;
+    self.valid = valid;
+  }
+
+  static func Build(
+      ExecutableOwner owner, ValueId id, ValueKind kind,
+      SemanticName name, TypeId type, bool typeResolved, FileId file,
+      SymbolId callable, ScopeId scope, SourceRange range,
+      int32 visibleFrom, int32 declarationOrder, bool mutableValue,
+      bool valid): ValueSymbol throws StateError {
+    if (!id.BelongsTo(owner) || !scope.BelongsTo(owner) ||
+        visibleFrom < 0 || declarationOrder < 0 ||
+        (typeResolved && type.GetIndex() == 0)) {
+      throw StateError("value symbol record is inconsistent");
+    }
+    if (kind == ValueKind.kSelf &&
+        (mutableValue || !name.EqualsString("self"))) {
+      throw StateError("intrinsic self value is inconsistent");
+    }
+    return ValueSymbol(
+        id, kind, name, type, typeResolved, file, callable, scope, range,
+        visibleFrom, declarationOrder, mutableValue, valid);
+  }
+
+  func GetId(): ValueId { return self.id; }
+  func GetKind(): ValueKind { return self.kind; }
+  func GetName(): SemanticName { return self.name; }
+  func GetType(): TypeId { return self.type; }
+  func IsTypeResolved(): bool { return self.typeResolved; }
+  func GetFile(): FileId { return self.file; }
+  func GetCallable(): SymbolId { return self.callable; }
+  func GetScope(): ScopeId { return self.scope; }
+  func GetRange(): SourceRange { return self.range; }
+  func GetVisibleFrom(): int32 { return self.visibleFrom; }
+  func GetDeclarationOrder(): int32 { return self.declarationOrder; }
+  func IsMutable(): bool { return self.mutableValue; }
+  func IsValid(): bool { return self.valid; }
+}

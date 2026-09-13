@@ -1,6 +1,19 @@
 load("//tools/bazel/cloth:defs.bzl", "expected_failure_test", "output_test")
 
 output_test(
+    name = "check_expression_success_test",
+    binary = "//src:clothc",
+    expected_stdout = "//tests/self_host:empty_stdout",
+    process_args = [
+        "check",
+        "tests/self_host/testdata/executable/Expressions.co",
+    ],
+    size = "small",
+    tags = ["driver", "expression", "integration", "semantic"],
+    test_data = ["//tests/self_host:testdata"],
+)
+
+output_test(
     name = "check_success_test",
     binary = "//src:clothc",
     expected_stdout = "//tests/self_host:empty_stdout",
@@ -11,6 +24,23 @@ output_test(
     size = "small",
     tags = ["driver", "integration"],
     test_data = ["//tests/self_host:testdata"],
+)
+
+expected_failure_test(
+    name = "check_expression_failure_test",
+    binary = "//src:clothc",
+    expected_status = 1,
+    expected_stderr = (
+        "DriverExpressionError.co:2:17: error: " +
+        "expression type is not compatible with its context"
+    ),
+    failure_args = [
+        "check",
+        "tests/self_host/tools/driver/DriverExpressionError.co",
+    ],
+    size = "small",
+    tags = ["driver", "expression", "integration", "semantic"],
+    test_data = ["DriverExpressionError.co"],
 )
 
 expected_failure_test(
@@ -93,6 +123,8 @@ expected_failure_test(
 test_suite(
     name = "tests",
     tests = [
+        ":check_expression_failure_test",
+        ":check_expression_success_test",
         ":check_lexer_failure_test",
         ":check_parser_failure_test",
         ":check_semantic_failure_test",

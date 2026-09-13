@@ -1,0 +1,99 @@
+import frontend.syntax::BlockId;
+import frontend.syntax::BlockSyntax;
+import frontend.syntax::StatementId;
+import frontend.syntax::StatementSyntax;
+import frontend.syntax::SyntaxNode;
+import frontend.syntax.storage::SyntaxStorage;
+import semantic.model::FileId;
+import semantic.value::ExecutableOwner;
+import semantic.value::LexicalScope;
+import semantic.value::ScopeId;
+import semantic.value::StatementScopes;
+
+class {
+  final FileId file;
+  final SyntaxStorage syntax;
+  final ScopeId?[] blocks;
+  final StatementScopes?[] statements;
+
+  _ExecutableFileScopes(FileId file, SyntaxStorage syntax,
+                        ScopeId?[] blocks,
+                        StatementScopes?[] statements) {
+    self.file = file;
+    self.syntax = syntax;
+    self.blocks = blocks;
+    self.statements = statements;
+  }
+
+  static func Build(
+      ExecutableOwner owner, FileId file, SyntaxStorage syntax,
+      ScopeId?[] blockInput,
+      StatementScopes?[] statementInput,
+      int32 scopeCount): ExecutableFileScopes
+      throws StateError {
+    if (!syntax.IsSealed() ||
+        blockInput::length != syntax.GetNodeCount() ||
+        statementInput::length != syntax.GetNodeCount()) {
+      throw StateError("executable syntax scope index has the wrong size");
+    }
+    final ScopeId?[] blocks = ScopeId?[:blockInput::length];
+    final StatementScopes?[] statements =
+        StatementScopes?[:statementInput::length];
+    for (int32 index = 0; index < blockInput::length; index++) {
+      final SyntaxNode node = syntax.GetNode(index);
+      final ScopeId? block = blockInput[index];
+      if (block != null &&
+          (!block.BelongsTo(owner) || block.GetIndex() >= scopeCount ||
+           !(node is BlockSyntax))) {
+        throw StateError("block scope index contains a foreign scope");
+      }
+      blocks[index] = block;
+      final StatementScopes? statement = statementInput[index];
+      if (statement != null &&
+          (!statement.GetEntry().BelongsTo(owner) ||
+           !statement.GetContinuation().BelongsTo(owner) ||
+           statement.GetEntry().GetIndex() >= scopeCount ||
+           statement.GetContinuation().GetIndex() >= scopeCount ||
+           !(node is StatementSyntax))) {
+        throw StateError("statement scope index contains a foreign scope");
+      }
+      statements[index] = statement;
+    }
+    return ExecutableFileScopes(file, syntax, blocks, statements);
+  }
+
+  func GetFile(): FileId { return self.file; }
+
+  func VerifyScopes(LexicalScope?[] scopes): void throws StateError {
+    for (int32 index = 0; index < self.blocks::length; index++) {
+      final ScopeId? block = self.blocks[index];
+      if (block != null && scopes[block.GetIndex()]!.GetFile().GetIndex() !=
+              self.file.GetIndex()) {
+        throw StateError("block scope index references another file");
+      }
+      final StatementScopes? statement = self.statements[index];
+      if (statement != null &&
+          (scopes[statement.GetEntry().GetIndex()]!
+                   .GetFile().GetIndex() != self.file.GetIndex() ||
+           scopes[statement.GetContinuation().GetIndex()]!
+                   .GetFile().GetIndex() != self.file.GetIndex())) {
+        throw StateError("statement scope index references another file");
+      }
+    }
+  }
+
+  func FindBlock(BlockId block): ScopeId? throws StateError {
+    if (!self.syntax.OwnsBlock(block)) {
+      throw StateError("block scope lookup uses foreign syntax");
+    }
+    return self.blocks[block.GetOrdinal()];
+  }
+
+  func FindStatement(StatementId statement): StatementScopes?
+      throws StateError {
+    if (!self.syntax.OwnsStatement(statement)) {
+      throw StateError("statement scope lookup uses foreign syntax");
+    }
+    return self.statements[statement.GetOrdinal()];
+  }
+}
