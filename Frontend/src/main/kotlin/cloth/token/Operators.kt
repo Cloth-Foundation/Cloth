@@ -1,5 +1,7 @@
 package cloth.token
 
+import kotlin.enums.enumEntries
+
 enum class Operators(val character: String) {
 
 	PLUS("+"),
@@ -56,6 +58,14 @@ enum class Operators(val character: String) {
 
 	override fun toString(): String {
 		return character
+	}
+
+	companion object {
+		private val map = enumEntries<Operators>().associateBy(Operators::character)
+
+		fun fromCharacter(character: String): Operators? = map[character]
+
+		fun fromCharacterRequired(character: String): Operators = map[character] ?: throw IllegalArgumentException("Unknown operator: $character")
 	}
 
 }
