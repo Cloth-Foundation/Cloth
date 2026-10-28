@@ -4,13 +4,24 @@
   <component name="GradleSettings">
     <option name="linkedExternalProjectsSettings">
       <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/_build-logic" name="_build-logic">
+                <projects>
+                  <project path="$PROJECT_DIR$/_build-logic" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
-            <option value="$PROJECT_DIR$/Compiler" />
+            <option value="$PROJECT_DIR$/Backend" />
             <option value="$PROJECT_DIR$/Frontend" />
-            <option value="$PROJECT_DIR$/IR" />
+            <option value="$PROJECT_DIR$/_build-logic" />
           </set>
         </option>
         <option name="myGradleHome" value="" />

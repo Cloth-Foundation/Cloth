@@ -1,15 +1,162 @@
-module mr.fart;
+mod my.module
 
-# Test comment
-938_472,
-109f,
-5.63,
-481I,
-754F,
+use Console.IO.println
 
-#|
- | I am a multiline
- |#
-12
+// Module-level C declarations
+interop<C> {
+    """
+    #include <stdio.h>
+    """
+}
 
-int x = 12;
+typedef<class>
+pub Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
+
+    def<bool> alive = true
+
+    pub mt<void> die () {
+        this.health = 0
+        this.alive = false
+    }
+
+    pub mt<bool> isAlive () {
+        return this.alive
+    }
+
+    pub[mod] mt<void> applyDamage (float amount) {
+        this.health -= amount
+
+        if (this.health <= 0) {
+            this.die()
+        }
+    }
+
+    @Override
+    pub mt<float> getHealth () {
+        return this.health
+    }
+
+}
+
+typedef<class>
+pub Player (def<string?> name ?: "Unknown") : Entity<Player>(100f) {
+
+    ~Player {
+        println("Goodbye.")
+    }
+
+    @Initial
+    pub state<void> Alive {
+
+        pub mt<DamageType, float> attack (DamageSource source) {
+            this.applyDamage(source.damageAmount)
+
+            if (!this.isAlive()) {
+                // Activate Dead and run its init before continuing
+                this -> Dead({
+                    source.type,
+                    #"{name} died from {source.type}!"
+                })
+            }
+
+            // Execution continues after the transition
+            return source.type, source.damageAmount
+        }
+
+    }
+
+    pub state<DeathInfo> Dead {
+
+        init {
+            this.die()
+            println(state.message)
+        }
+
+    }
+
+}
+
+// enums may hold constant values
+// decided in the ctor (head) or override in body
+// enums are stored as numbers ie. DamageType.FALL -> int == 1 would be true (starting at 0, in order of decl)
+typedef<enum>
+pub DamageType (pub def<int> number = 1) {
+
+    ATTACK,
+    FALL,
+    ENVIRONMENT(10.0),
+    UNKNOWN(-1)
+
+    ctor(float num) : this(num -> int) { }
+
+}
+
+// Struct fields do not need to have visibility modifiers, they inherently assume the visibility of the enclosing struct
+typedef<struct>
+pub DamageSource {
+
+    DamageType type,
+    float damageAmount
+
+}
+
+typedef<struct>
+pub DeathInfo {
+
+    DamageType cause,
+    string message
+
+}
+
+// Interface methods don't need visibility modifiers.
+// They're always callable through the interface.
+// The implementing class decides whether they're also callable directly on the class.
+typedef<interface>
+pub IHealth<T: Number> {
+
+    mt<T> getHealth() = default (0 -> T)
+
+}
+
+pub fn<void> main (string[] args) {
+    def<Player> player = Player::new(args[0])
+    def<DamageSource> source = { DamageType.ATTACK, 10f }
+
+    // Infer both types and make both bindings immutable
+    def type, amount := player.attack(source)
+
+    println(#"Damage type: {type}, amount: {amount}")
+
+    player::delete // would print Goodbye to console.
+
+    // Widen before arithmetic, then convert to a 64-bit integer
+    // Default int is signed 32-bit
+    def<float<64>> largeFloat = (int.MAX -> float<64>) * 2
+    def<int<64>> largeInt = largeFloat -> int<64>
+
+    // Character declaration
+    def<char> x = 'n'
+
+    // Type inference and immutable binding
+    def hello := "Hello World!"
+
+    // Declarations are resolved independently of source order
+    cInterop()
+}
+
+// Function-level C executes when this function is called
+// no 'pub' defaults to private. still callable in the same file, not exposed to the rest of the program.
+fn<void> cInterop () {
+    interop<C> {
+        """
+        printf("Hello World\n");
+        """
+    }
+}
+
+// Compile-time constant
+// Must be immutably assigned
+const def<string> NAME := "Cloth"
+
+// Something extremely important to me is that we dont use pointers. I hate them, ref and mut are dumb.
+// We can by default know we are always passing a pointer in memory, dont need to explicitly state we are.
