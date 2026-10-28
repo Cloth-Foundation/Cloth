@@ -8,10 +8,10 @@ class TokenSpan(val startLine: Int, val startColumn: Int, val endLine: Int, val 
 
 }
 
-class Token(val kind: TokenType, val span: TokenSpan, val lexeme: String) {
+class Token(val type: TokenType, val span: TokenSpan, val lexeme: String) {
 
 	override fun toString(): String {
-		return "Token {\n\tKind: $kind \n\tSpan: $span \n\tLexeme: $lexeme \n}\n"
+		return "Token {\n\tKind: $type \n\tSpan: $span \n\tLexeme: $lexeme \n}\n"
 	}
 
 }
