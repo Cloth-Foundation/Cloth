@@ -1,18 +1,18 @@
-// Root is a pure aggregator — it has no sources of its own. Shared dependencies
-// live in dependencies.gradle.kts (applied by each module); shared build
-// conventions live here.
+plugins {
+	java
+}
+group = "com.example"
+version = "1.0-SNAPSHOT"
 
-allprojects {
-    group = "cloth"
-    version = "1.0-SNAPSHOT"
-
-    repositories {
-        mavenCentral()
-    }
+repositories {
+	mavenCentral()
 }
 
-subprojects {
-    tasks.withType(Test::class.java).configureEach {
-        useJUnitPlatform()
-    }
+dependencies {
+	testImplementation(platform("org.junit:junit-bom:5.10.0"))
+	testImplementation("org.junit.jupiter:junit-jupiter")
+}
+
+tasks.test {
+	useJUnitPlatform()
 }
