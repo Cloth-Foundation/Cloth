@@ -1,7 +1,7 @@
 plugins {
 	java
 }
-group = "com.example"
+group = "cloth"
 version = "1.0-SNAPSHOT"
 
 repositories {

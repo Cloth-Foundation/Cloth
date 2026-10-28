@@ -54,11 +54,14 @@ enum class Operators(val character: String) {
 	TILDE("~"),
 	POUND("#"),
 	COLON_COLON("::"),
-	SEMICOLON(";");
+	SEMICOLON(";"),
+	UNDERSCORE("_");
 
 	override fun toString(): String {
 		return character
 	}
+
+	fun toChar(): Char = character.first()
 
 	companion object {
 		private val map = enumEntries<Operators>().associateBy(Operators::character)

@@ -1,19 +1,17 @@
 package cloth
 
+import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
-import cloth.token.TokenType
+import cloth.parser.Parser
 import java.io.File
 
 fun main(args: Array<String>) {
-	val file = File("Test.co")
+	val file = File("Math.co")
 	val lexer = Lexer(file.readText())
-	val tokens = lexer.scanTokens().filter {
-			it.type != TokenType.NewLine && it.type != TokenType.EOF
-		}
+	val tokens = lexer.scanTokens()
 
-	println(tokens.joinToString(separator = ",\n", prefix = "[\n", postfix = "\n]") { token ->
-		token.toString().prependIndent("  ")
-	})
-
-	println("Tokens: %d".format(tokens.size))
+	val parser = Parser(tokens)
+	val ast = parser.parse()
+	val ir = LLVMEmitter().emit(ast)
+	println(ir)
 }

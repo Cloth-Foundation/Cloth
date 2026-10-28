@@ -1,6 +1,7 @@
 package cloth.lexer
 
 import cloth.token.*
+import cloth.util.CursorPosition
 
 class Lexer(private val source: String) {
 
@@ -10,10 +11,8 @@ class Lexer(private val source: String) {
 
 	private var start = 0
 	private var current = 0
-	private var line = 1
-	private var column = 1
-	private var startLine = 1
-	private var startColumn = 1
+	private var cStart: CursorPosition = CursorPosition(1, 1)
+	private var cAt: CursorPosition = CursorPosition(1, 1)
 
 	private val tokens = mutableListOf<Token>()
 
@@ -21,11 +20,10 @@ class Lexer(private val source: String) {
 
 	private fun advance(): Char {
 		val c = source[current++]
-		if (c == '\n') {
-			line++
-			column = 1
+		cAt = if (c == '\n') {
+			CursorPosition(cAt.line + 1, 1)
 		} else {
-			column++
+			cAt.copy(column = cAt.column + 1)
 		}
 		return c
 	}
@@ -35,17 +33,16 @@ class Lexer(private val source: String) {
 	fun scanTokens(): List<Token> {
 		while (!isAtEnd()) {
 			start = current
-			startLine = line
-			startColumn = column
+			cStart = cAt
 			scanToken()
 		}
 
-		tokens.add(Token(TokenType.EOF, TokenSpan(line, column, line, column), ""))
+		tokens.add(Token(TokenType.EOF, TokenSpan(cAt.line, cAt.column, cAt.line, cAt.column), ""))
 		return tokens
 	}
 
 	private fun addToken(type: TokenType, lexeme: String = source.substring(start, current)) {
-		val span = TokenSpan(startLine, startColumn, line, column)
+		val span = TokenSpan(cStart.line, cStart.column, cAt.line, cAt.column)
 		tokens.add(Token(type, span, lexeme))
 	}
 
@@ -56,7 +53,7 @@ class Lexer(private val source: String) {
 				val substring = source.substring(current, current + len)
 				if (substring == op.character) {
 					current += len
-					column += len
+					cAt = cAt.copy(column = cAt.column + len)
 					return op
 				}
 			}
@@ -72,7 +69,7 @@ class Lexer(private val source: String) {
 			return
 		}
 
-		if (peek() == '"') {
+		if (peek() == Operators.QUOTATION.toChar()) {
 			advance() // Opening quote.
 			string()
 			return
@@ -99,7 +96,7 @@ class Lexer(private val source: String) {
 			else            -> {
 				if (c.isDigit()) {
 					number()
-				} else if (c.isLetter() || c == '_') {
+				} else if (c.isLetter() || c == Operators.UNDERSCORE.toChar()) {
 					identifier()
 				} else {
 					addToken(TokenType.Unknown)
@@ -109,10 +106,10 @@ class Lexer(private val source: String) {
 	}
 
 	private fun skipComments(): Boolean {
-		if (peek() != '/') return false
+		if (peek() != Operators.DIVIDE.toChar()) return false
 
 		when (source.getOrNull(current + 1)) {
-			'/' -> {
+			Operators.DIVIDE.toChar() -> {
 				advance()
 				advance()
 
@@ -123,13 +120,13 @@ class Lexer(private val source: String) {
 				return true
 			}
 
-			'*' -> {
+			Operators.MULTIPLY.toChar() -> {
 				advance()
 				advance()
 
 				while (!isAtEnd()) {
-					if (peek() == '*' &&
-						source.getOrNull(current + 1) == '/'
+					if (peek() == Operators.MULTIPLY.toChar() &&
+						source.getOrNull(current + 1) == Operators.DIVIDE.toChar()
 					) {
 						advance()
 						advance()
@@ -139,7 +136,7 @@ class Lexer(private val source: String) {
 					advance()
 				}
 
-				error("Unterminated block comment at $startLine:$startColumn")
+				error("Unterminated block comment at $cStart")
 			}
 
 			else -> return false
@@ -150,10 +147,10 @@ class Lexer(private val source: String) {
 		var isFloat = false
 
 		fun consumeDigits() {
-			while (peek().isDigit() || peek() == '_') {
-				if (peek() == '_') {
+			while (peek().isDigit() || peek() == Operators.UNDERSCORE.toChar()) {
+				if (peek() == Operators.UNDERSCORE.toChar()) {
 					require(source[current - 1].isDigit() && source.getOrNull(current + 1)?.isDigit() == true) {
-						"Underscores must appear between digits at $line:$column"
+						"Underscores must appear between digits at $cAt"
 					}
 				}
 
@@ -163,7 +160,7 @@ class Lexer(private val source: String) {
 
 		consumeDigits()
 
-		if (peek() == '.' && source.getOrNull(current + 1)?.isDigit() == true) {
+		if (peek() == Operators.DOT.toChar() && source.getOrNull(current + 1)?.isDigit() == true) {
 			isFloat = true
 			advance() // Decimal point.
 			advance() // First fractional digit.
@@ -181,7 +178,7 @@ class Lexer(private val source: String) {
 	}
 
 	private fun identifier() {
-		while (peek().isLetter() || peek().isDigit() || peek() == '_') advance()
+		while (peek().isLetter() || peek().isDigit() || peek() == Operators.UNDERSCORE.toChar()) advance()
 		val text = source.substring(start, current)
 		val keyword = KEYWORDS.firstOrNull { it.toString() == text }
 
@@ -205,13 +202,13 @@ class Lexer(private val source: String) {
 			advance()
 		}
 
-		error("Unterminated raw string at $startLine:$startColumn")
+		error("Unterminated raw string at $cStart")
 	}
 
 	private fun string() {
 		while (!isAtEnd()) {
 			when (advance()) {
-				'"'        -> {
+				Operators.QUOTATION.toChar()        -> {
 					addToken(TokenType.StringLiteral)
 					return
 				}
@@ -220,37 +217,37 @@ class Lexer(private val source: String) {
 					if (isAtEnd()) break
 
 					require(peek() != '\n' && peek() != '\r') {
-						"Strings cannot span multiple lines at $startLine:$startColumn"
+						"Strings cannot span multiple lines at $cStart"
 					}
 
 					advance() // Escaped character, including \" or \\.
 				}
 
 				'\n', '\r' -> {
-					error("Strings cannot span multiple lines at $startLine:$startColumn")
+					error("Strings cannot span multiple lines at $cStart")
 				}
 			}
 		}
 
-		error("Unterminated string at $startLine:$startColumn")
+		error("Unterminated string at $cStart")
 	}
 
 	private fun character() {
 		require(!isAtEnd() && peek() != '\n' && peek() != '\r') {
-			"Unterminated character literal at $startLine:$startColumn"
+			"Unterminated character literal at $cStart"
 		}
 
 		when (advance()) {
-			'\'' -> error("Empty character literal at $startLine:$startColumn")
+			'\'' -> error("Empty character literal at $cStart")
 
 			'\\' -> {
 				require(!isAtEnd()) {
-					"Unterminated escape at $startLine:$startColumn"
+					"Unterminated escape at $cStart"
 				}
 
 				val escaped = advance()
 				require(escaped in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) {
-					"Invalid character escape: \\$escaped at $startLine:$startColumn"
+					"Invalid character escape: \\$escaped at $cStart"
 				}
 			}
 
@@ -258,7 +255,7 @@ class Lexer(private val source: String) {
 		}
 
 		require(!isAtEnd() && peek() == '\'') {
-			"Expected closing quote after one character at $startLine:$startColumn"
+			"Expected closing quote after one character at $cStart"
 		}
 
 		advance() // Closing quote.
