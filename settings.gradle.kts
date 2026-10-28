@@ -7,4 +7,3 @@ pluginManagement {
 rootProject.name = "Cloth"
 includeBuild("_build-logic")
 include("Frontend")
-include("Backend")
