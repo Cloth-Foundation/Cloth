@@ -11,7 +11,9 @@ repositories {
 }
 
 dependencies {
-    testImplementation(kotlin("test"))
+    testImplementation(platform("org.junit:junit-bom:5.10.0"))
+    testImplementation(kotlin("test-junit5"))
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
 	implementation("org.bytedeco:javacpp:1.5.14")
 	implementation("org.bytedeco:llvm:22.1.8-1.5.14")
