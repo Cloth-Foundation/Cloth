@@ -7,4 +7,4 @@ data class BinaryExpression(val left: Expression, val operator: Token, val right
 
 sealed interface NumberLiteral : Expression
 data class IntegerLiteral(val value: Int) : NumberLiteral
-data class FloatingPointLiteral(val value: Double) : NumberLiteral
+data class FloatingPointLiteral(val value: Float) : NumberLiteral

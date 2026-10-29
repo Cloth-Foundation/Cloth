@@ -1,14 +1,8 @@
 package cloth.emitter
 
 import cloth.ast.ASTStructure
-import cloth.parser.expression.BinaryExpression
-import cloth.parser.expression.Expression
-import cloth.parser.expression.IntegerLiteral
-import cloth.parser.expression.FloatingPointLiteral
-import cloth.parser.expression.UnaryExpression
-import cloth.parser.statement.ExpressionStatement
-import cloth.parser.statement.Statement
-import cloth.token.Operators
+import cloth.emitter.types.EmitExpression
+import cloth.emitter.types.EmitStatement
 import cloth.util.ExecutableFormat
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
@@ -52,7 +46,6 @@ class LLVMEmitter {
 
 		try {
 			val int32Type = LLVMInt32TypeInContext(context)
-			val float64Type = LLVMDoubleTypeInContext(context)
 
 			val functionType = LLVMFunctionType(int32Type, null as PointerPointer<*>?, 0, 0)
 
@@ -62,66 +55,13 @@ class LLVMEmitter {
 
 			LLVMPositionBuilderAtEnd(builder, entryBlock)
 
-			fun emitExpression(expression: Expression): LLVMValueRef {
-				return when (expression) {
-					is IntegerLiteral -> LLVMConstInt(int32Type, expression.value.toLong(), 1)
-					is FloatingPointLiteral -> LLVMConstReal(float64Type, expression.value)
-
-					is UnaryExpression  -> {
-						val operand = emitExpression(expression.operand)
-						when (expression.operator.lexeme) {
-							Operators.PLUS.toString()  -> operand
-							Operators.MINUS.toString() -> if (isFloatingPoint(operand)) {
-								LLVMBuildFNeg(builder, operand, "negtmp")
-							} else {
-								LLVMBuildNeg(builder, operand, "negtmp")
-							}
-							else                       -> error("Unsupported unary operator: ${expression.operator}")
-						}
-					}
-
-					is BinaryExpression -> {
-						var left = emitExpression(expression.left)
-						var right = emitExpression(expression.right)
-						val floatingPoint = isFloatingPoint(left) || isFloatingPoint(right)
-						if (floatingPoint) {
-							if (!isFloatingPoint(left)) left = LLVMBuildSIToFP(builder, left, float64Type, "leftfloat")
-							if (!isFloatingPoint(right)) right = LLVMBuildSIToFP(builder, right, float64Type, "rightfloat")
-						}
-
-						if (floatingPoint) when (expression.operator.lexeme) {
-							Operators.PLUS.toString()     -> LLVMBuildFAdd(builder, left, right, "addtmp")
-							Operators.MINUS.toString()    -> LLVMBuildFSub(builder, left, right, "subtmp")
-							Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, "multmp")
-							Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, "divtmp")
-							Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, "modtmp")
-							else                          -> error("Unsupported binary operator: ${expression.operator}")
-						} else when (expression.operator.lexeme) {
-							Operators.PLUS.toString()     -> LLVMBuildAdd(builder, left, right, "addtmp")
-							Operators.MINUS.toString()    -> LLVMBuildSub(builder, left, right, "subtmp")
-							Operators.MULTIPLY.toString() -> LLVMBuildMul(builder, left, right, "multmp")
-							Operators.DIVIDE.toString()   -> LLVMBuildSDiv(builder, left, right, "divtmp")
-							Operators.MODULO.toString()   -> LLVMBuildSRem(builder, left, right, "modtmp")
-							else                          -> error("Unsupported binary operator: ${expression.operator}")
-						}
-					}
-
-					else                -> error("Unsupported expression: $expression")
-				}
-			}
-
-			fun emitStatement(statement: Statement): LLVMValueRef {
-				return when (statement) {
-					is ExpressionStatement -> emitExpression(statement.expression)
-
-					else                   -> error("Unsupported statement: $statement")
-				}
-			}
+			val expressionEmitter = EmitExpression(context, builder)
+			val statementEmitter = EmitStatement(expressionEmitter)
 
 			var result = LLVMConstInt(int32Type, 0L, 0)
 
 			for (statement in ast.statements) {
-				result = emitStatement(statement)
+				result = statementEmitter.emit(statement)
 			}
 
 			if (forcePrint) emitPrint(context, module, builder, result)
@@ -138,7 +78,7 @@ class LLVMEmitter {
 		}
 	}
 
-	private fun isFloatingPoint(value: LLVMValueRef): Boolean = LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMDoubleTypeKind
+	private fun isFloatingPoint(value: LLVMValueRef): Boolean = LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMFloatTypeKind
 
 	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef) {
 		val printfType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
@@ -146,11 +86,17 @@ class LLVMEmitter {
 			LLVMFunctionType(LLVMInt32TypeInContext(context), parameters, 1, 1)
 		}
 		val printf = LLVMAddFunction(module, "printf", printfType)
-		val formatString = if (isFloatingPoint(result)) "%.17g\n" else "%d\n"
+		val floatingPoint = isFloatingPoint(result)
+		val formatString = if (floatingPoint) "%.9g\n" else "%d\n"
 		val format = LLVMBuildGlobalStringPtr(builder, formatString, "result_format")
+		val printValue = if (floatingPoint) {
+			LLVMBuildFPExt(builder, result, LLVMDoubleTypeInContext(context), "printfdouble")
+		} else {
+			result
+		}
 		PointerPointer<LLVMValueRef>(2L).use { arguments ->
 			arguments.put(0, format)
-			arguments.put(1, result)
+			arguments.put(1, printValue)
 			LLVMBuildCall2(builder, printfType, printf, arguments, 2, "")
 		}
 	}
