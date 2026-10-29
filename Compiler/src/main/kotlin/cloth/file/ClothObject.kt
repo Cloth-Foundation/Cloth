@@ -10,7 +10,7 @@ class ClothObject(val name: String, val ext: FileExtension = FileExtension.CO, v
 	private val file: File = File(path.toString())
 
 	fun getContents(): String {
-		return file.readText()
+		return getFile().readText()
 	}
 
 	fun getFile(): File {
