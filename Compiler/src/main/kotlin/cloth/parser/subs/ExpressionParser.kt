@@ -4,7 +4,8 @@ import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
-import cloth.parser.expression.NumberLiteral
+import cloth.parser.expression.IntegerLiteral
+import cloth.parser.expression.FloatingPointLiteral
 import cloth.parser.expression.UnaryExpression
 import cloth.token.Operators
 import cloth.token.TokenType
@@ -58,7 +59,16 @@ class ExpressionParser(val parser: Parser) {
 
 				val value = token.lexeme.toIntOrNull() ?: throw SyntaxException("Invalid or out-of-range integer '${token.lexeme}' at ${token.span}")
 
-				NumberLiteral(value)
+				IntegerLiteral(value)
+			}
+
+			TokenType.FloatingPointLiteral -> {
+				parser.advance()
+
+				val value = token.lexeme.toDoubleOrNull()?.takeIf { it.isFinite() }
+					?: throw SyntaxException("Invalid or out-of-range float '${token.lexeme}' at ${token.span}")
+
+				FloatingPointLiteral(value)
 			}
 
 			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.character -> {
@@ -70,7 +80,7 @@ class ExpressionParser(val parser: Parser) {
 				expression
 			}
 
-			else                                                                 -> throw SyntaxException("Expected an integer or '(', got '${token.lexeme}' at ${token.span}")
+			else                                                                 -> throw SyntaxException("Expected a number or '(', got '${token.lexeme}' at ${token.span}")
 		}
 	}
 
