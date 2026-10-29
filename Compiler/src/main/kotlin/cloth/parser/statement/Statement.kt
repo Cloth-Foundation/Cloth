@@ -1,3 +1,3 @@
 package cloth.parser.statement
 
-interface Statement {}
+interface Statement

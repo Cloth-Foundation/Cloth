@@ -1,3 +1,3 @@
 package cloth.parser.expression
 
-interface Expression {}
+interface Expression

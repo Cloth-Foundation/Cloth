@@ -60,6 +60,7 @@ class ExpressionParser(val parser: Parser) {
 
 				NumberLiteral(value)
 			}
+
 			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.character -> {
 				parser.advance()
 
@@ -68,12 +69,13 @@ class ExpressionParser(val parser: Parser) {
 				parser.expect(Operators.PAREN_CLOSE)
 				expression
 			}
+
 			else                                                                 -> throw SyntaxException("Expected an integer or '(', got '${token.lexeme}' at ${token.span}")
 		}
 	}
 
-	companion object { enum class Associativity { LEFT, RIGHT
-	}
+	companion object {
+		enum class Associativity { LEFT, RIGHT }
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 

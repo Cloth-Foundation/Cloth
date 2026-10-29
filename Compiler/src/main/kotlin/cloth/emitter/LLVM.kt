@@ -8,15 +8,43 @@ import cloth.parser.expression.UnaryExpression
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
 import cloth.token.Operators
+import cloth.util.ExecutableFormat
+import org.bytedeco.javacpp.BytePointer
+import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.LLVMValueRef
+import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
-
-// Import your AST classes from their package.
+import java.nio.file.Files
+import java.nio.file.Path
 
 class LLVMEmitter {
 
-	fun emit(ast: ASTStructure): String {
+	fun compile(ast: ASTStructure, output: Path, forcePrint: Boolean = true): Path {
+		val executable = ExecutableFormat.current.executablePath(output).toAbsolutePath().normalize()
+		Files.createDirectories(executable.parent)
+		val objectFile = Files.createTempFile("cloth-", ".o")
+
+		try {
+			withModule(ast, forcePrint) { module ->
+				emitObject(module, objectFile)
+			}
+			NativeLinker.link(objectFile, executable)
+			return executable
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
+	}
+
+	fun emit(ast: ASTStructure, forcePrint: Boolean = false): String = withModule(ast, forcePrint) { module ->
+		val ir = LLVMPrintModuleToString(module)
+		try {
+			ir.string
+		} finally {
+			LLVMDisposeMessage(ir)
+		}
+	}
+
+	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, action: (LLVMModuleRef) -> T): T {
 		val context = LLVMContextCreate()
 		val module = LLVMModuleCreateWithNameInContext("cloth", context)
 		val builder = LLVMCreateBuilderInContext(context)
@@ -49,7 +77,6 @@ class LLVMEmitter {
 						val left = emitExpression(expression.left)
 						val right = emitExpression(expression.right)
 
-						// Assumes operator is a String, as in the last example.
 						when (expression.operator.lexeme) {
 							Operators.PLUS.toString()     -> LLVMBuildAdd(builder, left, right, "addtmp")
 							Operators.MINUS.toString()    -> LLVMBuildSub(builder, left, right, "subtmp")
@@ -72,27 +99,81 @@ class LLVMEmitter {
 				}
 			}
 
-			// Empty programs return 0.
 			var result = LLVMConstInt(int32Type, 0L, 0)
 
 			for (statement in ast.statements) {
 				result = emitStatement(statement)
 			}
 
-			// Emit one return after all expressions.
+			if (forcePrint) emitPrint(context, module, builder, result)
+
 			LLVMBuildRet(builder, result)
-
-			val ir = LLVMPrintModuleToString(module)
-
-			return try {
-				ir.string
-			} finally {
-				LLVMDisposeMessage(ir)
+			checkLLVM("Invalid LLVM module") { error ->
+				LLVMVerifyModule(module, LLVMReturnStatusAction, error)
 			}
+			return action(module)
 		} finally {
 			LLVMDisposeBuilder(builder)
 			LLVMDisposeModule(module)
 			LLVMContextDispose(context)
 		}
+	}
+
+	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef) {
+		val printfType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
+			parameters.put(0, LLVMPointerTypeInContext(context, 0))
+			LLVMFunctionType(LLVMInt32TypeInContext(context), parameters, 1, 1)
+		}
+		val printf = LLVMAddFunction(module, "printf", printfType)
+		val format = LLVMBuildGlobalStringPtr(builder, "%d\n", "result_format")
+		PointerPointer<LLVMValueRef>(2L).use { arguments ->
+			arguments.put(0, format)
+			arguments.put(1, result)
+			LLVMBuildCall2(builder, printfType, printf, arguments, 2, "")
+		}
+	}
+
+	private fun emitObject(module: LLVMModuleRef, output: Path) {
+		val triple = LLVMGetDefaultTargetTriple()
+		try {
+			val target = LLVMTargetRef()
+			checkLLVM("Unable to find the native target") { error ->
+				LLVMGetTargetFromTriple(triple, target, error)
+			}
+			val machine = LLVMCreateTargetMachine(target, triple.string, "generic", "", LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelDefault)
+			check(machine != null && !machine.isNull) { "Unable to create the native target machine" }
+
+			try {
+				LLVMSetTarget(module, triple)
+				val layout = LLVMCreateTargetDataLayout(machine)
+				try {
+					LLVMSetModuleDataLayout(module, layout)
+				} finally {
+					LLVMDisposeTargetData(layout)
+				}
+				checkLLVM("Unable to emit native object code") { error ->
+					LLVMTargetMachineEmitToFile(machine, module, output.toString(), LLVMObjectFile, error)
+				}
+			} finally {
+				LLVMDisposeTargetMachine(machine)
+			}
+		} finally {
+			LLVMDisposeMessage(triple)
+		}
+	}
+
+	private fun checkLLVM(message: String, action: (BytePointer) -> Int) {
+		val error = BytePointer(null as Pointer?)
+		try {
+			check(action(error) == 0) { "$message: ${if (error.isNull) "Unknown LLVM error" else error.string}" }
+		} finally {
+			if (!error.isNull) LLVMDisposeMessage(error)
+		}
+	}
+
+	companion object { init {
+		check(LLVMInitializeNativeTarget() == 0) { "Unable to initialize the native LLVM target" }
+		check(LLVMInitializeNativeAsmPrinter() == 0) { "Unable to initialize the native LLVM assembly printer" }
+	}
 	}
 }
