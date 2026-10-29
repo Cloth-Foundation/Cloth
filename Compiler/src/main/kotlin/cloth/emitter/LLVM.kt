@@ -3,6 +3,8 @@ package cloth.emitter
 import cloth.ast.ASTStructure
 import cloth.emitter.types.EmitExpression
 import cloth.emitter.types.EmitStatement
+import cloth.emitter.types.EmitBindings
+import cloth.semantic.SemanticAnalyzer
 import cloth.util.ExecutableFormat
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
@@ -40,6 +42,7 @@ class LLVMEmitter {
 	}
 
 	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, action: (LLVMModuleRef) -> T): T {
+		SemanticAnalyzer().analyze(ast)
 		val context = LLVMContextCreate()
 		val module = LLVMModuleCreateWithNameInContext("cloth", context)
 		val builder = LLVMCreateBuilderInContext(context)
@@ -55,8 +58,9 @@ class LLVMEmitter {
 
 			LLVMPositionBuilderAtEnd(builder, entryBlock)
 
-			val expressionEmitter = EmitExpression(context, builder)
-			val statementEmitter = EmitStatement(expressionEmitter)
+			val bindings = EmitBindings(builder)
+			val expressionEmitter = EmitExpression(context, builder, bindings)
+			val statementEmitter = EmitStatement(expressionEmitter, bindings)
 
 			var result = LLVMConstInt(int32Type, 0L, 0)
 

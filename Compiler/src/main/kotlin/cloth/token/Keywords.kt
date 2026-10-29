@@ -8,13 +8,13 @@ enum class Keywords(val keyword: String? = null) {
 
 	CLASS, STRUCT, ENUM,
 
-	METHOD("mt"), FUNCTION("fn"), CONSTRUCTOR("ctor"),
+	METHOD("mt"), FUNCTION("fn"), CONSTRUCTOR("ctor"), PUBLIC("pub"),
 
 	BOOLEAN("bool"), STRING, FLOAT, INTEGER("int"), CHARACTER("char"), VOID, STATE,
 
 	INIT,
 
-	IF, ELSE;
+	IF, ELSE, IS;
 
 	override fun toString(): String {
 		return keyword ?: this.name.lowercase()
