@@ -76,6 +76,16 @@ pub Player (def<string?> name ?: "Unknown") : Entity<Player>(100f) {
 
 }
 
+typedef<state<DeathInfo>>
+pub Dead for Player {
+
+    init {
+        this.die()
+        println(state.message)
+    }
+
+}
+
 // enums may hold constant values
 // decided in the ctor (head) or override in body
 // enums are stored as numbers ie. DamageType.FALL -> int == 1 would be true (starting at 0, in order of decl)
@@ -123,7 +133,7 @@ pub fn<void> main (string[] args) {
     def<DamageSource> source = { DamageType.ATTACK, 10f }
 
     // Infer both types and make both bindings immutable
-    def type, amount := player.attack(source)
+    def type, amount := player::attack(source)
 
     println(#"Damage type: {type}, amount: {amount}")
 
@@ -131,7 +141,7 @@ pub fn<void> main (string[] args) {
 
     // Widen before arithmetic, then convert to a 64-bit integer
     // Default int is signed 32-bit
-    def<float<64>> largeFloat = (int.MAX -> float<64>) * 2
+    def<float<64>> largeFloat = (int::MAX -> float<64>) * 2
     def<int<64>> largeInt = largeFloat -> int<64>
 
     // Character declaration

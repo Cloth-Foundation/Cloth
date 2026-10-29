@@ -1,0 +1,12 @@
+// Explicit integer bindings: '=' is mutable, ':=' is immutable.
+def<int> x = 10
+def<int> original := x
+
+// Initializers can read earlier bindings and use arithmetic.
+def<int> offset := (original + 2) * 3
+
+// Reassignment can read the binding's previous value.
+x = x + 5
+
+// Integer values are independent: original is still 10.
+original + x + offset // 61

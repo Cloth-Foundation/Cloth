@@ -35,4 +35,5 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     useJUnitPlatform()
+    workingDir(rootProject.projectDir)
 }

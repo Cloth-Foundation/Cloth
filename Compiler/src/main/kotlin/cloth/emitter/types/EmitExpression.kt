@@ -8,13 +8,14 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(context: LLVMContextRef, private val builder: LLVMBuilderRef) {
+internal class EmitExpression(context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings) {
 
 	private val int32Type = LLVMInt32TypeInContext(context)
 	private val float32Type = LLVMFloatTypeInContext(context)
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
+			is NameExpression -> bindings.read(expression.name.lexeme)
 			is IntegerLiteral -> LLVMConstInt(int32Type, expression.value.toLong(), 1)
 			is FloatingPointLiteral -> LLVMConstReal(float32Type, expression.value.toDouble())
 

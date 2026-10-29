@@ -5,6 +5,7 @@ import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IntegerLiteral
+import cloth.parser.expression.NameExpression
 import cloth.parser.expression.FloatingPointLiteral
 import cloth.parser.expression.UnaryExpression
 import cloth.token.Operators
@@ -54,6 +55,7 @@ class ExpressionParser(val parser: Parser) {
 		val token = parser.peek()
 
 		return when (token.type) {
+			TokenType.Identifier -> NameExpression(parser.advance())
 			TokenType.IntegerLiteral                                             -> {
 				parser.advance()
 
@@ -72,15 +74,10 @@ class ExpressionParser(val parser: Parser) {
 			}
 
 			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.character -> {
-				parser.advance()
-
-				val expression = parseExpression()
-
-				parser.expect(Operators.PAREN_CLOSE)
-				expression
+				parser.delimited.parentheses { parseExpression() }
 			}
 
-			else                                                                 -> throw SyntaxException("Expected a number or '(', got '${token.lexeme}' at ${token.span}")
+			else                                                                 -> throw SyntaxException("Expected a number, binding name, or '(', got '${token.lexeme}' at ${token.span}")
 		}
 	}
 
