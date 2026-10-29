@@ -65,7 +65,7 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.FloatingPointLiteral -> {
 				parser.advance()
 
-				val value = token.lexeme.toDoubleOrNull()?.takeIf { it.isFinite() }
+				val value = token.lexeme.toFloatOrNull()?.takeIf { it.isFinite() }
 					?: throw SyntaxException("Invalid or out-of-range float '${token.lexeme}' at ${token.span}")
 
 				FloatingPointLiteral(value)
