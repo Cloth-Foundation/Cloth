@@ -1,4 +1,5 @@
 plugins {
+    application
     kotlin("jvm") version "2.4.20"
 }
 
@@ -19,6 +20,15 @@ dependencies {
 
 kotlin {
     jvmToolchain(25)
+}
+
+application {
+    mainClass.set("cloth.EntryKt")
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.named<JavaExec>("run") {
+    workingDir(rootProject.projectDir)
 }
 
 tasks.test {

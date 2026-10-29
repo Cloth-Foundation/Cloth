@@ -109,7 +109,7 @@ class Lexer(private val source: String) {
 		if (peek() != Operators.DIVIDE.toChar()) return false
 
 		when (source.getOrNull(current + 1)) {
-			Operators.DIVIDE.toChar() -> {
+			Operators.DIVIDE.toChar()   -> {
 				advance()
 				advance()
 
@@ -125,9 +125,7 @@ class Lexer(private val source: String) {
 				advance()
 
 				while (!isAtEnd()) {
-					if (peek() == Operators.MULTIPLY.toChar() &&
-						source.getOrNull(current + 1) == Operators.DIVIDE.toChar()
-					) {
+					if (peek() == Operators.MULTIPLY.toChar() && source.getOrNull(current + 1) == Operators.DIVIDE.toChar()) {
 						advance()
 						advance()
 						return true
@@ -139,7 +137,7 @@ class Lexer(private val source: String) {
 				error("Unterminated block comment at $cStart")
 			}
 
-			else -> return false
+			else                        -> return false
 		}
 	}
 
@@ -208,12 +206,12 @@ class Lexer(private val source: String) {
 	private fun string() {
 		while (!isAtEnd()) {
 			when (advance()) {
-				Operators.QUOTATION.toChar()        -> {
+				Operators.QUOTATION.toChar() -> {
 					addToken(TokenType.StringLiteral)
 					return
 				}
 
-				'\\'       -> {
+				'\\'                         -> {
 					if (isAtEnd()) break
 
 					require(peek() != '\n' && peek() != '\r') {
@@ -223,7 +221,7 @@ class Lexer(private val source: String) {
 					advance() // Escaped character, including \" or \\.
 				}
 
-				'\n', '\r' -> {
+				'\n', '\r'                   -> {
 					error("Strings cannot span multiple lines at $cStart")
 				}
 			}

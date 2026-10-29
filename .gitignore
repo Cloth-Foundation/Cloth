@@ -6,6 +6,9 @@ build/
 .kotlin
 .idea
 
+*.exe
+*.ll
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
