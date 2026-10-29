@@ -1,3 +1,3 @@
 rootProject.name = "Cloth"
 includeBuild("_build-logic")
-include("Frontend")
+include("Compiler")
