@@ -21,7 +21,7 @@ import kotlin.test.*
 
 class AssignmentOperatorsTest {
 
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `lexer recognizes update tokens and retains line comments`() {
@@ -159,7 +159,7 @@ class AssignmentOperatorsTest {
 			"def<unsigned int> x = 2\ndef y = 3\nx ** y" to DiagnosticCode.MIXED_INTEGERS,
 			"def<int<8>> x = 2\nx ** 128" to DiagnosticCode.INTEGER_RANGE
 		)) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertEquals(code, failure.diagnosticCode, source)
 		}
 	}
@@ -218,7 +218,7 @@ class AssignmentOperatorsTest {
 			def negativeZero = (-0.0) ** 3
 			nan != nan && infinity > 1.0 && (1.0 / negativeZero) < 0.0 && 0.0 ** 0.0 == 1.0
 		"""
-		val executable = LLVMEmitter(LinkOptions(runtime = RuntimeLinkage.DYNAMIC)).compile(parse(source), directory.resolve("power_special"))
+		val executable = LLVMEmitter(LinkOptions(runtime = RuntimeLinkage.DYNAMIC)).compileSnippet(parse(source), directory.resolve("power_special"))
 		assertExecutable(executable, "true")
 	}
 
@@ -237,7 +237,7 @@ class AssignmentOperatorsTest {
 			def skipped = false && 2 ** negative == 0
 			result == 512 && visits == 11 && !skipped && (if (true) { 3 ** 2 } else { 0 }) == 9
 		""", "true")
-		val executable = LLVMEmitter().compile(parse("def exponent = -1\n2 ** exponent"), directory.resolve("power_invalid"))
+		val executable = LLVMEmitter().compileSnippet(parse("def exponent = -1\n2 ** exponent"), directory.resolve("power_invalid"))
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS))
@@ -250,7 +250,7 @@ class AssignmentOperatorsTest {
 	}
 
 	private fun assertProgram(target: Path, source: String, expected: String) {
-		val executable = LLVMEmitter().compile(parse(source), target)
+		val executable = LLVMEmitter().compileSnippet(parse(source), target)
 		assertExecutable(executable, expected)
 	}
 

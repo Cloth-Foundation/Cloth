@@ -7,35 +7,41 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
+import cloth.parser.statement.ReturnStatement
+import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 
-internal class EmitStatement(private val expressionEmitter: EmitExpression, private val bindings: EmitBindings, private val semantics: SemanticModel) {
+internal class EmitStatement(private val expressionEmitter: EmitExpression, private val bindings: EmitBindings, private val semantics: SemanticModel, private val functions: FunctionSemanticModel? = null) {
 
 	fun emit(statement: Statement): LLVMValueRef? {
+		if (expressionEmitter.terminated()) return null
 		return when (statement) {
 			is BindingDeclaration  -> {
 				val value = expressionEmitter.emit(statement.initializer)
-				bindings.declare(statement.name.lexeme, semantics.typeOf(statement), value)
+				if (expressionEmitter.terminated()) return null
+				bindings.declare(functions?.declarations?.symbolOf(statement) ?: statement.name.lexeme, statement.name.lexeme, semantics.typeOf(statement), checkNotNull(value))
 				value
 			}
 
 			is AssignmentStatement -> {
 				val value = expressionEmitter.emit(statement.value)
-				bindings.assign(statement.name.lexeme, value)
+				if (expressionEmitter.terminated()) return null
+				bindings.assign(functions?.declarations?.targetOf(statement) ?: statement.name.lexeme, checkNotNull(value))
 				value
 			}
 
 			is UpdateStatement -> {
 				val value = expressionEmitter.emitUpdate(statement, semantics.typeOf(statement))
-				bindings.assign(statement.name.lexeme, value)
+				bindings.assign(functions?.declarations?.targetOf(statement) ?: statement.name.lexeme, value)
 				value
 			}
 
 			is ExpressionStatement -> if (statement.expression is IfExpression && semantics.typeOf(statement) == ValueType.VOID) {
 				expressionEmitter.emitConditional(statement.expression, requireValue = false)
 			} else expressionEmitter.emit(statement.expression)
+			is ReturnStatement -> { expressionEmitter.emitReturn(statement); null }
 
 			else                   -> throw InternalErrors.invariant("Unsupported statement: $statement")
 		}

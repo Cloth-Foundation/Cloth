@@ -11,9 +11,10 @@ import org.bytedeco.llvm.global.LLVM.*
 internal class LLVMTypes(private val context: LLVMContextRef) {
 
 	fun value(type: ValueType): LLVMTypeRef = when (type) {
+		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no LLVM value")
 		ValueType.Void                                            -> LLVMVoidTypeInContext(context)
 		is ValueType.Integer, ValueType.Bool, ValueType.Character -> LLVMIntTypeInContext(context, type.bits)
-		ValueType.Text                                            -> PointerPointer<LLVMTypeRef>(2L).use { fields ->
+		ValueType.Text, is ValueType.ArrayValue                    -> PointerPointer<LLVMTypeRef>(2L).use { fields ->
 			fields.put(0, LLVMPointerTypeInContext(context, 0))
 			fields.put(1, LLVMInt64TypeInContext(context))
 			LLVMStructTypeInContext(context, fields, 2, 0)
@@ -27,8 +28,9 @@ internal class LLVMTypes(private val context: LLVMContextRef) {
 	}
 
 	fun storage(type: ValueType): LLVMTypeRef = when (type) {
+		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no storage")
 		ValueType.Void                                            -> throw InternalErrors.invariant("A void statement has no binding storage")
-		is ValueType.Floating, ValueType.Text                     -> value(type)
+		is ValueType.Floating, ValueType.Text, is ValueType.ArrayValue -> value(type)
 		is ValueType.Integer, ValueType.Bool, ValueType.Character -> LLVMIntTypeInContext(context, type.storageBits)
 	}
 }

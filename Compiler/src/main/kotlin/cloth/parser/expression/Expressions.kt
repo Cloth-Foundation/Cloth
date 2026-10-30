@@ -11,6 +11,13 @@ data class NameExpression(val name: Token) : Expression {
 	override val span get() = name.span
 }
 
+/** A named function call; overload resolution is a separate semantic stage. */
+data class CallExpression(val name: Token, val arguments: List<Expression>, override val span: TokenSpan) : Expression
+
+data class ArrayLiteral(val elements: List<Expression>, override val span: TokenSpan) : Expression
+
+data class IndexExpression(val array: Expression, val index: Expression, override val span: TokenSpan) : Expression
+
 data class UnaryExpression(val operator: Token, val operand: Expression) : Expression {
 
 	override val span get() = operator.span.through(operand.span)

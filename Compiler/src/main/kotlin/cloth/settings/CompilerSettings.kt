@@ -6,15 +6,19 @@ import java.io.File
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
+enum class OutputKind { EXECUTABLE, OBJECT }
+
 class CompilerSettings(val args: Array<String>) {
 
 	private val positional = mutableListOf<String>()
 	val linkOptions: LinkOptions
+	val outputKind: OutputKind
 	var debug: Boolean = false
 		private set
 
 	init {
 		var options = LinkOptions()
+		var emission = OutputKind.EXECUTABLE
 		var index = 0
 		var literalArguments = false
 		while (index < args.size) {
@@ -41,6 +45,14 @@ class CompilerSettings(val args: Array<String>) {
 			}
 			val value = attached ?: args.getOrNull(index)?.takeUnless { it.startsWith("-") }?.also { index++ }
 			if (value.isNullOrBlank()) throw CliErrors.missing(name, usage)
+			if (name == "--emit") {
+				emission = when (value) {
+					"executable" -> OutputKind.EXECUTABLE
+					"object" -> OutputKind.OBJECT
+					else -> errorValue(name, value, "executable, object")
+				}
+				continue
+			}
 			options = when (name) {
 				"--linker"              -> options.copy(linker = path(value))
 				"--linker-driver"       -> options.copy(driver = when (value) {
@@ -69,16 +81,17 @@ class CompilerSettings(val args: Array<String>) {
 		}
 		if (positional.size > 2) throw CliErrors.arguments(usage)
 		linkOptions = options
+		outputKind = emission
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/EX.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/StringFunctions.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 
 	companion object {
 
-		private val optionNames = setOf("--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
-		private const val usage = "Usage: cloth [source.co] [output] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]"
+		private val optionNames = setOf("--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
+		private const val usage = "Usage: cloth [source.co] [output] [--emit executable|object] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]"
 		private fun errorValue(name: String, value: String, expected: String): Nothing = throw CliErrors.value(name, value, expected)
 		private fun path(value: String): Path = try {
 			Path.of(value)

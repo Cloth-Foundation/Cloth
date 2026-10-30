@@ -59,14 +59,30 @@ sealed class ValueType(val keyword: Keywords) {
 
 	data object Text : ValueType(Keywords.STRING)
 
+	data class ArrayValue(val element: ValueType, val size: Int? = null) : ValueType(element.keyword)
+
+	/** Unsized array contracts accept a known extent, recursively, without numeric conversion. */
+	fun accepts(actual: ValueType): Boolean = actual == NEVER || this == actual ||
+		(this is ArrayValue && actual is ArrayValue && (size == null || size == actual.size) && element.accepts(actual.element))
+
+	val buffered: Boolean get() = this == Text || this is ArrayValue
+
 	/** A standalone conditional executes branches without yielding a value. */
 	data object Void : ValueType(Keywords.VOID)
+
+	/** Internal bottom type: evaluation returns from the enclosing function. No source spelling. */
+	data object Never : ValueType(Keywords.VOID)
 
 	val integer: Boolean get() = this is Integer
 	val floating: Boolean get() = this is Floating
 	val numeric: Boolean get() = integer || floating
 	val spelling: String
-		get() = buildString {
+		get() = if (this == Never) "<no continuation>" else if (this is ArrayValue) {
+			var base: ValueType = this
+			val dimensions = StringBuilder()
+			while (base is ArrayValue) { dimensions.append("[${base.size ?: ""}]"); base = base.element }
+			base.spelling + dimensions
+		} else buildString {
 			if (unsigned) append("${Keywords.UNSIGNED} ")
 			append(keyword)
 			if ((integer || floating) && bits != DEFAULT_BITS) append("<$bits>")
@@ -89,6 +105,7 @@ sealed class ValueType(val keyword: Keywords) {
 		val CHAR = Character
 		val STRING = Text
 		val VOID = Void
+		internal val NEVER = Never
 
 		/** Two floats use the wider format; mixed integer/float expressions use at least float32. */
 		fun commonFloating(left: ValueType, right: ValueType): Floating {

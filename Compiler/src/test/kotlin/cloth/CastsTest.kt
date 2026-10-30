@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class CastsTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 	private fun expression(source: String) = assertIs<ExpressionStatement>(parse(source).statements.single()).expression
 
 	@Test
@@ -98,7 +98,7 @@ class CastsTest {
 			"false && (true -> int == 1)" to "Cannot cast 'bool' to 'int'"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -219,7 +219,7 @@ class CastsTest {
 
 	@Test
 	fun `cast LLVM uses value conversions and guards unsafe float conversions`() {
-		val ir = LLVMEmitter().emit(parse("""
+		val ir = LLVMEmitter().emitSnippet(parse("""
 			def<int> s = -1
 			def<unsigned int> u = s -> unsigned int
 			def wideSigned = s -> int<64>
@@ -252,7 +252,7 @@ class CastsTest {
 	}
 
 	private fun runProgram(outputPath: Path, source: String): Pair<Int, String> {
-		val executable = LLVMEmitter().compile(parse(source), outputPath)
+		val executable = LLVMEmitter().compileSnippet(parse(source), outputPath)
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")

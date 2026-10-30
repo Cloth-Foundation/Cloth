@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class UnsignedIntegersTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `unsigned modifier and nested width annotations preserve their syntax`() {
@@ -91,7 +91,7 @@ class UnsignedIntegersTest {
 			"def<unsigned int> u = 1\nu < false" to "requires numeric operands"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -104,18 +104,18 @@ class UnsignedIntegersTest {
 			for ((leftType, rightType) in listOf("int" to "unsigned int", "unsigned int" to "int",
 				"int<64>" to "unsigned int<64>", "unsigned int<64>" to "unsigned int", "int" to "int<64>")) {
 				val source = "def<$leftType> left = 1\ndef<$rightType> right = 2\nleft $operator right"
-				val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+				val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 				assertContains(failure.message.orEmpty(), "use an explicit conversion")
 			}
 		}
 		assertFailsWith<SemanticException> {
-			LLVMEmitter().emit(parse("def<unsigned int> u = 1\ndef s = 1\nfalse && (u == s)"))
+			LLVMEmitter().emitSnippet(parse("def<unsigned int> u = 1\ndef s = 1\nfalse && (u == s)"))
 		}
 	}
 
 	@Test
 	fun `LLVM retains unsigned operations float conversions and typed output`() {
-		val ir = LLVMEmitter().emit(parse("""
+		val ir = LLVMEmitter().emitSnippet(parse("""
 			def<unsigned int> a = 4294967295
 			def<unsigned int> b = 2
 			def quotient = a / b
@@ -131,7 +131,7 @@ class UnsignedIntegersTest {
 		for (instruction in listOf("udiv i32", "urem i32", "icmp ult i32", "icmp ugt i32",
 			"icmp ule i32", "icmp uge i32", "uitofp i32", "%u")) assertContains(ir, instruction)
 		assertFalse(ir.contains("sitofp"))
-		val wide = LLVMEmitter().emit(parse("def<unsigned int<64>> a = 18446744073709551615\na / 2"), forcePrint = true)
+		val wide = LLVMEmitter().emitSnippet(parse("def<unsigned int<64>> a = 18446744073709551615\na / 2"), forcePrint = true)
 		assertContains(wide, "alloca i64")
 		assertContains(wide, "udiv i64")
 		assertContains(wide, "%llu")
@@ -234,7 +234,7 @@ class UnsignedIntegersTest {
 	private fun assertPrograms(directory: Path, cases: List<Pair<String, String>>) {
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("program_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("program_$index"))
 			assertTrue(Files.isRegularFile(executable))
 			val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 			try {

@@ -1,8 +1,11 @@
-def x = 19
-x += 1
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    def x = 19
+    x += 1
 
-def<float<16>> smaller = (x ** 2) -> float<16>
+    def<float<16>> smaller = (x ** 2) -> float<16>
 
-def<string> answer = #"The answer is: {smaller + 0.2}"
+    def<string> answer = #"The answer is: {smaller + 0.2}"
 
-answer // The answer is: 400.200012
+    return if (answer == "The answer is: 400.200012") { 0 } else { 1 }
+}

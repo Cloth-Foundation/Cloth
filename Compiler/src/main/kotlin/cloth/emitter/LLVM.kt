@@ -1,12 +1,17 @@
 package cloth.emitter
 
 import cloth.ast.ASTStructure
+import cloth.ast.SourceUnit
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.ClothDiagnostic
 import cloth.emitter.types.*
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
+import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.ProgramAnalyzer
+import cloth.semantic.ProgramKind
 import cloth.settings.LinkOptions
 import cloth.token.Keywords
 import org.bytedeco.javacpp.BytePointer
@@ -22,7 +27,71 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 	private val abi by lazy { NativeCABI.native() }
 	private val linker by lazy { ToolchainResolver.native(abi, linkOptions) }
 
-	fun compile(ast: ASTStructure, output: Path, forcePrint: Boolean = true): Path {
+	fun compile(unit: SourceUnit, output: Path): Path {
+		val program = ProgramAnalyzer().analyze(unit)
+		EmitFunctions.validate(program.functions)
+		val configuration = linker // Entry/type/feature failures precede linker discovery and output creation.
+		val executable = abi.executableFormat.executablePath(output).toAbsolutePath().normalize()
+		Files.createDirectories(executable.parent)
+		val objectFile = Files.createTempFile("cloth-", ".o")
+		try {
+			withFunctions(program.functions) { context, module, functions, _ ->
+				EmitEntryPoint(context, module, abi).emit(program, functions)
+				verify(module)
+				emitObject(module, objectFile)
+			}
+			NativeLinker.link(objectFile, executable, configuration)
+			return executable
+		} finally { Files.deleteIfExists(objectFile) }
+	}
+
+	fun emitExecutable(unit: SourceUnit): String {
+		val program = ProgramAnalyzer().analyze(unit)
+		return withFunctions(program.functions) { context, module, functions, _ ->
+			EmitEntryPoint(context, module, abi).emit(program, functions)
+			verify(module)
+			val ir = LLVMPrintModuleToString(module)
+			try { ir.string } finally { LLVMDisposeMessage(ir) }
+		}
+	}
+
+	/** Declaration module only; use emitExecutable to include program startup. */
+	fun emit(unit: SourceUnit): String = withFunctions(unit) { _, module, _, _ ->
+		val ir = LLVMPrintModuleToString(module)
+		try { ir.string } finally { LLVMDisposeMessage(ir) }
+	}
+
+	fun compileObject(unit: SourceUnit, output: Path): Path = withFunctions(ProgramAnalyzer().analyze(unit, ProgramKind.LIBRARY).functions) { _, module, _, _ ->
+		val target = output.toAbsolutePath().normalize()
+		Files.createDirectories(target.parent)
+		emitObject(module, target)
+		target
+	}
+
+	/** Module composition hook used by native tests and entry-point emission. */
+	internal fun <T> withFunctions(unit: SourceUnit, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T = withFunctions(FunctionAnalyzer().analyze(unit), action)
+
+	private fun <T> withFunctions(semantics: FunctionSemanticModel, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T {
+		EmitFunctions.validate(semantics)
+		val targetABI = abi
+		val context = LLVMContextCreate()
+		val module = LLVMModuleCreateWithNameInContext("cloth", context)
+		try {
+			LLVMSetTarget(module, targetABI.targetTriple)
+			val functions = EmitFunctions(context, module, targetABI, semantics)
+			functions.emitAll()
+			verify(module)
+			return action(context, module, functions, semantics)
+		} finally {
+			LLVMDisposeModule(module)
+			LLVMContextDispose(context)
+		}
+	}
+
+	internal fun verify(module: LLVMModuleRef) = checkLLVM(BackendErrors::invalidIR) { LLVMVerifyModule(module, LLVMReturnStatusAction, it) }
+
+	/** Test instrumentation for isolated body fragments, not language program startup. */
+	internal fun compileSnippet(ast: ASTStructure, output: Path, forcePrint: Boolean = true): Path {
 		val semantics = SemanticAnalyzer().analyze(ast)
 		val configuration = linker // Validate the toolchain before creating output files or generating code.
 		val executable = abi.executableFormat.executablePath(output).toAbsolutePath().normalize()
@@ -40,7 +109,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	fun emit(ast: ASTStructure, forcePrint: Boolean = false): String = withModule(ast, forcePrint) { module ->
+	internal fun emitSnippet(ast: ASTStructure, forcePrint: Boolean = false): String = withModule(ast, forcePrint) { module ->
 		val ir = LLVMPrintModuleToString(module)
 		try {
 			ir.string
@@ -94,7 +163,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef, type: ValueType, casts: EmitCast, strings: EmitString) {
+	internal fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef, type: ValueType, casts: EmitCast, strings: EmitString) {
 		if (type == ValueType.CHAR) {
 			EmitCharacter(context, builder, abi).print(module, result)
 			return
@@ -130,7 +199,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	private fun emitObject(module: LLVMModuleRef, output: Path) {
+	internal fun emitObject(module: LLVMModuleRef, output: Path) {
 		val target = LLVMTargetRef()
 		BytePointer(abi.targetTriple).use { triple ->
 			checkLLVM(BackendErrors::target) { error ->

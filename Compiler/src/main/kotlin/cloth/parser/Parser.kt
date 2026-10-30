@@ -1,7 +1,12 @@
 package cloth.parser
 
 import cloth.ast.ASTStructure
+import cloth.ast.SourceUnit
 import cloth.diagnostics.SyntaxErrors
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.ParameterDeclaration
 import cloth.parser.expression.ConditionalBranch
 import cloth.parser.expression.IfExpression
 import cloth.parser.expression.BinaryExpression
@@ -11,6 +16,7 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
+import cloth.parser.statement.ReturnStatement
 import cloth.parser.subs.DelimitedParser
 import cloth.parser.subs.ExpressionParser
 import cloth.parser.subs.TypeParser
@@ -19,6 +25,8 @@ import cloth.token.*
 class Parser(private val tokens: List<Token>) {
 
 	private var currentIndex: Int = 0
+	private var inFunctionBody = false
+	internal val allowsContextualFloatingLiterals get() = inFunctionBody
 
 	private val expressionParser: ExpressionParser = ExpressionParser(this)
 	private val typeParser = TypeParser(this)
@@ -31,8 +39,68 @@ class Parser(private val tokens: List<Token>) {
 		return tokens[currentIndex++]
 	}
 
-	fun parse(): ASTStructure {
+	/** Complete source files contain declarations, never file-level executable snippets. */
+	fun parse(): SourceUnit = parseDeclarations()
+
+	/** Body fragment grammar for focused tests; not a source-file entry point. */
+	internal fun parseSnippet(): ASTStructure {
 		return ASTStructure(parseStatements(inBlock = false))
+	}
+
+	/** File-level grammar currently supports fn declarations, not executable statements. */
+	fun parseDeclarations(): SourceUnit {
+		val declarations = mutableListOf<FunctionDeclaration>()
+		skipNewlines()
+		while (peek().type != TokenType.EOF) {
+			declarations.add(parseFunction())
+			if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
+				throw SyntaxErrors.newline(peek())
+			}
+			skipNewlines()
+		}
+		return SourceUnit(declarations, peek().span)
+	}
+
+	private fun atKeyword(keyword: Keywords) = peek().type == TokenType.Keyword && peek().lexeme == keyword.toString()
+
+	private fun parseFunction(): FunctionDeclaration {
+		val visibility = if (atKeyword(Keywords.PUBLIC)) advance() else null
+		if (!atKeyword(Keywords.FUNCTION)) throw SyntaxErrors.expected("a 'fn' declaration", peek())
+		val keyword = advance()
+		val returnType = if (peek().lexeme == Operators.LESS.character) {
+			delimited.angles { typeParser.parse(allowArrays = true) }
+		} else null
+		val name = expect(TokenType.Identifier, "a function name")
+		val parameters = delimited.parentheses {
+			delimited.commaSeparated(Operators.PAREN_CLOSE) {
+				val finalKeyword = if (atKeyword(Keywords.FINAL)) advance() else null
+				val type = typeParser.parse(allowArrays = true)
+				ParameterDeclaration(type, expect(TokenType.Identifier, "a parameter name"), finalKeyword)
+			}
+		}
+		skipNewlines()
+		val previousContext = inFunctionBody
+		inFunctionBody = true
+		try {
+			val body = when (peek().lexeme) {
+				Operators.BRACE_OPEN.character -> parseBlock()
+				Operators.ASSIGN.character -> {
+					val equals = advance()
+					val expression = expressionParser.parseExpression()
+					ExpressionBody(equals, expression, equals.span.through(previous().span))
+				}
+				else -> throw SyntaxErrors.expected("a function body ('{' or '=')", peek())
+			}
+			return FunctionDeclaration(keyword, name, returnType, parameters, body, visibility)
+		} finally {
+			inFunctionBody = previousContext
+		}
+	}
+
+	private fun parseBlock(): BlockBody {
+		val opening = peek()
+		val statements = delimited.braces { parseStatements(inBlock = true) }
+		return BlockBody(statements, opening.span.through(previous().span))
 	}
 
 	private fun parseStatements(inBlock: Boolean): List<Statement> {
@@ -66,8 +134,8 @@ class Parser(private val tokens: List<Token>) {
 				expression
 			}
 			skipNewlines()
-			val body = delimited.braces { parseStatements(inBlock = true) }
-			branches.add(ConditionalBranch(condition, body, condition.span.through(previous().span)))
+			val body = parseBlock()
+			branches.add(ConditionalBranch(condition, body.statements, condition.span.through(body.span)))
 			var offset = 0
 			while (peek(offset).type == TokenType.NewLine) offset++
 			if (peek(offset).type != TokenType.Keyword || peek(offset).lexeme != Keywords.ELSE.toString()) break
@@ -77,20 +145,27 @@ class Parser(private val tokens: List<Token>) {
 				advance()
 				skipNewlines()
 			} else {
-				val start = peek().span
-				otherwise = delimited.braces { parseStatements(inBlock = true) }
-				otherwiseSpan = start.through(previous().span)
+				val body = parseBlock()
+				otherwise = body.statements
+				otherwiseSpan = body.span
 				break
 			}
 		}
 		return IfExpression(keyword, branches, otherwise, keyword.span.through(previous().span), otherwiseSpan)
 	}
 
-	private fun skipNewlines() {
+	fun skipNewlines() {
 		while (peek().type == TokenType.NewLine) advance()
 	}
 
 	private fun parseStatement(): Statement {
+		if (atKeyword(Keywords.RETURN)) {
+			if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
+			val keyword = advance()
+			val bare = peek().type in setOf(TokenType.NewLine, TokenType.EOF) || peek().lexeme == Operators.BRACE_CLOSE.character
+			val value = if (bare) null else expressionParser.parseExpression()
+			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
+		}
 		if (peek().type == TokenType.Keyword && peek().lexeme == Keywords.DEFINITION.toString()) {
 			return parseBinding()
 		}
@@ -116,7 +191,7 @@ class Parser(private val tokens: List<Token>) {
 	private fun parseBinding(): BindingDeclaration {
 		val keyword = advance() // def
 		val type = if (peek().type == TokenType.Operator && peek().lexeme == Operators.LESS.character) {
-			delimited.angles { typeParser.parse() }
+			delimited.angles { typeParser.parse(allowArrays = true) }
 		} else null
 		val name = expect(TokenType.Identifier, "a binding name")
 		val assignment = peek()

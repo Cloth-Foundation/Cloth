@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class StringsTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `quoted strings decode escapes and preserve Unicode scalars`() {
@@ -76,7 +76,7 @@ class StringsTest {
 		""")
 		val model = SemanticAnalyzer().analyze(ast)
 		for (statement in ast.statements) assertEquals(ValueType.STRING, model.typeOf(statement))
-		val ir = LLVMEmitter().emit(ast, forcePrint = true)
+		val ir = LLVMEmitter().emitSnippet(ast, forcePrint = true)
 		assertContains(ir, "%text = alloca { ptr, i64 }")
 		assertContains(ir, "%original = alloca { ptr, i64 }")
 		assertContains(ir, "private constant")
@@ -93,7 +93,7 @@ class StringsTest {
 			"def s := \"text\"\ns = \"other\"", "def<string> s = s", "def s = \"a\"\ndef s = \"b\"",
 			"def<unsigned string> s = \"a\"", "def<string<8>> s = \"a\"", "def<string<32>> s = \"a\"")
 		for (source in cases) {
-			assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
 	}
 
@@ -115,7 +115,7 @@ class StringsTest {
 			add("false && (\"a\" == 1)")
 		}
 		for (source in cases) {
-			assertLocated(assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) })
+			assertLocated(assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) })
 		}
 	}
 
@@ -137,7 +137,7 @@ class StringsTest {
 		assertEquals("==", equality.operator.lexeme)
 		assertEquals("+", assertIs<BinaryExpression>(equality.right).operator.lexeme)
 		for (source in listOf("\"a\" +", "\"a\" ==", "\"a\" !=", "\"a\" + + \"b\"")) {
-			assertFails(source) { LLVMEmitter().emit(parse(source)) }
+			assertFails(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
 		assertFailsWith<SyntaxException> { parse("\"a\" == == \"b\"") }
 	}
@@ -149,7 +149,7 @@ class StringsTest {
 			"def s = \"a\"\ns = s != \"b\"", "def b = true\nb = \"a\" + \"b\"",
 			"def s := \"a\"\ns = s + \"b\"", "def b := \"a\" == \"a\"\nb = false",
 			"\"a\" == \"a\" == \"a\"", "true || (\"a\" + 1 == \"a1\")"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
@@ -226,7 +226,7 @@ class StringsTest {
 
 	@Test
 	fun `string IR guards lengths and places comparisons and allocations inside short circuit branches`() {
-		val ir = LLVMEmitter().emit(parse("""
+		val ir = LLVMEmitter().emitSnippet(parse("""
 			def a = "a"
 			def b = "b"
 			false && (a + b == "ab")
@@ -277,7 +277,7 @@ class StringsTest {
 	}
 
 	private fun assertProgram(output: Path, source: String, expected: String) {
-		val executable = LLVMEmitter().compile(parse(source), output)
+		val executable = LLVMEmitter().compileSnippet(parse(source), output)
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")

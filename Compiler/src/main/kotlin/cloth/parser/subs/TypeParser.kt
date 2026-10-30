@@ -4,11 +4,12 @@ import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.TokenType
 
 class TypeParser(private val parser: Parser) {
 
-	fun parse(inCast: Boolean = false): TypeReference {
+	fun parse(inCast: Boolean = false, allowArrays: Boolean = false): TypeReference {
 		val start = parser.peek().span
 		val unsigned = parser.peek().type == TokenType.Keyword && parser.peek().lexeme == Keywords.UNSIGNED.toString()
 		if (unsigned) parser.advance()
@@ -23,6 +24,15 @@ class TypeParser(private val parser: Parser) {
 		val width = if (parser.peek().lexeme == "<" && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == ">"))) {
 			parser.delimited.angles { parser.expect(TokenType.IntegerLiteral, "a numeric type width") }
 		} else null
-		return TypeReference(name, unsigned, width, start.through(parser.previous().span))
+		val sizes = mutableListOf<cloth.token.Token?>()
+		val arrays = buildList {
+			while (allowArrays && parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
+				val opening = parser.advance()
+				sizes.add(if (parser.peek().type == TokenType.IntegerLiteral) parser.advance() else null)
+				val closing = parser.expect(Operators.BRACKET_CLOSE)
+				add(opening.span.through(closing.span))
+			}
+		}
+		return TypeReference(name, unsigned, width, start.through(parser.previous().span), arrays, sizes)
 	}
 }

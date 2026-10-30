@@ -21,3 +21,5 @@ data class UpdateStatement(val name: Token, val operator: Token) : Statement {
 
 	override val span get() = name.span.through(operator.span)
 }
+
+data class ReturnStatement(val keyword: Token, val value: Expression?, override val span: TokenSpan = value?.let { keyword.span.through(it.span) } ?: keyword.span) : Statement

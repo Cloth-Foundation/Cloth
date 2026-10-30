@@ -1,0 +1,19 @@
+// Forward calls and recursion; 0 means the checks passed.
+fn<int> main() {
+    return if (factorial(5) == 120 && even(12) && !even(11)) { 0 } else { 1 }
+}
+
+fn<int> factorial(int value) {
+    if (value <= 1) { return 1 }
+    return value * factorial(value - 1)
+}
+
+fn<bool> even(int value) {
+    if (value == 0) { return true }
+    return odd(value - 1)
+}
+
+fn<bool> odd(int value) {
+    if (value == 0) { return false }
+    return even(value - 1)
+}

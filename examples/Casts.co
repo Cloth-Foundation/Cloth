@@ -1,16 +1,19 @@
-// Widen before arithmetic, then convert the result, as in Test.co.
-def<float<64>> largeFloat = (2147483647 -> float<64>) * 2
-def<int<64>> largeInt = largeFloat -> int<64>
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    // Widen before arithmetic, then convert the result, as in Test.co.
+    def<float<64>> largeFloat = (2147483647 -> float<64>) * 2
+    def<int<64>> largeInt = largeFloat -> int<64>
 
-// Integer casts wrap/truncate. Widening respects the source signedness.
-def<unsigned int> mask = -1 -> unsigned int
-def<int<64>> positiveMask = mask -> int<64>
-def<int> signedMask = mask -> int
+    // Integer casts wrap/truncate. Widening respects the source signedness.
+    def<unsigned int> mask = -1 -> unsigned int
+    def<int<64>> positiveMask = mask -> int<64>
+    def<int> signedMask = mask -> int
 
-// Float-to-integer casts discard the fractional part toward zero.
-def<int> whole = -3.75 -> int
+    // Float-to-integer casts discard the fractional part toward zero.
+    def<int> whole = -3.75 -> int
 
-// Cast results participate in ordinary comparisons and boolean expressions.
-def<bool> valid = positiveMask > 0 && signedMask == -1 && whole == -3
+    // Cast results participate in ordinary comparisons and boolean expressions.
+    def<bool> valid = positiveMask > 0 && signedMask == -1 && whole == -3
 
-largeInt
+    return if (largeInt == 4294967294 && valid) { 0 } else { 1 }
+}

@@ -1,32 +1,35 @@
-// Explicit and inferred booleans follow the ordinary binding rules.
-def<bool> alive = true
-def original := alive
-def<bool> stopped := !alive // false
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    // Explicit and inferred booleans follow the ordinary binding rules.
+    def<bool> alive = true
+    def original := alive
+    def<bool> stopped := !alive // false
 
-// Each bool has its own byte of local storage; copies keep their value.
-alive = !stopped // true
-alive = !alive // false
+    // Each bool has its own byte of local storage; copies keep their value.
+    alive = !stopped // true
+    alive = !alive // false
 
-// && binds more tightly than ||; both short-circuit from left to right.
-def<bool> ready := original && !stopped
-def permitted := alive || ready
+    // && binds more tightly than ||; both short-circuit from left to right.
+    def<bool> ready := original && !stopped
+    def permitted := alive || ready
 
-// Equality compares bool values and binds more tightly than && and ||.
-def<bool> same := permitted == original // true
-def different := alive != original // true
+    // Equality compares bool values and binds more tightly than && and ||.
+    def<bool> same := permitted == original // true
+    def different := alive != original // true
 
-// Numeric equality also returns bool; mixed numbers use float promotion.
-def numericSame := 7 == 7.0 // true
-def<bool> numericDifferent := 2.5 != 2.0 // true
+    // Numeric equality also returns bool; mixed numbers use float promotion.
+    def numericSame := 7 == 7.0 // true
+    def<bool> numericDifferent := 2.5 != 2.0 // true
 
-// Ordering accepts numbers and returns bool, with the same float promotion.
-def<int> count = 7
-def<float> limit := 7.5
-def inRange := count >= 0 && count < limit
-def<bool> ordered := limit > count && count <= 7
-same && different && numericSame && numericDifferent && inRange && ordered // true
+    // Ordering accepts numbers and returns bool, with the same float promotion.
+    def<int> count = 7
+    def<float> limit := 7.5
+    def inRange := count >= 0 && count < limit
+    def<bool> ordered := limit > count && count <= 7
+    return if (same && different && numericSame && numericDifferent && inRange && ordered) { 0 } else { 1 }
 
-// These would be compile-time errors:
-// alive = 1 // bool and int are distinct types.
-// original = false // original is immutable.
-// alive + 1 // bool is not a numeric type.
+    // These would be compile-time errors:
+    // alive = 1 // bool and int are distinct types.
+    // original = false // original is immutable.
+    // alive + 1 // bool is not a numeric type.
+}
