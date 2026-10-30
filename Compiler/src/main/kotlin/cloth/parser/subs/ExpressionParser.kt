@@ -3,12 +3,14 @@ package cloth.parser.subs
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.CastExpression
 import cloth.parser.expression.BooleanLiteral
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IntegerLiteral
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.FloatingPointLiteral
 import cloth.parser.expression.UnaryExpression
+import cloth.semantic.ValueType
 import cloth.token.Operators
 import cloth.token.Keywords
 import cloth.token.TokenType
@@ -22,6 +24,12 @@ class ExpressionParser(val parser: Parser) {
 			val operator = parser.peek()
 			val kind = Operators.fromCharacter(operator.lexeme)
 			if (kind == Operators.PAREN_CLOSE) break
+			if (kind == Operators.POINTER_RIGHT) {
+				if (CAST_PRECEDENCE < minimumPrecedence) break
+				parser.advance()
+				left = CastExpression(left, operator, TypeParser(parser).parse(inCast = true))
+				continue
+			}
 			val operatorPrecedence = binaryOperators[kind] ?: throw SyntaxException("Unsupported operator '${operator.lexeme}' at ${operator.span}")
 
 			if (operatorPrecedence.precedence < minimumPrecedence) {
@@ -65,18 +73,20 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.IntegerLiteral                                             -> {
 				parser.advance()
 
-				val value = token.lexeme.toIntOrNull() ?: throw SyntaxException("Invalid or out-of-range integer '${token.lexeme}' at ${token.span}")
+				val value = token.lexeme.toBigIntegerOrNull()?.takeIf { it.bitLength() <= ValueType.MAX_INTEGER_BITS }
+					?: throw SyntaxException("Invalid or out-of-range ${Keywords.INTEGER} '${token.lexeme}' at ${token.span}")
 
-				IntegerLiteral(value)
+				IntegerLiteral(value, token)
 			}
 
 			TokenType.FloatingPointLiteral -> {
 				parser.advance()
 
-				val value = token.lexeme.toFloatOrNull()?.takeIf { it.isFinite() }
-					?: throw SyntaxException("Invalid or out-of-range float '${token.lexeme}' at ${token.span}")
+				if (token.lexeme.toBigDecimalOrNull()?.let(ValueType.FLOAT::acceptsLiteral) != true) {
+					throw SyntaxException("Invalid or out-of-range ${Keywords.FLOAT} '${token.lexeme}' at ${token.span}")
+				}
 
-				FloatingPointLiteral(value)
+				FloatingPointLiteral(token.lexeme)
 			}
 
 			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.character -> {
@@ -88,6 +98,7 @@ class ExpressionParser(val parser: Parser) {
 	}
 
 	companion object {
+		private const val CAST_PRECEDENCE = 9
 		enum class Associativity { LEFT, RIGHT }
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
@@ -95,6 +106,12 @@ class ExpressionParser(val parser: Parser) {
 		val binaryOperators = mapOf(
 			Operators.OR to OperatorPrecedence(1),
 			Operators.AND to OperatorPrecedence(2),
+			Operators.EQUAL to OperatorPrecedence(5),
+			Operators.NOT_EQUAL to OperatorPrecedence(5),
+			Operators.LESS to OperatorPrecedence(7),
+			Operators.GREATER to OperatorPrecedence(7),
+			Operators.LESS_EQUAL to OperatorPrecedence(7),
+			Operators.GREATER_EQUAL to OperatorPrecedence(7),
 			Operators.PLUS to OperatorPrecedence(10),
 			Operators.MINUS to OperatorPrecedence(10),
 			Operators.MULTIPLY to OperatorPrecedence(20),

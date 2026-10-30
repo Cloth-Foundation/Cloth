@@ -6,6 +6,7 @@ package cloth.emitter
 
 const val LLVM_NEGOTIATION_TEMPORARY = "negtmp"
 const val LLVM_NOT_TEMPORARY = "nottmp"
+const val LLVM_COMPARE_TEMPORARY = "cmptmp"
 
 const val LLVM_ADD_TEMPORARY = "addtmp"
 const val LLVM_SUB_TEMPORARY = "subtmp"
