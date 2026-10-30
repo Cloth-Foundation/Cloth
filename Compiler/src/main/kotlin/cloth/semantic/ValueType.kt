@@ -53,6 +53,9 @@ sealed class ValueType(val keyword: Keywords) {
 
 	data object Text : ValueType(Keywords.STRING)
 
+	/** A standalone conditional executes branches without yielding a value. */
+	data object Void : ValueType(Keywords.VOID)
+
 	val integer: Boolean get() = this is Integer
 	val floating: Boolean get() = this is Floating
 	val numeric: Boolean get() = integer || floating
@@ -77,6 +80,7 @@ sealed class ValueType(val keyword: Keywords) {
 		val BOOL = Bool
 		val CHAR = Character
 		val STRING = Text
+		val VOID = Void
 
 		/** Two floats use the wider format; mixed integer/float expressions use at least float32. */
 		fun commonFloating(left: ValueType, right: ValueType): Floating {

@@ -14,6 +14,17 @@ internal class EmitBindings(context: LLVMContextRef, private val builder: LLVMBu
 	private val bindings = mutableMapOf<String, Storage>()
 	private val types = LLVMTypes(context)
 
+	/** Restore lexical names after a branch; stores to enclosing bindings persist. */
+	fun <T> withScope(action: () -> T): T {
+		val enclosing = bindings.toMap()
+		try {
+			return action()
+		} finally {
+			bindings.clear()
+			bindings.putAll(enclosing)
+		}
+	}
+
 	fun declare(name: String, type: ValueType, value: LLVMValueRef) {
 		val address = LLVMBuildAlloca(builder, types.storage(type), name)
 		bindings[name] = Storage(type, address)

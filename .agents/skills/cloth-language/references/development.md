@@ -2,6 +2,35 @@
 
 ## Current work
 
+The user selected `if` / `else if` / `else` conditionals next and requested
+implementation. Inline and multiline chains, nested conditionals, boolean
+conditions, branch scopes, semantic checks, and LLVM emission are implemented.
+A conditional can initialize or reassign a binding and compose with ordinary
+expressions. A standalone conditional executes its branch without an implied
+value or automatic last-value output; it may omit `else` and have empty branches.
+Conditions run once in order until the first true condition, and only the
+selected body executes. Skipped conditions and bodies are still type checked.
+
+The initial implementation uses these rules for details not separately settled
+by the user: a value-producing chain requires a final `else`; every branch must
+end with an expression, which supplies its value; and all branch results must
+have exactly the same type, including numeric width and signedness. Declared
+integer binding types provide context for branch-result integer literals, using
+the existing literal rules. There is no implicit branch-result numeric promotion.
+Branches have separate lexical scopes, may shadow enclosing names, and may
+assign enclosing mutable bindings. Local names do not escape into sibling
+conditions, sibling branches, or the enclosing scope. These initial choices
+are recorded as implementation behavior, not additional confirmed user decisions.
+
+Primitive `is Type` checks are implemented, including `a is unsigned int`, exact
+numeric widths/signedness, and `bool`/`char`/`string` targets. The operand is
+evaluated once even when its type is statically known. Checks use comparison
+precedence, below casts/arithmetic and above equality/logical operators. Class
+runtime type checks, state checks, and class-type narrowing remain unimplemented.
+`../../../../examples/Conditionals.co` is runnable and prints `is unsigned!`;
+the user's original initializer in `../../../../examples/Test.co` is covered by
+a native test, without claiming that the rest of that design file compiles.
+
 The user selected string definitions after characters. Explicit `def<string>`
 and inferred string bindings, mutable `=` / immutable `:=` declarations, copies,
 reassignment, parenthesized literals, and identity casts are implemented. The
@@ -307,23 +336,28 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   broader lexical machinery. Recognizing a token does not establish parser,
   type-checker, or emitter support for that language feature.
 - `cloth/parser/Parser.kt` builds expression statements, explicit or inferred binding
-  declarations, and simple `name = expression` assignment statements. Statements
-  currently require newline separation (or EOF).
+  declarations, simple `name = expression` assignment statements, and `if` chains
+  with brace-delimited branch statement lists. Statements currently require
+  newline separation (or a closing branch brace/EOF). A chain accepts `else` on
+  the same line or after newlines/comments without consuming a subsequent
+  unrelated statement's separator.
   `BindingDeclaration.type` is nullable to represent an omitted annotation.
   `cloth/parser/subs/ExpressionParser.kt` handles integer and float literals,
   boolean, character, ordinary string and raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
   with precedence, plus `-> Type` casts between arithmetic and comparison
-  precedence levels.
+  precedence levels, primitive `is Type` checks at comparison precedence, and
+  conditional expressions.
 - `cloth/parser/subs/DelimitedParser.kt` provides a generic delimiter wrapper
   with caller-supplied content parsing, including angle and parenthesis helpers.
-  Binding type annotations and parenthesized expressions use this wrapper;
+  Binding type annotations, parenthesized expressions/conditions, and branch
+  braces use this wrapper;
   recursive callbacks can handle nested delimiters. `TypeParser` reads an optional
   `unsigned` modifier, a type name, and an optional nested numeric width.
   In a cast, only a complete `<number>` suffix is consumed as a width; other
   following `<` tokens remain available for ordering comparisons.
   General generic type arguments are not implemented.
-- `cloth/semantic/SemanticAnalyzer.kt` checks the current single executable scope
-  before LLVM emission. It rejects unknown names, duplicate declarations,
+- `cloth/semantic/SemanticAnalyzer.kt` checks the executable scope and nested
+  branch scopes before LLVM emission. It rejects unknown names, duplicate declarations,
   immutable reassignment, and assignment type mismatches. An omitted annotation
   infers signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, `bool`, `char`, or `string` from the initializer once, preserving that type on all
   later assignments. Current assignment checks require exact types; no new
@@ -332,7 +366,9 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   expression and statement's language type for emission, using identity keys.
   Explicit signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, `bool`, `char`, and `string` annotations are implemented;
   other explicit type names receive an unsupported-feature diagnostic. Casts
-  resolve their target through the same type resolver as binding annotations.
+  and primitive `is` checks resolve their target through the same type resolver
+  as binding annotations. Standalone conditionals have `void` statement type;
+  value-producing chains require exhaustive, compatible branch results.
   Boolean/numeric conversions and arithmetic on booleans are rejected before emission; prefix `!` requires a boolean operand and returns `bool`. `&&` and `||` require boolean operands. Equality accepts two booleans, two characters, two strings, or two numbers, including mixed int/float values, and returns `bool`. Ordering comparisons require two numbers and return `bool`.
   Bindings become available after their initializer is checked;
   forward/self reads are currently rejected. This is implementation coverage,
@@ -341,13 +377,17 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   code for arithmetic, boolean negation (`LLVMBuildNot` on `i1`), short-circuit
   logical expressions (conditional branches and phi values), boolean equality and numeric equality/ordering
   comparisons (`icmp` on `i1`/`i8`/`i16`/`i32`/`i64` or `fcmp` on `float`/`double`), casts
-  through `EmitCast`, and binding reads.
+  through `EmitCast`, binding reads, and conditional chains. Conditional value
+  merges use phi nodes with each branch's actual ending block, including nested
+  expressions and runtime guards. Statement conditionals have no value phi.
   Integer signedness comes from semantic types, since LLVM integer types do not
   encode it. `EmitBindings` allocates typed local
   storage and emits loads/stores (with a separate byte per boolean and conversion
   between `i1` values and `i8` storage); `EmitStatement` handles declarations and
-  assignments. Native compilation prints the last statement's value and links
-  a native executable. Boolean results print as `true` or `false`.
+  assignments. Branch emission restores lexical binding names without undoing
+  stores to enclosing bindings. Native compilation prints the last statement's
+  value when it produces one, and links a native executable. Boolean results
+  print as `true` or `false`.
 - `../../../../examples/Math.co` is the arithmetic example; `../../../../examples/Bindings.co` demonstrates explicit and
   inferred integer and float bindings and evaluates to `76.25`. It includes
   commented examples of invalid type-changing and immutable reassignments. `../../../../examples/Booleans.co` demonstrates boolean inference, explicit types, copies, negation, short-circuit logic, boolean/numeric equality and inequality, numeric ordering, and reassignment, and evaluates to `true`.
@@ -356,6 +396,17 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   `../../../../examples/Casts.co` demonstrates numeric conversions and evaluates to `4294967294`.
   `../../../../examples/Test.co` describes the broader target
   language; it is not currently an end-to-end compiler test.
+- Verified on 2026-10-30: the full compiler suite passed all 129 tests with no
+  failures, errors, or skips using
+  `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`.
+  All 15 new `ConditionalsTest.kt` cases also passed in a focused run. Coverage
+  includes inline/multiline and nested chains, malformed syntax, exhaustive
+  value branches, strict condition/result types, skipped-code checking, branch
+  scopes and shadowing, mutability, all current primitive storage types,
+  expression composition, actual LLVM predecessor blocks after nested guards,
+  once-only condition evaluation, skipped alternatives/bodies, primitive `is`
+  checks with operand side effects, absent output from standalone conditionals,
+  the user's exact unsigned initializer, and the runnable conditional CLI example.
 - Verified on 2026-10-30: 114 test cases checked for string equality and
   concatenation. The full run passed 113 cases and found a stale default-source
   assertion; after updating it to the current `examples/Strings.co` default,
@@ -477,7 +528,10 @@ the user's preference for one question at a time:
 - Character ordering, arithmetic, and conversions to/from numeric types.
 - String indexing, content mutation, and dynamic/escaping string
   construction/lifetime rules beyond the current literal-backed bindings.
-- The next milestone after string equality and concatenation.
+- Whether a value-producing `if` requires a final `else` in all cases.
+- Branch result type compatibility/inference for value-producing `if` chains.
+- How a value-producing branch selects its result when it contains multiple
+  statements (for example, whether its last expression supplies the value).
 
 This list is a set of unresolved areas, not an exhaustive specification checklist
 or a set of required features.

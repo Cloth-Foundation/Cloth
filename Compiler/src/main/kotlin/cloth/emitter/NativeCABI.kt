@@ -25,6 +25,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	val executableFormat: ExecutableFormat get() = profile.executableFormat
 
 	fun printArgument(type: ValueType): ValueType = when (type) {
+		ValueType.Void -> error("A void statement has no printable value")
 		is ValueType.Floating -> doubleType
 		is ValueType.Integer -> {
 			require(type.bits <= longLongType.bits) { "Native printing does not support ${type.spelling} on '$targetTriple'" }
@@ -37,6 +38,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 
 	/** The C conversion specifier matching the argument representation selected above. */
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
+		ValueType.Void -> error("A void statement has no print format")
 		is ValueType.Floating -> "g"
 		is ValueType.Integer -> when {
 			argument.unsigned && argument.bits > intType.bits -> "llu"

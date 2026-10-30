@@ -9,6 +9,7 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Maps Cloth value and storage representations to LLVM types. */
 internal class LLVMTypes(private val context: LLVMContextRef) {
 	fun value(type: ValueType): LLVMTypeRef = when (type) {
+		ValueType.Void -> LLVMVoidTypeInContext(context)
 		is ValueType.Integer, ValueType.Bool, ValueType.Character -> LLVMIntTypeInContext(context, type.bits)
 		ValueType.Text -> PointerPointer<LLVMTypeRef>(2L).use { fields ->
 			fields.put(0, LLVMPointerTypeInContext(context, 0))
@@ -23,6 +24,7 @@ internal class LLVMTypes(private val context: LLVMContextRef) {
 	}
 
 	fun storage(type: ValueType): LLVMTypeRef = when (type) {
+		ValueType.Void -> error("A void statement has no binding storage")
 		is ValueType.Floating, ValueType.Text -> value(type)
 		is ValueType.Integer, ValueType.Bool, ValueType.Character -> LLVMIntTypeInContext(context, type.storageBits)
 	}

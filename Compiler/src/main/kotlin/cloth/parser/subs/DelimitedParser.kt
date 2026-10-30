@@ -18,4 +18,6 @@ class DelimitedParser(private val parser: Parser) {
 	fun <T> parentheses(parseContents: () -> T): T = parse(Operators.PAREN_OPEN, Operators.PAREN_CLOSE, parseContents)
 
 	fun <T> brackets(parseContents: () -> T): T = parse(Operators.BRACKET_OPEN, Operators.BRACKET_CLOSE, parseContents)
+
+	fun <T> braces(parseContents: () -> T): T = parse(Operators.BRACE_OPEN, Operators.BRACE_CLOSE, parseContents)
 }

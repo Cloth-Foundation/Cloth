@@ -55,7 +55,7 @@ class CompilerSettings(val args: Array<String>) {
 		linkOptions = options
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Strings.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Conditionals.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 

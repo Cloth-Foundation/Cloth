@@ -46,6 +46,34 @@ and length internally, and previous copies survive reassignment. String ordering
 interpolation, indexing, and nullable strings are not implemented yet.
 Run `examples/Strings.co` to try it.
 
+## Conditionals
+
+An `if` expression supplies the selected branch's value:
+
+```cloth
+def<unsigned int> a = 10
+def<string> description = if (a is unsigned int) {
+    "is unsigned"
+} else if (a > 25) {
+    "is above 25"
+} else { ":(" }
+
+if (a > 0) {
+    description = description + "!"
+}
+
+description
+```
+
+The current compiler requires a final `else` for value-producing chains. Each
+branch ends with an expression, and every result must have the same type.
+Standalone `if` statements have no implied value and may omit `else`. Conditions
+must be booleans; only the selected branch runs. Branch-local bindings stay in
+their branch, while assignments to enclosing mutable bindings persist.
+Primitive `is` checks compare exact types, including integer signedness and
+numeric widths. Class and state checks remain future compiler work.
+Run `examples/Conditionals.co` to try both forms; it prints `is unsigned!`.
+
 ## Building and linking
 
 Compile a source file with the Gradle application task:

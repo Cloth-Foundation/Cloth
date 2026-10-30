@@ -12,6 +12,7 @@ import cloth.parser.expression.IntegerLiteral
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.FloatingPointLiteral
 import cloth.parser.expression.UnaryExpression
+import cloth.parser.expression.TypeCheckExpression
 import cloth.semantic.ValueType
 import cloth.token.Operators
 import cloth.token.Keywords
@@ -22,10 +23,17 @@ class ExpressionParser(val parser: Parser) {
 	fun parseExpression(minimumPrecedence: Int = 0): Expression {
 		var left = parseUnary()
 
-		while (parser.peek().type == TokenType.Operator) {
+		while (true) {
 			val operator = parser.peek()
+			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
+				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
+				parser.advance()
+				left = TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
+				continue
+			}
+			if (operator.type != TokenType.Operator) break
 			val kind = Operators.fromCharacter(operator.lexeme)
-			if (kind == Operators.PAREN_CLOSE) break
+			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE)) break
 			if (kind == Operators.POINTER_RIGHT) {
 				if (CAST_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -67,6 +75,7 @@ class ExpressionParser(val parser: Parser) {
 		val token = parser.peek()
 
 		return when (token.type) {
+			TokenType.Keyword if token.lexeme == Keywords.IF.toString() -> parser.parseIf()
 			TokenType.Keyword if token.lexeme in setOf(Keywords.TRUE.toString(), Keywords.FALSE.toString()) -> {
 				parser.advance()
 				BooleanLiteral(token.lexeme == Keywords.TRUE.toString())
@@ -134,6 +143,7 @@ class ExpressionParser(val parser: Parser) {
 
 	companion object {
 		private const val CAST_PRECEDENCE = 9
+		private const val TYPE_CHECK_PRECEDENCE = 7
 		enum class Associativity { LEFT, RIGHT }
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)

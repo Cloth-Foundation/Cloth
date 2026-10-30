@@ -3,6 +3,8 @@ package cloth.parser
 import cloth.ast.ASTStructure
 import cloth.parser.exception.SyntaxException
 import cloth.parser.statement.*
+import cloth.parser.expression.ConditionalBranch
+import cloth.parser.expression.IfExpression
 import cloth.parser.subs.DelimitedParser
 import cloth.parser.subs.ExpressionParser
 import cloth.parser.subs.TypeParser
@@ -26,20 +28,59 @@ class Parser(private val tokens: List<Token>) {
 	}
 
 	fun parse(): ASTStructure {
+		return ASTStructure(parseStatements(inBlock = false))
+	}
+
+	private fun parseStatements(inBlock: Boolean): List<Statement> {
 		val statements = mutableListOf<Statement>()
 
-		while (peek().type != TokenType.EOF) {
+		while (peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
 			if (peek().type == TokenType.NewLine) {
 				advance()
 			} else {
 				statements.add(parseStatement())
-				if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
+				if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF &&
+					!(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
 					throw SyntaxException("Expected a newline after statement, found '${peek().lexeme}' at ${peek().span}")
 				}
 			}
 		}
 
-		return ASTStructure(statements)
+		return statements
+	}
+
+	/** Newlines before an else belong to the chain; other newlines remain separators. */
+	fun parseIf(): IfExpression {
+		val keyword = advance() // if
+		val branches = mutableListOf<ConditionalBranch>()
+		var otherwise: List<Statement>? = null
+		while (true) {
+			val condition = delimited.parentheses {
+				skipNewlines()
+				val expression = expressionParser.parseExpression()
+				skipNewlines()
+				expression
+			}
+			skipNewlines()
+			branches.add(ConditionalBranch(condition, delimited.braces { parseStatements(inBlock = true) }))
+			var offset = 0
+			while (peek(offset).type == TokenType.NewLine) offset++
+			if (peek(offset).type != TokenType.Keyword || peek(offset).lexeme != Keywords.ELSE.toString()) break
+			repeat(offset + 1) { advance() }
+			skipNewlines()
+			if (peek().type == TokenType.Keyword && peek().lexeme == Keywords.IF.toString()) {
+				advance()
+				skipNewlines()
+			} else {
+				otherwise = delimited.braces { parseStatements(inBlock = true) }
+				break
+			}
+		}
+		return IfExpression(keyword, branches, otherwise)
+	}
+
+	private fun skipNewlines() {
+		while (peek().type == TokenType.NewLine) advance()
 	}
 
 	private fun parseStatement(): Statement {

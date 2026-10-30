@@ -76,13 +76,13 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts, strings)
 			val statementEmitter = EmitStatement(expressionEmitter, bindings, semantics)
 
-			var result = LLVMConstInt(types.value(ValueType.INT), 0L, 0)
+			var result: LLVMValueRef? = LLVMConstInt(types.value(ValueType.INT), 0L, 0)
 
 			for (statement in ast.statements) {
 				result = statementEmitter.emit(statement)
 			}
 
-			if (forcePrint) emitPrint(context, module, builder, result,
+			if (forcePrint && result != null) emitPrint(context, module, builder, result,
 				ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts, strings)
 
 			LLVMBuildRet(builder, LLVMConstInt(nativeIntType, 0L, 0))
