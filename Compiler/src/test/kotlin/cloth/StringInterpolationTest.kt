@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class StringInterpolationTest {
-	private fun parse(source: String) = Parser(Lexer(SourceFile("interpolation.co", source.trimIndent())).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(SourceFile("interpolation.co", source.trimIndent())).scanTokens()).parseSnippet()
 
 	@Test
 	fun `interpolation has string type and keeps original source spans`() {
@@ -155,17 +155,17 @@ class StringInterpolationTest {
 		val output = StringBuilder()
 		val target = directory.resolve("EX")
 		assertEquals(0, runCompiler(arrayOf("examples/EX.co", target.toString()), DiagnosticReporter(output)), output.toString())
-		assertExecutable(cloth.util.ExecutableFormat.current.executablePath(target), "The answer is: 20")
+		assertExecutable(cloth.util.ExecutableFormat.current.executablePath(target), null)
 	}
 
 	@Test
 	fun `numeric formatting uses one target ABI declaration and works with dynamic CRT`(@TempDir directory: Path) {
 		val ast = parse("#\"{1}|{2 -> unsigned int<64>}|{3.5}|{'中'}|{false}\"")
-		val ir = LLVMEmitter().emit(ast, forcePrint = true)
+		val ir = LLVMEmitter().emitSnippet(ast, forcePrint = true)
 		assertEquals(1, ir.lineSequence().count { it.startsWith("declare i32 @snprintf(ptr, i64, ptr, ...)") })
 		assertContains(ir, "format_fits")
 		assertContains(ir, "String interpolation formatting failed")
-		assertExecutable(LLVMEmitter(LinkOptions(runtime = RuntimeLinkage.DYNAMIC)).compile(ast, directory.resolve("dynamic")), "1|2|3.5|中|false")
+		assertExecutable(LLVMEmitter(LinkOptions(runtime = RuntimeLinkage.DYNAMIC)).compileSnippet(ast, directory.resolve("dynamic")), "1|2|3.5|中|false")
 	}
 
 	@Test
@@ -190,16 +190,16 @@ class StringInterpolationTest {
 	}
 
 	private fun assertProgram(target: Path, source: String, expected: String) {
-		assertExecutable(LLVMEmitter().compile(parse(source), target), expected)
+		assertExecutable(LLVMEmitter().compileSnippet(parse(source), target), expected)
 	}
 
-	private fun assertExecutable(executable: Path, expected: String) {
+	private fun assertExecutable(executable: Path, expected: String?) {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out")
 			val bytes = process.inputStream.use { it.readBytes() }
 			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			assertContentEquals((expected + "\n").replace("\n", System.lineSeparator()).toByteArray(Charsets.UTF_8), bytes)
+			assertContentEquals((expected?.let { (it + "\n").replace("\n", System.lineSeparator()) } ?: "").toByteArray(Charsets.UTF_8), bytes)
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}

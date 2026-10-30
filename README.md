@@ -1,9 +1,58 @@
 Cloth is a modern, strongly-typed object-oriented language aimed at application and library development. It sits in a 
 familiar space for Java and Kotlin developers while carrying a light C++ influence through primary constructors and 
-named destructors. The language deliberately rejects pointers, references, and mutability annotations, treating memory 
-management as the compiler’s concern rather than the programmer’s. Its most distinctive feature is first-class state 
+named destructors. The language has explicit object creation and destruction, without GC or programmer-visible pointers,
+references, or `mut` syntax. Its most distinctive feature is first-class state
 machines embedded directly in classes, allowing objects to declare named states and transition between them with 
 explicit syntax.
+
+## Functions and program entry
+
+Source files contain declarations. Executable statements belong inside bodies,
+and an executable must declare exactly one `main`:
+
+```cloth
+fn<int> main() {
+    return square(5) - 25
+}
+
+fn<int> square(int value) = value * value
+```
+
+Functions support forward calls, overloads, direct and mutual recursion, and
+mutable parameters (`final int value` makes a parameter immutable). Brace bodies
+require explicit returns; `=` bodies return their expression implicitly. Omitting
+the return annotation means `void`. Non-void functions cannot fall through.
+Arguments and returns use strict types, with contextual integer literals and
+contextual floating literals at call sites. Overloads prefer the default `int`
+or `float` literal type when an exact match exists.
+
+A void `main` exits with status 0; a signed integer `main` supplies the process
+exit status. Signed integer widths 8, 16, 32 and 64 are accepted. The current
+native adapter sign-extends narrow results to C `int` and retains the low bits of
+wider results, following Cloth's explicit integer-cast rules.
+Expression statements do not print automatically. The executable examples check
+their results and return 0 on success or 1 on failure; `examples/Functions.co`
+demonstrates forward calls and recursion.
+
+Strings can be passed to and returned from functions, including local
+concatenations and interpolated results:
+
+```cloth
+fn<string> greeting(final string name) = #"Hello, {name}!"
+```
+
+Parameters borrow immutable string bytes during the call; rebinding a parameter
+only changes its local binding. Returned bytes are copied into storage owned by
+the caller, so they survive the callee's return and later calls. Each invocation
+releases its temporary return buffers on exit. This is internal value storage;
+it does not change Cloth's explicit object creation/destruction rules or add GC.
+`examples/StringFunctions.co` demonstrates returned strings and recursion.
+
+`main(string[] args)` is a valid entry signature, but native argument-array
+construction is not implemented yet. Array function parameters and returns
+currently report C4030. Numeric, boolean, character, string and void boundaries
+are supported. Console I/O is separate future library work. The smaller code
+examples below are body fragments.
 
 ## Compound assignments
 
@@ -39,7 +88,7 @@ letter != original
 Character bindings support inference, copies, equality, and the usual mutable
 `=` / immutable `:=` rules. Literals accept `\n`, `\r`, `\t`, `\0`, `\\`, `\'`,
 and `\"` escapes. Characters remain distinct from numbers and booleans.
-`examples/Characters.co` is a runnable example; its final character prints as UTF-8.
+`examples/Characters.co` checks Unicode character operations in a runnable `main`.
 
 ## String bindings
 
@@ -58,11 +107,15 @@ implicit number or character conversions. Comparisons are exact, including NULs,
 case, and Unicode scalar sequences, without Unicode normalization.
 Ordinary double-quoted literals accept the same escapes as characters.
 Triple-quoted raw literals preserve their contents, including newlines and
-backslashes. Native output uses UTF-8 and preserves embedded `\0` bytes.
+backslashes. Native string storage uses UTF-8 and preserves embedded `\0` bytes.
 
-Literal bytes currently use constant program storage; concatenation results use
-local buffers for the current executable scope. Bindings store the bytes' address
-and length internally, and previous copies survive reassignment. String ordering,
+Literal bytes use constant program storage; local concatenations and interpolation
+use buffers for the creating function invocation. Return values copy their bytes
+into caller-owned heap buffers, reclaimed when that caller exits. Bindings store
+the bytes' address and length internally, and previous copies survive reassignment.
+The current implementation copies every string return and retains received return
+buffers until invocation exit, including discarded results. This favors a simple
+lifetime rule over copy/allocation optimization. String ordering,
 indexing, and nullable strings are not implemented yet.
 Run `examples/Strings.co` to try it.
 
@@ -77,10 +130,11 @@ def count = 20
 Holes accept expressions, including nested interpolation and value-producing
 conditionals. Each expression runs once, left to right. Strings, characters,
 booleans, and all supported integer and floating widths can be interpolated;
-numbers use the same decimal formatting as native result output. Use `{{` and
+numbers use decimal formatting with round-trip precision. Use `{{` and
 `}}` for literal braces. Ordinary string escapes still apply to the surrounding
 text; unprefixed strings keep braces literally. Interpolation results use the same
-local buffer lifetime as concatenation. `examples/EX.co` prints `The answer is: 20`.
+local buffer lifetime as concatenation. `examples/EX.co` checks the interpolated
+result `The answer is: 400.200012`.
 
 ## Conditionals
 
@@ -108,7 +162,7 @@ must be booleans; only the selected branch runs. Branch-local bindings stay in
 their branch, while assignments to enclosing mutable bindings persist.
 Primitive `is` checks compare exact types, including integer signedness and
 numeric widths. Class and state checks remain future compiler work.
-Run `examples/Conditionals.co` to try both forms; it prints `It is unsigned!`.
+Run `examples/Conditionals.co` to try both forms; it checks `It is unsigned!`.
 
 ## Compiler diagnostics
 
@@ -156,11 +210,26 @@ Compile a source file with the Gradle application task:
 
 ```powershell
 .\gradlew.bat :Compiler:run --args="examples/Strings.co build/strings"
+& .\build\strings.exe
+$LASTEXITCODE # 0 when the example's checks pass
 ```
 
 Use `./gradlew` on Linux or macOS. The compiler selects its native target from
 LLVM's default target triple and validates an explicit C ABI profile. Linking
 resolves an installed toolchain for that ABI before generating code.
+Successful compilation exits with status 0, independently of the generated
+program's later exit status.
+
+To emit an object module without requiring `main` or invoking a linker:
+
+```powershell
+.\gradlew.bat :Compiler:run --args="--emit object examples/Functions.co build/functions.o"
+```
+
+The default mode is `executable`; `object` defaults to a `.o` output when no
+output path is given. Object mode validates all function bodies but adds no
+startup adapter. It does not yet provide a library archive, exported symbols or
+a cross-module ABI; function symbols still have provisional internal linkage.
 
 Build options can appear before or after the source and output arguments:
 
@@ -170,6 +239,7 @@ Build options can appear before or after the source and output arguments:
 
 | Option | Meaning |
 | --- | --- |
+| `--emit executable\|object` | Select executable startup/linking or an object module without an entry point. |
 | `--linker PATH` | Override the linker executable or C linker driver. Paths containing spaces are single arguments. |
 | `--linker-driver lld\|msvc\|cc` | Select generic LLD in Windows link flavor, an MSVC-compatible command interface (`link.exe` or `lld-link`), or a Unix GCC/Clang linker driver. |
 | `--runtime default\|static\|dynamic` | Choose C runtime linkage. The default is static CRT on Windows and the driver default on Linux/macOS. Static system CRT linking on macOS is rejected. |

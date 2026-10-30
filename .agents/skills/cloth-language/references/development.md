@@ -2,6 +2,439 @@
 
 ## Current work
 
+Function implementation chunk 7 (string function boundaries and return lifetimes)
+is implemented. Native functions now accept and return the existing immutable
+UTF-8 `{ ptr, i64 }` string descriptor. Parameters borrow the caller's bytes for
+the duration of a call; reassignment still changes only the local binding.
+String return values, including literals, borrowed parameters, local concatenations
+and interpolation buffers, are copied before the callee returns. They remain
+valid across later calls, reassignment, direct/mutual recursion and early returns.
+String semantic types and overload rules are unchanged; C4030 now guards array
+boundaries only.
+
+Initial internal storage policy: a string-returning function has an additional
+private LLVM parameter pointing to its caller's return-buffer list. At each
+return it allocates and copies bytes into that list. Each invocation that
+receives string results has its own lazily introduced head slot, initialized in
+entry even when first used in a branch. `EmitStringArena` generates module-local
+copy/release helpers, uses the target C ABI's size_t for malloc sizes, checks
+size-addition overflow and null allocation, and releases buffers with free.
+An allocation failure is a controlled runtime error rather than an unchecked
+null dereference. Empty strings retain a valid address and zero byte length.
+
+`EmitFunctionFrame` joins every normal exit at one return block. It merges
+actual return predecessors, copies an outgoing string into the caller's storage,
+then releases the current invocation's received results before returning.
+Void fallthrough, bare/void-expression returns, scalar results and returns
+nested inside expressions/call arguments all use this path. Runtime failures
+terminate the process through the existing error path; they do not unwind frames.
+Argument snapshots still evaluate once, left to right, before the callee runs.
+
+This temporary value-storage policy adds no GC, reference counting, automatic
+object destruction, programmer-visible ownership qualifiers or object lifetime
+API. Local concatenation/formatting buffers still use their creating stack frame;
+only returned strings require heap-backed copies. Every string return currently
+copies, including literals and forwarded arguments, and received buffers live
+until their receiving invocation exits, including ignored/discarded results.
+This trades allocation/copy efficiency for a simple invocation lifetime rule;
+zero-copy/escape optimization and strings stored in future objects or
+containers remain separate work. The descriptor and hidden argument are a
+provisional internal ABI, not a public C or cross-module export contract.
+
+`examples/StringFunctions.co` exercises returned interpolation/concatenation and
+recursive construction through the normal CLI with silent status checks. The
+README and unsupported-boundary guidance now describe string support. Arrays,
+including native construction for `main(string[] args)`, remain chunk 8 work.
+
+Verified on 2026-10-30: `gradlew.bat :Compiler:test --offline --console=plain
+--no-daemon` passed all 327 tests with no failures, errors or skips. The 17 new
+`StringFunctionTest` cases cover borrowed parameters/rebinding, final parameters,
+literal/raw/empty/Unicode/NUL returns, local concatenation and single-hole
+interpolation, retained copies across subsequent calls, argument snapshots/order,
+direct/mutual recursion, conditional return merges, interrupted arguments,
+overloads, runtime-name collisions, object emission and dynamic CRT linkage.
+Allocation wrappers count live buffers and poison bytes before free; normal,
+early, scalar, void and discarded-result exits leave no outstanding allocations.
+Injected null allocations and oversized internal descriptors exercise controlled
+runtime failure and overflow rejection before allocation. Skipped code allocates
+no return buffers, and array capability errors still precede output creation.
+After adding branch-only allocation and pre-allocation early-return cases to the
+cleanup coverage, a focused rerun of all 17 string tests also passed. The full run
+also executed `examples/StringFunctions.co` through the CLI. Native execution was
+verified on the current Windows host; other platforms' execution is not claimed.
+`git diff --check` passed.
+
+Function implementation chunk 6 (program entry and CLI migration) is implemented.
+`Parser.parse()` now returns a declaration `SourceUnit`; the CLI runs the complete
+function pipeline and starts an executable through its selected Cloth `main`.
+File-level executable statements are rejected. Internal `parseSnippet`,
+`compileSnippet` and `emitSnippet` helpers retain isolated body-fragment tests
+and their result-printing instrumentation, without exposing snippet compilation
+as a production source-file mode.
+
+`ProgramAnalyzer` validates executable versus library/object mode on top of
+`FunctionAnalyzer`. Executables require exactly one `main`, accepting no parameters
+or one `string[]` parameter, and void or signed int8/16/32/64 returns. Parameter
+names and `final` do not affect entry selection. Library mode requires no entry
+and treats `main` as an ordinary function name. New entry diagnostics are C3034
+(missing main, with an EOF label), C3035 (multiple entry declarations), C3036
+(invalid parameters) and C3037 (invalid return type). Same-signature duplicate
+functions still fail earlier with C3019. Declaration/body/entry and boundary
+capability errors precede linker discovery and output creation; compilation
+continues to stop at the first error.
+
+`EmitEntryPoint` emits the native C `main` adapter and invokes the selected,
+mangled Cloth function. Void completion returns zero. Integer results become
+the native status: narrower signed results are sign-extended to C `int`; wider
+results retain their low bits. The user confirmed low-bit truncation rather than
+a runtime error for out-of-range int64 statuses on 2026-10-30. Host operating
+systems may further constrain the status observed by a parent process. Native
+programs do not implicitly print expression results.
+
+`LLVMEmitter.compile(SourceUnit, Path)` emits and links executables;
+`emitExecutable(SourceUnit)` produces verified startup IR. `emit(SourceUnit)`
+still emits a declaration module without startup. CLI `--emit executable|object`
+defaults to executable; object mode performs full function checking and object
+emission without requiring main or discovering a linker. Its default filename
+has a `.o` suffix. This is not yet an archive/shared-library or export ABI:
+function symbols retain chunk 5's provisional internal linkage.
+
+Runnable examples now contain explicit `main` declarations and verify their
+calculations using process status 0/1. `examples/Functions.co` adds forward calls,
+factorial and mutual recursion. CLI example tests check successful execution and
+empty output. No console I/O syntax or library was invented. `examples/Test.co`
+remains the broad design example, not a fully supported source file.
+
+The `main(string[] args)` signature is semantically valid, but native array
+construction remains chunk 8 work. It currently fails with C4030 before output
+creation, as do other array function boundaries. String function boundaries and
+return lifetimes are now supported by chunk 7 above. Chunk 6 introduced no heap
+or object lifetime behavior.
+
+Verified on 2026-10-30: the focused `ProgramEntryTest`, `CompilerSettingsTest`
+and `DiagnosticsTest` run passed all 36 tests. The 24 new entry tests cover
+declaration-only source parsing, missing/duplicate/invalid main diagnostics,
+valid signature forms and signed widths, library entry independence, native
+startup IR, silence without implicit printing, void and integer exit statuses,
+wide low-bit truncation, narrow sign extension, recursion, source snapshots/EOF,
+errors before output/linker discovery, CLI path handling, object output/defaults,
+and unsupported argument arrays. The full
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed all
+310 tests with no failures, errors or skips, including the migrated runnable
+examples and all prior function, scalar/string, diagnostics and toolchain tests.
+Native execution was verified on the current Windows host; execution on other
+platforms is not claimed. `git diff --check` also passed.
+
+Function implementation chunk 5 (LLVM functions, calls and recursion) is
+implemented through `LLVMEmitter.emit(SourceUnit)` and
+`LLVMEmitter.compileObject(SourceUnit, Path)`. Both run the full function
+analyzer and verify generated LLVM. Declaration modules do not synthesize a
+native `main` or choose a Cloth entry point; object emission works without main
+and does not invoke a linker. Chunk 6 above adds CLI startup separately.
+Native tests compose a separate LLVM runner through an internal module
+hook; its output printing and zero process status are test instrumentation, not
+Cloth startup or implicit output behavior.
+
+`EmitFunctions` declares every LLVM signature before emitting bodies, using the
+selected function symbols from semantic analysis. Overloads have distinct,
+deterministic module-local names (`cloth.fn.<index>.<name>`) and internal linkage,
+avoiding native runtime-name collisions. This provisional naming does not define
+cross-module exports or a C interop ABI. Direct, forward and mutual calls now
+execute natively. Arguments are evaluated once, left to right, and their values
+are captured before entering the callee; parameter reassignment changes only
+that invocation's storage.
+
+Scalar bindings are keyed by stable symbols in function emission, preserving
+parameter/local/branch shadowing. Each function has independent parameter/local
+storage, with scalar allocas inserted in its entry block and initializers/stores
+left at their source execution points. Boolean storage remains one byte with
+i1 values. All signed/unsigned integer widths, float16/32/64, bool, char and void
+boundaries are supported. Float16 calls pass/return their raw i16 bits internally
+and bitcast at the boundary, avoiding external half-conversion ABI helpers while
+preserving Cloth's half type and rounding behavior.
+
+Expression emission distinguishes void/non-continuing evaluation from values.
+Explicit and implicit returns, bare/void-expression returns, and `-> void` now
+emit without invented numeric placeholders. Emission stops after a terminator,
+including returns nested in operands, initializers or call arguments, so later
+operands/arguments and the callee are skipped when required. Conditional/logical
+merges include only actual continuing predecessors; returning paths add no phi
+input or extra branch. Merge blocks with no predecessors end in `unreachable`.
+Simple boolean facts from semantic flow analysis prune infeasible alternatives
+only after evaluating the condition/left operand, preserving its side effects.
+Nested casts, strings and power guards retain their actual LLVM predecessor blocks.
+
+Native string boundaries are now supported by chunk 7 above; array boundaries
+remain unsupported pending their storage chunk. C4030 reports an unsupported
+boundary type with its source span before output creation. Function-local strings,
+interpolation and string operators remain supported; returned bytes are copied
+into caller storage before the creating invocation exits. Chunk 5 itself added
+no heap, GC, object lifetime mechanism or automatic object cleanup.
+
+Verified on 2026-10-30: focused `FunctionEmissionTest` passed all 26 tests using
+`gradlew.bat :Compiler:test --tests cloth.FunctionEmissionTest --offline
+--console=plain --no-daemon`. Coverage includes verified IR/object modules without
+entry synthesis, overload targets, forward calls, factorial/Fibonacci/mutual
+recursion, parameter isolation, once-only argument ordering/snapshots, every
+integer width/signedness boundary, booleans/Unicode characters, floating precision
+and binary16 rounding/ABI, entry allocations and shadowing, early-return phi
+predecessors, nested/non-continuing operands/arguments, short circuits and boolean
+proofs, void/discard emission, skipped unreachable code, cast guards, local strings
+across recursion, runtime-name collisions, unsupported boundaries before output,
+and dynamic-CRT power calls. Native execution was verified on the current Windows
+host; other platforms' native function execution is not claimed.
+The full `gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run
+then passed all 286 tests with no failures, errors or skips, including the existing
+semantic, native scalar/string, diagnostics, toolchain and CLI regressions.
+
+Function implementation chunk 4 (return validation and control flow) is
+implemented through `FunctionAnalyzer.analyze(SourceUnit)` or
+`FunctionAnalyzer.analyze(DeclarationModel)`. This combines the implemented
+declaration, call and return stages and returns `FunctionSemanticModel` with
+`controlFlow` metadata. The public `CallAnalyzer()` remains a stage 3 entry point
+without return validation, so earlier-stage tests and signature-only body
+fixtures retain their meaning. This checker does not introduce a CLI mode or
+itself emit native functions; chunk 5 above provides declaration-based emission.
+
+The full checker enforces omitted/explicit void returns, bare early returns,
+explicit returns in braces, implicit `=` returns, exact result types and
+contextual integer literals. Void functions may return void expressions, as
+newly confirmed by the user (`return cleanup()` or `return calculate() -> void`).
+They cannot return a produced value, including through an `=` body without an
+explicit discard. Typed numeric results require casts to change width, signedness
+or kind; floating return literals retain existing binding rules, while the
+contextual floating parameter rules from chunk 3 remain intact. Return context
+still does not select overloads. Non-void brace bodies cannot fall through, and
+their final expressions do not implicitly return.
+
+`ControlFlowModel` tracks continuing and returning paths for expressions,
+statements and function bodies. It handles ordered evaluation, nested conditionals,
+returns in initializers/call arguments/interpolation, and short circuits. Simple
+boolean literals, negation and logical combinations can prove branch reachability;
+arbitrary arithmetic comparisons, binding values and callee termination remain
+conservative. It does not attempt to prove recursive calls terminate or diverge.
+Boolean facts and flow summaries use identity caches to avoid repeated traversal.
+
+Value-producing conditional branches that return from the enclosing function do
+not also need a final value expression. Continuing branches retain the existing
+final-expression and compatible-result rules. An internal `ValueType.Never`
+marks expressions with no continuing result; it has no Cloth syntax and is not
+a new programmer-visible type. This allows all-returning branches to compose
+inside calls, assignments, arithmetic and other existing expressions without
+inventing a value or claiming fallthrough. LLVM value/storage/printing helpers
+guard this internal type; chunk 5's emitter now handles flow without requesting
+a value or storage for non-continuing expressions.
+
+Initial implementation policy: unreachable statements and skipped branches remain
+name/type/return checked, and otherwise valid unreachable code is accepted without
+a new warning or error. `=` conditional bodies are checked as expressions rather
+than statement conditionals, so their continuing branches must supply compatible
+final expressions, including void expressions where appropriate. The existing
+final-else rule for value expressions is retained when they can continue. These
+details do not settle broader future unreachable-code or conditional design.
+
+New structured diagnostics are C3030 (bare return requires a value), C3031
+(produced value in void function), C3032 (return type mismatch), and C3033
+(non-void body can reach its closing brace). They label the returned expression
+or closing brace and the function's declared return contract. Return-expression
+errors inside argument probes stay fatal instead of becoming overload mismatches.
+Compilation still stops at the first detected error; no recovery or diagnostic
+accumulation is added.
+
+Verified on 2026-10-30: the focused `FunctionReturnsTest`, `CallResolutionTest`,
+`DeclarationScopesTest`, `FunctionParsingTest` and `DiagnosticsTest` run passed
+all 103 tests. The 30 new return/flow tests cover both body forms, void expressions
+and discards, exact result types, every integer width/signedness boundary,
+conditional path coverage, nested/non-continuing expressions, short circuits,
+constant boolean facts, long logical chains, checked unreachable code, recursive
+calls, probe diagnostics, overload preference preservation, array/string type
+identity, source spans/CRLF, first-error rendering, analyzer reuse and earlier
+stage boundaries.
+The final full `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed all 260 tests with no failures, errors or skips, including existing
+native and CLI regressions. Native execution was verified on the current Windows
+host. Native scalar function emission is now implemented by chunk 5 above.
+
+The CLI now uses chunk 6's declaration and entry pipeline. Native scalar function
+calls/returns are available through chunk 5, and string boundaries through chunk 7.
+Argument-array construction remains a subsequent chunk; semantic array return
+checking does not establish runtime array storage support.
+
+Function implementation chunk 3 (call resolution and argument validation) is
+implemented through `CallAnalyzer.analyze(SourceUnit)` or
+`CallAnalyzer.analyze(DeclarationModel)`. It resolves primitive signature types
+and semantic array identities, then checks function bodies using chunk 2's stable
+symbols. `FunctionSemanticModel` records parameter/local types, expression and
+statement types, and the selected `FunctionSymbol` for each call. Forward, direct
+and mutual calls use declared return types without recursively analyzing the
+called body's return paths. Unknown nominal types still receive an unsupported
+type diagnostic; class/type declaration resolution is a later feature.
+
+Calls first filter overloads by argument count, then prefer an exact match for
+the arguments' ordinary types. Thus integer literals prefer default `int`, and
+floating literals prefer default `float` (`float<32>`), independently of source
+order. Without a whole-argument exact match, candidates are checked with their
+parameter types as literal context. A unique viable candidate wins; two viable
+candidates are ambiguous, and none produces a no-matching-call error. Integer
+and floating literals receive only their own numeric kind of context. Already
+typed bindings, casts and call results never implicitly change type to fit a
+parameter. Return types and surrounding assignment/return expectations do not
+select overloads. Initial implementation policy for multiple arguments: prefer
+a whole exact match, otherwise require one viable candidate; there is no summed
+conversion score or preference based on the number of contextual matches.
+
+The user confirmed contextual floating literals at call sites as well as default
+`float` preference. They retain original decimal text until a width is selected;
+range checks use that width, including float16 overflow and literals beyond the
+default float32 range that fit float64. The declaration parser therefore defers
+floating literal range checks until typing. The legacy snippet parser retains
+its existing default-float range diagnostics. This change supplies floating
+parameter context; it does not broaden the existing floating literal rules for
+binding assignments or return values. Integer literal context remains unchanged.
+
+Overload probes use separate type/binding/call maps; only the selected probe's
+facts are committed. A nonviable candidate does not construct a diagnostic or
+leave literal types, branch-local types or nested call selections behind. Probe
+rejection is a private control signal, not compiler error recovery or diagnostic
+collection. Fatal call failures still throw one structured diagnostic immediately.
+New codes are C3023 (argument count), C3024 (no match), C3025 (ambiguity), C3026
+(void used as a value), C3027 (function used as a binding value), C3028 (floating
+literal range) and C3029 (invalid void parameter/binding/array element type).
+Call diagnostics label the call and relevant declarations.
+
+`ExpressionTyping` and `TypeResolver` now share existing primitive expression,
+binding, assignment and conditional typing rules with the legacy analyzer.
+Calls can compose with expressions, inferred bindings, conditionals, interpolation
+and casts; skipped code is checked. Standalone calls may discard values, and the
+declaration checker supports explicit `-> void`. Void cannot supply an argument
+or binding value. Array element/rank identity supports strict parameter passing,
+but array storage, indexing and command-line argument construction are not
+implemented; existing LLVM/C printing paths explicitly guard unsupported arrays.
+
+The CLI now uses chunk 6's declaration and entry pipeline. Return-contract/flow checks are
+available through chunk 4's `FunctionAnalyzer`, and function emission through
+chunk 5 for scalar/void boundaries and chunk 7 for strings. Entry validation is
+implemented by chunk 6; command-line argument construction remains pending. The stage 3 entry point
+alone does not perform return checks or execute functions; chunk 5 enforces the
+confirmed once-only evaluation order without changing AST argument order.
+
+Verified on 2026-10-30: the focused `CallResolutionTest`, `DeclarationScopesTest`,
+`FunctionParsingTest` and `DiagnosticsTest` run passed all 73 tests. The 29 new
+call tests cover default int/float preferences, contextual widths, ambiguity,
+numeric bounds, strict typed arguments/casts, arity, nonnumeric types, multiple
+arguments, return-context independence, nesting, recursion, probe isolation,
+contextual arithmetic, arrays, discards/void, skipped code, signature diagnostics,
+deferred return/entry checks, source locations and analyzer reuse. The full
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run then passed
+all 230 tests with no failures, errors or skips, including existing numeric,
+string, native and CLI regressions. Native execution was verified on the current
+Windows host, without claiming function code generation.
+
+Function implementation chunk 2 (declaration collection and lexical scopes) is
+implemented through `DeclarationAnalyzer.analyze(SourceUnit)`. It collects all
+function signatures and overload groups before resolving any bodies. Signature
+keys include ordered parameter types, normalizing default numeric widths (so
+`int` and `int<32>` conflict), while preserving signedness, explicit widths,
+array rank and nominal type names. Return types, visibility, parameter names and
+`final` do not distinguish overloads. These are structural declaration keys;
+type names and widths are not yet semantically resolved or validated.
+
+`DeclarationModel` records identity-based symbols for functions, parameters and
+local bindings, lexical scopes, name uses, assignment/update targets, and visible
+overload groups for calls. Every function gets its own scope beneath file scope;
+parameters and outermost body locals share it. Nested conditional branches get
+separate child scopes and may shadow enclosing bindings. Locals become visible
+after their initializer is resolved, preserving the snippet analyzer's existing
+behavior; a shadow's initializer can read the enclosing declaration. Branch
+locals do not escape to sibling conditions/bodies, outer scopes or other functions.
+The user confirmed one namespace: nearer bindings shadow functions even in call
+position, producing a not-callable error rather than bypassing the binding.
+
+The resolver checks duplicate function signatures/parameter/local names, unknown
+names, non-callable binding calls, attempts to assign to functions, and immutable
+binding/final-parameter writes. It traverses current expression and statement
+forms, including nested calls, interpolation and skipped branches. Diagnostics
+stop immediately and preserve original declaration/use spans; new codes are
+C3019 (duplicate function), C3020 (unknown name), C3021 (not callable) and C3022
+(assignment requires a binding). Final-parameter diagnostics reuse C3002 with
+parameter-specific guidance. Calls retain their whole overload group without
+argument-count filtering, type validation or overload selection in this stage;
+the chunk 3 checker above handles those later. Direct and mutual
+recursion now resolve at the name level, without claiming native function execution.
+
+The declaration pipeline powers the CLI; internal snippet test helpers remain separate.
+Call argument/type validation and overload selection are now available through
+chunk 3, return checks through chunk 4, and scalar function emission through
+chunk 5, and entry-point validation through chunk 6. Invoking only the chunk 2 analyzer may still leave
+type-invalid calls/returns or both `main` forms; later stages enforce those contracts.
+
+Verified on 2026-10-30: the focused `DeclarationScopesTest`, `FunctionParsingTest`
+and `DiagnosticsTest` run passed all 44 tests using `gradlew.bat :Compiler:test
+--tests cloth.DeclarationScopesTest --tests cloth.FunctionParsingTest --tests
+cloth.DiagnosticsTest --offline --console=plain --no-daemon`. The 20 new
+declaration/scope tests cover forward/direct/mutual calls, overload groups and
+canonical duplicate signatures, parameter/local duplicates, branch shadowing and
+isolation, initializer visibility, symbol identity for reads/writes, function-name
+shadowing, immutability, skipped-code traversal, analyzer reuse, deferred later
+checks, source spans/CRLF and first-error behavior.
+The full `gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run
+then passed all 201 tests with no failures, errors or skips, including existing
+native and CLI regressions. Native execution was verified on the current Windows
+host; this does not imply function code generation is implemented.
+
+Function implementation chunk 1 (declaration AST and body parsing) is implemented.
+`Parser.parseDeclarations()` returns a `SourceUnit` containing function
+declarations, separate from the existing executable-snippet `ASTStructure`.
+It parses optional `pub`, omitted or explicit return annotations, typed parameters
+with optional leading `final`, brace bodies, and `= expression` bodies. Omitted
+return annotations remain absent in the AST, with the confirmed meaning of void.
+Function-signature types preserve numeric widths/signedness and unsized `[]`
+suffixes, including `main(string[] args)`, without implementing array values.
+
+Function and conditional branches share brace-body parsing. `ReturnStatement`
+preserves bare and value returns; `ExpressionBody` remains distinct from a brace
+body's final expression. Named calls preserve argument order, nest inside ordinary
+expressions and interpolation, and retain their closing-parenthesis source spans.
+Function, parameter, body, return, and array-suffix spans retain the source snapshot,
+including CRLF input. `final` is now a keyword. Word operators `for`/`while`/`do`
+require identifier boundaries, fixing names such as `format` and `doubleValue`
+that were previously split into operator prefixes.
+
+The declaration entry point rejects file-level executable statements and nested
+`fn`/`mt` declarations. It currently supports only `fn` declarations, not the
+broader class/module/import grammar in `Test.co`. Parameter and argument lists
+allow empty lists and multiline contents; trailing commas are currently rejected.
+These list-format details are initial parser choices, not separately confirmed
+language decisions. Return statements are recognized only within function bodies.
+
+`Parser.parse()` and the CLI now use declarations, following chunk 6's entry-point
+migration. The distinct `SourceUnit` type cannot be
+passed accidentally to the existing snippet analyzer/emitter. Declaration
+collection and lexical resolution are now available through the chunk 2 API
+above, typed calls through chunk 3, and return validation through chunk 4.
+Scalar function LLVM emission is available through chunk 5. Syntactically valid but semantically invalid functions can still
+be parsed independently of those stages. Internal snippet test instrumentation
+synthesizes a native runner; declaration modules add startup only when explicitly
+compiled as executables. The confirmed [function contract](semantics.md) remains the
+design authority. Local dynamic string buffers remain in their creating function;
+chunk 7 implements safe string returns by copying into caller-owned storage.
+
+Verified on 2026-10-30: the focused `FunctionParsingTest` run passed all 15 tests
+using `gradlew.bat :Compiler:test --tests cloth.FunctionParsingTest --offline
+--console=plain --no-daemon`. Coverage includes declaration/body structure,
+visibility, mutable/final parameters, numeric and array signature syntax,
+multiline lists/comments, nested statements/conditionals/calls/interpolation,
+return boundaries, precedence, explicit void casts, deliberately deferred semantic
+checks, malformed syntax and declaration contexts, source spans/CRLF/EOF,
+first-error reporting, and identifier boundaries for word operators.
+The full `gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run
+then passed all 181 tests with no failures, errors, or skips, including the 15
+new parser tests and existing native/CLI regressions. The first full run exposed
+a stale `StringInterpolationTest` expectation: committed `examples/EX.co` then
+printed `The answer is: 400.200012`, not `The answer is: 20`. Updating that test's
+expected output resolved the failure; the example and backend were unchanged.
+Native execution was verified on the current Windows host.
+
 Compound assignments `name += value`, `-=`, `*=`, `/=`, and `%=` now parse as
 ordinary local binding assignments whose values use the corresponding binary
 operation. Standalone `name++` and `name--` add or subtract a same-type one,
@@ -20,7 +453,7 @@ and mixed powers use ordinary promotion, C `powf`/`pow`, and half result roundin
 Initial choices not separately confirmed as design: powers associate right,
 bind above unary signs and multiplication, and zero to the zero power is one.
 Existing matching integer width/signedness requirements apply. `//` remains a comment.
-`examples/EX.co` now uses `x += 1` and retains its output.
+`examples/EX.co` uses `x += 1`; chunk 6 now checks its result through main status.
 
 Verified on 2026-10-30: `gradlew.bat :Compiler:test --offline --console=plain
 --no-daemon` passed all 166 tests with no failures, errors, or skips. The 14 new
@@ -30,12 +463,13 @@ target/RHS evaluation order, branch scopes, numeric updates including half
 storage, rejection of prefix/expression updates, power grouping, all integer
 widths/signedness, exact uint64 results, float promotion and special values,
 static and runtime negative-exponent failures, nested control flow, short
-circuits, and dynamic CRT power calls. Existing CLI tests verify EX.co output.
+circuits, and dynamic CRT power calls. At that stage CLI tests verified EX.co output.
 Native execution was verified on the current Windows host.
 
-String interpolation is implemented for `#"Hello, {name}!"`. `examples/EX.co`
-now uses `#"The answer is: {x}"` and compiles to a program printing
-`The answer is: 20`. The lexer emits text and expression delimiters with original
+String interpolation is implemented for `#"Hello, {name}!"`. The original
+`#"The answer is: {x}"` example produced `The answer is: 20` in the snippet
+runner; the current `examples/EX.co` checks its updated calculation inside main.
+The lexer emits text and expression delimiters with original
 source spans, recursively lexing holes through the ordinary scanner. Nested
 interpolation, quoted/raw strings and characters, comments, casts, arithmetic,
 and value-producing conditionals work inside holes. Embedded expressions are
@@ -135,7 +569,7 @@ numeric widths/signedness, and `bool`/`char`/`string` targets. The operand is
 evaluated once even when its type is statically known. Checks use comparison
 precedence, below casts/arithmetic and above equality/logical operators. Class
 runtime type checks, state checks, and class-type narrowing remain unimplemented.
-`../../../../examples/Conditionals.co` is runnable and prints `It is unsigned!`;
+`../../../../examples/Conditionals.co` is runnable and checks `It is unsigned!`;
 the user's original initializer in `../../../../examples/Test.co` is covered by
 a native test, without claiming that the rest of that design file compiles.
 
@@ -155,13 +589,14 @@ LLVM string values and binding storage currently use `{ ptr, i64 }`: a pointer
 to UTF-8 bytes and their byte length. Literal bytes use private constant storage
 for the program's lifetime. Concatenation checks length-addition overflow before
 allocating a fresh local byte buffer, then copies both operands with LLVM memcpy
-intrinsics. These buffers last for the current executable function; this
-implementation applies to the compiler's current single-scope programs and
-does not implement strings escaping through functions/objects. Copying a binding
+intrinsics. These buffers last for the creating function, including separate
+recursive invocations. Function returns now copy into caller-owned buffers through
+chunk 7; strings escaping into future objects remain separate work. Copying a binding
 copies its descriptor; reassignment does not change previous copies. There is
-no heap allocation, GC, reference counting, or language-level object destruction.
+no heap allocation for local concatenations; chunk 7 uses malloc/free for return
+buffers without adding GC, reference counting or language-level object destruction.
 This is an internal implementation choice, not a decision about dynamic string
-APIs or language-level object lifetime. Last-value output walks the stored
+APIs or language-level object lifetime. Internal test result output walks the stored
 length through ABI-typed `putchar`, preserving Unicode, empty strings, embedded
 NULs, and percent signs. Equality checks lengths before ABI-typed C `memcmp`
 using the profile's unsigned pointer-width `size_t`, and compares exact contents
@@ -173,7 +608,7 @@ String ordering, other arithmetic, logical operations on strings, cross-type
 conversions outside interpolation, indexing, and nullable annotations are not implemented.
 Unsupported operations are rejected
 before LLVM emission. `../../../../examples/Strings.co` demonstrates bindings and
-prints `Unicode: é 中 😀`; it also demonstrates concatenation, equality, and
+checks `Unicode: é 中 😀`; it also demonstrates concatenation, equality, and
 copies preserved across reassignment. Runnable examples and CLI regression paths use
 the repository's `examples` directory.
 
@@ -191,9 +626,9 @@ surrogates, empty/multiple-scalar literals, and raw line breaks. Existing escape
 `\n`, `\r`, `\t`, `\0`, `\\`, `\'`, and `\"` are decoded. String scanning now
 correctly uses double quotes; its previous single-quote check had shadowed the
 character scanner. LLVM character values and local storage use `i32`. Native
-last-value character output emits UTF-8 bytes through ABI-typed `putchar` calls,
+test-result character output emits UTF-8 bytes through ABI-typed `putchar` calls,
 independently of the C locale and native `wchar_t` width. `../../../../examples/Characters.co`
-demonstrates the feature and prints `😀`.
+demonstrates the feature and checks `😀` inside main.
 
 As of 2026-10-29, the user selected explicit integer bindings as the first
 compiler milestone after arithmetic. It is implemented and verified: `def<int>`
@@ -439,11 +874,14 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
   and native LLVM compilation. The CLI settings currently default to `examples/EX.co` and accept
-  `[source.co] [output]`, preserving source paths and using a separate output.
+  `[source.co] [output] [--emit executable|object]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,
   type-checker, or emitter support for that language feature.
-- `cloth/parser/Parser.kt` builds expression statements, explicit or inferred binding
+- `cloth/parser/Parser.kt` uses `parse()` / `parseDeclarations()` as declaration entry points,
+  producing `SourceUnit` and the function/parameter/body AST in
+  `cloth/parser/declaration/Declarations.kt`. Internal `parseSnippet()` and function bodies
+  parse expression statements, explicit or inferred binding
   declarations, simple and compound assignment statements, standalone postfix
   `name++`/`name--` updates, and `if` chains
   with brace-delimited branch statement lists. Statements currently require
@@ -455,16 +893,39 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   boolean, character, ordinary/interpolated/raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `**`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
   with precedence, plus `-> Type` casts between arithmetic and comparison
   precedence levels, primitive `is Type` checks at comparison precedence, and
-  conditional expressions.
+  conditional expressions, and named function calls with comma-separated arguments.
+  Calls have separate name and typed resolution stages and native scalar emission.
 - `cloth/parser/subs/DelimitedParser.kt` provides a generic delimiter wrapper
   with caller-supplied content parsing, including angle and parenthesis helpers.
   Binding type annotations, parenthesized expressions/conditions, and branch
   braces use this wrapper;
   recursive callbacks can handle nested delimiters. `TypeParser` reads an optional
   `unsigned` modifier, a type name, and an optional nested numeric width.
+  Function headers additionally enable unsized `[]` type suffix parsing.
   In a cast, only a complete `<number>` suffix is consumed as a width; other
   following `<` tokens remain available for ordering comparisons.
   General generic type arguments are not implemented.
+- `cloth/semantic/DeclarationAnalyzer.kt` collects declaration signatures and
+  resolves function-body names through `DeclarationModel`, using the symbols
+  and lexical scopes in `cloth/semantic/symbols`. This path consumes `SourceUnit`
+  separately from the legacy snippet analyzer and does not select overloads or
+  type-check expressions yet.
+- `cloth/semantic/CallAnalyzer.kt` and `FunctionSemanticModel.kt` resolve typed
+  calls on top of `DeclarationModel`, using shared `ExpressionTyping.kt` and
+  `TypeResolver.kt`. The selected callee is recorded independently of its return
+  context; primitive numeric width/signedness and array rank remain strict.
+  Contextual floating literals are enabled for call arguments, while legacy
+  snippet binding behavior is retained. Return-flow checks are available through
+  `FunctionAnalyzer`; native scalar function emission is implemented through
+  the declaration-based LLVM entry points.
+- `cloth/semantic/FunctionAnalyzer.kt` enables the full implemented function
+  checker, adding return contracts and `ControlFlowModel` completion facts for
+  function emission. Earlier declaration/call APIs retain their stage
+  boundaries.
+- `cloth/semantic/ProgramAnalyzer.kt` applies executable entry rules separately
+  from library validation. `EmitEntryPoint` adds native startup only for executable
+  emission. The CLI defaults to executable mode; object mode requires no main
+  and does not invoke a linker.
 - `cloth/semantic/SemanticAnalyzer.kt` checks the executable scope and nested
   branch scopes before LLVM emission. It rejects unknown names, duplicate declarations,
   immutable reassignment, and assignment type mismatches. An omitted annotation
@@ -482,6 +943,17 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   Bindings become available after their initializer is checked;
   forward/self reads are currently rejected. This is implementation coverage,
   not a decision about declaration resolution for the broader language.
+- `cloth/emitter/types/EmitFunctions.kt` declares every scalar/void function
+  signature before emitting bodies. `LLVMEmitter.emit(SourceUnit)` and
+  `compileObject(SourceUnit, Path)` use `FunctionAnalyzer` and this emitter;
+  they generate verified declaration modules without synthesizing a native
+  entry point. Scalar storage uses stable symbols and entry allocas, calls use
+  selected symbols, and returns/merges respect continuing control flow. String
+  parameters/returns now work through chunk 7; arrays still report C4030.
+- `EmitFunctionFrame` joins normal exits, copies outgoing string bytes into the
+  caller's return storage, and releases the current frame's received string results.
+  `EmitStringArena` emits checked malloc/copy and free helpers using the native
+  size_t ABI. Local formatting/concatenation buffers remain on the creating stack.
 - `cloth/emitter/LLVM.kt` and `cloth/emitter/types/EmitExpression.kt` emit LLVM
   code for arithmetic, boolean negation (`LLVMBuildNot` on `i1`), short-circuit
   logical expressions (conditional branches and phi values), boolean equality and numeric equality/ordering
@@ -494,15 +966,17 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   storage and emits loads/stores (with a separate byte per boolean and conversion
   between `i1` values and `i8` storage); `EmitStatement` handles declarations and
   assignments. Branch emission restores lexical binding names without undoing
-  stores to enclosing bindings. Native compilation prints the last statement's
-  value when it produces one, and links a native executable. Boolean results
-  print as `true` or `false`.
+  stores to enclosing bindings. Internal snippet test instrumentation prints the
+  last value when requested; production programs use explicit main exit status
+  and do not implicitly print values.
 - `../../../../examples/Math.co` is the arithmetic example; `../../../../examples/Bindings.co` demonstrates explicit and
-  inferred integer and float bindings and evaluates to `76.25`. It includes
-  commented examples of invalid type-changing and immutable reassignments. `../../../../examples/Booleans.co` demonstrates boolean inference, explicit types, copies, negation, short-circuit logic, boolean/numeric equality and inequality, numeric ordering, and reassignment, and evaluates to `true`.
+  inferred integer and float bindings and checks `76.25`. It includes
+  commented examples of invalid type-changing and immutable reassignments. `../../../../examples/Booleans.co` demonstrates boolean inference, explicit types, copies, negation, short-circuit logic, boolean/numeric equality and inequality, numeric ordering, and reassignment, and checks a true result.
   `../../../../examples/Unsigned.co` demonstrates unsigned widths, wrapping, copies, division, float
-  promotion, and comparisons, and evaluates to `true`.
-  `../../../../examples/Casts.co` demonstrates numeric conversions and evaluates to `4294967294`.
+  promotion, and comparisons, and checks a true result.
+  `../../../../examples/Casts.co` demonstrates numeric conversions and checks `4294967294`.
+  These examples have explicit main functions, return 0/1 for pass/fail, and do
+  not print implicitly. `../../../../examples/Functions.co` exercises recursion.
   `../../../../examples/Test.co` describes the broader target
   language; it is not currently an end-to-end compiler test.
 - Verified on 2026-10-30: the full compiler suite passed all 129 tests with no

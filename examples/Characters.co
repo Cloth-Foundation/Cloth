@@ -1,11 +1,14 @@
-// A char stores one Unicode scalar in 32 bits.
-def<char> letter = 'n'
-def original := letter
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    // A char stores one Unicode scalar in 32 bits.
+    def<char> letter = 'n'
+    def original := letter
 
-// Inference, copies, equality, and ordinary binding rules apply.
-letter = '😀'
-def<bool> changed = letter != original
-def<char> newline := '\n'
+    // Inference, copies, equality, and ordinary binding rules apply.
+    letter = '😀'
+    def<bool> changed = letter != original
+    def<char> newline := '\n'
 
-// The compiler prints the last value as UTF-8.
-letter
+    // Check the Unicode values explicitly; main returns the process status.
+    return if (letter == '😀' && changed && newline == '\n') { 0 } else { 1 }
+}

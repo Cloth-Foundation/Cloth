@@ -1,18 +1,46 @@
 package cloth.diagnostics
 
 import cloth.parser.expression.Expression
+import cloth.parser.expression.CallExpression
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.SemanticException
 import cloth.semantic.ValueType
+import cloth.semantic.symbols.FunctionSymbol
 import cloth.token.Keywords
 import cloth.token.Token
 import cloth.token.TokenSpan
 import java.math.BigInteger
 
 object SemanticErrors {
+	fun array(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ARRAY, message, span)
+	fun index(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_INDEX, message, span)
 
 	private fun issue(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null) = SemanticException(code, message, listOf(SourceLabel(span, "here")), help)
 	fun unknown(name: Token) = issue(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding '${name.lexeme}'", name.span, "Declare this binding before using it.")
+	fun unknownName(name: Token) = issue(DiagnosticCode.UNKNOWN_NAME, "Unknown name '${name.lexeme}'", name.span, "Declare a visible binding or function with this name.")
+	fun duplicateFunction(signature: String, first: Token, duplicate: Token) = SemanticException(DiagnosticCode.DUPLICATE_FUNCTION, "Function '$signature' is already declared", listOf(SourceLabel(first.span, "first declared here"), SourceLabel(duplicate.span, "same name and parameter types")), "Return types, parameter names and 'final' do not distinguish overloads.")
+	fun notCallable(name: Token, declaration: Token) = SemanticException(DiagnosticCode.NOT_CALLABLE, "Binding '${name.lexeme}' is not callable", listOf(SourceLabel(declaration.span, "binding declared here"), SourceLabel(name.span, "called here")), "A local binding shadows a function with the same name.")
+	fun bindingRequired(name: Token, declaration: Token) = SemanticException(DiagnosticCode.EXPECTED_BINDING, "Cannot assign to function '${name.lexeme}'", listOf(SourceLabel(declaration.span, "function declared here"), SourceLabel(name.span, "assignment requires a binding")))
+	fun immutableParameter(name: Token, declaration: Token) = SemanticException(DiagnosticCode.IMMUTABLE_BINDING, "Cannot reassign final parameter '${name.lexeme}'", listOf(SourceLabel(declaration.span, "final parameter declared here"), SourceLabel(name.span, "reassigned here")), "Remove 'final' from the parameter if it needs reassignment.")
+	private fun callIssue(code: DiagnosticCode, call: CallExpression, candidates: List<FunctionSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, it.signature.spelling) }, help)
+	fun callArity(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
+	fun noMatchingCall(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")
+	fun ambiguousCall(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous", "Use explicit casts to select the intended parameter types.")
+	fun voidValue(span: TokenSpan) = issue(DiagnosticCode.VOID_VALUE, "A void expression cannot supply a value", span)
+	fun voidType(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot be used as a parameter, binding or array element type", span)
+	fun functionValue(name: Token) = issue(DiagnosticCode.FUNCTION_VALUE, "Function '${name.lexeme}' cannot be used as a binding value", name.span, "Call the function with parentheses.")
+	fun floating(value: String, type: ValueType.Floating, span: TokenSpan) = issue(DiagnosticCode.FLOAT_RANGE, "Floating literal '$value' is out of range for '${type.spelling}'", span)
+	private fun returnContract(function: FunctionDeclaration) = function.returnType?.span ?: function.name.span
+	fun returnValueRequired(function: FunctionDeclaration, expected: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_VALUE_REQUIRED, "Function '${function.name.lexeme}' must return a value of type '${expected.spelling}'", listOf(SourceLabel(span, "bare return has no value"), SourceLabel(returnContract(function), "declared return type")), "Return an expression matching the declared type.")
+	fun valueInVoid(function: FunctionDeclaration, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.VALUE_IN_VOID, "Void function '${function.name.lexeme}' cannot return '${actual.spelling}'", listOf(SourceLabel(span, "produces '${actual.spelling}'"), SourceLabel(returnContract(function), "function returns void")), "Discard the value explicitly with '-> void', or declare a matching return type.")
+	fun returnType(function: FunctionDeclaration, expected: ValueType, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_TYPE, "Return type mismatch in '${function.name.lexeme}': expected '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "returns '${actual.spelling}'"), SourceLabel(returnContract(function), "requires '${expected.spelling}'")), "Return the declared type; numeric type changes require explicit casts.")
+	fun missingReturn(function: FunctionDeclaration, body: BlockBody): SemanticException {
+		val end = body.span
+		val closing = TokenSpan(end.endLine, end.endColumn - 1, end.endLine, end.endColumn, end.source)
+		return SemanticException(DiagnosticCode.MISSING_RETURN, "Non-void function '${function.name.lexeme}' can reach its end without returning a value", listOf(SourceLabel(closing, "execution can reach this closing brace"), SourceLabel(returnContract(function), "requires a return value")), "Use explicit 'return' on every continuing path; a final expression in braces does not return implicitly.")
+	}
 	fun negativeExponent(span: TokenSpan) = issue(DiagnosticCode.NEGATIVE_EXPONENT, "Integer exponentiation requires a nonnegative exponent", span)
 	fun integer(value: BigInteger, type: ValueType.Integer, span: TokenSpan) = issue(DiagnosticCode.INTEGER_RANGE, "Integer literal '$value' is out of range for '${type.spelling}'", span, "'${type.spelling}' accepts values from ${type.minimum} through ${type.maximum}.")
 	fun missingElse(span: TokenSpan) = issue(DiagnosticCode.MISSING_ELSE, "A value-producing 'if' requires a final 'else'", span, "Add an 'else' branch that produces a value.")

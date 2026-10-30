@@ -1,18 +1,21 @@
-// unsigned int defaults to 32 bits; width expansion uses the usual type syntax.
-def<unsigned int> a = 4294967295
-def<unsigned int<64>> wide := 18446744073709551615
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    // unsigned int defaults to 32 bits; width expansion uses the usual type syntax.
+    def<unsigned int> a = 4294967295
+    def<unsigned int<64>> wide := 18446744073709551615
 
-// Copies and arithmetic preserve unsigned types. Arithmetic wraps at the width.
-def original := a
-a = a + 1
-def half = original / 2
+    // Copies and arithmetic preserve unsigned types. Arithmetic wraps at the width.
+    def original := a
+    a = a + 1
+    def half = original / 2
 
-// Mixed float expressions convert unsigned values as positive numbers.
-def promoted := original / 2.0
+    // Mixed float expressions convert unsigned values as positive numbers.
+    def promoted := original / 2.0
 
-// Comparisons return bool and compose with ordinary boolean expressions.
-original > half && a == 0 && wide > 4294967295 && promoted > 0.0
+    // Comparisons return bool and compose with ordinary boolean expressions.
+    return if (original > half && a == 0 && wide > 4294967295 && promoted > 0.0) { 0 } else { 1 }
 
-// Signed and unsigned bindings require an explicit conversion to mix.
-// def<int> signedValue = 1
-// original + signedValue
+    // Signed and unsigned bindings require an explicit conversion to mix.
+    // def<int> signedValue = 1
+    // original + signedValue
+}

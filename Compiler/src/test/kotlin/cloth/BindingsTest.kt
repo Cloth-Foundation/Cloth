@@ -23,7 +23,7 @@ import kotlin.test.*
 
 class BindingsTest {
 
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `declarations preserve explicit types and binding mutability`() {
@@ -113,7 +113,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) {
 				// The public emission path must reject mismatches before generating LLVM.
-				LLVMEmitter().emit(parse(source))
+				LLVMEmitter().emitSnippet(parse(source))
 			}
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
@@ -146,7 +146,7 @@ class BindingsTest {
 	@Test
 	fun `emitter checks bindings before emitting LLVM`() {
 		assertFailsWith<SemanticException> {
-			LLVMEmitter().emit(parse("def<int> x := 1\nx = 2"))
+			LLVMEmitter().emitSnippet(parse("def<int> x := 1\nx = 2"))
 		}
 	}
 
@@ -169,24 +169,24 @@ class BindingsTest {
 			x = x / 2
 			original * 100 + x * 10 + y
 		"""
-		val executable = LLVMEmitter().compile(parse(source), directory.resolve("bindings"))
+		val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("bindings"))
 		assertOutput(executable, "1105")
 	}
 
 	@Test
 	fun `bindings and existing math examples compile through the CLI`(@TempDir directory: Path) {
-		for ((file, expected) in listOf("Bindings.co" to "76.25", "Math.co" to "6689", "Booleans.co" to "true", "Unsigned.co" to "true", "Casts.co" to "4294967294", "Characters.co" to "😀", "Strings.co" to "Unicode: é 中 😀")) {
+		for (file in listOf("Bindings.co", "Math.co", "Booleans.co", "Unsigned.co", "Casts.co", "Characters.co", "Strings.co", "Functions.co", "StringFunctions.co")) {
 			val output = directory.resolve(file.removeSuffix(".co"))
 			// Absolute paths exercise source selection and the separate output argument.
 			main(arrayOf(Path.of("examples", file).toAbsolutePath().toString(), output.toString()))
 			val executable = cloth.util.ExecutableFormat.current.executablePath(output)
-			assertOutput(executable, expected)
+			assertOutput(executable, "") // Each main checks its result and returns status 0.
 		}
 	}
 
 	@Test
 	fun `integer bindings can participate in existing floating point arithmetic`(@TempDir directory: Path) {
-		val executable = LLVMEmitter().compile(parse("def<int> x = 9\nx / 2.0"), directory.resolve("mixed"))
+		val executable = LLVMEmitter().compileSnippet(parse("def<int> x = 9\nx / 2.0"), directory.resolve("mixed"))
 		assertOutput(executable, "4.5")
 	}
 
@@ -200,7 +200,7 @@ class BindingsTest {
 			half = half * 3
 			x * 100 + y * 10 + half
 		"""
-		val executable = LLVMEmitter().compile(parse(source), directory.resolve("inferred_int"))
+		val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("inferred_int"))
 		assertOutput(executable, "1326")
 	}
 
@@ -214,7 +214,7 @@ class BindingsTest {
 			scale = (scale + 0.75)
 			original + mixed + scale
 		"""
-		val executable = LLVMEmitter().compile(parse(source), directory.resolve("inferred_float"))
+		val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("inferred_float"))
 		assertOutput(executable, "8.25")
 	}
 
@@ -234,7 +234,7 @@ class BindingsTest {
 		)
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) {
-				LLVMEmitter().emit(parse(source))
+				LLVMEmitter().emitSnippet(parse(source))
 			}
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
@@ -253,7 +253,7 @@ class BindingsTest {
 			offset = scale / 2
 			snapshot + fromInferred + scale + offset
 		"""
-		val executable = LLVMEmitter().compile(parse(source), directory.resolve("explicit_float"))
+		val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("explicit_float"))
 		assertOutput(executable, "8.5")
 	}
 
@@ -297,7 +297,7 @@ class BindingsTest {
 					.map { it to "requires numeric operands" }
 			}
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -309,7 +309,7 @@ class BindingsTest {
 			val source = (0 until count).joinToString("\n") {
 				"def flag$it = true\ndef number$it = $it\ndef scale$it = 1.5"
 			} + "\nflag0 = flag${count - 1}\nflag0"
-			val ir = LLVMEmitter().emit(parse(source))
+			val ir = LLVMEmitter().emitSnippet(parse(source))
 			assertEquals(count, Regex("alloca i8\\b").findAll(ir).count(), ir)
 			assertFalse(ir.contains("alloca i1,"), ir)
 			assertContains(ir, "to i1")
@@ -346,7 +346,7 @@ class BindingsTest {
 		""".trimIndent()
 		val expected = listOf(false, true, true, false, false, true, false, true, false, true)
 		for ((index, name) in listOf("a", "b", "c", "d", "e", "f", "g", "h", "i", "snapshot").withIndex()) {
-			val executable = LLVMEmitter().compile(parse("$source\n$name"), directory.resolve("independent_$name"))
+			val executable = LLVMEmitter().compileSnippet(parse("$source\n$name"), directory.resolve("independent_$name"))
 			assertOutput(executable, expected[index].toString())
 		}
 	}
@@ -354,7 +354,7 @@ class BindingsTest {
 	@Test
 	fun `boolean literals and last assignments print as boolean values`(@TempDir directory: Path) {
 		for ((index, source) in listOf("true", "false", "def x = true\nx = false", "def<bool> x = false\nx = true").withIndex()) {
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("bool_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("bool_$index"))
 			assertOutput(executable, (index == 0 || index == 3).toString())
 		}
 	}
@@ -391,7 +391,7 @@ class BindingsTest {
 			"!true + 1" to "requires numeric operands"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -413,7 +413,7 @@ class BindingsTest {
 		)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("negation_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("negation_$index"))
 			assertOutput(executable, expected.toString())
 		}
 	}
@@ -466,7 +466,7 @@ class BindingsTest {
 			"-(true && false)" to "requires a numeric operand"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -475,7 +475,7 @@ class BindingsTest {
 	@Test
 	fun `short circuit control flow branches around the right operand load`() {
 		for (operator in listOf("&&", "||")) {
-			val ir = LLVMEmitter().emit(parse("def left = true\ndef right = false\nleft $operator right"))
+			val ir = LLVMEmitter().emitSnippet(parse("def left = true\ndef right = false\nleft $operator right"))
 			val branch = assertNotNull(Regex("br i1 %left_bool, label %([^,\\s]+), label %([^\\s]+)").find(ir), ir)
 			val rhsLabel = branch.groupValues[if (operator == "&&") 1 else 2]
 			val endLabel = branch.groupValues[if (operator == "&&") 2 else 1]
@@ -495,7 +495,7 @@ class BindingsTest {
 			for (left in listOf(false, true)) {
 				for (right in listOf(false, true)) {
 					val source = "def left = $left\ndef<bool> right := $right\nleft $operator right"
-					val executable = LLVMEmitter().compile(parse(source), directory.resolve("logic_${operator == "&&"}_${left}_$right"))
+					val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("logic_${operator == "&&"}_${left}_$right"))
 					val expected = if (operator == "&&") left && right else left || right
 					assertOutput(executable, expected.toString())
 				}
@@ -519,10 +519,10 @@ class BindingsTest {
 		)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("nested_logic_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("nested_logic_$index"))
 			assertOutput(executable, expected.toString())
 		}
-		val numeric = LLVMEmitter().compile(parse("def flag = true && false\ndef x = 7\nx + 2"), directory.resolve("after_logic"))
+		val numeric = LLVMEmitter().compileSnippet(parse("def flag = true && false\ndef x = 7\nx + 2"), directory.resolve("after_logic"))
 		assertOutput(numeric, "9")
 	}
 
@@ -566,7 +566,7 @@ class BindingsTest {
 			"(true == false) + 1" to "requires numeric operands"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -580,7 +580,7 @@ class BindingsTest {
 					val expected = if (operator == "==") left == right else left != right
 					for (bindings in listOf(false, true)) {
 						val source = if (bindings) "def left = $left\ndef<bool> right := $right\nleft $operator right" else "$left $operator $right"
-						val executable = LLVMEmitter().compile(parse(source), directory.resolve("equality_${operator == "=="}_${left}_${right}_$bindings"))
+						val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("equality_${operator == "=="}_${left}_${right}_$bindings"))
 						assertOutput(executable, expected.toString())
 					}
 				}
@@ -608,7 +608,7 @@ class BindingsTest {
 		)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("comparison_composition_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("comparison_composition_$index"))
 			assertOutput(executable, expected.toString())
 		}
 	}
@@ -630,7 +630,7 @@ class BindingsTest {
 			for (equal in listOf(false, true)) {
 				val operator = if (equal) "==" else "!="
 				val source = "def<int> left = $left\ndef right := $right\nleft $operator right"
-				val executable = LLVMEmitter().compile(parse(source), directory.resolve("int_equality_${index}_$equal"))
+				val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("int_equality_${index}_$equal"))
 				assertOutput(executable, (if (equal) same else !same).toString())
 			}
 		}
@@ -656,7 +656,7 @@ class BindingsTest {
 			for (equal in listOf(false, true)) {
 				val operator = if (equal) "==" else "!="
 				val source = "def<float> zero = 0.0\ndef left = $left\ndef<float> right := $right\nleft $operator right"
-				val executable = LLVMEmitter().compile(parse(source), directory.resolve("float_equality_${index}_$equal"))
+				val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("float_equality_${index}_$equal"))
 				assertOutput(executable, (if (equal) same else !same).toString())
 			}
 		}
@@ -680,7 +680,7 @@ class BindingsTest {
 			for (equal in listOf(false, true)) {
 				val operator = if (equal) "==" else "!="
 				val source = "def left = $left\ndef right := $right\nleft $operator right"
-				val executable = LLVMEmitter().compile(parse(source), directory.resolve("mixed_equality_${index}_$equal"))
+				val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("mixed_equality_${index}_$equal"))
 				assertOutput(executable, (if (equal) same else !same).toString())
 			}
 		}
@@ -699,7 +699,7 @@ class BindingsTest {
 		)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("numeric_composition_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("numeric_composition_$index"))
 			assertOutput(executable, expected.toString())
 		}
 	}
@@ -720,7 +720,7 @@ class BindingsTest {
 			"(1 == 1) + 2" to "requires numeric operands"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -763,7 +763,7 @@ class BindingsTest {
 			"(1 < 2) + 3" to "requires numeric operands"
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
 			assertLocated(failure)
 		}
@@ -832,7 +832,7 @@ class BindingsTest {
 		)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val executable = LLVMEmitter().compile(parse(source), directory.resolve("ordering_composition_$index"))
+			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("ordering_composition_$index"))
 			assertOutput(executable, expected.toString())
 		}
 	}
@@ -848,7 +848,7 @@ class BindingsTest {
 					else -> relation >= 0
 				}
 				val source = "def<float> zero = 0.0\ndef left = $left\ndef right := $right\nleft $operator right"
-				val executable = LLVMEmitter().compile(parse(source), directory.resolve("ordering_${name}_${index}_$opIndex"))
+				val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("ordering_${name}_${index}_$opIndex"))
 				assertOutput(executable, expected.toString())
 			}
 		}

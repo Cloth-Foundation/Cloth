@@ -55,6 +55,9 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 			if (current + len <= source.length) {
 				val substring = source.substring(current, current + len)
 				if (substring == op.character) {
+					// Word operators must not consume prefixes of function/binding names.
+					val next = source.getOrNull(current + len)
+					if (op.character.last().isLetter() && next != null && (next.isLetterOrDigit() || next == '_')) continue
 					current += len
 					cAt = cAt.copy(column = cAt.column + len)
 					return op

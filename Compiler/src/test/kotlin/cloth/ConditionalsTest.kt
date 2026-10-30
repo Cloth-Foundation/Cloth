@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ConditionalsTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `inline and multiline chains preserve nesting and subsequent statements`() {
@@ -68,7 +68,7 @@ class ConditionalsTest {
 			"def<int> x = if (true) { true } else { false }",
 			"def x = if (true) { if (false) { 1 } } else { 2 }",
 			"1 + if (true) { 2 }", "false && (if (true) { false })"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
@@ -79,7 +79,7 @@ class ConditionalsTest {
 			"if (true) {} else { missing }", "if (true) {} else if (missing) {}",
 			"def x = if (true) { 1 } else { missing }", "if (false) { 1 + true }",
 			"def x := 1\nif (false) { x = 2 }", "def x = 1\nif (false) { x = true }"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
@@ -92,7 +92,7 @@ class ConditionalsTest {
 			"def x = if (true) { def local = 1\nlocal } else { local }",
 			"if (true) { def local := 1\nlocal = 2 }",
 			"def x = if (true) { x } else { 1 }"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		SemanticAnalyzer().analyze(parse("if (true) { def x = 1 } else { def x = false }\ndef x = 'a'"))
 	}
 
@@ -100,7 +100,7 @@ class ConditionalsTest {
 	fun `standalone conditionals yield void and produce no phi or automatic output`(@TempDir directory: Path) {
 		val ast = parse("if (true) { 1 } else if (false) { \"unused\" } else {}")
 		assertEquals(ValueType.VOID, SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
-		val ir = LLVMEmitter().emit(ast, forcePrint = true)
+		val ir = LLVMEmitter().emitSnippet(ast, forcePrint = true)
 		assertFalse(ir.contains("if_value"))
 		assertFalse(ir.contains("@printf"))
 		assertProgram(directory.resolve("no_output"), "42\nif (true) { 1 } else { false }", null)
@@ -152,7 +152,7 @@ class ConditionalsTest {
 			""", expected)
 		}
 		assertProgram(directory.resolve("inferred"), "def x := if (false) { 0 } else { 42 }\nx", "42")
-		assertFailsWith<SemanticException> { LLVMEmitter().emit(parse("def x := if (true) { 1 } else { 2 }\nx = 3")) }
+		assertFailsWith<SemanticException> { LLVMEmitter().emitSnippet(parse("def x := if (true) { 1 } else { 2 }\nx = 3")) }
 	}
 
 	@Test
@@ -191,7 +191,7 @@ class ConditionalsTest {
 			def same = (if (flag) { value } else { "" }) == "ab"
 			same && converted == 41.0 && (if (flag) { true } else { false })
 		""", "true")
-		val ir = LLVMEmitter().emit(parse("def flag = true\ndef result = if (flag) { \"a\" + \"b\" } else { \"c\" + \"d\" }\nresult"))
+		val ir = LLVMEmitter().emitSnippet(parse("def flag = true\ndef result = if (flag) { \"a\" + \"b\" } else { \"c\" + \"d\" }\nresult"))
 		assertContains(ir, "phi { ptr, i64 }")
 		assertContains(ir, "concat_valid")
 	}
@@ -235,7 +235,7 @@ class ConditionalsTest {
 	@Test
 	fun `invalid is targets and operands fail before emission`() {
 		for (source in listOf("1 is unsigned float", "1 is int<7>", "1 is string<32>", "1 is Player", "1 is void", "missing is int", "1 is int < true")) {
-			assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
 		for (source in listOf("1 is", "1 is unsigned", "1 is 1", "is int")) {
 			assertFailsWith<SyntaxException>(source) { parse(source) }
@@ -265,11 +265,11 @@ class ConditionalsTest {
 		val output = directory.resolve("conditional_example")
 		main(arrayOf(Path.of("examples", "Conditionals.co").toAbsolutePath().toString(), output.toString()))
 		val executable = if (Files.exists(output)) output else Path.of("$output.exe")
-		assertOutput(executable, "It is unsigned!")
+		assertOutput(executable, null) // The example checks its result through main's status.
 	}
 
 	private fun assertProgram(output: Path, source: String, expected: String?) {
-		assertOutput(LLVMEmitter().compile(parse(source), output), expected)
+		assertOutput(LLVMEmitter().compileSnippet(parse(source), output), expected)
 	}
 
 	private fun assertOutput(executable: Path, expected: String?) {

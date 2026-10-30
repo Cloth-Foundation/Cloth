@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class CharactersTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `literals decode one Unicode scalar and the existing escapes`() {
@@ -65,7 +65,7 @@ class CharactersTest {
 		assertEquals(ValueType.CHAR, model.typeOf(ast.statements[0]))
 		assertEquals(ValueType.CHAR, model.typeOf(ast.statements[1]))
 		assertEquals(ValueType.CHAR, model.typeOf(ast.statements.last()))
-		val ir = LLVMEmitter().emit(ast)
+		val ir = LLVMEmitter().emitSnippet(ast)
 		assertContains(ir, "%letter = alloca i32")
 		assertContains(ir, "%copy = alloca i32")
 		assertContains(ir, "store i32 128512, ptr %letter")
@@ -80,7 +80,7 @@ class CharactersTest {
 			"def c := 'n'\nc = 'x'", "def<char> c = c", "def c = 'n'\ndef c = 'x'",
 			"def<unsigned char> c = 'n'", "def<char<8>> c = 'n'", "def<char<32>> c = 'n'")
 		for (source in cases) {
-			assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
 	}
 
@@ -105,7 +105,7 @@ class CharactersTest {
 			add("true || ('a' == true)")
 		}
 		for (source in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertLocated(failure)
 		}
 	}
@@ -147,7 +147,7 @@ class CharactersTest {
 	}
 
 	private fun assertProgram(output: Path, source: String, expected: String) {
-		val executable = LLVMEmitter().compile(parse(source), output)
+		val executable = LLVMEmitter().compileSnippet(parse(source), output)
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")

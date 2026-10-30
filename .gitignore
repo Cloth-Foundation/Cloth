@@ -9,6 +9,8 @@ build/
 .idea
 
 *.exe
+*.o
+*.obj
 *.ll
 
 ### IntelliJ IDEA ###

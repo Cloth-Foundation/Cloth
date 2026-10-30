@@ -23,7 +23,7 @@ class ExpressionParser(val parser: Parser) {
 			}
 			if (operator.type != TokenType.Operator) break
 			val kind = Operators.fromCharacter(operator.lexeme)
-			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE)) break
+			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE, Operators.BRACKET_CLOSE, Operators.COMMA)) break
 			if (kind == Operators.POINTER_RIGHT) {
 				if (CAST_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -58,13 +58,22 @@ class ExpressionParser(val parser: Parser) {
 			return UnaryExpression(token, if (token.lexeme == "!") parseUnary() else parseExpression(POWER_PRECEDENCE))
 		}
 
-		return parsePrimary()
+		var value = parsePrimary()
+		while (parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
+			val index = parser.delimited.brackets { parseExpression() }
+			value = IndexExpression(value, index, value.span.through(parser.previous().span))
+		}
+		return value
 	}
 
 	fun parsePrimary(): Expression {
 		val token = parser.peek()
 
 		return when (token.type) {
+			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.character -> {
+				val elements = parser.delimited.brackets { parser.delimited.commaSeparated(Operators.BRACKET_CLOSE) { parseExpression() } }
+				ArrayLiteral(elements, token.span.through(parser.previous().span))
+			}
 			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.parseIf()
 			TokenType.Keyword if token.lexeme in setOf(Keywords.TRUE.toString(), Keywords.FALSE.toString()) -> {
 				parser.advance()
@@ -73,7 +82,15 @@ class ExpressionParser(val parser: Parser) {
 
 			TokenType.InterpolationStart -> parseInterpolation()
 
-			TokenType.Identifier                                                                            -> NameExpression(parser.advance())
+			TokenType.Identifier                                                                            -> {
+				val name = parser.advance()
+				if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
+					val arguments = parser.delimited.parentheses {
+						parser.delimited.commaSeparated(Operators.PAREN_CLOSE) { parseExpression() }
+					}
+					CallExpression(name, arguments, name.span.through(parser.previous().span))
+				} else NameExpression(name)
+			}
 			TokenType.StringLiteral, TokenType.RawStringLiteral                                             -> {
 				parser.advance()
 				val raw = token.type == TokenType.RawStringLiteral
@@ -108,7 +125,8 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.FloatingPointLiteral                                                                  -> {
 				parser.advance()
 
-				if (token.lexeme.toBigDecimalOrNull()?.let(ValueType.FLOAT::acceptsLiteral) != true) {
+				val decimal = token.lexeme.toBigDecimalOrNull()
+				if (decimal == null || (!parser.allowsContextualFloatingLiterals && !ValueType.FLOAT.acceptsLiteral(decimal))) {
 					throw SyntaxErrors.number(token, floating = true)
 				}
 

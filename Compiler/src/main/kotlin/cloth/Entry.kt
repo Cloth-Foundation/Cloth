@@ -6,6 +6,7 @@ import cloth.file.ClothObject
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.CompilerSettings
+import cloth.settings.OutputKind
 import java.io.IOException
 import java.nio.file.InvalidPathException
 import kotlin.system.exitProcess
@@ -25,9 +26,13 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 		settings = compilerSettings
 		val clothObject = ClothObject(compilerSettings.getSourceFile())
 		val source = SourceFile(clothObject.path.toString(), clothObject.getContents())
-		val output = compilerSettings.getOutputFile()?.toPath() ?: clothObject.path.resolveSibling(clothObject.name)
-		val ast = Parser(Lexer(source).scanTokens()).parse()
-		LLVMEmitter(compilerSettings.linkOptions).compile(ast, output)
+		val output = compilerSettings.getOutputFile()?.toPath() ?: clothObject.path.resolveSibling(clothObject.name + if (compilerSettings.outputKind == OutputKind.OBJECT) ".o" else "")
+		val unit = Parser(Lexer(source).scanTokens()).parse()
+		val emitter = LLVMEmitter(compilerSettings.linkOptions)
+		when (compilerSettings.outputKind) {
+			OutputKind.EXECUTABLE -> emitter.compile(unit, output)
+			OutputKind.OBJECT -> emitter.compileObject(unit, output)
+		}
 		return 0
 	} catch (failure: ClothDiagnostic) {
 		reporter.report(failure, debug)

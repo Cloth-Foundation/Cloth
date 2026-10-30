@@ -211,21 +211,21 @@ class ToolchainResolverTest {
 	fun `invalid toolchain choices fail before creating compiler output directories`(@TempDir root: Path) {
 		val incompatible = if (NativeCABI.native().profile == NativeCABI.Profile.WINDOWS_LLP64) LinkerDriver.CC else LinkerDriver.MSVC
 		val output = root.resolve("should not exist/program")
-		val ast = Parser(Lexer("1").scanTokens()).parse()
-		assertFailsWith<ClothDiagnostic> { LLVMEmitter(LinkOptions(driver = incompatible)).compile(ast, output) }
+		val ast = Parser(Lexer("1").scanTokens()).parseSnippet()
+		assertFailsWith<ClothDiagnostic> { LLVMEmitter(LinkOptions(driver = incompatible)).compileSnippet(ast, output) }
 		assertFalse(Files.exists(output.parent))
 	}
 
 	@Test
 	fun `native explicit runtime and linker choices produce runnable programs`(@TempDir root: Path) {
 		if (NativeCABI.native().profile != NativeCABI.Profile.WINDOWS_LLP64) return
-		val ast = Parser(Lexer("def fraction = 7.0\nfraction / 2").scanTokens()).parse()
+		val ast = Parser(Lexer("def fraction = 7.0\nfraction / 2").scanTokens()).parseSnippet()
 		for ((index, options) in listOf(
 			LinkOptions(runtime = RuntimeLinkage.DYNAMIC),
 			LinkOptions(subsystem = ApplicationSubsystem.WINDOWS),
 			LinkOptions(driver = LinkerDriver.MSVC)
 		).withIndex()) {
-			val executable = LLVMEmitter(options).compile(ast, root.resolve("native_$index"))
+			val executable = LLVMEmitter(options).compileSnippet(ast, root.resolve("native_$index"))
 			val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 			try {
 				assertTrue(process.waitFor(10, TimeUnit.SECONDS))

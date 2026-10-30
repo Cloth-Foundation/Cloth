@@ -1,16 +1,19 @@
-// An if expression yields the selected branch's final expression.
-def<unsigned int> a = 10
-def<string> isUnsigned = if (a is unsigned int) { "is unsigned" } else if (a > 25) { "is above 25" } else { ":(" }
+// Returns 0 when this example passes its checks, or 1 on failure.
+fn<int> main() {
+    // An if expression yields the selected branch's final expression.
+    def<unsigned int> a = 10
+    def<string> isUnsigned = if (a is unsigned int) { "is unsigned" } else if (a > 25) { "is above 25" } else { ":(" }
 
-// Standalone conditionals execute statements without yielding a value.
-if (a > 0) {
-    isUnsigned = isUnsigned + "!"
+    // Standalone conditionals execute statements without yielding a value.
+    if (a > 0) {
+        isUnsigned = isUnsigned + "!"
+    }
+
+    // Branch-local bindings can contribute to a value without escaping their scope.
+    def message := if (isUnsigned != "") {
+        def prefix = "It "
+        prefix + isUnsigned
+    } else { "empty" }
+
+    return if (message == "It is unsigned!") { 0 } else { 1 }
 }
-
-// Branch-local bindings can contribute to a value without escaping their scope.
-def message := if (isUnsigned != "") {
-    def prefix = "It "
-    prefix + isUnsigned
-} else { "empty" }
-
-message

@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class NumericWidthsTest {
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parse()
+	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `numeric families carry validated widths and derive their spelling from keywords`() {
@@ -213,7 +213,7 @@ class NumericWidthsTest {
 	}
 
 	private fun runProgram(output: Path, source: String): Pair<Int, String> {
-		val executable = LLVMEmitter().compile(parse(source), output)
+		val executable = LLVMEmitter().compileSnippet(parse(source), output)
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")

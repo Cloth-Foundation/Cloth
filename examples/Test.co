@@ -192,10 +192,20 @@ typedef<class> Loops {
 
 fn<void> arrays () {
 
-    def<int[]> unsized = [ 1, 2, 3 ]
+    def<int[]> unsized = [ 1, 2, 3 ] // assumes size is 3
     def<float[5]> sized = [ 1.0, 2.0, 3.0, 4.0, 5.0 ]
     def inferredWithSize = [ true, true, false ] // infers bool[3]
-    def<int[2]> oversized = [ 1 ] // fine. pos 1 is 0 (maybe?)
+    def<int[2]> oversized = [ 1 ] // not all members initialized, error
     def<float[1]> undersized = [ 1.0, 2.0 ] // ERROR!
+    def<string[]> finalArray := [ "Hello", "Cloth" ]
 
+}
+
+fn assumedReturnType () {
+
+    def x = 10
+    x = x ** 10
+    // No specified return type assumes void, you can also specify <void> if you want.
+
+    //return x would be an error, as no return type is expected
 }

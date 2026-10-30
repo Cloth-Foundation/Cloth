@@ -33,7 +33,7 @@ internal fun assertLocated(failure: Throwable) {
 }
 
 class DiagnosticsTest {
-	private fun parse(text: String, name: String = "test.co") = Parser(Lexer(SourceFile(name, text)).scanTokens()).parse()
+	private fun parse(text: String, name: String = "test.co") = Parser(Lexer(SourceFile(name, text)).scanTokens()).parseSnippet()
 	private fun render(diagnostic: ClothDiagnostic): String = buildString {
 		DiagnosticReporter(this, GraphicalReportHandler.builder().withColours(false).withUnicode(false)
 			.withTerminalLinks(false).withTerminalWidth(100).withCauseChain(false).buildFor(this)).report(diagnostic)
@@ -111,7 +111,7 @@ class DiagnosticsTest {
 	@Test
 	fun `CRLF tabs trailing newlines and empty sources have renderable positions`() {
 		val source = SourceFile("tabs.co", "\tdef x = 1\r\n\tx = true\r\n")
-		val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parse()) }
+		val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parseSnippet()) }
 		assertEquals(DiagnosticCode.TYPE_MISMATCH, failure.diagnosticCode)
 		assertEquals(6, failure.sourceLabels.first().span.startColumn)
 		assertEquals(8, failure.labels().first().start().character())
@@ -161,7 +161,7 @@ class DiagnosticsTest {
 	@Test
 	fun `CLI reports semantic errors before resolving a deliberately invalid linker`(@TempDir directory: Path) {
 		val source = directory.resolve("bad.co")
-		Files.writeString(source, "\"answer\" + 19")
+		Files.writeString(source, "fn main() { \"answer\" + 19 }")
 		val output = StringBuilder()
 		val target = directory.resolve("must-not-exist/program")
 		assertEquals(1, runCompiler(arrayOf(source.toString(), target.toString(), "--linker", "missing-linker"), reporter(output)))

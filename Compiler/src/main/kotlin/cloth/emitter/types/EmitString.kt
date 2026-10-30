@@ -9,9 +9,11 @@ import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** UTF-8 bytes plus a byte length, including embedded NULs. Literals have constant storage;
- * concatenation buffers stay valid throughout the current executable function.
+ * local buffers stay valid throughout the creating invocation. Function returns copy
+ * their bytes into caller-owned storage before that invocation exits.
  */
 internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+	val arrays = EmitArray(context, builder, abi)
 
 	private val types = LLVMTypes(context)
 	private val lengthType = LLVMInt64TypeInContext(context)

@@ -23,6 +23,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	val executableFormat: ExecutableFormat get() = profile.executableFormat
 
 	fun printArgument(type: ValueType): ValueType = when (type) {
+		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
+		is ValueType.ArrayValue -> throw InternalErrors.invariant("Array printing is not implemented")
 		ValueType.Void        -> throw InternalErrors.invariant("A void statement has no printable value")
 		is ValueType.Floating -> doubleType
 		is ValueType.Integer  -> {
@@ -37,6 +39,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 
 	/** The C conversion specifier matching the argument representation selected above. */
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
+		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
+		is ValueType.ArrayValue -> throw InternalErrors.invariant("Array printing is not implemented")
 		ValueType.Void        -> throw InternalErrors.invariant("A void statement has no print format")
 		is ValueType.Floating -> "g"
 		is ValueType.Integer  -> when {

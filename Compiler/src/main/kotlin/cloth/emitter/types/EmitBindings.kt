@@ -5,14 +5,15 @@ import cloth.semantic.ValueType
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
+import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for bindings in the current function; names are checked by semantic analysis. */
-internal class EmitBindings(context: LLVMContextRef, private val builder: LLVMBuilderRef) {
+internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef? = null) {
 
-	private data class Storage(val type: ValueType, val address: LLVMValueRef)
+	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef)
 
-	private val bindings = mutableMapOf<String, Storage>()
+	private val bindings = mutableMapOf<Any, Storage>()
 	private val types = LLVMTypes(context)
 
 	/** Restore lexical names after a branch; stores to enclosing bindings persist. */
@@ -27,20 +28,31 @@ internal class EmitBindings(context: LLVMContextRef, private val builder: LLVMBu
 	}
 
 	fun declare(name: String, type: ValueType, value: LLVMValueRef) {
-		val address = LLVMBuildAlloca(builder, types.storage(type), name)
-		bindings[name] = Storage(type, address)
-		assign(name, value)
+		declare(name, name, type, value)
 	}
 
-	fun read(name: String): LLVMValueRef {
-		val storage = bindings.getValue(name)
-		val value = LLVMBuildLoad2(builder, types.storage(storage.type), storage.address, "${name}_value")
-		return if (storage.type == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(storage.type), "${name}_bool") else value
+	fun declare(key: Any, name: String, type: ValueType, value: LLVMValueRef) {
+		val address = if (entry == null) LLVMBuildAlloca(builder, types.storage(type), name) else {
+			val allocator = LLVMCreateBuilderInContext(context)
+			try {
+				val first = LLVMGetFirstInstruction(entry)
+				if (first == null || first.isNull) LLVMPositionBuilderAtEnd(allocator, entry) else LLVMPositionBuilderBefore(allocator, first)
+				LLVMBuildAlloca(allocator, types.storage(type), name)
+			} finally { LLVMDisposeBuilder(allocator) }
+		}
+		bindings[key] = Storage(name, type, address)
+		assign(key, value)
 	}
 
-	fun assign(name: String, value: LLVMValueRef) {
-		val storage = bindings.getValue(name)
-		val storedValue = if (storage.type == ValueType.BOOL) LLVMBuildZExt(builder, value, types.storage(storage.type), "${name}_byte") else value
+	fun read(key: Any): LLVMValueRef {
+		val storage = bindings.getValue(key)
+		val value = LLVMBuildLoad2(builder, types.storage(storage.type), storage.address, "${storage.name}_value")
+		return if (storage.type == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(storage.type), "${storage.name}_bool") else value
+	}
+
+	fun assign(key: Any, value: LLVMValueRef) {
+		val storage = bindings.getValue(key)
+		val storedValue = if (storage.type == ValueType.BOOL) LLVMBuildZExt(builder, value, types.storage(storage.type), "${storage.name}_byte") else value
 		LLVMBuildStore(builder, storedValue, storage.address)
 	}
 }

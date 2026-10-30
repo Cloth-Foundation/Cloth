@@ -4,7 +4,7 @@ enum class Keywords(val keyword: String? = null) {
 
 	MODULE("mod"), DEFINITION("def"), TYPEDEF, USE, THIS, RETURN, CONST, DEFAULT, INTEROP,
 
-	NEW, DELETE,
+	NEW, DELETE, FINAL,
 
 	CLASS, STRUCT, ENUM,
 

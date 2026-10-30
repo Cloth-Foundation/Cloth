@@ -84,8 +84,8 @@ class NativeCABITest {
 	@Test
 	fun `native emitted IR records the selected LLVM target and ABI declarations`() {
 		val abi = NativeCABI.native()
-		val ast = Parser(Lexer("def fraction = 3.75\nfraction -> int").scanTokens()).parse()
-		val ir = LLVMEmitter().emit(ast, forcePrint = true)
+		val ast = Parser(Lexer("def fraction = 3.75\nfraction -> int").scanTokens()).parseSnippet()
+		val ir = LLVMEmitter().emitSnippet(ast, forcePrint = true)
 		assertContains(ir, "target triple = \"${abi.targetTriple}\"")
 		assertContains(ir, "define i${abi.intType.bits} @main()")
 		assertContains(ir, "declare i${abi.intType.bits} @printf(")

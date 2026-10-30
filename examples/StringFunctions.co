@@ -1,0 +1,18 @@
+// Returned strings survive their creating function. 0 means every check passed.
+fn<int> main() {
+    def first := greeting("Cloth")
+    def second := greeting("World")
+    def path := steps(3)
+    return if (first == "Hello, Cloth!" && second == "Hello, World!" && path == "3:2:1:done") { 0 } else { 1 }
+}
+
+fn<string> greeting(final string name) {
+    def message := #"Hello, {name}"
+    return message + "!"
+}
+
+fn<string> steps(int count) {
+    if (count == 0) { return "done" }
+    def prefix := #"{count}:"
+    return prefix + steps(count - 1)
+}
