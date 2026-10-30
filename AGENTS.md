@@ -5,6 +5,12 @@ library development. Its defining feature is first-class state machines in class
 It has explicit object creation and destruction, no GC, and no programmer-visible
 pointer, reference, or `mut` syntax.
 
+Cloth fails at the first error. Stop compilation on the first detected error
+and render that diagnostic. Do not add error recovery, diagnostic accumulation,
+or multi-error reporting. This is deliberate Cloth philosophy, not an
+implementation limitation. Multiple source labels explaining the same error
+are appropriate.
+
 `examples/Test.co` describes the intended language. The compiler works toward that design;
 its current limitations do not define Cloth. Explicit design decisions from the
 user refine and extend the examples.

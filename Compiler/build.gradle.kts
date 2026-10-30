@@ -11,13 +11,20 @@ repositories {
 }
 
 dependencies {
+	// Tests
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation(kotlin("test-junit5"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
+	// LLVM
 	implementation("org.bytedeco:javacpp:1.5.14")
 	implementation("org.bytedeco:llvm:22.1.8-1.5.14")
 	runtimeOnly("org.bytedeco:llvm-platform:22.1.8-1.5.14")
+
+	// Errors
+	implementation("com.opencastsoftware:yvette:0.2.0")
+	implementation("com.opencastsoftware:prettier4j:0.3.1")
+	implementation("org.fusesource.jansi:jansi:2.4.0")
 }
 
 kotlin {

@@ -100,7 +100,7 @@ class CastsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 

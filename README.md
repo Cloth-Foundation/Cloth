@@ -72,7 +72,47 @@ must be booleans; only the selected branch runs. Branch-local bindings stay in
 their branch, while assignments to enclosing mutable bindings persist.
 Primitive `is` checks compare exact types, including integer signedness and
 numeric widths. Class and state checks remain future compiler work.
-Run `examples/Conditionals.co` to try both forms; it prints `is unsigned!`.
+Run `examples/Conditionals.co` to try both forms; it prints `It is unsigned!`.
+
+## Compiler diagnostics
+
+Compiler errors are structured diagnostics rendered by Yvette. Reports include a
+stable code, the source filename, labelled source ranges, and help where relevant.
+For example, `examples/EX.co` reports `C3017` for string-plus-integer concatenation,
+labelling both operands with their types. Assignment errors also label the original
+binding declaration; duplicate and immutable bindings show both relevant locations.
+
+| Codes | Category |
+| --- | --- |
+| `C0000–C0099` | Command-line arguments, source files, and output paths |
+| `C1000–C1999` | Lexical errors |
+| `C2000–C2999` | Syntax errors |
+| `C3000–C3999` | Semantic errors and unsupported types |
+| `C4000–C4999` | Native targets, toolchains, LLVM, and linking |
+| `C9000–C9999` | Internal compiler failures |
+
+Definitions live in `Compiler/src/main/kotlin/cloth/diagnostics`. Compiler code
+calls a predefined factory with tokens, spans, and type information rather than
+formatting an exception message. `DiagnosticCode` is the code registry; published
+codes must not be reused for different problems. `ClothDiagnostic` implements
+Yvette's diagnostic contract, and `DiagnosticReporter` owns terminal rendering.
+
+Expected failures go to stderr and exit with status 1. Internal compiler failures
+exit with status 2. Add `--debug` for stack traces and retained exception causes.
+Cloth deliberately fails at the first detected error, without error recovery or
+multi-error reporting. Semantic checks run before
+toolchain discovery and output creation. Gradle's `run` task additionally reports
+its own task failure when the compiler exits unsuccessfully.
+
+Reports use the exact source text compiled, preserve EOF and multiline locations,
+and expand tabs to four-column stops for display. Colours and terminal links use
+Yvette's terminal detection, including `NO_COLOR`; the reporter falls back to ASCII
+drawing characters when stderr's encoding cannot represent the Unicode theme.
+Yvette 0.2.0 still has limitations around wide and combining Unicode display
+characters. Source positions remain one-based UTF-16 with exclusive ends inside
+Cloth and convert to Yvette's zero-based ranges at the rendering boundary.
+Diagnostics emitted by native executables (such as an invalid executed numeric
+cast) continue to use the existing native runtime reporting path.
 
 ## Building and linking
 

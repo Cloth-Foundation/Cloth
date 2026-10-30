@@ -93,7 +93,7 @@ class UnsignedIntegersTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 		assertFailsWith<SyntaxException> { parse("def<unsigned int<64>> a = 18446744073709551616") }
 	}

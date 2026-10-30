@@ -2,6 +2,50 @@
 
 ## Current work
 
+The user selected structured compiler diagnostics through Yvette 0.2.0. The
+`cloth.diagnostics` package now defines stable codes, source labels, predefined
+lexer/syntax/semantic/CLI/toolchain/backend factories, and one graphical reporter.
+`ClothDiagnostic` implements Yvette's `Diagnostic` directly; syntax and semantic
+exception types remain available as structured subclasses. Jansi supplies the
+renderer dependency, and prettier4j 0.3.1 is explicit because Yvette's public API
+exposes `Doc` but declares prettier4j only as a runtime dependency.
+
+The source snapshot travels with token spans. Expressions, statements, literal
+nodes, types, conditional bodies, and binding declarations preserve locations.
+Internal positions are one-based UTF-16 with exclusive ends; the renderer converts
+to zero-based Yvette ranges and expands tabs at four-column stops. Its source
+adapter preserves CRLF input and empty final lines, including EOF labels.
+Yvette's wide/combining Unicode display-width limitations remain. The reporter
+uses terminal detection for colours/links and falls back to ASCII drawing when
+stderr's encoding cannot represent the Unicode theme.
+
+`examples/EX.co` reports C3017, labels the string and integer operands, and explains
+that concatenation requires two strings. Assignment, duplicate, and immutable
+binding failures include the original declaration. Lexer, parser, semantic,
+CLI/file, ABI, toolchain, linker, and LLVM failures use the shared diagnostics.
+Internal compiler invariants use C9xxx; low-level type-constructor assertions stay
+internal and are converted at the CLI boundary if reached during compilation.
+`runCompiler` returns a status for embedding/tests; main exits unsuccessfully for
+errors. Expected failures return 1, internal failures return 2, and `--debug` shows
+retained causes and stack traces. The CLI defaults to `examples/EX.co`, preserving
+the user's selected source. Semantic checks run before target/toolchain resolution
+or output creation. Compilation stops at the first detected error by explicit
+user decision and Cloth philosophy. Error recovery and multi-error collection
+must not be introduced; they are not pending features. Multiple source labels
+may explain the same error. Native runtime cast and string-length errors retain
+their existing C ABI reporting path.
+
+Verified on 2026-10-30: `gradlew.bat :Compiler:test --console=plain` passed
+all 138 tests with zero failures, errors, or skips. Nine diagnostic tests cover the
+EX.co rendering snapshot, code uniqueness, severity/help, operand and declaration
+ranges, literal/composite spans, CRLF/tabs, trailing-newline and empty-source EOF,
+multiline lexical failures, CLI file/argument failures, opt-in debug traces,
+semantic errors preceding an invalid linker, and Windows ASCII fallback. Existing
+language tests now assert structured source locations instead of message suffixes;
+ABI/toolchain tests check diagnostic codes. The conditional CLI example's stale
+expected output was corrected to its existing `It is unsigned!` result. The EX.co
+CLI also rendered C3017 and exited with status 1, without a compiler stack trace.
+
 The user selected `if` / `else if` / `else` conditionals next and requested
 implementation. Inline and multiline chains, nested conditionals, boolean
 conditions, branch scopes, semantic checks, and LLVM emission are implemented.
@@ -27,7 +71,7 @@ numeric widths/signedness, and `bool`/`char`/`string` targets. The operand is
 evaluated once even when its type is statically known. Checks use comparison
 precedence, below casts/arithmetic and above equality/logical operators. Class
 runtime type checks, state checks, and class-type narrowing remain unimplemented.
-`../../../../examples/Conditionals.co` is runnable and prints `is unsigned!`;
+`../../../../examples/Conditionals.co` is runnable and prints `It is unsigned!`;
 the user's original initializer in `../../../../examples/Test.co` is covered by
 a native test, without claiming that the rest of that design file compiles.
 
@@ -330,7 +374,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
 - The compiler is Kotlin/JVM in `Compiler`, built with Gradle. Its module declares
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
-  and native LLVM compilation. The CLI settings currently default to `examples/Strings.co` and accept
+  and native LLVM compilation. The CLI settings currently default to `examples/EX.co` and accept
   `[source.co] [output]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,

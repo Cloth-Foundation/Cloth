@@ -1,13 +1,13 @@
 package cloth.lexer
 
+import cloth.diagnostics.LexerErrors
+import cloth.diagnostics.SourceFile
 import cloth.token.*
 import cloth.util.CursorPosition
 
-class Lexer(private val source: String) {
+class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : this(SourceFile("<source>", source))
 
-	init {
-		require(source.isNotEmpty())
-	}
+	private val source = sourceFile.text
 
 	private var start = 0
 	private var current = 0
@@ -37,14 +37,17 @@ class Lexer(private val source: String) {
 			scanToken()
 		}
 
-		tokens.add(Token(TokenType.EOF, TokenSpan(cAt.line, cAt.column, cAt.line, cAt.column), ""))
+		tokens.add(Token(TokenType.EOF, TokenSpan(cAt.line, cAt.column, cAt.line, cAt.column, sourceFile), ""))
 		return tokens
 	}
 
 	private fun addToken(type: TokenType, lexeme: String = source.substring(start, current)) {
-		val span = TokenSpan(cStart.line, cStart.column, cAt.line, cAt.column)
+		val span = span()
 		tokens.add(Token(type, span, lexeme))
 	}
+
+	private fun span() = TokenSpan(cStart.line, cStart.column, cAt.line, cAt.column, sourceFile)
+	private fun cursorSpan() = TokenSpan(cAt.line, cAt.column, cAt.line, cAt.column + 1, sourceFile)
 
 	private fun matchOperator(): Operators? {
 		for (op in OPERATORS) {
@@ -99,7 +102,7 @@ class Lexer(private val source: String) {
 				} else if (c.isLetter() || c == Operators.UNDERSCORE.toChar()) {
 					identifier()
 				} else {
-					addToken(TokenType.Unknown)
+					throw LexerErrors.unexpected(c, span())
 				}
 			}
 		}
@@ -134,7 +137,7 @@ class Lexer(private val source: String) {
 					advance()
 				}
 
-				error("Unterminated block comment at $cStart")
+				throw LexerErrors.comment(span())
 			}
 
 			else                        -> return false
@@ -147,9 +150,7 @@ class Lexer(private val source: String) {
 		fun consumeDigits() {
 			while (peek().isDigit() || peek() == Operators.UNDERSCORE.toChar()) {
 				if (peek() == Operators.UNDERSCORE.toChar()) {
-					require(source[current - 1].isDigit() && source.getOrNull(current + 1)?.isDigit() == true) {
-						"Underscores must appear between digits at $cAt"
-					}
+					if (!source[current - 1].isDigit() || source.getOrNull(current + 1)?.isDigit() != true) throw LexerErrors.separator(cursorSpan())
 				}
 
 				advance()
@@ -200,17 +201,17 @@ class Lexer(private val source: String) {
 			advanceStringScalar()
 		}
 
-		error("Unterminated raw string at $cStart")
+		throw LexerErrors.string(span(), raw = true)
 	}
 
 	/** Validate source Unicode before UTF-8 encoding can replace malformed surrogates. */
 	private fun advanceStringScalar() {
 		val first = advance()
 		if (first.isHighSurrogate()) {
-			require(!isAtEnd() && peek().isLowSurrogate()) { "Invalid Unicode scalar in string at $cStart" }
+			if (isAtEnd() || !peek().isLowSurrogate()) throw LexerErrors.unicode(span(), "string")
 			advance()
 		} else {
-			require(!first.isLowSurrogate()) { "Invalid Unicode scalar in string at $cStart" }
+			if (first.isLowSurrogate()) throw LexerErrors.unicode(span(), "string")
 		}
 	}
 
@@ -223,67 +224,52 @@ class Lexer(private val source: String) {
 					return
 				}
 
-				'\\'                         -> {
+				'\\'                                -> {
 					advance()
 					if (isAtEnd()) break
 
-					require(peek() != '\n' && peek() != '\r') {
-						"Strings cannot span multiple lines at $cStart"
-					}
+					if (peek() == '\n' || peek() == '\r') throw LexerErrors.multiline(span())
 
 					val escaped = advance()
-					require(escaped in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) {
-						"Invalid string escape: \\$escaped at $cStart"
-					}
+					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "string")
 				}
 
-				'\n', '\r'                   -> {
-					error("Strings cannot span multiple lines at $cStart")
+				'\n', '\r'                          -> {
+					throw LexerErrors.multiline(span())
 				}
-				else -> advanceStringScalar()
+
+				else                                -> advanceStringScalar()
 			}
 		}
 
-		error("Unterminated string at $cStart")
+		throw LexerErrors.string(span())
 	}
 
 	private fun character() {
-		require(!isAtEnd() && peek() != '\n' && peek() != '\r') {
-			"Unterminated character literal at $cStart"
-		}
+		if (isAtEnd() || peek() == '\n' || peek() == '\r') throw LexerErrors.character(span())
 
 		when (advance()) {
-			'\'' -> error("Empty character literal at $cStart")
+			'\'' -> throw LexerErrors.emptyCharacter(span())
 
 			'\\' -> {
-				require(!isAtEnd()) {
-					"Unterminated escape at $cStart"
-				}
+				if (isAtEnd()) throw LexerErrors.character(span())
 
 				val escaped = advance()
-				require(escaped in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) {
-					"Invalid character escape: \\$escaped at $cStart"
-				}
+				if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "character")
 			}
 
 			else -> {
 				val first = source[current - 1]
 				if (first.isHighSurrogate()) {
-					require(!isAtEnd() && peek().isLowSurrogate()) {
-						"Invalid Unicode scalar in character literal at $cStart"
-					}
+					if (isAtEnd() || !peek().isLowSurrogate()) throw LexerErrors.unicode(span(), "character literal")
 					advance()
 				} else {
-					require(!first.isLowSurrogate()) {
-						"Invalid Unicode scalar in character literal at $cStart"
-					}
+					if (first.isLowSurrogate()) throw LexerErrors.unicode(span(), "character literal")
 				}
 			}
 		}
 
-		require(!isAtEnd() && peek() == '\'') {
-			"Expected closing quote after one character at $cStart"
-		}
+		if (isAtEnd() || peek() != '\'') throw LexerErrors.characterLength(span())
 
 		advance() // Closing quote.
 		addToken(TokenType.CharacterLiteral)

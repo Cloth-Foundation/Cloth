@@ -1,3 +1,8 @@
 package cloth.parser.expression
 
-interface Expression
+import cloth.token.TokenSpan
+
+interface Expression {
+
+	val span: TokenSpan
+}

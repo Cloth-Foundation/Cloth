@@ -1,8 +1,13 @@
 package cloth.token
 
+import cloth.diagnostics.SourceFile
+
 const val PRETTY_PRINT = true
 
-class TokenSpan(val startLine: Int, val startColumn: Int, val endLine: Int, val endColumn: Int) {
+/** One-based UTF-16 positions; the end is exclusive. */
+data class TokenSpan(val startLine: Int, val startColumn: Int, val endLine: Int, val endColumn: Int, val source: SourceFile? = null) {
+
+	fun through(end: TokenSpan) = TokenSpan(startLine, startColumn, end.endLine, end.endColumn, source)
 
 	override fun toString(): String {
 		return "$startLine:$startColumn-$endLine:$endColumn"

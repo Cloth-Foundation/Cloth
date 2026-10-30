@@ -3,12 +3,15 @@ package cloth.emitter.types
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Emit a controlled, non-returning runtime failure using the target's C ABI. */
-internal class EmitRuntimeError(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
-	private val abi: NativeCABI) {
+internal class EmitRuntimeError(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+
 	fun emit(message: String) {
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 		val intType = LLVMTypes(context).value(abi.intType)

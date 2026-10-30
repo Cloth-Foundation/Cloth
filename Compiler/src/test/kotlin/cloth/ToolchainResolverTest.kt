@@ -1,5 +1,8 @@
 package cloth
 
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+
 import cloth.emitter.*
 import cloth.lexer.Lexer
 import cloth.parser.Parser
@@ -148,10 +151,11 @@ class ToolchainResolverTest {
 		assertFalse(config.flags.any { it.startsWith("--target=") })
 		assertContains(config.flags, "-Wl,-Bdynamic")
 		for (target in listOf("aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-apple-darwin", "riscv64-unknown-linux-gnu")) {
-			val failure = assertFailsWith<IllegalArgumentException>(target) {
+			val failure = assertFailsWith<ClothDiagnostic>(target) {
 				unixResolver(executable, library, target).resolve(linux, LinkOptions(linker = executable))
 			}
 			assertContains(failure.message.orEmpty(), linux.targetTriple)
+			assertEquals(DiagnosticCode.INCOMPATIBLE_DRIVER, failure.diagnosticCode)
 		}
 	}
 
@@ -183,17 +187,22 @@ class ToolchainResolverTest {
 			linux to LinkOptions(driver = LinkerDriver.LLD), linux to LinkOptions(subsystem = ApplicationSubsystem.WINDOWS),
 			linux to LinkOptions(msvcTools = root), mac to LinkOptions(runtime = RuntimeLinkage.STATIC),
 			linux to LinkOptions(libraries = listOf("bad name"))
-		)) assertFailsWith<IllegalArgumentException> { resolver.resolve(abi, options) }
+		)) {
+			val failure = assertFailsWith<ClothDiagnostic> { resolver.resolve(abi, options) }
+			assertEquals(if (options.libraries.isEmpty()) DiagnosticCode.TOOLCHAIN_OPTIONS else DiagnosticCode.INVALID_LIBRARY_NAME,
+				failure.diagnosticCode)
+		}
 		val tools = root.resolve("tools")
 		val sdk = root.resolve("sdk")
 		windowsLibraries(tools, sdk.resolve("Lib/10.0.26100.0"), "x64")
 		Files.delete(sdk.resolve("Lib/10.0.26100.0/um/x64/kernel32.lib"))
-		val missing = assertFailsWith<IllegalStateException> {
+		val missing = assertFailsWith<ClothDiagnostic> {
 			resolver.resolve(windows, LinkOptions(msvcTools = tools, windowsSDK = sdk))
 		}
 		assertContains(missing.message.orEmpty(), "kernel32.lib")
 		assertContains(missing.message.orEmpty(), windows.targetTriple)
-		assertFailsWith<IllegalArgumentException> {
+		assertEquals(DiagnosticCode.MISSING_LIBRARY, missing.diagnosticCode)
+		assertFailsWith<ClothDiagnostic> {
 			resolver.resolve(windows, LinkOptions(msvcTools = tools, windowsSDK = sdk, libraryPaths = listOf(root.resolve("missing"))))
 		}
 	}
@@ -203,7 +212,7 @@ class ToolchainResolverTest {
 		val incompatible = if (NativeCABI.native().profile == NativeCABI.Profile.WINDOWS_LLP64) LinkerDriver.CC else LinkerDriver.MSVC
 		val output = root.resolve("should not exist/program")
 		val ast = Parser(Lexer("1").scanTokens()).parse()
-		assertFailsWith<IllegalArgumentException> { LLVMEmitter(LinkOptions(driver = incompatible)).compile(ast, output) }
+		assertFailsWith<ClothDiagnostic> { LLVMEmitter(LinkOptions(driver = incompatible)).compile(ast, output) }
 		assertFalse(Files.exists(output.parent))
 	}
 

@@ -11,8 +11,8 @@ import org.bytedeco.llvm.global.LLVM.*
 /** UTF-8 bytes plus a byte length, including embedded NULs. Literals have constant storage;
  * concatenation buffers stay valid throughout the current executable function.
  */
-internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
-	private val abi: NativeCABI) {
+internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+
 	private val types = LLVMTypes(context)
 	private val lengthType = LLVMInt64TypeInContext(context)
 	private val boolType = types.value(ValueType.BOOL)
@@ -47,9 +47,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		LLVMPositionBuilderAtEnd(builder, valid)
 
 		// A valid address even for empty strings; no terminator is needed with a stored length.
-		val allocationLength = LLVMBuildSelect(builder,
-			LLVMBuildICmp(builder, LLVMIntEQ, length, LLVMConstInt(lengthType, 0, 0), "concat_empty"),
-			LLVMConstInt(lengthType, 1, 0), length, "concat_storage_length")
+		val allocationLength = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, length, LLVMConstInt(lengthType, 0, 0), "concat_empty"), LLVMConstInt(lengthType, 1, 0), length, "concat_storage_length")
 		val bytes = LLVMBuildArrayAlloca(builder, LLVMInt8TypeInContext(context), allocationLength, "concat_bytes")
 		LLVMBuildMemCpy(builder, bytes, 1, LLVMBuildExtractValue(builder, left, 0, "concat_left_bytes"), 1, leftLength)
 		val tail = PointerPointer<LLVMValueRef>(1L).use { indices ->
@@ -120,6 +118,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 				LLVMBuildCall2(builder, putcharType, putchar, arguments, 1, "")
 			}
 		}
+
 		val data = LLVMBuildExtractValue(builder, value, 0, "string_bytes")
 		val length = LLVMBuildExtractValue(builder, value, 1, "string_length")
 		val entry = LLVMGetInsertBlock(builder)

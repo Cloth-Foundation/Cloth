@@ -1,3 +1,8 @@
 package cloth.parser.statement
 
-interface Statement
+import cloth.token.TokenSpan
+
+interface Statement {
+
+	val span: TokenSpan
+}
