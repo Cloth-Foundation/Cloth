@@ -12,7 +12,7 @@ enum class Operators(val character: String) {
 
 	ASSIGN("="), FINAL_ASSIGN(":="),
 
-	EQUAL("=="), NOT_EQUAL("!="), NOT("!"),
+	EQUAL("=="), NOT_EQUAL("!="), NOT("!"), AND("&&"), OR("||"),
 
 	GREATER(">"), LESS("<"), GREATER_EQUAL(">="), LESS_EQUAL("<="),
 

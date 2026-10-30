@@ -3,6 +3,7 @@ package cloth.semantic
 import cloth.ast.ASTStructure
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.token.Operators
 import cloth.token.Token
 
 /** Checks the current, single statement scope before any LLVM code is emitted. */
@@ -24,7 +25,11 @@ class SemanticAnalyzer {
 			is NameExpression -> lookup(expression.name).type
 			is UnaryExpression -> {
 				val operand = typeOf(expression.operand)
-				if (operand == ValueType.BOOL) {
+				if (expression.operator.lexeme == Operators.NOT.character) {
+					if (operand != ValueType.BOOL) {
+						throw SemanticException("Operator '!' requires a boolean operand, got '${operand.spelling}' at ${expression.operator.span}")
+					}
+				} else if (operand == ValueType.BOOL) {
 					throw SemanticException("Operator '${expression.operator.lexeme}' requires a numeric operand, got 'bool' at ${expression.operator.span}")
 				}
 				operand
@@ -32,10 +37,17 @@ class SemanticAnalyzer {
 			is BinaryExpression -> {
 				val left = typeOf(expression.left)
 				val right = typeOf(expression.right)
-				if (left == ValueType.BOOL || right == ValueType.BOOL) {
-					throw SemanticException("Operator '${expression.operator.lexeme}' requires numeric operands, got '${left.spelling}' and '${right.spelling}' at ${expression.operator.span}")
+				if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
+					if (left != ValueType.BOOL || right != ValueType.BOOL) {
+						throw SemanticException("Operator '${expression.operator.lexeme}' requires boolean operands, got '${left.spelling}' and '${right.spelling}' at ${expression.operator.span}")
+					}
+					ValueType.BOOL
+				} else {
+					if (left == ValueType.BOOL || right == ValueType.BOOL) {
+						throw SemanticException("Operator '${expression.operator.lexeme}' requires numeric operands, got '${left.spelling}' and '${right.spelling}' at ${expression.operator.span}")
+					}
+					if (left == ValueType.FLOAT || right == ValueType.FLOAT) ValueType.FLOAT else ValueType.INT
 				}
-				if (left == ValueType.FLOAT || right == ValueType.FLOAT) ValueType.FLOAT else ValueType.INT
 			}
 			else -> error("Unsupported expression: $expression")
 		}

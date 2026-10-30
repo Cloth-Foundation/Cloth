@@ -61,6 +61,16 @@ not the compiler's current feature coverage.
 - `bool` stores the boolean values `true` and `false`.
 - Boolean bindings support both explicit `def<bool>` annotations and inference
   from boolean initializers, following the ordinary `=` and `:=` binding rules.
+- Prefix `!` accepts a `bool` and returns its logical negation as a `bool`:
+  `!true` is `false`, and `!false` is `true`. Numeric operands are errors;
+  there is no implicit numeric truthiness. Repeated negation such as `!!alive`
+  and parenthesized operands are permitted. Negation itself does not modify its
+  operand; `alive = !alive` uses ordinary reassignment.
+- `&&` and `||` accept two `bool` operands and return `bool`. They evaluate
+  left to right with short circuiting: `a && b` evaluates `b` only when `a` is
+  `true`; `a || b` evaluates `b` only when `a` is `false`. Each evaluated operand
+  runs once. Both operands must be valid and well typed even when runtime
+  evaluation would skip the right operand. No numeric truthiness is introduced.
 - Each `bool` uses its own byte of storage for now. This user decision supersedes
   the earlier one-bit storage goal and shared-byte packing implementation.
 - Boolean values still have only two values; byte storage does not introduce

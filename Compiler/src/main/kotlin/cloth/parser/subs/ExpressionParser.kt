@@ -45,7 +45,7 @@ class ExpressionParser(val parser: Parser) {
 	fun parseUnary(): Expression {
 		val token = parser.peek()
 
-		if (token.type == TokenType.Operator && token.lexeme in setOf("+", "-")) {
+		if (token.type == TokenType.Operator && token.lexeme in setOf("+", "-", "!")) {
 			parser.advance()
 			return UnaryExpression(token, parseUnary())
 		}
@@ -92,6 +92,14 @@ class ExpressionParser(val parser: Parser) {
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 
-		val binaryOperators = mapOf(Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20))
+		val binaryOperators = mapOf(
+			Operators.OR to OperatorPrecedence(1),
+			Operators.AND to OperatorPrecedence(2),
+			Operators.PLUS to OperatorPrecedence(10),
+			Operators.MINUS to OperatorPrecedence(10),
+			Operators.MULTIPLY to OperatorPrecedence(20),
+			Operators.DIVIDE to OperatorPrecedence(20),
+			Operators.MODULO to OperatorPrecedence(20)
+		)
 	}
 }
