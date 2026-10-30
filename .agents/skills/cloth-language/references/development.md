@@ -2,13 +2,69 @@
 
 ## Current work
 
+The user selected string definitions after characters. Explicit `def<string>`
+and inferred string bindings, mutable `=` / immutable `:=` declarations, copies,
+reassignment, parenthesized literals, and identity casts are implemented. The
+user then selected equality and concatenation: string `==` / `!=` and `+` are
+implemented with strict string operands, ordinary precedence, and once-only
+left-to-right operand evaluation. Equality returns `bool`; concatenation returns
+`string` without changing either input.
+Ordinary double-quoted literals decode `\n`, `\r`, `\t`, `\0`, `\\`, `\'`, and
+`\"`; unknown escapes, line breaks, unterminated strings, and isolated UTF-16
+surrogates are rejected. Triple-quoted raw strings preserve their contents,
+including newlines, quotes, and backslashes, while validating Unicode scalars.
+
+LLVM string values and binding storage currently use `{ ptr, i64 }`: a pointer
+to UTF-8 bytes and their byte length. Literal bytes use private constant storage
+for the program's lifetime. Concatenation checks length-addition overflow before
+allocating a fresh local byte buffer, then copies both operands with LLVM memcpy
+intrinsics. These buffers last for the current executable function; this
+implementation applies to the compiler's current single-scope programs and
+does not implement strings escaping through functions/objects. Copying a binding
+copies its descriptor; reassignment does not change previous copies. There is
+no heap allocation, GC, reference counting, or language-level object destruction.
+This is an internal implementation choice, not a decision about dynamic string
+APIs or language-level object lifetime. Last-value output walks the stored
+length through ABI-typed `putchar`, preserving Unicode, empty strings, embedded
+NULs, and percent signs. Equality checks lengths before ABI-typed C `memcmp`
+using the profile's unsigned pointer-width `size_t`, and compares exact contents
+without Unicode normalization or case folding. Empty strings and NULs work in
+both operators. Comparison branches compose with nested short-circuit logic;
+skipped concatenations are not evaluated. A shared `EmitRuntimeError` emits
+existing numeric-cast failures and new concatenation length-overflow failures.
+String ordering, other arithmetic, logical operations on strings, cross-type
+conversions, interpolation, indexing, and nullable annotations are not implemented.
+Unsupported operations are rejected
+before LLVM emission. `../../../../examples/Strings.co` demonstrates bindings and
+prints `Unicode: é 中 😀`; it also demonstrates concatenation, equality, and
+copies preserved across reassignment. Runnable examples and CLI regression paths use
+the repository's `examples` directory.
+
+The user selected `char` next and confirmed 32-bit Unicode scalar storage.
+Explicit `def<char>` and inferred bindings, immutable and mutable declarations,
+copies, reassignment, parenthesized literals, character `==`/`!=`, and identity
+casts are implemented. Characters are distinct from numbers and booleans;
+arithmetic, ordering, logical operators on characters, cross-type comparisons,
+and casts to/from other types are rejected pending language design. `unsigned`
+and width parameters are not accepted for `char`.
+
+The lexer accepts a single Unicode scalar between single quotes, including a
+UTF-16 surrogate pair in the host's source string, and rejects isolated
+surrogates, empty/multiple-scalar literals, and raw line breaks. Existing escapes
+`\n`, `\r`, `\t`, `\0`, `\\`, `\'`, and `\"` are decoded. String scanning now
+correctly uses double quotes; its previous single-quote check had shadowed the
+character scanner. LLVM character values and local storage use `i32`. Native
+last-value character output emits UTF-8 bytes through ABI-typed `putchar` calls,
+independently of the C locale and native `wchar_t` width. `../../../../examples/Characters.co`
+demonstrates the feature and prints `😀`.
+
 As of 2026-10-29, the user selected explicit integer bindings as the first
 compiler milestone after arithmetic. It is implemented and verified: `def<int>`
 with mutable `=` or immutable `:=`, binding reads in expressions, and reassignment
 with `=`. The user then selected type inference, now implemented and verified:
 `def x = 10` and `def y := x + 2` infer from their initializers, and reassignment
 must satisfy the original inferred type. Current expression types allow inferred
-`int`, `float`, and `bool` bindings. Explicit `def<float>` bindings have now also been
+`int`, `float`, `bool`, `char`, and `string` bindings. Explicit `def<float>` bindings have now also been
 implemented and verified, alongside `def<int>` and inferred declarations, with
 the same assignment checks and mutable/immutable binding behavior.
 Reusable parsing of delimited contents is an explicit implementation requirement.
@@ -23,7 +79,7 @@ syntax, attached initial-state selection, and automatic external-transition
 permission for attached public states are also confirmed in that reference.
 
 State calls now use `object::method(...)`; ordinary instance method calls use
-`object.method(...)`. `Test.co`'s attack call has been updated accordingly.
+`object.method(...)`. `../../../../examples/Test.co`'s attack call has been updated accordingly.
 
 The user selected boolean bindings next. Explicit `def<bool>` and inferred
 boolean bindings are implemented and verified, including `true`/`false`, reads,
@@ -83,7 +139,7 @@ Unsigned division/remainder and ordering emit `udiv`/`urem` and unsigned `icmp`
 predicates; float promotion uses `uitofp` for unsigned inputs. Native output uses
 the appropriate signed/unsigned format, extending 8/16-bit values to 32 bits for
 the native variadic calling convention. `unsigned` on another type is
-rejected. `Unsigned.co` demonstrates the supported integration.
+rejected. `../../../../examples/Unsigned.co` demonstrates the supported integration.
 
 Explicit `->` casts are now implemented between all eleven numeric types: signed
 and unsigned 8/16/32/64-bit integers and 16/32/64-bit floats. The user confirmed integer
@@ -134,12 +190,80 @@ Its floating format mapping is exhaustive, so introducing a format requires an
 explicit backend mapping. It defines no types, storage-width policies, C ABI
 rules, or arithmetic promotion rules.
 
-`NativeCABI` owns the current native target contract: 32-bit C int, 64-bit C long
-long, double floating arguments, printing argument selection, and C conversion
-specifiers. This is an explicit contract, not target ABI discovery or a derivation
-from JVM or Cloth default widths. The native entry point and C library calls use
-that ABI integer type regardless of Cloth's default integer width. Printing derives
-its precision from shared floating metadata and reuses ordinary floating conversions.
+The user selected explicit target ABI profiles without adding a Clang frontend.
+`NativeCABI` is now an instance selected from LLVM's normalized target triple,
+with Windows LLP64, Linux LP64, and Darwin LP64 profiles. Initial supported
+architectures are x86-64 and AArch64 (including Apple's `arm64` spelling): Windows
+requires the MSVC environment, Linux requires GNU or musl, and macOS accepts Darwin
+or macOS versioned OS names. LLVM normalizes abbreviated triples first, including
+its default MSVC environment for a Windows triple without an explicit environment.
+Unsupported architectures, OSes, and environments receive a diagnostic containing
+the original/normalized triple and supported targets; there is no profile fallback.
+This includes x32/ILP32, Android, MinGW, iOS, and bare-metal targets.
+
+Profiles declare C int/long/long-long and pointer widths, double format, and
+executable format. Windows uses a 32-bit long; Linux/macOS use a 64-bit long.
+These are explicit ABI facts, not automatic discovery or a derivation from JVM or
+Cloth default widths. Profile sources are Microsoft's
+[LLP64 model](https://learn.microsoft.com/en-us/windows/win32/winprog64/abstract-data-models)
+and [type ranges](https://learn.microsoft.com/en-us/cpp/cpp/data-type-ranges), the
+[x86-64 psABI scalar types](https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex),
+[AAPCS64](https://github.com/ARM-software/abi-aa/blob/main/aapcs64/aapcs64.rst), and
+[Apple's 64-bit data model](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/64bitPorting/transition/transition.html).
+
+`LLVMEmitter` resolves the native ABI once before generating IR and before creating
+output files. It records that normalized triple in the module, uses the selected
+C int type for the entry point and library declarations, and passes the ABI into
+`EmitCast` for runtime error calls. Object generation uses the same triple and
+checks the profile's pointer width against LLVM's target data layout. Printing
+argument selection and C conversion specifiers belong to the selected ABI;
+display precision derives from shared floating metadata and uses ordinary floating
+conversions. Output suffixes and linker selection follow the profile's executable
+format; the CLI leaves suffix selection to the emitter. Compilation remains native
+only; matching profiles for other targets is not a cross-compilation interface.
+
+The user then selected separation of linker/toolchain configuration from process
+execution. `LinkOptions` carries executable/driver overrides, default/static/dynamic
+runtime linkage, console/Windows subsystem, ordered user library directories and
+libraries, sysroot, MSVC tools root, Windows SDK root, and optional SDK version.
+`CompilerSettings` exposes these through CLI options while retaining the two
+positional source/output arguments and default source. Long options accept separate
+or `=` values; `-L`/`-l` are repeatable, and `--` permits dash-prefixed filenames.
+The README documents the supported options.
+
+`ToolchainResolver` resolves and validates these options for the selected ABI before
+IR or output-directory creation. Windows uses bundled generic LLD by default or an
+explicit MSVC-compatible driver. It discovers MSVC through `VCToolsInstallDir` or
+`vswhere` and Windows SDKs through SDK environment variables or the Windows Kits
+installation. Tools/SDK versions sort numerically. It selects x64/ARM64 library
+directories from the ABI architecture and resolves CRT, compatibility, and kernel32
+libraries to actual files. The chosen paths become explicit `/libpath` arguments
+and the link process's `LIB` environment. Static CRT remains the default; dynamic
+CRT selects the corresponding import libraries. Machine/subsystem flags are
+explicit, and GUI output selects `mainCRTStartup` to initialize the CRT before
+calling Cloth's generated `main`. Microsoft LINK's help/no-input status is handled
+without treating arbitrary failed probes as successful.
+
+Unix resolution uses `--linker`, `CC`, or `cc`, identifies GCC/Clang, and validates
+the driver's reported target architecture, OS profile, and Linux GNU/musl
+environment against LLVM's selected ABI. Clang receives the selected target triple;
+fixed-target GCC does not receive Clang-specific options. Library paths come from
+explicit options, sysroot/SDK, and driver search-directory queries. Linux resolves
+its math runtime, including a static archive for static linkage; macOS resolves
+the SDK's System library and obtains the SDK from `--sysroot`, `SDKROOT`, or `xcrun`.
+Unsupported driver/subsystem/runtime/SDK combinations and missing target files
+fail during resolution. This does not add a Clang frontend or a cross-target CLI.
+
+`LinkerConfiguration` holds the resolved executable, flags, runtime files, library
+paths, user libraries, environment, and target identity, and constructs an argument
+list without shell quoting. `NativeLinker` only executes that command and checks
+its result. Default configurations are cached per target within the compiler
+process; explicit options resolve independently. Toolchain probes have bounded
+waits. The implementation follows the
+[LLD Windows interface](https://lld.llvm.org/windows_support.html),
+[MSVC CRT choices](https://learn.microsoft.com/en-us/cpp/c-runtime-library/crt-library-features),
+[CRT entry points](https://learn.microsoft.com/en-us/cpp/build/reference/entry-entry-point-symbol),
+and [GCC target/search queries](https://gcc.gnu.org/onlinedocs/gcc/Developer-Options.html).
 The software half arithmetic working type is selected by `EmitHalf.arithmeticType`;
 semantic expression promotion remains in `ValueType.commonFloating`.
 `EmitBindings` retains the semantic type instead of reconstructing boolean storage
@@ -161,21 +285,23 @@ infinities, and NaN). It converts double directly to half to avoid double roundi
 Half bindings use LLVM `half` storage; half arithmetic computes in float32 and
 rounds back to half. This avoids LLVM half runtime helpers absent from the current
 Windows link setup. Native printing widens half/float32 to double.
-`Casts.co` demonstrates widening before arithmetic and evaluates to `4294967294`.
-`Test.co` remains a broader design example: primitive `int::MAX` lookup and other
+`../../../../examples/Casts.co` demonstrates widening before arithmetic and evaluates to `4294967294`.
+`../../../../examples/Test.co` remains a broader design example: primitive `int::MAX` lookup and other
 unsupported declarations in that file are not implemented by this milestone.
 
-The milestone after numeric widths has not been chosen. Do not treat the order
+The user selected character and then string bindings after numeric widths.
+The user then selected string equality and concatenation. The milestone after
+these string operators has not been chosen. Do not treat the order
 of open questions or missing features as an approved plan.
 
 ## Implementation snapshot
 
-Inspected from repository source on 2026-10-29; recheck before relying on it:
+Inspected from repository source through 2026-10-30; recheck before relying on it:
 
 - The compiler is Kotlin/JVM in `Compiler`, built with Gradle. Its module declares
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
-  and native LLVM compilation. It currently defaults to `Unsigned.co` and accepts
+  and native LLVM compilation. The CLI settings currently default to `examples/Strings.co` and accept
   `[source.co] [output]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,
@@ -185,7 +311,7 @@ Inspected from repository source on 2026-10-29; recheck before relying on it:
   currently require newline separation (or EOF).
   `BindingDeclaration.type` is nullable to represent an omitted annotation.
   `cloth/parser/subs/ExpressionParser.kt` handles integer and float literals,
-  boolean literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
+  boolean, character, ordinary string and raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
   with precedence, plus `-> Type` casts between arithmetic and comparison
   precedence levels.
 - `cloth/parser/subs/DelimitedParser.kt` provides a generic delimiter wrapper
@@ -199,15 +325,15 @@ Inspected from repository source on 2026-10-29; recheck before relying on it:
 - `cloth/semantic/SemanticAnalyzer.kt` checks the current single executable scope
   before LLVM emission. It rejects unknown names, duplicate declarations,
   immutable reassignment, and assignment type mismatches. An omitted annotation
-  infers signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, or `bool` from the initializer once, preserving that type on all
+  infers signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, `bool`, `char`, or `string` from the initializer once, preserving that type on all
   later assignments. Current assignment checks require exact types; no new
   numeric binding conversions were introduced. Integer literals can take an integer
   context without converting named bindings. A `SemanticModel` records each
   expression and statement's language type for emission, using identity keys.
-  Explicit signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, and `bool` annotations are implemented;
+  Explicit signed/unsigned 8/16/32/64-bit integers, 16/32/64-bit floats, `bool`, `char`, and `string` annotations are implemented;
   other explicit type names receive an unsupported-feature diagnostic. Casts
   resolve their target through the same type resolver as binding annotations.
-  Boolean/numeric conversions and arithmetic on booleans are rejected before emission; prefix `!` requires a boolean operand and returns `bool`. `&&` and `||` require boolean operands. Equality accepts two booleans or two numbers, including mixed int/float values, and returns `bool`. Ordering comparisons require two numbers and return `bool`.
+  Boolean/numeric conversions and arithmetic on booleans are rejected before emission; prefix `!` requires a boolean operand and returns `bool`. `&&` and `||` require boolean operands. Equality accepts two booleans, two characters, two strings, or two numbers, including mixed int/float values, and returns `bool`. Ordering comparisons require two numbers and return `bool`.
   Bindings become available after their initializer is checked;
   forward/self reads are currently rejected. This is implementation coverage,
   not a decision about declaration resolution for the broader language.
@@ -222,23 +348,46 @@ Inspected from repository source on 2026-10-29; recheck before relying on it:
   between `i1` values and `i8` storage); `EmitStatement` handles declarations and
   assignments. Native compilation prints the last statement's value and links
   a native executable. Boolean results print as `true` or `false`.
-- `Math.co` is the arithmetic example; `Bindings.co` demonstrates explicit and
+- `../../../../examples/Math.co` is the arithmetic example; `../../../../examples/Bindings.co` demonstrates explicit and
   inferred integer and float bindings and evaluates to `76.25`. It includes
-  commented examples of invalid type-changing and immutable reassignments. `Booleans.co` demonstrates boolean inference, explicit types, copies, negation, short-circuit logic, boolean/numeric equality and inequality, numeric ordering, and reassignment, and evaluates to `true`.
-  `Unsigned.co` demonstrates unsigned widths, wrapping, copies, division, float
+  commented examples of invalid type-changing and immutable reassignments. `../../../../examples/Booleans.co` demonstrates boolean inference, explicit types, copies, negation, short-circuit logic, boolean/numeric equality and inequality, numeric ordering, and reassignment, and evaluates to `true`.
+  `../../../../examples/Unsigned.co` demonstrates unsigned widths, wrapping, copies, division, float
   promotion, and comparisons, and evaluates to `true`.
-  `Casts.co` demonstrates numeric conversions and evaluates to `4294967294`.
-  `Test.co` describes the broader target
+  `../../../../examples/Casts.co` demonstrates numeric conversions and evaluates to `4294967294`.
+  `../../../../examples/Test.co` describes the broader target
   language; it is not currently an end-to-end compiler test.
-- Verified on 2026-10-29: `gradlew.bat :Compiler:test --offline --console=plain`
-  passed all 75 tests across `BindingsTest.kt`, `UnsignedIntegersTest.kt`,
-  `CastsTest.kt`, and `NumericWidthsTest.kt`.
+- Verified on 2026-10-30: 114 test cases checked for string equality and
+  concatenation. The full run passed 113 cases and found a stale default-source
+  assertion; after updating it to the current `examples/Strings.co` default,
+  all three settings tests passed in a focused rerun. Operator tests cover strict
+  types, precedence, immutable bindings, exact content equality, differing
+  lengths, Unicode and normalization distinctions, empty strings, NULs, raw text,
+  chained/nested concatenation, copied values, self-reassignment, short circuits,
+  generated length guards and ABI declarations, and native concatenation growth
+  across stack pages. The full run also passed all numeric-cast error tests
+  after their failure emission was shared with concatenation guards.
+- Verified on 2026-10-29: the full compiler suite passed all 106 tests across
+  `BindingsTest.kt`, `UnsignedIntegersTest.kt`,
+  `CastsTest.kt`, `NumericWidthsTest.kt`, `NativeCABITest.kt`,
+  `CompilerSettingsTest.kt`, `ToolchainResolverTest.kt`, `CharactersTest.kt`, and
+  `StringsTest.kt`. The full run used `--no-daemon` and a temporary init script
+  under `build` to isolate test reports after Gradle reported corrupt/missing
+  files in its default report directory. Standard focused string, character,
+  and settings tests also passed. String tests cover literal decoding, raw
+  text/newline preservation, Unicode validation, strict binding types and
+  mutability, copies across reassignment, rejected operators/conversions, and
+  byte-exact native UTF-8 output including empty strings, NULs, and percent signs.
+  Character tests cover literal/escape decoding, string-quote separation, malformed
+  and isolated-surrogate rejection, exact 32-bit storage, strict binding types,
+  immutability, rejected operators/conversions, native copies and equality, and
+  byte-exact UTF-8 output for literals and loaded bindings across every encoding
+  boundary through U+10FFFF, including NUL, escapes, and emoji.
   Tests cover syntax, nested delimiter callbacks, semantic diagnostics, native
   arithmetic/assignment/copy behavior, inferred integer and float bindings,
   explicit floats with strict type and immutability checks, fixed inferred types
   on reassignment, mixed arithmetic, and CLI source/output paths. CLI tests
-  compile and run all five examples (`76.25`, `6689`, `true`, `true`, and
-  `4294967294`). New boolean
+  compile and run all seven runnable examples from `examples` (`76.25`, `6689`,
+  `true`, `true`, `4294967294`, `😀`, and `Unicode: é 中 😀`). New boolean
   checks cover syntax, strict types, arithmetic rejection, immutable bindings,
   separate byte allocations at 1/2/8/9/16/17 boolean bindings with interleaved
   integers and floats, native independent reassignment and copied values, and
@@ -286,10 +435,27 @@ Inspected from repository source on 2026-10-29; recheck before relying on it:
   Default floating literal tests also cover exact decimal midpoint rounding,
   values immediately around overflow, and preservation of rounded values through
   inferred copies and native comparisons.
+  ABI profile tests cover the architecture/OS/environment selection matrix,
+  Windows versus Unix long widths, executable formats, LLVM triple normalization,
+  versioned Darwin/macOS/MSVC spellings, unsupported targets and ABI variants, and
+  the native emitted module's triple and C declarations. Native execution is
+  verified on the current host; other platforms' profile selection is tested
+  without claiming cross-platform executable verification.
+  Toolchain tests use installed-directory fixtures and probe results for Windows,
+  GNU/musl Linux mismatch detection, and macOS. They cover numeric version selection,
+  architecture-specific runtime paths, static/dynamic choices, GUI CRT startup,
+  SDK/sysroot selection, driver compatibility, explicit overrides, library ordering,
+  paths containing spaces, CLI parsing, missing dependencies, and rejection before
+  output directories are created. Native Windows tests additionally build and run
+  programs with the dynamic CRT, GUI subsystem, and actual Microsoft LINK driver;
+  the existing native suite exercises default static-CRT linking through LLD.
+  CLI smoke checks also compiled `../../../../examples/Unsigned.co` with default and dynamic runtime
+  options; both executables printed `true`.
   The test directory is now
   exempted from the broad test-directory ignore rule so tests can be tracked.
   `gradlew.bat :Compiler:run --args="Bindings.co" --offline --console=plain`
-  also succeeded; running `Bindings.exe` printed `76.25`.
+  also succeeded before examples were moved; that source now lives at
+  `examples/Bindings.co`.
 
 Repository-relative paths above identify current implementation locations; they
 are not language specification boundaries.
@@ -308,7 +474,10 @@ the user's preference for one question at a time:
   their lifetime after the originating method finishes.
 - The exact diagnostics/error model for invalid-state calls and deleted-object access.
 - Deleting an already-invalid binding or intentionally null value.
-- The next compiler milestone and its acceptance criteria after numeric widths.
+- Character ordering, arithmetic, and conversions to/from numeric types.
+- String indexing, content mutation, and dynamic/escaping string
+  construction/lifetime rules beyond the current literal-backed bindings.
+- The next milestone after string equality and concatenation.
 
 This list is a set of unresolved areas, not an exhaustive specification checklist
 or a set of required features.

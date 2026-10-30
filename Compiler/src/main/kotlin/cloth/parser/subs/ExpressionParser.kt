@@ -5,6 +5,8 @@ import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.CastExpression
 import cloth.parser.expression.BooleanLiteral
+import cloth.parser.expression.CharacterLiteral
+import cloth.parser.expression.StringLiteral
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IntegerLiteral
 import cloth.parser.expression.NameExpression
@@ -70,6 +72,39 @@ class ExpressionParser(val parser: Parser) {
 				BooleanLiteral(token.lexeme == Keywords.TRUE.toString())
 			}
 			TokenType.Identifier -> NameExpression(parser.advance())
+			TokenType.StringLiteral, TokenType.RawStringLiteral -> {
+				parser.advance()
+				val raw = token.type == TokenType.RawStringLiteral
+				val quotes = if (raw) 3 else 1
+				val contents = token.lexeme.substring(quotes, token.lexeme.length - quotes)
+				StringLiteral(if (raw) contents else buildString {
+					var index = 0
+					while (index < contents.length) {
+						val character = contents[index++]
+						append(if (character != '\\') character else when (val escaped = contents[index++]) {
+							'n' -> '\n'
+							'r' -> '\r'
+							't' -> '\t'
+							'0' -> '\u0000'
+							else -> escaped // Quote or backslash, validated by the lexer.
+						})
+					}
+				})
+			}
+			TokenType.CharacterLiteral -> {
+				parser.advance()
+				val contents = token.lexeme.substring(1, token.lexeme.length - 1)
+				val value = if (contents.startsWith("\\")) {
+					when (contents[1]) {
+						'n' -> '\n'.code
+						'r' -> '\r'.code
+						't' -> '\t'.code
+						'0' -> 0
+						else -> contents[1].code // Escaped quote or backslash, validated by the lexer.
+					}
+				} else contents.codePointAt(0)
+				CharacterLiteral(value)
+			}
 			TokenType.IntegerLiteral                                             -> {
 				parser.advance()
 
@@ -93,7 +128,7 @@ class ExpressionParser(val parser: Parser) {
 				parser.delimited.parentheses { parseExpression() }
 			}
 
-			else                                                                 -> throw SyntaxException("Expected a number, boolean, binding name, or '(', got '${token.lexeme}' at ${token.span}")
+			else                                                                 -> throw SyntaxException("Expected a number, boolean, character, string, binding name, or '(', got '${token.lexeme}' at ${token.span}")
 		}
 	}
 

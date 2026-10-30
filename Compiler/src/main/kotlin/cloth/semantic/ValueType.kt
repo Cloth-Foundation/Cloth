@@ -47,8 +47,15 @@ sealed class ValueType(val keyword: Keywords) {
 		override val storageBits: Int = 8
 	}
 
+	data object Character : ValueType(Keywords.CHARACTER) {
+		override val bits: Int = 32
+	}
+
+	data object Text : ValueType(Keywords.STRING)
+
 	val integer: Boolean get() = this is Integer
 	val floating: Boolean get() = this is Floating
+	val numeric: Boolean get() = integer || floating
 	val spelling: String get() = buildString {
 		if (unsigned) append("${Keywords.UNSIGNED} ")
 		append(keyword)
@@ -68,6 +75,8 @@ sealed class ValueType(val keyword: Keywords) {
 		val SINGLE = Floating(FloatingFormat.SINGLE)
 		val DOUBLE = Floating(FloatingFormat.DOUBLE)
 		val BOOL = Bool
+		val CHAR = Character
+		val STRING = Text
 
 		/** Two floats use the wider format; mixed integer/float expressions use at least float32. */
 		fun commonFloating(left: ValueType, right: ValueType): Floating {

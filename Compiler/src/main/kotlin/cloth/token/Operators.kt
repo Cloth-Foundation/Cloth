@@ -18,7 +18,9 @@ enum class Operators(val character: String) {
 
 	POINTER_RIGHT("->"), POINTER_LEFT("<-"),
 
-	QUESTION("?"), ELVIS("?:"),
+	QUESTION("?"), ELVIS("?:"), RANGE(".."), RANGE_INCLUSIVE("..="),
+
+	FOR("for"), WHILE("while"), DO("do"),
 
 	PAREN_OPEN("("), PAREN_CLOSE(")"), BRACE_OPEN("{"), BRACE_CLOSE("}"), BRACKET_OPEN("["), BRACKET_CLOSE("]"),
 

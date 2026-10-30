@@ -154,6 +154,8 @@ pub fn<void> main (string[] args) {
 
     // unsigned decorator for int makes it an unsigned 32 by default unless expanded
     def<unsigned int> a = 10
+
+    def<string> isUnsigned = if (a is unsigned int) { "is unsigned" } else if (a > 25) { "is above 25" } else { ":(" }
 }
 
 // Function-level C executes when this function is called
@@ -172,3 +174,17 @@ const def<string> NAME := "Cloth"
 
 // Something extremely important to me is that we dont use pointers. I hate them, ref and mut are dumb.
 // We can by default know we are always passing a pointer in memory, dont need to explicitly state we are.
+
+typedef<class> Loops {
+
+    mt<void> testLoops () {
+        for (def<int> i = 0 : 0..10; i++) {
+            for (def<int> j = 0 : 0..=100; j++) {
+                //.. is range exclusive
+                //..= range inclusive
+                // : 1 defines step
+            }
+        }
+    }
+
+}

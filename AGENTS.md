@@ -5,7 +5,7 @@ library development. Its defining feature is first-class state machines in class
 It has explicit object creation and destruction, no GC, and no programmer-visible
 pointer, reference, or `mut` syntax.
 
-`Test.co` describes the intended language. The compiler works toward that design;
+`examples/Test.co` describes the intended language. The compiler works toward that design;
 its current limitations do not define Cloth. Explicit design decisions from the
 user refine and extend the examples.
 

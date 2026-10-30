@@ -69,7 +69,7 @@ class Lexer(private val source: String) {
 			return
 		}
 
-		if (peek() == Operators.QUOTATION.toChar()) {
+		if (peek() == Operators.DOUBLE_QUOTATION.toChar()) {
 			advance() // Opening quote.
 			string()
 			return
@@ -197,33 +197,50 @@ class Lexer(private val source: String) {
 				return
 			}
 
-			advance()
+			advanceStringScalar()
 		}
 
 		error("Unterminated raw string at $cStart")
 	}
 
+	/** Validate source Unicode before UTF-8 encoding can replace malformed surrogates. */
+	private fun advanceStringScalar() {
+		val first = advance()
+		if (first.isHighSurrogate()) {
+			require(!isAtEnd() && peek().isLowSurrogate()) { "Invalid Unicode scalar in string at $cStart" }
+			advance()
+		} else {
+			require(!first.isLowSurrogate()) { "Invalid Unicode scalar in string at $cStart" }
+		}
+	}
+
 	private fun string() {
 		while (!isAtEnd()) {
-			when (advance()) {
-				Operators.QUOTATION.toChar() -> {
+			when (peek()) {
+				Operators.DOUBLE_QUOTATION.toChar() -> {
+					advance()
 					addToken(TokenType.StringLiteral)
 					return
 				}
 
 				'\\'                         -> {
+					advance()
 					if (isAtEnd()) break
 
 					require(peek() != '\n' && peek() != '\r') {
 						"Strings cannot span multiple lines at $cStart"
 					}
 
-					advance() // Escaped character, including \" or \\.
+					val escaped = advance()
+					require(escaped in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) {
+						"Invalid string escape: \\$escaped at $cStart"
+					}
 				}
 
 				'\n', '\r'                   -> {
 					error("Strings cannot span multiple lines at $cStart")
 				}
+				else -> advanceStringScalar()
 			}
 		}
 
@@ -249,7 +266,19 @@ class Lexer(private val source: String) {
 				}
 			}
 
-			else -> {} // One ordinary character consumed.
+			else -> {
+				val first = source[current - 1]
+				if (first.isHighSurrogate()) {
+					require(!isAtEnd() && peek().isLowSurrogate()) {
+						"Invalid Unicode scalar in character literal at $cStart"
+					}
+					advance()
+				} else {
+					require(!first.isLowSurrogate()) {
+						"Invalid Unicode scalar in character literal at $cStart"
+					}
+				}
+			}
 		}
 
 		require(!isAtEnd() && peek() == '\'') {
