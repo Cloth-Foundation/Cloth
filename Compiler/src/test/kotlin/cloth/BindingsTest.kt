@@ -5,6 +5,9 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BooleanLiteral
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.statement.ExpressionStatement
+import cloth.parser.expression.UnaryExpression
 import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.semantic.SemanticAnalyzer
@@ -354,6 +357,174 @@ class BindingsTest {
 			val executable = LLVMEmitter().compile(parse(source), directory.resolve("bool_$index"))
 			assertOutput(executable, (index == 0 || index == 3).toString())
 		}
+	}
+
+	@Test
+	fun `boolean negation parses nested prefix operands and requires an operand`() {
+		val declaration = assertIs<BindingDeclaration>(parse("def inverse := !!(false)").statements.single())
+		val outer = assertIs<UnaryExpression>(declaration.initializer)
+		assertEquals("!", outer.operator.lexeme)
+		val inner = assertIs<UnaryExpression>(outer.operand)
+		assertEquals("!", inner.operator.lexeme)
+		assertFalse(assertIs<BooleanLiteral>(inner.operand).value)
+		for (source in listOf("!", "!!", "!()", "def inverse = !", "true!")) {
+			assertFailsWith<SyntaxException>(source) { parse(source) }
+		}
+	}
+
+	@Test
+	fun `boolean negation rejects numeric operands and preserves type rules`() {
+		val cases = listOf(
+			"!0" to "requires a boolean operand, got 'int'",
+			"!!1" to "requires a boolean operand, got 'int'",
+			"!-1" to "requires a boolean operand, got 'int'",
+			"!1.5" to "requires a boolean operand, got 'float'",
+			"!(1 + 2)" to "requires a boolean operand, got 'int'",
+			"def number = 1.0\n!number" to "requires a boolean operand, got 'float'",
+			"!missing" to "Unknown binding 'missing'",
+			"def<int> x = !true" to "Cannot assign 'bool' to 'int'",
+			"def<float> x = !false" to "Cannot assign 'bool' to 'float'",
+			"def x = !true\nx = 1" to "Cannot assign 'int' to 'bool'",
+			"def x := !true\nx = !x" to "Cannot reassign immutable binding 'x'",
+			"-!true" to "requires a numeric operand",
+			"!+false" to "requires a numeric operand",
+			"!true + 1" to "requires numeric operands"
+		)
+		for ((source, diagnostic) in cases) {
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertContains(failure.message.orEmpty(), diagnostic)
+			assertContains(failure.message.orEmpty(), " at ")
+		}
+	}
+
+	@Test
+	fun `native boolean negation handles literals nesting and current binding values`(@TempDir directory: Path) {
+		val cases = listOf(
+			"!true" to false,
+			"!false" to true,
+			"!!false" to false,
+			"!!!false" to true,
+			"!(!(true))" to true,
+			"def<bool> alive = true\ndef inverse := !alive\ninverse" to false,
+			"def alive = false\ndef<bool> inverse := !alive\ninverse" to true,
+			"def alive = false\nalive = !alive" to true,
+			"def alive = true\nalive = !alive\nalive = !alive\nalive" to true,
+			"def alive = true\ndef snapshot := !alive\nalive = !alive\n!snapshot" to true
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (source, expected) = case
+			val executable = LLVMEmitter().compile(parse(source), directory.resolve("negation_$index"))
+			assertOutput(executable, expected.toString())
+		}
+	}
+
+	@Test
+	fun `logical operators remain distinct from unsupported inequality`() {
+		val operators = Lexer("!true != false && !false || true").scanTokens()
+			.filter { it.type == TokenType.Operator }.map { it.lexeme }
+		assertEquals(listOf("!", "!=", "&&", "!", "||"), operators)
+		for (operator in listOf("!=", "==")) {
+			val failure = assertFailsWith<SyntaxException> { parse("!true $operator false") }
+			assertContains(failure.message.orEmpty(), "Unsupported operator '$operator'")
+		}
+	}
+
+	@Test
+	fun `logical operators respect precedence parentheses and left associativity`() {
+		fun expression(source: String) = assertIs<ExpressionStatement>(parse(source).statements.single()).expression
+		val mixed = assertIs<BinaryExpression>(expression("!true || false && true"))
+		assertEquals("||", mixed.operator.lexeme)
+		assertIs<UnaryExpression>(mixed.left)
+		assertEquals("&&", assertIs<BinaryExpression>(mixed.right).operator.lexeme)
+		val grouped = assertIs<BinaryExpression>(expression("(true || false) && true"))
+		assertEquals("&&", grouped.operator.lexeme)
+		assertEquals("||", assertIs<BinaryExpression>(grouped.left).operator.lexeme)
+		for (operator in listOf("&&", "||")) {
+			val chain = assertIs<BinaryExpression>(expression("true $operator false $operator true"))
+			assertEquals(operator, assertIs<BinaryExpression>(chain.left).operator.lexeme)
+			assertIs<BooleanLiteral>(chain.right)
+		}
+		for (source in listOf("true &&", "|| false", "true || || false", "true && ()")) {
+			assertFailsWith<SyntaxException>(source) { parse(source) }
+		}
+	}
+
+	@Test
+	fun `logical operators type check both operands even when short circuited`() {
+		val cases = listOf(
+			"false && 1" to "requires boolean operands",
+			"true || 0.0" to "requires boolean operands",
+			"1 && true" to "requires boolean operands",
+			"1.5 || false" to "requires boolean operands",
+			"1 && 2.0" to "requires boolean operands",
+			"false && missing" to "Unknown binding 'missing'",
+			"true || missing" to "Unknown binding 'missing'",
+			"def<int> x = true && false" to "Cannot assign 'bool' to 'int'",
+			"def<float> x = false || true" to "Cannot assign 'bool' to 'float'",
+			"def x = true && false\nx = 1" to "Cannot assign 'int' to 'bool'",
+			"def x := false || true\nx = false" to "Cannot reassign immutable binding 'x'",
+			"true || false + 1" to "requires numeric operands",
+			"-(true && false)" to "requires a numeric operand"
+		)
+		for ((source, diagnostic) in cases) {
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertContains(failure.message.orEmpty(), diagnostic)
+			assertContains(failure.message.orEmpty(), " at ")
+		}
+	}
+
+	@Test
+	fun `short circuit control flow branches around the right operand load`() {
+		for (operator in listOf("&&", "||")) {
+			val ir = LLVMEmitter().emit(parse("def left = true\ndef right = false\nleft $operator right"))
+			val branch = assertNotNull(Regex("br i1 %left_bool, label %([^,\\s]+), label %([^\\s]+)").find(ir), ir)
+			val rhsLabel = branch.groupValues[if (operator == "&&") 1 else 2]
+			val endLabel = branch.groupValues[if (operator == "&&") 2 else 1]
+			val rhsStart = ir.indexOf("$rhsLabel:")
+			val endStart = ir.indexOf("$endLabel:")
+			val rightLoad = ir.indexOf("%right_value = load i8")
+			assertTrue(rhsStart > branch.range.last && rightLoad > rhsStart && rightLoad < endStart, ir)
+			val skippedValue = if (operator == "&&") "false" else "true"
+			assertContains(ir, "phi i1 [ $skippedValue, %entry ], [ %right_bool, %$rhsLabel ]")
+			assertFalse(Regex("\\b(and|or) i1\\b").containsMatchIn(ir), ir)
+		}
+	}
+
+	@Test
+	fun `native logical operators implement truth tables with boolean bindings`(@TempDir directory: Path) {
+		for (operator in listOf("&&", "||")) {
+			for (left in listOf(false, true)) {
+				for (right in listOf(false, true)) {
+					val source = "def left = $left\ndef<bool> right := $right\nleft $operator right"
+					val executable = LLVMEmitter().compile(parse(source), directory.resolve("logic_${operator == "&&"}_${left}_$right"))
+					val expected = if (operator == "&&") left && right else left || right
+					assertOutput(executable, expected.toString())
+				}
+			}
+		}
+	}
+
+	@Test
+	fun `nested short circuit expressions compose with storage negation and later statements`(@TempDir directory: Path) {
+		val cases = listOf(
+			"true || false && false" to true,
+			"(true || false) && false" to false,
+			"false && true || true" to true,
+			"false || (true && !false)" to true,
+			"(true && false) || (false || true)" to true,
+			"(true || false) && (false || true)" to true,
+			"true && (false || (true && false))" to false,
+			"!((false || true) && (true || false))" to false,
+			"def a = true\ndef snapshot := a && false\na = a && !snapshot\na = !a || snapshot\na" to false,
+			"def<bool> a = false || true\ndef b := a && true\na = false\nb" to true
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (source, expected) = case
+			val executable = LLVMEmitter().compile(parse(source), directory.resolve("nested_logic_$index"))
+			assertOutput(executable, expected.toString())
+		}
+		val numeric = LLVMEmitter().compile(parse("def flag = true && false\ndef x = 7\nx + 2"), directory.resolve("after_logic"))
+		assertOutput(numeric, "9")
 	}
 
 	private fun assertOutput(executable: Path, expected: String) {

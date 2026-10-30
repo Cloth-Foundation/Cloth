@@ -1,11 +1,16 @@
 // Explicit and inferred booleans follow the ordinary binding rules.
 def<bool> alive = true
 def original := alive
-def<bool> stopped := false
+def<bool> stopped := !alive // false
 
 // Each bool has its own byte of local storage; copies keep their value.
-alive = stopped
-original // true
+alive = !stopped // true
+alive = !alive // false
+
+// && binds more tightly than ||; both short-circuit from left to right.
+def<bool> ready := original && !stopped
+def permitted := alive || ready
+permitted // true
 
 // These would be compile-time errors:
 // alive = 1 // bool and int are distinct types.

@@ -3,12 +3,14 @@ package cloth.emitter.types
 import cloth.emitter.*
 import cloth.parser.expression.*
 import cloth.token.Operators
+import org.bytedeco.javacpp.PointerPointer
+import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings) {
 
 	private val int32Type = LLVMInt32TypeInContext(context)
 	private val float32Type = LLVMFloatTypeInContext(context)
@@ -24,6 +26,7 @@ internal class EmitExpression(context: LLVMContextRef, private val builder: LLVM
 			is UnaryExpression -> {
 				val operand = emit(expression.operand)
 				when (expression.operator.lexeme) {
+					Operators.NOT.toString() -> LLVMBuildNot(builder, operand, LLVM_NOT_TEMPORARY)
 					Operators.PLUS.toString()  -> operand
 					Operators.MINUS.toString() -> if (isFloatingPoint(operand)) {
 						LLVMBuildFNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
@@ -35,6 +38,9 @@ internal class EmitExpression(context: LLVMContextRef, private val builder: LLVM
 			}
 
 			is BinaryExpression -> {
+				if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
+					return emitLogical(expression)
+				}
 				var left = emit(expression.left)
 				var right = emit(expression.right)
 				val floatingPoint = isFloatingPoint(left) || isFloatingPoint(right)
@@ -62,6 +68,37 @@ internal class EmitExpression(context: LLVMContextRef, private val builder: LLVM
 
 			else -> error("Unsupported expression: $expression")
 		}
+	}
+
+	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {
+		val conjunction = expression.operator.lexeme == Operators.AND.character
+		val left = emit(expression.left)
+		// Nested expressions can move the builder; use their actual ending blocks.
+		val leftBlock = LLVMGetInsertBlock(builder)
+		val function = LLVMGetBasicBlockParent(leftBlock)
+		val rightBlock = LLVMAppendBasicBlockInContext(context, function, "logic_rhs")
+		val mergeBlock = LLVMAppendBasicBlockInContext(context, function, "logic_end")
+		LLVMBuildCondBr(builder, left,
+			if (conjunction) rightBlock else mergeBlock,
+			if (conjunction) mergeBlock else rightBlock)
+
+		LLVMPositionBuilderAtEnd(builder, rightBlock)
+		val right = emit(expression.right)
+		val rightEndBlock = LLVMGetInsertBlock(builder)
+		LLVMBuildBr(builder, mergeBlock)
+
+		LLVMPositionBuilderAtEnd(builder, mergeBlock)
+		val result = LLVMBuildPhi(builder, boolType, "logic_value")
+		PointerPointer<LLVMValueRef>(2L).use { values ->
+			PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+				values.put(0, LLVMConstInt(boolType, if (conjunction) 0L else 1L, 0))
+				values.put(1, right)
+				blocks.put(0, leftBlock)
+				blocks.put(1, rightEndBlock)
+				LLVMAddIncoming(result, values, blocks, 2)
+			}
+		}
+		return result
 	}
 
 	private fun isFloatingPoint(value: LLVMValueRef): Boolean = LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMFloatTypeKind
