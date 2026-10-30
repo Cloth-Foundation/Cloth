@@ -175,7 +175,7 @@ class BindingsTest {
 
 	@Test
 	fun `bindings and existing math examples compile through the CLI`(@TempDir directory: Path) {
-		for ((file, expected) in listOf("Bindings.co" to "76.25", "Math.co" to "6689", "Booleans.co" to "true")) {
+		for ((file, expected) in listOf("Bindings.co" to "76.25", "Math.co" to "6689", "Booleans.co" to "true", "Unsigned.co" to "true", "Casts.co" to "4294967294")) {
 			val output = directory.resolve(file.removeSuffix(".co"))
 			// Absolute paths exercise source selection and the separate output argument.
 			main(arrayOf(Path.of(file).toAbsolutePath().toString(), output.toString()))
@@ -419,14 +419,13 @@ class BindingsTest {
 	}
 
 	@Test
-	fun `logical operators remain distinct from unsupported inequality`() {
-		val operators = Lexer("!true != false && !false || true").scanTokens()
+	fun `logical and equality tokens remain distinct from assignment and negation`() {
+		val operators = Lexer("!true != false && !false || true == false = true").scanTokens()
 			.filter { it.type == TokenType.Operator }.map { it.lexeme }
-		assertEquals(listOf("!", "!=", "&&", "!", "||"), operators)
-		for (operator in listOf("!=", "==")) {
-			val failure = assertFailsWith<SyntaxException> { parse("!true $operator false") }
-			assertContains(failure.message.orEmpty(), "Unsupported operator '$operator'")
-		}
+		assertEquals(listOf("!", "!=", "&&", "!", "||", "==", "="), operators)
+		val ordering = Lexer("1 < 2 > 0 <= 3 >= 1").scanTokens()
+			.filter { it.type == TokenType.Operator }.map { it.lexeme }
+		assertEquals(listOf("<", ">", "<=", ">="), ordering)
 	}
 
 	@Test
@@ -525,6 +524,334 @@ class BindingsTest {
 		}
 		val numeric = LLVMEmitter().compile(parse("def flag = true && false\ndef x = 7\nx + 2"), directory.resolve("after_logic"))
 		assertOutput(numeric, "9")
+	}
+
+	@Test
+	fun `boolean equality precedence lies between negation and short circuit logic`() {
+		fun expression(source: String) = assertIs<ExpressionStatement>(parse(source).statements.single()).expression
+		val mixed = assertIs<BinaryExpression>(expression("!true == false && true != false || false"))
+		assertEquals("||", mixed.operator.lexeme)
+		val conjunction = assertIs<BinaryExpression>(mixed.left)
+		assertEquals("&&", conjunction.operator.lexeme)
+		val equal = assertIs<BinaryExpression>(conjunction.left)
+		assertEquals("==", equal.operator.lexeme)
+		assertIs<UnaryExpression>(equal.left)
+		assertEquals("!=", assertIs<BinaryExpression>(conjunction.right).operator.lexeme)
+		val grouped = assertIs<BinaryExpression>(expression("(true || false) == (false && true)"))
+		assertEquals("==", grouped.operator.lexeme)
+		assertEquals("||", assertIs<BinaryExpression>(grouped.left).operator.lexeme)
+		assertEquals("&&", assertIs<BinaryExpression>(grouped.right).operator.lexeme)
+		val chain = assertIs<BinaryExpression>(expression("true == false != false"))
+		assertEquals("!=", chain.operator.lexeme)
+		assertEquals("==", assertIs<BinaryExpression>(chain.left).operator.lexeme)
+		for (source in listOf("true ==", "!= false", "true != != false", "true == ()")) {
+			assertFailsWith<SyntaxException>(source) { parse(source) }
+		}
+	}
+
+	@Test
+	fun `equality rejects boolean numeric mixing and preserves binding rules`() {
+		val cases = listOf(
+			"true == 1" to "Cannot compare 'bool' and 'int'",
+			"0 != false" to "Cannot compare 'int' and 'bool'",
+			"true != 1.0" to "Cannot compare 'bool' and 'float'",
+			"0.0 == false" to "Cannot compare 'float' and 'bool'",
+			"true || (false != 1)" to "Cannot compare 'bool' and 'int'",
+			"true == missing" to "Unknown binding 'missing'",
+			"missing != false" to "Unknown binding 'missing'",
+			"def<int> same = true == false" to "Cannot assign 'bool' to 'int'",
+			"def<float> different = true != false" to "Cannot assign 'bool' to 'float'",
+			"def same = true == false\nsame = 1" to "Cannot assign 'int' to 'bool'",
+			"def same := true == false\nsame = true" to "Cannot reassign immutable binding 'same'",
+			"(true == false) + 1" to "requires numeric operands"
+		)
+		for ((source, diagnostic) in cases) {
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertContains(failure.message.orEmpty(), diagnostic)
+			assertContains(failure.message.orEmpty(), " at ")
+		}
+	}
+
+	@Test
+	fun `native boolean equality and inequality implement both truth tables`(@TempDir directory: Path) {
+		for (operator in listOf("==", "!=")) {
+			for (left in listOf(false, true)) {
+				for (right in listOf(false, true)) {
+					val expected = if (operator == "==") left == right else left != right
+					for (bindings in listOf(false, true)) {
+						val source = if (bindings) "def left = $left\ndef<bool> right := $right\nleft $operator right" else "$left $operator $right"
+						val executable = LLVMEmitter().compile(parse(source), directory.resolve("equality_${operator == "=="}_${left}_${right}_$bindings"))
+						assertOutput(executable, expected.toString())
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	fun `boolean comparisons compose with short circuits negation and storage`(@TempDir directory: Path) {
+		val cases = listOf(
+			"!true == false" to true,
+			"!(true == false)" to true,
+			"true == false && false" to false,
+			"true || false == false" to true,
+			"true && true != false || false" to true,
+			"(true && false) == (false || false)" to true,
+			"(true || false) != (true && false)" to true,
+			"true == (false || (true && false))" to false,
+			"(true && false) != true && !false" to true,
+			"false && (true != false)" to false,
+			"true || (true == false)" to true,
+			"true == false != false" to false,
+			"def a = true\ndef<bool> same = a == false\ndef copy := same\na = false\nsame = a != true\ncopy == !same" to true,
+			"def a = true\ndef same := a == true\na = false\nsame" to true
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (source, expected) = case
+			val executable = LLVMEmitter().compile(parse(source), directory.resolve("comparison_composition_$index"))
+			assertOutput(executable, expected.toString())
+		}
+	}
+
+	@Test
+	fun `native integer equality preserves exact values signs and boundaries`(@TempDir directory: Path) {
+		val cases = listOf(
+			Triple("0", "0", true),
+			Triple("7", "7", true),
+			Triple("7", "8", false),
+			Triple("-7", "-7", true),
+			Triple("-7", "7", false),
+			Triple("2147483647", "2147483646", false),
+			Triple("(-2147483647 - 1)", "(-2147483647 - 1)", true),
+			Triple("16777217", "16777216", false)
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (left, right, same) = case
+			for (equal in listOf(false, true)) {
+				val operator = if (equal) "==" else "!="
+				val source = "def<int> left = $left\ndef right := $right\nleft $operator right"
+				val executable = LLVMEmitter().compile(parse(source), directory.resolve("int_equality_${index}_$equal"))
+				assertOutput(executable, (if (equal) same else !same).toString())
+			}
+		}
+	}
+
+	@Test
+	fun `native float equality handles signed zero infinity and NaN`(@TempDir directory: Path) {
+		val cases = listOf(
+			Triple("1.25", "1.25", true),
+			Triple("1.25", "1.5", false),
+			Triple("-1.25", "-1.25", true),
+			Triple("-1.25", "1.25", false),
+			Triple("zero", "-zero", true),
+			Triple("1.0 / zero", "1.0 / zero", true),
+			Triple("1.0 / zero", "-1.0 / zero", false),
+			Triple("zero / zero", "zero / zero", false),
+			Triple("zero / zero", "1.0", false),
+			Triple("1.0", "zero / zero", false),
+			Triple("1.0 / zero", "zero / zero", false)
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (left, right, same) = case
+			for (equal in listOf(false, true)) {
+				val operator = if (equal) "==" else "!="
+				val source = "def<float> zero = 0.0\ndef left = $left\ndef<float> right := $right\nleft $operator right"
+				val executable = LLVMEmitter().compile(parse(source), directory.resolve("float_equality_${index}_$equal"))
+				assertOutput(executable, (if (equal) same else !same).toString())
+			}
+		}
+	}
+
+	@Test
+	fun `mixed numeric equality follows existing float32 promotion in either order`(@TempDir directory: Path) {
+		val cases = listOf(
+			Triple("7", "7.0", true),
+			Triple("7.0", "7", true),
+			Triple("-7", "-7.0", true),
+			Triple("-7.0", "7", false),
+			Triple("7", "7.5", false),
+			Triple("7.5", "7", false),
+			Triple("0", "-0.0", true),
+			Triple("16777217", "16777216.0", true),
+			Triple("16777216.0", "16777217", true)
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (left, right, same) = case
+			for (equal in listOf(false, true)) {
+				val operator = if (equal) "==" else "!="
+				val source = "def left = $left\ndef right := $right\nleft $operator right"
+				val executable = LLVMEmitter().compile(parse(source), directory.resolve("mixed_equality_${index}_$equal"))
+				assertOutput(executable, (if (equal) same else !same).toString())
+			}
+		}
+	}
+
+	@Test
+	fun `numeric comparisons compose with arithmetic bindings and guarded division`(@TempDir directory: Path) {
+		val cases = listOf(
+			"1 + 2 * 3 == 7 && 4.5 / 1.5 != 2.0" to true,
+			"!(3 == 4) && (1.5 != 2.0)" to true,
+			"(1 == 1) == (2.0 != 3.0)" to true,
+			"def<int> count = 7\ndef snapshot := count == 7.0\ncount = 8\nsnapshot && count != 7" to true,
+			"def<float> scale = 1.5\ndef<bool> same = scale == 1.5\nscale = 2.0\nsame = scale == 1.5\nsame" to false,
+			"def zero = 0\ndef guard = false\nguard && (10 / zero == 1)" to false,
+			"def zero = 0\ndef guard = true\nguard || (10 / zero != 1)" to true
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (source, expected) = case
+			val executable = LLVMEmitter().compile(parse(source), directory.resolve("numeric_composition_$index"))
+			assertOutput(executable, expected.toString())
+		}
+	}
+
+	@Test
+	fun `numeric equality results retain bool typing and strict assignment checks`() {
+		val cases = listOf(
+			"def<int> same = 1 == 1" to "Cannot assign 'bool' to 'int'",
+			"def<float> different = 1.0 != 2.0" to "Cannot assign 'bool' to 'float'",
+			"def same = 1 == 1.0\nsame = 1" to "Cannot assign 'int' to 'bool'",
+			"def same := 1.0 == 1\nsame = false" to "Cannot reassign immutable binding 'same'",
+			"def x = 1\nx = 1.0" to "Cannot assign 'float' to 'int'",
+			"def<float> x = 1" to "Cannot assign 'int' to 'float'",
+			"1 == 1 == 1" to "Cannot compare 'bool' and 'int'",
+			"true == 1.0" to "Cannot compare 'bool' and 'float'",
+			"1.0 != false" to "Cannot compare 'float' and 'bool'",
+			"1 == missing" to "Unknown binding 'missing'",
+			"(1 == 1) + 2" to "requires numeric operands"
+		)
+		for ((source, diagnostic) in cases) {
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertContains(failure.message.orEmpty(), diagnostic)
+			assertContains(failure.message.orEmpty(), " at ")
+		}
+	}
+
+	@Test
+	fun `ordering precedence lies between arithmetic and equality`() {
+		val expression = assertIs<ExpressionStatement>(parse("1 + 2 * 3 < 8 == true && 4 >= 3").statements.single()).expression
+		val conjunction = assertIs<BinaryExpression>(expression)
+		assertEquals("&&", conjunction.operator.lexeme)
+		val equality = assertIs<BinaryExpression>(conjunction.left)
+		assertEquals("==", equality.operator.lexeme)
+		val less = assertIs<BinaryExpression>(equality.left)
+		assertEquals("<", less.operator.lexeme)
+		val addition = assertIs<BinaryExpression>(less.left)
+		assertEquals("+", addition.operator.lexeme)
+		assertEquals("*", assertIs<BinaryExpression>(addition.right).operator.lexeme)
+		assertEquals(">=", assertIs<BinaryExpression>(conjunction.right).operator.lexeme)
+		val grouped = assertIs<ExpressionStatement>(parse("(1 + 2) <= (3 * 4)").statements.single()).expression
+		assertEquals("<=", assertIs<BinaryExpression>(grouped).operator.lexeme)
+		for (source in listOf("1 <", "> 1", "1 <= <= 2", "1 >= ()")) {
+			assertFailsWith<SyntaxException>(source) { parse(source) }
+		}
+	}
+
+	@Test
+	fun `ordering requires numeric operands and returns a bool`() {
+		val cases = listOf(
+			"true < false" to "requires numeric operands",
+			"true > 1" to "requires numeric operands",
+			"1.0 <= false" to "requires numeric operands",
+			"true >= 1.5" to "requires numeric operands",
+			"false && (true < 1)" to "requires numeric operands",
+			"1 < 2 < 3" to "requires numeric operands",
+			"1 <= missing" to "Unknown binding 'missing'",
+			"def<int> x = 1 < 2" to "Cannot assign 'bool' to 'int'",
+			"def<float> x = 1.0 >= 2.0" to "Cannot assign 'bool' to 'float'",
+			"def x = 1 < 2.0\nx = 1" to "Cannot assign 'int' to 'bool'",
+			"def x := 1.0 > 2\nx = false" to "Cannot reassign immutable binding 'x'",
+			"(1 < 2) + 3" to "requires numeric operands"
+		)
+		for ((source, diagnostic) in cases) {
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
+			assertContains(failure.message.orEmpty(), diagnostic)
+			assertContains(failure.message.orEmpty(), " at ")
+		}
+	}
+
+	@Test
+	fun `native integer ordering uses signed exact comparisons`(@TempDir directory: Path) {
+		assertOrdering(directory, "int", listOf(
+			Triple("1", "2", -1),
+			Triple("2", "1", 1),
+			Triple("2", "2", 0),
+			Triple("-1", "0", -1),
+			Triple("0", "-1", 1),
+			Triple("-3", "-2", -1),
+			Triple("(-2147483647 - 1)", "2147483647", -1),
+			Triple("2147483647", "(-2147483647 - 1)", 1),
+			Triple("16777217", "16777216", 1)
+		))
+	}
+
+	@Test
+	fun `native float ordering handles zero infinity and unordered NaN`(@TempDir directory: Path) {
+		assertOrdering(directory, "float", listOf(
+			Triple("1.25", "1.5", -1),
+			Triple("1.5", "1.25", 1),
+			Triple("1.25", "1.25", 0),
+			Triple("-1.5", "-1.25", -1),
+			Triple("zero", "-zero", 0),
+			Triple("1.0 / zero", "1.0 / zero", 0),
+			Triple("-1.0 / zero", "1.0", -1),
+			Triple("1.0 / zero", "1.0", 1),
+			Triple("zero / zero", "1.0", null),
+			Triple("1.0", "zero / zero", null),
+			Triple("zero / zero", "zero / zero", null)
+		))
+	}
+
+	@Test
+	fun `mixed ordering follows float32 promotion in both operand directions`(@TempDir directory: Path) {
+		assertOrdering(directory, "mixed", listOf(
+			Triple("7", "7.5", -1),
+			Triple("7.5", "7", 1),
+			Triple("7", "7.0", 0),
+			Triple("7.0", "7", 0),
+			Triple("-7", "-6.5", -1),
+			Triple("-6.5", "-7", 1),
+			Triple("0", "-0.0", 0),
+			Triple("16777217", "16777216.0", 0),
+			Triple("16777216.0", "16777217", 0)
+		))
+	}
+
+	@Test
+	fun `ordering composes with arithmetic equality storage and short circuit guards`(@TempDir directory: Path) {
+		val cases = listOf(
+			"1 + 2 * 3 < 8 == true && 4 >= 3" to true,
+			"!(3 < 2) && 1.5 <= 2.0" to true,
+			"2 > 1 != 4 <= 3" to true,
+			"1 < 2 && 3.0 > 2 || 4 >= 5" to true,
+			"(1 > 2 || 3 <= 3) == (4.0 >= 4 && 5 != 6)" to true,
+			"def x = 7\ndef snapshot := x < 8.0\nx = 9\nsnapshot && x >= 8" to true,
+			"def<float> x = 1.5\ndef<bool> inRange = x > 1.0\nx = 0.5\ninRange = x > 1.0\ninRange" to false,
+			"def zero = 0\nzero != 0 && 10 / zero > 1" to false,
+			"def zero = 0\nzero == 0 || 10 / zero <= 1" to true,
+			"def x = 2 < 3\ndef y = 9\ny + 1" to "10"
+		)
+		for ((index, case) in cases.withIndex()) {
+			val (source, expected) = case
+			val executable = LLVMEmitter().compile(parse(source), directory.resolve("ordering_composition_$index"))
+			assertOutput(executable, expected.toString())
+		}
+	}
+
+	private fun assertOrdering(directory: Path, name: String, cases: List<Triple<String, String, Int?>>) {
+		for ((index, case) in cases.withIndex()) {
+			val (left, right, relation) = case
+			for ((opIndex, operator) in listOf("<", ">", "<=", ">=").withIndex()) {
+				val expected = relation != null && when (operator) {
+					"<" -> relation < 0
+					">" -> relation > 0
+					"<=" -> relation <= 0
+					else -> relation >= 0
+				}
+				val source = "def<float> zero = 0.0\ndef left = $left\ndef right := $right\nleft $operator right"
+				val executable = LLVMEmitter().compile(parse(source), directory.resolve("ordering_${name}_${index}_$opIndex"))
+				assertOutput(executable, expected.toString())
+			}
+		}
 	}
 
 	private fun assertOutput(executable: Path, expected: String) {

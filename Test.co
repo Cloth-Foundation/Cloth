@@ -151,6 +151,9 @@ pub fn<void> main (string[] args) {
 
     // Declarations are resolved independently of source order
     cInterop()
+
+    // unsigned decorator for int makes it an unsigned 32 by default unless expanded
+    def<unsigned int> a = 10
 }
 
 // Function-level C executes when this function is called

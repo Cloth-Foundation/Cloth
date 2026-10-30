@@ -4,7 +4,11 @@ import cloth.ast.ASTStructure
 import cloth.emitter.types.EmitExpression
 import cloth.emitter.types.EmitStatement
 import cloth.emitter.types.EmitBindings
+import cloth.emitter.types.EmitCast
+import cloth.emitter.types.EmitHalf
 import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.ValueType
+import cloth.token.Keywords
 import cloth.util.ExecutableFormat
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
@@ -42,15 +46,16 @@ class LLVMEmitter {
 	}
 
 	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, action: (LLVMModuleRef) -> T): T {
-		SemanticAnalyzer().analyze(ast)
+		val semantics = SemanticAnalyzer().analyze(ast)
 		val context = LLVMContextCreate()
 		val module = LLVMModuleCreateWithNameInContext("cloth", context)
 		val builder = LLVMCreateBuilderInContext(context)
 
 		try {
-			val int32Type = LLVMInt32TypeInContext(context)
+			val types = LLVMTypes(context)
+			val nativeIntType = types.value(NativeCABI.INT)
 
-			val functionType = LLVMFunctionType(int32Type, null as PointerPointer<*>?, 0, 0)
+			val functionType = LLVMFunctionType(nativeIntType, null as PointerPointer<*>?, 0, 0)
 
 			val mainFunction = LLVMAddFunction(module, "main", functionType)
 
@@ -59,18 +64,20 @@ class LLVMEmitter {
 			LLVMPositionBuilderAtEnd(builder, entryBlock)
 
 			val bindings = EmitBindings(context, builder)
-			val expressionEmitter = EmitExpression(context, builder, bindings)
-			val statementEmitter = EmitStatement(expressionEmitter, bindings)
+			val casts = EmitCast(context, builder, semantics)
+			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts)
+			val statementEmitter = EmitStatement(expressionEmitter, bindings, semantics)
 
-			var result = LLVMConstInt(int32Type, 0L, 0)
+			var result = LLVMConstInt(types.value(ValueType.INT), 0L, 0)
 
 			for (statement in ast.statements) {
 				result = statementEmitter.emit(statement)
 			}
 
-			if (forcePrint) emitPrint(context, module, builder, result)
+			if (forcePrint) emitPrint(context, module, builder, result,
+				ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts)
 
-			LLVMBuildRet(builder, LLVMConstInt(int32Type, 0L, 0))
+			LLVMBuildRet(builder, LLVMConstInt(nativeIntType, 0L, 0))
 			checkLLVM("Invalid LLVM module") { error ->
 				LLVMVerifyModule(module, LLVMReturnStatusAction, error)
 			}
@@ -82,28 +89,27 @@ class LLVMEmitter {
 		}
 	}
 
-	private fun isFloatingPoint(value: LLVMValueRef): Boolean = LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMFloatTypeKind
-
-	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef) {
+	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef,
+		result: LLVMValueRef, type: ValueType, casts: EmitCast) {
+		val types = LLVMTypes(context)
 		val printfType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
-			LLVMFunctionType(LLVMInt32TypeInContext(context), parameters, 1, 1)
+			LLVMFunctionType(types.value(NativeCABI.INT), parameters, 1, 1)
 		}
 		val printf = LLVMAddFunction(module, "printf", printfType)
-		val floatingPoint = isFloatingPoint(result)
-		val type = LLVMTypeOf(result)
-		val boolean = LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) == 1
-		val formatString = when {
-			boolean -> "%s\n"
-			floatingPoint -> "%.9g\n"
-			else -> "%d\n"
-		}
+		val floatingPoint = type.floating
+		val boolean = type == ValueType.BOOL
+		val argumentType = NativeCABI.printArgument(type)
+		val precision = if (type is ValueType.Floating) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
+		val formatString = "%$precision${NativeCABI.printSpecifier(type)}\n"
 		val format = LLVMBuildGlobalStringPtr(builder, formatString, "result_format")
 		val printValue = when {
 			boolean -> LLVMBuildSelect(builder, result,
-				LLVMBuildGlobalStringPtr(builder, "true", "bool_true"),
-				LLVMBuildGlobalStringPtr(builder, "false", "bool_false"), "bool_text")
-			floatingPoint -> LLVMBuildFPExt(builder, result, LLVMDoubleTypeInContext(context), "printfdouble")
+				LLVMBuildGlobalStringPtr(builder, Keywords.TRUE.toString(), "bool_true"),
+				LLVMBuildGlobalStringPtr(builder, Keywords.FALSE.toString(), "bool_false"), "bool_text")
+			floatingPoint -> casts.toFloating(result, type, argumentType)
+			type.integer && type.bits < argumentType.bits -> if (type.unsigned) LLVMBuildZExt(builder, result, types.value(argumentType), "printfunsigned")
+				else LLVMBuildSExt(builder, result, types.value(argumentType), "printfsigned")
 			else -> result
 		}
 		PointerPointer<LLVMValueRef>(2L).use { arguments ->

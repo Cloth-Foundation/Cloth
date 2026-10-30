@@ -2,6 +2,8 @@ package cloth.emitter.types
 
 import cloth.emitter.*
 import cloth.parser.expression.*
+import cloth.semantic.SemanticModel
+import cloth.semantic.ValueType
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
@@ -10,26 +12,29 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
+	private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast) {
 
-	private val int32Type = LLVMInt32TypeInContext(context)
-	private val float32Type = LLVMFloatTypeInContext(context)
-	private val boolType = LLVMInt1TypeInContext(context)
+	private val types = LLVMTypes(context)
+	private val boolType = types.value(ValueType.BOOL)
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
 			is NameExpression -> bindings.read(expression.name.lexeme)
-			is IntegerLiteral -> LLVMConstInt(int32Type, expression.value.toLong(), 1)
-			is FloatingPointLiteral -> LLVMConstReal(float32Type, expression.value.toDouble())
+			is IntegerLiteral -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
+			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
+			is CastExpression -> casts.emit(expression, emit(expression.operand))
 
 			is UnaryExpression -> {
 				val operand = emit(expression.operand)
 				when (expression.operator.lexeme) {
 					Operators.NOT.toString() -> LLVMBuildNot(builder, operand, LLVM_NOT_TEMPORARY)
 					Operators.PLUS.toString()  -> operand
-					Operators.MINUS.toString() -> if (isFloatingPoint(operand)) {
-						LLVMBuildFNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
+					Operators.MINUS.toString() -> if (semantics.typeOf(expression).floating) {
+						val type = semantics.typeOf(expression) as ValueType.Floating
+						val workingType = EmitHalf.arithmeticType(type)
+						casts.toFloating(LLVMBuildFNeg(builder, casts.toFloating(operand, type, workingType), LLVM_NEGOTIATION_TEMPORARY), workingType, type)
 					} else {
 						LLVMBuildNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
 					}
@@ -43,25 +48,53 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				}
 				var left = emit(expression.left)
 				var right = emit(expression.right)
-				val floatingPoint = isFloatingPoint(left) || isFloatingPoint(right)
+				val leftType = semantics.typeOf(expression.left)
+				val rightType = semantics.typeOf(expression.right)
+				val unsigned = leftType.unsigned
+				val floatingPoint = leftType.floating || rightType.floating
+				val commonType = if (floatingPoint) ValueType.commonFloating(leftType, rightType) else null
+				// Compute half operations in float32 and explicitly round back to half.
+				val workingType = commonType?.let(EmitHalf::arithmeticType)
 				if (floatingPoint) {
-					if (!isFloatingPoint(left)) left = LLVMBuildSIToFP(builder, left, float32Type, "leftfloat")
-					if (!isFloatingPoint(right)) right = LLVMBuildSIToFP(builder, right, float32Type, "rightfloat")
+					left = casts.toFloating(left, leftType, workingType!!)
+					right = casts.toFloating(right, rightType, workingType)
+				}
+				val comparison = when (expression.operator.lexeme) {
+					Operators.EQUAL.character -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
+					// Unordered != keeps NaN unequal to every value, including itself.
+					Operators.NOT_EQUAL.character -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
+					Operators.LESS.character -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
+					Operators.GREATER.character -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
+					Operators.LESS_EQUAL.character -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
+					Operators.GREATER_EQUAL.character -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
+					else -> null
+				}
+				if (comparison != null) {
+					return if (floatingPoint) {
+						LLVMBuildFCmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
+					} else {
+						LLVMBuildICmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
+					}
 				}
 
-				if (floatingPoint) when (expression.operator.lexeme) {
-					Operators.PLUS.toString()     -> LLVMBuildFAdd(builder, left, right, LLVM_ADD_TEMPORARY)
-					Operators.MINUS.toString()    -> LLVMBuildFSub(builder, left, right, LLVM_SUB_TEMPORARY)
-					Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, LLVM_MUL_TEMPORARY)
-					Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, LLVM_DIV_TEMPORARY)
-					Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, LLVM_MOD_TEMPORARY)
-					else -> error("Unsupported binary operator: ${expression.operator}")
+				if (floatingPoint) {
+					val result = when (expression.operator.lexeme) {
+						Operators.PLUS.toString()     -> LLVMBuildFAdd(builder, left, right, LLVM_ADD_TEMPORARY)
+						Operators.MINUS.toString()    -> LLVMBuildFSub(builder, left, right, LLVM_SUB_TEMPORARY)
+						Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, LLVM_MUL_TEMPORARY)
+						Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+						Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, LLVM_MOD_TEMPORARY)
+						else -> error("Unsupported binary operator: ${expression.operator}")
+					}
+					casts.toFloating(result, workingType!!, commonType)
 				} else when (expression.operator.lexeme) {
 					Operators.PLUS.toString()     -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
 					Operators.MINUS.toString()    -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
 					Operators.MULTIPLY.toString() -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
-					Operators.DIVIDE.toString()   -> LLVMBuildSDiv(builder, left, right, LLVM_DIV_TEMPORARY)
-					Operators.MODULO.toString()   -> LLVMBuildSRem(builder, left, right, LLVM_MOD_TEMPORARY)
+					Operators.DIVIDE.toString()   -> if (unsigned) LLVMBuildUDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+						else LLVMBuildSDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+					Operators.MODULO.toString()   -> if (unsigned) LLVMBuildURem(builder, left, right, LLVM_MOD_TEMPORARY)
+						else LLVMBuildSRem(builder, left, right, LLVM_MOD_TEMPORARY)
 					else -> error("Unsupported binary operator: ${expression.operator}")
 				}
 			}
@@ -100,6 +133,4 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 		return result
 	}
-
-	private fun isFloatingPoint(value: LLVMValueRef): Boolean = LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMFloatTypeKind
 }

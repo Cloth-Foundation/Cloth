@@ -10,7 +10,21 @@ alive = !alive // false
 // && binds more tightly than ||; both short-circuit from left to right.
 def<bool> ready := original && !stopped
 def permitted := alive || ready
-permitted // true
+
+// Equality compares bool values and binds more tightly than && and ||.
+def<bool> same := permitted == original // true
+def different := alive != original // true
+
+// Numeric equality also returns bool; mixed numbers use float promotion.
+def numericSame := 7 == 7.0 // true
+def<bool> numericDifferent := 2.5 != 2.0 // true
+
+// Ordering accepts numbers and returns bool, with the same float promotion.
+def<int> count = 7
+def<float> limit := 7.5
+def inRange := count >= 0 && count < limit
+def<bool> ordered := limit > count && count <= 7
+same && different && numericSame && numericDifferent && inRange && ordered // true
 
 // These would be compile-time errors:
 // alive = 1 // bool and int are distinct types.
