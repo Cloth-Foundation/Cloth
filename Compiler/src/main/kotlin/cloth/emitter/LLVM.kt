@@ -58,7 +58,7 @@ class LLVMEmitter {
 
 			LLVMPositionBuilderAtEnd(builder, entryBlock)
 
-			val bindings = EmitBindings(builder)
+			val bindings = EmitBindings(context, builder)
 			val expressionEmitter = EmitExpression(context, builder, bindings)
 			val statementEmitter = EmitStatement(expressionEmitter, bindings)
 
@@ -91,12 +91,20 @@ class LLVMEmitter {
 		}
 		val printf = LLVMAddFunction(module, "printf", printfType)
 		val floatingPoint = isFloatingPoint(result)
-		val formatString = if (floatingPoint) "%.9g\n" else "%d\n"
+		val type = LLVMTypeOf(result)
+		val boolean = LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) == 1
+		val formatString = when {
+			boolean -> "%s\n"
+			floatingPoint -> "%.9g\n"
+			else -> "%d\n"
+		}
 		val format = LLVMBuildGlobalStringPtr(builder, formatString, "result_format")
-		val printValue = if (floatingPoint) {
-			LLVMBuildFPExt(builder, result, LLVMDoubleTypeInContext(context), "printfdouble")
-		} else {
-			result
+		val printValue = when {
+			boolean -> LLVMBuildSelect(builder, result,
+				LLVMBuildGlobalStringPtr(builder, "true", "bool_true"),
+				LLVMBuildGlobalStringPtr(builder, "false", "bool_false"), "bool_text")
+			floatingPoint -> LLVMBuildFPExt(builder, result, LLVMDoubleTypeInContext(context), "printfdouble")
+			else -> result
 		}
 		PointerPointer<LLVMValueRef>(2L).use { arguments ->
 			arguments.put(0, format)

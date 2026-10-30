@@ -60,12 +60,14 @@ class Parser(private val tokens: List<Token>) {
 
 	private fun parseBinding(): BindingDeclaration {
 		advance() // def
-		val type = delimited.angles { typeParser.parse() }
+		val type = if (peek().type == TokenType.Operator && peek().lexeme == Operators.LESS.character) {
+			delimited.angles { typeParser.parse() }
+		} else null
 		val name = expect(TokenType.Identifier, "a binding name")
 		val assignment = peek()
 		if (assignment.type != TokenType.Operator ||
 			assignment.lexeme !in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)) {
-			throw SyntaxException("Expected '=' or ':=', found '${assignment.lexeme}' at ${assignment.span}")
+			throw SyntaxException("Expected '${Operators.ASSIGN.character}' or '${Operators.FINAL_ASSIGN.character}', found '${assignment.lexeme}' at ${assignment.span}")
 		}
 		advance()
 		return BindingDeclaration(type, name, expressionParser.parseExpression(), assignment.lexeme == Operators.ASSIGN.character)
