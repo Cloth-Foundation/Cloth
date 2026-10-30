@@ -6,7 +6,8 @@ enum class TokenType {
 
 	Identifier, Keyword, Operator,
 
-	FloatingPointLiteral, IntegerLiteral, StringLiteral, RawStringLiteral, CharacterLiteral;
+	FloatingPointLiteral, IntegerLiteral, StringLiteral, RawStringLiteral, CharacterLiteral,
+	InterpolationStart, StringSegment, InterpolationOpen, InterpolationClose, InterpolationEnd;
 
 	override fun toString(): String {
 		return this.name

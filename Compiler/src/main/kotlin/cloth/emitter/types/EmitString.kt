@@ -17,6 +17,87 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 	private val lengthType = LLVMInt64TypeInContext(context)
 	private val boolType = types.value(ValueType.BOOL)
 
+	private fun descriptor(data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
+		val value = LLVMBuildInsertValue(builder, LLVMGetUndef(types.value(ValueType.STRING)), data, 0, "text_data")
+		return LLVMBuildInsertValue(builder, value, length, 1, "text_value")
+	}
+
+	/** Conversion is specific to interpolation; ordinary '+' keeps its strict operand types. */
+	fun interpolate(value: LLVMValueRef, type: ValueType, casts: EmitCast, location: String): LLVMValueRef {
+		if (type == ValueType.STRING) return value
+		if (type == ValueType.BOOL) {
+			val data = LLVMBuildSelect(builder, value, LLVMBuildGlobalStringPtr(builder, "true", "true_text"), LLVMBuildGlobalStringPtr(builder, "false", "false_text"), "bool_text")
+			val length = LLVMBuildSelect(builder, value, LLVMConstInt(lengthType, 4, 0), LLVMConstInt(lengthType, 5, 0), "bool_length")
+			return descriptor(data, length)
+		}
+		if (type == ValueType.CHAR) return character(value)
+
+		// Decimal int64/uint64 and %g with at most 17 significant digits fit in 64 bytes,
+		// including sign, decimal point, exponent and NUL. Check snprintf's result anyway.
+		val capacity = LLVMConstInt(types.value(abi.sizeType), 64, 0)
+		val data = LLVMBuildArrayAlloca(builder, LLVMInt8TypeInContext(context), capacity, "formatted_bytes")
+		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
+		val nativeInt = types.value(abi.intType)
+		val functionType = PointerPointer<LLVMTypeRef>(3L).use { parameters ->
+			parameters.put(0, LLVMPointerTypeInContext(context, 0))
+			parameters.put(1, types.value(abi.sizeType))
+			parameters.put(2, LLVMPointerTypeInContext(context, 0))
+			LLVMFunctionType(nativeInt, parameters, 3, 1)
+		}
+		val existing = LLVMGetNamedFunction(module, "snprintf")
+		val function = if (existing == null || existing.isNull) LLVMAddFunction(module, "snprintf", functionType) else existing
+		val argumentType = abi.printArgument(type)
+		val argument = when {
+			type.floating -> casts.toFloating(value, type, argumentType)
+			type.bits < argumentType.bits -> if (type.unsigned) LLVMBuildZExt(builder, value, types.value(argumentType), "format_unsigned") else LLVMBuildSExt(builder, value, types.value(argumentType), "format_signed")
+			else -> value
+		}
+		val precision = if (type is ValueType.Floating) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
+		val format = LLVMBuildGlobalStringPtr(builder, "%$precision${abi.printSpecifier(type)}", "interpolation_format")
+		val length = PointerPointer<LLVMValueRef>(4L).use { arguments ->
+			arguments.put(0, data)
+			arguments.put(1, capacity)
+			arguments.put(2, format)
+			arguments.put(3, argument)
+			LLVMBuildCall2(builder, functionType, function, arguments, 4, "formatted_length")
+		}
+		val parent = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
+		val valid = LLVMAppendBasicBlockInContext(context, parent, "format_valid")
+		val invalid = LLVMAppendBasicBlockInContext(context, parent, "format_invalid")
+		// Unsigned comparison rejects negative encoding failures as well as truncation.
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, length, LLVMConstInt(nativeInt, 64, 0), "format_fits"), valid, invalid)
+		LLVMPositionBuilderAtEnd(builder, invalid)
+		EmitRuntimeError(context, builder, abi).emit("String interpolation formatting failed at $location")
+		LLVMPositionBuilderAtEnd(builder, valid)
+		return descriptor(data, LLVMBuildZExt(builder, length, lengthType, "format_length"))
+	}
+
+	/** Encode one scalar; unused bytes are outside the descriptor's length. */
+	private fun character(value: LLVMValueRef): LLVMValueRef {
+		val scalarType = types.value(ValueType.CHAR)
+		fun constant(n: Int) = LLVMConstInt(scalarType, n.toLong(), 0)
+		fun fits(limit: Int) = LLVMBuildICmp(builder, LLVMIntULT, value, constant(limit), "utf8_fits")
+		fun shift(bits: Int) = LLVMBuildLShr(builder, value, constant(bits), "utf8_shift")
+		fun continuation(bits: Int) = LLVMBuildOr(builder, LLVMBuildAnd(builder, shift(bits), constant(63), "utf8_payload"), constant(128), "utf8_continuation")
+		val one = fits(0x80)
+		val two = fits(0x800)
+		val three = fits(0x10000)
+		fun select(test: LLVMValueRef, yes: LLVMValueRef, no: LLVMValueRef) = LLVMBuildSelect(builder, test, yes, no, "utf8_select")
+		val length = select(one, constant(1), select(two, constant(2), select(three, constant(3), constant(4))))
+		val lead = select(one, value, select(two, LLVMBuildOr(builder, shift(6), constant(0xc0), "utf8_lead2"), select(three, LLVMBuildOr(builder, shift(12), constant(0xe0), "utf8_lead3"), LLVMBuildOr(builder, shift(18), constant(0xf0), "utf8_lead4"))))
+		val bytes = listOf(lead, select(two, continuation(0), select(three, continuation(6), continuation(12))), select(three, continuation(0), continuation(6)), continuation(0))
+		val byteType = LLVMInt8TypeInContext(context)
+		val data = LLVMBuildArrayAlloca(builder, byteType, constant(4), "char_bytes")
+		for ((index, byte) in bytes.withIndex()) {
+			val address = PointerPointer<LLVMValueRef>(1L).use { indices ->
+				indices.put(0, constant(index))
+				LLVMBuildInBoundsGEP2(builder, byteType, data, indices, 1, "char_byte_address")
+			}
+			LLVMBuildStore(builder, LLVMBuildTrunc(builder, byte, byteType, "char_byte"), address)
+		}
+		return descriptor(data, LLVMBuildZExt(builder, length, lengthType, "char_length"))
+	}
+
 	fun literal(text: String): LLVMValueRef {
 		val bytes = text.toByteArray(Charsets.UTF_8)
 		val constant = BytePointer(*bytes).use { buffer ->

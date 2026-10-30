@@ -4,6 +4,7 @@ import cloth.diagnostics.InternalErrors
 import cloth.emitter.*
 import cloth.parser.expression.*
 import cloth.parser.statement.Statement
+import cloth.parser.statement.UpdateStatement
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
 import cloth.token.Operators
@@ -14,11 +15,25 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower) {
 
 	private val types = LLVMTypes(context)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics) }
+
+	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
+		val operand = bindings.read(statement.name.lexeme)
+		val increment = statement.operator.lexeme == Operators.PLUS_PLUS.character
+		if (type is ValueType.Floating) {
+			val workingType = EmitHalf.arithmeticType(type)
+			val value = casts.toFloating(operand, type, workingType)
+			val one = LLVMConstReal(types.value(workingType), 1.0)
+			val result = if (increment) LLVMBuildFAdd(builder, value, one, "increment") else LLVMBuildFSub(builder, value, one, "decrement")
+			return casts.toFloating(result, workingType, type)
+		}
+		val one = LLVMConstInt(types.value(type), 1, 0)
+		return if (increment) LLVMBuildAdd(builder, operand, one, "increment") else LLVMBuildSub(builder, operand, one, "decrement")
+	}
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
@@ -36,6 +51,15 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is BooleanLiteral       -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
 			is CharacterLiteral     -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
 			is StringLiteral        -> strings.literal(expression.value)
+			is InterpolatedString   -> {
+				var result: LLVMValueRef? = null
+				for (part in expression.parts) {
+					if (part is StringLiteral && part.value.isEmpty()) continue
+					val value = strings.interpolate(emit(part), semantics.typeOf(part), casts, part.span.toString())
+					result = result?.let { strings.concatenate(it, value, part.span.toString()) } ?: value
+				}
+				result ?: strings.literal("")
+			}
 			is CastExpression       -> casts.emit(expression, emit(expression.operand))
 
 			is UnaryExpression      -> {
@@ -79,6 +103,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				if (floatingPoint) {
 					left = casts.toFloating(left, leftType, workingType!!)
 					right = casts.toFloating(right, rightType, workingType)
+				}
+				if (expression.operator.lexeme == Operators.MUL_MUL.character) {
+					val result = power.emit(left, right, workingType ?: leftType, expression.operator.span.toString())
+					return if (floatingPoint) casts.toFloating(result, workingType!!, commonType) else result
 				}
 				val comparison = when (expression.operator.lexeme) {
 					Operators.EQUAL.character         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ

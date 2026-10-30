@@ -1,6 +1,8 @@
 def x = 19
-x = x + 1
+x += 1
 
-def<string> answer = "The answer is: " + x
+def<float<16>> smaller = (x ** 2) -> float<16>
 
-answer
+def<string> answer = #"The answer is: {smaller + 0.2}"
+
+answer // The answer is: 400.200012

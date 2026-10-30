@@ -84,6 +84,20 @@ not the compiler's current feature coverage.
   `player.applyDamage(...)` when that method is accessible.
 - There is no separate `mut` qualifier.
 
+## Compound assignments and update operators
+
+- Cloth has `+=`, `-=`, `/=`, `*=`, and `%=` compound assignments, plus `++`,
+  `--`, and `**`, as confirmed by the user on 2026-10-30. Their tokens are
+  defined in `Operators.kt`; `Test.co` demonstrates standalone postfix `i++`.
+- `//` starts a line comment and is not a division operator.
+- `x ** y` is exponentiation. With two integer operands the result is an
+  integer; negative integer exponents are errors. These decisions were confirmed
+  directly by the user on 2026-10-30.
+- `x++` and `x--` are standalone statements only. Prefix updates and use inside
+  expressions are not supported by the language design; there is no old/new
+  expression-result distinction. The user confirmed this on 2026-10-30.
+- See development status for current support and initial exponentiation choices.
+
 ## Integer signedness and widths
 
 - `int` supports 8, 16, 32 (default), and 64 bits, signed or unsigned. Explicit
@@ -205,6 +219,11 @@ not the compiler's current feature coverage.
 
 ## Strings
 
+- The user requested interpolated strings using `#"Hello, {name}!"`, primarily
+  to make `examples/EX.co` valid. Braced expressions contribute text to a string.
+  This does not change the strict string operand requirement for ordinary `+`.
+  See development status for initial formatting and brace-escaping choices;
+  those details have not been separately confirmed as language design decisions.
 - The user selected string definitions after character support. Explicit
   `def<string>` and inferred declarations such as `def hello := "Hello World!"`
   follow the ordinary fixed-type binding and `=` / `:=` rules shown in
@@ -395,7 +414,7 @@ added to `../../../../examples/Test.co`.
   issue definitions, stable error codes, source-line rendering, labels, and help.
   Compiler checks should pass structured values and source locations to shared
   definitions rather than assemble raw JVM exception messages.
-- The first requested case is `examples/EX.co`'s string-plus-integer error, followed
+- The first requested case was `examples/EX.co`'s string-plus-integer error, followed
   by migration of the remaining compiler failures. This does not change string
   concatenation or introduce implicit string conversions.
 - The implementation and its current limits are recorded in

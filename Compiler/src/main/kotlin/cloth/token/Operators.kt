@@ -9,7 +9,9 @@ enum class Operators(val character: String) {
 
 	MINUS("-"), MINUS_MINUS("--"), MINUS_EQUAL("-="),
 
-	MULTIPLY("*"), MUL_MUL("**"), MUL_EQUAL("*="), DIVIDE("/"), DIV_EQUAL("/="), MODULO("%"), MOD_EQUAL("%="),
+	MULTIPLY("*"), MUL_MUL("**"), MUL_EQUAL("*="),
+	DIVIDE("/"), DIV_EQUAL("/="),
+	MODULO("%"), MOD_EQUAL("%="),
 
 	ASSIGN("="), FINAL_ASSIGN(":="),
 

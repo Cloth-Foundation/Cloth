@@ -51,3 +51,6 @@ data class BooleanLiteral(val value: Boolean, override val span: TokenSpan) : Ex
 data class CharacterLiteral(val value: Int, override val span: TokenSpan) : Expression
 
 data class StringLiteral(val value: String, override val span: TokenSpan) : Expression
+
+/** Text segments and embedded expressions in source evaluation order. */
+data class InterpolatedString(val parts: List<Expression>, override val span: TokenSpan) : Expression

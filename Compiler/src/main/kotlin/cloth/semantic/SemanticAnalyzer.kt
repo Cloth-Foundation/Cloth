@@ -8,6 +8,7 @@ import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
+import cloth.parser.statement.UpdateStatement
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -57,6 +58,10 @@ class SemanticAnalyzer {
 				is BooleanLiteral       -> ValueType.BOOL
 				is CharacterLiteral     -> ValueType.CHAR
 				is StringLiteral        -> ValueType.STRING
+				is InterpolatedString   -> {
+					expression.parts.forEach { typeOf(it) }
+					ValueType.STRING
+				}
 				is NameExpression       -> lookup(expression.name).type
 				is TypeCheckExpression  -> {
 					typeOf(expression.operand)
@@ -134,6 +139,12 @@ class SemanticAnalyzer {
 					} else null
 					val left = typeOf(expression.left, context)
 					val right = typeOf(expression.right, context)
+					if (expression.operator.lexeme == Operators.MUL_MUL.character && left.integer && right.integer) {
+						val exponent = expression.right
+						if (exponent is UnaryExpression && exponent.operator.lexeme == "-" && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) {
+							throw SemanticErrors.negativeExponent(exponent.span)
+						}
+					}
 					if (numeric && left.integer && right.integer && left != right) {
 						throw SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, mixedIntegers = true)
 					}
@@ -193,6 +204,13 @@ class SemanticAnalyzer {
 					model.statements[statement] = binding.type
 				}
 
+				is UpdateStatement -> {
+					val binding = lookup(statement.name)
+					if (!binding.mutable) throw SemanticErrors.immutable(statement.name, binding.declaration)
+					if (!binding.type.numeric) throw SemanticErrors.unary(statement.operator, NameExpression(statement.name), binding.type, boolean = false)
+					model.statements[statement] = binding.type
+				}
+
 				is ExpressionStatement -> model.statements[statement] = typeOf(statement.expression, requireValue = statement.expression !is IfExpression)
 				else                   -> throw InternalErrors.invariant("Unsupported statement: $statement")
 			}
@@ -229,7 +247,7 @@ class SemanticAnalyzer {
 
 	companion object {
 
-		private val arithmeticOperators = setOf("+", "-", "*", "/", "%")
+		private val arithmeticOperators = setOf("+", "-", "*", "/", "%", "**")
 		private val comparisonOperators = setOf("==", "!=", "<", ">", "<=", ">=")
 	}
 }

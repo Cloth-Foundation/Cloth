@@ -6,6 +6,7 @@ import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
+import cloth.parser.statement.UpdateStatement
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -22,6 +23,12 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 
 			is AssignmentStatement -> {
 				val value = expressionEmitter.emit(statement.value)
+				bindings.assign(statement.name.lexeme, value)
+				value
+			}
+
+			is UpdateStatement -> {
+				val value = expressionEmitter.emitUpdate(statement, semantics.typeOf(statement))
 				bindings.assign(statement.name.lexeme, value)
 				value
 			}
