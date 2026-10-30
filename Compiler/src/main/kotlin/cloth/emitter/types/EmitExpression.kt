@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.emitter.*
 import cloth.parser.expression.*
+import cloth.parser.statement.Statement
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
 import cloth.token.Operators
@@ -18,9 +19,17 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private val types = LLVMTypes(context)
 	private val boolType = types.value(ValueType.BOOL)
+	private val statements by lazy { EmitStatement(this, bindings, semantics) }
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
+			is IfExpression -> checkNotNull(emitConditional(expression, requireValue = true))
+			is TypeCheckExpression -> {
+				// Preserve evaluation (and any side effects) even for a statically known check.
+				emit(expression.operand)
+				val matches = semantics.typeOf(expression.operand) == semantics.targetTypeOf(expression)
+				LLVMConstInt(boolType, if (matches) 1L else 0L, 0)
+			}
 			is NameExpression -> bindings.read(expression.name.lexeme)
 			is IntegerLiteral -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
 			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
@@ -112,6 +121,50 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			else -> error("Unsupported expression: $expression")
 		}
+	}
+
+	fun emitConditional(expression: IfExpression, requireValue: Boolean): LLVMValueRef? {
+		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
+		val merge = LLVMAppendBasicBlockInContext(context, function, "if_end")
+		val values = mutableListOf<LLVMValueRef>()
+		val ends = mutableListOf<LLVMBasicBlockRef>()
+
+		fun emitBody(body: List<Statement>) {
+			val value = bindings.withScope {
+				var result: LLVMValueRef? = null
+				for (statement in body) result = statements.emit(statement)
+				result
+			}
+			if (requireValue) {
+				values.add(checkNotNull(value))
+				// Nested conditionals, casts, and strings can move the insertion block.
+				ends.add(LLVMGetInsertBlock(builder))
+			}
+			LLVMBuildBr(builder, merge)
+		}
+
+		for (branch in expression.branches) {
+			val condition = emit(branch.condition)
+			val body = LLVMAppendBasicBlockInContext(context, function, "if_then")
+			val next = LLVMAppendBasicBlockInContext(context, function, "if_else")
+			LLVMBuildCondBr(builder, condition, body, next)
+			LLVMPositionBuilderAtEnd(builder, body)
+			emitBody(branch.statements)
+			LLVMPositionBuilderAtEnd(builder, next)
+		}
+		if (expression.otherwise != null) emitBody(expression.otherwise) else LLVMBuildBr(builder, merge)
+		LLVMPositionBuilderAtEnd(builder, merge)
+		if (!requireValue) return null
+
+		val result = LLVMBuildPhi(builder, types.value(semantics.typeOf(expression)), "if_value")
+		PointerPointer<LLVMValueRef>(values.size.toLong()).use { incomingValues ->
+			PointerPointer<LLVMBasicBlockRef>(ends.size.toLong()).use { incomingBlocks ->
+				values.forEachIndexed { index, value -> incomingValues.put(index.toLong(), value) }
+				ends.forEachIndexed { index, block -> incomingBlocks.put(index.toLong(), block) }
+				LLVMAddIncoming(result, incomingValues, incomingBlocks, values.size)
+			}
+		}
+		return result
 	}
 
 	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {

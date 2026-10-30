@@ -8,17 +8,20 @@ import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 
-/** Checks the current, single statement scope before any LLVM code is emitted. */
+/** Checks bindings, nested branch scopes, and expression types before LLVM emission. */
 class SemanticAnalyzer {
 
 	private data class Binding(val type: ValueType, val mutable: Boolean)
 
 	fun analyze(ast: ASTStructure): SemanticModel {
-		val bindings = mutableMapOf<String, Binding>()
+		val scopes = mutableListOf(mutableMapOf<String, Binding>())
 		val model = SemanticModel()
 
-		fun lookup(name: Token): Binding = bindings[name.lexeme]
+		fun lookup(name: Token): Binding = scopes.asReversed().firstNotNullOfOrNull { it[name.lexeme] }
 			?: throw SemanticException("Unknown binding '${name.lexeme}' at ${name.span}")
+
+		// Statements and value-producing conditionals can recursively contain each other.
+		lateinit var checkStatement: (Statement) -> Unit
 
 		// Only integer literals receive context. A named binding never changes type.
 		fun integerContext(expression: Expression): ValueType? = when (expression) {
@@ -41,7 +44,7 @@ class SemanticAnalyzer {
 			return type
 		}
 
-		fun typeOf(expression: Expression, expected: ValueType? = null): ValueType {
+		fun typeOf(expression: Expression, expected: ValueType? = null, requireValue: Boolean = true): ValueType {
 			val type = when (expression) {
 				is IntegerLiteral -> literalType(expression, expected)
 				is FloatingPointLiteral -> ValueType.FLOAT
@@ -49,6 +52,45 @@ class SemanticAnalyzer {
 				is CharacterLiteral -> ValueType.CHAR
 				is StringLiteral -> ValueType.STRING
 				is NameExpression -> lookup(expression.name).type
+				is TypeCheckExpression -> {
+					typeOf(expression.operand)
+					// All currently supported values have a statically known primitive type.
+					// Resolving the target still validates its modifiers and width.
+					model.typeChecks[expression] = resolveType(expression.target)
+					ValueType.BOOL
+				}
+				is IfExpression -> {
+					if (requireValue && expression.otherwise == null) {
+						throw SemanticException("A value-producing 'if' requires a final 'else' at ${expression.keyword.span}")
+					}
+					for (branch in expression.branches) {
+						if (typeOf(branch.condition) != ValueType.BOOL) {
+							throw SemanticException("An 'if' condition requires a boolean value at ${expression.keyword.span}")
+						}
+					}
+					var resultType: ValueType? = null
+					for (statements in expression.branches.map { it.statements } + listOfNotNull(expression.otherwise)) {
+						if (requireValue && statements.lastOrNull() !is ExpressionStatement) {
+							throw SemanticException("Each value-producing 'if' branch must end with an expression at ${expression.keyword.span}")
+						}
+						scopes.add(mutableMapOf())
+						try {
+							for ((index, statement) in statements.withIndex()) {
+								if (requireValue && index == statements.lastIndex) {
+									val branchType = typeOf((statement as ExpressionStatement).expression, expected)
+									model.statements[statement] = branchType
+									if (resultType != null && branchType != resultType) {
+										throw SemanticException("'if' branches must yield the same type, got '${resultType.spelling}' and '${branchType.spelling}' at ${expression.keyword.span}")
+									}
+									resultType = branchType
+								} else checkStatement(statement)
+							}
+						} finally {
+							scopes.removeAt(scopes.lastIndex)
+						}
+					}
+					if (requireValue) checkNotNull(resultType) else ValueType.VOID
+				}
 				is CastExpression -> {
 					// A cast converts an independently typed value; its destination must
 					// never change arithmetic or literal types inside the operand.
@@ -117,10 +159,10 @@ class SemanticAnalyzer {
 			}
 		}
 
-		for (statement in ast.statements) {
+		checkStatement = { statement ->
 			when (statement) {
 				is BindingDeclaration -> {
-					if (bindings.containsKey(statement.name.lexeme)) {
+					if (scopes.last().containsKey(statement.name.lexeme)) {
 						throw SemanticException("Binding '${statement.name.lexeme}' is already declared in this scope at ${statement.name.span}")
 					}
 					val declaredType = statement.type?.let { resolveType(it) }
@@ -128,7 +170,7 @@ class SemanticAnalyzer {
 					val bindingType = declaredType ?: initializerType
 					checkType(bindingType, initializerType, statement.name)
 					// A declaration is visible only after its initializer has been checked.
-					bindings[statement.name.lexeme] = Binding(bindingType, statement.mutable)
+					scopes.last()[statement.name.lexeme] = Binding(bindingType, statement.mutable)
 					model.statements[statement] = bindingType
 				}
 				is AssignmentStatement -> {
@@ -139,10 +181,12 @@ class SemanticAnalyzer {
 					checkType(binding.type, typeOf(statement.value, binding.type), statement.name)
 					model.statements[statement] = binding.type
 				}
-				is ExpressionStatement -> model.statements[statement] = typeOf(statement.expression)
+				is ExpressionStatement -> model.statements[statement] = typeOf(statement.expression,
+					requireValue = statement.expression !is IfExpression)
 				else -> error("Unsupported statement: $statement")
 			}
 		}
+		ast.statements.forEach(checkStatement)
 		return model
 	}
 
