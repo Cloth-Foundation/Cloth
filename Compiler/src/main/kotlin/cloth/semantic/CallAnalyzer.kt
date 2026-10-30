@@ -71,7 +71,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 					val expected = statement.type?.let { resolveType(it) }
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
-					val type = if (expected is ValueType.ArrayValue && expected.accepts(actual)) actual else expected ?: actual
+					val type = if (expected is ValueType.ArrayValue && actual is ValueType.ArrayValue && expected.accepts(actual)) actual else expected ?: actual
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.initializer, statement.name) }
 					facts.bindings[symbol] = type
 					model.statements[statement] = type

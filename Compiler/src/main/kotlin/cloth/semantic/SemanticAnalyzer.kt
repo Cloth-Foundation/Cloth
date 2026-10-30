@@ -28,7 +28,7 @@ class SemanticAnalyzer {
 						scopes.last()[statement.name.lexeme]?.let { throw SemanticErrors.duplicate(statement.name, it.declaration) }
 						val declaredType = statement.type?.let { resolveType(it) }
 						val initializerType = typeOf(statement.initializer, declaredType)
-						val bindingType = if (declaredType is ValueType.ArrayValue && declaredType.accepts(initializerType)) initializerType else declaredType ?: initializerType
+						val bindingType = if (declaredType is ValueType.ArrayValue && initializerType is ValueType.ArrayValue && declaredType.accepts(initializerType)) initializerType else declaredType ?: initializerType
 						checkType(bindingType, initializerType, statement.name, statement.initializer, statement.name)
 						scopes.last()[statement.name.lexeme] = Binding(bindingType, statement.mutable, statement.name)
 						model.statements[statement] = bindingType
