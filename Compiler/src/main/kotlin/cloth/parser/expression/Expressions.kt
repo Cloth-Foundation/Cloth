@@ -17,3 +17,8 @@ data class IntegerLiteral(val value: BigInteger, val token: Token) : NumberLiter
 data class FloatingPointLiteral(val value: String) : NumberLiteral
 
 data class BooleanLiteral(val value: Boolean) : Expression
+
+/** One Unicode scalar, independent of the host's UTF-16 Char representation. */
+data class CharacterLiteral(val value: Int) : Expression
+
+data class StringLiteral(val value: String) : Expression

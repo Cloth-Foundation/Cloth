@@ -19,12 +19,12 @@ boilerplate or silently inventing additional shorthand.
 
 ## Design authority
 
-- [Test.co](../../../Test.co) is intended language design, including features not
+- [Test.co](../../../examples/Test.co) is intended language design, including features not
   implemented by the compiler yet. It is a substantial example, not an exhaustive
   specification or a claim that the whole file currently compiles.
 - Read [confirmed semantics](references/semantics.md) before deciding language
   behavior. These user decisions refine the examples and include accepted syntax
-  that has not yet been added to `Test.co`.
+  that has not yet been added to `../../../examples/Test.co`.
 - Read [development status](references/development.md) when working on the
   compiler, assessing support, or deciding what work comes next. Recheck relevant
   source before relying on its implementation snapshot.

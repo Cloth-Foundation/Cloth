@@ -175,10 +175,10 @@ class BindingsTest {
 
 	@Test
 	fun `bindings and existing math examples compile through the CLI`(@TempDir directory: Path) {
-		for ((file, expected) in listOf("Bindings.co" to "76.25", "Math.co" to "6689", "Booleans.co" to "true", "Unsigned.co" to "true", "Casts.co" to "4294967294")) {
+		for ((file, expected) in listOf("Bindings.co" to "76.25", "Math.co" to "6689", "Booleans.co" to "true", "Unsigned.co" to "true", "Casts.co" to "4294967294", "Characters.co" to "😀", "Strings.co" to "Unicode: é 中 😀")) {
 			val output = directory.resolve(file.removeSuffix(".co"))
 			// Absolute paths exercise source selection and the separate output argument.
-			main(arrayOf(Path.of(file).toAbsolutePath().toString(), output.toString()))
+			main(arrayOf(Path.of("examples", file).toAbsolutePath().toString(), output.toString()))
 			val executable = cloth.util.ExecutableFormat.current.executablePath(output)
 			assertOutput(executable, expected)
 		}

@@ -1,7 +1,7 @@
 # Confirmed Cloth semantics
 
 These decisions were confirmed directly by the user during the language design
-discussion on 2026-10-29. `Test.co` remains the main syntax example; these rules
+discussion on 2026-10-29 and 2026-10-30. `../../../../examples/Test.co` remains the main syntax example; these rules
 clarify it and extend it where noted. This document describes intended behavior,
 not the compiler's current feature coverage.
 
@@ -25,7 +25,7 @@ not the compiler's current feature coverage.
 - Cloth has no `private` keyword. Do not introduce one into Cloth source.
 - Interface methods remain callable through the interface without `pub`. The
   implementing class determines whether they are also callable directly on it,
-  as described in `Test.co`.
+  as described in `../../../../examples/Test.co`.
 - Struct fields inherit the enclosing struct's visibility without needing `pub`.
   This is an exception to the general default-private rule.
 
@@ -50,7 +50,7 @@ not the compiler's current feature coverage.
 
 ## Bindings
 
-- Explicit primitive bindings use `def<int>`, `def<float>`, or `def<bool>`, with the same `=`
+- Explicit primitive bindings use `def<int>`, `def<float>`, `def<bool>`, `def<char>`, or `def<string>`, with the same `=`
   and `:=` binding behavior as inferred declarations.
 - Omitting the type annotation infers the binding's type from its initializer,
   for example `def x = 10` and `def y := x + 2`.
@@ -70,6 +70,13 @@ not the compiler's current feature coverage.
   and `int<64>`. Width is a parameter of the numeric type, not a separate type
   spelling hardcoded for each size. Compiler spellings follow `Keywords.INTEGER`
   and `Keywords.FLOAT`.
+- C type widths used by the compiler come from explicit ABI profiles selected
+  using LLVM's target triple. Unsupported targets must be rejected instead of
+  falling back to a global C data model. These profiles do not change Cloth's
+  numeric widths or defaults, and do not require a Clang frontend.
+- Linker/toolchain configuration is separate from C type definitions and from
+  process execution. It resolves the executable, flags, runtime libraries, and
+  search paths using the selected target ABI and explicit build options.
 - `unsigned` decorates `int`: `def<unsigned int> a = 10` declares an unsigned
   32-bit binding. The modifier applies at every supported integer width, for
   example `unsigned int<8>` and `unsigned int<64>`; `unsigned int<32>` explicitly
@@ -100,7 +107,7 @@ not the compiler's current feature coverage.
 ## Explicit numeric casts
 
 - `expression -> Type` explicitly converts a numeric value, as demonstrated in
-  `Test.co`. Targets include signed and unsigned integer types and float types,
+  `../../../../examples/Test.co`. Targets include signed and unsigned integer types and float types,
   with their width syntax: `value -> int<64>`, `value -> unsigned int`, and
   `value -> float<64>`.
 - A cast applies to the preceding arithmetic expression: `1 + 2 -> float` means
@@ -110,7 +117,7 @@ not the compiler's current feature coverage.
 - Evaluate the source once in its own type, then convert the result. A cast
   does not change an existing binding's type or retroactively widen arithmetic
   inside its operand. Widen first to avoid overflow or precision loss in that
-  arithmetic, following the `Test.co` example.
+  arithmetic, following the `../../../../examples/Test.co` example.
 - Integer-to-integer casts wrap/truncate to the target width. Narrowing retains
   the low bits; widening extends according to the source signedness. The target
   signedness determines how the resulting bits are interpreted. For example,
@@ -161,6 +168,39 @@ not the compiler's current feature coverage.
   numeric conversions or change the ordinary binding rules.
 - Packed collections, field layout, atomics, and foreign interfaces have not
   been designed by this decision.
+
+## Characters and storage
+
+- The user selected `char` as the next storage type and confirmed that each value
+  represents one full Unicode scalar stored in 32 bits, including supplementary
+  characters such as `'😀'`. Surrogate code points are excluded.
+- Character declarations use single-quoted literals, as in `../../../../examples/Test.co`:
+  `def<char> x = 'n'`. Inferred declarations and mutable `=` / immutable `:=`
+  bindings follow the ordinary binding rules.
+- One scalar need not be an entire displayed grapheme: a base letter followed
+  by a combining mark contains multiple scalars and cannot be one `char` literal.
+- Character arithmetic, ordering, and conversions to other types have not been
+  designed. See development status for the supported operations and diagnostics.
+
+## Strings
+
+- The user selected string definitions after character support. Explicit
+  `def<string>` and inferred declarations such as `def hello := "Hello World!"`
+  follow the ordinary fixed-type binding and `=` / `:=` rules shown in
+  `../../../../examples/Test.co`.
+- The user then requested string equality and concatenation. `==` and `!=`
+  compare two strings by contents and return `bool`; `+` concatenates two strings
+  and returns a new string value. Both operands are evaluated once, left to
+  right. `+` uses ordinary addition precedence and left associativity, above
+  equality. String operators do not implicitly convert numbers, booleans, or
+  characters to strings. Existing copies are preserved when a binding is
+  reassigned to a concatenation result.
+- Current equality compares exact Unicode scalar sequences (including embedded
+  NULs), implemented as length-aware UTF-8 byte comparison. It performs no case
+  folding or Unicode normalization.
+- Indexing, content mutation, and escaping/dynamic string lifetime APIs remain
+  unresolved. See development status for current literal support and internal
+  storage; that representation does not define future object lifetime rules.
 
 ## Object lifetime and nullability
 
@@ -213,7 +253,7 @@ not the compiler's current feature coverage.
   between those two kinds of methods.
 - Overloading is supported when argument lists distinguish the overloads. Do not
   assume additional overload-resolution rules that have not been specified.
-- As demonstrated in `Test.co`, `this -> Dead(payload)` activates the destination
+- As demonstrated in `../../../../examples/Test.co`, `this -> Dead(payload)` activates the destination
   state and runs its `init` before the calling method continues. A transition
   does not itself terminate the method that performed it.
 - Transitioning into the already-active state replaces its payload and reruns
@@ -248,7 +288,7 @@ not the compiler's current feature coverage.
 - Top-level state declarations use `typedef<state<Payload>>`, followed by
   `pub StateName for HostContract` and the state body. `pub` is optional under
   Cloth's default-private visibility rule. `for` introduces the host contract.
-- Nested state declarations use the `state<Payload> StateName` form in `Test.co`.
+- Nested state declarations use the `state<Payload> StateName` form in `../../../../examples/Test.co`.
   Do not substitute that nested spelling for the top-level `typedef` form.
 - A class attaches top-level states using a class-level `@State(StateName, ...)`
   decorator, for example `@State(Dead, Stunned)`. Each attached state is added to
@@ -321,4 +361,4 @@ def player := Player::new("Alex")
 ```
 
 `@Initial(payloadExpression)` was accepted in the discussion and has not yet been
-added to `Test.co`.
+added to `../../../../examples/Test.co`.

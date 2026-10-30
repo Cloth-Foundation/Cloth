@@ -5,14 +5,13 @@ import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
-import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
 
 /** Numeric value conversions. The caller evaluates the source exactly once. */
 internal class EmitCast(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
-	private val semantics: SemanticModel) {
+	private val semantics: SemanticModel, private val abi: NativeCABI) {
 	private val half = EmitHalf(context, builder)
 	private val types = LLVMTypes(context)
 
@@ -70,31 +69,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		LLVMBuildCondBr(builder, valid, success, failure)
 
 		LLVMPositionBuilderAtEnd(builder, failure)
-		emitError(function, "Invalid numeric cast: '${source.spelling}' to '${target.spelling}' at ${expression.operator.span}")
+		EmitRuntimeError(context, builder, abi).emit("Invalid numeric cast: '${source.spelling}' to '${target.spelling}' at ${expression.operator.span}")
 		LLVMPositionBuilderAtEnd(builder, success)
-	}
-
-	private fun emitError(function: LLVMValueRef, message: String) {
-		val module = LLVMGetGlobalParent(function)
-		val intType = types.value(NativeCABI.INT)
-		PointerPointer<LLVMTypeRef>(1L).use { parameters ->
-			parameters.put(0, LLVMPointerTypeInContext(context, 0))
-			val putsType = LLVMFunctionType(intType, parameters, 1, 0)
-			val existing = LLVMGetNamedFunction(module, "puts")
-			val puts = if (existing == null || existing.isNull) LLVMAddFunction(module, "puts", putsType) else existing
-			PointerPointer<LLVMValueRef>(1L).use { arguments ->
-				arguments.put(0, LLVMBuildGlobalStringPtr(builder, message, "cast_error"))
-				LLVMBuildCall2(builder, putsType, puts, arguments, 1, "")
-			}
-			parameters.put(0, intType)
-			val exitType = LLVMFunctionType(LLVMVoidTypeInContext(context), parameters, 1, 0)
-			val existingExit = LLVMGetNamedFunction(module, "exit")
-			val exit = if (existingExit == null || existingExit.isNull) LLVMAddFunction(module, "exit", exitType) else existingExit
-			PointerPointer<LLVMValueRef>(1L).use { arguments ->
-				arguments.put(0, LLVMConstInt(intType, 1, 0))
-				LLVMBuildCall2(builder, exitType, exit, arguments, 1, "")
-			}
-		}
-		LLVMBuildUnreachable(builder)
 	}
 }

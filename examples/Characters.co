@@ -1,0 +1,11 @@
+// A char stores one Unicode scalar in 32 bits.
+def<char> letter = 'n'
+def original := letter
+
+// Inference, copies, equality, and ordinary binding rules apply.
+letter = '😀'
+def<bool> changed = letter != original
+def<char> newline := '\n'
+
+// The compiler prints the last value as UTF-8.
+letter

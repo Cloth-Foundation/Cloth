@@ -1,0 +1,23 @@
+// Explicit and inferred string bindings use the usual = and := rules.
+def<string> greeting = "Hello, Cloth!"
+def original := greeting
+def<string> fixed := "Unicode: é 中 😀"
+
+greeting = fixed
+def copy = greeting
+greeting = "A new value leaves copies unchanged."
+
+// Escapes work in ordinary strings; triple-quoted strings keep their raw text.
+def escaped := "a quote: \" and a backslash: \\"
+def raw := """Raw text keeps \n and "quotes" unchanged."""
+
+// Concatenation makes a new value; comparisons use the complete contents.
+def<string> welcome = "Hello, " + "Cloth!"
+def snapshot := welcome
+welcome = welcome + " 😀"
+def<bool> same := snapshot == "Hello, Cloth!"
+def different := welcome != snapshot
+def withNul := "before\0" + "after"
+def complete := withNul == "before\0after"
+
+copy

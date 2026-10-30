@@ -13,7 +13,8 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
-	private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast) {
+	private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast,
+	private val strings: EmitString) {
 
 	private val types = LLVMTypes(context)
 	private val boolType = types.value(ValueType.BOOL)
@@ -24,6 +25,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is IntegerLiteral -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
 			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
+			is CharacterLiteral -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
+			is StringLiteral -> strings.literal(expression.value)
 			is CastExpression -> casts.emit(expression, emit(expression.operand))
 
 			is UnaryExpression -> {
@@ -50,6 +53,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				var right = emit(expression.right)
 				val leftType = semantics.typeOf(expression.left)
 				val rightType = semantics.typeOf(expression.right)
+				if (leftType == ValueType.STRING && rightType == ValueType.STRING) {
+					return when (expression.operator.lexeme) {
+						Operators.PLUS.character -> strings.concatenate(left, right, expression.operator.span.toString())
+						Operators.EQUAL.character -> strings.equal(left, right)
+						Operators.NOT_EQUAL.character -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
+						else -> error("Unsupported string operator: ${expression.operator}")
+					}
+				}
 				val unsigned = leftType.unsigned
 				val floatingPoint = leftType.floating || rightType.floating
 				val commonType = if (floatingPoint) ValueType.commonFloating(leftType, rightType) else null

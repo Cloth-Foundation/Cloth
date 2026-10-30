@@ -46,13 +46,15 @@ class SemanticAnalyzer {
 				is IntegerLiteral -> literalType(expression, expected)
 				is FloatingPointLiteral -> ValueType.FLOAT
 				is BooleanLiteral -> ValueType.BOOL
+				is CharacterLiteral -> ValueType.CHAR
+				is StringLiteral -> ValueType.STRING
 				is NameExpression -> lookup(expression.name).type
 				is CastExpression -> {
 					// A cast converts an independently typed value; its destination must
 					// never change arithmetic or literal types inside the operand.
 					val source = typeOf(expression.operand)
 					val target = resolveType(expression.target)
-					if ((source == ValueType.BOOL) != (target == ValueType.BOOL)) {
+					if (source != target && !(source.numeric && target.numeric)) {
 						throw SemanticException("Cannot cast '${source.spelling}' to '${target.spelling}' at ${expression.operator.span}")
 					}
 					target
@@ -65,7 +67,7 @@ class SemanticAnalyzer {
 						if (operand != ValueType.BOOL) {
 							throw SemanticException("Operator '!' requires a boolean operand, got '${operand.spelling}' at ${expression.operator.span}")
 						}
-					} else if (operand == ValueType.BOOL) {
+					} else if (!operand.numeric) {
 						throw SemanticException("Operator '${expression.operator.lexeme}' requires a numeric operand, got '${operand.spelling}' at ${expression.operator.span}")
 					}
 					operand
@@ -82,17 +84,19 @@ class SemanticAnalyzer {
 						throw SemanticException("Operator '${expression.operator.lexeme}' cannot mix '${left.spelling}' and '${right.spelling}'; use an explicit conversion at ${expression.operator.span}")
 					}
 					if (expression.operator.lexeme in setOf(Operators.EQUAL.character, Operators.NOT_EQUAL.character)) {
-						if ((left == ValueType.BOOL) != (right == ValueType.BOOL)) {
+						if (left != right && !(left.numeric && right.numeric)) {
 							throw SemanticException("Cannot compare '${left.spelling}' and '${right.spelling}' with '${expression.operator.lexeme}' at ${expression.operator.span}")
 						}
 						ValueType.BOOL
+					} else if (expression.operator.lexeme == Operators.PLUS.character && left == ValueType.STRING && right == ValueType.STRING) {
+						ValueType.STRING
 					} else if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
 						if (left != ValueType.BOOL || right != ValueType.BOOL) {
 							throw SemanticException("Operator '${expression.operator.lexeme}' requires boolean operands, got '${left.spelling}' and '${right.spelling}' at ${expression.operator.span}")
 						}
 						ValueType.BOOL
 					} else {
-						if (left == ValueType.BOOL || right == ValueType.BOOL) {
+						if (!left.numeric || !right.numeric) {
 							throw SemanticException("Operator '${expression.operator.lexeme}' requires numeric operands, got '${left.spelling}' and '${right.spelling}' at ${expression.operator.span}")
 						}
 						if (expression.operator.lexeme in setOf(Operators.LESS.character, Operators.GREATER.character,
@@ -162,6 +166,8 @@ class SemanticAnalyzer {
 		}
 		if (annotation.width == null) {
 			if (name == Keywords.BOOLEAN.toString()) return ValueType.BOOL
+			if (name == Keywords.CHARACTER.toString()) return ValueType.CHAR
+			if (name == Keywords.STRING.toString()) return ValueType.STRING
 		}
 		throw SemanticException("Binding type '${annotation.spelling}' is not supported yet at ${annotation.name.span}")
 	}
