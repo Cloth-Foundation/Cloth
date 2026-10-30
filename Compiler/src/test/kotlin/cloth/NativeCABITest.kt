@@ -1,5 +1,8 @@
 package cloth
 
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
@@ -71,9 +74,10 @@ class NativeCABITest {
 			"x86_64-apple-darwin24.invalid", "x86_64-apple-macosx14.0.0-simulator"
 		)
 		for (triple in unsupported) {
-			val failure = assertFailsWith<UnsupportedOperationException>(triple) { NativeCABI.forTarget(triple) }
+			val failure = assertFailsWith<ClothDiagnostic>(triple) { NativeCABI.forTarget(triple) }
 			assertContains(failure.message.orEmpty(), "Unsupported native C ABI target '$triple'")
 			assertContains(failure.message.orEmpty(), "Supported targets:")
+			assertEquals(DiagnosticCode.UNSUPPORTED_TARGET, failure.diagnosticCode)
 		}
 	}
 

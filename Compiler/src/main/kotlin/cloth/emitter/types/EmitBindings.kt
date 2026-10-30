@@ -11,6 +11,7 @@ import org.bytedeco.llvm.global.LLVM.*
 internal class EmitBindings(context: LLVMContextRef, private val builder: LLVMBuilderRef) {
 
 	private data class Storage(val type: ValueType, val address: LLVMValueRef)
+
 	private val bindings = mutableMapOf<String, Storage>()
 	private val types = LLVMTypes(context)
 

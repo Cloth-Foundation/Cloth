@@ -10,8 +10,7 @@ enum class Keywords(val keyword: String? = null) {
 
 	METHOD("mt"), FUNCTION("fn"), CONSTRUCTOR("ctor"), PUBLIC("pub"),
 
-	BOOLEAN("bool"), STRING, FLOAT, INTEGER("int"), CHARACTER("char"), VOID, STATE,
-	TRUE, FALSE, NULL, UNSIGNED,
+	BOOLEAN("bool"), STRING, FLOAT, INTEGER("int"), CHARACTER("char"), VOID, STATE, TRUE, FALSE, NULL, UNSIGNED,
 
 	INIT,
 

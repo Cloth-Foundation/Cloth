@@ -4,16 +4,8 @@ import cloth.settings.LinkerDriver
 import java.nio.file.Path
 
 /** A resolved toolchain: no discovery, ABI selection, or process execution remains. */
-internal data class LinkerConfiguration(
-	val targetTriple: String,
-	val executable: Path,
-	val driver: LinkerDriver,
-	val flags: List<String>,
-	val runtimeLibraries: List<Path>,
-	val libraryPaths: List<Path>,
-	val libraries: List<String>,
-	val environment: Map<String, String> = emptyMap()
-) {
+internal data class LinkerConfiguration(val targetTriple: String, val executable: Path, val driver: LinkerDriver, val flags: List<String>, val runtimeLibraries: List<Path>, val libraryPaths: List<Path>, val libraries: List<String>, val environment: Map<String, String> = emptyMap()) {
+
 	fun command(objectFile: Path, output: Path): List<String> = buildList {
 		add(executable.toString())
 		addAll(flags)
@@ -25,7 +17,8 @@ internal data class LinkerConfiguration(
 				addAll(libraries)
 				add("/out:$output")
 			}
-			LinkerDriver.CC -> {
+
+			LinkerDriver.CC                     -> {
 				addAll(libraryPaths.map { "-L$it" })
 				add(objectFile.toString())
 				addAll(libraries.map { "-l$it" })

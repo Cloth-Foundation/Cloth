@@ -1,5 +1,6 @@
 package cloth.token
 
+import cloth.diagnostics.InternalErrors
 import kotlin.enums.enumEntries
 
 enum class Operators(val character: String) {
@@ -38,7 +39,7 @@ enum class Operators(val character: String) {
 
 		fun fromCharacter(character: String): Operators? = map[character]
 
-		fun fromCharacterRequired(character: String): Operators = map[character] ?: throw IllegalArgumentException("Unknown operator: $character")
+		fun fromCharacterRequired(character: String): Operators = map[character] ?: throw InternalErrors.invariant("Unknown operator: $character")
 	}
 
 }

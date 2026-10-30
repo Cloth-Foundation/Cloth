@@ -59,7 +59,7 @@ class StringsTest {
 			"\"a\nb\"", "\"a\rb\"", "\"\\\n\"", "\"\\\r\"", "\"\"\"raw",
 			"\"\uD800\"", "\"\uDC00\"", "\"\uD800x\"", "\"\"\"\uD800\"\"\"", "\"\"\"\uDC00\"\"\"")
 		for (source in cases) {
-			assertContains(assertFails(source) { Lexer(source).scanTokens() }.message.orEmpty(), " at ", message = source)
+			assertLocated(assertFails(source) { Lexer(source).scanTokens() })
 		}
 	}
 
@@ -115,7 +115,7 @@ class StringsTest {
 			add("false && (\"a\" == 1)")
 		}
 		for (source in cases) {
-			assertContains(assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }.message.orEmpty(), " at ", message = source)
+			assertLocated(assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) })
 		}
 	}
 

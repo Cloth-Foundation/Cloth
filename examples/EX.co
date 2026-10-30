@@ -1,0 +1,6 @@
+def x = 19
+x = x + 1
+
+def<string> answer = "The answer is: " + x
+
+answer

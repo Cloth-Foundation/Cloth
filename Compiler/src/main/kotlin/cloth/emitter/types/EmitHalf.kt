@@ -2,11 +2,14 @@ package cloth.emitter.types
 
 import cloth.emitter.LLVMTypes
 import cloth.semantic.ValueType
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** IEEE binary16 storage and round-to-nearest-even conversions without native half runtime helpers. */
 internal class EmitHalf(private val context: LLVMContextRef, private val builder: LLVMBuilderRef) {
+
 	private val types = LLVMTypes(context)
 	private val half = ValueType.HALF
 	private val single = ValueType.SINGLE
@@ -28,8 +31,7 @@ internal class EmitHalf(private val context: LLVMContextRef, private val builder
 		val singleExponentMask = ((1L shl single.exponentBits) - 1) shl single.fractionBits
 		val special = LLVMBuildOr(builder, LLVMBuildShl(builder, fraction, constant(fractionShift.toLong()), "half_payload"), constant(singleExponentMask), "half_special")
 		// Every binary16 subnormal is exactly representable in float32.
-		val subnormal = LLVMBuildFMul(builder, LLVMBuildUIToFP(builder, fraction, floatType, "half_subnormal_fraction"),
-			LLVMConstReal(floatType, Math.scalb(1.0, half.minimumSubnormalExponent)), "half_subnormal")
+		val subnormal = LLVMBuildFMul(builder, LLVMBuildUIToFP(builder, fraction, floatType, "half_subnormal_fraction"), LLVMConstReal(floatType, Math.scalb(1.0, half.minimumSubnormalExponent)), "half_subnormal")
 		val subnormalBits = LLVMBuildBitCast(builder, subnormal, intType, "half_subnormal_bits")
 		val finite = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, exponent, constant(0), "half_is_subnormal"), subnormalBits, normal, "half_finite")
 		val unsigned = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, exponent, constant(exponentMask), "half_is_special"), special, finite, "half_unsigned_float")
@@ -64,8 +66,7 @@ internal class EmitHalf(private val context: LLVMContextRef, private val builder
 		val shift = LLVMBuildSub(builder, constant((fractionBits + half.minimumSubnormalExponent).toLong()), unbiasedExponent, "half_subnormal_shift")
 		// Inactive select operands must not create oversized/negative integer shifts.
 		val atLeastOne = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSLT, shift, constant(1), "half_shift_low"), constant(1), shift, "half_shift_min")
-		val safeShift = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSGT, atLeastOne, constant((fractionBits + 1).toLong()), "half_shift_high"),
-			constant((fractionBits + 1).toLong()), atLeastOne, "half_shift_safe")
+		val safeShift = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSGT, atLeastOne, constant((fractionBits + 1).toLong()), "half_shift_high"), constant((fractionBits + 1).toLong()), atLeastOne, "half_shift_safe")
 		val significand = LLVMBuildOr(builder, and(magnitude, (1L shl fractionBits) - 1, "float_fraction"), constant(1L shl fractionBits), "float_significand")
 		val halfStep = LLVMBuildShl(builder, constant(1), LLVMBuildSub(builder, safeShift, constant(1), "half_shift_previous"), "half_subnormal_step")
 		val subnormalBias = LLVMBuildSub(builder, halfStep, constant(1), "half_subnormal_bias")
@@ -82,8 +83,8 @@ internal class EmitHalf(private val context: LLVMContextRef, private val builder
 	}
 
 	companion object {
+
 		/** Software half arithmetic computes in single precision before rounding back. */
-		fun arithmeticType(type: ValueType.Floating): ValueType.Floating =
-			if (type == ValueType.HALF) ValueType.SINGLE else type
+		fun arithmeticType(type: ValueType.Floating): ValueType.Floating = if (type == ValueType.HALF) ValueType.SINGLE else type
 	}
 }

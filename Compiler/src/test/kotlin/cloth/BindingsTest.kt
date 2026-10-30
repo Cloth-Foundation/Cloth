@@ -116,7 +116,7 @@ class BindingsTest {
 				LLVMEmitter().emit(parse(source))
 			}
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -139,7 +139,7 @@ class BindingsTest {
 				SemanticAnalyzer().analyze(parse(source))
 			}
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -237,7 +237,7 @@ class BindingsTest {
 				LLVMEmitter().emit(parse(source))
 			}
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -299,7 +299,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -393,7 +393,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -468,7 +468,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -568,7 +568,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -722,7 +722,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 
@@ -765,7 +765,7 @@ class BindingsTest {
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
-			assertContains(failure.message.orEmpty(), " at ")
+			assertLocated(failure)
 		}
 	}
 

@@ -46,7 +46,7 @@ class CharactersTest {
 			"'\\x'", "'\\nX'", "'\n'", "'\r'", "'\\\n'", "'\uD800'", "'\uDC00'", "'\uD800x'")
 		for (source in cases) {
 			val failure = assertFails(source) { Lexer(source).scanTokens() }
-			assertContains(failure.message.orEmpty(), " at ", message = source)
+			assertLocated(failure)
 		}
 	}
 
@@ -106,7 +106,7 @@ class CharactersTest {
 		}
 		for (source in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
-			assertContains(failure.message.orEmpty(), " at ", message = source)
+			assertLocated(failure)
 		}
 	}
 

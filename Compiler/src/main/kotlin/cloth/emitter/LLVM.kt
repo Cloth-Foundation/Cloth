@@ -1,17 +1,14 @@
 package cloth.emitter
 
 import cloth.ast.ASTStructure
-import cloth.emitter.types.EmitExpression
-import cloth.emitter.types.EmitStatement
-import cloth.emitter.types.EmitBindings
-import cloth.emitter.types.EmitCast
-import cloth.emitter.types.EmitHalf
-import cloth.emitter.types.EmitCharacter
-import cloth.emitter.types.EmitString
+import cloth.diagnostics.BackendErrors
+import cloth.diagnostics.ClothDiagnostic
+import cloth.emitter.types.*
 import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
-import cloth.token.Keywords
 import cloth.settings.LinkOptions
+import cloth.token.Keywords
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
@@ -21,17 +18,19 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
+
 	private val abi by lazy { NativeCABI.native() }
 	private val linker by lazy { ToolchainResolver.native(abi, linkOptions) }
 
 	fun compile(ast: ASTStructure, output: Path, forcePrint: Boolean = true): Path {
+		val semantics = SemanticAnalyzer().analyze(ast)
 		val configuration = linker // Validate the toolchain before creating output files or generating code.
 		val executable = abi.executableFormat.executablePath(output).toAbsolutePath().normalize()
 		Files.createDirectories(executable.parent)
 		val objectFile = Files.createTempFile("cloth-", ".o")
 
 		try {
-			withModule(ast, forcePrint) { module ->
+			withModule(ast, forcePrint, semantics) { module ->
 				emitObject(module, objectFile)
 			}
 			NativeLinker.link(objectFile, executable, configuration)
@@ -50,9 +49,8 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, action: (LLVMModuleRef) -> T): T {
+	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, semantics: SemanticModel = SemanticAnalyzer().analyze(ast), action: (LLVMModuleRef) -> T): T {
 		val targetABI = abi // Resolve and reject unsupported targets before generating any IR.
-		val semantics = SemanticAnalyzer().analyze(ast)
 		val context = LLVMContextCreate()
 		val module = LLVMModuleCreateWithNameInContext("cloth", context)
 		val builder = LLVMCreateBuilderInContext(context)
@@ -82,11 +80,10 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 				result = statementEmitter.emit(statement)
 			}
 
-			if (forcePrint && result != null) emitPrint(context, module, builder, result,
-				ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts, strings)
+			if (forcePrint && result != null) emitPrint(context, module, builder, result, ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts, strings)
 
 			LLVMBuildRet(builder, LLVMConstInt(nativeIntType, 0L, 0))
-			checkLLVM("Invalid LLVM module") { error ->
+			checkLLVM(BackendErrors::invalidIR) { error ->
 				LLVMVerifyModule(module, LLVMReturnStatusAction, error)
 			}
 			return action(module)
@@ -97,8 +94,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef,
-		result: LLVMValueRef, type: ValueType, casts: EmitCast, strings: EmitString) {
+	private fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef, type: ValueType, casts: EmitCast, strings: EmitString) {
 		if (type == ValueType.CHAR) {
 			EmitCharacter(context, builder, abi).print(module, result)
 			return
@@ -120,13 +116,12 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		val formatString = "%$precision${abi.printSpecifier(type)}\n"
 		val format = LLVMBuildGlobalStringPtr(builder, formatString, "result_format")
 		val printValue = when {
-			boolean -> LLVMBuildSelect(builder, result,
-				LLVMBuildGlobalStringPtr(builder, Keywords.TRUE.toString(), "bool_true"),
-				LLVMBuildGlobalStringPtr(builder, Keywords.FALSE.toString(), "bool_false"), "bool_text")
-			floatingPoint -> casts.toFloating(result, type, argumentType)
+			boolean                                       -> LLVMBuildSelect(builder, result, LLVMBuildGlobalStringPtr(builder, Keywords.TRUE.toString(), "bool_true"), LLVMBuildGlobalStringPtr(builder, Keywords.FALSE.toString(), "bool_false"), "bool_text")
+			floatingPoint                                 -> casts.toFloating(result, type, argumentType)
 			type.integer && type.bits < argumentType.bits -> if (type.unsigned) LLVMBuildZExt(builder, result, types.value(argumentType), "printfunsigned")
-				else LLVMBuildSExt(builder, result, types.value(argumentType), "printfsigned")
-			else -> result
+			else LLVMBuildSExt(builder, result, types.value(argumentType), "printfsigned")
+
+			else                                          -> result
 		}
 		PointerPointer<LLVMValueRef>(2L).use { arguments ->
 			arguments.put(0, format)
@@ -138,25 +133,23 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 	private fun emitObject(module: LLVMModuleRef, output: Path) {
 		val target = LLVMTargetRef()
 		BytePointer(abi.targetTriple).use { triple ->
-			checkLLVM("Unable to find the native target") { error ->
+			checkLLVM(BackendErrors::target) { error ->
 				LLVMGetTargetFromTriple(triple, target, error)
 			}
 		}
 		val machine = LLVMCreateTargetMachine(target, abi.targetTriple, "generic", "", LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelDefault)
-		check(machine != null && !machine.isNull) { "Unable to create the native target machine" }
+		if (machine == null || machine.isNull) throw BackendErrors.machine()
 
 		try {
 			val layout = LLVMCreateTargetDataLayout(machine)
 			try {
 				val pointer = LLVMPointerTypeInContext(LLVMGetModuleContext(module), 0)
-				check(LLVMSizeOfTypeInBits(layout, pointer) == abi.pointerBits.toLong()) {
-					"C ABI profile '${abi.profile}' does not match LLVM's pointer width for '${abi.targetTriple}'"
-				}
+				if (LLVMSizeOfTypeInBits(layout, pointer) != abi.pointerBits.toLong()) throw BackendErrors.layout(abi.profile.name, abi.targetTriple)
 				LLVMSetModuleDataLayout(module, layout)
 			} finally {
 				LLVMDisposeTargetData(layout)
 			}
-			checkLLVM("Unable to emit native object code") { error ->
+			checkLLVM(BackendErrors::objectCode) { error ->
 				LLVMTargetMachineEmitToFile(machine, module, output.toString(), LLVMObjectFile, error)
 			}
 		} finally {
@@ -164,18 +157,18 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	private fun checkLLVM(message: String, action: (BytePointer) -> Int) {
+	private fun checkLLVM(diagnostic: (String) -> ClothDiagnostic, action: (BytePointer) -> Int) {
 		val error = BytePointer(null as Pointer?)
 		try {
-			check(action(error) == 0) { "$message: ${if (error.isNull) "Unknown LLVM error" else error.string}" }
+			if (action(error) != 0) throw diagnostic(if (error.isNull) "Unknown LLVM error" else error.string)
 		} finally {
 			if (!error.isNull) LLVMDisposeMessage(error)
 		}
 	}
 
 	companion object { init {
-		check(LLVMInitializeNativeTarget() == 0) { "Unable to initialize the native LLVM target" }
-		check(LLVMInitializeNativeAsmPrinter() == 0) { "Unable to initialize the native LLVM assembly printer" }
+		if (LLVMInitializeNativeTarget() != 0) throw BackendErrors.initialize("target")
+		if (LLVMInitializeNativeAsmPrinter() != 0) throw BackendErrors.initialize("assembly printer")
 	}
 	}
 }

@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.diagnostics.InternalErrors
 import cloth.emitter.*
 import cloth.parser.expression.*
 import cloth.parser.statement.Statement
@@ -13,9 +14,7 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
-	private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast,
-	private val strings: EmitString) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString) {
 
 	private val types = LLVMTypes(context)
 	private val boolType = types.value(ValueType.BOOL)
@@ -23,25 +22,26 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
-			is IfExpression -> checkNotNull(emitConditional(expression, requireValue = true))
-			is TypeCheckExpression -> {
+			is IfExpression         -> checkNotNull(emitConditional(expression, requireValue = true))
+			is TypeCheckExpression  -> {
 				// Preserve evaluation (and any side effects) even for a statically known check.
 				emit(expression.operand)
 				val matches = semantics.typeOf(expression.operand) == semantics.targetTypeOf(expression)
 				LLVMConstInt(boolType, if (matches) 1L else 0L, 0)
 			}
-			is NameExpression -> bindings.read(expression.name.lexeme)
-			is IntegerLiteral -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
-			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
-			is BooleanLiteral -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
-			is CharacterLiteral -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
-			is StringLiteral -> strings.literal(expression.value)
-			is CastExpression -> casts.emit(expression, emit(expression.operand))
 
-			is UnaryExpression -> {
+			is NameExpression       -> bindings.read(expression.name.lexeme)
+			is IntegerLiteral       -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
+			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
+			is BooleanLiteral       -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
+			is CharacterLiteral     -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
+			is StringLiteral        -> strings.literal(expression.value)
+			is CastExpression       -> casts.emit(expression, emit(expression.operand))
+
+			is UnaryExpression      -> {
 				val operand = emit(expression.operand)
 				when (expression.operator.lexeme) {
-					Operators.NOT.toString() -> LLVMBuildNot(builder, operand, LLVM_NOT_TEMPORARY)
+					Operators.NOT.toString()   -> LLVMBuildNot(builder, operand, LLVM_NOT_TEMPORARY)
 					Operators.PLUS.toString()  -> operand
 					Operators.MINUS.toString() -> if (semantics.typeOf(expression).floating) {
 						val type = semantics.typeOf(expression) as ValueType.Floating
@@ -50,11 +50,12 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					} else {
 						LLVMBuildNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
 					}
-					else -> error("Unsupported unary operator: ${expression.operator}")
+
+					else                       -> throw InternalErrors.invariant("Unsupported unary operator: ${expression.operator}")
 				}
 			}
 
-			is BinaryExpression -> {
+			is BinaryExpression     -> {
 				if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
 					return emitLogical(expression)
 				}
@@ -64,10 +65,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val rightType = semantics.typeOf(expression.right)
 				if (leftType == ValueType.STRING && rightType == ValueType.STRING) {
 					return when (expression.operator.lexeme) {
-						Operators.PLUS.character -> strings.concatenate(left, right, expression.operator.span.toString())
-						Operators.EQUAL.character -> strings.equal(left, right)
+						Operators.PLUS.character      -> strings.concatenate(left, right, expression.operator.span.toString())
+						Operators.EQUAL.character     -> strings.equal(left, right)
 						Operators.NOT_EQUAL.character -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
-						else -> error("Unsupported string operator: ${expression.operator}")
+						else                          -> throw InternalErrors.invariant("Unsupported string operator: ${expression.operator}")
 					}
 				}
 				val unsigned = leftType.unsigned
@@ -80,14 +81,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					right = casts.toFloating(right, rightType, workingType)
 				}
 				val comparison = when (expression.operator.lexeme) {
-					Operators.EQUAL.character -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
+					Operators.EQUAL.character         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
 					// Unordered != keeps NaN unequal to every value, including itself.
-					Operators.NOT_EQUAL.character -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
-					Operators.LESS.character -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
-					Operators.GREATER.character -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
-					Operators.LESS_EQUAL.character -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
+					Operators.NOT_EQUAL.character     -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
+					Operators.LESS.character          -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
+					Operators.GREATER.character       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
+					Operators.LESS_EQUAL.character    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
 					Operators.GREATER_EQUAL.character -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
-					else -> null
+					else                              -> null
 				}
 				if (comparison != null) {
 					return if (floatingPoint) {
@@ -104,7 +105,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 						Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, LLVM_MUL_TEMPORARY)
 						Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, LLVM_DIV_TEMPORARY)
 						Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, LLVM_MOD_TEMPORARY)
-						else -> error("Unsupported binary operator: ${expression.operator}")
+						else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
 					}
 					casts.toFloating(result, workingType!!, commonType)
 				} else when (expression.operator.lexeme) {
@@ -112,14 +113,16 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					Operators.MINUS.toString()    -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
 					Operators.MULTIPLY.toString() -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
 					Operators.DIVIDE.toString()   -> if (unsigned) LLVMBuildUDiv(builder, left, right, LLVM_DIV_TEMPORARY)
-						else LLVMBuildSDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+					else LLVMBuildSDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+
 					Operators.MODULO.toString()   -> if (unsigned) LLVMBuildURem(builder, left, right, LLVM_MOD_TEMPORARY)
-						else LLVMBuildSRem(builder, left, right, LLVM_MOD_TEMPORARY)
-					else -> error("Unsupported binary operator: ${expression.operator}")
+					else LLVMBuildSRem(builder, left, right, LLVM_MOD_TEMPORARY)
+
+					else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
 				}
 			}
 
-			else -> error("Unsupported expression: $expression")
+			else                    -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
 	}
 
@@ -175,9 +178,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val function = LLVMGetBasicBlockParent(leftBlock)
 		val rightBlock = LLVMAppendBasicBlockInContext(context, function, "logic_rhs")
 		val mergeBlock = LLVMAppendBasicBlockInContext(context, function, "logic_end")
-		LLVMBuildCondBr(builder, left,
-			if (conjunction) rightBlock else mergeBlock,
-			if (conjunction) mergeBlock else rightBlock)
+		LLVMBuildCondBr(builder, left, if (conjunction) rightBlock else mergeBlock, if (conjunction) mergeBlock else rightBlock)
 
 		LLVMPositionBuilderAtEnd(builder, rightBlock)
 		val right = emit(expression.right)

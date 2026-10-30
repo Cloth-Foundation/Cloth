@@ -51,7 +51,7 @@ class ConditionalsTest {
 			"if (true) {} else if (false)", "else {}", "if (true) {} else {} else {}",
 			"if (true) {} if (false) {}", "if (true) { def x = }", "def x = if (true) { 1 } else { 2"
 		)) {
-			assertContains(assertFailsWith<SyntaxException>(source) { parse(source) }.message.orEmpty(), " at ", message = source)
+			assertLocated(assertFailsWith<SyntaxException>(source) { parse(source) })
 		}
 	}
 
@@ -265,7 +265,7 @@ class ConditionalsTest {
 		val output = directory.resolve("conditional_example")
 		main(arrayOf(Path.of("examples", "Conditionals.co").toAbsolutePath().toString(), output.toString()))
 		val executable = if (Files.exists(output)) output else Path.of("$output.exe")
-		assertOutput(executable, "is unsigned!")
+		assertOutput(executable, "It is unsigned!")
 	}
 
 	private fun assertProgram(output: Path, source: String, expected: String?) {

@@ -1,5 +1,7 @@
 package cloth
 
+import cloth.diagnostics.ClothDiagnostic
+
 import cloth.settings.*
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -8,7 +10,7 @@ import kotlin.test.*
 class CompilerSettingsTest {
 	@Test
 	fun `existing positional CLI and default source remain available`() {
-		assertEquals(Path.of("examples", "Strings.co"), CompilerSettings(emptyArray()).getSourceFile().toPath())
+		assertEquals(Path.of("examples", "EX.co"), CompilerSettings(emptyArray()).getSourceFile().toPath())
 		val settings = CompilerSettings(arrayOf("source.co", "program"))
 		assertEquals("source.co", settings.getSourceFile().path)
 		assertEquals("program", settings.getOutputFile()!!.path)
@@ -40,7 +42,7 @@ class CompilerSettingsTest {
 			arrayOf("--runtime", "--subsystem=console"), arrayOf("--runtime=invalid"), arrayOf("--subsystem=invalid"),
 			arrayOf("--linker-driver=invalid"), arrayOf("--library-path="), arrayOf("-L"), arrayOf("-l"),
 			arrayOf("one", "two", "three")
-		)) assertFailsWith<IllegalArgumentException>(arguments.toList().toString()) { CompilerSettings(arguments) }
+		)) assertFailsWith<ClothDiagnostic>(arguments.toList().toString()) { CompilerSettings(arguments) }
 		val literal = CompilerSettings(arrayOf("--", "-source.co", "-output"))
 		assertEquals("-source.co", literal.getSourceFile().path)
 		assertEquals("-output", literal.getOutputFile()!!.path)
