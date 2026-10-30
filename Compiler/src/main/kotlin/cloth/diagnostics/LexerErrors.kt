@@ -15,4 +15,6 @@ object LexerErrors {
 	fun character(span: TokenSpan) = issue(DiagnosticCode.UNTERMINATED_CHARACTER, "Unterminated character literal", span, "Close the character literal with a single quote.")
 	fun emptyCharacter(span: TokenSpan) = issue(DiagnosticCode.EMPTY_CHARACTER, "Empty character literal", span)
 	fun characterLength(span: TokenSpan) = issue(DiagnosticCode.INVALID_CHARACTER_LENGTH, "Expected closing quote after one character", span, "A character literal contains exactly one Unicode scalar.")
+	fun interpolation(span: TokenSpan) = issue(DiagnosticCode.UNTERMINATED_INTERPOLATION, "Unterminated string interpolation", span, "Close the expression with '}' and the string with a double quote.")
+	fun interpolationBrace(span: TokenSpan) = issue(DiagnosticCode.UNMATCHED_INTERPOLATION_BRACE, "Unmatched '}' in interpolated string", span, "Use '}}' for a literal closing brace.")
 }

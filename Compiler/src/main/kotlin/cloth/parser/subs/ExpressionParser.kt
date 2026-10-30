@@ -55,7 +55,7 @@ class ExpressionParser(val parser: Parser) {
 
 		if (token.type == TokenType.Operator && token.lexeme in setOf("+", "-", "!")) {
 			parser.advance()
-			return UnaryExpression(token, parseUnary())
+			return UnaryExpression(token, if (token.lexeme == "!") parseUnary() else parseExpression(POWER_PRECEDENCE))
 		}
 
 		return parsePrimary()
@@ -71,25 +71,15 @@ class ExpressionParser(val parser: Parser) {
 				BooleanLiteral(token.lexeme == Keywords.TRUE.toString(), token.span)
 			}
 
+			TokenType.InterpolationStart -> parseInterpolation()
+
 			TokenType.Identifier                                                                            -> NameExpression(parser.advance())
 			TokenType.StringLiteral, TokenType.RawStringLiteral                                             -> {
 				parser.advance()
 				val raw = token.type == TokenType.RawStringLiteral
 				val quotes = if (raw) 3 else 1
 				val contents = token.lexeme.substring(quotes, token.lexeme.length - quotes)
-				StringLiteral(if (raw) contents else buildString {
-					var index = 0
-					while (index < contents.length) {
-						val character = contents[index++]
-						append(if (character != '\\') character else when (val escaped = contents[index++]) {
-							'n'  -> '\n'
-							'r'  -> '\r'
-							't'  -> '\t'
-							'0'  -> '\u0000'
-							else -> escaped // Quote or backslash, validated by the lexer.
-						})
-					}
-				}, token.span)
+				StringLiteral(if (raw) contents else decodeString(contents), token.span)
 			}
 
 			TokenType.CharacterLiteral                                                                      -> {
@@ -133,15 +123,47 @@ class ExpressionParser(val parser: Parser) {
 		}
 	}
 
+	private fun parseInterpolation(): Expression {
+		val opening = parser.advance()
+		val parts = mutableListOf<Expression>()
+		while (true) {
+			val segment = parser.expect(TokenType.StringSegment, "string text")
+			parts.add(StringLiteral(decodeString(segment.lexeme.replace("{{", "{").replace("}}", "}")), segment.span))
+			if (parser.peek().type == TokenType.InterpolationEnd) {
+				return InterpolatedString(parts, opening.span.through(parser.advance().span))
+			}
+			parser.expect(TokenType.InterpolationOpen, "'{' before an interpolated expression")
+			while (parser.peek().type == TokenType.NewLine) parser.advance()
+			parts.add(parseExpression())
+			while (parser.peek().type == TokenType.NewLine) parser.advance()
+			parser.expect(TokenType.InterpolationClose, "'}' after an interpolated expression")
+		}
+	}
+
+	private fun decodeString(contents: String): String = buildString {
+		var index = 0
+		while (index < contents.length) {
+			val character = contents[index++]
+			append(if (character != '\\') character else when (val escaped = contents[index++]) {
+				'n' -> '\n'
+				'r' -> '\r'
+				't' -> '\t'
+				'0' -> '\u0000'
+				else -> escaped // Validated by the lexer.
+			})
+		}
+	}
+
 	companion object {
 
 		private const val CAST_PRECEDENCE = 9
 		private const val TYPE_CHECK_PRECEDENCE = 7
+		private const val POWER_PRECEDENCE = 30
 
 		enum class Associativity { LEFT, RIGHT }
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 
-		val binaryOperators = mapOf(Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20))
+		val binaryOperators = mapOf(Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20), Operators.MUL_MUL to OperatorPrecedence(POWER_PRECEDENCE, Associativity.RIGHT))
 	}
 }

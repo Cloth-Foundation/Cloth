@@ -5,6 +5,26 @@ management as the compiler’s concern rather than the programmer’s. Its most 
 machines embedded directly in classes, allowing objects to declare named states and transition between them with 
 explicit syntax.
 
+## Compound assignments
+
+```cloth
+def x = 19
+x += 1
+x++
+x--
+```
+
+`+=`, `-=`, `*=`, `/=`, and `%=` update mutable bindings using the ordinary
+arithmetic and assignment rules. The result must match the binding's fixed type.
+String `+=` concatenates two strings. Standalone `x++` and `x--` add or subtract
+one from a numeric binding; prefix updates and updates inside expressions are
+not allowed. `//` continues to start a line comment.
+
+`x ** y` raises `x` to the power `y`. Powers associate right and bind above unary
+signs and multiplication: `2 ** 3 ** 2` is `512`, and `-2 ** 2` is `-4`.
+Integer powers keep their integer type and reject negative exponents. Floating
+operands follow the ordinary promotion rules; `2.0 ** -2` yields `0.25`.
+
 ## Character bindings
 
 `char` stores one Unicode scalar in 32 bits, including supplementary characters:
@@ -43,8 +63,24 @@ backslashes. Native output uses UTF-8 and preserves embedded `\0` bytes.
 Literal bytes currently use constant program storage; concatenation results use
 local buffers for the current executable scope. Bindings store the bytes' address
 and length internally, and previous copies survive reassignment. String ordering,
-interpolation, indexing, and nullable strings are not implemented yet.
+indexing, and nullable strings are not implemented yet.
 Run `examples/Strings.co` to try it.
+
+Interpolated strings use `#"...{expression}..."`:
+
+```cloth
+def name := "Cloth"
+def count = 20
+#"Hello, {name}! The answer is: {count}"
+```
+
+Holes accept expressions, including nested interpolation and value-producing
+conditionals. Each expression runs once, left to right. Strings, characters,
+booleans, and all supported integer and floating widths can be interpolated;
+numbers use the same decimal formatting as native result output. Use `{{` and
+`}}` for literal braces. Ordinary string escapes still apply to the surrounding
+text; unprefixed strings keep braces literally. Interpolation results use the same
+local buffer lifetime as concatenation. `examples/EX.co` prints `The answer is: 20`.
 
 ## Conditionals
 
@@ -78,7 +114,7 @@ Run `examples/Conditionals.co` to try both forms; it prints `It is unsigned!`.
 
 Compiler errors are structured diagnostics rendered by Yvette. Reports include a
 stable code, the source filename, labelled source ranges, and help where relevant.
-For example, `examples/EX.co` reports `C3017` for string-plus-integer concatenation,
+For example, `"The answer is: " + 20` reports `C3017` for string-plus-integer concatenation,
 labelling both operands with their types. Assignment errors also label the original
 binding declaration; duplicate and immutable bindings show both relevant locations.
 

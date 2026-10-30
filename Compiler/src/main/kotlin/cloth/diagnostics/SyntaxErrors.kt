@@ -17,5 +17,5 @@ object SyntaxErrors {
 	fun reassignment(token: Token) = SyntaxException(DiagnosticCode.INVALID_REASSIGNMENT, "':=' is only allowed in a binding declaration; use '=' for reassignment", token.span)
 	fun operator(token: Token) = SyntaxException(DiagnosticCode.UNSUPPORTED_OPERATOR, "Unsupported operator '${token.lexeme}'", token.span)
 	fun number(token: Token, floating: Boolean) = SyntaxException(if (floating) DiagnosticCode.INVALID_FLOAT else DiagnosticCode.INVALID_INTEGER, "Invalid or out-of-range ${if (floating) "float" else "int"} '${token.lexeme}'", token.span)
-	fun expression(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_EXPRESSION, "Expected a number, boolean, character, string, binding name, or '(', got ${found(token)}", token.span)
+	fun expression(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_EXPRESSION, "Expected a number, boolean, character, string, binding name, 'if', or '(', got ${found(token)}", token.span)
 }

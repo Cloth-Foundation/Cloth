@@ -66,6 +66,14 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 	}
 
 	private fun scanToken() {
+		if (source.startsWith("#\"", current)) {
+			advance()
+			advance()
+			addToken(TokenType.InterpolationStart)
+			interpolatedString()
+			return
+		}
+
 		if (source.startsWith("\"\"\"", current)) {
 			repeat(3) { advance() } // Opening triple quotes.
 			rawString()
@@ -188,6 +196,62 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 		}
 
 		addToken(type)
+	}
+
+	/** Scan holes with the ordinary lexer so quotes, comments and nested strings own their braces. */
+	private fun interpolatedString() {
+		val opening = span()
+		fun mark() { start = current; cStart = cAt }
+		mark()
+		while (!isAtEnd()) {
+			when (peek()) {
+				'"' -> {
+					addToken(TokenType.StringSegment)
+					mark()
+					advance()
+					addToken(TokenType.InterpolationEnd)
+					return
+				}
+				'{', '}' -> {
+					val brace = peek()
+					if (source.getOrNull(current + 1) == brace) {
+						advance(); advance()
+					} else if (brace == '}') {
+						throw LexerErrors.interpolationBrace(cursorSpan())
+					} else {
+						addToken(TokenType.StringSegment)
+						mark()
+						advance()
+						addToken(TokenType.InterpolationOpen)
+						val hole = span()
+						var depth = 0
+						while (true) {
+							if (isAtEnd()) throw LexerErrors.interpolation(hole)
+							mark()
+							if (peek() == '}' && depth == 0) {
+								advance()
+								addToken(TokenType.InterpolationClose)
+								break
+							}
+							if (peek() == '{') depth++
+							if (peek() == '}') depth--
+							scanToken()
+						}
+						mark()
+					}
+				}
+				'\\' -> {
+					advance()
+					if (isAtEnd()) break
+					if (peek() == '\n' || peek() == '\r') throw LexerErrors.multiline(span())
+					val escaped = advance()
+					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "string")
+				}
+				'\n', '\r' -> throw LexerErrors.multiline(span())
+				else -> advanceStringScalar()
+			}
+		}
+		throw LexerErrors.string(opening.through(span()))
 	}
 
 	private fun rawString() {

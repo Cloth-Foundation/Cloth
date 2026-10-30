@@ -16,3 +16,8 @@ data class AssignmentStatement(val name: Token, val value: Expression) : Stateme
 
 	override val span get() = name.span.through(value.span)
 }
+
+data class UpdateStatement(val name: Token, val operator: Token) : Statement {
+
+	override val span get() = name.span.through(operator.span)
+}

@@ -4,10 +4,13 @@ import cloth.ast.ASTStructure
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.expression.ConditionalBranch
 import cloth.parser.expression.IfExpression
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.NameExpression
 import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
+import cloth.parser.statement.UpdateStatement
 import cloth.parser.subs.DelimitedParser
 import cloth.parser.subs.ExpressionParser
 import cloth.parser.subs.TypeParser
@@ -91,13 +94,21 @@ class Parser(private val tokens: List<Token>) {
 		if (peek().type == TokenType.Keyword && peek().lexeme == Keywords.DEFINITION.toString()) {
 			return parseBinding()
 		}
-		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)) {
+		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
 			if (peek().lexeme == Operators.FINAL_ASSIGN.character) {
 				throw SyntaxErrors.reassignment(peek())
 			}
-			expect(Operators.ASSIGN)
-			return AssignmentStatement(name, expressionParser.parseExpression())
+			val operator = advance()
+			val update = operator.lexeme in setOf(Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
+			if (update) return UpdateStatement(name, operator)
+			val right = expressionParser.parseExpression()
+			// Local binding targets have no evaluation side effects. Reuse ordinary
+			// arithmetic and assignment checks, including exact result-type matching.
+			val value = if (operator.lexeme == Operators.ASSIGN.character) right else {
+				BinaryExpression(NameExpression(name), Token(TokenType.Operator, operator.span, operator.lexeme.dropLast(1)), right)
+			}
+			return AssignmentStatement(name, value)
 		}
 		return ExpressionStatement(expressionParser.parseExpression())
 	}
@@ -131,6 +142,10 @@ class Parser(private val tokens: List<Token>) {
 			throw SyntaxErrors.expected("'${operator.character}'", token)
 		}
 		return advance()
+	}
+
+	companion object {
+		private val assignmentOperators = setOf("=", ":=", "+=", "-=", "*=", "/=", "%=", "++", "--")
 	}
 
 }

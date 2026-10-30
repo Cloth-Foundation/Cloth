@@ -2,6 +2,70 @@
 
 ## Current work
 
+Compound assignments `name += value`, `-=`, `*=`, `/=`, and `%=` now parse as
+ordinary local binding assignments whose values use the corresponding binary
+operation. Standalone `name++` and `name--` add or subtract a same-type one,
+including floating types without promotion of half values to float32 bindings.
+Existing exact binding-type, mutability, contextual integer literal, signedness,
+width, and arithmetic rules apply; string `+=` uses ordinary concatenation.
+The target's current value is read before the right operand, which runs once.
+Only simple local binding targets are currently implemented. Update operators
+are standalone postfix statements only, as explicitly confirmed by the user.
+`x ** y` exponentiation is implemented. Integer results retain their operand
+type and use exponentiation by squaring with ordinary wrapping multiplication,
+preserving uint64 bits without a floating-point conversion. Direct negative
+integer exponent literals report C3018; other negative integer exponents raise
+a controlled runtime error. Both operands run once, left to right. Floating
+and mixed powers use ordinary promotion, C `powf`/`pow`, and half result rounding.
+Initial choices not separately confirmed as design: powers associate right,
+bind above unary signs and multiplication, and zero to the zero power is one.
+Existing matching integer width/signedness requirements apply. `//` remains a comment.
+`examples/EX.co` now uses `x += 1` and retains its output.
+
+Verified on 2026-10-30: `gradlew.bat :Compiler:test --offline --console=plain
+--no-daemon` passed all 166 tests with no failures, errors, or skips. The 14 new
+`AssignmentOperatorsTest` cases cover compound precedence and types, mutable
+and immutable targets, unsigned wrapping, string concatenation and copies,
+target/RHS evaluation order, branch scopes, numeric updates including half
+storage, rejection of prefix/expression updates, power grouping, all integer
+widths/signedness, exact uint64 results, float promotion and special values,
+static and runtime negative-exponent failures, nested control flow, short
+circuits, and dynamic CRT power calls. Existing CLI tests verify EX.co output.
+Native execution was verified on the current Windows host.
+
+String interpolation is implemented for `#"Hello, {name}!"`. `examples/EX.co`
+now uses `#"The answer is: {x}"` and compiles to a program printing
+`The answer is: 20`. The lexer emits text and expression delimiters with original
+source spans, recursively lexing holes through the ordinary scanner. Nested
+interpolation, quoted/raw strings and characters, comments, casts, arithmetic,
+and value-producing conditionals work inside holes. Embedded expressions are
+checked normally, even in skipped code, and evaluated once, left to right.
+Ordinary string `+` remains restricted to two strings.
+
+Initial implementation choices, not separately confirmed language decisions:
+`{{` and `}}` escape literal braces; unescaped `}` is C1012 and an unclosed
+hole is C1011. Surrounding text uses ordinary quoted-string escapes and cannot
+contain literal line breaks; hole expressions may span lines. There is no raw
+interpolated-string form or custom format-specifier syntax. All currently
+supported primitive values can be embedded. Strings preserve their UTF-8 bytes
+and lengths, characters encode one scalar including NUL, booleans become
+`true`/`false`, and numbers use the same ABI-aware decimal formats and precision
+as native result printing. Numeric formatting uses C `snprintf` with a checked
+64-byte buffer, enough for every supported integer and `%g` float representation.
+Generated text uses the existing local string-buffer lifetime; this does not
+settle dynamic/escaping string lifetime design. Empty text segments are skipped.
+
+Verified on 2026-10-30: the full compiler suite passed 149 tests using
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`. After adding
+three final regression cases, the focused `--tests cloth.StringInterpolationTest`
+run passed all 14 interpolation tests with no failures, errors, or skips. Coverage
+includes source spans, malformed syntax and Unicode, strict/skipped-code checks,
+all numeric widths and signedness, native formatting precision, UTF-8 boundaries,
+NULs, braces/escapes, nested strings/comments/conditionals, once-only evaluation
+order, short circuits, reassignment/copies, large buffers, first-error behavior,
+the C ABI declaration, static/default and dynamic CRT execution, and EX.co via CLI.
+Native execution was verified on the current Windows host.
+
 The user selected structured compiler diagnostics through Yvette 0.2.0. The
 `cloth.diagnostics` package now defines stable codes, source labels, predefined
 lexer/syntax/semantic/CLI/toolchain/backend factories, and one graphical reporter.
@@ -19,7 +83,7 @@ Yvette's wide/combining Unicode display-width limitations remain. The reporter
 uses terminal detection for colours/links and falls back to ASCII drawing when
 stderr's encoding cannot represent the Unicode theme.
 
-`examples/EX.co` reports C3017, labels the string and integer operands, and explains
+String-plus-integer expressions report C3017, label both operands, and explain
 that concatenation requires two strings. Assignment, duplicate, and immutable
 binding failures include the original declaration. Lexer, parser, semantic,
 CLI/file, ABI, toolchain, linker, and LLVM failures use the shared diagnostics.
@@ -106,7 +170,7 @@ both operators. Comparison branches compose with nested short-circuit logic;
 skipped concatenations are not evaluated. A shared `EmitRuntimeError` emits
 existing numeric-cast failures and new concatenation length-overflow failures.
 String ordering, other arithmetic, logical operations on strings, cross-type
-conversions, interpolation, indexing, and nullable annotations are not implemented.
+conversions outside interpolation, indexing, and nullable annotations are not implemented.
 Unsupported operations are rejected
 before LLVM emission. `../../../../examples/Strings.co` demonstrates bindings and
 prints `Unicode: é 中 😀`; it also demonstrates concatenation, equality, and
@@ -193,8 +257,8 @@ and float predicates are ordered (`OLT`, `OGT`, `OLE`, `OGE`), so every ordering
 comparison with NaN is false. Signed zeros compare equal for `<=` and `>=`, and
 infinities follow their numeric ordering. Mixed comparisons use the same float32
 promotion described above. Arithmetic binds above ordering, ordering above
-equality, equality above `&&`, and `&&` above `||`; prefix unary operators bind
-above binary operators. Ordering operators associate left to right; mathematical
+equality, equality above `&&`, and `&&` above `||`; prefix unary signs bind
+above these operators but below exponentiation. Ordering operators associate left to right; mathematical
 chains such as `1 < x < 3` are rejected because the first result is `bool`.
 Use `1 < x && x < 3` for a range check.
 
@@ -380,14 +444,15 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   broader lexical machinery. Recognizing a token does not establish parser,
   type-checker, or emitter support for that language feature.
 - `cloth/parser/Parser.kt` builds expression statements, explicit or inferred binding
-  declarations, simple `name = expression` assignment statements, and `if` chains
+  declarations, simple and compound assignment statements, standalone postfix
+  `name++`/`name--` updates, and `if` chains
   with brace-delimited branch statement lists. Statements currently require
   newline separation (or a closing branch brace/EOF). A chain accepts `else` on
   the same line or after newlines/comments without consuming a subsequent
   unrelated statement's separator.
   `BindingDeclaration.type` is nullable to represent an omitted annotation.
   `cloth/parser/subs/ExpressionParser.kt` handles integer and float literals,
-  boolean, character, ordinary string and raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
+  boolean, character, ordinary/interpolated/raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `**`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
   with precedence, plus `-> Type` casts between arithmetic and comparison
   precedence levels, primitive `is Type` checks at comparison precedence, and
   conditional expressions.

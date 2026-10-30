@@ -13,6 +13,7 @@ object SemanticErrors {
 
 	private fun issue(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null) = SemanticException(code, message, listOf(SourceLabel(span, "here")), help)
 	fun unknown(name: Token) = issue(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding '${name.lexeme}'", name.span, "Declare this binding before using it.")
+	fun negativeExponent(span: TokenSpan) = issue(DiagnosticCode.NEGATIVE_EXPONENT, "Integer exponentiation requires a nonnegative exponent", span)
 	fun integer(value: BigInteger, type: ValueType.Integer, span: TokenSpan) = issue(DiagnosticCode.INTEGER_RANGE, "Integer literal '$value' is out of range for '${type.spelling}'", span, "'${type.spelling}' accepts values from ${type.minimum} through ${type.maximum}.")
 	fun missingElse(span: TokenSpan) = issue(DiagnosticCode.MISSING_ELSE, "A value-producing 'if' requires a final 'else'", span, "Add an 'else' branch that produces a value.")
 	fun condition(expression: Expression) = issue(DiagnosticCode.NON_BOOLEAN_CONDITION, "An 'if' condition requires a boolean value", expression.span)
