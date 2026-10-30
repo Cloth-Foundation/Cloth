@@ -1,0 +1,13 @@
+// Explicit and inferred booleans follow the ordinary binding rules.
+def<bool> alive = true
+def original := alive
+def<bool> stopped := false
+
+// Each bool has its own byte of local storage; copies keep their value.
+alive = stopped
+original // true
+
+// These would be compile-time errors:
+// alive = 1 // bool and int are distinct types.
+// original = false // original is immutable.
+// alive + 1 // bool is not a numeric type.

@@ -1,5 +1,8 @@
-// Explicit integer bindings: '=' is mutable, ':=' is immutable.
-def<int> x = 10
+// Infer int from a literal or expression; '=' is mutable, ':=' is immutable.
+def x = 10
+def y := x + 2
+
+// Explicit types can be mixed with inferred bindings.
 def<int> original := x
 
 // Initializers can read earlier bindings and use arithmetic.
@@ -8,5 +11,19 @@ def<int> offset := (original + 2) * 3
 // Reassignment can read the binding's previous value.
 x = x + 5
 
-// Integer values are independent: original is still 10.
-original + x + offset // 61
+// Integer values are independent: original is still 10, y is still 12.
+def intTotal := original + x + offset + y // 73
+
+// Explicit and inferred floats share the same arithmetic and binding rules.
+def<float> scale = 1.5
+def adjustment := 0.25
+def<float> initialScale := scale
+scale = scale + adjustment
+
+intTotal + scale + initialScale // 76.25
+
+// These would be compile-time errors:
+// x = 1.5 // x's inferred type remains int.
+// y = 20  // y is immutable.
+// scale = 2 // scale is float; use a float value such as 2.0.
+// initialScale = 2.0 // initialScale is immutable.

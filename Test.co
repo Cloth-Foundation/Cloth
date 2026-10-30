@@ -9,8 +9,7 @@ interop<C> {
     """
 }
 
-typedef<class>
-pub Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
+pub typedef<class> Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
 
     def<bool> alive = true
 

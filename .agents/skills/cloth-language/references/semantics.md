@@ -26,8 +26,8 @@ not the compiler's current feature coverage.
 - Interface methods remain callable through the interface without `pub`. The
   implementing class determines whether they are also callable directly on it,
   as described in `Test.co`.
-- The relationship between the general default-private rule and struct fields
-  inheriting their enclosing struct's visibility is awaiting clarification.
+- Struct fields inherit the enclosing struct's visibility without needing `pub`.
+  This is an exception to the general default-private rule.
 
 ## Type checks, state checks, and equality
 
@@ -43,12 +43,30 @@ not the compiler's current feature coverage.
 
 ## Bindings
 
+- Explicit primitive bindings use `def<int>`, `def<float>`, or `def<bool>`, with the same `=`
+  and `:=` binding behavior as inferred declarations.
+- Omitting the type annotation infers the binding's type from its initializer,
+  for example `def x = 10` and `def y := x + 2`.
+- A binding's declared or inferred type stays fixed. Reassignment must satisfy
+  that type; assigning a different type does not change the binding's type.
 - `=` creates a mutable binding.
 - `:=` creates an immutable binding. It prevents reassignment of that binding;
   it does not freeze the object or its fields.
 - An immutable binding can call methods that mutate its object's fields, such as
   `player.applyDamage(...)` when that method is accessible.
 - There is no separate `mut` qualifier.
+
+## Booleans and storage
+
+- `bool` stores the boolean values `true` and `false`.
+- Boolean bindings support both explicit `def<bool>` annotations and inference
+  from boolean initializers, following the ordinary `=` and `:=` binding rules.
+- Each `bool` uses its own byte of storage for now. This user decision supersedes
+  the earlier one-bit storage goal and shared-byte packing implementation.
+- Boolean values still have only two values; byte storage does not introduce
+  numeric conversions or change the ordinary binding rules.
+- Packed collections, field layout, atomics, and foreign interfaces have not
+  been designed by this decision.
 
 ## Object lifetime and nullability
 

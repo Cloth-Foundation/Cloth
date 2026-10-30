@@ -3,12 +3,14 @@ package cloth.parser.subs
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.BooleanLiteral
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IntegerLiteral
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.FloatingPointLiteral
 import cloth.parser.expression.UnaryExpression
 import cloth.token.Operators
+import cloth.token.Keywords
 import cloth.token.TokenType
 
 class ExpressionParser(val parser: Parser) {
@@ -55,6 +57,10 @@ class ExpressionParser(val parser: Parser) {
 		val token = parser.peek()
 
 		return when (token.type) {
+			TokenType.Keyword if token.lexeme in setOf(Keywords.TRUE.toString(), Keywords.FALSE.toString()) -> {
+				parser.advance()
+				BooleanLiteral(token.lexeme == Keywords.TRUE.toString())
+			}
 			TokenType.Identifier -> NameExpression(parser.advance())
 			TokenType.IntegerLiteral                                             -> {
 				parser.advance()
@@ -77,7 +83,7 @@ class ExpressionParser(val parser: Parser) {
 				parser.delimited.parentheses { parseExpression() }
 			}
 
-			else                                                                 -> throw SyntaxException("Expected a number, binding name, or '(', got '${token.lexeme}' at ${token.span}")
+			else                                                                 -> throw SyntaxException("Expected a number, boolean, binding name, or '(', got '${token.lexeme}' at ${token.span}")
 		}
 	}
 

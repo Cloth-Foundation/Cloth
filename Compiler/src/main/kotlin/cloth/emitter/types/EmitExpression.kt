@@ -12,12 +12,14 @@ internal class EmitExpression(context: LLVMContextRef, private val builder: LLVM
 
 	private val int32Type = LLVMInt32TypeInContext(context)
 	private val float32Type = LLVMFloatTypeInContext(context)
+	private val boolType = LLVMInt1TypeInContext(context)
 
 	fun emit(expression: Expression): LLVMValueRef {
 		return when (expression) {
 			is NameExpression -> bindings.read(expression.name.lexeme)
 			is IntegerLiteral -> LLVMConstInt(int32Type, expression.value.toLong(), 1)
 			is FloatingPointLiteral -> LLVMConstReal(float32Type, expression.value.toDouble())
+			is BooleanLiteral -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
 
 			is UnaryExpression -> {
 				val operand = emit(expression.operand)
