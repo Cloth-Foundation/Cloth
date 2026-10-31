@@ -325,6 +325,62 @@ class StringFunctionTest {
 		""")
 	}
 
+	@Test
+	fun `array writes copies and returned updates release every temporary on all normal exits`(@TempDir directory: Path) {
+		instrumented(directory, "array_write_cleanup", """
+			fn<string[][]> change(string[][] a, int n) {
+			    a[0][0] = #"value {n}"
+			    a[1] = ["Cloth" + "!"]
+			    if (n > 0) { return change(a, n - 1) }
+			    return a
+			}
+			fn discard(bool early) {
+			    def a = [["first"], ["second"]]
+			    def b = a
+			    b[0][0] = "changed"
+			    change(a, 3)
+			    if (early) { return }
+			    a = change(a, 2)
+			}
+			fn<bool> test() {
+			    def a = [["first"], ["second"]]
+			    def b = change(a, 4)
+			    discard(true)
+			    discard(false)
+			    if (a[0][0] != "first" || b[0][0] != "value 0" || b[1][0] != "Cloth!") { return false }
+			    a = change(a, 1)
+			    return a[0][0] == "value 0" && a[1][0] == "Cloth!"
+			}
+		""")
+	}
+
+	@Test
+	fun `initial array shapes survive returned replacements without leaking storage`(@TempDir directory: Path) {
+		instrumented(directory, "array_shape_cleanup", """
+			fn<string[][]> make(int n) = [[#"value {n}"], ["Cloth" + "!"]]
+			fn<string[][]> replace(string[][] a) {
+			    a = make(2)
+			    a = make(3)
+			    return a
+			}
+			fn discard(bool early) {
+			    def a = make(0)
+			    a = replace(a)
+			    if (early) { return }
+			    a = make(4)
+			}
+			fn<bool> test() {
+			    def a = make(0)
+			    def b = a
+			    a = replace(a)
+			    a = make(5)
+			    discard(true)
+			    discard(false)
+			    return a[0][0] == "value 5" && b[0][0] == "value 0" && a[1][0] == "Cloth!"
+			}
+		""")
+	}
+
 	/** Replace only the module's native allocation imports with counted test wrappers.
 	 * Observe the heap after test() returns, independently of the generated cleanup shape.
 	 */

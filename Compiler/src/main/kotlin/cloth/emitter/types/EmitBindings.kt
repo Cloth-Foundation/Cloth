@@ -11,7 +11,7 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Storage for bindings in the current function; names are checked by semantic analysis. */
 internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef? = null) {
 
-	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef)
+	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val initialShape: LLVMValueRef?)
 
 	private val bindings = mutableMapOf<Any, Storage>()
 	private val types = LLVMTypes(context)
@@ -40,9 +40,12 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 				LLVMBuildAlloca(allocator, types.storage(type), name)
 			} finally { LLVMDisposeBuilder(allocator) }
 		}
-		bindings[key] = Storage(name, type, address)
+		// Capture the initial descriptor's extent values, never the mutable binding slot.
+		bindings[key] = Storage(name, type, address, value.takeIf { type is ValueType.ArrayValue })
 		assign(key, value)
 	}
+
+	fun initialArrayShape(key: Any): LLVMValueRef = checkNotNull(bindings.getValue(key).initialShape)
 
 	fun read(key: Any): LLVMValueRef {
 		val storage = bindings.getValue(key)

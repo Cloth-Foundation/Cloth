@@ -61,13 +61,36 @@ fn<int> main() {
 }
 ```
 
+Arrays are rectangular: all rows/subarrays must have matching dimensions,
+including when rows come from functions. Known mismatches are compile-time
+errors; unknown dimensions are checked at runtime. Replacing a row or plane
+must preserve its shape. Jagged arrays are reserved for a future collection type.
 Explicit sizes require exactly that many initializers. Unsized array parameters
-accept matching element types and dimensions of any size. Array returns copy
-their storage, including nested arrays and string contents, before the callee
-exits. Invalid indices produce a runtime error. `main(string[] args)` receives
+accept rectangular values with matching element types and rank, of any shape.
+Every array binding preserves its initial shape, including when `[]` dimensions
+come from a function result. For example, `def<int[]> a = make()` keeps the length
+of that first result; later assignments must have the same length. This applies
+to every dimension. Known mismatches fail at compile time; dimensions unknown
+to the compiler are captured at initialization and checked at runtime. An array
+parameter similarly preserves the shape received for that invocation. `[]` in
+a function's parameter or return signature still permits different shapes on
+different calls.
+Array returns copy their storage, including nested arrays and string contents,
+before the callee exits. Invalid indices produce a runtime error. `main(string[] args)` receives
 the command-line arguments after the executable name. `examples/Arrays.co`
-demonstrates these features. Element assignment and array equality are not yet
-implemented. Console I/O is separate future library work. The smaller code
+demonstrates these features. Element assignment supports `values[0] = 10` and
+`matrix[1][2] = 10`. Array bindings and function arguments copy recursively;
+mutating a parameter leaves the caller's array unchanged. Return and assign
+the modified array to apply its changes: `values = change(values)`. Assigning
+an unsized result to a sized destination validates its dimensions at runtime.
+`examples/ArrayAssignment.co` demonstrates copied arrays and returned updates.
+Array equality and indexed compound assignments remain unimplemented.
+Element inference is independent of element order: with an `int<64>` binding
+`n`, both `[1, n]` and `[n, 1]` infer `int<64>[2]`. Already-typed values must
+match exactly; differing widths, signedness or integer/float types require
+explicit casts. Literal-only arrays keep their existing defaults and range
+checks. Inference also considers typed elements in later rows of nested arrays.
+Console I/O is separate future library work. The smaller code
 examples below are body fragments.
 
 ## Function blocks

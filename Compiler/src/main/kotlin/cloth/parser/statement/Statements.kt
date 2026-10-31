@@ -1,6 +1,7 @@
 package cloth.parser.statement
 
 import cloth.parser.expression.Expression
+import cloth.parser.expression.IndexExpression
 import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -15,6 +16,10 @@ data class BindingDeclaration(val type: TypeReference?, val name: Token, val ini
 data class AssignmentStatement(val name: Token, val value: Expression) : Statement {
 
 	override val span get() = name.span.through(value.span)
+}
+
+data class ElementAssignmentStatement(val target: IndexExpression, val value: Expression) : Statement {
+	override val span get() = target.span.through(value.span)
 }
 
 data class UpdateStatement(val name: Token, val operator: Token) : Statement {

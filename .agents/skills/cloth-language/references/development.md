@@ -2,6 +2,288 @@
 
 ## Current work
 
+### Fixed initial array shapes (2026-10-31)
+
+The user confirmed that every array-valued binding preserves its initial shape,
+including omitted dimensions initialized from function results. The existing
+semantic checker rejects mismatches in known dimensions. Unknown dimensions
+are captured from the initialized value and checked before each whole-binding
+replacement, recursively across all dimensions. Equal element counts do not
+permit a different rectangular shape. Same-shape returned updates remain valid
+and continue copying recursively by value.
+
+`EmitBindings` retains the initial descriptor as an immutable SSA shape template,
+independent of the binding's mutable storage slot. `EmitExpression` compares
+unknown binding dimensions before copying the replacement. Fully known types
+keep their existing static checks and runtime destination constraints. This adds
+no allocations or separate shape-storage lifetime. Branches, shadowed bindings,
+captures and parameters use the correct binding identity and initial descriptor.
+Unknown dimensions below empty axes retain the existing internal -1 policy;
+known dimensions following empty axes remain fixed and checked.
+
+Function signatures retain their declared contracts: `int[]` can accept or
+return different lengths on separate calls. Each parameter binding preserves
+its received shape for that invocation; each receiving local preserves its
+own initial result. Function bodies are not inspected to invent static sizes
+at call sites. Deferred function-block declarations still execute on every
+read; only a stored result captures an initial array shape.
+
+Fourteen `ArrayBindingShapeTest` cases cover compile-time versus runtime checks,
+literal and returned initializers, copies and returned updates, parameters and
+varying return shapes, partial extents, matrices and higher-rank equal-count
+reshapes, branches/shadowing/captures, repeated function-block reads, empty axes,
+once-only source evaluation and legacy snippets. A counted/poisoned allocation
+test covers repeated unknown-shape returned replacements and normal/early exits.
+README, confirmed semantics and `examples/ArrayAssignment.co` document the rule.
+
+Verified on 2026-10-31: focused binding-shape and assignment tests passed,
+followed by the complete `gradlew.bat :Compiler:test --offline --console=plain
+--no-daemon` suite: 436 tests, zero failures/errors/skips. The suite includes
+the expanded array-assignment CLI example and counted/poisoned storage checks.
+`git diff --check` passed. Native execution was verified on Windows; the change
+uses shared LLVM shape checks without target-specific backend code.
+
+### Order-independent array inference (2026-10-31)
+
+The user confirmed that all elements must participate in compile-time array
+element inference before contextual literals receive their types. Already-typed
+values retain exact width, signedness and primitive type; conflicts require
+explicit casts. Literal-only arrays retain existing defaults and range rules.
+This resolves the audit's `[n, 1]` versus `[1, n]` discrepancy without adding a
+widest-type search, implicit numeric conversion or runtime element-type changes.
+
+Shared `ExpressionTyping` now discovers fixed element constraints before the
+ordinary source-ordered typing pass. Explicit element annotations take priority.
+Integer literals, contextual literal arithmetic and unary expressions can defer
+their type until constraints are available. Nested literal rows contribute typed
+leaf constraints recursively. Calls, casts, indexing, ordinary bindings and
+function-block reads contribute their established result types. Conditional
+result branches contribute constraints with their own lexical scopes and local
+binding types; non-result statements and enclosing return contracts still check
+normally. No diagnostic recovery/accumulation is used. Existing overload forks
+continue isolating rejected candidate facts, and default literal preference stays
+in force. Inference checks compile-time facts only; runtime elements still evaluate
+once, left to right, including function blocks and early returns.
+
+Existing floating-literal policy is retained: floating literals default to
+`float` in ordinary bindings/returns; call arguments can receive floating-width
+context. Array discovery does not make a `float` literal or a typed `float`
+binding implicitly convert to `float<64>` in an ordinary inferred binding.
+Compatible known/unknown dimensions still merge under the rectangular contract.
+An older rectangular regression that expected `[[1], [wide]]` to fail was updated
+to use two differently typed bindings, preserving the intended exact-type check.
+
+`examples/Arrays.co` demonstrates both element orders and a typed value in a
+later row guiding earlier literal rows. README and confirmed semantics record
+the rule. The later fixed-initial-shape work above settles the `[]` binding-size
+policy. The array length API, equality and copy optimizations remain separate
+audit items.
+
+Verified on 2026-10-31: the focused inference tests passed, followed by the full
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` suite: 421 tests,
+zero failures/errors/skips. Eighteen `ArrayInferenceTest` cases cover every integer
+width/signedness and anchor position, rejected typed numeric conflicts, explicit
+annotations/casts, literal defaults and range failures, existing floating literal
+policies, nested rows and typed row values, literal arithmetic/unary expressions,
+conditional branch/local binding constraints, calls/indexing/function blocks,
+overload isolation/default preference, once-only runtime evaluation, early returns,
+contextual empty rows, incompatible conditional branches and the shared legacy
+snippet pipeline. Existing rectangular, function/return and counted/poisoned
+storage-lifetime checks also passed. The normal CLI test executes the expanded
+array example. `git diff --check` passed. Native execution was verified on Windows;
+this change is in the shared semantic checker and introduces no target-specific
+backend paths.
+
+### Rectangular array contract (2026-10-30)
+
+The user confirmed rectangular arrays for current Cloth, with jagged arrays
+reserved for a future collection type. All rows/subarrays at each level must
+have the same dimensions recursively, including values created or returned by
+functions. Unsized dimensions are unknown sizes, not permission for jagged rows.
+Replacing a row/plane must preserve that subarray's complete shape. The later
+fixed-initial-shape work above extends this stability to whole-value rebinding,
+including dimensions inferred from function results.
+
+`ExpressionTyping` merges compatible known/unknown array extents while preserving
+exact primitive element types. Differing known row dimensions still fail with
+C3038; a literal row and a function-produced row with a compatible shape can now
+coexist in either order. Scalar numeric inference/conversion rules are unchanged.
+
+The private LLVM array descriptor now contains the data pointer followed by one
+i64 extent per dimension. One-dimensional arrays and UTF-8 strings retain their
+two-field representations. Full shape metadata survives copies, parameters,
+conditional/block values and function returns, including dimensions following
+an empty axis: an erased `int[0][3]` value cannot satisfy `int[0][4]`.
+Indexed subarrays inherit their parent's shape constraints, including dimensions
+learned from a sibling row of an immediately indexed literal temporary.
+`EmitArray` checks every sibling shape during literal evaluation, even for an
+immediately indexed temporary. `EmitStringArena` validates/normalizes dimensions
+against declared contracts and parent shape before recursively copying children.
+`EmitExpression` validates a replacement subarray against the existing target
+shape before storing, preventing shape changes through unsized matrix parameters
+or function-returned values. Matching replacements keep the existing independent
+value-copy semantics. Runtime mismatches use the controlled error path and stop
+evaluation of subsequent rows.
+
+Empty-dimension implementation policy: a dimension with no runtime witness below
+an empty axis and no declared extent is represented internally by -1. Declared
+context can constrain it; explicitly known extents remain known through erasure.
+Replacement preserves the target's shape, including unconstrained empty tails.
+The sentinel is internal metadata, never an array length that can be indexed.
+No GC, reference qualifiers or new source syntax are introduced.
+
+The array audit's rectangular/jagged inconsistency and its known/unknown row
+mixing issue are resolved by this work. Other findings below remain separate.
+
+Verified on 2026-10-30: focused rectangular-array, assignment and counted/poisoned
+storage-lifetime checks passed, followed by the full `gradlew.bat :Compiler:test
+--offline --console=plain --no-daemon` run: 403 tests, zero failures/errors/skips.
+Fourteen `RectangularArraysTest` cases cover compile-time ragged rejection,
+mixed literal/function rows, runtime rejection in bindings/arguments/returns and
+immediately indexed temporaries, recursive copy isolation, row/plane replacement,
+higher-rank shape mismatches, preserved dimensions below empty axes, context for
+unwitnessed empty dimensions, zero-length rows, complete-value rebinding,
+evaluation stopping on the first mismatched row, and empty temporary subarray
+reads/replacements. The existing `examples/Arrays.co` CLI test now exercises
+rectangular matrices built from returned rows. Updated the prior row-replacement
+diagnostic assertion to expect the new rectangular-shape guard. `git diff --check`
+passed. Native execution was verified on the current Windows host; implementation
+uses the shared LLVM backend and target ABI helpers without platform-specific code.
+
+### Array behavior audit (2026-10-30)
+
+This is a historical audit snapshot; the rectangular contract above supersedes
+its shape-related observations and the previously unsettled shape decision.
+The later order-independent inference work also supersedes its first-element
+inference observations, and fixed-initial-shape work supersedes its differing
+literal/function binding-stability observations.
+
+Audit only: compiler semantics were not changed. The complete 389-test suite
+passed alongside two temporary audit drivers (391 JUnit cases total, zero
+failures/errors/skips). The drivers ran 26 semantic/native behavior probes and
+a native counted-allocation experiment on Windows. Reproducible source, LLVM IR,
+`observations.tsv`, `allocations.txt` and the archived `ArrayAuditProbeTest.kt`
+are under ignored `build/array-audit/`. The temporary driver was moved out of
+the normal test tree after execution; its observations are not new contracts.
+
+Confirmed-contract checks passed for recursive binding/parameter isolation,
+return-and-reassign updates, exact known shapes, contextual empty arrays,
+zero-length inner dimensions, bounds guards (including unsigned 64-bit maximum
+and empty-array access), and runtime shape validation at sized parameter and
+return boundaries. Existing counted/poisoning tests also passed.
+
+Reproduced surprises and gaps:
+
+- Shape consistency: `def<int[][]> a = [[1], [2, 3]]` is rejected, but
+  `[row(0), row(1)]` succeeds when `row` returns `int[]` and those same row
+  values. Its inferred type is `int[2][]`, and `a[1][1]` returns 3. A matrix
+  obtained through an `int[][]` function can also have one row replaced with
+  a different-length array. Known versus erased extents currently determine
+  whether jagged values can be constructed. Rectangular versus jagged semantics
+  have not been confirmed; this is an implementation-policy inconsistency to
+  resolve before presenting a uniform multidimensional-array contract.
+- Element inference: with `def<int<64>> n = 2`, `[1, n]` is rejected while
+  `[n, 1]` infers `int<64>[2]`. A row-returning call mixed with an identical
+  literal row is also rejected because the known/unknown row types differ.
+  The first-element policy is documented as provisional, not confirmed design.
+- Binding extents: `def<int[]> a = [1, 2]` retains `int[2]` and rejects
+  `a = [3]`; replacing the initializer with an unsized `make()` returning the
+  identical values yields `int[]` and permits that rebinding. This follows
+  current static information, but the declaration/signature meaning of `[]`
+  and the intended array-size stability should be made explicit.
+- Length access is absent: `.length`, `.size`, and `len(args)` are all rejected.
+  Generic code cannot query a received array's extent, including checking
+  whether command-line arguments are empty before indexing. Length/count and
+  iteration are expected collection facilities, not implemented contracts yet.
+- The existing Windows Unicode argv defect remains reproducible: the argument
+  `é中😀` compares unequal to the same Cloth string literal; the ASCII `Cloth`
+  control succeeds. Continue tracking the cross-platform fix in
+  `todo/unicode-command-line-arguments.md`; this audit did not settle invalid
+  native-byte policy or establish execution on Linux/macOS.
+- Final bindings remain element-mutable: `def a := [1]; a[0] = 10` (with
+  newline statement separators) succeeds. This follows the present binding-only
+  policy, but differs from immutable collection values in Swift; explicitly
+  distinguish binding immutability from immutable array contents.
+- Performance: `def a = [1, 2, 3]` followed by `def b = identity(a)` produces
+  four native heap-copy allocations in a straight-line scalar-returning sample:
+  declaration, argument snapshot, returned result, and result binding. This is
+  not a value-semantics failure. Current eager copies and invocation-long
+  retention need optimization before efficiency is comparable to mature
+  collection implementations. No general performance benchmark was performed.
+- Array equality, indexed compound/update operators and trailing literal commas
+  remain unsupported; untyped empty arrays require context. These are capability
+  gaps or deliberate provisional choices, rather than failures of confirmed
+  copy/index semantics. Runtime-size construction and array iteration are also
+  not implemented by the current grammar.
+
+Comparison used primary language documentation. Go fixed arrays are values
+whose lengths belong to their types; Go slices instead share backing arrays:
+https://go.dev/doc/effective_go#arrays . Swift Array has value behavior and
+copy-on-write optimization; immutable collection constants prevent element
+mutation: https://docs.swift.org/swift-book/LanguageGuide/ClassesAndStructures.html
+and https://docs.swift.org/swift-book/LanguageGuide/CollectionTypes.html . Java
+and C# arrays are reference types, and Kotlin array `val` bindings permit element
+mutation: https://docs.oracle.com/javase/specs/jls/se26/html/jls-10.html ,
+https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/arrays ,
+https://kotlinlang.org/docs/arrays.html . Rust fixed arrays include their length
+in the type and enforce initialization/bounds in safe access:
+https://doc.rust-lang.org/reference/types/array.html . C++ `std::array<T,N>`
+provides fixed, contiguous storage and a size API:
+https://eel.is/c++draft/array.overview . These comparisons support Cloth's chosen
+value-copy model without importing reference sharing, pointer syntax, numeric
+conversions, implicit initialization, or other languages' object lifetime rules.
+
+### Indexed assignment implementation
+
+Indexed element assignment and independent array value copies are implemented.
+`ElementAssignmentStatement` parses `arr[index] = value`, including nested targets,
+and participates in name resolution, strict element/index/shape checking and flow
+analysis. `EmitArray.checkedAddress` shares the existing bounds guard with writes.
+The entire target evaluates once, left to right, and each dimension is checked
+before evaluating the RHS. The RHS evaluates once; stores preserve bool byte
+storage and every supported primitive representation. Returns nested in target
+indices or the RHS stop the remaining evaluation and emit no store.
+
+The user confirmed that copied arrays and function arguments are independent,
+recursively. Earlier parameter rules guaranteed local rebinding only; the old
+array descriptors still shared backing storage. The emitter now copies arrays
+at binding declarations/reassignments, each call argument (before subsequent
+arguments run), subarray insertion/replacement, and block/conditional value
+boundaries. Chained target indexing reads the original nested storage, while
+extracting a row into a new binding copies it. `values = change(values)` applies
+a returned update; calling `change(values)` alone cannot alter the caller.
+Existing function-return copies and frame cleanup remain in place. Copies use
+the existing invocation arena and recursive size/overflow/allocation guards;
+replaced/discarded snapshots remain allocated until that invocation exits.
+This is eager copying with no COW, GC or new programmer-visible qualifiers.
+
+Initial implementation policies: unknown array extents can satisfy a known-size
+binding, parameter, return or subarray assignment with recursive runtime size
+checks during copying. Known incompatible extents remain compile-time errors.
+Declared extents are retained; omitted extents infer from the initializer where
+known. This enables assigning unsized function results back to inferred-size
+bindings safely. Invalid runtime extents terminate with a size-mismatch error.
+`:=`/`final` retain binding-only immutability: element writes are allowed but the
+binding cannot be reassigned. Only plain indexed `=` is implemented; indexed
+compound assignment and increment/decrement remain separate work. The legacy
+snippet emitter now uses an ordinary function frame to release its array copies.
+
+Verified on 2026-10-30: the focused indexed-assignment and storage-lifetime tests
+passed, followed by all 389 tests in `gradlew.bat :Compiler:test --offline
+--console=plain --no-daemon`, with no failures, errors or skips. Eighteen
+`ArrayAssignmentTest` cases cover parsing/spans, strict types and dimensions,
+all primitive storage representations, independent bindings and parameters,
+returned updates, nested construction/extraction/replacement, argument snapshots,
+once-only target/RHS order, recursive string-array lifetimes, block/conditional
+temporary results, final bindings, interrupted writes, bounds failure precedence,
+runtime shape validation, unsupported indexed compounds, legacy snippets and
+the normal CLI example in `examples/ArrayAssignment.co`. An added counted and
+poisoning allocator test verifies independent modified values and balanced
+cleanup across normal/early exits, recursion and discarded results. The full
+run initially found a stale settings assertion; it now matches the existing
+`examples/FunctionBlocks.co` default. `git diff --check` passed. Native execution
+was verified on Windows; implementation uses the existing shared LLVM/ABI paths.
+
 Local function blocks are implemented. `def<Type> name = { ... }` declares a
 parameterless computation; each evaluated read executes it again. The explicit
 annotation is its return contract. There is no declaration-time execution or
@@ -83,8 +365,8 @@ fail-fast with one diagnostic.
 Initial implementation policies (not separately confirmed language decisions):
 
 - Unsized parameter/return dimensions accept matching element types of any
-  extent, recursively. Known extents must match sized contracts exactly; there
-  is no runtime conversion of unknown extents to sized contracts. A binding
+  extent, recursively. Known extents must match sized contracts exactly; the
+  later element-assignment work adds runtime validation of unknown extents. A binding
   initialized from a known-size value retains its size even with `[]` in its
   annotation. An unsized function result retains its unknown static extent.
   Unsized contextual return contracts also allow conditional branches to yield
@@ -102,15 +384,14 @@ Initial implementation policies (not separately confirmed language decisions):
   negative or past-end indices terminate through a controlled runtime error.
   Bounds are checked before deriving/dereferencing an element address.
 - Literals and indexed operands evaluate once in source order. Returns nested
-  in elements or indices stop subsequent evaluation. Local array copies and
-  parameters use descriptors; rebinding changes only the local binding. Array
-  element assignment, aliasing/mutation semantics and array equality remain
-  unimplemented and unconfirmed, rather than inheriting C ownership semantics.
+  in elements or indices stop subsequent evaluation. The later element-assignment
+  work replaces descriptor-sharing transfers with recursive value copies and
+  implements indexed writes. Array equality remains unimplemented.
 - Native startup constructs `string[]` from `argc`/`argv`, excluding the
   executable name. The adapter borrows native narrow-string bytes and lengths;
   platform-specific command-line Unicode transcoding is not implemented.
 
-`EmitArray` stores a `{ ptr, i64 }` descriptor with storage-typed elements,
+At chunk 8, `EmitArray` stored a `{ ptr, i64 }` descriptor with storage-typed elements,
 including byte storage for bools and descriptors for strings/nested arrays.
 Local literals use stack buffers. Array-returning functions receive the same
 private caller-arena parameter as string-returning functions. `EmitStringArena`
@@ -1040,7 +1321,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
 - The compiler is Kotlin/JVM in `Compiler`, built with Gradle. Its module declares
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
-  and native LLVM compilation. The CLI settings currently default to `examples/StringFunctions.co` and accept
+  and native LLVM compilation. The CLI settings currently default to `examples/FunctionBlocks.co` and accept
   `[source.co] [output] [--emit executable|object]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,
@@ -1268,6 +1549,10 @@ are not language specification boundaries.
 The following have not yet been settled. Ask about them when relevant, keeping
 the user's preference for one question at a time:
 
+- Array length/count API and iteration syntax; array equality semantics.
+- Whether value-array `:=`/`final` should retain the current binding-only policy
+  or also forbid element mutation. Current behavior is documented, not silently
+  changed by the comparison with other languages.
 - Type-narrowing behavior after reassignment and outside successful `if` branches.
 - Function-block capture escape/lifetime rules beyond reading surrounding locals
   while their enclosing scope is active; whether blocks can be stored or escape

@@ -44,23 +44,72 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		return type
 	}
 
+	/** Discover fixed value types before defaulting contextual literals. This checks
+	 * types only; emission still evaluates every element once in source order.
+	 */
+	private fun arrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? = when (expression) {
+		is IntegerLiteral -> null
+		is FloatingPointLiteral -> if (contextualFloat) null else ValueType.FLOAT
+		is ArrayLiteral -> arrayElementContext(expression.elements, contextualFloat)?.let { ValueType.ArrayValue(it, expression.elements.size) }
+		is UnaryExpression -> if (expression.operator.lexeme in setOf("+", "-")) {
+			arrayElementHint(expression.operand, contextualFloat)?.let { typeOf(expression, it, contextualFloat = contextualFloat) }
+		} else typeOf(expression)
+		is BinaryExpression -> if (expression.operator.lexeme in arithmeticOperators) {
+			val left = arrayElementHint(expression.left, contextualFloat)
+			val right = arrayElementHint(expression.right, contextualFloat)
+			if (left == null && right == null) null else typeOf(expression, left ?: right, contextualFloat = contextualFloat)
+		} else typeOf(expression)
+		is IfExpression -> {
+			var hint: ValueType? = null
+			var first: TokenSpan? = null
+			val bodies = expression.branches.map { it.statements } + listOfNotNull(expression.otherwise)
+			for (body in bodies) withScope {
+				for ((index, item) in body.withIndex()) {
+					if (index == body.lastIndex && item is ExpressionStatement && completion(body).canContinue) {
+						val next = arrayElementHint(item.expression, contextualFloat)
+						if (next != null && next != ValueType.NEVER) {
+							hint = hint?.commonArrayShape(next) ?: if (hint == null) next
+							else reject { SemanticErrors.branchTypes(checkNotNull(hint), next, checkNotNull(first), item.span) }
+							first = first ?: item.span
+						}
+					} else statement(item)
+				}
+			}
+			hint
+		}
+		else -> typeOf(expression)
+	}
+
+	private fun arrayElementContext(elements: List<Expression>, contextualFloat: Boolean): ValueType? {
+		var context: ValueType? = null
+		for (item in elements) {
+			val hint = arrayElementHint(item, contextualFloat) ?: continue
+			if (hint == ValueType.NEVER) continue
+			context = context?.commonArrayShape(hint) ?: if (context == null) hint
+			else reject { SemanticErrors.array("Array elements require one exact type and matching dimensions; use explicit casts for differing numeric types", item.span) }
+		}
+		return context
+	}
+
 	fun typeOf(expression: Expression, expected: ValueType? = null, requireValue: Boolean = true, contextualFloat: Boolean = false, allowVoidResult: Boolean = false): ValueType {
 		val type = when (expression) {
 			is ArrayLiteral -> {
 				val context = expected as? ValueType.ArrayValue
 				if (context?.size != null && context.size != expression.elements.size) reject { SemanticErrors.array("Expected ${context.size} array elements, got ${expression.elements.size}; every element must be initialized", expression.span) }
+				val elementContext = context?.element ?: arrayElementContext(expression.elements, contextualFloat)
 				var element: ValueType? = null
 				for (item in expression.elements) {
-					val actual = typeOf(item, context?.element ?: element, contextualFloat = contextualFloat)
-					val required = context?.element ?: element
+					val actual = typeOf(item, elementContext ?: element, contextualFloat = contextualFloat)
+					val required = elementContext ?: element
 					if (required != null && !required.accepts(actual)) reject { SemanticErrors.array("Array element requires '${required.spelling}', got '${actual.spelling}'", item.span) }
 					if (actual != ValueType.NEVER) {
-						if (element != null && element != actual) reject { SemanticErrors.array("Array elements must have the same type and dimensions", item.span) }
-						element = actual
+						val candidate = elementContext?.inferArraySizes(actual) ?: actual
+						element = element?.commonArrayShape(candidate) ?: if (element == null) candidate
+						else reject { SemanticErrors.array("Rectangular arrays require matching element types and dimensions", item.span) }
 					}
 				}
 				if (element == null && !completion(expression).canContinue) ValueType.NEVER
-				else ValueType.ArrayValue(element ?: context?.element ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
+				else ValueType.ArrayValue(element ?: elementContext ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
 			}
 			is IndexExpression -> {
 				val array = typeOf(expression.array)

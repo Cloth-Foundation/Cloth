@@ -61,9 +61,23 @@ sealed class ValueType(val keyword: Keywords) {
 
 	data class ArrayValue(val element: ValueType, val size: Int? = null) : ValueType(element.keyword)
 
-	/** Unsized array contracts accept a known extent, recursively, without numeric conversion. */
+	val arrayDimensions: List<Int?> get() = if (this is ArrayValue) listOf(size) + element.arrayDimensions else emptyList()
+
+	/** Unknown extents may be resolved at runtime; conflicting known extents cannot merge. */
+	fun commonArrayShape(other: ValueType): ValueType? = when {
+		this == other -> this
+		this is ArrayValue && other is ArrayValue && (size == null || other.size == null || size == other.size) ->
+			element.commonArrayShape(other.element)?.let { ArrayValue(it, size ?: other.size) }
+		else -> null
+	}
+
+	/** Array extents may need runtime checks; element types never undergo numeric conversion. */
 	fun accepts(actual: ValueType): Boolean = actual == NEVER || this == actual ||
-		(this is ArrayValue && actual is ArrayValue && (size == null || size == actual.size) && element.accepts(actual.element))
+		(this is ArrayValue && actual is ArrayValue && (size == null || actual.size == null || size == actual.size) && element.accepts(actual.element))
+
+	/** Keep declared extents and fill omitted extents from the initializer where known. */
+	fun inferArraySizes(actual: ValueType): ValueType =
+		if (this is ArrayValue && actual is ArrayValue) ArrayValue(element.inferArraySizes(actual.element), size ?: actual.size) else this
 
 	val buffered: Boolean get() = this == Text || this is ArrayValue
 

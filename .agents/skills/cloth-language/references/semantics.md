@@ -135,6 +135,18 @@ Array syntax and construction were confirmed on 2026-10-30:
 - `def<int[]> unsized = [1, 2, 3]` infers a size of 3.
 - `def<float[5]> sized = [1.0, 2.0, 3.0, 4.0, 5.0]` supplies an explicit size.
 - `def inferredWithSize = [true, true, false]` infers `bool[3]`.
+- On 2026-10-30 the user confirmed order-independent array element inference.
+  An explicit element type supplies context; otherwise the compiler considers
+  all elements' already-typed values before resolving context-sensitive literals.
+  With an `int<64>` binding `n`, `[n, 1]` and `[1, n]` both infer `int<64>[2]`.
+- Already-typed element values must match exactly, including numeric width and
+  signedness. There is no automatic widest-type selection or implicit numeric
+  promotion between elements. Differing typed values require explicit casts,
+  including differing floating widths and integer/floating combinations.
+- Literal context and range checks follow the existing numeric rules; arrays
+  containing only literals retain their existing defaults. These rules apply
+  recursively to rectangular nested array construction. Type inference happens
+  at compile time and does not alter left-to-right, once-only element evaluation.
 - Explicit sizes require every member to be initialized, with no extra members:
   `def<int[2]> oversized = [1]` and
   `def<float[1]> undersized = [1.0, 2.0]` are errors.
@@ -143,9 +155,42 @@ Array syntax and construction were confirmed on 2026-10-30:
   returns the string `"Hello"`.
 - Arrays must be constructable values that can be passed as function arguments,
   beyond array syntax in declarations alone. Multidimensional arrays are allowed.
+- On 2026-10-30 the user chose rectangular arrays. Every row/subarray at a given
+  level must have the same shape, recursively. Jagged arrays are reserved for a
+  future collection type. This applies equally to literals and arrays produced
+  by functions; unknown dimensions do not relax the rectangular requirement.
+- For example, `[[1, 2], [3, 4]]` is rectangular, while `[[1], [2, 3]]` is an
+  error. Function-produced rows with those mismatched lengths are also errors.
+- Replacing a row or a higher-dimensional subarray must preserve that subarray's
+  shape so element assignment cannot turn a rectangular array into a jagged one.
+- On 2026-10-31 the user confirmed that `[]` infers and preserves the initial
+  shape of an array-valued binding, whether initialized from a literal, a
+  function result or another array value. Every dimension remains fixed for
+  that binding; whole-array replacement is permitted only with the same shape.
+  Known mismatches fail at compile time. Dimensions unknown to the compiler
+  are captured at initialization and checked on assignment at runtime.
+- `[]` in a function parameter or return signature leaves that dimension
+  unspecified across calls. Each array parameter binding preserves the shape
+  it receives for that invocation. Separate calls may receive or return
+  different shapes; storing a result fixes the receiving binding's shape.
+- A function-block declaration such as `def<int[]> compute = { ... }` names
+  a computation rather than an initialized array value. Its results may have
+  different lengths on different reads. `def a = compute` evaluates it once
+  and preserves the shape of that stored result, without caching future reads.
+- On 2026-10-30 the user requested element assignment, including nested indices:
+  `arr[0] = 10` and `matrix[1][2] = 10`.
+- The user then confirmed independent array values when copied or passed as
+  arguments. Modifying a copied binding or a function's array parameter does
+  not modify the source/caller's array. This applies recursively to nested
+  arrays; copying only the outer array would not satisfy the rule.
+- To apply a function's array changes to the caller's binding, return the changed
+  array and assign that result, for example `values = change(values)`. Calling
+  `change(values)` alone leaves the caller's array unchanged.
+- This array decision extends the earlier local-parameter-rebinding rule to
+  element writes. It does not establish deep-copy semantics for class objects.
 - See development status for current nested-literal syntax and implementation
   policies that have not been separately confirmed as language design, including
-  empty arrays, bounds failures, and mutation/copy behavior.
+  empty arrays and bounds failures.
 
 - Parameter bindings are mutable inside the function by default. Reassignment,
   compound assignment, and standalone updates are permitted subject to the

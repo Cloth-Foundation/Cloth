@@ -1,0 +1,36 @@
+fn<int[]> changed(int[] values) {
+    values[0] = 10
+    return values
+}
+
+fn<int[][]> changedMatrix(int[][] values) {
+    values[1][0] = 20
+    return values
+}
+
+fn<int[][]> makeMatrix() = [[1, 2], [3, 4]]
+
+fn<int> main() {
+    def values = [1, 2, 3]
+    def copy = values
+    copy[0] = 5
+    changed(values) // A discarded result leaves values unchanged.
+    if (values[0] != 1 || copy[0] != 5) { return 1 }
+
+    values = changed(values) // Assign the returned value to apply the update.
+    if (values[0] != 10) { return 1 }
+
+    def matrix = [[1, 2], [3, 4]]
+    def updated = changedMatrix(matrix)
+    if (matrix[1][0] != 3 || updated[1][0] != 20) { return 1 }
+    matrix[0][1] = 30
+    if (matrix[0][1] != 30 || updated[0][1] != 2) { return 1 }
+
+    def<int[][]> returned = makeMatrix() // Captures the initial 2-by-2 shape at runtime.
+    returned = [[5, 6], [7, 8]] // Same-shape replacement is allowed.
+    returned = changedMatrix(returned)
+    if (returned[1][0] != 20 || returned[0][1] != 6) { return 1 }
+    // returned = [[9]] // Runtime error: the binding must remain 2-by-2.
+    // matrix = [[9]] // Compile-time error: matrix's 2-by-2 shape is known.
+    return 0
+}
