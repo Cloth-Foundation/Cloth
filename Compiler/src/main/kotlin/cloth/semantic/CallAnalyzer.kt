@@ -69,6 +69,20 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 				is BindingDeclaration -> {
 					val symbol = facts.declarations.symbolOf(statement)
 					val expected = statement.type?.let { resolveType(it) }
+					val block = statement.initializer as? FunctionBlockExpression
+					if (block != null) {
+						val contract = expected ?: throw SemanticErrors.blockReturnType(statement.name)
+						val body = block.declaration.body as BlockBody
+						val checker = BodyTyping(facts, block.declaration, contract, validateReturns)
+						checker.check(body.statements)
+						if (validateReturns && contract != ValueType.VOID && facts.controlFlow.of(body).canContinue) {
+							throw SemanticErrors.missingReturn(block.declaration, body)
+						}
+						facts.bindings[symbol] = contract
+						model.statements[statement] = contract
+						model.expressions[block] = contract
+						return
+					}
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
 					val type = if (expected is ValueType.ArrayValue && actual is ValueType.ArrayValue && expected.accepts(actual)) actual else expected ?: actual

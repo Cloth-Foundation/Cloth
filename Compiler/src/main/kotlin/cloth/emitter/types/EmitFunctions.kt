@@ -34,7 +34,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun emitAll() {
 		for ((index, function) in semantics.declarations.functions.withIndex()) {
 			val type = semantics.typeOf(function)
-			// A string result is copied into an invocation-owned arena supplied by its caller.
+			// String and array results copy into an invocation arena supplied by the caller.
 			val parameterCount = type.parameters.size + if (type.returns.buffered) 1 else 0
 			val signature = PointerPointer<LLVMTypeRef>(parameterCount.toLong()).use { parameters ->
 				type.parameters.forEachIndexed { position, parameter -> parameters.put(position.toLong(), abiType(parameter)) }
@@ -65,7 +65,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 			val casts = EmitCast(context, builder, semantics.types, abi)
 			val strings = EmitString(context, builder, abi)
-			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), this, semantics, signature.returns, frame)
+			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.returns, frame)
 			when (val body = function.declaration.body) {
 				is BlockBody -> {
 					expressions.emitStatements(body.statements)

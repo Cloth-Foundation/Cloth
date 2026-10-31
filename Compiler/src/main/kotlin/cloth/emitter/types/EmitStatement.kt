@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.IfExpression
+import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
@@ -19,6 +20,8 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 		if (expressionEmitter.terminated()) return null
 		return when (statement) {
 			is BindingDeclaration  -> {
+				// The declaration carries code, not an eagerly computed storage value.
+				if (statement.initializer is FunctionBlockExpression) return null
 				val value = expressionEmitter.emit(statement.initializer)
 				if (expressionEmitter.terminated()) return null
 				bindings.declare(functions?.declarations?.symbolOf(statement) ?: statement.name.lexeme, statement.name.lexeme, semantics.typeOf(statement), checkNotNull(value))

@@ -209,3 +209,24 @@ fn assumedReturnType () {
 
     //return x would be an error, as no return type is expected
 }
+
+// Function blocks execute on every evaluated read.
+fn functionBlocks () {
+
+    def value = 10
+
+    // Explicit return type, no parameters, and no execution at declaration.
+    def<int> x = {
+        return value * 2
+    }
+
+    println(x) // Executes the block and passes 20.
+    value = 30
+    println(x) // Executes it again and passes 60.
+
+    def<int> saved := x // Executes once here and stores 60.
+    value = 50
+    println(saved) // Still 60.
+    println(x + x) // Executes twice, left to right, and passes 200.
+
+}

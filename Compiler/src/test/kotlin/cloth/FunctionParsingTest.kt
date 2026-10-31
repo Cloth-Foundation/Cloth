@@ -207,7 +207,7 @@ class FunctionParsingTest {
 			"fn work(final) {}", "fn work(final final int value) {}", "fn work(int final value) {}",
 			"fn work(def<int> value) {}", "fn work(int value = 1) {}", "fn work(int a int b) {}",
 			"fn work(int a,) {}", "fn work(,int a) {}", "fn work(string[ args) {}",
-			"fn work(string[2] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20",
+			"fn work(string[x] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20",
 			"fn work() { return + }", "fn work() { return 1 return 2 }",
 			"fn work() = calculate(", "fn work() = calculate(1,)", "fn work() = calculate(,1)",
 			"fn work() = calculate(1 2)", "fn work() = calculate(1,,2)", "fn work() = calculate(1}",

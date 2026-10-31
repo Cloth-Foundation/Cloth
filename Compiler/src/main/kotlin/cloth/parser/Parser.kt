@@ -11,6 +11,7 @@ import cloth.parser.expression.ConditionalBranch
 import cloth.parser.expression.IfExpression
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.NameExpression
+import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
@@ -199,7 +200,13 @@ class Parser(private val tokens: List<Token>) {
 			throw SyntaxErrors.expected("'${Operators.ASSIGN.character}' or '${Operators.FINAL_ASSIGN.character}'", assignment)
 		}
 		advance()
-		val initializer = expressionParser.parseExpression()
+		val initializer = if (peek().lexeme == Operators.BRACE_OPEN.character) {
+			val previousContext = inFunctionBody
+			inFunctionBody = true
+			try {
+				FunctionBlockExpression(FunctionDeclaration(keyword, name, type, emptyList(), parseBlock()))
+			} finally { inFunctionBody = previousContext }
+		} else expressionParser.parseExpression()
 		return BindingDeclaration(type, name, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(initializer.span))
 	}
 

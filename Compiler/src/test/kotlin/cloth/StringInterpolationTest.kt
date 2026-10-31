@@ -7,12 +7,14 @@ import cloth.parser.Parser
 import cloth.parser.expression.*
 import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.ValueType
 import cloth.settings.LinkOptions
 import cloth.settings.RuntimeLinkage
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
@@ -61,6 +63,90 @@ class StringInterpolationTest {
 			assertEquals(code, failure.diagnosticCode, source)
 			assertLocated(failure)
 		}
+	}
+
+	@Test
+	fun `array interpolation reports the unsupported hole in snippets and skipped branches`() {
+		for (source in listOf(
+			"#\"{[1]}\"", "def values = [1, 2]\n#\"{values}\"", "#\"{[[1], [2]]}\"",
+			"false && (#\"{[1]}\" == \"\")", "true || (#\"{[1]}\" == \"\")",
+			"if (false) { #\"{[1]}\" }", "if (true) {} else { #\"{[1]}\" }")) {
+			val error = assertFailsWith<ClothDiagnostic>(source) { SemanticAnalyzer().analyze(parse(source)) }
+			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode, source)
+			assertLocated(error)
+			assertEquals(1, error.sourceLabels.size)
+		}
+		val error = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(parse("#\"{[1]}{[2, 3]}\"")) }
+		assertEquals(4, error.sourceLabels.single().span.startColumn)
+		assertEquals(7, error.sourceLabels.single().span.endColumn)
+		assertContains(error.summary, "int[1]")
+		assertFalse(error.summary.contains("int[2]"))
+	}
+
+	@Test
+	fun `function interpolation rejects array values including return calls and overload arguments`() {
+		val prelude = "fn<int[]> values() = [1, 2]\nfn consume(string text) {}\nfn consume(int value) {}\n"
+		for ((setup, hole) in listOf(
+			"" to "[1, 2]", "def data = [1, 2]" to "data", "" to "[[1], [2]]",
+			"" to "values()", "" to "if (true) { [1] } else { [2] }",
+			"" to "[[1]][0]", "def<int[0]> empty = []" to "empty", "" to "args")) {
+			for (expression in listOf("#\"{$hole}\"", "consume(#\"{$hole}\")", "if (false) { #\"{$hole}\" }")) {
+				val source = prelude + "fn main(string[] args) {\n$setup\n$expression\n}"
+				val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer().analyze(parseProgram(source)) }
+				assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode, source)
+				assertLocated(error)
+				val span = error.sourceLabels.single().span
+				assertEquals(hole, assertNotNull(span.source).text.lines()[span.startLine - 1].substring(span.startColumn - 1, span.endColumn - 1))
+			}
+		}
+	}
+
+	@Test
+	fun `unsupported interpolation fails before toolchain discovery emission and output creation`(@TempDir directory: Path) {
+		val source = "fn main() { #\"{[1]}{[2]}\" }"
+		val emitter = LLVMEmitter(LinkOptions(linker = directory.resolve("missing-linker")))
+		val output = directory.resolve("absent/program")
+		for (action in listOf<() -> Unit>(
+			{ emitter.compile(parseProgram(source), output) },
+			{ emitter.compileObject(parseProgram(source), output) },
+			{ emitter.emit(parseProgram(source)) },
+			{ emitter.emitExecutable(parseProgram(source)) },
+			{ emitter.emitSnippet(parse("#\"{[1]}\"")) },
+			{ emitter.compileSnippet(parse("#\"{[1]}\""), output) })) {
+			val error = assertFailsWith<ClothDiagnostic> { action() }
+			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode)
+			assertLocated(error)
+			assertFalse(Files.exists(output.parent))
+		}
+		val input = directory.resolve("unsupported.co")
+		Files.writeString(input, source)
+		val rendered = StringBuilder()
+		assertEquals(1, runCompiler(arrayOf(input.toString(), output.toString()), DiagnosticReporter(rendered)))
+		assertEquals(1, Regex("C3040").findAll(rendered).count(), rendered.toString())
+		assertContains(rendered, "int[1]")
+		assertFalse(rendered.contains("C9000"))
+		assertFalse(Files.exists(output.parent))
+	}
+
+	@Test
+	fun `array elements still interpolate and returns inside holes keep their control flow`(@TempDir directory: Path) {
+		val executable = LLVMEmitter().compile(parseProgram("""
+			fn<int> early() {
+			    def text = #"{if (true) { return 7 } else { return 8 }}"
+			    return 9
+			}
+			fn<string> text(bool early) {
+			    def count = 0
+			    return #"{if (early) { return "early" } else { count += 1
+			        count }}:{if (true) { count += 1
+			        count } else { 0 }}:{count}:{["ok"][0]}"
+			}
+			fn<int> main() {
+			    if (early() == 7 && text(true) == "early" && text(false) == "1:2:2:ok") { return 0 }
+			    return 1
+			}
+		"""), directory.resolve("hole_returns"))
+		assertExecutable(executable, null)
 	}
 
 	@Test
@@ -192,6 +278,8 @@ class StringInterpolationTest {
 	private fun assertProgram(target: Path, source: String, expected: String) {
 		assertExecutable(LLVMEmitter().compileSnippet(parse(source), target), expected)
 	}
+
+	private fun parseProgram(source: String) = Parser(Lexer(SourceFile("interpolation.co", source.trimIndent())).scanTokens()).parse()
 
 	private fun assertExecutable(executable: Path, expected: String?) {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()

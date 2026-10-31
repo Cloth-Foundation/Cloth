@@ -48,11 +48,57 @@ releases its temporary return buffers on exit. This is internal value storage;
 it does not change Cloth's explicit object creation/destruction rules or add GC.
 `examples/StringFunctions.co` demonstrates returned strings and recursion.
 
-`main(string[] args)` is a valid entry signature, but native argument-array
-construction is not implemented yet. Array function parameters and returns
-currently report C4030. Numeric, boolean, character, string and void boundaries
-are supported. Console I/O is separate future library work. The smaller code
+Arrays support literals, inferred or explicit sizes, zero-based reads, function
+parameters and returns, and nested dimensions:
+
+```cloth
+fn<int> last(int[3] values) = values[2]
+fn<int> main() {
+    def<int[]> values = [1, 2, 3] // int[3]
+    def flags := [true, true, false] // bool[3]
+    def<int[2][3]> matrix = [[1, 2, 3], [4, 5, 6]]
+    return last(values) + matrix[1][2] - 9
+}
+```
+
+Explicit sizes require exactly that many initializers. Unsized array parameters
+accept matching element types and dimensions of any size. Array returns copy
+their storage, including nested arrays and string contents, before the callee
+exits. Invalid indices produce a runtime error. `main(string[] args)` receives
+the command-line arguments after the executable name. `examples/Arrays.co`
+demonstrates these features. Element assignment and array equality are not yet
+implemented. Console I/O is separate future library work. The smaller code
 examples below are body fragments.
+
+## Function blocks
+
+An explicitly typed binding can name a parameterless computation:
+
+```cloth
+fn<int> main() {
+    def value = 10
+    def<int> x = {
+        return value * 2
+    }
+
+    def saved := x // Executes once here and stores 20.
+    value = 30
+    return x + saved - 80 // Executes x again, producing 60.
+}
+```
+
+Declaration does not execute the block. Each evaluated read executes it again,
+using the current values of surrounding bindings. `consume(x)` passes the
+produced value; `x + x` executes twice, left to right. Short-circuit evaluation
+skips unused occurrences. Blocks require an explicit return type and follow
+ordinary brace-body return checks; `return` exits only that block. Explicit
+`def<void>` blocks can run effects without producing a value.
+
+Both `=` and `:=` declarations are accepted; neither caches a block's result.
+Assignment or updates to block bindings are currently rejected while replacement
+semantics remain undecided. Blocks are local computations, and their names
+produce results rather than escaping as callbacks. `examples/FunctionBlocks.co`
+demonstrates repeated reads, saved values, argument order and 64-bit results.
 
 ## Compound assignments
 

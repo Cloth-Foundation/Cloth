@@ -1,6 +1,7 @@
 package cloth.parser.expression
 
 import cloth.parser.statement.Statement
+import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -9,6 +10,14 @@ import java.math.BigInteger
 data class NameExpression(val name: Token) : Expression {
 
 	override val span get() = name.span
+}
+
+/** A local, parameterless computation; its binding annotation is its return contract.
+ * Reuses function body syntax/contracts without introducing a callable function value.
+ */
+data class FunctionBlockExpression(val declaration: FunctionDeclaration) : Expression {
+
+	override val span get() = declaration.body.span
 }
 
 /** A named function call; overload resolution is a separate semantic stage. */

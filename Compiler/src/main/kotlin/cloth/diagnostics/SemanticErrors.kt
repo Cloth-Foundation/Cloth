@@ -14,8 +14,11 @@ import cloth.token.TokenSpan
 import java.math.BigInteger
 
 object SemanticErrors {
+	fun blockReturnType(name: Token) = issue(DiagnosticCode.BLOCK_RETURN_TYPE_REQUIRED, "Function block '${name.lexeme}' requires an explicit return type", name.span, "Declare the return contract with 'def<Type>'; function-block returns are never inferred.")
+	fun blockAssignment(name: Token, declaration: Token) = SemanticException(DiagnosticCode.BLOCK_ASSIGNMENT, "Assignment to function block '${name.lexeme}' is not supported yet", listOf(SourceLabel(name.span, "assignment or update here"), SourceLabel(declaration.span, "function block declared here")), "Read the block to execute it, or store its result in an ordinary binding.")
 	fun array(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ARRAY, message, span)
 	fun index(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_INDEX, message, span)
+	fun interpolation(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, "String interpolation does not support values of type '${type.spelling}' yet", span, "Only integers, floats, booleans, characters and strings can be interpolated for now.")
 
 	private fun issue(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null) = SemanticException(code, message, listOf(SourceLabel(span, "here")), help)
 	fun unknown(name: Token) = issue(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding '${name.lexeme}'", name.span, "Declare this binding before using it.")

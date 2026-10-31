@@ -59,7 +59,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 						element = actual
 					}
 				}
-				ValueType.ArrayValue(element ?: context?.element ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
+				if (element == null && !completion(expression).canContinue) ValueType.NEVER
+				else ValueType.ArrayValue(element ?: context?.element ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
 			}
 			is IndexExpression -> {
 				val array = typeOf(expression.array)
@@ -80,7 +81,13 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is NameExpression -> nameType(expression)
 			is CallExpression -> callType(expression)
 			is InterpolatedString -> {
-				expression.parts.forEach { typeOf(it) }
+				expression.parts.forEach { part ->
+					val type = typeOf(part)
+					if (!type.numeric && type != ValueType.BOOL && type != ValueType.CHAR && type != ValueType.STRING && type != ValueType.NEVER) {
+						// Holes receive no overload context; this failure cannot be fixed by another candidate.
+						throw SemanticErrors.interpolation(type, part.span)
+					}
+				}
 				ValueType.STRING
 			}
 			is TypeCheckExpression -> {
@@ -105,8 +112,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 							if (needsValue && index == statements.lastIndex) {
 								val branchType = typeOf((item as ExpressionStatement).expression, expected, contextualFloat = contextualFloat, allowVoidResult = allowVoidResult)
 								model.statements[item] = branchType
-								if (resultType != null && branchType != resultType) reject { SemanticErrors.branchTypes(checkNotNull(resultType), branchType, checkNotNull(resultSpan), item.span) }
-								resultType = branchType
+								resultType = if (resultType != null && branchType != resultType) {
+									if (expected is ValueType.ArrayValue && expected.accepts(checkNotNull(resultType)) && expected.accepts(branchType)) expected
+									else reject { SemanticErrors.branchTypes(checkNotNull(resultType), branchType, checkNotNull(resultSpan), item.span) }
+								} else branchType
 								resultSpan = item.span
 							} else statement(item)
 						}

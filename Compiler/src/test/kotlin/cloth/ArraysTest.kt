@@ -9,7 +9,6 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.semantic.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
@@ -42,7 +41,7 @@ class ArraysTest {
 			}
 		""")
 		val declarations = model.declarations.functions.single().declaration.body as cloth.parser.declaration.BlockBody
-		assertEquals(listOf("int[3]", "float[5]", "bool[3]", "string[2]"), declarations.statements.map { model.types.typeOf(it) .spelling })
+		assertEquals(listOf("int[3]", "float[5]", "bool[3]", "string[2]"), declarations.statements.map { model.types.typeOf(it).spelling })
 		assertFalse((declarations.statements.last() as BindingDeclaration).mutable)
 	}
 	@Test fun `both size mismatches and heterogeneous elements fail`() {
@@ -58,12 +57,29 @@ class ArraysTest {
 		failure("fn test() { [1][true] }", DiagnosticCode.INVALID_INDEX)
 		failure("fn test() { 1[0] }", DiagnosticCode.INVALID_INDEX)
 	}
+	@Test fun `array syntax keeps exact spans and rejects malformed contents`() {
+		val unit = parse("fn main() {\n def<int[2]> a = [\n 1,\n 2\n ]\n a[0]\n}")
+		val body = (unit.declarations.single() as cloth.parser.declaration.FunctionDeclaration).body as cloth.parser.declaration.BlockBody
+		val binding = body.statements.first() as BindingDeclaration
+		assertEquals("int[2]", binding.type?.spelling)
+		assertEquals(2, binding.type?.arraySizes?.single()?.span?.startLine)
+		val literal = binding.initializer as ArrayLiteral
+		assertEquals(2, literal.elements.size)
+		assertEquals(2, literal.span.startLine)
+		assertEquals(5, literal.span.endLine)
+		for (source in listOf("def a = [1,]", "def a = [1 2]", "def a = [1", "def<int[x]> a = []", "[1][]", "[1][0")) {
+			val error = assertFailsWith<ClothDiagnostic> { parse("fn main() { $source }") }
+			assertLocated(error)
+		}
+		failure("fn main() { def<int[2147483648]> a = [] }", DiagnosticCode.INVALID_ARRAY)
+	}
 	@Test fun `numeric widths and shapes distinguish parameter overloads`(@TempDir directory: Path) {
 		native(directory, "overloads", """
 			fn<int> take(int[] a) = a[0]
 			fn<int> take(int<64>[] a) = 99
 			fn<int> shape(int[1] a) = 1
 			fn<int> shape(int[2] a) = 2
+			fn<int> shape(int[] a) = 9
 			fn<int> main() = take([10]) + shape([1]) + shape([1, 2]) - 13
 		""")
 	}
@@ -146,6 +162,21 @@ class ArraysTest {
 	@Test fun `empty arrays require context and work through returns`(@TempDir directory: Path) {
 		native(directory, "empty", "fn<int[]> empty() = []\nfn take(int[] a) {}\nfn main() {\n def<int[0]> a = []\n take(a)\n take(empty())\n}")
 	}
+	@Test fun `unsized return context permits different sized conditional results`(@TempDir directory: Path) {
+		native(directory, "conditional_arrays", """
+			fn<int[]> choose(bool flag) = if (flag) { [1] } else { [2, 3] }
+			fn<int> main() = choose(true)[0] + choose(false)[1] - 4
+		""")
+	}
+	@Test fun `typed indexed operands provide numeric literal context`(@TempDir directory: Path) {
+		native(directory, "index_context", """
+			fn<int> main() {
+			    def<unsigned int<16>[]> a = [65534]
+			    if (a[0] + 1 == 65535) { return 0 }
+			    return 1
+			}
+		""")
+	}
 	@Test fun `out of range and negative indices fail through the runtime diagnostic`(@TempDir directory: Path) {
 		for ((index, value) in listOf("-1", "1", "18446744073709551615 -> unsigned int<64>").withIndex()) {
 			val expression = if (index == 2) "def<unsigned int<64>> i = 18446744073709551615" else "def i = $value"
@@ -158,5 +189,19 @@ class ArraysTest {
 	}
 	@Test fun `array libraries emit object files`() {
 		assertContains(LLVMEmitter().emit(parse("fn<int[]> identity(int[] a) = a")), "cloth.rt.array.copy")
+		assertContains(LLVMEmitter().emit(parse("fn<int[2]> make() = [1, 2]")), "cloth.rt.array.copy")
+		failure("fn take(int[02] a) {}\nfn take(int[2] b) {}", DiagnosticCode.DUPLICATE_FUNCTION)
+		failure("fn take(void[] a) {}", DiagnosticCode.VOID_TYPE)
+	}
+	@Test fun `runnable array example passes the normal CLI`(@TempDir directory: Path) {
+		val reports = StringBuilder()
+		val target = directory.resolve("arrays_example")
+		assertEquals(0, runCompiler(arrayOf("examples/Arrays.co", target.toString()), DiagnosticReporter(reports)), reports.toString())
+		val executable = cloth.util.ExecutableFormat.current.executablePath(target)
+		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
+		try {
+			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
+			assertEquals(0, process.exitValue(), process.inputStream.readBytes().toString(Charsets.UTF_8))
+		} finally { if (process.isAlive) process.destroyForcibly() }
 	}
 }
