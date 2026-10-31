@@ -4,7 +4,6 @@ import cloth.diagnostics.*
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
-import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
@@ -14,11 +13,11 @@ import com.opencastsoftware.yvette.Severity
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Files
-import java.nio.file.Path
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.charset.Charset
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.*
 
 /** Existing language tests now verify structured locations instead of text suffixes. */
@@ -33,21 +32,19 @@ internal fun assertLocated(failure: Throwable) {
 }
 
 class DiagnosticsTest {
+
 	private fun parse(text: String, name: String = "test.co") = Parser(Lexer(SourceFile(name, text)).scanTokens()).parseSnippet()
 	private fun render(diagnostic: ClothDiagnostic): String = buildString {
-		DiagnosticReporter(this, GraphicalReportHandler.builder().withColours(false).withUnicode(false)
-			.withTerminalLinks(false).withTerminalWidth(100).withCauseChain(false).buildFor(this)).report(diagnostic)
+		DiagnosticReporter(this, GraphicalReportHandler.builder().withColours(false).withUnicode(false).withTerminalLinks(false).withTerminalWidth(100).withCauseChain(false).buildFor(this)).report(diagnostic)
 	}.replace("\r\n", "\n")
-	private fun reporter(output: StringBuilder) = DiagnosticReporter(output,
-		GraphicalReportHandler.builder().withColours(false).withUnicode(false).withTerminalLinks(false)
-			.withTerminalWidth(100).withCauseChain(false).buildFor(output))
+
+	private fun reporter(output: StringBuilder) = DiagnosticReporter(output, GraphicalReportHandler.builder().withColours(false).withUnicode(false).withTerminalLinks(false).withTerminalWidth(100).withCauseChain(false).buildFor(output))
 
 	@Test
 	fun `codes are unique and severity help and source survive the Yvette contract`() {
 		assertEquals(DiagnosticCode.entries.size, DiagnosticCode.entries.map { it.id }.toSet().size)
 		val source = SourceFile("test.co", "x")
-		val diagnostic = ClothDiagnostic(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding 'x'",
-			listOf(SourceLabel(TokenSpan(1, 1, 1, 2, source), "unknown name")), "Declare x.", Severity.Warning)
+		val diagnostic = ClothDiagnostic(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding 'x'", listOf(SourceLabel(TokenSpan(1, 1, 1, 2, source), "unknown name")), "Declare x.", Severity.Warning)
 		assertEquals("C3000", diagnostic.code())
 		assertEquals(Severity.Warning, diagnostic.severity())
 		assertEquals("Declare x.", diagnostic.help()!!.render())
@@ -130,12 +127,7 @@ class DiagnosticsTest {
 
 	@Test
 	fun `lexical failures render multiline opening and EOF locations`() {
-		for ((text, code) in listOf(
-			"/* open\ncomment\n" to DiagnosticCode.UNTERMINATED_COMMENT,
-			"\"\"\"open\nraw\n" to DiagnosticCode.UNTERMINATED_RAW_STRING,
-			"\"\\q\"" to DiagnosticCode.INVALID_ESCAPE,
-			"\u2603" to DiagnosticCode.UNEXPECTED_CHARACTER,
-			"1__2" to DiagnosticCode.INVALID_SEPARATOR)) {
+		for ((text, code) in listOf("/* open\ncomment\n" to DiagnosticCode.UNTERMINATED_COMMENT, "\"\"\"open\nraw\n" to DiagnosticCode.UNTERMINATED_RAW_STRING, "\"\\q\"" to DiagnosticCode.INVALID_ESCAPE, "\u2603" to DiagnosticCode.UNEXPECTED_CHARACTER, "1__2" to DiagnosticCode.INVALID_SEPARATOR)) {
 			val failure = assertFailsWith<ClothDiagnostic> { Lexer(SourceFile("bad.co", text)).scanTokens() }
 			assertEquals(code, failure.diagnosticCode)
 			assertContains(render(failure), "bad.co")
@@ -145,11 +137,7 @@ class DiagnosticsTest {
 
 	@Test
 	fun `binding and branch errors retain both original and conflicting locations`() {
-		for ((text, code) in listOf(
-			"def x = 1\ndef x = 2" to DiagnosticCode.DUPLICATE_BINDING,
-			"def x := 1\nx = 2" to DiagnosticCode.IMMUTABLE_BINDING,
-			"def x = 1\nx = false" to DiagnosticCode.TYPE_MISMATCH,
-			"def x = if (true) { 1 } else { false }" to DiagnosticCode.BRANCH_TYPE_MISMATCH)) {
+		for ((text, code) in listOf("def x = 1\ndef x = 2" to DiagnosticCode.DUPLICATE_BINDING, "def x := 1\nx = 2" to DiagnosticCode.IMMUTABLE_BINDING, "def x = 1\nx = false" to DiagnosticCode.TYPE_MISMATCH, "def x = if (true) { 1 } else { false }" to DiagnosticCode.BRANCH_TYPE_MISMATCH)) {
 			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse(text)) }
 			assertEquals(code, failure.diagnosticCode)
 			assertEquals(2, failure.sourceLabels.size)
@@ -173,11 +161,7 @@ class DiagnosticsTest {
 
 	@Test
 	fun `CLI and IO diagnostics need no source snippets and debug traces are opt in`(@TempDir directory: Path) {
-		for ((args, code) in listOf(
-			arrayOf("--unknown") to "C0001", arrayOf("--runtime") to "C0002",
-			arrayOf("--runtime=invalid") to "C0003", arrayOf("one", "two", "three") to "C0004",
-			arrayOf(directory.resolve("missing.co").toString()) to "C0010",
-			arrayOf(directory.resolve("bad.txt").toString()) to "C0011")) {
+		for ((args, code) in listOf(arrayOf("--unknown") to "C0001", arrayOf("--runtime") to "C0002", arrayOf("--runtime=invalid") to "C0003", arrayOf("one", "two", "three") to "C0004", arrayOf(directory.resolve("missing.co").toString()) to "C0010", arrayOf(directory.resolve("bad.txt").toString()) to "C0011")) {
 			val output = StringBuilder()
 			assertEquals(1, runCompiler(args, reporter(output)))
 			assertContains(output.toString(), code)

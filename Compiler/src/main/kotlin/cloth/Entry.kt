@@ -31,7 +31,7 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 		val emitter = LLVMEmitter(compilerSettings.linkOptions)
 		when (compilerSettings.outputKind) {
 			OutputKind.EXECUTABLE -> emitter.compile(unit, output)
-			OutputKind.OBJECT -> emitter.compileObject(unit, output)
+			OutputKind.OBJECT     -> emitter.compileObject(unit, output)
 		}
 		return 0
 	} catch (failure: ClothDiagnostic) {

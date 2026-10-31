@@ -1,7 +1,7 @@
 package cloth.parser.expression
 
-import cloth.parser.statement.Statement
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.statement.Statement
 import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan

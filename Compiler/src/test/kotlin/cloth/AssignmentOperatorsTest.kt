@@ -31,19 +31,7 @@ class AssignmentOperatorsTest {
 
 	@Test
 	fun `compound assignments enforce binding types and mutability`() {
-		val cases = listOf(
-			"missing += 1" to DiagnosticCode.UNKNOWN_BINDING,
-			"def x := 1\nx += 1" to DiagnosticCode.IMMUTABLE_BINDING,
-			"def x := 1\nx++" to DiagnosticCode.IMMUTABLE_BINDING,
-			"def x = true\nx--" to DiagnosticCode.UNARY_OPERAND,
-			"def x = 1\nx += 0.5" to DiagnosticCode.TYPE_MISMATCH,
-			"def<unsigned int> x = 1\ndef y = 2\nx *= y" to DiagnosticCode.MIXED_INTEGERS,
-			"def<int<8>> x = 1\nx += 128" to DiagnosticCode.INTEGER_RANGE,
-			"def x = true\nx += false" to DiagnosticCode.BINARY_OPERANDS,
-			"def x = 'a'\nx -= 1" to DiagnosticCode.BINARY_OPERANDS,
-			"def x = \"a\"\nx *= 2" to DiagnosticCode.BINARY_OPERANDS,
-			"def x = 1\nx += firstMissing + secondMissing" to DiagnosticCode.UNKNOWN_BINDING
-		)
+		val cases = listOf("missing += 1" to DiagnosticCode.UNKNOWN_BINDING, "def x := 1\nx += 1" to DiagnosticCode.IMMUTABLE_BINDING, "def x := 1\nx++" to DiagnosticCode.IMMUTABLE_BINDING, "def x = true\nx--" to DiagnosticCode.UNARY_OPERAND, "def x = 1\nx += 0.5" to DiagnosticCode.TYPE_MISMATCH, "def<unsigned int> x = 1\ndef y = 2\nx *= y" to DiagnosticCode.MIXED_INTEGERS, "def<int<8>> x = 1\nx += 128" to DiagnosticCode.INTEGER_RANGE, "def x = true\nx += false" to DiagnosticCode.BINARY_OPERANDS, "def x = 'a'\nx -= 1" to DiagnosticCode.BINARY_OPERANDS, "def x = \"a\"\nx *= 2" to DiagnosticCode.BINARY_OPERANDS, "def x = 1\nx += firstMissing + secondMissing" to DiagnosticCode.UNKNOWN_BINDING)
 		for ((source, code) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { SemanticAnalyzer().analyze(parse(source)) }
 			assertEquals(code, failure.diagnosticCode, source)
@@ -150,15 +138,7 @@ class AssignmentOperatorsTest {
 
 	@Test
 	fun `powers reject nonnumeric operands mixed integers and literal negative exponents`() {
-		for ((source, code) in listOf(
-			"2 ** -1" to DiagnosticCode.NEGATIVE_EXPONENT,
-			"false && (2 ** -1 == 0)" to DiagnosticCode.NEGATIVE_EXPONENT,
-			"true ** 2" to DiagnosticCode.BINARY_OPERANDS,
-			"2 ** 'a'" to DiagnosticCode.BINARY_OPERANDS,
-			"\"a\" ** 2" to DiagnosticCode.BINARY_OPERANDS,
-			"def<unsigned int> x = 2\ndef y = 3\nx ** y" to DiagnosticCode.MIXED_INTEGERS,
-			"def<int<8>> x = 2\nx ** 128" to DiagnosticCode.INTEGER_RANGE
-		)) {
+		for ((source, code) in listOf("2 ** -1" to DiagnosticCode.NEGATIVE_EXPONENT, "false && (2 ** -1 == 0)" to DiagnosticCode.NEGATIVE_EXPONENT, "true ** 2" to DiagnosticCode.BINARY_OPERANDS, "2 ** 'a'" to DiagnosticCode.BINARY_OPERANDS, "\"a\" ** 2" to DiagnosticCode.BINARY_OPERANDS, "def<unsigned int> x = 2\ndef y = 3\nx ** y" to DiagnosticCode.MIXED_INTEGERS, "def<int<8>> x = 2\nx ** 128" to DiagnosticCode.INTEGER_RANGE)) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertEquals(code, failure.diagnosticCode, source)
 		}

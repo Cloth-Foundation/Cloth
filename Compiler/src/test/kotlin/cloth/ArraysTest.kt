@@ -1,12 +1,15 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.expression.*
+import cloth.parser.expression.ArrayLiteral
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.*
+import cloth.semantic.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -14,6 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ArraysTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("arrays.co", source.trimIndent())).scanTokens()).parse()
 	private fun check(source: String) = FunctionAnalyzer().analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
@@ -21,17 +25,25 @@ class ArraysTest {
 		assertEquals(code, diagnostic.diagnosticCode)
 		assertLocated(diagnostic)
 	}
+
 	private fun native(directory: Path, name: String, source: String, status: Int = 0, arguments: List<String> = emptyList(), error: String? = null) {
 		val executable = LLVMEmitter().compile(parse(source), directory.resolve(name))
 		val process = ProcessBuilder(listOf(executable.toString()) + arguments).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), name)
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
-			if (error == null) { assertEquals(status, process.exitValue(), output); assertEquals("", output) }
-			else { assertNotEquals(0, process.exitValue()); assertContains(output, error) }
-		} finally { if (process.isAlive) process.destroyForcibly() }
+			if (error == null) {
+				assertEquals(status, process.exitValue(), output); assertEquals("", output)
+			} else {
+				assertNotEquals(0, process.exitValue()); assertContains(output, error)
+			}
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
-	@Test fun `user declarations infer and retain sizes`() {
+
+	@Test
+	fun `user declarations infer and retain sizes`() {
 		val model = check("""
 			fn values() {
 			    def<int[]> unsized = [ 1, 2, 3 ]
@@ -44,12 +56,16 @@ class ArraysTest {
 		assertEquals(listOf("int[3]", "float[5]", "bool[3]", "string[2]"), declarations.statements.map { model.types.typeOf(it).spelling })
 		assertFalse((declarations.statements.last() as BindingDeclaration).mutable)
 	}
-	@Test fun `both size mismatches and heterogeneous elements fail`() {
+
+	@Test
+	fun `both size mismatches and heterogeneous elements fail`() {
 		for (binding in listOf("def<int[2]> oversized = [1]", "def<float[1]> undersized = [1.0, 2.0]", "def values = [1, true]", "def<int[]> values = [1.0]", "def<int[2][2]> values = [[1, 2], [3]]", "def values = [[1], [2, 3]]", "def values = []")) {
 			failure("fn test() { $binding }", DiagnosticCode.INVALID_ARRAY)
 		}
 	}
-	@Test fun `array and element types remain strict`() {
+
+	@Test
+	fun `array and element types remain strict`() {
 		failure("fn test() {\n def a = [1, 2]\n a = [3]\n}", DiagnosticCode.INVALID_ARRAY)
 		failure("fn test() {\n def a := [1]\n a = [2]\n}", DiagnosticCode.IMMUTABLE_BINDING)
 		failure("fn take(int[] a) {}\nfn test() { take([true]) }", DiagnosticCode.NO_MATCHING_CALL)
@@ -57,7 +73,9 @@ class ArraysTest {
 		failure("fn test() { [1][true] }", DiagnosticCode.INVALID_INDEX)
 		failure("fn test() { 1[0] }", DiagnosticCode.INVALID_INDEX)
 	}
-	@Test fun `array syntax keeps exact spans and rejects malformed contents`() {
+
+	@Test
+	fun `array syntax keeps exact spans and rejects malformed contents`() {
 		val unit = parse("fn main() {\n def<int[2]> a = [\n 1,\n 2\n ]\n a[0]\n}")
 		val body = (unit.declarations.single() as cloth.parser.declaration.FunctionDeclaration).body as cloth.parser.declaration.BlockBody
 		val binding = body.statements.first() as BindingDeclaration
@@ -73,7 +91,9 @@ class ArraysTest {
 		}
 		failure("fn main() { def<int[2147483648]> a = [] }", DiagnosticCode.INVALID_ARRAY)
 	}
-	@Test fun `numeric widths and shapes distinguish parameter overloads`(@TempDir directory: Path) {
+
+	@Test
+	fun `numeric widths and shapes distinguish parameter overloads`(@TempDir directory: Path) {
 		native(directory, "overloads", """
 			fn<int> take(int[] a) = a[0]
 			fn<int> take(int<64>[] a) = 99
@@ -83,7 +103,9 @@ class ArraysTest {
 			fn<int> main() = take([10]) + shape([1]) + shape([1, 2]) - 13
 		""")
 	}
-	@Test fun `construction indexing reassigning and calls execute`(@TempDir directory: Path) {
+
+	@Test
+	fun `construction indexing reassigning and calls execute`(@TempDir directory: Path) {
 		native(directory, "construction", """
 			fn<int> sum(int[] values) = values[0] + values[1] + values[2]
 			fn<int> fixed(int[3] values) = values[2]
@@ -95,7 +117,9 @@ class ArraysTest {
 			}
 		""")
 	}
-	@Test fun `nested array types use C dimension order`(@TempDir directory: Path) {
+
+	@Test
+	fun `nested array types use C dimension order`(@TempDir directory: Path) {
 		native(directory, "matrix", """
 			fn<int> get(int[2][3] matrix) = matrix[1][2]
 			fn<int> other(int[][] matrix) = matrix[0][1]
@@ -105,7 +129,9 @@ class ArraysTest {
 			}
 		""")
 	}
-	@Test fun `every primitive element representation survives calls and returns`(@TempDir directory: Path) {
+
+	@Test
+	fun `every primitive element representation survives calls and returns`(@TempDir directory: Path) {
 		for ((index, pair) in listOf("bool" to "true", "char" to "'😀'", "string" to "\"Hello\"", "float<16>" to "1.5", "float<64>" to "1.5", "unsigned int<8>" to "255", "int<64>" to "4294967296").withIndex()) {
 			val (type, literal) = pair
 			val value = if (type.startsWith("float<")) "$literal -> $type" else literal
@@ -120,7 +146,9 @@ class ArraysTest {
 			""")
 		}
 	}
-	@Test fun `return values deep copy strings and nested arrays across recursion`(@TempDir directory: Path) {
+
+	@Test
+	fun `return values deep copy strings and nested arrays across recursion`(@TempDir directory: Path) {
 		native(directory, "lifetimes", """
 			fn<string[][]> make(int n) {
 			    def local = [[#"value {n}", "Cloth" + "!"]]
@@ -136,7 +164,9 @@ class ArraysTest {
 			}
 		""")
 	}
-	@Test fun `elements and index expressions evaluate once in source order`(@TempDir directory: Path) {
+
+	@Test
+	fun `elements and index expressions evaluate once in source order`(@TempDir directory: Path) {
 		native(directory, "order", """
 			fn<int> combine(int[] a, int b) = a[0] * 100 + a[1] * 10 + b
 			fn<int> main() {
@@ -151,7 +181,9 @@ class ArraysTest {
 			}
 		""")
 	}
-	@Test fun `returns nested inside arrays and indices stop later evaluation`(@TempDir directory: Path) {
+
+	@Test
+	fun `returns nested inside arrays and indices stop later evaluation`(@TempDir directory: Path) {
 		native(directory, "interrupted", """
 			fn<int> trap() = [1][5]
 			fn<int> first(bool flag) { def<int[]> a = [if (flag) { return 7 } else { return 8 }, trap()] }
@@ -159,16 +191,22 @@ class ArraysTest {
 			fn<int> main() = first(true) + first(false) + second() - 24
 		""")
 	}
-	@Test fun `empty arrays require context and work through returns`(@TempDir directory: Path) {
+
+	@Test
+	fun `empty arrays require context and work through returns`(@TempDir directory: Path) {
 		native(directory, "empty", "fn<int[]> empty() = []\nfn take(int[] a) {}\nfn main() {\n def<int[0]> a = []\n take(a)\n take(empty())\n}")
 	}
-	@Test fun `unsized return context permits different sized conditional results`(@TempDir directory: Path) {
+
+	@Test
+	fun `unsized return context permits different sized conditional results`(@TempDir directory: Path) {
 		native(directory, "conditional_arrays", """
 			fn<int[]> choose(bool flag) = if (flag) { [1] } else { [2, 3] }
 			fn<int> main() = choose(true)[0] + choose(false)[1] - 4
 		""")
 	}
-	@Test fun `typed indexed operands provide numeric literal context`(@TempDir directory: Path) {
+
+	@Test
+	fun `typed indexed operands provide numeric literal context`(@TempDir directory: Path) {
 		native(directory, "index_context", """
 			fn<int> main() {
 			    def<unsigned int<16>[]> a = [65534]
@@ -177,23 +215,31 @@ class ArraysTest {
 			}
 		""")
 	}
-	@Test fun `out of range and negative indices fail through the runtime diagnostic`(@TempDir directory: Path) {
+
+	@Test
+	fun `out of range and negative indices fail through the runtime diagnostic`(@TempDir directory: Path) {
 		for ((index, value) in listOf("-1", "1", "18446744073709551615 -> unsigned int<64>").withIndex()) {
 			val expression = if (index == 2) "def<unsigned int<64>> i = 18446744073709551615" else "def i = $value"
 			native(directory, "bounds_$index", "fn<int> main() {\n $expression\n return [1][i]\n}", error = "Array index out of bounds")
 		}
 	}
-	@Test fun `main receives actual command line strings`(@TempDir directory: Path) {
+
+	@Test
+	fun `main receives actual command line strings`(@TempDir directory: Path) {
 		native(directory, "arguments", "fn<int> main(string[] args) {\n if (args[0] == \"Hello\" && args[1] == \"Cloth with spaces\") { return 0 }\n return 1\n}", arguments = listOf("Hello", "Cloth with spaces"))
 		native(directory, "no_arguments", "fn main(string[] args) {}")
 	}
-	@Test fun `array libraries emit object files`() {
+
+	@Test
+	fun `array libraries emit object files`() {
 		assertContains(LLVMEmitter().emit(parse("fn<int[]> identity(int[] a) = a")), "cloth.rt.array.copy")
 		assertContains(LLVMEmitter().emit(parse("fn<int[2]> make() = [1, 2]")), "cloth.rt.array.copy")
 		failure("fn take(int[02] a) {}\nfn take(int[2] b) {}", DiagnosticCode.DUPLICATE_FUNCTION)
 		failure("fn take(void[] a) {}", DiagnosticCode.VOID_TYPE)
 	}
-	@Test fun `runnable array example passes the normal CLI`(@TempDir directory: Path) {
+
+	@Test
+	fun `runnable array example passes the normal CLI`(@TempDir directory: Path) {
 		val reports = StringBuilder()
 		val target = directory.resolve("arrays_example")
 		assertEquals(0, runCompiler(arrayOf("examples/Arrays.co", target.toString()), DiagnosticReporter(reports)), reports.toString())
@@ -202,6 +248,8 @@ class ArraysTest {
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
 			assertEquals(0, process.exitValue(), process.inputStream.readBytes().toString(Charsets.UTF_8))
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

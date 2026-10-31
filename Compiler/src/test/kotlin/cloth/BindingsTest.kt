@@ -4,12 +4,12 @@ import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
-import cloth.parser.expression.BooleanLiteral
 import cloth.parser.expression.BinaryExpression
-import cloth.parser.statement.ExpressionStatement
+import cloth.parser.expression.BooleanLiteral
 import cloth.parser.expression.UnaryExpression
 import cloth.parser.statement.AssignmentStatement
 import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
 import cloth.token.Operators
@@ -74,21 +74,7 @@ class BindingsTest {
 
 	@Test
 	fun `malformed binding syntax is rejected`() {
-		val cases = listOf(
-			"def x",
-			"def x =",
-			"def y :=",
-			"def = 10",
-			"def<> x = 10",
-			"def<int x = 10",
-			"def<int>> x = 10",
-			"def<int> = 10",
-			"def<int> x 10",
-			"def<int> x =",
-			"def<int> x = (1 + 2",
-			"def<int> x = 1 def<int> y = 2",
-			"x := 10"
-		)
+		val cases = listOf("def x", "def x =", "def y :=", "def = 10", "def<> x = 10", "def<int x = 10", "def<int>> x = 10", "def<int> = 10", "def<int> x 10", "def<int> x =", "def<int> x = (1 + 2", "def<int> x = 1 def<int> y = 2", "x := 10")
 		for (source in cases) {
 			assertFailsWith<SyntaxException>(source) { parse(source) }
 		}
@@ -96,20 +82,7 @@ class BindingsTest {
 
 	@Test
 	fun `inferred bindings keep their initializer type and ordinary binding rules`() {
-		val cases = listOf(
-			"def x = 10\nx = 1.5" to "Cannot assign 'float' to 'int'",
-			"def x = 10\ndef y := x + 2\nx = y / 2.0" to "Cannot assign 'float' to 'int'",
-			"def x = 10\nx = x + 1\nx = 1.5" to "Cannot assign 'float' to 'int'",
-			"def x = 1.5\nx = 10" to "Cannot assign 'int' to 'float'",
-			"def x = 1 + 0.5\ndef y = -x\ny = 2" to "Cannot assign 'int' to 'float'",
-			"def x := 10\nx = 20" to "Cannot reassign immutable binding 'x'",
-			"def x := 1.5\nx = 2.5" to "Cannot reassign immutable binding 'x'",
-			"def x = x + 1" to "Unknown binding 'x'",
-			"def x := missing + 2" to "Unknown binding 'missing'",
-			"def x = 1\ndef<int> x = 2" to "already declared",
-			"def<int> x = 1\ndef x := 2" to "already declared",
-			"def x = 1.5\ndef<int> y = x" to "Cannot assign 'float' to 'int'"
-		)
+		val cases = listOf("def x = 10\nx = 1.5" to "Cannot assign 'float' to 'int'", "def x = 10\ndef y := x + 2\nx = y / 2.0" to "Cannot assign 'float' to 'int'", "def x = 10\nx = x + 1\nx = 1.5" to "Cannot assign 'float' to 'int'", "def x = 1.5\nx = 10" to "Cannot assign 'int' to 'float'", "def x = 1 + 0.5\ndef y = -x\ny = 2" to "Cannot assign 'int' to 'float'", "def x := 10\nx = 20" to "Cannot reassign immutable binding 'x'", "def x := 1.5\nx = 2.5" to "Cannot reassign immutable binding 'x'", "def x = x + 1" to "Unknown binding 'x'", "def x := missing + 2" to "Unknown binding 'missing'", "def x = 1\ndef<int> x = 2" to "already declared", "def<int> x = 1\ndef x := 2" to "already declared", "def x = 1.5\ndef<int> y = x" to "Cannot assign 'float' to 'int'")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) {
 				// The public emission path must reject mismatches before generating LLVM.
@@ -122,18 +95,7 @@ class BindingsTest {
 
 	@Test
 	fun `invalid binding uses report semantic errors with locations`() {
-		val cases = listOf(
-			"missing + 1" to "Unknown binding 'missing'",
-			"missing = 1" to "Unknown binding 'missing'",
-			"def<int> x = x + 1" to "Unknown binding 'x'",
-			"def<int> x = later\ndef<int> later = 1" to "Unknown binding 'later'",
-			"def<int> x = 1\ndef<int> x = 2" to "already declared",
-			"def<int> x := 1\nx = 2" to "Cannot reassign immutable binding 'x'",
-			"def<int> x = 1.5" to "Cannot assign 'float' to 'int'",
-			"def<int> x = 1\nx = x + 0.5" to "Cannot assign 'float' to 'int'",
-			"def<bool> x = 1" to "Cannot assign 'int' to 'bool'",
-			"def<Widget> x = 1" to "not supported yet"
-		)
+		val cases = listOf("missing + 1" to "Unknown binding 'missing'", "missing = 1" to "Unknown binding 'missing'", "def<int> x = x + 1" to "Unknown binding 'x'", "def<int> x = later\ndef<int> later = 1" to "Unknown binding 'later'", "def<int> x = 1\ndef<int> x = 2" to "already declared", "def<int> x := 1\nx = 2" to "Cannot reassign immutable binding 'x'", "def<int> x = 1.5" to "Cannot assign 'float' to 'int'", "def<int> x = 1\nx = x + 0.5" to "Cannot assign 'float' to 'int'", "def<bool> x = 1" to "Cannot assign 'int' to 'bool'", "def<Widget> x = 1" to "not supported yet")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) {
 				SemanticAnalyzer().analyze(parse(source))
@@ -220,18 +182,7 @@ class BindingsTest {
 
 	@Test
 	fun `explicit floats enforce declared types and immutability`() {
-		val cases = listOf(
-			"def<float> x = 1" to "Cannot assign 'int' to 'float'",
-			"def<float> x := 1" to "Cannot assign 'int' to 'float'",
-			"def x = 10\ndef<float> y = x" to "Cannot assign 'int' to 'float'",
-			"def<float> x = 1.5\nx = 2" to "Cannot assign 'int' to 'float'",
-			"def<float> x = 1.5\nx = 2.0\nx = 2 / 2" to "Cannot assign 'int' to 'float'",
-			"def<float> x := 1.5\nx = 2.0" to "Cannot reassign immutable binding 'x'",
-			"def<float> x = 1.5\ndef<int> y = x" to "Cannot assign 'float' to 'int'",
-			"def<float> x = 1.5\ndef y = 1\ny = x" to "Cannot assign 'float' to 'int'",
-			"def<float> x = x + 1.0" to "Unknown binding 'x'",
-			"def x = 1.5\ndef<float> x = 2.0" to "already declared"
-		)
+		val cases = listOf("def<float> x = 1" to "Cannot assign 'int' to 'float'", "def<float> x := 1" to "Cannot assign 'int' to 'float'", "def x = 10\ndef<float> y = x" to "Cannot assign 'int' to 'float'", "def<float> x = 1.5\nx = 2" to "Cannot assign 'int' to 'float'", "def<float> x = 1.5\nx = 2.0\nx = 2 / 2" to "Cannot assign 'int' to 'float'", "def<float> x := 1.5\nx = 2.0" to "Cannot reassign immutable binding 'x'", "def<float> x = 1.5\ndef<int> y = x" to "Cannot assign 'float' to 'int'", "def<float> x = 1.5\ndef y = 1\ny = x" to "Cannot assign 'float' to 'int'", "def<float> x = x + 1.0" to "Unknown binding 'x'", "def x = 1.5\ndef<float> x = 2.0" to "already declared")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) {
 				LLVMEmitter().emitSnippet(parse(source))
@@ -277,25 +228,9 @@ class BindingsTest {
 
 	@Test
 	fun `booleans reject numeric conversions arithmetic and immutable assignment`() {
-		val cases = listOf(
-			"def<bool> x = 0" to "Cannot assign 'int' to 'bool'",
-			"def<bool> x = 1.0" to "Cannot assign 'float' to 'bool'",
-			"def<int> x = true" to "Cannot assign 'bool' to 'int'",
-			"def<float> x = false" to "Cannot assign 'bool' to 'float'",
-			"def x = true\nx = 1" to "Cannot assign 'int' to 'bool'",
-			"def x = false\nx = 1.0" to "Cannot assign 'float' to 'bool'",
-			"def x = 1\nx = false" to "Cannot assign 'bool' to 'int'",
-			"def x = 1.0\nx = true" to "Cannot assign 'bool' to 'float'",
-			"def<bool> x := true\nx = false" to "Cannot reassign immutable binding 'x'",
-			"def x := false\nx = true" to "Cannot reassign immutable binding 'x'",
-			"def x = true\ndef x = false" to "already declared",
-			"def x = x" to "Unknown binding 'x'",
-			"def x = later\ndef later = true" to "Unknown binding 'later'"
-		) + listOf("+true", "-false").map { it to "requires a numeric operand" } +
-			listOf("+", "-", "*", "/", "%").flatMap { operator ->
-				listOf("true $operator false", "true $operator 1", "1.0 $operator false", "1 $operator true")
-					.map { it to "requires numeric operands" }
-			}
+		val cases = listOf("def<bool> x = 0" to "Cannot assign 'int' to 'bool'", "def<bool> x = 1.0" to "Cannot assign 'float' to 'bool'", "def<int> x = true" to "Cannot assign 'bool' to 'int'", "def<float> x = false" to "Cannot assign 'bool' to 'float'", "def x = true\nx = 1" to "Cannot assign 'int' to 'bool'", "def x = false\nx = 1.0" to "Cannot assign 'float' to 'bool'", "def x = 1\nx = false" to "Cannot assign 'bool' to 'int'", "def x = 1.0\nx = true" to "Cannot assign 'bool' to 'float'", "def<bool> x := true\nx = false" to "Cannot reassign immutable binding 'x'", "def x := false\nx = true" to "Cannot reassign immutable binding 'x'", "def x = true\ndef x = false" to "already declared", "def x = x" to "Unknown binding 'x'", "def x = later\ndef later = true" to "Unknown binding 'later'") + listOf("+true", "-false").map { it to "requires a numeric operand" } + listOf("+", "-", "*", "/", "%").flatMap { operator ->
+			listOf("true $operator false", "true $operator 1", "1.0 $operator false", "1 $operator true").map { it to "requires numeric operands" }
+		}
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -374,22 +309,7 @@ class BindingsTest {
 
 	@Test
 	fun `boolean negation rejects numeric operands and preserves type rules`() {
-		val cases = listOf(
-			"!0" to "requires a boolean operand, got 'int'",
-			"!!1" to "requires a boolean operand, got 'int'",
-			"!-1" to "requires a boolean operand, got 'int'",
-			"!1.5" to "requires a boolean operand, got 'float'",
-			"!(1 + 2)" to "requires a boolean operand, got 'int'",
-			"def number = 1.0\n!number" to "requires a boolean operand, got 'float'",
-			"!missing" to "Unknown binding 'missing'",
-			"def<int> x = !true" to "Cannot assign 'bool' to 'int'",
-			"def<float> x = !false" to "Cannot assign 'bool' to 'float'",
-			"def x = !true\nx = 1" to "Cannot assign 'int' to 'bool'",
-			"def x := !true\nx = !x" to "Cannot reassign immutable binding 'x'",
-			"-!true" to "requires a numeric operand",
-			"!+false" to "requires a numeric operand",
-			"!true + 1" to "requires numeric operands"
-		)
+		val cases = listOf("!0" to "requires a boolean operand, got 'int'", "!!1" to "requires a boolean operand, got 'int'", "!-1" to "requires a boolean operand, got 'int'", "!1.5" to "requires a boolean operand, got 'float'", "!(1 + 2)" to "requires a boolean operand, got 'int'", "def number = 1.0\n!number" to "requires a boolean operand, got 'float'", "!missing" to "Unknown binding 'missing'", "def<int> x = !true" to "Cannot assign 'bool' to 'int'", "def<float> x = !false" to "Cannot assign 'bool' to 'float'", "def x = !true\nx = 1" to "Cannot assign 'int' to 'bool'", "def x := !true\nx = !x" to "Cannot reassign immutable binding 'x'", "-!true" to "requires a numeric operand", "!+false" to "requires a numeric operand", "!true + 1" to "requires numeric operands")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -399,18 +319,7 @@ class BindingsTest {
 
 	@Test
 	fun `native boolean negation handles literals nesting and current binding values`(@TempDir directory: Path) {
-		val cases = listOf(
-			"!true" to false,
-			"!false" to true,
-			"!!false" to false,
-			"!!!false" to true,
-			"!(!(true))" to true,
-			"def<bool> alive = true\ndef inverse := !alive\ninverse" to false,
-			"def alive = false\ndef<bool> inverse := !alive\ninverse" to true,
-			"def alive = false\nalive = !alive" to true,
-			"def alive = true\nalive = !alive\nalive = !alive\nalive" to true,
-			"def alive = true\ndef snapshot := !alive\nalive = !alive\n!snapshot" to true
-		)
+		val cases = listOf("!true" to false, "!false" to true, "!!false" to false, "!!!false" to true, "!(!(true))" to true, "def<bool> alive = true\ndef inverse := !alive\ninverse" to false, "def alive = false\ndef<bool> inverse := !alive\ninverse" to true, "def alive = false\nalive = !alive" to true, "def alive = true\nalive = !alive\nalive = !alive\nalive" to true, "def alive = true\ndef snapshot := !alive\nalive = !alive\n!snapshot" to true)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
 			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("negation_$index"))
@@ -420,11 +329,9 @@ class BindingsTest {
 
 	@Test
 	fun `logical and equality tokens remain distinct from assignment and negation`() {
-		val operators = Lexer("!true != false && !false || true == false = true").scanTokens()
-			.filter { it.type == TokenType.Operator }.map { it.lexeme }
+		val operators = Lexer("!true != false && !false || true == false = true").scanTokens().filter { it.type == TokenType.Operator }.map { it.lexeme }
 		assertEquals(listOf("!", "!=", "&&", "!", "||", "==", "="), operators)
-		val ordering = Lexer("1 < 2 > 0 <= 3 >= 1").scanTokens()
-			.filter { it.type == TokenType.Operator }.map { it.lexeme }
+		val ordering = Lexer("1 < 2 > 0 <= 3 >= 1").scanTokens().filter { it.type == TokenType.Operator }.map { it.lexeme }
 		assertEquals(listOf("<", ">", "<=", ">="), ordering)
 	}
 
@@ -450,21 +357,7 @@ class BindingsTest {
 
 	@Test
 	fun `logical operators type check both operands even when short circuited`() {
-		val cases = listOf(
-			"false && 1" to "requires boolean operands",
-			"true || 0.0" to "requires boolean operands",
-			"1 && true" to "requires boolean operands",
-			"1.5 || false" to "requires boolean operands",
-			"1 && 2.0" to "requires boolean operands",
-			"false && missing" to "Unknown binding 'missing'",
-			"true || missing" to "Unknown binding 'missing'",
-			"def<int> x = true && false" to "Cannot assign 'bool' to 'int'",
-			"def<float> x = false || true" to "Cannot assign 'bool' to 'float'",
-			"def x = true && false\nx = 1" to "Cannot assign 'int' to 'bool'",
-			"def x := false || true\nx = false" to "Cannot reassign immutable binding 'x'",
-			"true || false + 1" to "requires numeric operands",
-			"-(true && false)" to "requires a numeric operand"
-		)
+		val cases = listOf("false && 1" to "requires boolean operands", "true || 0.0" to "requires boolean operands", "1 && true" to "requires boolean operands", "1.5 || false" to "requires boolean operands", "1 && 2.0" to "requires boolean operands", "false && missing" to "Unknown binding 'missing'", "true || missing" to "Unknown binding 'missing'", "def<int> x = true && false" to "Cannot assign 'bool' to 'int'", "def<float> x = false || true" to "Cannot assign 'bool' to 'float'", "def x = true && false\nx = 1" to "Cannot assign 'int' to 'bool'", "def x := false || true\nx = false" to "Cannot reassign immutable binding 'x'", "true || false + 1" to "requires numeric operands", "-(true && false)" to "requires a numeric operand")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -505,18 +398,7 @@ class BindingsTest {
 
 	@Test
 	fun `nested short circuit expressions compose with storage negation and later statements`(@TempDir directory: Path) {
-		val cases = listOf(
-			"true || false && false" to true,
-			"(true || false) && false" to false,
-			"false && true || true" to true,
-			"false || (true && !false)" to true,
-			"(true && false) || (false || true)" to true,
-			"(true || false) && (false || true)" to true,
-			"true && (false || (true && false))" to false,
-			"!((false || true) && (true || false))" to false,
-			"def a = true\ndef snapshot := a && false\na = a && !snapshot\na = !a || snapshot\na" to false,
-			"def<bool> a = false || true\ndef b := a && true\na = false\nb" to true
-		)
+		val cases = listOf("true || false && false" to true, "(true || false) && false" to false, "false && true || true" to true, "false || (true && !false)" to true, "(true && false) || (false || true)" to true, "(true || false) && (false || true)" to true, "true && (false || (true && false))" to false, "!((false || true) && (true || false))" to false, "def a = true\ndef snapshot := a && false\na = a && !snapshot\na = !a || snapshot\na" to false, "def<bool> a = false || true\ndef b := a && true\na = false\nb" to true)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
 			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("nested_logic_$index"))
@@ -551,20 +433,7 @@ class BindingsTest {
 
 	@Test
 	fun `equality rejects boolean numeric mixing and preserves binding rules`() {
-		val cases = listOf(
-			"true == 1" to "Cannot compare 'bool' and 'int'",
-			"0 != false" to "Cannot compare 'int' and 'bool'",
-			"true != 1.0" to "Cannot compare 'bool' and 'float'",
-			"0.0 == false" to "Cannot compare 'float' and 'bool'",
-			"true || (false != 1)" to "Cannot compare 'bool' and 'int'",
-			"true == missing" to "Unknown binding 'missing'",
-			"missing != false" to "Unknown binding 'missing'",
-			"def<int> same = true == false" to "Cannot assign 'bool' to 'int'",
-			"def<float> different = true != false" to "Cannot assign 'bool' to 'float'",
-			"def same = true == false\nsame = 1" to "Cannot assign 'int' to 'bool'",
-			"def same := true == false\nsame = true" to "Cannot reassign immutable binding 'same'",
-			"(true == false) + 1" to "requires numeric operands"
-		)
+		val cases = listOf("true == 1" to "Cannot compare 'bool' and 'int'", "0 != false" to "Cannot compare 'int' and 'bool'", "true != 1.0" to "Cannot compare 'bool' and 'float'", "0.0 == false" to "Cannot compare 'float' and 'bool'", "true || (false != 1)" to "Cannot compare 'bool' and 'int'", "true == missing" to "Unknown binding 'missing'", "missing != false" to "Unknown binding 'missing'", "def<int> same = true == false" to "Cannot assign 'bool' to 'int'", "def<float> different = true != false" to "Cannot assign 'bool' to 'float'", "def same = true == false\nsame = 1" to "Cannot assign 'int' to 'bool'", "def same := true == false\nsame = true" to "Cannot reassign immutable binding 'same'", "(true == false) + 1" to "requires numeric operands")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -590,22 +459,7 @@ class BindingsTest {
 
 	@Test
 	fun `boolean comparisons compose with short circuits negation and storage`(@TempDir directory: Path) {
-		val cases = listOf(
-			"!true == false" to true,
-			"!(true == false)" to true,
-			"true == false && false" to false,
-			"true || false == false" to true,
-			"true && true != false || false" to true,
-			"(true && false) == (false || false)" to true,
-			"(true || false) != (true && false)" to true,
-			"true == (false || (true && false))" to false,
-			"(true && false) != true && !false" to true,
-			"false && (true != false)" to false,
-			"true || (true == false)" to true,
-			"true == false != false" to false,
-			"def a = true\ndef<bool> same = a == false\ndef copy := same\na = false\nsame = a != true\ncopy == !same" to true,
-			"def a = true\ndef same := a == true\na = false\nsame" to true
-		)
+		val cases = listOf("!true == false" to true, "!(true == false)" to true, "true == false && false" to false, "true || false == false" to true, "true && true != false || false" to true, "(true && false) == (false || false)" to true, "(true || false) != (true && false)" to true, "true == (false || (true && false))" to false, "(true && false) != true && !false" to true, "false && (true != false)" to false, "true || (true == false)" to true, "true == false != false" to false, "def a = true\ndef<bool> same = a == false\ndef copy := same\na = false\nsame = a != true\ncopy == !same" to true, "def a = true\ndef same := a == true\na = false\nsame" to true)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
 			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("comparison_composition_$index"))
@@ -615,16 +469,7 @@ class BindingsTest {
 
 	@Test
 	fun `native integer equality preserves exact values signs and boundaries`(@TempDir directory: Path) {
-		val cases = listOf(
-			Triple("0", "0", true),
-			Triple("7", "7", true),
-			Triple("7", "8", false),
-			Triple("-7", "-7", true),
-			Triple("-7", "7", false),
-			Triple("2147483647", "2147483646", false),
-			Triple("(-2147483647 - 1)", "(-2147483647 - 1)", true),
-			Triple("16777217", "16777216", false)
-		)
+		val cases = listOf(Triple("0", "0", true), Triple("7", "7", true), Triple("7", "8", false), Triple("-7", "-7", true), Triple("-7", "7", false), Triple("2147483647", "2147483646", false), Triple("(-2147483647 - 1)", "(-2147483647 - 1)", true), Triple("16777217", "16777216", false))
 		for ((index, case) in cases.withIndex()) {
 			val (left, right, same) = case
 			for (equal in listOf(false, true)) {
@@ -638,19 +483,7 @@ class BindingsTest {
 
 	@Test
 	fun `native float equality handles signed zero infinity and NaN`(@TempDir directory: Path) {
-		val cases = listOf(
-			Triple("1.25", "1.25", true),
-			Triple("1.25", "1.5", false),
-			Triple("-1.25", "-1.25", true),
-			Triple("-1.25", "1.25", false),
-			Triple("zero", "-zero", true),
-			Triple("1.0 / zero", "1.0 / zero", true),
-			Triple("1.0 / zero", "-1.0 / zero", false),
-			Triple("zero / zero", "zero / zero", false),
-			Triple("zero / zero", "1.0", false),
-			Triple("1.0", "zero / zero", false),
-			Triple("1.0 / zero", "zero / zero", false)
-		)
+		val cases = listOf(Triple("1.25", "1.25", true), Triple("1.25", "1.5", false), Triple("-1.25", "-1.25", true), Triple("-1.25", "1.25", false), Triple("zero", "-zero", true), Triple("1.0 / zero", "1.0 / zero", true), Triple("1.0 / zero", "-1.0 / zero", false), Triple("zero / zero", "zero / zero", false), Triple("zero / zero", "1.0", false), Triple("1.0", "zero / zero", false), Triple("1.0 / zero", "zero / zero", false))
 		for ((index, case) in cases.withIndex()) {
 			val (left, right, same) = case
 			for (equal in listOf(false, true)) {
@@ -664,17 +497,7 @@ class BindingsTest {
 
 	@Test
 	fun `mixed numeric equality follows existing float32 promotion in either order`(@TempDir directory: Path) {
-		val cases = listOf(
-			Triple("7", "7.0", true),
-			Triple("7.0", "7", true),
-			Triple("-7", "-7.0", true),
-			Triple("-7.0", "7", false),
-			Triple("7", "7.5", false),
-			Triple("7.5", "7", false),
-			Triple("0", "-0.0", true),
-			Triple("16777217", "16777216.0", true),
-			Triple("16777216.0", "16777217", true)
-		)
+		val cases = listOf(Triple("7", "7.0", true), Triple("7.0", "7", true), Triple("-7", "-7.0", true), Triple("-7.0", "7", false), Triple("7", "7.5", false), Triple("7.5", "7", false), Triple("0", "-0.0", true), Triple("16777217", "16777216.0", true), Triple("16777216.0", "16777217", true))
 		for ((index, case) in cases.withIndex()) {
 			val (left, right, same) = case
 			for (equal in listOf(false, true)) {
@@ -688,15 +511,7 @@ class BindingsTest {
 
 	@Test
 	fun `numeric comparisons compose with arithmetic bindings and guarded division`(@TempDir directory: Path) {
-		val cases = listOf(
-			"1 + 2 * 3 == 7 && 4.5 / 1.5 != 2.0" to true,
-			"!(3 == 4) && (1.5 != 2.0)" to true,
-			"(1 == 1) == (2.0 != 3.0)" to true,
-			"def<int> count = 7\ndef snapshot := count == 7.0\ncount = 8\nsnapshot && count != 7" to true,
-			"def<float> scale = 1.5\ndef<bool> same = scale == 1.5\nscale = 2.0\nsame = scale == 1.5\nsame" to false,
-			"def zero = 0\ndef guard = false\nguard && (10 / zero == 1)" to false,
-			"def zero = 0\ndef guard = true\nguard || (10 / zero != 1)" to true
-		)
+		val cases = listOf("1 + 2 * 3 == 7 && 4.5 / 1.5 != 2.0" to true, "!(3 == 4) && (1.5 != 2.0)" to true, "(1 == 1) == (2.0 != 3.0)" to true, "def<int> count = 7\ndef snapshot := count == 7.0\ncount = 8\nsnapshot && count != 7" to true, "def<float> scale = 1.5\ndef<bool> same = scale == 1.5\nscale = 2.0\nsame = scale == 1.5\nsame" to false, "def zero = 0\ndef guard = false\nguard && (10 / zero == 1)" to false, "def zero = 0\ndef guard = true\nguard || (10 / zero != 1)" to true)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
 			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("numeric_composition_$index"))
@@ -706,19 +521,7 @@ class BindingsTest {
 
 	@Test
 	fun `numeric equality results retain bool typing and strict assignment checks`() {
-		val cases = listOf(
-			"def<int> same = 1 == 1" to "Cannot assign 'bool' to 'int'",
-			"def<float> different = 1.0 != 2.0" to "Cannot assign 'bool' to 'float'",
-			"def same = 1 == 1.0\nsame = 1" to "Cannot assign 'int' to 'bool'",
-			"def same := 1.0 == 1\nsame = false" to "Cannot reassign immutable binding 'same'",
-			"def x = 1\nx = 1.0" to "Cannot assign 'float' to 'int'",
-			"def<float> x = 1" to "Cannot assign 'int' to 'float'",
-			"1 == 1 == 1" to "Cannot compare 'bool' and 'int'",
-			"true == 1.0" to "Cannot compare 'bool' and 'float'",
-			"1.0 != false" to "Cannot compare 'float' and 'bool'",
-			"1 == missing" to "Unknown binding 'missing'",
-			"(1 == 1) + 2" to "requires numeric operands"
-		)
+		val cases = listOf("def<int> same = 1 == 1" to "Cannot assign 'bool' to 'int'", "def<float> different = 1.0 != 2.0" to "Cannot assign 'bool' to 'float'", "def same = 1 == 1.0\nsame = 1" to "Cannot assign 'int' to 'bool'", "def same := 1.0 == 1\nsame = false" to "Cannot reassign immutable binding 'same'", "def x = 1\nx = 1.0" to "Cannot assign 'float' to 'int'", "def<float> x = 1" to "Cannot assign 'int' to 'float'", "1 == 1 == 1" to "Cannot compare 'bool' and 'int'", "true == 1.0" to "Cannot compare 'bool' and 'float'", "1.0 != false" to "Cannot compare 'float' and 'bool'", "1 == missing" to "Unknown binding 'missing'", "(1 == 1) + 2" to "requires numeric operands")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -748,20 +551,7 @@ class BindingsTest {
 
 	@Test
 	fun `ordering requires numeric operands and returns a bool`() {
-		val cases = listOf(
-			"true < false" to "requires numeric operands",
-			"true > 1" to "requires numeric operands",
-			"1.0 <= false" to "requires numeric operands",
-			"true >= 1.5" to "requires numeric operands",
-			"false && (true < 1)" to "requires numeric operands",
-			"1 < 2 < 3" to "requires numeric operands",
-			"1 <= missing" to "Unknown binding 'missing'",
-			"def<int> x = 1 < 2" to "Cannot assign 'bool' to 'int'",
-			"def<float> x = 1.0 >= 2.0" to "Cannot assign 'bool' to 'float'",
-			"def x = 1 < 2.0\nx = 1" to "Cannot assign 'int' to 'bool'",
-			"def x := 1.0 > 2\nx = false" to "Cannot reassign immutable binding 'x'",
-			"(1 < 2) + 3" to "requires numeric operands"
-		)
+		val cases = listOf("true < false" to "requires numeric operands", "true > 1" to "requires numeric operands", "1.0 <= false" to "requires numeric operands", "true >= 1.5" to "requires numeric operands", "false && (true < 1)" to "requires numeric operands", "1 < 2 < 3" to "requires numeric operands", "1 <= missing" to "Unknown binding 'missing'", "def<int> x = 1 < 2" to "Cannot assign 'bool' to 'int'", "def<float> x = 1.0 >= 2.0" to "Cannot assign 'bool' to 'float'", "def x = 1 < 2.0\nx = 1" to "Cannot assign 'int' to 'bool'", "def x := 1.0 > 2\nx = false" to "Cannot reassign immutable binding 'x'", "(1 < 2) + 3" to "requires numeric operands")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -771,65 +561,22 @@ class BindingsTest {
 
 	@Test
 	fun `native integer ordering uses signed exact comparisons`(@TempDir directory: Path) {
-		assertOrdering(directory, "int", listOf(
-			Triple("1", "2", -1),
-			Triple("2", "1", 1),
-			Triple("2", "2", 0),
-			Triple("-1", "0", -1),
-			Triple("0", "-1", 1),
-			Triple("-3", "-2", -1),
-			Triple("(-2147483647 - 1)", "2147483647", -1),
-			Triple("2147483647", "(-2147483647 - 1)", 1),
-			Triple("16777217", "16777216", 1)
-		))
+		assertOrdering(directory, "int", listOf(Triple("1", "2", -1), Triple("2", "1", 1), Triple("2", "2", 0), Triple("-1", "0", -1), Triple("0", "-1", 1), Triple("-3", "-2", -1), Triple("(-2147483647 - 1)", "2147483647", -1), Triple("2147483647", "(-2147483647 - 1)", 1), Triple("16777217", "16777216", 1)))
 	}
 
 	@Test
 	fun `native float ordering handles zero infinity and unordered NaN`(@TempDir directory: Path) {
-		assertOrdering(directory, "float", listOf(
-			Triple("1.25", "1.5", -1),
-			Triple("1.5", "1.25", 1),
-			Triple("1.25", "1.25", 0),
-			Triple("-1.5", "-1.25", -1),
-			Triple("zero", "-zero", 0),
-			Triple("1.0 / zero", "1.0 / zero", 0),
-			Triple("-1.0 / zero", "1.0", -1),
-			Triple("1.0 / zero", "1.0", 1),
-			Triple("zero / zero", "1.0", null),
-			Triple("1.0", "zero / zero", null),
-			Triple("zero / zero", "zero / zero", null)
-		))
+		assertOrdering(directory, "float", listOf(Triple("1.25", "1.5", -1), Triple("1.5", "1.25", 1), Triple("1.25", "1.25", 0), Triple("-1.5", "-1.25", -1), Triple("zero", "-zero", 0), Triple("1.0 / zero", "1.0 / zero", 0), Triple("-1.0 / zero", "1.0", -1), Triple("1.0 / zero", "1.0", 1), Triple("zero / zero", "1.0", null), Triple("1.0", "zero / zero", null), Triple("zero / zero", "zero / zero", null)))
 	}
 
 	@Test
 	fun `mixed ordering follows float32 promotion in both operand directions`(@TempDir directory: Path) {
-		assertOrdering(directory, "mixed", listOf(
-			Triple("7", "7.5", -1),
-			Triple("7.5", "7", 1),
-			Triple("7", "7.0", 0),
-			Triple("7.0", "7", 0),
-			Triple("-7", "-6.5", -1),
-			Triple("-6.5", "-7", 1),
-			Triple("0", "-0.0", 0),
-			Triple("16777217", "16777216.0", 0),
-			Triple("16777216.0", "16777217", 0)
-		))
+		assertOrdering(directory, "mixed", listOf(Triple("7", "7.5", -1), Triple("7.5", "7", 1), Triple("7", "7.0", 0), Triple("7.0", "7", 0), Triple("-7", "-6.5", -1), Triple("-6.5", "-7", 1), Triple("0", "-0.0", 0), Triple("16777217", "16777216.0", 0), Triple("16777216.0", "16777217", 0)))
 	}
 
 	@Test
 	fun `ordering composes with arithmetic equality storage and short circuit guards`(@TempDir directory: Path) {
-		val cases = listOf(
-			"1 + 2 * 3 < 8 == true && 4 >= 3" to true,
-			"!(3 < 2) && 1.5 <= 2.0" to true,
-			"2 > 1 != 4 <= 3" to true,
-			"1 < 2 && 3.0 > 2 || 4 >= 5" to true,
-			"(1 > 2 || 3 <= 3) == (4.0 >= 4 && 5 != 6)" to true,
-			"def x = 7\ndef snapshot := x < 8.0\nx = 9\nsnapshot && x >= 8" to true,
-			"def<float> x = 1.5\ndef<bool> inRange = x > 1.0\nx = 0.5\ninRange = x > 1.0\ninRange" to false,
-			"def zero = 0\nzero != 0 && 10 / zero > 1" to false,
-			"def zero = 0\nzero == 0 || 10 / zero <= 1" to true,
-			"def x = 2 < 3\ndef y = 9\ny + 1" to "10"
-		)
+		val cases = listOf("1 + 2 * 3 < 8 == true && 4 >= 3" to true, "!(3 < 2) && 1.5 <= 2.0" to true, "2 > 1 != 4 <= 3" to true, "1 < 2 && 3.0 > 2 || 4 >= 5" to true, "(1 > 2 || 3 <= 3) == (4.0 >= 4 && 5 != 6)" to true, "def x = 7\ndef snapshot := x < 8.0\nx = 9\nsnapshot && x >= 8" to true, "def<float> x = 1.5\ndef<bool> inRange = x > 1.0\nx = 0.5\ninRange = x > 1.0\ninRange" to false, "def zero = 0\nzero != 0 && 10 / zero > 1" to false, "def zero = 0\nzero == 0 || 10 / zero <= 1" to true, "def x = 2 < 3\ndef y = 9\ny + 1" to "10")
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
 			val executable = LLVMEmitter().compileSnippet(parse(source), directory.resolve("ordering_composition_$index"))
@@ -842,8 +589,8 @@ class BindingsTest {
 			val (left, right, relation) = case
 			for ((opIndex, operator) in listOf("<", ">", "<=", ">=").withIndex()) {
 				val expected = relation != null && when (operator) {
-					"<" -> relation < 0
-					">" -> relation > 0
+					"<"  -> relation < 0
+					">"  -> relation > 0
 					"<=" -> relation <= 0
 					else -> relation >= 0
 				}

@@ -6,7 +6,8 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.LinkOptions
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -16,10 +17,12 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ArrayCopyElisionTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("array-elision.co", source.trimIndent())).scanTokens()).parse()
 	private val make = "fn<int[]> make(int n) = [n, n]"
 
-	@Test fun `the audited identity example eliminates the extra result binding copy`(@TempDir directory: Path) {
+	@Test
+	fun `the audited identity example eliminates the extra result binding copy`(@TempDir directory: Path) {
 		counted(directory, "identity", """
 			fn<int[]> identity(int[] a) = a
 			fn<int> sample() {
@@ -32,7 +35,8 @@ class ArrayCopyElisionTest {
 		""", 3)
 	}
 
-	@Test fun `fresh results pass through bindings and chained arguments without extra snapshots`(@TempDir directory: Path) {
+	@Test
+	fun `fresh results pass through bindings and chained arguments without extra snapshots`(@TempDir directory: Path) {
 		counted(directory, "chain", """
 			$make
 			fn<int[]> change(int[] a) { a[0] = 9
@@ -44,7 +48,8 @@ class ArrayCopyElisionTest {
 		""", 3)
 	}
 
-	@Test fun `stored and final results lose freshness and retain independent copy semantics`(@TempDir directory: Path) {
+	@Test
+	fun `stored and final results lose freshness and retain independent copy semantics`(@TempDir directory: Path) {
 		counted(directory, "stored", """
 			$make
 			fn<int[]> change(final int[] a) { a[0] = 9
@@ -59,11 +64,13 @@ class ArrayCopyElisionTest {
 		""", 4)
 	}
 
-	@Test fun `whole binding replacement adopts a fresh result and preserves its shape`(@TempDir directory: Path) {
+	@Test
+	fun `whole binding replacement adopts a fresh result and preserves its shape`(@TempDir directory: Path) {
 		counted(directory, "replace", "$make\nfn<int> sample() {\n def a = make(1)\n a = make(2)\n return a[1] - 2\n}", 2)
 	}
 
-	@Test fun `fresh rows transfer on replacement while extracted bound rows still copy`(@TempDir directory: Path) {
+	@Test
+	fun `fresh rows transfer on replacement while extracted bound rows still copy`(@TempDir directory: Path) {
 		counted(directory, "rows", """
 			$make
 			fn<int> sample() {
@@ -76,18 +83,21 @@ class ArrayCopyElisionTest {
 		""", 5)
 	}
 
-	@Test fun `indexing a fresh temporary can transfer its independent subarray`(@TempDir directory: Path) {
+	@Test
+	fun `indexing a fresh temporary can transfer its independent subarray`(@TempDir directory: Path) {
 		counted(directory, "temporary_row", "fn<int[][]> matrix() = [[1, 2], [3, 4]]\nfn<int> sample() {\n def row = matrix()[1]\n row[0] = 9\n return row[1] - 4\n}", 5)
 		counted(directory, "bound_row", "fn<int[][]> matrix() = [[1, 2], [3, 4]]\nfn<int> sample() {\n def a = matrix()\n def row = a[1]\n row[0] = 9\n return a[1][0] - 3\n}", 6)
 	}
 
-	@Test fun `dynamic conditional merges preserve fresh ownership on either path`(@TempDir directory: Path) {
+	@Test
+	fun `dynamic conditional merges preserve fresh ownership on either path`(@TempDir directory: Path) {
 		for ((index, condition) in listOf("true", "false").withIndex()) {
 			counted(directory, "conditional_$index", "$make\nfn<bool> flag() = $condition\nfn<int> sample() {\n def a = if (flag()) { make(1) } else { make(2) }\n return a[0] - ${index + 1}\n}", 1)
 		}
 	}
 
-	@Test fun `conditional assignment results cannot reuse storage already held by a binding`(@TempDir directory: Path) {
+	@Test
+	fun `conditional assignment results cannot reuse storage already held by a binding`(@TempDir directory: Path) {
 		for ((index, condition) in listOf("true", "false").withIndex()) {
 			counted(directory, "conditional_alias_$index", """
 				$make
@@ -104,7 +114,8 @@ class ArrayCopyElisionTest {
 		}
 	}
 
-	@Test fun `conditional indexed assignment results also take independent snapshots`(@TempDir directory: Path) {
+	@Test
+	fun `conditional indexed assignment results also take independent snapshots`(@TempDir directory: Path) {
 		counted(directory, "stored_row_result", """
 			$make
 			fn<int> sample() {
@@ -117,7 +128,8 @@ class ArrayCopyElisionTest {
 		""", 5)
 	}
 
-	@Test fun `each function block read produces a separately transferable fresh result`(@TempDir directory: Path) {
+	@Test
+	fun `each function block read produces a separately transferable fresh result`(@TempDir directory: Path) {
 		counted(directory, "block_fresh", """
 			$make
 			fn<int> sample() {
@@ -141,7 +153,8 @@ class ArrayCopyElisionTest {
 		""", 3)
 	}
 
-	@Test fun `multiple block return paths merge fresh and borrowed values safely`(@TempDir directory: Path) {
+	@Test
+	fun `multiple block return paths merge fresh and borrowed values safely`(@TempDir directory: Path) {
 		for ((index, condition) in listOf("true", "false").withIndex()) {
 			counted(directory, "block_paths_$index", """
 				$make
@@ -160,7 +173,8 @@ class ArrayCopyElisionTest {
 		}
 	}
 
-	@Test fun `argument snapshots precede later captured mutations and evaluate once`(@TempDir directory: Path) {
+	@Test
+	fun `argument snapshots precede later captured mutations and evaluate once`(@TempDir directory: Path) {
 		counted(directory, "argument_order", """
 			$make
 			fn<int> read(int[] a, int ignored) = a[0]
@@ -178,7 +192,8 @@ class ArrayCopyElisionTest {
 		""", 3)
 	}
 
-	@Test fun `captured array producers and mixed conditional aliases preserve argument snapshots`(@TempDir directory: Path) {
+	@Test
+	fun `captured array producers and mixed conditional aliases preserve argument snapshots`(@TempDir directory: Path) {
 		counted(directory, "mixed_argument", """
 			$make
 			fn<bool> flag() = true
@@ -194,11 +209,13 @@ class ArrayCopyElisionTest {
 		""", 3)
 	}
 
-	@Test fun `early returns stop further argument evaluation and release adopted temporaries`(@TempDir directory: Path) {
+	@Test
+	fun `early returns stop further argument evaluation and release adopted temporaries`(@TempDir directory: Path) {
 		counted(directory, "early", "$make\nfn<int[]> unused(int[] a, int n) = a\nfn<int> sample() {\n unused(make(1), if (true) { return 0 } else { [1][5] })\n return 1\n}", 1)
 	}
 
-	@Test fun `nested string results survive recursion replacement and poisoned callee cleanup`(@TempDir directory: Path) {
+	@Test
+	fun `nested string results survive recursion replacement and poisoned callee cleanup`(@TempDir directory: Path) {
 		counted(directory, "nested_lifetime", """
 			fn<string[][]> make(int n) {
 			    if (n > 0) { return make(n - 1) }
@@ -218,15 +235,9 @@ class ArrayCopyElisionTest {
 		""")
 	}
 
-	@Test fun `fresh adoption retains known and inferred shape checks including empty dimensions`(@TempDir directory: Path) {
-		val cases = listOf(
-			"fn<int[]> make() = [1]\nfn main() { def<int[2]> a = make() }" to "Array size mismatch: expected 2 elements",
-			"fn<int[]> make() = [1]\nfn<int> trap() = [1][5]\nfn take(int[2] a, int n) {}\nfn main() { take(make(), trap()) }" to "Array size mismatch: expected 2 elements",
-			"fn<int[]> make() = [1]\nfn main() {\n def<int[2]> compute = { return make() }\n compute\n}" to "Array size mismatch: expected 2 elements",
-			"fn<int[][]> make() = [[1, 2], [3, 4]]\nfn main() {\n def a = make()\n a = if (true) { [[1], [2]] } else { [[3], [4]] }\n}" to "assignment must preserve the binding's initial shape",
-			"fn<int[][]> make() {\n def<int[0][3]> a = []\n return a\n}\nfn main() { def<int[0][4]> a = make() }" to "Array size mismatch: expected 4 elements",
-			"fn<int[]> make() = [1]\nfn main() {\n def a = [[1, 2]]\n a[0] = make()\n}" to "Array shape mismatch"
-		)
+	@Test
+	fun `fresh adoption retains known and inferred shape checks including empty dimensions`(@TempDir directory: Path) {
+		val cases = listOf("fn<int[]> make() = [1]\nfn main() { def<int[2]> a = make() }" to "Array size mismatch: expected 2 elements", "fn<int[]> make() = [1]\nfn<int> trap() = [1][5]\nfn take(int[2] a, int n) {}\nfn main() { take(make(), trap()) }" to "Array size mismatch: expected 2 elements", "fn<int[]> make() = [1]\nfn main() {\n def<int[2]> compute = { return make() }\n compute\n}" to "Array size mismatch: expected 2 elements", "fn<int[][]> make() = [[1, 2], [3, 4]]\nfn main() {\n def a = make()\n a = if (true) { [[1], [2]] } else { [[3], [4]] }\n}" to "assignment must preserve the binding's initial shape", "fn<int[][]> make() {\n def<int[0][3]> a = []\n return a\n}\nfn main() { def<int[0][4]> a = make() }" to "Array size mismatch: expected 4 elements", "fn<int[]> make() = [1]\nfn main() {\n def a = [[1, 2]]\n a[0] = make()\n}" to "Array shape mismatch")
 		for ((index, case) in cases.withIndex()) {
 			val executable = LLVMEmitter().compile(parse(case.first), directory.resolve("shape_$index"))
 			val (status, output) = execute(executable)
@@ -236,7 +247,8 @@ class ArrayCopyElisionTest {
 		}
 	}
 
-	@Test fun `index targets remain resolved before rhs replacement of their root binding`(@TempDir directory: Path) {
+	@Test
+	fun `index targets remain resolved before rhs replacement of their root binding`(@TempDir directory: Path) {
 		counted(directory, "target_order", """
 			fn<int[][]> make() = [[1, 2]]
 			fn<int[]> row() = [7, 8]
@@ -255,7 +267,9 @@ class ArrayCopyElisionTest {
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), executable.toString())
 			return process.exitValue() to process.inputStream.readBytes().toString(Charsets.UTF_8)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 
 	/** Count actual heap allocations independently of emitter structure. Poison
@@ -278,9 +292,11 @@ class ArrayCopyElisionTest {
 				fun signature(result: LLVMTypeRef, vararg params: LLVMTypeRef) = PointerPointer<LLVMTypeRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMFunctionType(result, values, params.size, 0)
 				}
+
 				fun call(type: LLVMTypeRef, function: LLVMValueRef, vararg params: LLVMValueRef) = PointerPointer<LLVMValueRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMBuildCall2(builder, type, function, values, params.size, "")
 				}
+
 				fun global(name: String) = LLVMAddGlobal(module, integer, name).also { LLVMSetInitializer(it, int(0)); LLVMSetLinkage(it, LLVMPrivateLinkage) }
 				val allocated = global("test.allocations")
 				val outstanding = global("test.outstanding")
@@ -322,14 +338,19 @@ class ArrayCopyElisionTest {
 				val printfType = PointerPointer<LLVMTypeRef>(1L).use { values -> values.put(0, pointer); LLVMFunctionType(integer, values, 1, 1) }
 				val existing = LLVMGetNamedFunction(module, "printf")
 				val printf = if (existing == null || existing.isNull) LLVMAddFunction(module, "printf", printfType) else existing
-				call(printfType, printf, LLVMBuildGlobalStringPtr(builder, "allocations=%d outstanding=%d result=%d\n", "metrics"),
-					LLVMBuildLoad2(builder, integer, allocated, "allocations"), LLVMBuildLoad2(builder, integer, outstanding, "remaining"), result)
+				call(printfType, printf, LLVMBuildGlobalStringPtr(builder, "allocations=%d outstanding=%d result=%d\n", "metrics"), LLVMBuildLoad2(builder, integer, allocated, "allocations"), LLVMBuildLoad2(builder, integer, outstanding, "remaining"), result)
 				LLVMBuildRet(builder, result)
 				emitter.verify(module)
 				emitter.emitObject(module, objectFile)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
-		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
+		try {
+			NativeLinker.link(objectFile, executable, configuration)
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 		val (status, output) = execute(executable)
 		assertEquals(0, status, output)
 		val metrics = assertNotNull(Regex("allocations=(\\d+) outstanding=(-?\\d+) result=(-?\\d+)").matchEntire(output.trim()), output).groupValues
