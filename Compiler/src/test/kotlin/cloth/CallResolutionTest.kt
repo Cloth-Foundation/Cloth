@@ -1,13 +1,21 @@
 package cloth
 
+import cloth.data.CArray
+import cloth.data.CFloat
+import cloth.data.CInt
+import cloth.data.ValueType
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.*
-import cloth.parser.statement.*
-import cloth.semantic.*
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
+import cloth.semantic.CallAnalyzer
+import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.SemanticException
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
 import kotlin.test.*
@@ -28,10 +36,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `integer literals prefer default int regardless of declaration order`() {
-		for (declarations in listOf(
-			listOf("int<8>", "int<64>", "unsigned int", "int"),
-			listOf("int", "unsigned int", "int<64>", "int<8>")
-		)) {
+		for (declarations in listOf(listOf("int<8>", "int<64>", "unsigned int", "int"), listOf("int", "unsigned int", "int<64>", "int<8>"))) {
 			val model = analyze(declarations.joinToString("\n") { "fn choose($it value) {}" } + "\nfn test() {\n choose(10)\n choose(-10)\n}")
 			for (index in 0..1) assertEquals(ValueType.INT, parameter(model, call(model, index)))
 		}
@@ -62,7 +67,7 @@ class CallResolutionTest {
 			val model = analyze("fn choose(float<$width> value) {}\nfn test() { choose($decimal) }")
 			val literal = assertIs<FloatingPointLiteral>(call(model).arguments.single())
 			assertEquals(decimal, literal.value)
-			assertEquals(ValueType.Floating(width), model.typeOf(literal))
+			assertEquals(CFloat(width), model.typeOf(literal))
 		}
 	}
 
@@ -76,27 +81,23 @@ class CallResolutionTest {
 	@Test
 	fun `literal ranges eliminate candidates before ambiguity is reported`() {
 		val model = analyze("fn choose(int<8> value) {}\nfn choose(int<64> value) {}\nfn test() { choose(128) }")
-		assertEquals(ValueType.Integer(64), parameter(model))
+		assertEquals(CInt(64), parameter(model))
 		val floating = analyze("fn choose(float<16> value) {}\nfn choose(float<64> value) {}\nfn test() { choose(70000.0) }")
 		assertEquals(ValueType.DOUBLE, parameter(floating))
 		val unsigned = analyze("fn choose(unsigned int value) {}\nfn choose(int<64> value) {}\nfn test() { choose(-1) }")
-		assertEquals(ValueType.Integer(64), parameter(unsigned))
+		assertEquals(CInt(64), parameter(unsigned))
 	}
 
 	@Test
 	fun `integer boundary arguments retain exact signed and unsigned widths`() {
 		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
-			val type = ValueType.Integer(bits, unsigned)
+			val type = CInt(bits, unsigned)
 			for (value in listOf(type.minimum, type.maximum)) {
 				val model = analyze("fn choose(${type.spelling} value) {}\nfn test() { choose($value) }")
 				assertEquals(type, parameter(model))
 			}
 		}
-		for (source in listOf(
-			"fn choose(int<8> value) {}\nfn test() { choose(128) }",
-			"fn choose(unsigned int<8> value) {}\nfn test() { choose(256) }",
-			"fn choose(unsigned int value) {}\nfn test() { choose(-1) }"
-		)) failure(source, DiagnosticCode.NO_MATCHING_CALL)
+		for (source in listOf("fn choose(int<8> value) {}\nfn test() { choose(128) }", "fn choose(unsigned int<8> value) {}\nfn test() { choose(256) }", "fn choose(unsigned int value) {}\nfn test() { choose(-1) }")) failure(source, DiagnosticCode.NO_MATCHING_CALL)
 	}
 
 	@Test
@@ -106,7 +107,7 @@ class CallResolutionTest {
 		assertEquals(ValueType.DOUBLE, parameter(model))
 		assertEquals(ValueType.DOUBLE, model.typeOf(call(model).arguments.single()))
 		for (width in listOf(16, 32, 64)) {
-			val cutoff = "${ValueType.Floating(width).overflowThreshold}.0"
+			val cutoff = "${CFloat(width).overflowThreshold}.0"
 			failure("fn choose(float<$width> value) {}\nfn test() { choose($cutoff) }", DiagnosticCode.NO_MATCHING_CALL)
 		}
 		failure("fn test() { ${ValueType.FLOAT.overflowThreshold}.0 }", DiagnosticCode.FLOAT_RANGE)
@@ -114,11 +115,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `typed bindings never implicitly change numeric width signedness or kind`() {
-		for ((declaration, parameter) in listOf(
-			"def value = 10" to "int<64>", "def value = 1.5" to "float<64>",
-			"def<unsigned int> value = 10" to "int", "def value = 10" to "unsigned int",
-			"def value = 10" to "float", "def value = 1.5" to "int"
-		)) failure("fn choose($parameter value) {}\nfn test() {\n $declaration\n choose(value)\n}", DiagnosticCode.NO_MATCHING_CALL)
+		for ((declaration, parameter) in listOf("def value = 10" to "int<64>", "def value = 1.5" to "float<64>", "def<unsigned int> value = 10" to "int", "def value = 10" to "unsigned int", "def value = 10" to "float", "def value = 1.5" to "int")) failure("fn choose($parameter value) {}\nfn test() {\n $declaration\n choose(value)\n}", DiagnosticCode.NO_MATCHING_CALL)
 	}
 
 	@Test
@@ -148,8 +145,8 @@ class CallResolutionTest {
 		""")
 		val cast = assertIs<CastExpression>(call(model).arguments.single())
 		assertEquals(ValueType.INT, model.typeOf(cast.operand))
-		assertEquals(ValueType.Integer(64), model.typeOf(cast))
-		assertEquals(ValueType.Integer(64), parameter(model))
+		assertEquals(CInt(64), model.typeOf(cast))
+		assertEquals(CInt(64), parameter(model))
 		val floats = analyze("fn choose(float<16> value) {}\nfn choose(float<64> value) {}\nfn test() { choose(1.5 -> float<64>) }")
 		val floatingCast = assertIs<CastExpression>(call(floats).arguments.single())
 		assertEquals(ValueType.FLOAT, floats.typeOf(floatingCast.operand))
@@ -196,7 +193,7 @@ class CallResolutionTest {
 	@Test
 	fun `nested calls use declared return types and remain strict arguments`() {
 		val model = analyze("fn<int<64>> create() {}\nfn choose(int value) {}\nfn choose(int<64> value) {}\nfn test() { choose(create()) }")
-		assertEquals(ValueType.Integer(64), parameter(model))
+		assertEquals(CInt(64), parameter(model))
 		assertEquals("create", model.selectedFunction(assertIs<CallExpression>(call(model).arguments.single())).name.lexeme)
 		failure("fn<int> create() {}\nfn choose(int<64> value) {}\nfn test() { choose(create()) }", DiagnosticCode.NO_MATCHING_CALL)
 	}
@@ -226,20 +223,20 @@ class CallResolutionTest {
 			}
 		""")
 		val call = call(model)
-		assertEquals(listOf(ValueType.Integer(64), ValueType.BOOL), model.typeOf(model.selectedFunction(call)).parameters)
+		assertEquals(listOf(CInt(64), ValueType.BOOL), model.typeOf(model.selectedFunction(call)).parameters)
 		val conditional = assertIs<IfExpression>(call.arguments[0])
 		val branch = conditional.branches.single().statements
 		val local = assertIs<BindingDeclaration>(branch[0])
 		assertEquals(ValueType.INT, model.typeOf(model.declarations.symbolOf(local)))
 		assertEquals("create", model.selectedFunction(assertIs<CallExpression>(local.initializer)).name.lexeme)
-		assertEquals(ValueType.Integer(64), model.typeOf(assertIs<ExpressionStatement>(branch[2]).expression))
-		assertEquals(ValueType.Integer(64), model.typeOf(conditional))
+		assertEquals(CInt(64), model.typeOf(assertIs<ExpressionStatement>(branch[2]).expression))
+		assertEquals(CInt(64), model.typeOf(conditional))
 	}
 
 	@Test
 	fun `contextual arithmetic uses literal types without changing a typed operand`() {
 		val integer = analyze("fn choose(int<64> value) {}\nfn test() { choose(1 + 2) }")
-		assertEquals(ValueType.Integer(64), integer.typeOf(call(integer).arguments.single()))
+		assertEquals(CInt(64), integer.typeOf(call(integer).arguments.single()))
 		val floating = analyze("fn choose(float<64> value) {}\nfn test() { choose(1.5 + 2.5) }")
 		val sum = assertIs<BinaryExpression>(call(floating).arguments.single())
 		assertEquals(ValueType.DOUBLE, floating.typeOf(sum.left))
@@ -252,14 +249,14 @@ class CallResolutionTest {
 	fun `typed integer call results supply context to neighboring integer literals`() {
 		val model = analyze("fn<unsigned int<64>> create() {}\nfn choose(unsigned int<64> value) {}\nfn test() { choose(create() + 1) }")
 		val expression = assertIs<BinaryExpression>(call(model).arguments.single())
-		assertEquals(ValueType.Integer(64, true), model.typeOf(expression.right))
-		assertEquals(ValueType.Integer(64, true), parameter(model))
+		assertEquals(CInt(64, true), model.typeOf(expression.right))
+		assertEquals(CInt(64, true), parameter(model))
 	}
 
 	@Test
 	fun `array arguments match exact element type and rank without implementing array storage`() {
 		val model = analyze("fn choose(string[] value) {}\nfn test(string[] args) {\n def copy = args\n choose(copy)\n}")
-		assertEquals(ValueType.ArrayValue(ValueType.STRING), parameter(model, call(model, 1)))
+		assertEquals(CArray(ValueType.STRING), parameter(model, call(model, 1)))
 		failure("fn choose(string[][] value) {}\nfn test(string[] args) { choose(args) }", DiagnosticCode.NO_MATCHING_CALL)
 		failure("fn choose(int[] value) {}\nfn test(string[] args) { choose(args) }", DiagnosticCode.NO_MATCHING_CALL)
 	}

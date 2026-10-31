@@ -7,19 +7,8 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.ParameterDeclaration
-import cloth.parser.expression.ConditionalBranch
-import cloth.parser.expression.IfExpression
-import cloth.parser.expression.BinaryExpression
-import cloth.parser.expression.NameExpression
-import cloth.parser.expression.FunctionBlockExpression
-import cloth.parser.statement.AssignmentStatement
-import cloth.parser.statement.ElementAssignmentStatement
-import cloth.parser.expression.IndexExpression
-import cloth.parser.statement.BindingDeclaration
-import cloth.parser.statement.ExpressionStatement
-import cloth.parser.statement.Statement
-import cloth.parser.statement.UpdateStatement
-import cloth.parser.statement.ReturnStatement
+import cloth.parser.expression.*
+import cloth.parser.statement.*
 import cloth.parser.subs.DelimitedParser
 import cloth.parser.subs.ExpressionParser
 import cloth.parser.subs.TypeParser
@@ -87,12 +76,13 @@ class Parser(private val tokens: List<Token>) {
 		try {
 			val body = when (peek().lexeme) {
 				Operators.BRACE_OPEN.character -> parseBlock()
-				Operators.ASSIGN.character -> {
+				Operators.ASSIGN.character     -> {
 					val equals = advance()
 					val expression = expressionParser.parseExpression()
 					ExpressionBody(equals, expression, equals.span.through(previous().span))
 				}
-				else -> throw SyntaxErrors.expected("a function body ('{' or '=')", peek())
+
+				else                           -> throw SyntaxErrors.expected("a function body ('{' or '=')", peek())
 			}
 			return FunctionDeclaration(keyword, name, returnType, parameters, body, visibility)
 		} finally {
@@ -189,6 +179,9 @@ class Parser(private val tokens: List<Token>) {
 			return AssignmentStatement(name, value)
 		}
 		val expression = expressionParser.parseExpression(stopAtAssignment = true)
+		if (expression is ProviderAccessExpression && (peek().lexeme in assignmentOperators || peek().lexeme == Operators.FINAL_ASSIGN.character)) {
+			throw SyntaxErrors.readOnlyProvider(expression.name)
+		}
 		if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
 		if (peek().lexeme == Operators.ASSIGN.character) {
 			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
@@ -214,7 +207,9 @@ class Parser(private val tokens: List<Token>) {
 			inFunctionBody = true
 			try {
 				FunctionBlockExpression(FunctionDeclaration(keyword, name, type, emptyList(), parseBlock()))
-			} finally { inFunctionBody = previousContext }
+			} finally {
+				inFunctionBody = previousContext
+			}
 		} else expressionParser.parseExpression()
 		return BindingDeclaration(type, name, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(initializer.span))
 	}
@@ -236,7 +231,8 @@ class Parser(private val tokens: List<Token>) {
 	}
 
 	companion object {
-		private val assignmentOperators = setOf("=", ":=", "+=", "-=", "*=", "/=", "%=", "++", "--")
+
+		private val assignmentOperators = setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character, Operators.PLUS_EQUAL.character, Operators.MINUS_EQUAL.character, Operators.MUL_EQUAL.character, Operators.DIV_EQUAL.character, Operators.MOD_EQUAL.character, Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
 	}
 
 }

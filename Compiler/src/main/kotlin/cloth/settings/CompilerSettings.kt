@@ -48,8 +48,8 @@ class CompilerSettings(val args: Array<String>) {
 			if (name == "--emit") {
 				emission = when (value) {
 					"executable" -> OutputKind.EXECUTABLE
-					"object" -> OutputKind.OBJECT
-					else -> errorValue(name, value, "executable, object")
+					"object"     -> OutputKind.OBJECT
+					else         -> errorValue(name, value, "executable, object")
 				}
 				continue
 			}
@@ -84,7 +84,7 @@ class CompilerSettings(val args: Array<String>) {
 		outputKind = emission
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/FunctionBlocks.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Builtins.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 

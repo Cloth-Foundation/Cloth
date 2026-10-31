@@ -2,6 +2,333 @@
 
 ## Current work
 
+### Built-in function registry and explicit output (2026-10-31)
+
+`BuiltinFunctions` now centrally declares `PRINT = register("print", ::PrintFunction)`
+and `PRINTLN = register("println", ::PrintlnFunction)`. Factory registration
+returns a typed `BuiltinDefinition<T>`, populates the read-only common list and
+name index, and checks duplicate names/contracts as compiler invariants. Immutable
+definitions own overload contracts and emission recipes without native handles.
+
+Declaration lookup finds these functions automatically after ordinary lexical
+lookup. Source function groups and bindings shadow built-ins, with no fallback
+when a nearer function's arguments do not match. Names remain ordinary identifiers;
+the historical `Console.IO.println` import was removed from `examples/Test.co`.
+`examples/Builtins.co` demonstrates explicit output and array type metadata.
+
+The semantic call model now commits either a source-function choice or a bound
+built-in definition, overload and concrete argument conversions across overload
+forks. `Exact` parameter contracts retain strict/contextual typing; `Text` uses
+ordinary inference and selects a value `str` provider returning `string`. Existing
+provider recipes perform conversion during emission. No boxing, runtime type
+dispatch or function-name switches were added. `print(value)`, `println(value)`
+and `println()` return void; unsupported array values fail with source-located
+C3049. Existing arity, void-value and function-value diagnostics remain applicable.
+Built-in diagnostic labels use real source occurrences, with no invented native
+declaration locations. Compilation still stops on the first diagnostic.
+
+Emission evaluates arguments once, respects early exits, and keeps buffered values
+alive through adaptation and output. Built-in calls conservatively retain array
+temporaries through their owning frame; source-call copy/cleanup behavior remains
+unchanged. Metadata and control-flow passes already visit call arguments in the
+required order and need no built-in-specific dispatch.
+
+String output now shares one lazily emitted, length-aware stdout helper per
+module. Byte output and newline output are separate; the existing string snippet
+printer composes both. Scalar conversion shares `::str` and interpolation, while
+older numeric/character snippet instrumentation remains test-only. The helper
+preserves UTF-8 bytes and embedded NULs through the native text stream, interns
+its native declaration and terminates on detected `putchar` failures. Buffered
+flush failures and Windows native-console/code-page handling remain separate
+follow-up work; redirected output is covered by native Windows tests. The same
+C ABI path is used on Linux/macOS, whose native execution was not verified here.
+
+`BuiltinFunctionsTest` covers registration identity and read-only enumeration,
+resolved conversion plans, diagnostics, lexical shadowing, native output/newlines,
+all numeric formats and full integer ranges, default/contextual precision, Unicode,
+NUL/percent text, metadata, buffered results, once-only block effects, interrupted
+arguments, nested overload probes, void returns and per-module helper reuse.
+
+Verified on 2026-10-31: focused built-in/string/call/return tests passed, then
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` passed all
+554 tests across 37 suites with zero failures/errors/skips. Native tests ran
+on Windows. `git diff --check` passed. The CLI compiled `examples/Builtins.co`
+and its executable printed the expected greeting, numeric limits, boolean,
+Unicode character and normalized array type text.
+
+### Provider integration follow-up, chunk 3.5 (2026-10-31)
+
+The original phase 3 feature plan ended with chunk 3.4. The subsequent request
+for 3.5 is implemented as an integration review of that completed provider set,
+with no additional source syntax, provider contracts or deferred features.
+
+The review found that `MetadataAnalysis` joined returning and skipped paths with
+continuing paths. This discarded otherwise definite represented-type facts and
+allowed some known-invalid `element`, `extent` and `width` accesses to reach
+runtime validation. The pass now reuses the existing `ControlFlowModel`, including
+its simple boolean proofs, when joining conditional results and mutable binding
+facts. Only executable branches that continue contribute facts. Short-circuit
+joins distinguish skipped right operands, necessarily evaluated right operands
+and right operands that return; deferred block effects still invalidate mutable
+facts when executed. All source remains checked; no diagnostic recovery or
+accumulation is introduced. Unknown dynamic joins keep their controlled runtime
+checks, and value receiver evaluation/LLVM provider dispatch are unchanged.
+
+Six `ProviderIntegrationTest` cases reproduce the missing compile-time diagnostics
+and cover valid continuing paths, skipped captured writes, dynamic runtime errors,
+independent metadata copies, chained numeric queries and shared Unicode text.
+The three diagnostic regression groups failed before the fix and passed afterward.
+Focused integration, metadata, function-return and function-block regressions passed.
+Verified on 2026-10-31 with
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 541 tests
+across 36 suites passed with zero failures/errors/skips. `git diff --check` passed.
+Native integration tests ran on Windows using the shared LLVM and C ABI paths.
+
+### Built-in type metadata, phase 3.4 (2026-10-31)
+
+`CTypeInfo` is the built-in `typeinfo` value type, accepted in bindings, parameters,
+returns and arrays. The common `ValueType` provider map now registers `type` for
+source types (including `void`); the internal bottom type exposes no providers.
+Both type and value receivers describe the expression's static type. Type
+receivers construct no runtime instance, and executable receivers retain the
+existing once-only evaluation, effects, bounds checks and terminating control flow.
+
+Metadata values use handles to immutable compiler-generated native descriptor
+globals, with no runtime metadata allocation or new ownership mechanism. The
+descriptor stores complete canonical Cloth type text, immediate array element
+metadata, rank, outer static extent, numeric width and the inspection flags.
+Equality compares canonical represented-type text rather than handle addresses;
+numeric widths, signedness and every static/unspecified array extent participate.
+Numeric default widths are explicit in metadata text, while diagnostic spellings
+retain their existing format. `str`, interpolation and snippet printing share
+that text. Runtime array lengths never enter a type descriptor.
+
+`CTypeInfo` registers value-only `element`, `isarray`, `rank`, `hasextent`,
+`extent`, `width`, `isunsigned` and `isnumeric`, plus `str`; its inherited `type`
+describes `typeinfo` itself. Query result types, preconditions and native field
+layout are shared through `MetadataQuery`. Typed provider recipes own emission
+and use per-emission services; the common provider emitter gains no dispatch
+cases. Immutable handles pass through ordinary scalar storage/function paths;
+arrays of metadata use ordinary array copying.
+
+Invalid known `element`, `extent` and `width` accesses throw source-located
+C3048 immediately. Direct provider facts survive overload forks. A separate
+semantic facts pass follows expression evaluation order after type/call checking,
+so type-inference previews cannot reorder mutable facts. It propagates definite
+represented types through copies, assignments, identity casts, conditional
+results and branch joins. Mutable captures are treated as unknown inside deferred
+blocks, and block execution conservatively invalidates mutable facts. Parameters,
+ordinary call results and array element contents start unknown; this pass is not
+interprocedural specialization or general constant evaluation. Dynamic queries
+check descriptor preconditions before loading their result and terminate through
+the shared controlled runtime-error path, naming the source file and accessor.
+
+Eleven `TypeInfoTest` cases cover all numeric formats and signedness, normalized
+text, total predicates, recursive array metadata and full-range extents, exact
+equality, static array types across erased signatures, function/array transport,
+mutable copies, overloads, read-only targets, static diagnostics, runtime failures,
+branch joins, captured writes, receiver effects, bounds errors and early returns.
+Verified on 2026-10-31: focused metadata/provider/descriptor tests passed,
+followed by `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`:
+all 535 tests across 35 suites passed, with zero failures/errors/skips.
+`git diff --check` passed. Native tests ran on Windows through the shared LLVM
+and C ABI paths. `addr`, class/state execution and array/class formatting remain
+deferred. Phase 3 now covers its confirmed set for currently supported types.
+
+### Array/string sizes and scalar text conversion, phase 3.3 (2026-10-31)
+
+`CArray` now registers source `size`, returning the outer count as
+`unsigned int<64>`. Value receivers always evaluate once, even when their count
+is statically known. Type receivers are accepted exactly when the outer extent
+is known, including 0 and partially specified types such as `int[2][]`.
+Unspecified outer extents are rejected at the provider name. Static extents now
+use `BigInteger` throughout descriptors and type resolution, bounded to the
+unsigned 64-bit range; this removes the former signed-32-bit parsing limit and
+allows full-range fixed type queries without constructing an instance. Counts
+outside that range fail at compile time before any truncation or emission.
+
+To preserve rectangular shapes across the entire range, inner native extents
+now use i65, with an extra bit distinguishing unknown (-1 in i65) from the valid
+unsigned 64-bit maximum. Array descriptors are `{ptr, i64, i65, ...}`: outer
+lengths stay i64, and string/rank-one array layouts are unchanged. Shape creation,
+constraints, matching and indexed child shapes use explicit widening/narrowing;
+outer lengths are always known and are never treated as unknown sentinels.
+An empty array with a known maximum inner extent retains it through erased
+signatures, copying and assignment checks. This is compiler-private metadata,
+not a source pointer/reference or allocation ownership feature.
+
+`CString` registers value-only `size`, implemented by an allocation-free LLVM
+loop counting UTF-8 leading bytes over the stored byte length. Validated UTF-8
+is an existing Cloth invariant. Embedded NULs count as scalars; supplementary
+characters, combining sequences and empty strings follow the agreed scalar-count
+contract. The count cannot exceed the unsigned 64-bit byte length, so this loop
+cannot overflow. Dynamic array size reads the existing unsigned 64-bit outer
+length directly with no arithmetic or narrowing; static limits are checked above.
+
+Integers, floats, booleans, characters and strings register value-only `str`,
+returning `string` through the same formatter as interpolation. String receivers
+preserve their contents, including embedded NULs. Array/class formatting, `addr`
+and `typeinfo` remain outside this chunk. Existing provider emission keeps receiver
+storage alive; outgoing strings use the ordinary buffered-return copy before
+source-frame cleanup. Overload facts, strict result types, read-only targets,
+control flow and once-only receiver evaluation continue through the shared path.
+
+Eleven `BufferProvidersTest` cases exercise receiver restrictions and diagnostics,
+known overflow and full-range constants, outer/empty/multidimensional/runtime
+counts, maximum inner extents without sentinel collisions, Unicode scalar counts,
+shared scalar formatting, buffered returns/copies, captured effects, overloads,
+preserved shape/bounds failures and terminating receivers. Verified on 2026-10-31:
+focused provider and array-shape regressions passed, followed by
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 524 tests
+passed with zero failures/errors/skips. Existing shape, deep-copy, Unicode startup
+and temporary-cleanup tests passed. `git diff --check` passed. Native tests ran on
+Windows using the shared LLVM and C ABI paths. The next chunk is built-in
+`typeinfo` and its confirmed metadata operations.
+
+### Floating bounds and scalar byte sizes, phase 3.2 (2026-10-31)
+
+Chunk 3.2 registers floating `min`/`max` and scalar `size` on the existing
+descriptors, reusing the source syntax, receiver forms and provider-owned LLVM
+emission from earlier chunks. `CFloat.minimum`/`maximum` are exact `BigDecimal`
+finite limits derived from significand width and maximum exponent, using
+`BigInteger` arithmetic rather than host floating-point rounding. The bounds
+support type/value receivers and preserve binary16/32/64 result types; `min`
+is the most negative finite value, not a positive normal or subnormal threshold.
+
+`CInt`, `CFloat`, `CBool` and `CChar` expose `size` for both receiver forms,
+returning `unsigned int<64>` storage bytes. A shared scalar helper uses
+`storageBits`: boolean values remain LLVM i1 with i8 storage and report 1 byte;
+Unicode scalar characters report 4 bytes. Numeric sizes follow their selected
+width. These constants do not depend on the native C ABI or register width.
+No parser, semantic-dispatch or emitter cases were needed for these registrations.
+Existing once-only receiver evaluation, overload facts, read-only targets and
+strict assignment/return typing remain in force.
+
+Nine `ScalarProvidersTest` cases cover exact host-independent bounds, IEEE LLVM
+constant bit patterns for all formats, source result types, every scalar width
+and signedness, half/regular function ABIs, finite runtime bounds, mutable result
+copies, captured evaluation counts, NaN receiver contents, overload selection and
+preserved indexed-receiver bounds failures. Existing provider tests were updated
+only for the newly available scalar providers. Verified on 2026-10-31: focused
+provider tests passed, followed by
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 513 tests
+passed with zero failures/errors/skips. `git diff --check` passed. Native tests
+ran on Windows using the shared LLVM and C ABI paths. Array/string sizes, scalar
+text conversion and `typeinfo` remain the subsequent chunks recorded in
+[compiler data access](../../../../todo/compiler-data-access.md).
+
+### Source accessor syntax and integer bounds, phase 3.1 (2026-10-31)
+
+The user authorized implementing phase 3 in bounded chunks after the contracts
+were settled. Chunk 3.1 adds `TypeReceiverExpression`, `ProviderAccessExpression`
+and separate `StateCallExpression` syntax. Indexing and `::` share a postfix
+loop, binding tightly and chaining left to right. Primitive type receivers parse
+widths, unsigned modifiers and array suffixes. Data names remain identifiers;
+uppercase spellings have no provider alias. A bare type receiver is not a value.
+
+Integer `min` and `max` now work in source with both type and value receivers,
+preserving width and signedness. `ProviderReceiver` distinguishes descriptor-only
+type access from an evaluated LLVM value, and recipes advertise their supported
+forms. Type access creates no runtime instance or dummy receiver. Value access
+still evaluates once even when producing a constant, preserving captures, calls,
+index bounds checks, temporary lifetimes and terminating control flow.
+
+Semantic analysis stores resolved provider facts alongside expression types and
+commits them across overload probes. Provider availability is independent of the
+enclosing argument/return context; intrinsic lookup failures remain fatal during
+probes instead of degrading to a no-matching-overload error. Typed accessor results
+provide ordinary numeric operand context but cannot change their receiver's type
+to satisfy an enclosing assignment or return annotation.
+
+Dedicated source diagnostics cover unavailable providers, invalid receiver forms,
+read-only accessor mutations, bare type receivers and unimplemented state calls.
+Assignment, compound assignment and updates to accessor targets are rejected at
+the accessor name. Parenthesized state calls are parsed separately and remain
+unsupported pending class/state emission; there is no fallback to a provider call.
+
+Thirteen `ProviderSyntaxTest` cases cover postfix parsing, receiver forms, exact
+types, read-only targets, source locations, first-error behavior, overload probes,
+type-only constant emission, all integer bounds, captured effects, mutable result
+copies, contextual array inference, preserved indexing errors and early returns.
+Verified on 2026-10-31: focused syntax and phase 2 provider tests passed, followed
+by `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 504
+tests passed with zero failures/errors/skips. `git diff --check` passed. Native
+execution tests ran on Windows using the shared LLVM and C ABI paths. The next
+chunk is floating bounds and scalar byte-size providers;
+array/string operations and `typeinfo` follow. See the chunk plan in
+[compiler data access](../../../../todo/compiler-data-access.md).
+
+### Typed provider results and emission, phase 2 (2026-10-31)
+
+`ProviderResult<T>` now carries an explicit receiver descriptor and typed result
+descriptor. Integer constants use exact `BigInteger` values; floating constants
+use `BigDecimal` values and the existing literal overflow rules. Raw array extent
+recipes require an explicit axis and 64-bit result descriptor, folding known
+extents and otherwise reading native descriptor fields. Scalar text recipes reuse
+the existing interpolation formatter. Each recipe owns its LLVM emission method;
+there is no central provider-kind switch. Emission validates native receiver and
+result representations against the recorded descriptors and retains no LLVM
+handles in reusable recipes.
+
+`ValueType` supports contextual provider lookup through `CompilerDataProviders`
+spellings. `CInt` registers its existing minimum/maximum bounds internally using
+the receiver's exact width and signedness. Other source data contracts remain
+unsettled and unregistered: floating bounds, `size`, `str`, `addr` and `type`.
+The raw array extent operation preserves the existing -1 unwitnessed-inner-axis
+sentinel and does not establish a public array-size meaning. Source accessor
+syntax and its first-error diagnostics remain phase 3 work.
+
+`SemanticModel.providerAccess` retains a resolved expression and recipe.
+`EmitExpression.emitProvider` evaluates the receiver once even for constant
+results, then delegates emission through per-emission services. It suppresses
+early receiver temporary cleanup and conservatively retains buffers until the
+owning invocation exits; text results can borrow receiver bytes. Existing buffered
+return copying runs before source-frame release. Terminating receivers produce no
+provider value, and the temporary-depth guard is restored on every exit path.
+
+Eleven `ProviderResultsTest` cases cover contextual lookup, exact integer bounds,
+floating formats/range rejection, reusable recipes, receiver mismatch rejection,
+captured side effects, runtime/known/inner array extents and empty-axis sentinels,
+scalar formatting with Unicode and embedded NULs, buffered text return/lifetime
+and terminating receivers. Verified on 2026-10-31: focused tests passed, followed
+by `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 491
+tests passed with zero failures/errors/skips. `git diff --check` passed. Native
+provider tests executed on Windows; emission uses the shared LLVM and C ABI paths.
+
+### Primitive type descriptors, phase 1 (2026-10-31)
+
+The user approved phased implementation of the primitive-descriptor design.
+`cloth.data.ValueType` now supplies the shared compiler type contract, with a
+sealed `CObject` descriptor base and `CInt`, `CFloat`, `CBool`, `CChar`, `CString`
+and `CArray` implementations in `PrimitiveTypes.kt`. The former nested primitive
+classes in `cloth.semantic.ValueType` and unused parallel primitive scaffolding
+were consolidated. Semantic analysis, native C ABI profiles, diagnostics and
+emission now use these classes directly.
+
+Descriptors own their LLVM value/storage mappings. `LLVMTypes` is a small
+context-bound adapter with no type switch. Descriptors hold language facts rather
+than native handles and can be reused with independent LLVM contexts. Integer
+width/signedness and exact bounds, floating literal thresholds and promotion,
+boolean i1 values/i8 storage, Unicode scalar characters and native string/array
+descriptors retain their previous representations. Array shape operations moved
+onto `CArray`, retaining the existing recursive element/extents model. Singleton
+aliases use getters to avoid static initialization cycles.
+
+The unused `Any` provider API and placeholder addresses/strings/sizes were removed.
+`CompilerDataProviders` retains explicit contextual spellings. Typed provider
+results and emission were added in phase 2 above; source accessor parsing remains
+later work.
+Operator, cast and native formatting dispatch still use their existing rules.
+No accessor result type, size meaning or formatting policy was adopted by this
+refactor. See [compiler data access](../../../../todo/compiler-data-access.md).
+
+Three `PrimitiveTypesTest` cases exercise semantic descriptor production, LLVM
+scalar/aggregate layouts and descriptor reuse across independent LLVM contexts.
+Verified on 2026-10-31: focused tests passed, followed by
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 480 tests
+passed with zero failures/errors/skips. `git diff --check` passed. Native tests
+executed on Windows; the descriptor mappings remain shared across target ABIs.
+
 ### Conservative early array temporary cleanup (2026-10-31)
 
 The user authorized earlier cleanup only with a compiler proof, otherwise

@@ -1,13 +1,23 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.data.CInt
+import cloth.data.ValueType
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
-import cloth.semantic.*
-import cloth.settings.*
+import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.ProgramAnalyzer
+import cloth.semantic.ProgramKind
+import cloth.settings.CompilerSettings
+import cloth.settings.LinkOptions
+import cloth.settings.OutputKind
+import cloth.settings.RuntimeLinkage
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -70,7 +80,7 @@ class ProgramEntryTest {
 		for (header in listOf("fn main()", "fn<void> main()")) ProgramAnalyzer().analyze(parse("$header {}"))
 		for (width in ValueType.INTEGER_WIDTHS) {
 			val program = ProgramAnalyzer().analyze(parse("pub fn<int<$width>> main() = 0"))
-			assertEquals(ValueType.Integer(width), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
+			assertEquals(CInt(width), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
 		}
 		for ((type, expression) in listOf("bool" to "true", "char" to "'x'", "float" to "1.0", "string" to "\"x\"", "unsigned int" to "0", "int[]" to "main()")) {
 			failure("fn<$type> main() = $expression", DiagnosticCode.INVALID_MAIN_RETURN)
@@ -112,8 +122,7 @@ class ProgramEntryTest {
 
 	@Test
 	fun `void main fallthrough bare return and void expression return exit zero without output`(@TempDir directory: Path) {
-		for ((index, source) in listOf("fn main() {}", "fn main() { return }", "fn main() {\n def x = 10\n x + 1\n}",
-			"fn cleanup() {}\nfn main() { return cleanup() }", "fn cleanup() {}\nfn main() = cleanup()").withIndex()) {
+		for ((index, source) in listOf("fn main() {}", "fn main() { return }", "fn main() {\n def x = 10\n x + 1\n}", "fn cleanup() {}\nfn main() { return cleanup() }", "fn cleanup() {}\nfn main() = cleanup()").withIndex()) {
 			assertProgram(LLVMEmitter().compile(parse(source), directory.resolve("void_$index")), 0)
 		}
 	}
@@ -153,13 +162,7 @@ class ProgramEntryTest {
 
 	@Test
 	fun `entry and semantic failures precede invalid linker discovery and output creation`(@TempDir directory: Path) {
-		for ((index, case) in listOf(
-			"fn helper() {}" to DiagnosticCode.MISSING_MAIN,
-			"fn main() {}\nfn main(string[] args) {}" to DiagnosticCode.DUPLICATE_MAIN,
-			"fn main(int n) {}" to DiagnosticCode.INVALID_MAIN_PARAMETERS,
-			"fn<bool> main() = true" to DiagnosticCode.INVALID_MAIN_RETURN,
-			"fn<int> main() = true" to DiagnosticCode.RETURN_TYPE
-		).withIndex()) {
+		for ((index, case) in listOf("fn helper() {}" to DiagnosticCode.MISSING_MAIN, "fn main() {}\nfn main(string[] args) {}" to DiagnosticCode.DUPLICATE_MAIN, "fn main(int n) {}" to DiagnosticCode.INVALID_MAIN_PARAMETERS, "fn<bool> main() = true" to DiagnosticCode.INVALID_MAIN_RETURN, "fn<int> main() = true" to DiagnosticCode.RETURN_TYPE).withIndex()) {
 			val target = directory.resolve("invalid_$index/program")
 			val diagnostic = assertFailsWith<ClothDiagnostic> { LLVMEmitter(LinkOptions(linker = Path.of("missing-linker"))).compile(parse(case.first), target) }
 			assertEquals(case.second, diagnostic.diagnosticCode)
@@ -242,8 +245,7 @@ class ProgramEntryTest {
 
 	@Test
 	fun `invalid or missing emission kinds use structured CLI diagnostics`() {
-		for ((args, code) in listOf(arrayOf("--emit") to DiagnosticCode.MISSING_OPTION_VALUE, arrayOf("--emit=") to DiagnosticCode.MISSING_OPTION_VALUE,
-			arrayOf("--emit", "library") to DiagnosticCode.INVALID_OPTION_VALUE)) {
+		for ((args, code) in listOf(arrayOf("--emit") to DiagnosticCode.MISSING_OPTION_VALUE, arrayOf("--emit=") to DiagnosticCode.MISSING_OPTION_VALUE, arrayOf("--emit", "library") to DiagnosticCode.INVALID_OPTION_VALUE)) {
 			val diagnostic = assertFailsWith<ClothDiagnostic> { CompilerSettings(args) }
 			assertEquals(code, diagnostic.diagnosticCode)
 		}
@@ -272,6 +274,8 @@ class ProgramEntryTest {
 			val bytes = process.inputStream.readBytes()
 			assertEquals(expectedStatus, process.exitValue(), bytes.toString(Charsets.UTF_8))
 			assertTrue(bytes.isEmpty(), "Programs do not implicitly print expression results: ${bytes.toString(Charsets.UTF_8)}")
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

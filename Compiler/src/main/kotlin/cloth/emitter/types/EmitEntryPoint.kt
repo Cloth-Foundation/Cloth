@@ -1,11 +1,14 @@
 package cloth.emitter.types
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.semantic.ProgramModel
-import cloth.semantic.ValueType
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMModuleRef
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Native startup adapter; a Cloth main result is a status, never implicit output. */
@@ -34,13 +37,15 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 				LLVMBuildCall2(builder, functions.signature(selected), functions.reference(selected), values, if (withArguments) 1 else 0, if (type == ValueType.VOID) "" else "exit_status")
 			}
 			val status = when {
-				type == ValueType.VOID -> LLVMConstInt(nativeType, 0, 0)
+				type == ValueType.VOID       -> LLVMConstInt(nativeType, 0, 0)
 				type.bits < abi.intType.bits -> LLVMBuildSExt(builder, result, nativeType, "widen_exit_status")
 				type.bits > abi.intType.bits -> LLVMBuildTrunc(builder, result, nativeType, "narrow_exit_status")
-				else -> result
+				else                         -> result
 			}
 			argumentsEmitter.release(builder)
 			LLVMBuildRet(builder, status)
-		} finally { LLVMDisposeBuilder(builder) }
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
 	}
 }

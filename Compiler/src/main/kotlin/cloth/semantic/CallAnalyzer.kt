@@ -1,12 +1,25 @@
 package cloth.semantic
 
 import cloth.ast.SourceUnit
+import cloth.builtin.BoundBuiltinCall
+import cloth.builtin.BuiltinDefinition
+import cloth.builtin.BuiltinOverload
+import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.*
-import cloth.parser.expression.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.Expression
+import cloth.parser.expression.FunctionBlockExpression
+import cloth.parser.expression.NameExpression
 import cloth.parser.statement.*
-import cloth.semantic.symbols.*
+import cloth.semantic.symbols.BindingSymbol
+import cloth.semantic.symbols.BuiltinGroupSymbol
+import cloth.semantic.symbols.FunctionGroupSymbol
+import cloth.semantic.symbols.FunctionSymbol
 import cloth.token.TokenSpan
 
 /** Stage 3 checks calls; FunctionAnalyzer enables stage 4 return validation. */
@@ -30,13 +43,21 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 		for (function in declarations.functions) {
 			val checker = BodyTyping(model, function.declaration, signatures.getValue(function).returns, validateReturns)
 			when (val body = function.declaration.body) {
-				is BlockBody -> {
+				is BlockBody      -> {
 					checker.check(body.statements)
 					if (validateReturns && signatures.getValue(function).returns != ValueType.VOID && model.controlFlow.of(body).canContinue) {
 						throw SemanticErrors.missingReturn(function.declaration, body)
 					}
 				}
+
 				is ExpressionBody -> checker.checkExpressionBody(body)
+			}
+		}
+		for (function in declarations.functions) {
+			val metadata = MetadataAnalysis(model.types, function.parameters.map { it.name.lexeme to it.mutable }, model.controlFlow)
+			when (val body = function.declaration.body) {
+				is BlockBody      -> metadata.statements(body.statements)
+				is ExpressionBody -> metadata.expression(body.expression)
 			}
 		}
 		return model
@@ -52,6 +73,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 			if (returnType == ValueType.VOID) throw SemanticErrors.valueInVoid(function, actual, span)
 			throw SemanticErrors.returnType(function, returnType, actual, span)
 		}
+
 		fun checkExpressionBody(body: ExpressionBody) {
 			val actual = typeOf(body.expression, returnType, requireValue = validateReturns, allowVoidResult = validateReturns)
 			if (validateReturns) checkReturnedType(actual, body.expression.span)
@@ -62,11 +84,12 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 			if (symbol !is BindingSymbol) reject { SemanticErrors.functionValue(expression.name) }
 			return facts.bindings.getValue(symbol)
 		}
+
 		override fun withScope(action: () -> Unit) = action() // Resolved symbols already encode lexical scope.
 		fun check(statements: List<Statement>) = statements.forEach { statement(it) }
 		override fun statement(statement: Statement) {
 			when (statement) {
-				is BindingDeclaration -> {
+				is BindingDeclaration         -> {
 					val symbol = facts.declarations.symbolOf(statement)
 					val expected = statement.type?.let { resolveType(it) }
 					val block = statement.initializer as? FunctionBlockExpression
@@ -85,31 +108,35 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 					}
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
-					val type = if (expected is ValueType.ArrayValue && actual is ValueType.ArrayValue && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
+					val type = if (expected is CArray && actual is CArray && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.initializer, statement.name) }
 					facts.bindings[symbol] = type
 					model.statements[statement] = type
 				}
-				is AssignmentStatement -> {
+
+				is AssignmentStatement        -> {
 					val symbol = facts.declarations.targetOf(statement)
 					val type = facts.bindings.getValue(symbol)
 					val actual = typeOf(statement.value, type)
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.value, symbol.name) }
 					model.statements[statement] = type
 				}
-				is UpdateStatement -> {
+
+				is UpdateStatement            -> {
 					val type = facts.bindings.getValue(facts.declarations.targetOf(statement))
 					if (!type.numeric && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }
 					model.statements[statement] = type
 				}
+
 				is ElementAssignmentStatement -> {
 					val type = typeOf(statement.target)
 					val actual = typeOf(statement.value, type)
 					if (type != ValueType.NEVER && !compatible(actual, type)) reject { SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value.span) }
 					model.statements[statement] = type
 				}
-				is ExpressionStatement -> model.statements[statement] = typeOf(statement.expression, requireValue = false)
-				is ReturnStatement -> {
+
+				is ExpressionStatement        -> model.statements[statement] = typeOf(statement.expression, requireValue = false)
+				is ReturnStatement            -> {
 					if (statement.value == null) {
 						if (validateReturns && returnType != ValueType.VOID) throw SemanticErrors.returnValueRequired(function, returnType, statement.span)
 					} else {
@@ -121,13 +148,16 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 					}
 					model.statements[statement] = ValueType.VOID
 				}
-				else -> throw InternalErrors.invariant("Unsupported statement during call checking: $statement")
+
+				else                          -> throw InternalErrors.invariant("Unsupported statement during call checking: $statement")
 			}
 		}
 
 		override fun callType(expression: CallExpression): ValueType {
-			facts.calls[expression]?.let { return facts.typeOf(it).returns }
-			val group = facts.declarations.candidatesOf(expression).overloads
+			facts.calls[expression]?.let { return it.type.returns }
+			val target = facts.declarations.candidatesOf(expression)
+			if (target is BuiltinGroupSymbol) return builtinCallType(expression, target.definition)
+			val group = (target as FunctionGroupSymbol).overloads
 			val candidates = group.filter { facts.typeOf(it).parameters.size == expression.arguments.size }
 			if (candidates.isEmpty()) throw SemanticErrors.callArity(expression, group)
 
@@ -136,12 +166,13 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 			val defaults = try {
 				val checker = BodyTyping(ordinary, function, returnType, validateReturns, probe = true)
 				expression.arguments.map { checker.typeOf(it) }
-			} catch (_: CandidateMismatch) { null }
-			val exact = candidates.singleOrNull { facts.typeOf(it).parameters == defaults }
-				?: candidates.singleOrNull { candidate -> defaults != null && facts.typeOf(candidate).parameters.zip(defaults).all { (parameter, actual) -> parameter.accepts(actual) } }
+			} catch (_: CandidateMismatch) {
+				null
+			}
+			val exact = candidates.singleOrNull { facts.typeOf(it).parameters == defaults } ?: candidates.singleOrNull { candidate -> defaults != null && facts.typeOf(candidate).parameters.zip(defaults).all { (parameter, actual) -> parameter.accepts(actual) } }
 			if (exact != null) {
 				facts.commit(ordinary)
-				facts.calls[expression] = exact
+				facts.calls[expression] = ResolvedCall.Source(exact, facts.typeOf(exact))
 				return facts.typeOf(exact).returns
 			}
 
@@ -153,7 +184,9 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 				val matches = try {
 					val parameters = facts.typeOf(candidate).parameters
 					expression.arguments.indices.all { index -> compatible(checker.typeOf(expression.arguments[index], parameters[index], contextualFloat = true), parameters[index]) }
-				} catch (_: CandidateMismatch) { false }
+				} catch (_: CandidateMismatch) {
+					false
+				}
 				if (matches) {
 					if (selected != null) throw SemanticErrors.ambiguousCall(expression, listOf(selected, candidate))
 					selected = candidate
@@ -162,8 +195,60 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 			}
 			if (selected == null) throw SemanticErrors.noMatchingCall(expression, candidates)
 			facts.commit(checkNotNull(selectedFacts))
-			facts.calls[expression] = selected
+			facts.calls[expression] = ResolvedCall.Source(selected, facts.typeOf(selected))
 			return facts.typeOf(selected).returns
+		}
+
+		private fun builtinCallType(expression: CallExpression, definition: BuiltinDefinition<*>): ValueType {
+			val candidates = definition.function.overloads.filter { it.parameters.size == expression.arguments.size }
+			if (candidates.isEmpty()) throw SemanticErrors.builtinArity(expression, definition)
+
+			fun bind(overload: BuiltinOverload, trial: FunctionSemanticModel, contextual: Boolean): BoundBuiltinCall? {
+				val checker = BodyTyping(trial, function, returnType, validateReturns, probe = true)
+				val arguments = expression.arguments.mapIndexed { index, argument ->
+					val parameter = overload.parameters[index]
+					val actual = checker.typeOf(argument, if (contextual) parameter.expectedType else null, contextualFloat = contextual && parameter.expectedType != null)
+					parameter.bind(actual) ?: return null
+				}
+				return BoundBuiltinCall(definition, overload, arguments)
+			}
+
+			// With a fixed contract, preserve diagnostics from the argument itself.
+			// In particular Text supplies no contextual numeric type or boxing.
+			if (candidates.size == 1) {
+				val overload = candidates.single()
+				val checker = BodyTyping(facts, function, returnType, validateReturns)
+				val arguments = expression.arguments.mapIndexed { index, argument ->
+					val parameter = overload.parameters[index]
+					val actual = checker.typeOf(argument, parameter.expectedType, contextualFloat = parameter.expectedType != null)
+					parameter.bind(actual) ?: throw SemanticErrors.builtinArgument(expression, argument, actual, parameter)
+				}
+				facts.calls[expression] = ResolvedCall.Builtin(BoundBuiltinCall(definition, overload, arguments))
+				return overload.returns
+			}
+
+			data class Match(val call: BoundBuiltinCall, val trial: FunctionSemanticModel)
+
+			fun matches(contextual: Boolean) = candidates.mapNotNull { candidate ->
+				val trial = facts.fork()
+				val call = try {
+					bind(candidate, trial, contextual)
+				} catch (_: CandidateMismatch) {
+					null
+				}
+				call?.let { Match(it, trial) }
+			}
+
+			val ordinary = matches(contextual = false)
+			val exact = ordinary.filter { match -> match.call.overload.parameters.zip(match.call.arguments).all { (parameter, argument) -> parameter.expectedType == argument.sourceType } }
+			val fixed = ordinary.filter { match -> match.call.overload.parameters.all { it.expectedType != null } }
+			val choices = exact.ifEmpty { fixed }.ifEmpty { ordinary }.ifEmpty { matches(contextual = true) }
+			if (choices.isEmpty()) throw SemanticErrors.builtinNoMatch(expression, definition)
+			if (choices.size > 1) throw SemanticErrors.builtinAmbiguous(expression, definition)
+			val selected = choices.single()
+			facts.commit(selected.trial)
+			facts.calls[expression] = ResolvedCall.Builtin(selected.call)
+			return selected.call.overload.returns
 		}
 	}
 }

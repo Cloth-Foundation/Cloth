@@ -1,5 +1,6 @@
 package cloth
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
@@ -7,7 +8,6 @@ import cloth.parser.expression.CharacterLiteral
 import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
-import cloth.semantic.ValueType
 import cloth.token.TokenType
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -16,13 +16,12 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class CharactersTest {
+
 	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `literals decode one Unicode scalar and the existing escapes`() {
-		val cases = listOf("'n'" to 110, "'é'" to 0xe9, "'中'" to 0x4e2d, "'😀'" to 0x1f600,
-			"'\\n'" to 10, "'\\r'" to 13, "'\\t'" to 9, "'\\0'" to 0,
-			"'\\\\'" to 92, "'\\''" to 39, "'\\\"'" to 34)
+		val cases = listOf("'n'" to 110, "'é'" to 0xe9, "'中'" to 0x4e2d, "'😀'" to 0x1f600, "'\\n'" to 10, "'\\r'" to 13, "'\\t'" to 9, "'\\0'" to 0, "'\\\\'" to 92, "'\\''" to 39, "'\\\"'" to 34)
 		for ((source, expected) in cases) {
 			val tokens = Lexer(source).scanTokens()
 			assertEquals(TokenType.CharacterLiteral, tokens[0].type)
@@ -42,8 +41,7 @@ class CharactersTest {
 
 	@Test
 	fun `empty multiple unterminated and invalid scalar literals are rejected`() {
-		val cases = listOf("''", "'ab'", "'😀a'", "'a😀'", "'é'", "'", "'a", "'\\",
-			"'\\x'", "'\\nX'", "'\n'", "'\r'", "'\\\n'", "'\uD800'", "'\uDC00'", "'\uD800x'")
+		val cases = listOf("''", "'ab'", "'😀a'", "'a😀'", "'é'", "'", "'a", "'\\", "'\\x'", "'\\nX'", "'\n'", "'\r'", "'\\\n'", "'\uD800'", "'\uDC00'", "'\uD800x'")
 		for (source in cases) {
 			val failure = assertFails(source) { Lexer(source).scanTokens() }
 			assertLocated(failure)
@@ -74,11 +72,7 @@ class CharactersTest {
 
 	@Test
 	fun `characters reject type changes unsupported modifiers and invalid bindings`() {
-		val cases = listOf(
-			"def<char> c = 110", "def<char> c = 1.0", "def<char> c = true",
-			"def c = 'n'\nc = 1", "def c = 1\nc = 'n'", "def<bool> b = 'n'",
-			"def c := 'n'\nc = 'x'", "def<char> c = c", "def c = 'n'\ndef c = 'x'",
-			"def<unsigned char> c = 'n'", "def<char<8>> c = 'n'", "def<char<32>> c = 'n'")
+		val cases = listOf("def<char> c = 110", "def<char> c = 1.0", "def<char> c = true", "def c = 'n'\nc = 1", "def c = 1\nc = 'n'", "def<bool> b = 'n'", "def c := 'n'\nc = 'x'", "def<char> c = c", "def c = 'n'\ndef c = 'x'", "def<unsigned char> c = 'n'", "def<char<8>> c = 'n'", "def<char<32>> c = 'n'")
 		for (source in cases) {
 			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
@@ -140,8 +134,7 @@ class CharactersTest {
 			assertProgram(directory.resolve("literal_$point"), source, character)
 			assertProgram(directory.resolve("binding_$point"), "def<char> c = $source\nc", character)
 		}
-		for ((index, pair) in listOf("'\\n'" to "\n", "'\\r'" to "\r", "'\\t'" to "\t",
-			"'\\\\'" to "\\", "'\\''" to "'", "'\\\"'" to "\"").withIndex()) {
+		for ((index, pair) in listOf("'\\n'" to "\n", "'\\r'" to "\r", "'\\t'" to "\t", "'\\\\'" to "\\", "'\\''" to "'", "'\\\"'" to "\"").withIndex()) {
 			assertProgram(directory.resolve("escape_$index"), pair.first, pair.second)
 		}
 	}

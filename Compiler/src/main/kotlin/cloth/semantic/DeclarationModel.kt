@@ -3,10 +3,15 @@ package cloth.semantic
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.ParameterDeclaration
-import cloth.parser.expression.*
-import cloth.parser.statement.*
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.ConditionalBranch
+import cloth.parser.expression.IfExpression
+import cloth.parser.expression.NameExpression
+import cloth.parser.statement.AssignmentStatement
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.UpdateStatement
 import cloth.semantic.symbols.*
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Declaration identities and name resolutions, before expression/call type checking. */
 class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>) {
@@ -15,7 +20,7 @@ class DeclarationModel internal constructor(val fileScope: LexicalScope, val fun
 	internal val parameterSymbols = IdentityHashMap<ParameterDeclaration, ParameterSymbol>()
 	internal val localSymbols = IdentityHashMap<BindingDeclaration, LocalSymbol>()
 	internal val names = IdentityHashMap<NameExpression, Symbol>()
-	internal val calls = IdentityHashMap<CallExpression, FunctionGroupSymbol>()
+	internal val calls = IdentityHashMap<CallExpression, CallableGroupSymbol>()
 	internal val assignments = IdentityHashMap<AssignmentStatement, BindingSymbol>()
 	internal val updates = IdentityHashMap<UpdateStatement, BindingSymbol>()
 	internal val functionScopes = IdentityHashMap<FunctionDeclaration, LexicalScope>()
@@ -27,7 +32,7 @@ class DeclarationModel internal constructor(val fileScope: LexicalScope, val fun
 	fun symbolOf(declaration: ParameterDeclaration): ParameterSymbol = parameterSymbols.getValue(declaration)
 	fun symbolOf(declaration: BindingDeclaration): LocalSymbol = localSymbols.getValue(declaration)
 	fun symbolOf(expression: NameExpression): Symbol = names.getValue(expression)
-	fun candidatesOf(call: CallExpression): FunctionGroupSymbol = calls.getValue(call)
+	fun candidatesOf(call: CallExpression): CallableGroupSymbol = calls.getValue(call)
 	fun targetOf(statement: AssignmentStatement): BindingSymbol = assignments.getValue(statement)
 	fun targetOf(statement: UpdateStatement): BindingSymbol = updates.getValue(statement)
 	fun scopeOf(function: FunctionDeclaration): LexicalScope = functionScopes.getValue(function)

@@ -1,7 +1,5 @@
 mod my.module
 
-use Console.IO.println
-
 // Module-level C declarations
 interop<C> {
     """
@@ -141,7 +139,7 @@ pub fn<void> main (string[] args) {
 
     // Widen before arithmetic, then convert to a 64-bit integer
     // Default int is signed 32-bit
-    def<float<64>> largeFloat = (int::MAX -> float<64>) * 2
+    def<float<64>> largeFloat = (int::max -> float<64>) * 2
     def<int<64>> largeInt = largeFloat -> int<64>
 
     // Character declaration

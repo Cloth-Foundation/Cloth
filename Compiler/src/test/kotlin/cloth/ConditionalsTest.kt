@@ -1,14 +1,17 @@
 package cloth
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
-import cloth.parser.expression.*
-import cloth.parser.statement.*
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.IfExpression
+import cloth.parser.expression.TypeCheckExpression
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
-import cloth.semantic.ValueType
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -17,6 +20,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ConditionalsTest {
+
 	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
@@ -45,54 +49,24 @@ class ConditionalsTest {
 
 	@Test
 	fun `malformed conditionals have syntax diagnostics`() {
-		for (source in listOf(
-			"if true { 1 }", "if () {}", "if (true {}", "if (true) 1", "if (true) {",
-			"if (true) { 1", "if (true) { 1 2 }", "if (true) {} else", "if (true) {} else 1",
-			"if (true) {} else if (false)", "else {}", "if (true) {} else {} else {}",
-			"if (true) {} if (false) {}", "if (true) { def x = }", "def x = if (true) { 1 } else { 2"
-		)) {
+		for (source in listOf("if true { 1 }", "if () {}", "if (true {}", "if (true) 1", "if (true) {", "if (true) { 1", "if (true) { 1 2 }", "if (true) {} else", "if (true) {} else 1", "if (true) {} else if (false)", "else {}", "if (true) {} else {} else {}", "if (true) {} if (false) {}", "if (true) { def x = }", "def x = if (true) { 1 } else { 2")) {
 			assertLocated(assertFailsWith<SyntaxException>(source) { parse(source) })
 		}
 	}
 
 	@Test
 	fun `value contexts require exhaustive branches ending in compatible expressions`() {
-		for (source in listOf(
-			"def x = if (true) { 1 }", "def x = if (true) { 1 } else if (false) { 2 }",
-			"def x = if (true) {} else { 2 }", "def x = if (true) { 1 } else {}",
-			"def x = if (true) { def y = 1 } else { 2 }",
-			"def y = 0\ndef x = if (true) { y = 1 } else { 2 }",
-			"def x = if (true) { 1 } else { false }", "def x = if (false) { 1 } else { 2.0 }",
-			"def x = if (true) { 1 -> unsigned int } else { 1 }",
-			"def x = if (true) { 1 -> int<8> } else { 1 -> int<16> }",
-			"def<int> x = if (true) { true } else { false }",
-			"def x = if (true) { if (false) { 1 } } else { 2 }",
-			"1 + if (true) { 2 }", "false && (if (true) { false })"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+		for (source in listOf("def x = if (true) { 1 }", "def x = if (true) { 1 } else if (false) { 2 }", "def x = if (true) {} else { 2 }", "def x = if (true) { 1 } else {}", "def x = if (true) { def y = 1 } else { 2 }", "def y = 0\ndef x = if (true) { y = 1 } else { 2 }", "def x = if (true) { 1 } else { false }", "def x = if (false) { 1 } else { 2.0 }", "def x = if (true) { 1 -> unsigned int } else { 1 }", "def x = if (true) { 1 -> int<8> } else { 1 -> int<16> }", "def<int> x = if (true) { true } else { false }", "def x = if (true) { if (false) { 1 } } else { 2 }", "1 + if (true) { 2 }", "false && (if (true) { false })")) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
 	fun `all conditions and skipped branches are checked before emission`() {
-		for (source in listOf(
-			"if (1) {}", "if (1.0) {}", "if (\"yes\") {}", "if ('y') {}",
-			"if (true) {} else if (1) {}", "if (false) { missing }",
-			"if (true) {} else { missing }", "if (true) {} else if (missing) {}",
-			"def x = if (true) { 1 } else { missing }", "if (false) { 1 + true }",
-			"def x := 1\nif (false) { x = 2 }", "def x = 1\nif (false) { x = true }"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+		for (source in listOf("if (1) {}", "if (1.0) {}", "if (\"yes\") {}", "if ('y') {}", "if (true) {} else if (1) {}", "if (false) { missing }", "if (true) {} else { missing }", "if (true) {} else if (missing) {}", "def x = if (true) { 1 } else { missing }", "if (false) { 1 + true }", "def x := 1\nif (false) { x = 2 }", "def x = 1\nif (false) { x = true }")) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
 	fun `branch scopes isolate names and preserve duplicate and immutable checks`() {
-		for (source in listOf(
-			"if (true) { def local = 1 }\nlocal",
-			"if (true) { def local = 1 } else { local }",
-			"if (true) { def local = 1 } else if (local == 1) {}",
-			"if (true) { def local = 1\ndef local = 2 }",
-			"def x = if (true) { def local = 1\nlocal } else { local }",
-			"if (true) { def local := 1\nlocal = 2 }",
-			"def x = if (true) { x } else { 1 }"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+		for (source in listOf("if (true) { def local = 1 }\nlocal", "if (true) { def local = 1 } else { local }", "if (true) { def local = 1 } else if (local == 1) {}", "if (true) { def local = 1\ndef local = 2 }", "def x = if (true) { def local = 1\nlocal } else { local }", "if (true) { def local := 1\nlocal = 2 }", "def x = if (true) { x } else { 1 }")) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		SemanticAnalyzer().analyze(parse("if (true) { def x = 1 } else { def x = false }\ndef x = 'a'"))
 	}
 
@@ -131,16 +105,7 @@ class ConditionalsTest {
 
 	@Test
 	fun `native value branches support all storage types inference reassignment and copies`(@TempDir directory: Path) {
-		val cases = listOf(
-			Triple("int<8>", "-128", "-128"), Triple("unsigned int<8>", "255", "255"),
-			Triple("int<16>", "-32768", "-32768"), Triple("unsigned int<16>", "65535", "65535"),
-			Triple("int", "-2147483648", "-2147483648"), Triple("unsigned int", "4294967295", "4294967295"),
-			Triple("int<64>", "-9223372036854775808", "-9223372036854775808"),
-			Triple("unsigned int<64>", "18446744073709551615", "18446744073709551615"),
-			Triple("float<16>", "1.5 -> float<16>", "1.5"), Triple("float", "1.5", "1.5"),
-			Triple("float<64>", "1.5 -> float<64>", "1.5"), Triple("bool", "true", "true"),
-			Triple("char", "'😀'", "😀"), Triple("string", "\"é\\0中😀\" + \"!\"", "é\u0000中😀!")
-		)
+		val cases = listOf(Triple("int<8>", "-128", "-128"), Triple("unsigned int<8>", "255", "255"), Triple("int<16>", "-32768", "-32768"), Triple("unsigned int<16>", "65535", "65535"), Triple("int", "-2147483648", "-2147483648"), Triple("unsigned int", "4294967295", "4294967295"), Triple("int<64>", "-9223372036854775808", "-9223372036854775808"), Triple("unsigned int<64>", "18446744073709551615", "18446744073709551615"), Triple("float<16>", "1.5 -> float<16>", "1.5"), Triple("float", "1.5", "1.5"), Triple("float<64>", "1.5 -> float<64>", "1.5"), Triple("bool", "true", "true"), Triple("char", "'😀'", "😀"), Triple("string", "\"é\\0中😀\" + \"!\"", "é\u0000中😀!"))
 		for ((index, case) in cases.withIndex()) {
 			val (type, value, expected) = case
 			assertProgram(directory.resolve("type_$index"), """

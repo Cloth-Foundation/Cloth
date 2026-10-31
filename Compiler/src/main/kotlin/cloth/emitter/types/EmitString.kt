@@ -1,8 +1,9 @@
 package cloth.emitter.types
 
+import cloth.data.CFloat
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
-import cloth.semantic.ValueType
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -14,6 +15,8 @@ import org.bytedeco.llvm.global.LLVM.*
  */
 internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
 
+	val metadata by lazy { EmitTypeInfo(context, builder, abi, this) }
+
 	private val types = LLVMTypes(context)
 	private val lengthType = LLVMInt64TypeInContext(context)
 	private val boolType = types.value(ValueType.BOOL)
@@ -23,9 +26,10 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		return LLVMBuildInsertValue(builder, value, length, 1, "text_value")
 	}
 
-	/** Conversion is specific to interpolation; ordinary '+' keeps its strict operand types. */
+	/** Shared by interpolation and str; ordinary '+' keeps its strict operand types. */
 	fun interpolate(value: LLVMValueRef, type: ValueType, casts: EmitCast, location: String): LLVMValueRef {
 		if (type == ValueType.STRING) return value
+		if (type == ValueType.TYPEINFO) return metadata.text(value)
 		if (type == ValueType.BOOL) {
 			val data = LLVMBuildSelect(builder, value, LLVMBuildGlobalStringPtr(builder, "true", "true_text"), LLVMBuildGlobalStringPtr(builder, "false", "false_text"), "bool_text")
 			val length = LLVMBuildSelect(builder, value, LLVMConstInt(lengthType, 4, 0), LLVMConstInt(lengthType, 5, 0), "bool_length")
@@ -49,11 +53,11 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		val function = if (existing == null || existing.isNull) LLVMAddFunction(module, "snprintf", functionType) else existing
 		val argumentType = abi.printArgument(type)
 		val argument = when {
-			type.floating -> casts.toFloating(value, type, argumentType)
+			type.floating                 -> casts.toFloating(value, type, argumentType)
 			type.bits < argumentType.bits -> if (type.unsigned) LLVMBuildZExt(builder, value, types.value(argumentType), "format_unsigned") else LLVMBuildSExt(builder, value, types.value(argumentType), "format_signed")
-			else -> value
+			else                          -> value
 		}
-		val precision = if (type is ValueType.Floating) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
+		val precision = if (type is CFloat) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
 		val format = LLVMBuildGlobalStringPtr(builder, "%$precision${abi.printSpecifier(type)}", "interpolation_format")
 		val length = PointerPointer<LLVMValueRef>(4L).use { arguments ->
 			arguments.put(0, data)
@@ -97,6 +101,48 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 			LLVMBuildStore(builder, LLVMBuildTrunc(builder, byte, byteType, "char_byte"), address)
 		}
 		return descriptor(data, LLVMBuildZExt(builder, length, lengthType, "char_length"))
+	}
+
+	/** All Cloth strings are well-formed UTF-8. Count leading bytes, including NUL,
+	 * without allocating or exposing the descriptor's byte length as a scalar count.
+	 * Count never exceeds byte length, so an i64 count cannot overflow here.
+	 */
+	fun scalarCount(value: LLVMValueRef): LLVMValueRef {
+		val data = LLVMBuildExtractValue(builder, value, 0, "scalar_bytes")
+		val length = LLVMBuildExtractValue(builder, value, 1, "scalar_byte_length")
+		val start = LLVMGetInsertBlock(builder)
+		val function = LLVMGetBasicBlockParent(start)
+		val check = LLVMAppendBasicBlockInContext(context, function, "scalar_count_check")
+		val body = LLVMAppendBasicBlockInContext(context, function, "scalar_count_byte")
+		val done = LLVMAppendBasicBlockInContext(context, function, "scalar_count_done")
+		LLVMBuildBr(builder, check)
+		LLVMPositionBuilderAtEnd(builder, check)
+		val index = LLVMBuildPhi(builder, lengthType, "scalar_byte_index")
+		val count = LLVMBuildPhi(builder, lengthType, "scalar_count")
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, length, "scalar_has_byte"), body, done)
+		LLVMPositionBuilderAtEnd(builder, body)
+		val byteType = LLVMInt8TypeInContext(context)
+		val address = PointerPointer<LLVMValueRef>(1L).use { indices ->
+			indices.put(0, index)
+			LLVMBuildInBoundsGEP2(builder, byteType, data, indices, 1, "scalar_byte_address")
+		}
+		val octet = LLVMBuildLoad2(builder, byteType, address, "scalar_byte")
+		val prefix = LLVMBuildAnd(builder, octet, LLVMConstInt(byteType, 0xc0, 0), "scalar_prefix")
+		val leading = LLVMBuildICmp(builder, LLVMIntNE, prefix, LLVMConstInt(byteType, 0x80, 0), "scalar_leading")
+		val nextCount = LLVMBuildAdd(builder, count, LLVMBuildZExt(builder, leading, lengthType, "scalar_increment"), "next_scalar_count")
+		val nextIndex = LLVMBuildAdd(builder, index, LLVMConstInt(lengthType, 1, 0), "next_scalar_byte")
+		LLVMBuildBr(builder, check)
+		PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+			blocks.put(0, start); blocks.put(1, body)
+			PointerPointer<LLVMValueRef>(2L).use { values ->
+				values.put(0, LLVMConstInt(lengthType, 0, 0)); values.put(1, nextIndex)
+				LLVMAddIncoming(index, values, blocks, 2)
+				values.put(1, nextCount)
+				LLVMAddIncoming(count, values, blocks, 2)
+			}
+		}
+		LLVMPositionBuilderAtEnd(builder, done)
+		return count
 	}
 
 	fun literal(text: String): LLVMValueRef {
@@ -185,51 +231,9 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 
 	/** Length-based output avoids C string truncation and interpretation of '%' characters. */
 	fun print(module: LLVMModuleRef, value: LLVMValueRef) {
-		val intType = LLVMTypes(context).value(abi.intType)
-		val indexType = LLVMInt64TypeInContext(context)
-		val byteType = LLVMInt8TypeInContext(context)
-		val putcharType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
-			parameters.put(0, intType)
-			LLVMFunctionType(intType, parameters, 1, 0)
-		}
-		val existing = LLVMGetNamedFunction(module, "putchar")
-		val putchar = if (existing == null || existing.isNull) LLVMAddFunction(module, "putchar", putcharType) else existing
-		fun write(byte: LLVMValueRef) {
-			PointerPointer<LLVMValueRef>(1L).use { arguments ->
-				arguments.put(0, byte)
-				LLVMBuildCall2(builder, putcharType, putchar, arguments, 1, "")
-			}
-		}
-
-		val data = LLVMBuildExtractValue(builder, value, 0, "string_bytes")
-		val length = LLVMBuildExtractValue(builder, value, 1, "string_length")
-		val entry = LLVMGetInsertBlock(builder)
-		val function = LLVMGetBasicBlockParent(entry)
-		val condition = LLVMAppendBasicBlockInContext(context, function, "string_print_check")
-		val body = LLVMAppendBasicBlockInContext(context, function, "string_print_byte")
-		val end = LLVMAppendBasicBlockInContext(context, function, "string_print_end")
-		LLVMBuildBr(builder, condition)
-		LLVMPositionBuilderAtEnd(builder, condition)
-		val index = LLVMBuildPhi(builder, indexType, "string_index")
-		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, length, "string_has_byte"), body, end)
-		LLVMPositionBuilderAtEnd(builder, body)
-		val address = PointerPointer<LLVMValueRef>(1L).use { indices ->
-			indices.put(0, index)
-			LLVMBuildInBoundsGEP2(builder, byteType, data, indices, 1, "string_byte_address")
-		}
-		write(LLVMBuildZExt(builder, LLVMBuildLoad2(builder, byteType, address, "string_byte"), intType, "string_output_byte"))
-		val next = LLVMBuildAdd(builder, index, LLVMConstInt(indexType, 1, 0), "string_next")
-		LLVMBuildBr(builder, condition)
-		PointerPointer<LLVMValueRef>(2L).use { values ->
-			PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-				values.put(0, LLVMConstInt(indexType, 0, 0))
-				values.put(1, next)
-				blocks.put(0, entry)
-				blocks.put(1, body)
-				LLVMAddIncoming(index, values, blocks, 2)
-			}
-		}
-		LLVMPositionBuilderAtEnd(builder, end)
-		write(LLVMConstInt(intType, '\n'.code.toLong(), 0))
+		write(module, value)
+		write(module, literal("\n"))
 	}
+
+	fun write(module: LLVMModuleRef, value: LLVMValueRef) = EmitOutput(context, builder, abi).write(module, value)
 }

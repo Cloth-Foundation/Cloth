@@ -4,12 +4,19 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.declaration.*
-import cloth.parser.expression.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.IfExpression
+import cloth.parser.expression.NameExpression
 import cloth.parser.statement.*
 import cloth.semantic.DeclarationAnalyzer
 import cloth.semantic.SemanticException
-import cloth.semantic.symbols.*
+import cloth.semantic.symbols.BindingSymbol
+import cloth.semantic.symbols.FunctionGroupSymbol
+import cloth.semantic.symbols.LocalSymbol
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
@@ -36,7 +43,7 @@ class DeclarationScopesTest {
 		val functions = unit.declarations.map { assertIs<FunctionDeclaration>(it) }
 		for ((caller, callee) in listOf(0 to 1, 1 to 0, 2 to 2)) {
 			val call = assertIs<CallExpression>(expression(functions[caller]))
-			assertSame(model.symbolOf(functions[callee]), model.candidatesOf(call).overloads.single())
+			assertSame(model.symbolOf(functions[callee]), assertIs<FunctionGroupSymbol>(model.candidatesOf(call)).overloads.single())
 			assertSame(model.symbolOf(functions[caller].parameters.single()), model.symbolOf(assertIs<NameExpression>(call.arguments.single())))
 		}
 	}
@@ -50,7 +57,7 @@ class DeclarationScopesTest {
 		""")
 		val model = DeclarationAnalyzer().analyze(unit)
 		val call = assertIs<CallExpression>(assertIs<ExpressionStatement>(body(model.functions[0].declaration).statements.single()).expression)
-		val group = model.candidatesOf(call)
+		val group = assertIs<FunctionGroupSymbol>(model.candidatesOf(call))
 		assertSame(model.fileScope.lookup("choose"), group)
 		assertEquals(model.functions.drop(1), group.overloads)
 		assertNotSame(group.overloads[0], group.overloads[1])
@@ -58,10 +65,7 @@ class DeclarationScopesTest {
 
 	@Test
 	fun `duplicate signatures ignore return types visibility parameter names and final`() {
-		for (second in listOf(
-			"fn<bool> same(int renamed) = true", "pub fn<int> same(final int renamed) = 0",
-			"fn same(int<32> renamed) {}", "fn same(int<032> renamed) {}"
-		)) {
+		for (second in listOf("fn<bool> same(int renamed) = true", "pub fn<int> same(final int renamed) = 0", "fn same(int<32> renamed) {}", "fn same(int<032> renamed) {}")) {
 			val diagnostic = failure("fn<int> same(int value) = value\n$second", DiagnosticCode.DUPLICATE_FUNCTION)
 			assertContains(diagnostic.summary, "same(int)")
 			assertEquals(listOf(1, 2), diagnostic.sourceLabels.map { it.span.startLine })
@@ -171,12 +175,7 @@ class DeclarationScopesTest {
 
 	@Test
 	fun `branch bindings cannot escape into siblings conditions or enclosing scopes`() {
-		for (source in listOf(
-			"fn sample() {\n if (true) { def inner = 1 }\n inner\n}",
-			"fn sample() { if (true) { def inner = 1 } else { inner } }",
-			"fn sample() { if (true) { def inner = 1 } else if (inner == 1) {} }",
-			"fn first() { def inner = 1 }\nfn second() = inner"
-		)) failure(source, DiagnosticCode.UNKNOWN_NAME)
+		for (source in listOf("fn sample() {\n if (true) { def inner = 1 }\n inner\n}", "fn sample() { if (true) { def inner = 1 } else { inner } }", "fn sample() { if (true) { def inner = 1 } else if (inner == 1) {} }", "fn first() { def inner = 1 }\nfn second() = inner")) failure(source, DiagnosticCode.UNKNOWN_NAME)
 	}
 
 	@Test
@@ -188,11 +187,7 @@ class DeclarationScopesTest {
 
 	@Test
 	fun `nearest lexical binding shadows file function even in call position`() {
-		for (source in listOf(
-			"fn target() {}\nfn sample(int target) { target() }",
-			"fn target() {}\nfn sample() {\n def target = 1\n target()\n}",
-			"fn target() {}\nfn sample() { if (true) {\n def target = 1\n target()\n} }"
-		)) {
+		for (source in listOf("fn target() {}\nfn sample(int target) { target() }", "fn target() {}\nfn sample() {\n def target = 1\n target()\n}", "fn target() {}\nfn sample() { if (true) {\n def target = 1\n target()\n} }")) {
 			val diagnostic = failure(source, DiagnosticCode.NOT_CALLABLE)
 			assertEquals(2, diagnostic.sourceLabels.size)
 		}
@@ -254,9 +249,7 @@ class DeclarationScopesTest {
 
 	@Test
 	fun `all expression positions and skipped branches undergo name resolution`() {
-		for (expression in listOf("-missing", "1 + missing", "missing -> int", "missing is int", "!missing",
-			"false && missing", "true || missing", "#\"{missing}\"", "known(missing)",
-			"if (missing) { 1 } else { 2 }", "if (false) { missing } else { 2 }")) {
+		for (expression in listOf("-missing", "1 + missing", "missing -> int", "missing is int", "!missing", "false && missing", "true || missing", "#\"{missing}\"", "known(missing)", "if (missing) { 1 } else { 2 }", "if (false) { missing } else { 2 }")) {
 			failure("fn known(int n) {}\nfn sample() = $expression", DiagnosticCode.UNKNOWN_NAME)
 		}
 		failure("fn sample() { return missing }", DiagnosticCode.UNKNOWN_NAME)

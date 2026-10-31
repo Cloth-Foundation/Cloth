@@ -1,8 +1,8 @@
 package cloth.emitter.types
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
-import cloth.semantic.ValueType
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*

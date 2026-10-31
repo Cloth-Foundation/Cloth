@@ -1,8 +1,8 @@
 package cloth.emitter.types
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
-import cloth.semantic.ValueType
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -11,6 +11,7 @@ import org.bytedeco.llvm.global.LLVM.*
  * Windows uses UTF-16 CRT arguments; Unix arguments must already be well-formed UTF-8.
  */
 internal class EmitArguments(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI) {
+
 	private val types = LLVMTypes(context)
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val integer = types.value(abi.intType)
@@ -23,28 +24,25 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 	private fun int(value: Long) = LLVMConstInt(integer, value, 0)
 	private fun octet(value: Long) = LLVMConstInt(byte, value, 0)
 
-	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef =
-		PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
-			parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
-			LLVMFunctionType(result, values, parameters.size, 0)
-		}
+	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
+		parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
+		LLVMFunctionType(result, values, parameters.size, 0)
+	}
 
 	private fun external(name: String, type: LLVMTypeRef): LLVMValueRef {
 		val existing = LLVMGetNamedFunction(module, name)
 		return if (existing == null || existing.isNull) LLVMAddFunction(module, name, type) else existing
 	}
 
-	private fun call(builder: LLVMBuilderRef, type: LLVMTypeRef, function: LLVMValueRef, name: String, vararg arguments: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
-			arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
-			LLVMBuildCall2(builder, type, function, values, arguments.size, name)
-		}
+	private fun call(builder: LLVMBuilderRef, type: LLVMTypeRef, function: LLVMValueRef, name: String, vararg arguments: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
+		arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
+		LLVMBuildCall2(builder, type, function, values, arguments.size, name)
+	}
 
-	private fun offset(builder: LLVMBuilderRef, element: LLVMTypeRef, data: LLVMValueRef, index: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(1L).use { values ->
-			values.put(0, index)
-			LLVMBuildInBoundsGEP2(builder, element, data, values, 1, "argument_slot")
-		}
+	private fun offset(builder: LLVMBuilderRef, element: LLVMTypeRef, data: LLVMValueRef, index: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use { values ->
+		values.put(0, index)
+		LLVMBuildInBoundsGEP2(builder, element, data, values, 1, "argument_slot")
+	}
 
 	private fun guard(builder: LLVMBuilderRef, valid: LLVMValueRef, index: LLVMValueRef, encoding: String) {
 		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
@@ -61,8 +59,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		val start = LLVMGetInsertBlock(builder)
 		val function = LLVMGetBasicBlockParent(start)
 		if (windows && withValues) arena = strings.create(start)
-		val users = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSGT, argc, int(1), "has_arguments"),
-			LLVMBuildSub(builder, argc, int(1), "user_arguments"), int(0), "argument_count")
+		val users = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSGT, argc, int(1), "has_arguments"), LLVMBuildSub(builder, argc, int(1), "user_arguments"), int(0), "argument_count")
 		val length = LLVMBuildZExt(builder, users, size, "argument_length")
 		val data = if (withValues) LLVMBuildArrayAlloca(builder, types.storage(ValueType.STRING), length, "argument_strings") else null
 		val check = LLVMAppendBasicBlockInContext(context, function, "args_check")
@@ -77,7 +74,9 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		val input = LLVMBuildLoad2(builder, pointer, offset(builder, pointer, argv, next), "native_argument")
 		val value = if (windows) {
 			if (withValues) call(builder, signature(types.value(ValueType.STRING), pointer, pointer, size), wideConverter(), "utf8_argument", input, checkNotNull(arena), next)
-			else { wideLength(builder, input, next); null }
+			else {
+				wideLength(builder, input, next); null
+			}
 		} else {
 			val bytes = call(builder, signature(size, pointer), utf8Length(), "utf8_length", input)
 			guard(builder, LLVMBuildICmp(builder, LLVMIntNE, bytes, count(-1), "valid_utf8"), next, "UTF-8")
@@ -97,7 +96,9 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		return data?.let { arrays.descriptor(it, length) }
 	}
 
-	fun release(builder: LLVMBuilderRef) { arena?.let { strings.release(builder, it) } }
+	fun release(builder: LLVMBuilderRef) {
+		arena?.let { strings.release(builder, it) }
+	}
 
 	// CP_UTF8 and WC_ERR_INVALID_CHARS make unpaired UTF-16 surrogates errors.
 	private fun wideCall(builder: LLVMBuilderRef, input: LLVMValueRef, output: LLVMValueRef, capacity: LLVMValueRef): LLVMValueRef {
@@ -131,7 +132,9 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			val length = LLVMBuildZExt(builder, LLVMBuildSub(builder, capacity, int(1), "without_terminator"), size, "utf8_length")
 			val value = EmitArray(context, builder, abi).descriptor(buffer, length)
 			LLVMBuildRet(builder, strings.copy(builder, LLVMGetParam(function, 1), value))
-		} finally { LLVMDisposeBuilder(builder) }
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
 		return function
 	}
 
@@ -213,7 +216,9 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			LLVMBuildRet(builder, index)
 			LLVMPositionBuilderAtEnd(builder, invalid)
 			LLVMBuildRet(builder, count(-1))
-		} finally { LLVMDisposeBuilder(builder) }
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
 		return function
 	}
 }

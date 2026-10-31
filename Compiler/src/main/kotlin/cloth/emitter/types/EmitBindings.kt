@@ -1,11 +1,12 @@
 package cloth.emitter.types
 
+import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
-import cloth.semantic.ValueType
+import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
-import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for bindings in the current function; names are checked by semantic analysis. */
@@ -38,10 +39,12 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 				val first = LLVMGetFirstInstruction(entry)
 				if (first == null || first.isNull) LLVMPositionBuilderAtEnd(allocator, entry) else LLVMPositionBuilderBefore(allocator, first)
 				LLVMBuildAlloca(allocator, types.storage(type), name)
-			} finally { LLVMDisposeBuilder(allocator) }
+			} finally {
+				LLVMDisposeBuilder(allocator)
+			}
 		}
 		// Capture the initial descriptor's extent values, never the mutable binding slot.
-		bindings[key] = Storage(name, type, address, value.takeIf { type is ValueType.ArrayValue })
+		bindings[key] = Storage(name, type, address, value.takeIf { type is CArray })
 		assign(key, value)
 	}
 

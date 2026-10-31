@@ -1,16 +1,16 @@
 package cloth
 
+import cloth.data.ValueType
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.expression.StringLiteral
-import cloth.parser.expression.BinaryExpression
 import cloth.parser.exception.SyntaxException
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.StringLiteral
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
-import cloth.semantic.ValueType
 import cloth.token.TokenType
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -19,15 +19,12 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class StringsTest {
+
 	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `quoted strings decode escapes and preserve Unicode scalars`() {
-		val cases = listOf(
-			"\"\"" to "", "\"Hello World!\"" to "Hello World!", "\"é中😀é\"" to "é中😀é",
-			"\"\\n\\r\\t\\0\\\\\\'\\\"\"" to "\n\r\t\u0000\\'\"",
-			"\"// not a comment /* either */ {name} 100%\"" to "// not a comment /* either */ {name} 100%"
-		)
+		val cases = listOf("\"\"" to "", "\"Hello World!\"" to "Hello World!", "\"é中😀é\"" to "é中😀é", "\"\\n\\r\\t\\0\\\\\\'\\\"\"" to "\n\r\t\u0000\\'\"", "\"// not a comment /* either */ {name} 100%\"" to "// not a comment /* either */ {name} 100%")
 		for ((source, expected) in cases) {
 			val tokens = Lexer(source).scanTokens()
 			assertEquals(TokenType.StringLiteral, tokens[0].type)
@@ -55,9 +52,7 @@ class StringsTest {
 
 	@Test
 	fun `unterminated invalid escape multiline and malformed Unicode strings are rejected`() {
-		val cases = listOf("\"", "\"hello", "\"hello\\", "\"\\x\"", "\"\\u0041\"", "\"\\q\"",
-			"\"a\nb\"", "\"a\rb\"", "\"\\\n\"", "\"\\\r\"", "\"\"\"raw",
-			"\"\uD800\"", "\"\uDC00\"", "\"\uD800x\"", "\"\"\"\uD800\"\"\"", "\"\"\"\uDC00\"\"\"")
+		val cases = listOf("\"", "\"hello", "\"hello\\", "\"\\x\"", "\"\\u0041\"", "\"\\q\"", "\"a\nb\"", "\"a\rb\"", "\"\\\n\"", "\"\\\r\"", "\"\"\"raw", "\"\uD800\"", "\"\uDC00\"", "\"\uD800x\"", "\"\"\"\uD800\"\"\"", "\"\"\"\uDC00\"\"\"")
 		for (source in cases) {
 			assertLocated(assertFails(source) { Lexer(source).scanTokens() })
 		}
@@ -81,17 +76,13 @@ class StringsTest {
 		assertContains(ir, "%original = alloca { ptr, i64 }")
 		assertContains(ir, "private constant")
 		assertContains(ir, "load { ptr, i64 }, ptr %original")
-		assertContains(ir, "string_print_check")
+		assertContains(ir, "define internal void @cloth.runtime.write.stdout(")
 		assertFalse(ir.contains("@malloc"))
 	}
 
 	@Test
 	fun `strings reject invalid binding types mutations and modifiers`() {
-		val cases = listOf(
-			"def<string> s = 'a'", "def<string> s = 1", "def<string> s = 1.0", "def<string> s = true",
-			"def s = \"text\"\ns = 'a'", "def s = 1\ns = \"text\"", "def<char> c = \"a\"",
-			"def s := \"text\"\ns = \"other\"", "def<string> s = s", "def s = \"a\"\ndef s = \"b\"",
-			"def<unsigned string> s = \"a\"", "def<string<8>> s = \"a\"", "def<string<32>> s = \"a\"")
+		val cases = listOf("def<string> s = 'a'", "def<string> s = 1", "def<string> s = 1.0", "def<string> s = true", "def s = \"text\"\ns = 'a'", "def s = 1\ns = \"text\"", "def<char> c = \"a\"", "def s := \"text\"\ns = \"other\"", "def<string> s = s", "def s = \"a\"\ndef s = \"b\"", "def<unsigned string> s = \"a\"", "def<string<8>> s = \"a\"", "def<string<32>> s = \"a\"")
 		for (source in cases) {
 			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
@@ -144,22 +135,13 @@ class StringsTest {
 
 	@Test
 	fun `string operations retain strict assignment and immutable binding rules`() {
-		for (source in listOf(
-			"def<bool> b = \"a\" + \"b\"", "def<string> s = \"a\" == \"a\"",
-			"def s = \"a\"\ns = s != \"b\"", "def b = true\nb = \"a\" + \"b\"",
-			"def s := \"a\"\ns = s + \"b\"", "def b := \"a\" == \"a\"\nb = false",
-			"\"a\" == \"a\" == \"a\"", "true || (\"a\" + 1 == \"a1\")"
-		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+		for (source in listOf("def<bool> b = \"a\" + \"b\"", "def<string> s = \"a\" == \"a\"", "def s = \"a\"\ns = s != \"b\"", "def b = true\nb = \"a\" + \"b\"", "def s := \"a\"\ns = s + \"b\"", "def b := \"a\" == \"a\"\nb = false", "\"a\" == \"a\" == \"a\"", "true || (\"a\" + 1 == \"a1\")")) assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 	}
 
 	@Test
 	fun `native equality compares complete contents rather than addresses or C terminators`(@TempDir directory: Path) {
-		val equal = listOf("\"\" == \"\"", "\"same\" == \"same\"", "\"é中😀\" == \"é中😀\"",
-			"\"a\\0b\" == \"a\\0b\"", "\"a\" + \"b\" == \"ab\"", "\"\"\"\\n\"\"\" == \"\\\\n\"",
-			"\"\" + \"\" == \"\"", "\"a\" + \"bc\" == \"ab\" + \"c\"")
-		val unequal = listOf("\"\" != \"a\"", "\"a\" != \"\"", "\"a\" != \"ab\"", "\"ab\" != \"a\"",
-			"\"ab\" != \"ac\"", "\"Ab\" != \"ab\"", "\"a\\0b\" != \"a\\0c\"", "\"a\\0\" != \"a\"",
-			"\"😀\" != \"😁\"", "\"é\" != \"é\"", "\"a\" + \"b\" != \"ac\"")
+		val equal = listOf("\"\" == \"\"", "\"same\" == \"same\"", "\"é中😀\" == \"é中😀\"", "\"a\\0b\" == \"a\\0b\"", "\"a\" + \"b\" == \"ab\"", "\"\"\"\\n\"\"\" == \"\\\\n\"", "\"\" + \"\" == \"\"", "\"a\" + \"bc\" == \"ab\" + \"c\"")
+		val unequal = listOf("\"\" != \"a\"", "\"a\" != \"\"", "\"a\" != \"ab\"", "\"ab\" != \"a\"", "\"ab\" != \"ac\"", "\"Ab\" != \"ab\"", "\"a\\0b\" != \"a\\0c\"", "\"a\\0\" != \"a\"", "\"😀\" != \"😁\"", "\"é\" != \"é\"", "\"a\" + \"b\" != \"ac\"")
 		assertProgram(directory.resolve("contents"), (equal + unequal).joinToString(" && ") { "($it)" }, "true")
 		assertProgram(directory.resolve("false_equality"), "\"a\\0b\" == \"a\\0c\"", "false")
 		assertProgram(directory.resolve("false_inequality"), "\"é\" + \"😀\" != \"é😀\"", "false")
@@ -167,16 +149,7 @@ class StringsTest {
 
 	@Test
 	fun `native concatenation preserves order Unicode empty operands raw text and embedded NUL`(@TempDir directory: Path) {
-		val cases = listOf(
-			"\"Hello, \" + \"Cloth!\"" to "Hello, Cloth!",
-			"\"\" + \"\"" to "", "\"\" + \"😀\"" to "😀", "\"😀\" + \"\"" to "😀",
-			"\"a\" + \"b\" + (\"c\" + \"d\")" to "abcd",
-			"def a = \"é中\"\ndef b := \"😀\"\na + b" to "é中😀",
-			"\"a\\0\" + \"b\\0tail\"" to "a\u0000b\u0000tail",
-			"\"\"\"raw\\n\"\"\" + \"\\n\\t\\\"\"" to "raw\\n\n\t\"",
-			"\"100% \" + \"%s %n\"" to "100% %s %n",
-			"def<string> s = \"a\" + \"b\"\ns = s + \"c\"" to "abc"
-		)
+		val cases = listOf("\"Hello, \" + \"Cloth!\"" to "Hello, Cloth!", "\"\" + \"\"" to "", "\"\" + \"😀\"" to "😀", "\"😀\" + \"\"" to "😀", "\"a\" + \"b\" + (\"c\" + \"d\")" to "abcd", "def a = \"é中\"\ndef b := \"😀\"\na + b" to "é中😀", "\"a\\0\" + \"b\\0tail\"" to "a\u0000b\u0000tail", "\"\"\"raw\\n\"\"\" + \"\\n\\t\\\"\"" to "raw\\n\n\t\"", "\"100% \" + \"%s %n\"" to "100% %s %n", "def<string> s = \"a\" + \"b\"\ns = s + \"c\"" to "abc")
 		for ((index, pair) in cases.withIndex()) assertProgram(directory.resolve("concat_$index"), pair.first, pair.second)
 	}
 
@@ -245,15 +218,7 @@ class StringsTest {
 	fun `native string output preserves bytes lengths escapes and raw text`(@TempDir directory: Path) {
 		val points = listOf(0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff, 0x10000, 0x1f600, 0x10ffff)
 		val unicode = points.joinToString("") { String(Character.toChars(it)) } + "é"
-		val cases = listOf(
-			"\"\"" to "", "def<string> s = \"\"\ns" to "",
-			"\"$unicode\"" to unicode, "def s := \"$unicode\"\ns" to unicode,
-			"\"a\\0b\\0tail\"" to "a\u0000b\u0000tail",
-			"def s = \"\\0after\"\ns" to "\u0000after",
-			"\"\\n\\r\\t\\\\\\'\\\"\"" to "\n\r\t\\'\"",
-			"\"100% %s %n // text\"" to "100% %s %n // text",
-			"\"\"\"raw\n\"quotes\" \\n 😀\"\"\"" to "raw\n\"quotes\" \\n 😀"
-		)
+		val cases = listOf("\"\"" to "", "def<string> s = \"\"\ns" to "", "\"$unicode\"" to unicode, "def s := \"$unicode\"\ns" to unicode, "\"a\\0b\\0tail\"" to "a\u0000b\u0000tail", "def s = \"\\0after\"\ns" to "\u0000after", "\"\\n\\r\\t\\\\\\'\\\"\"" to "\n\r\t\\'\"", "\"100% %s %n // text\"" to "100% %s %n // text", "\"\"\"raw\n\"quotes\" \\n 😀\"\"\"" to "raw\n\"quotes\" \\n 😀")
 		for ((index, pair) in cases.withIndex()) assertProgram(directory.resolve("output_$index"), pair.first, pair.second)
 	}
 
