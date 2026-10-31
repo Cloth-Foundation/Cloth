@@ -30,7 +30,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 	fun compile(unit: SourceUnit, output: Path): Path {
 		val program = ProgramAnalyzer().analyze(unit)
 		EmitFunctions.validate(program.functions)
-		val configuration = linker // Entry/type/feature failures precede linker discovery and output creation.
+		val configuration = if (abi.profile == NativeCABI.Profile.WINDOWS_LLP64) linker.withWideEntryPoint() else linker
 		val executable = abi.executableFormat.executablePath(output).toAbsolutePath().normalize()
 		Files.createDirectories(executable.parent)
 		val objectFile = Files.createTempFile("cloth-", ".o")
@@ -201,21 +201,21 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		}
 	}
 
-	internal fun emitObject(module: LLVMModuleRef, output: Path) {
+	internal fun emitObject(module: LLVMModuleRef, output: Path, targetABI: NativeCABI = abi) {
 		val target = LLVMTargetRef()
-		BytePointer(abi.targetTriple).use { triple ->
+		BytePointer(targetABI.targetTriple).use { triple ->
 			checkLLVM(BackendErrors::target) { error ->
 				LLVMGetTargetFromTriple(triple, target, error)
 			}
 		}
-		val machine = LLVMCreateTargetMachine(target, abi.targetTriple, "generic", "", LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelDefault)
+		val machine = LLVMCreateTargetMachine(target, targetABI.targetTriple, "generic", "", LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelDefault)
 		if (machine == null || machine.isNull) throw BackendErrors.machine()
 
 		try {
 			val layout = LLVMCreateTargetDataLayout(machine)
 			try {
 				val pointer = LLVMPointerTypeInContext(LLVMGetModuleContext(module), 0)
-				if (LLVMSizeOfTypeInBits(layout, pointer) != abi.pointerBits.toLong()) throw BackendErrors.layout(abi.profile.name, abi.targetTriple)
+				if (LLVMSizeOfTypeInBits(layout, pointer) != targetABI.pointerBits.toLong()) throw BackendErrors.layout(targetABI.profile.name, targetABI.targetTriple)
 				LLVMSetModuleDataLayout(module, layout)
 			} finally {
 				LLVMDisposeTargetData(layout)

@@ -2,6 +2,164 @@
 
 ## Current work
 
+### Conservative early array temporary cleanup (2026-10-31)
+
+The user authorized earlier cleanup only with a compiler proof, otherwise
+retaining function-lifetime storage. They reaffirmed that Cloth does not and
+will not have GC, and excluded reference counting from this optimization.
+The implementation uses statically selected allocation checkpoints in the
+existing invocation arena. It adds no tracing, root scanning, runtime liveness
+decisions, ownership counts or automatic class-object destruction.
+
+`ArrayTemporaryAnalysis` has a closed whitelist of expressions that cannot
+publish newly allocated buffers to surrounding bindings. Ordinary calls use
+the existing value/return-copy contract; inline function-block reads are
+inspected for captured writes. All declarations/writes and unrecognized cases
+conservatively fail the proof. The analysis also requires possible caller-side
+array allocation, avoiding checkpoints for ordinary nonallocating scalar reads.
+
+`EmitExpression` wraps a proven expression only when its result is discarded
+or has no buffer pointer. It saves the arena head before evaluation, then frees
+exactly the new allocation-list segment after normal completion and restores
+that head. Nested evaluation stays within the outer proven checkpoint. Early
+function exits use ordinary frame cleanup after any outgoing return copy.
+`EmitStringArena.releaseTo` simply unwinds recorded allocations to that known
+checkpoint; it never searches for reachable objects or tests whether an object
+is live. No additional heap allocation is needed to record a checkpoint.
+
+Statement emission now distinguishes discarded expression results from the
+last value needed by a conditional branch. Live array/string results, adopted
+rows, borrowed string bytes and buffers exposed through captured writes retain
+the old frame lifetime. Named bindings, replacements and lexical scope exits
+are not shortened by this pass. Safe nested scalar operations can still reclaim
+their own new temporaries while preserving the older live prefix. Existing
+copy independence, shape/bounds checks and evaluation order remain in force.
+
+Fourteen `ArrayTemporaryCleanupTest` cases observe live/peak requested bytes
+during execution, count allocations and poison freed buffers. Eight discarded
+64-element integer arrays still allocate eight times, but live compiler buffer
+bytes return to zero between statements and peak at 264 bytes (256 data plus
+the existing 8-byte allocation link), rather than retaining all eight buffers.
+Tests also cover scalar/void argument snapshots, primitive indexing, nested
+literal/string arrays, adopted rows and borrowed strings, captured array/string
+writes, named/replaced/scoped fallback storage, repeated pure function-block
+reads, dynamic conditionals, short circuits and early buffered return paths.
+Verified on 2026-10-31: focused cleanup and copy-elision tests passed, followed
+by `gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 477
+tests passed with zero failures/errors/skips. Existing shape, bounds, evaluation
+order, capture, return-copy, Unicode startup and poisoned-storage regressions
+also passed. `git diff --check` passed. Native memory probes executed on Windows;
+the implementation uses shared LLVM/C-ABI paths without target-specific cleanup.
+
+### Fresh array result copy elimination (2026-10-31)
+
+The user authorized eliminating redundant physical copies of fresh array
+results while preserving independent values, shape checks and source evaluation
+order. `EmitExpression` now tracks one-use ownership of recursively independent
+temporary buffers in the current physical frame. Function-call results become
+fresh because the callee already copies them into that frame's arena. A binding,
+argument, literal row or subarray replacement can consume a fresh result without
+another copy. Storing it consumes freshness; binding reads never acquire it.
+
+Conditional branch results and function-block returns snapshot borrowed values
+or consume fresh results before their control-flow exits. Their merged result
+is independently owned and transferable once, including mixed fresh/borrowed
+paths and repeated function-block reads. Indexing a fresh temporary can transfer
+its selected subarray; indexing an existing binding still snapshots that row
+when transferring it elsewhere. Array literals retain the existing stack-backed
+construction and recursive snapshot path.
+
+Adoption checks every static destination extent using complete shape metadata.
+Whole-binding replacement still checks its captured initial shape, and subarray
+replacement still checks the parent's shape. Source arguments are transferred
+in order before later arguments run; existing binding arguments remain copied
+even for final parameters. Targets and indices still evaluate before assignment
+RHS expressions. No read-only borrowing, lifetime shortening, COW or new source
+syntax is introduced. Function returns continue recursively copying across
+physical frame boundaries before the callee's arena is released.
+
+Seventeen `ArrayCopyElisionTest` cases use actual allocation counters and poisoned
+released buffers. The original flat identity example now allocates three times
+instead of four. Three nested producer/transform calls allocate three return
+buffers, without argument/result-binding snapshots in between. Tests also cover
+stored/final copy isolation, row replacement/extraction, fresh subarray indexing,
+dynamic conditional paths, stored results read by conditional branches, repeated
+and captured function blocks, mixed block return paths, argument evaluation and
+captured mutation order, early returns, recursive nested string lifetimes,
+known/initial/empty-axis shape failures and target selection before RHS rebinding.
+Focused allocation, shape, function-block and storage-lifetime tests passed.
+Verified on 2026-10-31: a fresh, unexcluded
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` build passed
+all 463 tests, with zero failures/errors/skips. This includes the existing CLI
+examples, counted/poisoned storage tests and Unicode startup regressions; the
+previously unfinished prototype no longer blocked ordinary source compilation.
+`git diff --check` passed. Native optimization tests executed on Windows; this
+change is shared LLVM emission with no target-specific optimization path.
+
+### Array binding immutability confirmed (2026-10-31)
+
+The user confirmed retaining the existing binding-only `:=`/`final` behavior.
+Immutable locals and final parameters cannot be rebound, but their array
+elements and nested subarrays can be changed under the existing strict type,
+rectangular shape and independent-copy rules. Finality belongs to the binding,
+not the array type, and does not imply a read-only function parameter.
+
+README and confirmed semantics now state the rule explicitly. The existing
+`ArrayAssignmentTest` case `final array bindings retain binding only immutability`
+already covers native local element writes and final parameter copy isolation.
+This is documentation of confirmed existing behavior; compiler code is unchanged.
+The audit's binding/content immutability question is settled.
+
+### Unicode command-line startup (2026-10-31)
+
+The user confirmed lossless Unicode arguments on Windows, Linux and macOS and
+first-invalid-argument failure before Cloth main. `EmitArguments` validates
+user arguments sequentially, excluding the executable name, before both
+`main()` and `main(string[] args)`. One diagnostic identifies the invalid
+argument's one-based position and expected native encoding, then exits with
+status 1. Later arguments and user code are not evaluated.
+
+Windows executable adapters now export native `wmain(int, wchar_t**)`.
+`WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, ...)` validates UTF-16 and
+converts to UTF-8. A private helper sizes each conversion, uses temporary stack
+storage for that argument and copies the result into a startup arena. The arena
+is released after Cloth main returns. Parameterless main validates without
+allocating converted buffers. GUI executable linking replaces the narrow CRT
+override with `wmainCRTStartup`; console linkers discover `wmain`. Internal
+snippet/test-driver startup remains ordinary `main`.
+
+Linux/macOS keep native `main(int, char**)`. A shared validator follows Unicode
+Table 3-7, rejecting isolated continuations, overlong forms, surrogate encodings,
+out-of-range scalars and truncated sequences. It computes byte length while
+reading sequentially through the first NUL, without out-of-bounds lookahead.
+Valid UTF-8 bytes are borrowed unchanged for the main invocation. Both adapters
+preserve empty arguments, Unicode sequences, ordering and existing exit statuses.
+
+Ten `UnicodeArgumentsTest` cases cover native Unicode/quoting/empty inputs,
+signed entry contracts, Windows CRT/subsystem/linker combinations, verified
+startup IR for eight supported platform profiles, UTF-8 scalar boundaries and
+malformed forms, invalid UTF-16, stopping before a later unreadable argument,
+and balanced startup/copy/return allocations. Exact-code-unit native drivers
+bypass JVM sanitization. Native launch tests temporarily select the JVM's strict
+Windows quoting mode so literal quotes reach the CRT correctly.
+
+Focused tests passed on Windows. Native Linux verification also passed all 51
+checks using emitted ELF fixtures linked/executed in the installed Ubuntu WSL
+environment. Mach-O fixtures and verified Darwin x86-64/ARM64 IR are available;
+native macOS execution remains unverified. The reproducible Unix execution
+driver is `Compiler/src/test/resources/unicode-arguments/verify-unix.py`.
+All 446 compiler tests passed against the successfully compiled Unicode
+implementation (`:Compiler:test -x :Compiler:compileKotlin -x
+:Compiler:compileTestKotlin --offline --console=plain --no-daemon`). A regular
+full build encountered errors in the unrelated, concurrently edited
+`cloth/data/PrimitiveTypes.kt` prototype, which was left untouched. A separate
+fresh build excluded only that file and used a separate output directory;
+all 55 Unicode, entry-point and string-lifetime tests passed there as well.
+Whitespace checks passed for the changed files outside that prototype.
+See the updated
+[argument TODO](../../../../todo/unicode-command-line-arguments.md) for the
+remaining native macOS check and replay instructions.
+
 ### Fixed initial array shapes (2026-10-31)
 
 The user confirmed that every array-valued binding preserves its initial shape,
@@ -157,6 +315,12 @@ its shape-related observations and the previously unsettled shape decision.
 The later order-independent inference work also supersedes its first-element
 inference observations, and fixed-initial-shape work supersedes its differing
 literal/function binding-stability observations.
+The later Unicode startup work supersedes its Windows argument-encoding defect;
+native macOS verification remains tracked separately.
+The user also confirmed retaining the observed binding-only final-array policy.
+Fresh-result copy elimination above reduces the measured identity sample's
+allocation count from four to three. The original measurements below remain a
+historical baseline; general copy/lifetime optimization is still ongoing work.
 
 Audit only: compiler semantics were not changed. The complete 389-test suite
 passed alongside two temporary audit drivers (391 JUnit cases total, zero
@@ -347,9 +511,10 @@ Cross-platform requirement reaffirmed on 2026-10-30: Windows, Linux and macOS
 must remain first-class targets with the same Cloth feature contracts. Native
 startup/encoding adapters may differ by platform. Unicode argv work is tracked
 in [the cross-platform argument TODO](../../../../todo/unicode-command-line-arguments.md).
-This requirement does not establish native verification on all three systems;
-current execution evidence below remains Windows-only. Invalid native argument
-encoding policy is still unresolved.
+This requirement does not establish native verification on all three systems.
+The later Unicode startup work above records the confirmed invalid-input policy,
+implemented adapters and Windows/Linux execution evidence; older evidence below
+describes the earlier Windows-only implementation.
 
 Function implementation chunk 8 (array values and function boundaries) is
 implemented. Array literals `[1, 2, 3]`, sized/unsized annotations in bindings,
@@ -387,9 +552,9 @@ Initial implementation policies (not separately confirmed language decisions):
   in elements or indices stop subsequent evaluation. The later element-assignment
   work replaces descriptor-sharing transfers with recursive value copies and
   implements indexed writes. Array equality remains unimplemented.
-- Native startup constructs `string[]` from `argc`/`argv`, excluding the
-  executable name. The adapter borrows native narrow-string bytes and lengths;
-  platform-specific command-line Unicode transcoding is not implemented.
+- At chunk 8, native startup constructed `string[]` from `argc`/`argv`, excluding
+  the executable name, and borrowed narrow-string bytes without transcoding.
+  The Unicode startup adapters described above supersede that limitation.
 
 At chunk 8, `EmitArray` stored a `{ ptr, i64 }` descriptor with storage-typed elements,
 including byte storage for bools and descriptors for strings/nested arrays.
@@ -1549,10 +1714,15 @@ are not language specification boundaries.
 The following have not yet been settled. Ask about them when relevant, keeping
 the user's preference for one question at a time:
 
-- Array length/count API and iteration syntax; array equality semantics.
-- Whether value-array `:=`/`final` should retain the current binding-only policy
-  or also forbid element mutation. Current behavior is documented, not silently
-  changed by the comparison with other languages.
+- **Compiler data access** is the working name for deferred compiler-provided,
+  type-specific data access (2026-10-31), intended for more than arrays. The
+  proposed receiver form is `a::size`, producing 2 for `def a = [1, 2]`, without
+  parentheses. Array length/count access is deferred into this design. Result
+  types, multidimensional meaning, existing `::` interactions and the exploratory
+  soft/hard system-call categories remain unresolved; `.length` and its suggested
+  `int` result were not adopted. See the dedicated
+  [design note](../../../../todo/compiler-data-access.md). Array iteration syntax
+  and array equality semantics also remain unresolved.
 - Type-narrowing behavior after reassignment and outside successful `if` branches.
 - Function-block capture escape/lifetime rules beyond reading surrounding locals
   while their enclosing scope is active; whether blocks can be stored or escape

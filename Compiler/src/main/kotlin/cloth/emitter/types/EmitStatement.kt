@@ -17,7 +17,7 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 
 internal class EmitStatement(private val expressionEmitter: EmitExpression, private val bindings: EmitBindings, private val semantics: SemanticModel, private val functions: FunctionSemanticModel? = null) {
 
-	fun emit(statement: Statement): LLVMValueRef? {
+	fun emit(statement: Statement, discardResult: Boolean = false): LLVMValueRef? {
 		if (expressionEmitter.terminated()) return null
 		return when (statement) {
 			is BindingDeclaration  -> {
@@ -25,7 +25,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				if (statement.initializer is FunctionBlockExpression) return null
 				val value = expressionEmitter.emit(statement.initializer)
 				if (expressionEmitter.terminated()) return null
-				val snapshot = expressionEmitter.copyArrayValue(checkNotNull(value), semantics.typeOf(statement))
+				val snapshot = expressionEmitter.transferArrayValue(checkNotNull(value), semantics.typeOf(statement))
 				bindings.declare(functions?.declarations?.symbolOf(statement) ?: statement.name.lexeme, statement.name.lexeme, semantics.typeOf(statement), snapshot)
 				value
 			}
@@ -34,7 +34,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				val value = expressionEmitter.emit(statement.value)
 				if (expressionEmitter.terminated()) return null
 				val target = functions?.declarations?.targetOf(statement) ?: statement.name.lexeme
-				bindings.assign(target, expressionEmitter.copyBindingAssignment(target, checkNotNull(value), semantics.typeOf(statement)))
+				bindings.assign(target, expressionEmitter.transferBindingAssignment(target, checkNotNull(value), semantics.typeOf(statement)))
 				value
 			}
 
@@ -45,7 +45,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 			}
 			is ElementAssignmentStatement -> expressionEmitter.emitElementAssignment(statement)
 
-			is ExpressionStatement -> if (statement.expression is IfExpression && semantics.typeOf(statement) == ValueType.VOID) {
+			is ExpressionStatement -> if (discardResult) expressionEmitter.emitDiscarded(statement.expression) else if (statement.expression is IfExpression && semantics.typeOf(statement) == ValueType.VOID) {
 				expressionEmitter.emitConditional(statement.expression, requireValue = false)
 			} else expressionEmitter.emit(statement.expression)
 			is ReturnStatement -> { expressionEmitter.emitReturn(statement); null }

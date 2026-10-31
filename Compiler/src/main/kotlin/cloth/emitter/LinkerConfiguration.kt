@@ -6,6 +6,13 @@ import java.nio.file.Path
 /** A resolved toolchain: no discovery, ABI selection, or process execution remains. */
 internal data class LinkerConfiguration(val targetTriple: String, val executable: Path, val driver: LinkerDriver, val flags: List<String>, val runtimeLibraries: List<Path>, val libraryPaths: List<Path>, val libraries: List<String>, val environment: Map<String, String> = emptyMap()) {
 
+	/** Console linkers discover wmain; GUI programs need the matching CRT override.
+	 * Keep the ordinary main configuration for snippets and native test drivers.
+	 */
+	fun withWideEntryPoint(): LinkerConfiguration = copy(flags = flags.map {
+		if (it == "/entry:mainCRTStartup") "/entry:wmainCRTStartup" else it
+	})
+
 	fun command(objectFile: Path, output: Path): List<String> = buildList {
 		add(executable.toString())
 		addAll(flags)

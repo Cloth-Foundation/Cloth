@@ -12,17 +12,20 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Emit a controlled, non-returning runtime failure using the target's C ABI. */
 internal class EmitRuntimeError(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
 
-	fun emit(message: String) {
+	fun emit(message: String, vararg details: LLVMValueRef) {
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 		val intType = LLVMTypes(context).value(abi.intType)
 		PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
-			val putsType = LLVMFunctionType(intType, parameters, 1, 0)
-			val existing = LLVMGetNamedFunction(module, "puts")
-			val puts = if (existing == null || existing.isNull) LLVMAddFunction(module, "puts", putsType) else existing
-			PointerPointer<LLVMValueRef>(1L).use { arguments ->
-				arguments.put(0, LLVMBuildGlobalStringPtr(builder, message, "runtime_error"))
-				LLVMBuildCall2(builder, putsType, puts, arguments, 1, "")
+			val formatted = details.isNotEmpty()
+			val outputType = LLVMFunctionType(intType, parameters, 1, if (formatted) 1 else 0)
+			val name = if (formatted) "printf" else "puts"
+			val existing = LLVMGetNamedFunction(module, name)
+			val output = if (existing == null || existing.isNull) LLVMAddFunction(module, name, outputType) else existing
+			PointerPointer<LLVMValueRef>((details.size + 1).toLong()).use { arguments ->
+				arguments.put(0, LLVMBuildGlobalStringPtr(builder, if (formatted) "$message\n" else message, "runtime_error"))
+				details.forEachIndexed { index, value -> arguments.put((index + 1).toLong(), value) }
+				LLVMBuildCall2(builder, outputType, output, arguments, details.size + 1, "")
 			}
 			parameters.put(0, intType)
 			val exitType = LLVMFunctionType(LLVMVoidTypeInContext(context), parameters, 1, 0)

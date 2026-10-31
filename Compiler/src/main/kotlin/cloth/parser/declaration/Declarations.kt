@@ -14,7 +14,6 @@ sealed interface Declaration {
 data class FunctionDeclaration(
 	val keyword: Token,
 	val name: Token,
-	/** Null preserves omission; its language meaning is void, not inference. */
 	val returnType: TypeReference?,
 	val parameters: List<ParameterDeclaration>,
 	val body: FunctionBody,

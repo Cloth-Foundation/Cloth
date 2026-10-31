@@ -157,10 +157,22 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	}
 
 	fun release(builder: LLVMBuilderRef, arena: LLVMValueRef) {
-		val type = signature(LLVMVoidTypeInContext(context), pointer)
-		var function = LLVMGetNamedFunction(module, "cloth.rt.string.release")
+		release(builder, arena, null)
+	}
+
+	/** Free exactly the allocations after a statically proven temporary checkpoint.
+	 * The checkpoint is an ancestor of the current head, never a reachability test.
+	 */
+	fun releaseTo(builder: LLVMBuilderRef, arena: LLVMValueRef, checkpoint: LLVMValueRef) {
+		release(builder, arena, checkpoint)
+	}
+
+	private fun release(builder: LLVMBuilderRef, arena: LLVMValueRef, checkpoint: LLVMValueRef?) {
+		val type = if (checkpoint == null) signature(LLVMVoidTypeInContext(context), pointer) else signature(LLVMVoidTypeInContext(context), pointer, pointer)
+		val name = if (checkpoint == null) "cloth.rt.string.release" else "cloth.rt.string.release.to"
+		var function = LLVMGetNamedFunction(module, name)
 		if (function == null || function.isNull) {
-			function = LLVMAddFunction(module, "cloth.rt.string.release", type)
+			function = LLVMAddFunction(module, name, type)
 			LLVMSetLinkage(function, LLVMInternalLinkage)
 			val body = LLVMCreateBuilderInContext(context)
 			try {
@@ -170,11 +182,12 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val done = LLVMAppendBasicBlockInContext(context, function, "done")
 				LLVMPositionBuilderAtEnd(body, entry)
 				val slot = LLVMGetParam(function, 0)
+				val stop = if (checkpoint == null) nullPointer else LLVMGetParam(function, 1)
 				val head = LLVMBuildLoad2(body, pointer, slot, "head")
 				LLVMBuildBr(body, check)
 				LLVMPositionBuilderAtEnd(body, check)
 				val node = LLVMBuildPhi(body, pointer, "node")
-				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntNE, node, nullPointer, "has_buffer"), free, done)
+				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntNE, node, stop, "has_buffer"), free, done)
 				LLVMPositionBuilderAtEnd(body, free)
 				val next = LLVMBuildLoad2(body, pointer, node, "next")
 				val freeType = signature(LLVMVoidTypeInContext(context), pointer)
@@ -188,10 +201,10 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					}
 				}
 				LLVMPositionBuilderAtEnd(body, done)
-				LLVMBuildStore(body, nullPointer, slot)
+				LLVMBuildStore(body, stop, slot)
 				LLVMBuildRetVoid(body)
 			} finally { LLVMDisposeBuilder(body) }
 		}
-		call(builder, type, function, "", arena)
+		if (checkpoint == null) call(builder, type, function, "", arena) else call(builder, type, function, "", arena, checkpoint)
 	}
 }

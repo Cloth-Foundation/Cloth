@@ -75,7 +75,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 					}
 				}
 				is ExpressionBody -> {
-					val result = expressions.emit(body.expression)
+					val result = if (signature.returns == ValueType.VOID) expressions.emitDiscarded(body.expression) else expressions.emit(body.expression)
 					if (!expressions.terminated()) {
 						frame.emitReturn(if (signature.returns == ValueType.VOID) null else encode(builder, checkNotNull(result), signature.returns))
 					}
@@ -92,7 +92,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { arguments ->
 			// Snapshot each argument in source order, before entering the callee.
 			call.arguments.forEachIndexed { index, expression ->
-				val snapshot = expressions.copyArrayValue(expressions.emitValue(expression), type.parameters[index])
+				val snapshot = expressions.transferArrayValue(expressions.emitValue(expression), type.parameters[index])
 				arguments.put(index.toLong(), encode(builder, snapshot, type.parameters[index]))
 			}
 			if (type.returns.buffered) arguments.put(call.arguments.size.toLong(), expressions.stringReturnArena())

@@ -1,7 +1,7 @@
 # Confirmed Cloth semantics
 
 These decisions were confirmed directly by the user during the language design
-discussion on 2026-10-29 and 2026-10-30. `../../../../examples/Test.co` remains the main syntax example; these rules
+discussion from 2026-10-29 through 2026-10-31. `../../../../examples/Test.co` remains the main syntax example; these rules
 clarify it and extend it where noted. This document describes intended behavior,
 not the compiler's current feature coverage.
 
@@ -17,8 +17,16 @@ not the compiler's current feature coverage.
 - `main(string[] args)` keeps the same Cloth interface across all three targets.
   A Windows Unicode startup adapter must coexist with the Linux/macOS startup
   paths; `wmain` is not a proposed universal native entry point.
-- Behavior for malformed Unicode or non-UTF-8 native argument bytes has not yet
-  been confirmed. The proposal to report a startup error remains a proposal.
+- On 2026-10-31 the user confirmed Unicode-preserving command-line arguments
+  on Windows, Linux and macOS. Native arguments become well-formed UTF-8 Cloth
+  strings without replacing characters or normalizing their Unicode sequence.
+  Windows receives UTF-16 through a wide-character startup adapter; Linux and
+  macOS validate native argument bytes as UTF-8.
+- Validate user arguments in order before entering Cloth's `main`. The first
+  invalid argument produces a controlled startup error and a nonzero exit
+  status; do not continue to later arguments or execute user code. This also
+  applies when Cloth's `main()` has no argument parameter. Preserve empty
+  arguments, argument order and exclusion of the executable name.
 
 ## Concise syntax and bodies
 
@@ -128,6 +136,20 @@ not the compiler's current feature coverage.
   See [development status](development.md) for native entry support and pending
   argument-array construction.
 
+## Compiler data access (deferred)
+
+- On 2026-10-31 the user deferred array length/count access until a broader
+  type-specific facility can be designed. Its working name is **compiler data
+  access**, intended to expose compiler-provided data for types beyond arrays.
+- The proposed receiver-based form is `value::name`: with `def a = [1, 2]`,
+  `a::size` would produce 2, without parentheses. This records the design
+  direction, not implemented support or a complete syntax/typing contract.
+- Result types, multidimensional meaning and the relationship to the proposed
+  soft/hard system-call categories remain unresolved. The earlier `.length`
+  recommendation and its suggested `int` result were not adopted.
+- Track the deferred design and its open questions in
+  [compiler data access](../../../../todo/compiler-data-access.md).
+
 ## Function parameters
 
 Array syntax and construction were confirmed on 2026-10-30:
@@ -183,11 +205,32 @@ Array syntax and construction were confirmed on 2026-10-30:
   arguments. Modifying a copied binding or a function's array parameter does
   not modify the source/caller's array. This applies recursively to nested
   arrays; copying only the outer array would not satisfy the rule.
+- On 2026-10-31 the user authorized eliminating redundant physical copies of
+  fresh array results while preserving independent value behavior, all shape
+  checks and the agreed evaluation order. Reusing an unaliased temporary's
+  storage is permitted when it preserves those guarantees and storage lifetime.
+  A stored array remains independent of later copies and function arguments.
+- The user then authorized conservative early cleanup of temporary array
+  buffers only where the compiler can statically prove it safe. Otherwise,
+  keep those buffers until the owning function invocation returns. This must
+  preserve surviving arrays, strings and subarrays, captures, return values,
+  shape checks and once-only source evaluation in the established order.
+  This optimization must introduce neither GC nor reference counting.
 - To apply a function's array changes to the caller's binding, return the changed
   array and assign that result, for example `values = change(values)`. Calling
   `change(values)` alone leaves the caller's array unchanged.
 - This array decision extends the earlier local-parameter-rebinding rule to
   element writes. It does not establish deep-copy semantics for class objects.
+- On 2026-10-31 the user confirmed retaining binding-only immutability for
+  arrays. `:=` on a local and `final` on an array parameter forbid rebinding
+  that name but permit element writes, recursively through nested indices.
+  Replacing a row/subarray is permitted when the existing type and shape match.
+  For example, with `def a := [1, 2]`, `a[0] = 10` is allowed while
+  `a = [10, 2]` is a compile-time error.
+- `final int[] values` similarly permits `values[0] = 10` inside the function.
+  The parameter's recursive value copy remains independent of the caller.
+  Binding immutability does not make the array's type read-only or propagate
+  through copying; a new binding follows its own `=` or `:=` declaration.
 - See development status for current nested-literal syntax and implementation
   policies that have not been separately confirmed as language design, including
   empty arrays and bounds failures.
@@ -319,6 +362,8 @@ Array syntax and construction were confirmed on 2026-10-30:
 - `=` creates a mutable binding.
 - `:=` creates an immutable binding. It prevents reassignment of that binding;
   it does not freeze the object or its fields.
+- Arrays follow the same binding-only rule: `:=`/`final` permit element mutation
+  while prohibiting rebinding, subject to ordinary element type and shape checks.
 - An immutable binding can call methods that mutate its object's fields, such as
   `player.applyDamage(...)` when that method is accessible.
 - There is no separate `mut` qualifier.
@@ -497,7 +542,12 @@ Array syntax and construction were confirmed on 2026-10-30:
 
 ## Object lifetime and nullability
 
-- Object lifetime is explicitly managed by the programmer. Cloth has no GC.
+- Object lifetime is explicitly managed by the programmer. Cloth does not and
+  will not have a garbage collector, as reaffirmed by the user on 2026-10-31.
+- Compiler-managed temporary value buffers may be released at statically
+  proven safe points, with function-lifetime storage as the conservative
+  fallback. This introduces no runtime reachability analysis or reference
+  counting and does not implicitly destroy class objects or run destructors.
 - `Type::new(...)` creates an object. `object::delete` explicitly destroys it and
   runs its destructor. Do not assume cleanup on scope exit or automatic cleanup
   of objects the programmer has not deleted.
