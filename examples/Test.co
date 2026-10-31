@@ -183,7 +183,7 @@ typedef<class> Loops {
             for (def<int> j = 0 : 0..=100; j++) {
                 //.. is range exclusive
                 //..= range inclusive
-                // : 1 defines step
+                // ; 1 defines step
             }
         }
     }
@@ -198,6 +198,9 @@ fn<void> arrays () {
     def<int[2]> oversized = [ 1 ] // not all members initialized, error
     def<float[1]> undersized = [ 1.0, 2.0 ] // ERROR!
     def<string[]> finalArray := [ "Hello", "Cloth" ]
+    def<unsigned int<8>[2]> bytes = [ 127, 16 ]
+
+    def<char[10]> forceSize = [ ' '; 10 ]
 
 }
 

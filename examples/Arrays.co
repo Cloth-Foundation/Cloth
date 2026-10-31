@@ -2,6 +2,10 @@ fn<int> sum(int[] values) = values[0] + values[1] + values[2]
 
 fn<string[]> greeting(string name) = ["Hello", name + "!"]
 
+fn<int[]> row(int first) = [first, first + 1, first + 2]
+
+fn<int[][]> matrixFromFunctions() = [row(1), row(4)]
+
 fn<int> main() {
     def<int[]> unsized = [ 1, 2, 3 ]
     def<float[5]> sized = [ 1.0, 2.0, 3.0, 4.0, 5.0 ]
@@ -9,10 +13,17 @@ fn<int> main() {
     def<string[]> finalArray := [ "Hello", "Cloth" ]
     def<int[2][3]> matrix = [[1, 2, 3], [4, 5, 6]]
     def words = greeting(finalArray[1])
+    def returnedMatrix = matrixFromFunctions()
+    def<int<64>> wide = 20
+    def literalFirst = [1, wide]
+    def typedFirst = [wide, 1]
+    def nestedInferred = [[1, 2], [3, wide]]
 
     // def<int[2]> oversized = [1] // Error: every member must be initialized.
     // def<float[1]> undersized = [1.0, 2.0] // Error: too many initializers.
-    if (sum(unsized) == 6 && sized[4] == 5.0 && inferredWithSize[0] && finalArray[0] == "Hello" && matrix[1][2] == 6 && words[1] == "Cloth!") {
+    // def jagged = [[1], [2, 3]] // Error: all rows must have the same shape.
+    if (literalFirst[1] != typedFirst[0] || nestedInferred[1][1] != wide) { return 1 }
+    if (sum(unsized) == 6 && sized[4] == 5.0 && inferredWithSize[0] && finalArray[0] == "Hello" && matrix[1][2] == 6 && words[1] == "Cloth!" && returnedMatrix[1][2] == 6) {
         return 0
     }
     return 1

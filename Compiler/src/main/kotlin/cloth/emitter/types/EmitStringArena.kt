@@ -26,7 +26,8 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
 		if (valueType !is ValueType.ArrayValue) return value
 		val (type, function) = arrayCopies[valueType] ?: run {
-			val type = signature(text, pointer, text)
+			val arrayType = types.value(valueType)
+			val type = signature(arrayType, pointer, arrayType)
 			val function = LLVMAddFunction(module, "cloth.rt.array.copy.${arrayCopies.size}", type)
 			LLVMSetLinkage(function, LLVMInternalLinkage)
 			arrayCopies[valueType] = type to function
@@ -35,7 +36,8 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
 				LLVMPositionBuilderAtEnd(body, entry)
 				val arena = LLVMGetParam(function, 0)
-				val input = LLVMGetParam(function, 1)
+				val arrays = EmitArray(context, body, abi)
+				val input = arrays.constrain(LLVMGetParam(function, 1), valueType)
 				val length = LLVMBuildExtractValue(body, input, 1, "element_count")
 				val stride = LLVMSizeOf(types.storage(valueType.element))
 				val allocate = LLVMAppendBasicBlockInContext(context, function, "allocate")
@@ -46,9 +48,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				EmitRuntimeError(context, body, abi).emit("Unable to allocate returned array storage")
 				LLVMPositionBuilderAtEnd(body, allocate)
 				val bytes = LLVMBuildMul(body, length, stride, "byte_count")
-				val raw = LLVMBuildInsertValue(body, input, bytes, 1, "array_bytes")
+				val raw = arrays.descriptor(LLVMBuildExtractValue(body, input, 0, "source"), bytes)
 				val copied = copy(body, arena, raw)
-				val result = LLVMBuildInsertValue(body, copied, length, 1, "copied_array")
+				val result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
 				if (valueType.element.buffered) {
 					val check = LLVMAppendBasicBlockInContext(context, function, "check")
 					val item = LLVMAppendBasicBlockInContext(context, function, "element")
@@ -58,9 +60,11 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					val index = LLVMBuildPhi(body, size, "index")
 					LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntULT, index, length, "has_element"), item, done)
 					LLVMPositionBuilderAtEnd(body, item)
-					val arrays = EmitArray(context, body, abi)
 					val address = arrays.address(LLVMBuildExtractValue(body, result, 0, "elements"), valueType.element, index)
-					val element = LLVMBuildLoad2(body, types.storage(valueType.element), address, "element_value")
+					var element = LLVMBuildLoad2(body, types.storage(valueType.element), address, "element_value")
+					if (valueType.element is ValueType.ArrayValue) {
+						element = arrays.matchShape(element, arrays.childShape(element, input, valueType.element), valueType.element)
+					}
 					LLVMBuildStore(body, copyValue(body, arena, element, valueType.element), address)
 					val next = LLVMBuildAdd(body, index, LLVMConstInt(size, 1, 0), "next")
 					val end = LLVMGetInsertBlock(body)

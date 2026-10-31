@@ -10,11 +10,12 @@ import cloth.token.TokenType
 
 class ExpressionParser(val parser: Parser) {
 
-	fun parseExpression(minimumPrecedence: Int = 0): Expression {
+	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false): Expression {
 		var left = parseUnary()
 
 		while (true) {
 			val operator = parser.peek()
+			if (stopAtAssignment && operator.lexeme in setOf("=", ":=")) break
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()

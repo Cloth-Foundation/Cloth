@@ -91,7 +91,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val argumentCount = call.arguments.size + if (type.returns.buffered) 1 else 0
 		val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { arguments ->
 			// Snapshot each argument in source order, before entering the callee.
-			call.arguments.forEachIndexed { index, expression -> arguments.put(index.toLong(), encode(builder, expressions.emitValue(expression), type.parameters[index])) }
+			call.arguments.forEachIndexed { index, expression ->
+				val snapshot = expressions.copyArrayValue(expressions.emitValue(expression), type.parameters[index])
+				arguments.put(index.toLong(), encode(builder, snapshot, type.parameters[index]))
+			}
 			if (type.returns.buffered) arguments.put(call.arguments.size.toLong(), expressions.stringReturnArena())
 			LLVMBuildCall2(builder, signature(selected), reference(selected), arguments, argumentCount, if (type.returns == ValueType.VOID) "" else "call_result")
 		}

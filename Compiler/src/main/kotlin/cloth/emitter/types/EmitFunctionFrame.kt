@@ -23,6 +23,9 @@ internal class EmitFunctionFrame(
 
 	fun stringReturnArena(): LLVMValueRef = arena ?: strings.create(entry).also { arena = it }
 
+	fun copyArray(value: LLVMValueRef, type: ValueType.ArrayValue): LLVMValueRef =
+		strings.copyValue(builder, stringReturnArena(), value, type)
+
 	fun emitReturn(value: LLVMValueRef?) {
 		predecessors.add(LLVMGetInsertBlock(builder) to value)
 		LLVMBuildBr(builder, exit)

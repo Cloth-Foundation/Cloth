@@ -80,6 +80,10 @@ class DeclarationAnalyzer {
 					model.assignments[statement] = assignmentTarget(statement.name, scope)
 					expression(statement.value, scope)
 				}
+				is ElementAssignmentStatement -> {
+					expression(statement.target, scope)
+					expression(statement.value, scope)
+				}
 				is UpdateStatement -> model.updates[statement] = assignmentTarget(statement.name, scope)
 				is ExpressionStatement -> expression(statement.expression, scope)
 				is ReturnStatement -> statement.value?.let { expression(it, scope) }

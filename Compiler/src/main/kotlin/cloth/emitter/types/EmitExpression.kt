@@ -6,6 +6,7 @@ import cloth.parser.expression.*
 import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
 import cloth.parser.statement.ReturnStatement
+import cloth.parser.statement.ElementAssignmentStatement
 import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
@@ -65,6 +66,32 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
 
+	/** A transferred array is a recursive value snapshot, never an alias to its source. */
+	fun copyArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef =
+		if (type is ValueType.ArrayValue) checkNotNull(frame).copyArray(value, type) else value
+
+	fun copyBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
+		val checked = if (type is ValueType.ArrayValue && type.arrayDimensions.any { it == null }) arrays.matchShape(value, bindings.initialArrayShape(key), type,
+			message = "Array shape mismatch: assignment must preserve the binding's initial shape") else value
+		return copyArrayValue(checked, type)
+	}
+
+	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
+		// Resolve the complete target once, including each bounds check, before the RHS.
+		val array = emitValue(statement.target.array)
+		val index = emitValue(statement.target.index)
+		val type = semantics.typeOf(statement.target)
+		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
+		var value = emitValue(statement.value)
+		if (type is ValueType.ArrayValue) {
+			val previous = LLVMBuildLoad2(builder, types.storage(type), address, "replaced_array")
+			value = arrays.matchShape(value, arrays.childShape(previous, array, type), type)
+		}
+		value = copyArrayValue(value, type)
+		arrays.storeAt(address, type, value)
+		value
+	} catch (_: Terminated) { null }
+
 	/** Each read expands a fresh evaluation in the physical function frame. Captures
 	 * use resolved binding identities; temporary strings/arrays retain that frame's
 	 * lifetime and use the ordinary copy path if returned from the actual function.
@@ -87,7 +114,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		LLVMPositionBuilderAtEnd(builder, exit)
 		if (target.predecessors.isEmpty()) { LLVMBuildUnreachable(builder); return null }
 		if (type == ValueType.VOID) return null
-		if (target.predecessors.size == 1) return checkNotNull(target.predecessors.single().second)
+		if (target.predecessors.size == 1) return copyArrayValue(checkNotNull(target.predecessors.single().second), type)
 		val result = LLVMBuildPhi(builder, types.value(type), "block_value")
 		PointerPointer<LLVMValueRef>(target.predecessors.size.toLong()).use { values ->
 			PointerPointer<LLVMBasicBlockRef>(target.predecessors.size.toLong()).use { blocks ->
@@ -97,7 +124,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMAddIncoming(result, values, blocks, target.predecessors.size)
 			}
 		}
-		return result
+		return copyArrayValue(result, type)
 	}
 
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
@@ -124,7 +151,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is ArrayLiteral -> {
 				val type = semantics.typeOf(expression) as? ValueType.ArrayValue
 				if (type == null) { expression.elements.forEach { emitValue(it) }; null }
-				else arrays.literal(type.element, expression.elements.map { item -> { emitValue(item) } })
+				else arrays.literal(type.element, expression.elements.map { item -> { copyArrayValue(emitValue(item), type.element) } })
 			}
 			is IndexExpression -> {
 				val array = emitValue(expression.array)
@@ -303,7 +330,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMAddIncoming(result, incomingValues, incomingBlocks, values.size)
 			}
 		}
-		return result
+		return copyArrayValue(result, semantics.typeOf(expression))
 	}
 
 	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {

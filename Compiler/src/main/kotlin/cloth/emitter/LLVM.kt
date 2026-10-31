@@ -140,7 +140,8 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			val bindings = EmitBindings(context, builder)
 			val casts = EmitCast(context, builder, semantics, targetABI)
 			val strings = EmitString(context, builder, targetABI)
-			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts, strings, EmitPower(context, builder, abi), abi)
+			val frame = EmitFunctionFrame(context, builder, entryBlock, targetABI.intType, nativeIntType, EmitStringArena(context, module, targetABI), null)
+			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts, strings, EmitPower(context, builder, abi), abi, frame = frame)
 			val statementEmitter = EmitStatement(expressionEmitter, bindings, semantics)
 
 			var result: LLVMValueRef? = LLVMConstInt(types.value(ValueType.INT), 0L, 0)
@@ -151,7 +152,8 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 
 			if (forcePrint && result != null) emitPrint(context, module, builder, result, ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts, strings)
 
-			LLVMBuildRet(builder, LLVMConstInt(nativeIntType, 0L, 0))
+			frame.emitReturn(LLVMConstInt(nativeIntType, 0L, 0))
+			frame.finish()
 			checkLLVM(BackendErrors::invalidIR) { error ->
 				LLVMVerifyModule(module, LLVMReturnStatusAction, error)
 			}

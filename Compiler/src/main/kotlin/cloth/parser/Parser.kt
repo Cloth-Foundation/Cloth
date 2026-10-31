@@ -13,6 +13,8 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.statement.AssignmentStatement
+import cloth.parser.statement.ElementAssignmentStatement
+import cloth.parser.expression.IndexExpression
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
@@ -186,7 +188,14 @@ class Parser(private val tokens: List<Token>) {
 			}
 			return AssignmentStatement(name, value)
 		}
-		return ExpressionStatement(expressionParser.parseExpression())
+		val expression = expressionParser.parseExpression(stopAtAssignment = true)
+		if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
+		if (peek().lexeme == Operators.ASSIGN.character) {
+			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
+			advance()
+			return ElementAssignmentStatement(expression, expressionParser.parseExpression())
+		}
+		return ExpressionStatement(expression)
 	}
 
 	private fun parseBinding(): BindingDeclaration {

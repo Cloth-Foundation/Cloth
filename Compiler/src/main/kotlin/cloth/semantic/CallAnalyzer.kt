@@ -85,7 +85,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 					}
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
-					val type = if (expected is ValueType.ArrayValue && actual is ValueType.ArrayValue && expected.accepts(actual)) actual else expected ?: actual
+					val type = if (expected is ValueType.ArrayValue && actual is ValueType.ArrayValue && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.initializer, statement.name) }
 					facts.bindings[symbol] = type
 					model.statements[statement] = type
@@ -100,6 +100,12 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 				is UpdateStatement -> {
 					val type = facts.bindings.getValue(facts.declarations.targetOf(statement))
 					if (!type.numeric && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }
+					model.statements[statement] = type
+				}
+				is ElementAssignmentStatement -> {
+					val type = typeOf(statement.target)
+					val actual = typeOf(statement.value, type)
+					if (type != ValueType.NEVER && !compatible(actual, type)) reject { SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value.span) }
 					model.statements[statement] = type
 				}
 				is ExpressionStatement -> model.statements[statement] = typeOf(statement.expression, requireValue = false)

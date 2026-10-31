@@ -37,6 +37,7 @@ class ControlFlowModel {
 			is ReturnStatement -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration -> of(statement.initializer)
 			is AssignmentStatement -> of(statement.value)
+			is ElementAssignmentStatement -> of(statement.target).then(of(statement.value))
 			is ExpressionStatement -> of(statement.expression)
 			is UpdateStatement -> ControlFlow.CONTINUE
 			else -> throw InternalErrors.invariant("Unsupported statement during flow analysis: $statement")
