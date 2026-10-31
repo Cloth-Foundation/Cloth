@@ -2,6 +2,7 @@ package cloth
 
 import cloth.diagnostics.*
 import cloth.emitter.LLVMEmitter
+import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
@@ -94,10 +95,11 @@ class ProgramEntryTest {
 		val declarationIR = LLVMEmitter().emit(unit)
 		assertFalse(declarationIR.contains("@main("))
 		val executableIR = LLVMEmitter().emitExecutable(unit)
-		assertEquals(1, executableIR.lineSequence().count { it.startsWith("define i32 @main(") })
+		val entry = if (NativeCABI.native().profile == NativeCABI.Profile.WINDOWS_LLP64) "wmain" else "main"
+		assertEquals(1, executableIR.lineSequence().count { it.startsWith("define i32 @$entry(") })
 		assertContains(executableIR, "call void @cloth.fn.0.main()")
 		assertContains(executableIR, "ret i32 0")
-		assertFalse(executableIR.contains("@printf("))
+		assertContains(executableIR, "Invalid Unicode in command-line argument")
 		assertFalse(executableIR.contains("@putchar("))
 	}
 

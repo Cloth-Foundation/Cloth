@@ -26,22 +26,31 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private val arrays = EmitArray(context, builder, abi)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
+	private val temporaryAnalysis = ArrayTemporaryAnalysis(semantics, functionSemantics)
+	private var temporaryDepth = 0
 	private class Terminated : RuntimeException(null, null, false, false)
 	private class BlockExit(val type: ValueType, val exit: LLVMBasicBlockRef) {
 		val predecessors = mutableListOf<Pair<LLVMBasicBlockRef, LLVMValueRef?>>()
 	}
 	private val blockReturns = mutableListOf<BlockExit>()
+	// One-use ownership of recursively independent buffers in this physical frame.
+	// Storing a value consumes its freshness; reading the binding never restores it.
+	private val freshArrays = mutableSetOf<Long>()
+	private fun freshArray(value: LLVMValueRef, type: ValueType): LLVMValueRef {
+		if (type is ValueType.ArrayValue) freshArrays.add(value.address())
+		return value
+	}
 
 	fun terminated(): Boolean {
 		val end = LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(builder))
 		return end != null && !end.isNull
 	}
 
-	fun emitStatements(body: List<Statement>): LLVMValueRef? {
+	fun emitStatements(body: List<Statement>, preserveLastValue: Boolean = false): LLVMValueRef? {
 		var result: LLVMValueRef? = null
-		for (statement in body) {
+		for ((index, statement) in body.withIndex()) {
 			if (terminated()) break
-			result = statements.emit(statement)
+			result = statements.emit(statement, discardResult = !preserveLastValue || index != body.lastIndex)
 		}
 		return result
 	}
@@ -56,7 +65,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val value = statement.value?.let { emit(it) }
 		if (terminated()) return
 		blockReturns.lastOrNull()?.let { target ->
-			target.predecessors.add(LLVMGetInsertBlock(builder) to if (target.type == ValueType.VOID) null else checkNotNull(value))
+			val result = if (target.type == ValueType.VOID) null else transferArrayValue(checkNotNull(value), target.type)
+			target.predecessors.add(LLVMGetInsertBlock(builder) to result)
 			LLVMBuildBr(builder, target.exit)
 			return
 		}
@@ -66,14 +76,22 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
 
-	/** A transferred array is a recursive value snapshot, never an alias to its source. */
-	fun copyArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef =
-		if (type is ValueType.ArrayValue) checkNotNull(frame).copyArray(value, type) else value
+	/** Transfer an unaliased, frame-owned result once; otherwise take a recursive
+	 * snapshot. Full shape metadata still checks every destination dimension.
+	 */
+	fun transferArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef =
+		transferArrayValue(value, type, null)
 
-	fun copyBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
-		val checked = if (type is ValueType.ArrayValue && type.arrayDimensions.any { it == null }) arrays.matchShape(value, bindings.initialArrayShape(key), type,
-			message = "Array shape mismatch: assignment must preserve the binding's initial shape") else value
-		return copyArrayValue(checked, type)
+	private fun transferArrayValue(value: LLVMValueRef, type: ValueType, shape: LLVMValueRef?, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
+		if (type !is ValueType.ArrayValue) return value
+		val fresh = freshArrays.remove(value.address())
+		val checked = if (shape == null) value else arrays.matchShape(value, shape, type, message = message)
+		return if (fresh) arrays.constrain(checked, type) else checkNotNull(frame).copyArray(checked, type)
+	}
+
+	fun transferBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
+		val shape = if (type is ValueType.ArrayValue && type.arrayDimensions.any { it == null }) bindings.initialArrayShape(key) else null
+		return transferArrayValue(value, type, shape, "Array shape mismatch: assignment must preserve the binding's initial shape")
 	}
 
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
@@ -82,14 +100,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val index = emitValue(statement.target.index)
 		val type = semantics.typeOf(statement.target)
 		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
-		var value = emitValue(statement.value)
-		if (type is ValueType.ArrayValue) {
+		val value = emitValue(statement.value)
+		val shape = if (type is ValueType.ArrayValue) {
 			val previous = LLVMBuildLoad2(builder, types.storage(type), address, "replaced_array")
-			value = arrays.matchShape(value, arrays.childShape(previous, array, type), type)
-		}
-		value = copyArrayValue(value, type)
-		arrays.storeAt(address, type, value)
-		value
+			arrays.childShape(previous, array, type)
+		} else null
+		val snapshot = transferArrayValue(value, type, shape)
+		arrays.storeAt(address, type, snapshot)
+		snapshot
 	} catch (_: Terminated) { null }
 
 	/** Each read expands a fresh evaluation in the physical function frame. Captures
@@ -114,7 +132,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		LLVMPositionBuilderAtEnd(builder, exit)
 		if (target.predecessors.isEmpty()) { LLVMBuildUnreachable(builder); return null }
 		if (type == ValueType.VOID) return null
-		if (target.predecessors.size == 1) return copyArrayValue(checkNotNull(target.predecessors.single().second), type)
+		if (target.predecessors.size == 1) return freshArray(checkNotNull(target.predecessors.single().second), type)
 		val result = LLVMBuildPhi(builder, types.value(type), "block_value")
 		PointerPointer<LLVMValueRef>(target.predecessors.size.toLong()).use { values ->
 			PointerPointer<LLVMBasicBlockRef>(target.predecessors.size.toLong()).use { blocks ->
@@ -124,7 +142,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMAddIncoming(result, values, blocks, target.predecessors.size)
 			}
 		}
-		return copyArrayValue(result, type)
+		return freshArray(result, type)
 	}
 
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
@@ -142,8 +160,28 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emit(expression: Expression): LLVMValueRef? {
+		return emit(expression, discard = false)
+	}
+
+	fun emitDiscarded(expression: Expression): LLVMValueRef? {
+		emit(expression, discard = true)
+		return null
+	}
+
+	private fun emit(expression: Expression, discard: Boolean): LLVMValueRef? {
 		if (terminated()) return null
-		return try { emitInternal(expression) } catch (_: Terminated) { null }
+		val reclaim = temporaryDepth == 0 && (discard || !semantics.typeOf(expression).buffered) && temporaryAnalysis.canReclaim(expression)
+		if (!reclaim) return try { emitInternal(expression) } catch (_: Terminated) { null }
+		val checkpoint = checkNotNull(frame).temporaryCheckpoint()
+		val previousFresh = freshArrays.toSet()
+		temporaryDepth++
+		return try {
+			val result = try { emitInternal(expression) } catch (_: Terminated) { null }
+			// Early exits still use the ordinary frame cleanup, after copying returns.
+			if (!terminated()) frame.releaseTemporaries(checkpoint)
+			freshArrays.retainAll(previousFresh)
+			result
+		} finally { temporaryDepth-- }
 	}
 
 	private fun emitInternal(expression: Expression): LLVMValueRef? {
@@ -151,12 +189,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is ArrayLiteral -> {
 				val type = semantics.typeOf(expression) as? ValueType.ArrayValue
 				if (type == null) { expression.elements.forEach { emitValue(it) }; null }
-				else arrays.literal(type.element, expression.elements.map { item -> { copyArrayValue(emitValue(item), type.element) } })
+				else arrays.literal(type.element, expression.elements.map { item -> { transferArrayValue(emitValue(item), type.element) } })
 			}
 			is IndexExpression -> {
 				val array = emitValue(expression.array)
+				val fresh = freshArrays.remove(array.address())
 				val index = emitValue(expression.index)
-				arrays.index(array, semantics.typeOf(expression), index, semantics.typeOf(expression.index))
+				val value = arrays.index(array, semantics.typeOf(expression), index, semantics.typeOf(expression.index))
+				if (fresh) freshArray(value, semantics.typeOf(expression)) else value
 			}
 			is IfExpression         -> emitConditional(expression, requireValue = semantics.typeOf(expression) !in setOf(ValueType.VOID, ValueType.Never))
 			is TypeCheckExpression  -> {
@@ -171,7 +211,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 				if (block != null) emitBlock(block) else bindings.read(symbol ?: expression.name.lexeme)
 			}
-			is CallExpression       -> checkNotNull(functions).emitCall(expression, this, builder)
+			is CallExpression       -> checkNotNull(functions).emitCall(expression, this, builder)?.let { freshArray(it, semantics.typeOf(expression)) }
 			is IntegerLiteral       -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
 			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral       -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
@@ -287,9 +327,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val ends = mutableListOf<LLVMBasicBlockRef>()
 
 		fun emitBody(body: List<Statement>) {
-			val value = bindings.withScope { emitStatements(body) }
+			val value = bindings.withScope { emitStatements(body, preserveLastValue = requireValue) }
 			if (!terminated()) {
-				if (requireValue) values.add(checkNotNull(value))
+				if (requireValue) values.add(transferArrayValue(checkNotNull(value), semantics.typeOf(expression)))
 				// Nested conditionals, casts, and strings can move the insertion block.
 				ends.add(LLVMGetInsertBlock(builder))
 				LLVMBuildBr(builder, merge)
@@ -330,7 +370,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMAddIncoming(result, incomingValues, incomingBlocks, values.size)
 			}
 		}
-		return copyArrayValue(result, semantics.typeOf(expression))
+		return freshArray(result, semantics.typeOf(expression))
 	}
 
 	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {

@@ -23,6 +23,9 @@ internal class EmitFunctionFrame(
 
 	fun stringReturnArena(): LLVMValueRef = arena ?: strings.create(entry).also { arena = it }
 
+	fun temporaryCheckpoint(): LLVMValueRef = LLVMBuildLoad2(builder, LLVMPointerTypeInContext(context, 0), stringReturnArena(), "temporary_checkpoint")
+	fun releaseTemporaries(checkpoint: LLVMValueRef) { strings.releaseTo(builder, stringReturnArena(), checkpoint) }
+
 	fun copyArray(value: LLVMValueRef, type: ValueType.ArrayValue): LLVMValueRef =
 		strings.copyValue(builder, stringReturnArena(), value, type)
 

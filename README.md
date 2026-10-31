@@ -30,6 +30,11 @@ A void `main` exits with status 0; a signed integer `main` supplies the process
 exit status. Signed integer widths 8, 16, 32 and 64 are accepted. The current
 native adapter sign-extends narrow results to C `int` and retains the low bits of
 wider results, following Cloth's explicit integer-cast rules.
+`main(string[] args)` receives Unicode arguments in their original order,
+excluding the executable name. Startup converts Windows UTF-16 arguments to
+UTF-8 and validates UTF-8 arguments on Linux/macOS. The first invalid argument
+produces a startup error before Cloth's `main` runs, including parameterless
+`main()`. Empty arguments and original Unicode sequences are preserved.
 Expression statements do not print automatically. The executable examples check
 their results and return 0 on success or 1 on failure; `examples/Functions.co`
 demonstrates forward calls and recursion.
@@ -84,6 +89,22 @@ mutating a parameter leaves the caller's array unchanged. Return and assign
 the modified array to apply its changes: `values = change(values)`. Assigning
 an unsized result to a sized destination validates its dimensions at runtime.
 `examples/ArrayAssignment.co` demonstrates copied arrays and returned updates.
+For arrays, `:=` and `final` provide binding-only immutability. With
+`def a := [1, 2]`, `a[0] = 10` is allowed, but `a = [10, 2]` is rejected.
+The same rule applies to final array parameters and nested element/row writes;
+ordinary type and shape checks still apply. Each function argument remains an
+independent recursive copy, including when its parameter is `final`.
+The compiler can reuse the independent storage of a fresh array result instead
+of copying it again into a binding, argument or subarray. Values read from
+existing bindings still receive independent snapshots. This optimization keeps
+all shape checks, evaluation order and invocation cleanup rules intact.
+Temporary array buffers can be released early when the compiler statically
+proves that evaluation cannot leave a surviving dependency on them. Discarded
+results and temporary arrays consumed by scalar/void expressions qualify when
+their evaluation is proven safe. Uncertain cases retain function-lifetime
+storage, including borrowed string/subarray results and captured writes.
+Cloth does not and will not have a GC. This optimization uses no reference
+counting and leaves explicit class-object destruction unchanged.
 Array equality and indexed compound assignments remain unimplemented.
 Element inference is independent of element order: with an `int<64>` binding
 `n`, both `[1, n]` and `[n, 1]` infer `int<64>[2]`. Already-typed values must
