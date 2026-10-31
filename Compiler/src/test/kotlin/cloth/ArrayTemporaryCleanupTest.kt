@@ -6,27 +6,33 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.LinkOptions
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ArrayTemporaryCleanupTest {
+
 	private val make = "fn<int[]> make(int n) = [n, n]"
 	private val read = "fn<int> read(int[] a) = a[0]"
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
 
-	@Test fun `discarded results release all bytes before the next statement and bound peak memory`(@TempDir directory: Path) {
-		val source = "fn<int[]> make() = [${(0 until 64).joinToString(", ")}]\nfn<int> sample() {\n" +
-			List(8) { "make()\nif (liveBytes() != 0) { return 1 }" }.joinToString("\n") + "\nreturn 0\n}"
+	@Test
+	fun `discarded results release all bytes before the next statement and bound peak memory`(@TempDir directory: Path) {
+		val source = "fn<int[]> make() = [${(0 until 64).joinToString(", ")}]\nfn<int> sample() {\n" + List(8) { "make()\nif (liveBytes() != 0) { return 1 }" }.joinToString("\n") + "\nreturn 0\n}"
 		probe(directory, "discarded", source, allocations = 8, peak = 264)
 	}
 
-	@Test fun `scalar consumers release argument snapshots while preserving existing bindings`(@TempDir directory: Path) {
+	@Test
+	fun `scalar consumers release argument snapshots while preserving existing bindings`(@TempDir directory: Path) {
 		probe(directory, "scalar", """
 			$make
 			$read
@@ -42,7 +48,8 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 3, peak = 32)
 	}
 
-	@Test fun `void consumers release mutable parameter snapshots after the call`(@TempDir directory: Path) {
+	@Test
+	fun `void consumers release mutable parameter snapshots after the call`(@TempDir directory: Path) {
 		probe(directory, "void", """
 			$make
 			fn consume(final int[] a) { a[0] = 9 }
@@ -58,15 +65,18 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 3, peak = 32)
 	}
 
-	@Test fun `primitive indexing frees its producer after loading the scalar value`(@TempDir directory: Path) {
+	@Test
+	fun `primitive indexing frees its producer after loading the scalar value`(@TempDir directory: Path) {
 		probe(directory, "index", "$make\nfn<int> sample() {\n def n = make(7)[1]\n if (liveBytes() != 0) { return 1 }\n return n - 7\n}", allocations = 1, peak = 16)
 	}
 
-	@Test fun `nested literal temporaries release copied rows after scalar indexing`(@TempDir directory: Path) {
+	@Test
+	fun `nested literal temporaries release copied rows after scalar indexing`(@TempDir directory: Path) {
 		probe(directory, "literal_rows", "fn<int> sample() {\n def n = [[1, 2], [3, 4]][0][1]\n if (liveBytes() != 0) { return 1 }\n return n - 2\n}", allocations = 2, peak = 32)
 	}
 
-	@Test fun `discarded nested string arrays release complete allocation segments`(@TempDir directory: Path) {
+	@Test
+	fun `discarded nested string arrays release complete allocation segments`(@TempDir directory: Path) {
 		probe(directory, "nested", """
 			$texts
 			fn<string[][]> matrix() = [texts(), texts()]
@@ -80,7 +90,8 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
-	@Test fun `borrowed string and adopted row results retain their dependency buffers`(@TempDir directory: Path) {
+	@Test
+	fun `borrowed string and adopted row results retain their dependency buffers`(@TempDir directory: Path) {
 		probe(directory, "views", """
 			$make
 			$texts
@@ -99,7 +110,8 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
-	@Test fun `captured array writes force frame lifetime while safe nested regions preserve them`(@TempDir directory: Path) {
+	@Test
+	fun `captured array writes force frame lifetime while safe nested regions preserve them`(@TempDir directory: Path) {
 		probe(directory, "capture_array", """
 			$make
 			fn<int> read(int[] a, int ignored) = a[0]
@@ -116,7 +128,8 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
-	@Test fun `captured string writes prevent reclaiming a borrowed array element`(@TempDir directory: Path) {
+	@Test
+	fun `captured string writes prevent reclaiming a borrowed array element`(@TempDir directory: Path) {
 		probe(directory, "capture_string", """
 			$make
 			$texts
@@ -134,7 +147,8 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
-	@Test fun `stored overwritten and scoped arrays conservatively retain frame lifetime`(@TempDir directory: Path) {
+	@Test
+	fun `stored overwritten and scoped arrays conservatively retain frame lifetime`(@TempDir directory: Path) {
 		probe(directory, "fallback", """
 			$make
 			fn<int> sample() {
@@ -150,7 +164,8 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 3, peak = 48)
 	}
 
-	@Test fun `pure repeated function block reads reclaim only discarded or scalar results`(@TempDir directory: Path) {
+	@Test
+	fun `pure repeated function block reads reclaim only discarded or scalar results`(@TempDir directory: Path) {
 		probe(directory, "blocks", """
 			$make
 			fn<int> sample() {
@@ -166,7 +181,8 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 3, peak = 16)
 	}
 
-	@Test fun `dynamic conditional and short circuit cleanup executes only on evaluated paths`(@TempDir directory: Path) {
+	@Test
+	fun `dynamic conditional and short circuit cleanup executes only on evaluated paths`(@TempDir directory: Path) {
 		for ((index, flag) in listOf("true", "false").withIndex()) {
 			probe(directory, "conditional_$index", """
 				$make
@@ -186,7 +202,8 @@ class ArrayTemporaryCleanupTest {
 		}
 	}
 
-	@Test fun `early returns fall back to frame cleanup without freeing a returned array`(@TempDir directory: Path) {
+	@Test
+	fun `early returns fall back to frame cleanup without freeing a returned array`(@TempDir directory: Path) {
 		probe(directory, "early", """
 			$make
 			fn<int> read(int[] a, int n) = a[0]
@@ -202,7 +219,8 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
-	@Test fun `discarded expression body calls and scalar return paths clean up normally`(@TempDir directory: Path) {
+	@Test
+	fun `discarded expression body calls and scalar return paths clean up normally`(@TempDir directory: Path) {
 		probe(directory, "return_paths", """
 			$make
 			fn discard() = make(1) -> void
@@ -239,9 +257,11 @@ class ArrayTemporaryCleanupTest {
 				fun signature(result: LLVMTypeRef, vararg params: LLVMTypeRef) = PointerPointer<LLVMTypeRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMFunctionType(result, values, params.size, 0)
 				}
+
 				fun call(type: LLVMTypeRef, function: LLVMValueRef, vararg params: LLVMValueRef) = PointerPointer<LLVMValueRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMBuildCall2(builder, type, function, values, params.size, "")
 				}
+
 				fun global(name: String, type: LLVMTypeRef) = LLVMAddGlobal(module, type, name).also { LLVMSetInitializer(it, LLVMConstNull(type)); LLVMSetLinkage(it, LLVMPrivateLinkage) }
 				val allocated = global("test.allocations", integer)
 				val outstanding = global("test.outstanding", integer)
@@ -296,15 +316,19 @@ class ArrayTemporaryCleanupTest {
 				val printfType = PointerPointer<LLVMTypeRef>(1L).use { values -> values.put(0, pointer); LLVMFunctionType(integer, values, 1, 1) }
 				val existing = LLVMGetNamedFunction(module, "printf")
 				val printf = if (existing == null || existing.isNull) LLVMAddFunction(module, "printf", printfType) else existing
-				call(printfType, printf, LLVMBuildGlobalStringPtr(builder, "allocations=%d outstanding=%d bytes=%llu peak=%llu result=%d\n", "metrics"),
-					LLVMBuildLoad2(builder, integer, allocated, "allocations"), LLVMBuildLoad2(builder, integer, outstanding, "remaining"),
-					LLVMBuildLoad2(builder, size, live, "remaining_bytes"), LLVMBuildLoad2(builder, size, maximum, "peak_bytes"), result)
+				call(printfType, printf, LLVMBuildGlobalStringPtr(builder, "allocations=%d outstanding=%d bytes=%llu peak=%llu result=%d\n", "metrics"), LLVMBuildLoad2(builder, integer, allocated, "allocations"), LLVMBuildLoad2(builder, integer, outstanding, "remaining"), LLVMBuildLoad2(builder, size, live, "remaining_bytes"), LLVMBuildLoad2(builder, size, maximum, "peak_bytes"), result)
 				LLVMBuildRet(builder, result)
 				emitter.verify(module)
 				emitter.emitObject(module, objectFile)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
-		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
+		try {
+			NativeLinker.link(objectFile, executable, configuration)
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), name)
@@ -316,6 +340,8 @@ class ArrayTemporaryCleanupTest {
 			assertEquals("0", metrics[5], output)
 			if (allocations != null) assertEquals(allocations, metrics[1].toInt(), output)
 			if (peak != null) assertEquals(peak, metrics[4].toLong(), output)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

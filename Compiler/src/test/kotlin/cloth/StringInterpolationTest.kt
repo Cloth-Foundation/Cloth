@@ -1,24 +1,30 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.data.ValueType
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.expression.*
+import cloth.parser.expression.InterpolatedString
+import cloth.parser.expression.NameExpression
+import cloth.parser.expression.StringLiteral
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.ValueType
+import cloth.semantic.SemanticAnalyzer
 import cloth.settings.LinkOptions
 import cloth.settings.RuntimeLinkage
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class StringInterpolationTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("interpolation.co", source.trimIndent())).scanTokens()).parseSnippet()
 
 	@Test
@@ -51,14 +57,7 @@ class StringInterpolationTest {
 
 	@Test
 	fun `holes use normal type checking even in skipped code`() {
-		for ((source, code) in listOf(
-			"#\"{unknown}\"" to DiagnosticCode.UNKNOWN_BINDING,
-			"false && (#\"{unknown}\" == \"\")" to DiagnosticCode.UNKNOWN_BINDING,
-			"#\"{true + 1}\"" to DiagnosticCode.BINARY_OPERANDS,
-			"#\"{if (true) { 1 }}\"" to DiagnosticCode.MISSING_ELSE,
-			"def<int> number = #\"{1}\"" to DiagnosticCode.TYPE_MISMATCH,
-			"def text := #\"{1}\"\ntext = \"new\"" to DiagnosticCode.IMMUTABLE_BINDING,
-			"\"value\" + 1" to DiagnosticCode.STRING_CONCATENATION)) {
+		for ((source, code) in listOf("#\"{unknown}\"" to DiagnosticCode.UNKNOWN_BINDING, "false && (#\"{unknown}\" == \"\")" to DiagnosticCode.UNKNOWN_BINDING, "#\"{true + 1}\"" to DiagnosticCode.BINARY_OPERANDS, "#\"{if (true) { 1 }}\"" to DiagnosticCode.MISSING_ELSE, "def<int> number = #\"{1}\"" to DiagnosticCode.TYPE_MISMATCH, "def text := #\"{1}\"\ntext = \"new\"" to DiagnosticCode.IMMUTABLE_BINDING, "\"value\" + 1" to DiagnosticCode.STRING_CONCATENATION)) {
 			val failure = assertFailsWith<ClothDiagnostic>(source) { SemanticAnalyzer().analyze(parse(source)) }
 			assertEquals(code, failure.diagnosticCode, source)
 			assertLocated(failure)
@@ -67,10 +66,7 @@ class StringInterpolationTest {
 
 	@Test
 	fun `array interpolation reports the unsupported hole in snippets and skipped branches`() {
-		for (source in listOf(
-			"#\"{[1]}\"", "def values = [1, 2]\n#\"{values}\"", "#\"{[[1], [2]]}\"",
-			"false && (#\"{[1]}\" == \"\")", "true || (#\"{[1]}\" == \"\")",
-			"if (false) { #\"{[1]}\" }", "if (true) {} else { #\"{[1]}\" }")) {
+		for (source in listOf("#\"{[1]}\"", "def values = [1, 2]\n#\"{values}\"", "#\"{[[1], [2]]}\"", "false && (#\"{[1]}\" == \"\")", "true || (#\"{[1]}\" == \"\")", "if (false) { #\"{[1]}\" }", "if (true) {} else { #\"{[1]}\" }")) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { SemanticAnalyzer().analyze(parse(source)) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode, source)
 			assertLocated(error)
@@ -86,10 +82,7 @@ class StringInterpolationTest {
 	@Test
 	fun `function interpolation rejects array values including return calls and overload arguments`() {
 		val prelude = "fn<int[]> values() = [1, 2]\nfn consume(string text) {}\nfn consume(int value) {}\n"
-		for ((setup, hole) in listOf(
-			"" to "[1, 2]", "def data = [1, 2]" to "data", "" to "[[1], [2]]",
-			"" to "values()", "" to "if (true) { [1] } else { [2] }",
-			"" to "[[1]][0]", "def<int[0]> empty = []" to "empty", "" to "args")) {
+		for ((setup, hole) in listOf("" to "[1, 2]", "def data = [1, 2]" to "data", "" to "[[1], [2]]", "" to "values()", "" to "if (true) { [1] } else { [2] }", "" to "[[1]][0]", "def<int[0]> empty = []" to "empty", "" to "args")) {
 			for (expression in listOf("#\"{$hole}\"", "consume(#\"{$hole}\")", "if (false) { #\"{$hole}\" }")) {
 				val source = prelude + "fn main(string[] args) {\n$setup\n$expression\n}"
 				val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer().analyze(parseProgram(source)) }
@@ -106,13 +99,7 @@ class StringInterpolationTest {
 		val source = "fn main() { #\"{[1]}{[2]}\" }"
 		val emitter = LLVMEmitter(LinkOptions(linker = directory.resolve("missing-linker")))
 		val output = directory.resolve("absent/program")
-		for (action in listOf<() -> Unit>(
-			{ emitter.compile(parseProgram(source), output) },
-			{ emitter.compileObject(parseProgram(source), output) },
-			{ emitter.emit(parseProgram(source)) },
-			{ emitter.emitExecutable(parseProgram(source)) },
-			{ emitter.emitSnippet(parse("#\"{[1]}\"")) },
-			{ emitter.compileSnippet(parse("#\"{[1]}\""), output) })) {
+		for (action in listOf<() -> Unit>({ emitter.compile(parseProgram(source), output) }, { emitter.compileObject(parseProgram(source), output) }, { emitter.emit(parseProgram(source)) }, { emitter.emitExecutable(parseProgram(source)) }, { emitter.emitSnippet(parse("#\"{[1]}\"")) }, { emitter.compileSnippet(parse("#\"{[1]}\""), output) })) {
 			val error = assertFailsWith<ClothDiagnostic> { action() }
 			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode)
 			assertLocated(error)

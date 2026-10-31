@@ -1,11 +1,19 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.data.CInt
+import cloth.data.ValueType
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.declaration.*
-import cloth.parser.expression.*
-import cloth.parser.statement.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.IfExpression
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
+import cloth.parser.statement.ReturnStatement
 import cloth.semantic.*
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -46,8 +54,7 @@ class FunctionReturnsTest {
 
 	@Test
 	fun `void functions reject produced values in braces and expression bodies`() {
-		for (source in listOf("fn test() { return 1 }", "fn<void> test() { return true }", "fn test() = 1",
-			"fn<void> test() = \"value\"", "fn<int> calculate() = 1\nfn test() = calculate()")) {
+		for (source in listOf("fn test() { return 1 }", "fn<void> test() { return true }", "fn test() = 1", "fn<void> test() = \"value\"", "fn<int> calculate() = 1\nfn test() = calculate()")) {
 			val result = failure(source, DiagnosticCode.VALUE_IN_VOID)
 			assertEquals(2, result.sourceLabels.size)
 		}
@@ -66,8 +73,7 @@ class FunctionReturnsTest {
 
 	@Test
 	fun `brace body final expressions do not implicitly return`() {
-		for (source in listOf("fn<int> test() {}", "fn<int> test() { 1 }", "fn<int> test() { def value = 1 }",
-			"fn<int> test(bool flag) { if (flag) { 1 } else { 2 } }")) {
+		for (source in listOf("fn<int> test() {}", "fn<int> test() { 1 }", "fn<int> test() { def value = 1 }", "fn<int> test(bool flag) { if (flag) { 1 } else { 2 } }")) {
 			val result = failure(source, DiagnosticCode.MISSING_RETURN)
 			assertContains(result.guidance.orEmpty(), "explicit 'return'")
 		}
@@ -75,8 +81,7 @@ class FunctionReturnsTest {
 
 	@Test
 	fun `nonvoid bare returns fail even when unreachable or nested`() {
-		for (source in listOf("fn<int> test() { return }", "fn<int> test(bool flag) { if (flag) { return } else { return 1 } }",
-			"fn<int> test() {\n return 1\n return\n}")) failure(source, DiagnosticCode.RETURN_VALUE_REQUIRED)
+		for (source in listOf("fn<int> test() { return }", "fn<int> test(bool flag) { if (flag) { return } else { return 1 } }", "fn<int> test() {\n return 1\n return\n}")) failure(source, DiagnosticCode.RETURN_VALUE_REQUIRED)
 	}
 
 	@Test
@@ -101,13 +106,13 @@ class FunctionReturnsTest {
 	@Test
 	fun `contextual integer returns cover every width signedness and boundary`() {
 		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
-			val type = ValueType.Integer(bits, unsigned)
+			val type = CInt(bits, unsigned)
 			for (value in listOf(type.minimum, type.maximum)) for (expressionBody in listOf(false, true)) {
 				val ending = if (expressionBody) "= $value" else "{ return $value }"
 				val model = analyze("fn<${type.spelling}> test() $ending")
 				val expression = when (val body = function(model).body) {
 					is ExpressionBody -> body.expression
-					is BlockBody -> assertIs<ReturnStatement>(body.statements.single()).value!!
+					is BlockBody      -> assertIs<ReturnStatement>(body.statements.single()).value!!
 				}
 				assertEquals(type, model.typeOf(expression))
 			}
@@ -223,14 +228,13 @@ class FunctionReturnsTest {
 		failure("fn consume(int<8> value) {}\nfn consume(int<64> value) {}\nfn<int> test(bool flag) { consume(if (flag) { return if (flag) { true } else { 1 } } else { 128 }) }", DiagnosticCode.BRANCH_TYPE_MISMATCH)
 		val model = analyze("fn consume(int<8> value) {}\nfn consume(int<64> value) {}\nfn<int> test(bool flag) {\n consume(if (flag) { return 1 } else { 128 })\n return 2\n}")
 		val call = assertIs<CallExpression>(assertIs<ExpressionStatement>(body(model)[0]).expression)
-		assertEquals(ValueType.Integer(64), model.typeOf(model.selectedFunction(call)).parameters.single())
+		assertEquals(CInt(64), model.typeOf(model.selectedFunction(call)).parameters.single())
 	}
 
 	@Test
 	fun `eager arithmetic casts type checks and interpolation propagate noncontinuing evaluation`() {
 		val returning = "if (flag) { return 1 } else { return 2 }"
-		for (expression in listOf("($returning) + 3", "3 + ($returning)", "-($returning)", "($returning) -> float",
-			"($returning) is int", "#\"Value: {$returning}\"")) {
+		for (expression in listOf("($returning) + 3", "3 + ($returning)", "-($returning)", "($returning) -> float", "($returning) is int", "#\"Value: {$returning}\"")) {
 			val model = analyze("fn<int> test(bool flag) { $expression }")
 			assertEquals(ControlFlow.RETURN, model.controlFlow.of(function(model)))
 			assertEquals(ValueType.Never, model.typeOf(assertIs<ExpressionStatement>(body(model).single()).expression))

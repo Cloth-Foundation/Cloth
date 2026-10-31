@@ -1,16 +1,18 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.data.CInt
+import cloth.data.ValueType
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.SourceFile
 import cloth.emitter.*
 import cloth.emitter.types.EmitCast
 import cloth.emitter.types.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.ValueType
 import cloth.settings.LinkOptions
 import cloth.settings.RuntimeLinkage
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -117,7 +119,7 @@ class FunctionEmissionTest {
 	@Test
 	fun `every integer width and signedness survives argument storage and return`(@TempDir directory: Path) {
 		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
-			val type = ValueType.Integer(bits, unsigned)
+			val type = CInt(bits, unsigned)
 			for ((index, value) in listOf(type.minimum, type.maximum).withIndex()) {
 				native(directory, "integer_${bits}_${unsigned}_$index", "fn<${type.spelling}> identity(${type.spelling} value) = value\nfn<${type.spelling}> test() = identity($value)", value.toString())
 			}
@@ -145,7 +147,9 @@ class FunctionEmissionTest {
 		var allocations = 0
 		for (line in module.lines()) {
 			Regex("^([A-Za-z_][A-Za-z_0-9.]*):").find(line)?.let { block = it.groupValues[1] }
-			if ("alloca " in line) { allocations++; assertEquals("entry", block, line) }
+			if ("alloca " in line) {
+				allocations++; assertEquals("entry", block, line)
+			}
 		}
 		assertEquals(3, allocations)
 	}
@@ -276,15 +280,23 @@ class FunctionEmissionTest {
 				LLVMBuildRet(builder, LLVMConstInt(types.value(abi.intType), 0, 0))
 				emitter.verify(module)
 				emitter.emitObject(module, objectFile)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
-		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
+		try {
+			NativeLinker.link(objectFile, executable, configuration)
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), "$name timed out")
 			val bytes = process.inputStream.readBytes()
 			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
 			assertContentEquals((expected?.let { it + System.lineSeparator() } ?: "").toByteArray(Charsets.UTF_8), bytes, name)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

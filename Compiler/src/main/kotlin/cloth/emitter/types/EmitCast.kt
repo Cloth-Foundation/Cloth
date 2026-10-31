@@ -1,10 +1,12 @@
 package cloth.emitter.types
 
+import cloth.data.CFloat
+import cloth.data.CInt
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.parser.expression.CastExpression
 import cloth.semantic.SemanticModel
-import cloth.semantic.ValueType
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -21,7 +23,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		source == target          -> value
 		source == ValueType.HALF  -> toFloating(half.toFloat(value), ValueType.SINGLE, target)
 		target == ValueType.HALF  -> {
-			val intermediateType = source as? ValueType.Floating ?: ValueType.SINGLE
+			val intermediateType = source as? CFloat ?: ValueType.SINGLE
 			val intermediate = if (source.floating) value else toFloating(value, source, intermediateType)
 			half.fromFloat(intermediate, intermediateType)
 		}
@@ -40,7 +42,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		if (target.floating) return toFloating(value, source, target)
 		val integerType = types.value(target)
 		if (source.floating) {
-			guardFloatToInteger(expression, value, source, target as ValueType.Integer)
+			guardFloatToInteger(expression, value, source, target as CInt)
 			val operand = if (source == ValueType.HALF) half.toFloat(value) else value
 			return if (target.unsigned) LLVMBuildFPToUI(builder, operand, integerType, "cast_unsigned")
 			else LLVMBuildFPToSI(builder, operand, integerType, "cast_signed")
@@ -53,7 +55,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		}
 	}
 
-	private fun guardFloatToInteger(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: ValueType.Integer) {
+	private fun guardFloatToInteger(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: CInt) {
 		// Check the range after truncation toward zero, before fptosi/fptoui can
 		// produce poison. Use an exclusive lower bound when minimum - 1 is
 		// representable; otherwise the minimum itself is an inclusive bound.

@@ -2,11 +2,15 @@ package cloth
 
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-
-import cloth.emitter.*
+import cloth.emitter.LLVMEmitter
+import cloth.emitter.NativeCABI
+import cloth.emitter.ToolchainResolver
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.settings.*
+import cloth.settings.ApplicationSubsystem
+import cloth.settings.LinkOptions
+import cloth.settings.LinkerDriver
+import cloth.settings.RuntimeLinkage
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -16,11 +20,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ToolchainResolverTest {
+
 	private fun file(path: Path): Path {
 		Files.createDirectories(path.parent)
 		if (!Files.exists(path)) Files.write(path, byteArrayOf())
 		return path.toAbsolutePath().normalize()
 	}
+
 	private fun directory(path: Path): Path = Files.createDirectories(path).toAbsolutePath().normalize()
 	private val windows = NativeCABI.forTarget("x86_64-pc-windows-msvc")
 	private val linux = NativeCABI.forTarget("x86_64-unknown-linux-gnu")
@@ -44,8 +50,7 @@ class ToolchainResolverTest {
 		assertContains(config.flags, "/machine:x64")
 		assertContains(config.flags, "/subsystem:console")
 		assertFalse(config.flags.any { it.startsWith("/entry:") })
-		assertEquals(setOf("libcmt.lib", "libvcruntime.lib", "libucrt.lib", "oldnames.lib", "legacy_stdio_definitions.lib", "kernel32.lib"),
-			config.runtimeLibraries.map { it.fileName.toString() }.toSet())
+		assertEquals(setOf("libcmt.lib", "libvcruntime.lib", "libucrt.lib", "oldnames.lib", "legacy_stdio_definitions.lib", "kernel32.lib"), config.runtimeLibraries.map { it.fileName.toString() }.toSet())
 		assertTrue(config.runtimeLibraries.all { it.isAbsolute && Files.isRegularFile(it) })
 		assertEquals(config.libraryPaths.joinToString(";"), config.environment["LIB"])
 		val objectFile = root.resolve("object with spaces/input.o")
@@ -64,12 +69,7 @@ class ToolchainResolverTest {
 		val extra = directory(root.resolve("custom libs"))
 		val custom = file(extra.resolve("custom.lib"))
 		val executable = file(root.resolve("lld-link.exe"))
-		val config = ToolchainResolver(emptyMap(), { "LLD 22.1.8" }).resolve(
-			NativeCABI.forTarget("aarch64-pc-windows-msvc"), LinkOptions(
-				linker = executable, driver = LinkerDriver.MSVC, runtime = RuntimeLinkage.DYNAMIC,
-				subsystem = ApplicationSubsystem.WINDOWS, msvcTools = tools, windowsSDK = sdk,
-				libraryPaths = listOf(extra), libraries = listOf("custom")
-			))
+		val config = ToolchainResolver(emptyMap(), { "LLD 22.1.8" }).resolve(NativeCABI.forTarget("aarch64-pc-windows-msvc"), LinkOptions(linker = executable, driver = LinkerDriver.MSVC, runtime = RuntimeLinkage.DYNAMIC, subsystem = ApplicationSubsystem.WINDOWS, msvcTools = tools, windowsSDK = sdk, libraryPaths = listOf(extra), libraries = listOf("custom")))
 		assertContains(config.flags, "/machine:arm64")
 		assertContains(config.flags, "/subsystem:windows")
 		assertContains(config.flags, "/entry:mainCRTStartup")
@@ -102,18 +102,16 @@ class ToolchainResolverTest {
 		assertTrue(pinned.libraryPaths.contains(sdk.resolve("Lib/10.0.9.0/ucrt/x64").toAbsolutePath()))
 	}
 
-	private fun unixResolver(executable: Path, library: Path, target: String, clang: Boolean = true,
-		queries: MutableList<List<String>> = mutableListOf(), environment: Map<String, String> = emptyMap()): ToolchainResolver =
-		ToolchainResolver(environment, { command ->
-			queries.add(command)
-			when (command.last()) {
-				"--version" -> if (clang) "clang version 22.1.8" else "gcc (GCC) Free Software Foundation"
-				"-dumpmachine" -> target
-				"-print-search-dirs" -> "libraries: =$library"
-				"--show-sdk-path" -> library.parent.parent.toString()
-				else -> command.last().substringAfter("-print-file-name=")
-			}
-		}, { executable })
+	private fun unixResolver(executable: Path, library: Path, target: String, clang: Boolean = true, queries: MutableList<List<String>> = mutableListOf(), environment: Map<String, String> = emptyMap()): ToolchainResolver = ToolchainResolver(environment, { command ->
+		queries.add(command)
+		when (command.last()) {
+			"--version"          -> if (clang) "clang version 22.1.8" else "gcc (GCC) Free Software Foundation"
+			"-dumpmachine"       -> target
+			"-print-search-dirs" -> "libraries: =$library"
+			"--show-sdk-path"    -> library.parent.parent.toString()
+			else                 -> command.last().substringAfter("-print-file-name=")
+		}
+	}, { executable })
 
 	@Test
 	fun `Linux Clang resolves target flags sysroot math runtime and ordered user libraries`(@TempDir root: Path) {
@@ -146,8 +144,7 @@ class ToolchainResolverTest {
 		val executable = file(root.resolve("gcc"))
 		val library = directory(root.resolve("lib"))
 		file(library.resolve("libm.so"))
-		val config = unixResolver(executable, library, "x86_64-linux-gnu", clang = false)
-			.resolve(linux, LinkOptions(linker = executable, runtime = RuntimeLinkage.DYNAMIC))
+		val config = unixResolver(executable, library, "x86_64-linux-gnu", clang = false).resolve(linux, LinkOptions(linker = executable, runtime = RuntimeLinkage.DYNAMIC))
 		assertFalse(config.flags.any { it.startsWith("--target=") })
 		assertContains(config.flags, "-Wl,-Bdynamic")
 		for (target in listOf("aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-apple-darwin", "riscv64-unknown-linux-gnu")) {
@@ -174,23 +171,16 @@ class ToolchainResolverTest {
 		assertEquals(listOf(system), config.runtimeLibraries)
 		val bin = directory(root.resolve("bin"))
 		file(bin.resolve("xcrun${ExecutableFormat.current.extension}"))
-		val discovered = unixResolver(executable, library, "aarch64-apple-darwin23.0.0", environment = mapOf("PATH" to bin.toString()))
-			.resolve(mac, LinkOptions(linker = executable))
+		val discovered = unixResolver(executable, library, "aarch64-apple-darwin23.0.0", environment = mapOf("PATH" to bin.toString())).resolve(mac, LinkOptions(linker = executable))
 		assertEquals(config.runtimeLibraries, discovered.runtimeLibraries)
 	}
 
 	@Test
 	fun `incompatible build choices and missing target files fail during resolution`(@TempDir root: Path) {
 		val resolver = ToolchainResolver(emptyMap(), { error("Unexpected toolchain query: $it") })
-		for ((abi, options) in listOf(
-			windows to LinkOptions(driver = LinkerDriver.CC), windows to LinkOptions(sysroot = root),
-			linux to LinkOptions(driver = LinkerDriver.LLD), linux to LinkOptions(subsystem = ApplicationSubsystem.WINDOWS),
-			linux to LinkOptions(msvcTools = root), mac to LinkOptions(runtime = RuntimeLinkage.STATIC),
-			linux to LinkOptions(libraries = listOf("bad name"))
-		)) {
+		for ((abi, options) in listOf(windows to LinkOptions(driver = LinkerDriver.CC), windows to LinkOptions(sysroot = root), linux to LinkOptions(driver = LinkerDriver.LLD), linux to LinkOptions(subsystem = ApplicationSubsystem.WINDOWS), linux to LinkOptions(msvcTools = root), mac to LinkOptions(runtime = RuntimeLinkage.STATIC), linux to LinkOptions(libraries = listOf("bad name")))) {
 			val failure = assertFailsWith<ClothDiagnostic> { resolver.resolve(abi, options) }
-			assertEquals(if (options.libraries.isEmpty()) DiagnosticCode.TOOLCHAIN_OPTIONS else DiagnosticCode.INVALID_LIBRARY_NAME,
-				failure.diagnosticCode)
+			assertEquals(if (options.libraries.isEmpty()) DiagnosticCode.TOOLCHAIN_OPTIONS else DiagnosticCode.INVALID_LIBRARY_NAME, failure.diagnosticCode)
 		}
 		val tools = root.resolve("tools")
 		val sdk = root.resolve("sdk")
@@ -220,11 +210,7 @@ class ToolchainResolverTest {
 	fun `native explicit runtime and linker choices produce runnable programs`(@TempDir root: Path) {
 		if (NativeCABI.native().profile != NativeCABI.Profile.WINDOWS_LLP64) return
 		val ast = Parser(Lexer("def fraction = 7.0\nfraction / 2").scanTokens()).parseSnippet()
-		for ((index, options) in listOf(
-			LinkOptions(runtime = RuntimeLinkage.DYNAMIC),
-			LinkOptions(subsystem = ApplicationSubsystem.WINDOWS),
-			LinkOptions(driver = LinkerDriver.MSVC)
-		).withIndex()) {
+		for ((index, options) in listOf(LinkOptions(runtime = RuntimeLinkage.DYNAMIC), LinkOptions(subsystem = ApplicationSubsystem.WINDOWS), LinkOptions(driver = LinkerDriver.MSVC)).withIndex()) {
 			val executable = LLVMEmitter(options).compileSnippet(ast, root.resolve("native_$index"))
 			val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 			try {
@@ -232,7 +218,9 @@ class ToolchainResolverTest {
 				val output = process.inputStream.bufferedReader().use { it.readText().trim() }
 				assertEquals(0, process.exitValue(), output)
 				assertEquals("3.5", output)
-			} finally { if (process.isAlive) process.destroyForcibly() }
+			} finally {
+				if (process.isAlive) process.destroyForcibly()
+			}
 		}
 	}
 }

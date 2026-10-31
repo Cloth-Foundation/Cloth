@@ -1,8 +1,9 @@
 package cloth.emitter.types
 
+import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
-import cloth.semantic.ValueType
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -19,12 +20,12 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	private val text = types.value(ValueType.STRING)
 	private val byte = LLVMInt8TypeInContext(context)
 	private val nullPointer get() = LLVMConstNull(pointer)
-	private val arrayCopies = mutableMapOf<ValueType.ArrayValue, Pair<LLVMTypeRef, LLVMValueRef>>()
+	private val arrayCopies = mutableMapOf<CArray, Pair<LLVMTypeRef, LLVMValueRef>>()
 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
-		if (valueType !is ValueType.ArrayValue) return value
+		if (valueType !is CArray) return value
 		val (type, function) = arrayCopies[valueType] ?: run {
 			val arrayType = types.value(valueType)
 			val type = signature(arrayType, pointer, arrayType)
@@ -62,7 +63,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					LLVMPositionBuilderAtEnd(body, item)
 					val address = arrays.address(LLVMBuildExtractValue(body, result, 0, "elements"), valueType.element, index)
 					var element = LLVMBuildLoad2(body, types.storage(valueType.element), address, "element_value")
-					if (valueType.element is ValueType.ArrayValue) {
+					if (valueType.element is CArray) {
 						element = arrays.matchShape(element, arrays.childShape(element, input, valueType.element), valueType.element)
 					}
 					LLVMBuildStore(body, copyValue(body, arena, element, valueType.element), address)
@@ -79,28 +80,28 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					LLVMPositionBuilderAtEnd(body, done)
 				}
 				LLVMBuildRet(body, result)
-			} finally { LLVMDisposeBuilder(body) }
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
 			type to function
 		}
 		return call(builder, type, function, "returned_array", destination, value)
 	}
 
-	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef =
-		PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
-			parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
-			LLVMFunctionType(result, values, parameters.size, 0)
-		}
+	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
+		parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
+		LLVMFunctionType(result, values, parameters.size, 0)
+	}
 
 	private fun external(name: String, type: LLVMTypeRef): LLVMValueRef {
 		val existing = LLVMGetNamedFunction(module, name)
 		return if (existing == null || existing.isNull) LLVMAddFunction(module, name, type) else existing
 	}
 
-	private fun call(builder: LLVMBuilderRef, type: LLVMTypeRef, function: LLVMValueRef, name: String, vararg arguments: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
-			arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
-			LLVMBuildCall2(builder, type, function, values, arguments.size, name)
-		}
+	private fun call(builder: LLVMBuilderRef, type: LLVMTypeRef, function: LLVMValueRef, name: String, vararg arguments: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
+		arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
+		LLVMBuildCall2(builder, type, function, values, arguments.size, name)
+	}
 
 	/** The slot is initialized in entry, even if its first use is in a conditional branch. */
 	fun create(entry: LLVMBasicBlockRef): LLVMValueRef {
@@ -111,7 +112,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 			val head = LLVMBuildAlloca(allocations, pointer, "string_returns")
 			LLVMBuildStore(allocations, nullPointer, head)
 			return head
-		} finally { LLVMDisposeBuilder(allocations) }
+		} finally {
+			LLVMDisposeBuilder(allocations)
+		}
 	}
 
 	fun copy(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef): LLVMValueRef {
@@ -151,7 +154,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				LLVMBuildMemCpy(body, data, 1, LLVMBuildExtractValue(body, input, 0, "source"), 1, length)
 				val result = LLVMBuildInsertValue(body, LLVMGetUndef(text), data, 0, "copied_data")
 				LLVMBuildRet(body, LLVMBuildInsertValue(body, result, length, 1, "copied_string"))
-			} finally { LLVMDisposeBuilder(body) }
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
 		}
 		return call(builder, type, function, "returned_string", destination, value)
 	}
@@ -203,7 +208,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				LLVMPositionBuilderAtEnd(body, done)
 				LLVMBuildStore(body, stop, slot)
 				LLVMBuildRetVoid(body)
-			} finally { LLVMDisposeBuilder(body) }
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
 		}
 		if (checkpoint == null) call(builder, type, function, "", arena) else call(builder, type, function, "", arena, checkpoint)
 	}

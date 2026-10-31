@@ -1,9 +1,9 @@
 package cloth.parser.subs
 
+import cloth.data.ValueType
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.expression.*
-import cloth.semantic.ValueType
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.TokenType
@@ -15,7 +15,7 @@ class ExpressionParser(val parser: Parser) {
 
 		while (true) {
 			val operator = parser.peek()
-			if (stopAtAssignment && operator.lexeme in setOf("=", ":=")) break
+			if (stopAtAssignment && (operator.lexeme in setOf("=", ":=") || (left is ProviderAccessExpression && operator.lexeme in setOf("+=", "-=", "*=", "/=", "%=", "++", "--")))) break
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -60,28 +60,46 @@ class ExpressionParser(val parser: Parser) {
 		}
 
 		var value = parsePrimary()
-		while (parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
-			val index = parser.delimited.brackets { parseExpression() }
-			value = IndexExpression(value, index, value.span.through(parser.previous().span))
+		while (true) {
+			value = when (parser.peek().lexeme) {
+				Operators.BRACKET_OPEN.character -> {
+					val index = parser.delimited.brackets { parseExpression() }
+					IndexExpression(value, index, value.span.through(parser.previous().span))
+				}
+
+				Operators.COLON_COLON.character  -> {
+					parser.advance()
+					val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
+					if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
+						val arguments = parser.delimited.parentheses {
+							parser.delimited.commaSeparated(Operators.PAREN_CLOSE) { parseExpression() }
+						}
+						StateCallExpression(value, name, arguments, value.span.through(parser.previous().span))
+					} else ProviderAccessExpression(value, name)
+				}
+
+				else                             -> return value
+			}
 		}
-		return value
 	}
 
 	fun parsePrimary(): Expression {
 		val token = parser.peek()
 
 		return when (token.type) {
-			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.character -> {
+			TokenType.Keyword if TypeParser.startsTypeReceiver(token)                                       -> TypeReceiverExpression(TypeParser(parser).parse(allowArrays = true))
+			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.character                          -> {
 				val elements = parser.delimited.brackets { parser.delimited.commaSeparated(Operators.BRACKET_CLOSE) { parseExpression() } }
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
 			}
+
 			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.parseIf()
 			TokenType.Keyword if token.lexeme in setOf(Keywords.TRUE.toString(), Keywords.FALSE.toString()) -> {
 				parser.advance()
 				BooleanLiteral(token.lexeme == Keywords.TRUE.toString(), token.span)
 			}
 
-			TokenType.InterpolationStart -> parseInterpolation()
+			TokenType.InterpolationStart                                                                    -> parseInterpolation()
 
 			TokenType.Identifier                                                                            -> {
 				val name = parser.advance()
@@ -92,6 +110,7 @@ class ExpressionParser(val parser: Parser) {
 					CallExpression(name, arguments, name.span.through(parser.previous().span))
 				} else NameExpression(name)
 			}
+
 			TokenType.StringLiteral, TokenType.RawStringLiteral                                             -> {
 				parser.advance()
 				val raw = token.type == TokenType.RawStringLiteral
@@ -164,10 +183,10 @@ class ExpressionParser(val parser: Parser) {
 		while (index < contents.length) {
 			val character = contents[index++]
 			append(if (character != '\\') character else when (val escaped = contents[index++]) {
-				'n' -> '\n'
-				'r' -> '\r'
-				't' -> '\t'
-				'0' -> '\u0000'
+				'n'  -> '\n'
+				'r'  -> '\r'
+				't'  -> '\t'
+				'0'  -> '\u0000'
 				else -> escaped // Validated by the lexer.
 			})
 		}

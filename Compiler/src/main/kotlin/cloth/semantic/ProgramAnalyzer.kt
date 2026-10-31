@@ -1,6 +1,9 @@
 package cloth.semantic
 
 import cloth.ast.SourceUnit
+import cloth.data.CArray
+import cloth.data.CInt
+import cloth.data.ValueType
 import cloth.diagnostics.EntryErrors
 import cloth.semantic.symbols.FunctionSymbol
 
@@ -19,8 +22,8 @@ class ProgramAnalyzer {
 		if (mains.size > 1) throw EntryErrors.duplicate(mains)
 		val main = mains.single()
 		val type = functions.typeOf(main)
-		if (type.parameters.isNotEmpty() && type.parameters != listOf(ValueType.ArrayValue(ValueType.STRING))) throw EntryErrors.parameters(main)
-		if (type.returns != ValueType.VOID && (type.returns !is ValueType.Integer || type.returns.unsigned)) throw EntryErrors.returns(main)
+		if (type.parameters.isNotEmpty() && type.parameters != listOf(CArray(ValueType.STRING))) throw EntryErrors.parameters(main)
+		if (type.returns != ValueType.VOID && (type.returns !is CInt || type.returns.unsigned)) throw EntryErrors.returns(main)
 		return ProgramModel(kind, functions, main)
 	}
 }

@@ -1,30 +1,25 @@
 package cloth
 
+import cloth.data.CInt
+import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.ValueType
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class NativeCABITest {
+
 	@Test
 	fun `supported target triples select explicit platform ABI profiles`() {
-		val targets = listOf(
-			"x86_64-pc-windows-msvc" to NativeCABI.Profile.WINDOWS_LLP64,
-			"aarch64-pc-windows-msvc" to NativeCABI.Profile.WINDOWS_LLP64,
-			"x86_64-unknown-linux-gnu" to NativeCABI.Profile.LINUX_LP64,
-			"aarch64-unknown-linux-gnu" to NativeCABI.Profile.LINUX_LP64,
-			"x86_64-unknown-linux-musl" to NativeCABI.Profile.LINUX_LP64,
-			"aarch64-unknown-linux-musl" to NativeCABI.Profile.LINUX_LP64,
-			"x86_64-apple-darwin" to NativeCABI.Profile.DARWIN_LP64,
-			"arm64-apple-darwin" to NativeCABI.Profile.DARWIN_LP64
-		)
+		val targets = listOf("x86_64-pc-windows-msvc" to NativeCABI.Profile.WINDOWS_LLP64, "aarch64-pc-windows-msvc" to NativeCABI.Profile.WINDOWS_LLP64, "x86_64-unknown-linux-gnu" to NativeCABI.Profile.LINUX_LP64, "aarch64-unknown-linux-gnu" to NativeCABI.Profile.LINUX_LP64, "x86_64-unknown-linux-musl" to NativeCABI.Profile.LINUX_LP64, "aarch64-unknown-linux-musl" to NativeCABI.Profile.LINUX_LP64, "x86_64-apple-darwin" to NativeCABI.Profile.DARWIN_LP64, "arm64-apple-darwin" to NativeCABI.Profile.DARWIN_LP64)
 		for ((triple, profile) in targets) {
 			val abi = NativeCABI.forTarget(triple)
 			assertEquals(profile, abi.profile, triple)
@@ -37,8 +32,8 @@ class NativeCABITest {
 			assertEquals(ValueType.DOUBLE, abi.doubleType, triple)
 			assertEquals(when (profile) {
 				NativeCABI.Profile.WINDOWS_LLP64 -> ExecutableFormat.PE
-				NativeCABI.Profile.LINUX_LP64 -> ExecutableFormat.ELF
-				NativeCABI.Profile.DARWIN_LP64 -> ExecutableFormat.MACH_O
+				NativeCABI.Profile.LINUX_LP64    -> ExecutableFormat.ELF
+				NativeCABI.Profile.DARWIN_LP64   -> ExecutableFormat.MACH_O
 			}, abi.executableFormat, triple)
 		}
 	}
@@ -63,16 +58,7 @@ class NativeCABITest {
 
 	@Test
 	fun `unknown architectures operating systems and ABI variants never fall back to a profile`() {
-		val unsupported = listOf(
-			"", "unknown-unknown-unknown", "not-a-target", "x86_64", "aarch64-none-elf",
-			"i686-pc-windows-msvc", "armv7-unknown-linux-gnueabihf", "riscv64-unknown-linux-gnu",
-			"x86_64-unknown-freebsd", "x86_64-pc-windows-gnu", "aarch64-pc-windows-gnu",
-			"x86_64-pc-windows-msvc19.bad", "x86_64-unknown-linux",
-			"x86_64-unknown-linux-gnux32", "aarch64-unknown-linux-gnu_ilp32",
-			"aarch64-unknown-linux-android", "x86_64-unknown-linux-gnufuture",
-			"x86_64-apple-ios-simulator", "arm64-apple-ios", "arm64ec-pc-windows-msvc",
-			"x86_64-apple-darwin24.invalid", "x86_64-apple-macosx14.0.0-simulator"
-		)
+		val unsupported = listOf("", "unknown-unknown-unknown", "not-a-target", "x86_64", "aarch64-none-elf", "i686-pc-windows-msvc", "armv7-unknown-linux-gnueabihf", "riscv64-unknown-linux-gnu", "x86_64-unknown-freebsd", "x86_64-pc-windows-gnu", "aarch64-pc-windows-gnu", "x86_64-pc-windows-msvc19.bad", "x86_64-unknown-linux", "x86_64-unknown-linux-gnux32", "aarch64-unknown-linux-gnu_ilp32", "aarch64-unknown-linux-android", "x86_64-unknown-linux-gnufuture", "x86_64-apple-ios-simulator", "arm64-apple-ios", "arm64ec-pc-windows-msvc", "x86_64-apple-darwin24.invalid", "x86_64-apple-macosx14.0.0-simulator")
 		for (triple in unsupported) {
 			val failure = assertFailsWith<ClothDiagnostic>(triple) { NativeCABI.forTarget(triple) }
 			assertContains(failure.message.orEmpty(), "Unsupported native C ABI target '$triple'")
@@ -92,8 +78,8 @@ class NativeCABITest {
 		assertContains(ir, "declare i${abi.intType.bits} @puts(")
 		assertContains(ir, "declare void @exit(i${abi.intType.bits})")
 		for (bits in ValueType.INTEGER_WIDTHS) {
-			val signed = ValueType.Integer(bits)
-			val unsigned = ValueType.Integer(bits, true)
+			val signed = CInt(bits)
+			val unsigned = CInt(bits, true)
 			assertEquals(if (bits <= abi.intType.bits) "d" else "lld", abi.printSpecifier(signed))
 			assertEquals(if (bits <= abi.intType.bits) "u" else "llu", abi.printSpecifier(unsigned))
 		}

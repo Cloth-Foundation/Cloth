@@ -1,6 +1,6 @@
 package cloth.diagnostics
 
-import cloth.semantic.ValueType
+import cloth.data.ValueType
 import cloth.token.TokenSpan
 
 object BackendErrors {

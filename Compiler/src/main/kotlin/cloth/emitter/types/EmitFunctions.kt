@@ -1,18 +1,20 @@
 package cloth.emitter.types
 
+import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.CallExpression
 import cloth.semantic.FunctionSemanticModel
-import cloth.semantic.ValueType
 import cloth.semantic.symbols.FunctionSymbol
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
-import java.util.IdentityHashMap
+import java.util.*
 
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
@@ -26,10 +28,8 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 
 	/** Raw binary16 bits avoid requiring external half-precision ABI conversion helpers. */
 	private fun abiType(type: ValueType): LLVMTypeRef = if (type == ValueType.HALF) LLVMInt16TypeInContext(context) else types.value(type)
-	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef =
-		if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, abiType(type), "half_argument_bits") else value
-	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef =
-		if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, types.value(type), "half_result") else value
+	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, abiType(type), "half_argument_bits") else value
+	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, types.value(type), "half_result") else value
 
 	fun emitAll() {
 		for ((index, function) in semantics.declarations.functions.withIndex()) {
@@ -56,8 +56,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val signature = semantics.typeOf(function)
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
-			val frame = EmitFunctionFrame(context, builder, entry, signature.returns, abiType(signature.returns), stringStorage,
-				if (signature.returns.buffered) LLVMGetParam(value, signature.parameters.size) else null)
+			val frame = EmitFunctionFrame(context, builder, entry, signature.returns, abiType(signature.returns), stringStorage, if (signature.returns.buffered) LLVMGetParam(value, signature.parameters.size) else null)
 			val bindings = EmitBindings(context, builder, entry)
 			function.parameters.forEachIndexed { index, parameter ->
 				val argument = decode(builder, LLVMGetParam(value, index), signature.parameters[index])
@@ -67,13 +66,14 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val strings = EmitString(context, builder, abi)
 			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.returns, frame)
 			when (val body = function.declaration.body) {
-				is BlockBody -> {
+				is BlockBody      -> {
 					expressions.emitStatements(body.statements)
 					if (!expressions.terminated()) {
 						if (signature.returns != ValueType.VOID) throw InternalErrors.invariant("Validated non-void function fell through during emission")
 						frame.emitReturn(null)
 					}
 				}
+
 				is ExpressionBody -> {
 					val result = if (signature.returns == ValueType.VOID) expressions.emitDiscarded(body.expression) else expressions.emit(body.expression)
 					if (!expressions.terminated()) {
@@ -82,7 +82,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				}
 			}
 			frame.finish()
-		} finally { LLVMDisposeBuilder(builder) }
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
 	}
 
 	fun emitCall(call: CallExpression, expressions: EmitExpression, builder: LLVMBuilderRef): LLVMValueRef? {
@@ -102,8 +104,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	}
 
 	companion object {
+
 		fun validate(semantics: FunctionSemanticModel) {
-			fun supported(type: ValueType): Boolean = if (type is ValueType.ArrayValue) type.element != ValueType.VOID && supported(type.element) else type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING)
+			fun supported(type: ValueType): Boolean = if (type is CArray) type.element != ValueType.VOID && supported(type.element) else type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
 			for (function in semantics.declarations.functions) {
 				val type = semantics.typeOf(function)
 				if (!supported(type.returns)) throw BackendErrors.functionType(type.returns, function.declaration.returnType?.span ?: function.name.span)

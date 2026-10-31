@@ -5,6 +5,7 @@ import cloth.parser.Parser
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.Token
 import cloth.token.TokenType
 
 class TypeParser(private val parser: Parser) {
@@ -14,7 +15,6 @@ class TypeParser(private val parser: Parser) {
 		val unsigned = parser.peek().type == TokenType.Keyword && parser.peek().lexeme == Keywords.UNSIGNED.toString()
 		if (unsigned) parser.advance()
 		val token = parser.peek()
-		val primitiveTypes = setOf(Keywords.INTEGER, Keywords.FLOAT, Keywords.BOOLEAN, Keywords.STRING, Keywords.CHARACTER, Keywords.VOID)
 		if (token.type != TokenType.Identifier && !(token.type == TokenType.Keyword && primitiveTypes.any { it.toString() == token.lexeme })) {
 			throw SyntaxErrors.expected("a type name", token)
 		}
@@ -24,7 +24,7 @@ class TypeParser(private val parser: Parser) {
 		val width = if (parser.peek().lexeme == "<" && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == ">"))) {
 			parser.delimited.angles { parser.expect(TokenType.IntegerLiteral, "a numeric type width") }
 		} else null
-		val sizes = mutableListOf<cloth.token.Token?>()
+		val sizes = mutableListOf<Token?>()
 		val arrays = buildList {
 			while (allowArrays && parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
 				val opening = parser.advance()
@@ -34,5 +34,11 @@ class TypeParser(private val parser: Parser) {
 			}
 		}
 		return TypeReference(name, unsigned, width, start.through(parser.previous().span), arrays, sizes)
+	}
+
+	companion object {
+
+		private val primitiveTypes = setOf(Keywords.INTEGER, Keywords.FLOAT, Keywords.BOOLEAN, Keywords.STRING, Keywords.CHARACTER, Keywords.VOID, Keywords.TYPEINFO)
+		fun startsTypeReceiver(token: Token): Boolean = token.type == TokenType.Keyword && (token.lexeme == Keywords.UNSIGNED.toString() || primitiveTypes.any { it.toString() == token.lexeme })
 	}
 }

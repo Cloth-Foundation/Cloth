@@ -1,6 +1,10 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.data.ValueType
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
@@ -8,7 +12,8 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.*
+import cloth.semantic.ControlFlow
+import cloth.semantic.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -17,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class FunctionBlocksTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("blocks.co", source.trimIndent())).scanTokens()).parse()
 	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
@@ -25,6 +31,7 @@ class FunctionBlocksTest {
 		assertLocated(diagnostic)
 		return diagnostic
 	}
+
 	private fun native(directory: Path, name: String, source: String) {
 		val executable = LLVMEmitter().compile(parse(source), directory.resolve(name))
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
@@ -33,10 +40,13 @@ class FunctionBlocksTest {
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(0, process.exitValue(), output)
 			assertEquals("", output)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 
-	@Test fun `block syntax preserves the annotation body source and binding form`() {
+	@Test
+	fun `block syntax preserves the annotation body source and binding form`() {
 		for (assignment in listOf("=", ":=")) {
 			val unit = parse("fn test() {\n def<int<64>> x $assignment {\n return 10000000000\n }\n}")
 			val binding = ((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single() as BindingDeclaration
@@ -51,13 +61,15 @@ class FunctionBlocksTest {
 		}
 	}
 
-	@Test fun `return type is mandatory even for unused blocks and void bodies`() {
+	@Test
+	fun `return type is mandatory even for unused blocks and void bodies`() {
 		for (body in listOf("return 1", "return", "", "unknown()")) for (assignment in listOf("=", ":=")) {
 			failure("fn test() { def x $assignment { $body } }", DiagnosticCode.BLOCK_RETURN_TYPE_REQUIRED)
 		}
 	}
 
-	@Test fun `block returns use their own strict contract and never imply an enclosing return`() {
+	@Test
+	fun `block returns use their own strict contract and never imply an enclosing return`() {
 		failure("fn test() { def<int> x = { return true } }", DiagnosticCode.RETURN_TYPE)
 		failure("fn<int> test() { def<int> x = { return 1 } }", DiagnosticCode.MISSING_RETURN)
 		failure("fn test() { def<int> x = { return } }", DiagnosticCode.RETURN_VALUE_REQUIRED)
@@ -70,7 +82,8 @@ class FunctionBlocksTest {
 		analyze("fn<int<64>> test() {\n def<int<64>> x = { return 10000000000 }\n return x\n}")
 	}
 
-	@Test fun `block return diagnostics identify the block contract and fail at the first error`() {
+	@Test
+	fun `block return diagnostics identify the block contract and fail at the first error`() {
 		val mismatch = failure("fn test() {\n def<int> x = {\n return true\n return \"wrong\"\n }\n}", DiagnosticCode.RETURN_TYPE)
 		assertEquals(listOf(3, 2), mismatch.sourceLabels.map { it.span.startLine })
 		assertContains(mismatch.summary, "x")
@@ -83,7 +96,8 @@ class FunctionBlocksTest {
 		assertContains(reports.toString(), "blocks.co")
 	}
 
-	@Test fun `local scope captures visible bindings without leaking declarations or self recursion`() {
+	@Test
+	fun `local scope captures visible bindings without leaking declarations or self recursion`() {
 		analyze("fn test(int n) {\n def<int> x = {\n def n = n + 1\n return n\n }\n}")
 		failure("fn test() {\n def<int> x = {\n def hidden = 1\n return hidden\n }\n hidden\n}", DiagnosticCode.UNKNOWN_NAME)
 		failure("fn test() { def<int> x = { return x } }", DiagnosticCode.UNKNOWN_NAME)
@@ -92,14 +106,16 @@ class FunctionBlocksTest {
 		failure("fn test() { def<int> x = {\n def n = 1\n def n = 2\n return n\n} }", DiagnosticCode.DUPLICATE_BINDING)
 	}
 
-	@Test fun `block names supply typed results to overloads and cannot be called or assigned`() {
+	@Test
+	fun `block names supply typed results to overloads and cannot be called or assigned`() {
 		analyze("fn take(int value) {}\nfn take(int<64> value) {}\nfn test() {\n def<int> x = { return 1 }\n take(x)\n}")
 		failure("fn take(int<64> value) {}\nfn test() {\n def<int> x = { return 1 }\n take(x)\n}", DiagnosticCode.NO_MATCHING_CALL)
 		for (call in listOf("x()", "x(1)")) failure("fn test() {\n def<int> x = { return 1 }\n $call\n}", DiagnosticCode.NOT_CALLABLE)
 		for (write in listOf("x = 2", "x += 1", "x++", "x--")) failure("fn test() {\n def<int> x = { return 1 }\n $write\n}", DiagnosticCode.BLOCK_ASSIGNMENT)
 	}
 
-	@Test fun `void blocks use ordinary void return rules`() {
+	@Test
+	fun `void blocks use ordinary void return rules`() {
 		analyze("fn test() {\n def<void> x = {}\n x\n}")
 		analyze("fn cleanup() {}\nfn test() {\n def<void> x = { return cleanup() }\n x\n}")
 		failure("fn test() { def<void> x = { return 1 } }", DiagnosticCode.VALUE_IN_VOID)
@@ -107,7 +123,8 @@ class FunctionBlocksTest {
 		failure("fn take(int x) {}\nfn test() {\n def<void> x = {}\n take(x)\n}", DiagnosticCode.NO_MATCHING_CALL)
 	}
 
-	@Test fun `declaration has no return flow and saved results are ordinary values`() {
+	@Test
+	fun `declaration has no return flow and saved results are ordinary values`() {
 		val model = analyze("fn<int> test() {\n def<int> x = { return 1 }\n def saved := x\n return saved\n}")
 		val body = model.declarations.functions.single().declaration.body as BlockBody
 		val block = body.statements[0] as BindingDeclaration
@@ -117,7 +134,8 @@ class FunctionBlocksTest {
 		assertEquals(ControlFlow.RETURN, model.controlFlow.of(body))
 	}
 
-	@Test fun `every read executes once and ordinary bindings save a result`(@TempDir directory: Path) {
+	@Test
+	fun `every read executes once and ordinary bindings save a result`(@TempDir directory: Path) {
 		native(directory, "reads", """
 			fn<int> main() {
 			    def n = 0
@@ -139,7 +157,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `arguments arrays casts comparisons interpolation and indices evaluate blocks in source order`(@TempDir directory: Path) {
+	@Test
+	fun `arguments arrays casts comparisons interpolation and indices evaluate blocks in source order`(@TempDir directory: Path) {
 		native(directory, "contexts", """
 			fn<int> combine(int a, int b) = a * 10 + b
 			fn<int> choose(int value) = value
@@ -165,7 +184,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `short circuit reads skip blocks and evaluate needed reads once`(@TempDir directory: Path) {
+	@Test
+	fun `short circuit reads skip blocks and evaluate needed reads once`(@TempDir directory: Path) {
 		native(directory, "short_circuit", """
 			fn<int> main() {
 			    def n = 0
@@ -189,7 +209,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `nested blocks use independent returns fresh locals and lexical captures`(@TempDir directory: Path) {
+	@Test
+	fun `nested blocks use independent returns fresh locals and lexical captures`(@TempDir directory: Path) {
 		native(directory, "nested", """
 			fn<int> test(bool flag) {
 			    def n = 5
@@ -215,7 +236,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `returns inside block arguments conditions and initializers exit only the block`(@TempDir directory: Path) {
+	@Test
+	fun `returns inside block arguments conditions and initializers exit only the block`(@TempDir directory: Path) {
 		native(directory, "early_returns", """
 			fn<int> take(int a, int b) = [1][99]
 			fn<int> test(bool flag) {
@@ -234,7 +256,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `block captures remain independent across recursive calls`(@TempDir directory: Path) {
+	@Test
+	fun `block captures remain independent across recursive calls`(@TempDir directory: Path) {
 		native(directory, "recursion", """
 			fn<int> sum(int n) {
 			    def<int> step = {
@@ -247,7 +270,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `all primitive return representations work with block result merges`(@TempDir directory: Path) {
+	@Test
+	fun `all primitive return representations work with block result merges`(@TempDir directory: Path) {
 		for ((index, pair) in listOf("int<64>" to "10000000000", "unsigned int<8>" to "255", "bool" to "true", "char" to "'😀'", "float<16>" to "(1.5 -> float<16>)", "float<64>" to "(1.5 -> float<64>)").withIndex()) {
 			val (type, value) = pair
 			native(directory, "primitive_$index", """
@@ -266,7 +290,8 @@ class FunctionBlocksTest {
 		}
 	}
 
-	@Test fun `string and nested array results survive reads function returns and recursion`(@TempDir directory: Path) {
+	@Test
+	fun `string and nested array results survive reads function returns and recursion`(@TempDir directory: Path) {
 		native(directory, "buffers", """
 			fn<string> text(int n) {
 			    def<string> x = {
@@ -298,7 +323,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `void block reads run effects and returns stop only the block`(@TempDir directory: Path) {
+	@Test
+	fun `void block reads run effects and returns stop only the block`(@TempDir directory: Path) {
 		native(directory, "void", """
 			fn<int> main() {
 			    def n = 0
@@ -315,7 +341,8 @@ class FunctionBlocksTest {
 		""")
 	}
 
-	@Test fun `compiler reports block errors before producing output`(@TempDir directory: Path) {
+	@Test
+	fun `compiler reports block errors before producing output`(@TempDir directory: Path) {
 		val source = directory.resolve("invalid.co")
 		Files.writeString(source, "fn main() { def x = { return 1 } }")
 		val target = directory.resolve("output/program")
@@ -325,7 +352,8 @@ class FunctionBlocksTest {
 		assertFalse(Files.exists(target.parent))
 	}
 
-	@Test fun `function block example compiles through the normal CLI`(@TempDir directory: Path) {
+	@Test
+	fun `function block example compiles through the normal CLI`(@TempDir directory: Path) {
 		val reports = StringBuilder()
 		val target = directory.resolve("blocks_example")
 		assertEquals(0, runCompiler(arrayOf("examples/FunctionBlocks.co", target.toString()), DiagnosticReporter(reports)), reports.toString())
@@ -334,6 +362,8 @@ class FunctionBlocksTest {
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
 			assertEquals(0, process.exitValue(), process.inputStream.readBytes().toString(Charsets.UTF_8))
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

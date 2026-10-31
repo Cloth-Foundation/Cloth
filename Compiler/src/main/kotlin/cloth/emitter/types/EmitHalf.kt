@@ -1,7 +1,8 @@
 package cloth.emitter.types
 
+import cloth.data.CFloat
+import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
-import cloth.semantic.ValueType
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -40,7 +41,7 @@ internal class EmitHalf(private val context: LLVMContextRef, private val builder
 	}
 
 	/** Convert directly from float32 or float64, avoiding double rounding through float32. */
-	fun fromFloat(value: LLVMValueRef, source: ValueType.Floating): LLVMValueRef {
+	fun fromFloat(value: LLVMValueRef, source: CFloat): LLVMValueRef {
 		require(source == single || source == ValueType.DOUBLE)
 		val sourceBits = source.bits
 		val intType = LLVMIntTypeInContext(context, sourceBits)
@@ -85,6 +86,6 @@ internal class EmitHalf(private val context: LLVMContextRef, private val builder
 	companion object {
 
 		/** Software half arithmetic computes in single precision before rounding back. */
-		fun arithmeticType(type: ValueType.Floating): ValueType.Floating = if (type == ValueType.HALF) ValueType.SINGLE else type
+		fun arithmeticType(type: CFloat): CFloat = if (type == ValueType.HALF) ValueType.SINGLE else type
 	}
 }

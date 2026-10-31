@@ -2,16 +2,12 @@ package cloth.emitter
 
 import cloth.ast.ASTStructure
 import cloth.ast.SourceUnit
+import cloth.data.CFloat
+import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.ClothDiagnostic
 import cloth.emitter.types.*
-import cloth.semantic.SemanticAnalyzer
-import cloth.semantic.SemanticModel
-import cloth.semantic.ValueType
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.FunctionSemanticModel
-import cloth.semantic.ProgramAnalyzer
-import cloth.semantic.ProgramKind
+import cloth.semantic.*
 import cloth.settings.LinkOptions
 import cloth.token.Keywords
 import org.bytedeco.javacpp.BytePointer
@@ -42,7 +38,9 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			}
 			NativeLinker.link(objectFile, executable, configuration)
 			return executable
-		} finally { Files.deleteIfExists(objectFile) }
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 	}
 
 	fun emitExecutable(unit: SourceUnit): String {
@@ -51,14 +49,22 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			EmitEntryPoint(context, module, abi).emit(program, functions)
 			verify(module)
 			val ir = LLVMPrintModuleToString(module)
-			try { ir.string } finally { LLVMDisposeMessage(ir) }
+			try {
+				ir.string
+			} finally {
+				LLVMDisposeMessage(ir)
+			}
 		}
 	}
 
 	/** Declaration module only; use emitExecutable to include program startup. */
 	fun emit(unit: SourceUnit): String = withFunctions(unit) { _, module, _, _ ->
 		val ir = LLVMPrintModuleToString(module)
-		try { ir.string } finally { LLVMDisposeMessage(ir) }
+		try {
+			ir.string
+		} finally {
+			LLVMDisposeMessage(ir)
+		}
 	}
 
 	fun compileObject(unit: SourceUnit, output: Path): Path = withFunctions(ProgramAnalyzer().analyze(unit, ProgramKind.LIBRARY).functions) { _, module, _, _ ->
@@ -174,6 +180,10 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			strings.print(module, result)
 			return
 		}
+		if (type == ValueType.TYPEINFO) {
+			strings.print(module, strings.metadata.text(result))
+			return
+		}
 		val types = LLVMTypes(context)
 		val printfType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
@@ -183,7 +193,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 		val floatingPoint = type.floating
 		val boolean = type == ValueType.BOOL
 		val argumentType = abi.printArgument(type)
-		val precision = if (type is ValueType.Floating) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
+		val precision = if (type is CFloat) ".${EmitHalf.arithmeticType(type).roundTripDigits}" else ""
 		val formatString = "%$precision${abi.printSpecifier(type)}\n"
 		val format = LLVMBuildGlobalStringPtr(builder, formatString, "result_format")
 		val printValue = when {

@@ -1,0 +1,11 @@
+fn main() {
+    print("Hello, ")
+    println("Cloth!")
+    println()
+
+    println(42)
+    println(unsigned int<64>::max)
+    println(true)
+    println('😀')
+    println(#"Type: {int[3]::type}")
+}
