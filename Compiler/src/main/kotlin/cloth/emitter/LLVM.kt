@@ -140,7 +140,7 @@ class LLVMEmitter(private val linkOptions: LinkOptions = LinkOptions()) {
 			val bindings = EmitBindings(context, builder)
 			val casts = EmitCast(context, builder, semantics, targetABI)
 			val strings = EmitString(context, builder, targetABI)
-			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts, strings, EmitPower(context, builder, abi))
+			val expressionEmitter = EmitExpression(context, builder, bindings, semantics, casts, strings, EmitPower(context, builder, abi), abi)
 			val statementEmitter = EmitStatement(expressionEmitter, bindings, semantics)
 
 			var result: LLVMValueRef? = LLVMConstInt(types.value(ValueType.INT), 0L, 0)

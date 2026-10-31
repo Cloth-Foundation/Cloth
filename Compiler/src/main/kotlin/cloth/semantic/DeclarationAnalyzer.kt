@@ -58,6 +58,7 @@ class DeclarationAnalyzer {
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
 			val symbol = lookup(name, scope)
 			if (symbol !is BindingSymbol) throw SemanticErrors.bindingRequired(name, symbol.name)
+			if (symbol is LocalSymbol && symbol.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.blockAssignment(name, symbol.name)
 			if (!symbol.mutable) {
 				if (symbol is ParameterSymbol) throw SemanticErrors.immutableParameter(name, symbol.name)
 				throw SemanticErrors.immutable(name, symbol.name)
@@ -88,6 +89,13 @@ class DeclarationAnalyzer {
 
 		fun expression(expression: Expression, scope: LexicalScope) {
 			when (expression) {
+				is FunctionBlockExpression -> {
+					if (expression.declaration.returnType == null) throw SemanticErrors.blockReturnType(expression.declaration.name)
+					val body = expression.declaration.body as BlockBody
+					val child = LexicalScope(scope)
+					model.blockScopes[body] = child
+					statements(body.statements, child)
+				}
 				is ArrayLiteral -> expression.elements.forEach { expression(it, scope) }
 				is IndexExpression -> { expression(expression.array, scope); expression(expression.index, scope) }
 				is NameExpression -> model.names[expression] = lookup(expression.name, scope)

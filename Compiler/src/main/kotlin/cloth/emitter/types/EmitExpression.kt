@@ -9,6 +9,8 @@ import cloth.parser.statement.ReturnStatement
 import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.SemanticModel
 import cloth.semantic.ValueType
+import cloth.semantic.symbols.LocalSymbol
+import cloth.parser.declaration.BlockBody
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
@@ -17,12 +19,17 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, private val functions: EmitFunctions? = null, private val functionSemantics: FunctionSemanticModel? = null, private val returnType: ValueType? = null, private val frame: EmitFunctionFrame? = null) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, abi: NativeCABI, private val functions: EmitFunctions? = null, private val functionSemantics: FunctionSemanticModel? = null, private val returnType: ValueType? = null, private val frame: EmitFunctionFrame? = null) {
 
 	private val types = LLVMTypes(context)
+	private val arrays = EmitArray(context, builder, abi)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
 	private class Terminated : RuntimeException(null, null, false, false)
+	private class BlockExit(val type: ValueType, val exit: LLVMBasicBlockRef) {
+		val predecessors = mutableListOf<Pair<LLVMBasicBlockRef, LLVMValueRef?>>()
+	}
+	private val blockReturns = mutableListOf<BlockExit>()
 
 	fun terminated(): Boolean {
 		val end = LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(builder))
@@ -47,11 +54,51 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitReturn(statement: ReturnStatement) {
 		val value = statement.value?.let { emit(it) }
 		if (terminated()) return
+		blockReturns.lastOrNull()?.let { target ->
+			target.predecessors.add(LLVMGetInsertBlock(builder) to if (target.type == ValueType.VOID) null else checkNotNull(value))
+			LLVMBuildBr(builder, target.exit)
+			return
+		}
 		val type = returnType ?: throw InternalErrors.invariant("Return outside emitted function")
 		checkNotNull(frame).emitReturn(if (type == ValueType.VOID) null else checkNotNull(functions).encode(builder, checkNotNull(value), type))
 	}
 
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
+
+	/** Each read expands a fresh evaluation in the physical function frame. Captures
+	 * use resolved binding identities; temporary strings/arrays retain that frame's
+	 * lifetime and use the ordinary copy path if returned from the actual function.
+	 */
+	private fun emitBlock(block: FunctionBlockExpression): LLVMValueRef? {
+		val type = semantics.typeOf(block)
+		val exit = LLVMAppendBasicBlockInContext(context, LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)), "block_end")
+		val target = BlockExit(type, exit)
+		blockReturns.add(target)
+		try {
+			bindings.withScope {
+				emitStatements((block.declaration.body as BlockBody).statements)
+				if (!terminated()) {
+					check(type == ValueType.VOID)
+					target.predecessors.add(LLVMGetInsertBlock(builder) to null)
+					LLVMBuildBr(builder, exit)
+				}
+			}
+		} finally { blockReturns.removeAt(blockReturns.lastIndex) }
+		LLVMPositionBuilderAtEnd(builder, exit)
+		if (target.predecessors.isEmpty()) { LLVMBuildUnreachable(builder); return null }
+		if (type == ValueType.VOID) return null
+		if (target.predecessors.size == 1) return checkNotNull(target.predecessors.single().second)
+		val result = LLVMBuildPhi(builder, types.value(type), "block_value")
+		PointerPointer<LLVMValueRef>(target.predecessors.size.toLong()).use { values ->
+			PointerPointer<LLVMBasicBlockRef>(target.predecessors.size.toLong()).use { blocks ->
+				target.predecessors.forEachIndexed { index, (end, value) ->
+					values.put(index.toLong(), checkNotNull(value)); blocks.put(index.toLong(), end)
+				}
+				LLVMAddIncoming(result, values, blocks, target.predecessors.size)
+			}
+		}
+		return result
+	}
 
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
 		val operand = bindings.read(functionSemantics?.declarations?.targetOf(statement) ?: statement.name.lexeme)
@@ -77,12 +124,12 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is ArrayLiteral -> {
 				val type = semantics.typeOf(expression) as? ValueType.ArrayValue
 				if (type == null) { expression.elements.forEach { emitValue(it) }; null }
-				else strings.arrays.literal(type.element, expression.elements.map { item -> { emitValue(item) } })
+				else arrays.literal(type.element, expression.elements.map { item -> { emitValue(item) } })
 			}
 			is IndexExpression -> {
 				val array = emitValue(expression.array)
 				val index = emitValue(expression.index)
-				strings.arrays.index(array, semantics.typeOf(expression), index, semantics.typeOf(expression.index))
+				arrays.index(array, semantics.typeOf(expression), index, semantics.typeOf(expression.index))
 			}
 			is IfExpression         -> emitConditional(expression, requireValue = semantics.typeOf(expression) !in setOf(ValueType.VOID, ValueType.Never))
 			is TypeCheckExpression  -> {
@@ -92,7 +139,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMConstInt(boolType, if (matches) 1L else 0L, 0)
 			}
 
-			is NameExpression       -> bindings.read(functionSemantics?.declarations?.symbolOf(expression) ?: expression.name.lexeme)
+			is NameExpression       -> {
+				val symbol = functionSemantics?.declarations?.symbolOf(expression)
+				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
+				if (block != null) emitBlock(block) else bindings.read(symbol ?: expression.name.lexeme)
+			}
 			is CallExpression       -> checkNotNull(functions).emitCall(expression, this, builder)
 			is IntegerLiteral       -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
 			is FloatingPointLiteral -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)

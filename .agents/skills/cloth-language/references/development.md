@@ -2,6 +2,173 @@
 
 ## Current work
 
+Local function blocks are implemented. `def<Type> name = { ... }` declares a
+parameterless computation; each evaluated read executes it again. The explicit
+annotation is its return contract. There is no declaration-time execution or
+automatic cache. An ordinary binding initialized from its name saves the result.
+See the confirmed [function-block semantics](semantics.md#function-blocks),
+`functionBlocks` in `../../../../examples/Test.co`, and the runnable
+`../../../../examples/FunctionBlocks.co`.
+
+`Parser.parseBinding` recognizes block initializers and reuses the function body
+AST inside `FunctionBlockExpression`. Declaration resolution gives each body a
+child scope; captures refer to visible enclosing binding identities and read their
+current values. The body cannot see its own newly declared binding or later
+locals. `BodyTyping` checks the block under its own return contract, including
+unused blocks. Its returns do not contribute to the enclosing function's flow.
+Existing diagnostics C3030-C3033 label block return failures; C3041 rejects a
+missing annotation and C3042 rejects assignment/updates to block bindings.
+
+Native emission expands a fresh body evaluation at each read, with separate local
+storage and a block-specific return merge. Both `=` and `:=` declarations are
+accepted; neither memoizes. Explicit `<void>` blocks support ordinary void-body
+return rules and effect-only reads. Normal argument order, overload selection,
+short circuits and strict numeric/result types remain in force. String and array
+temporaries use the physical enclosing function's existing storage lifetime;
+results returned from that function follow the ordinary deep-copy and cleanup
+paths. No escaping closure representation, new public ABI or GC is introduced.
+Future block replacement rules and escaping capture lifetimes remain open design
+questions. The internal legacy snippet analyzer is not the function-block pipeline;
+use source units containing function declarations.
+
+Verified on 2026-10-30: the focused function-block tests and the full
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` suite passed.
+The full suite reports 370 tests with no failures, errors or skips. Nineteen new
+`FunctionBlocksTest` cases cover syntax and spans, mandatory types, strict return
+contracts and first-error diagnostics, scope/captures, declaration-time deferral,
+saved results, argument order and overloads, short circuits, nested returns,
+recursion, all primitive representations, void blocks, buffered results and the
+normal CLI example. A twentieth test in `StringFunctionTest` uses the existing
+counted/poisoning allocator to verify buffered block results and balanced cleanup
+across repeated reads, discarded values, recursion and early enclosing-function
+returns. Native execution is verified on the current Windows host;
+implementation uses the shared LLVM backend without new platform-specific ABI
+paths. `git diff --check` passed.
+
+The array-interpolation guard is implemented. Shared expression typing now
+rejects unsupported hole values with source-located C3040 before toolchain
+discovery, output creation or LLVM emission. Integer/float/bool/char/string
+interpolation and non-continuing holes with nested returns remain supported.
+Array literals, bindings, parameters, nested arrays, subarrays and array-returning
+calls are checked even in skipped branches and overload arguments. Formatting
+output and a future `toString()` API remain deferred; see the completed
+[formatting guard TODO](../../../../todo/native-formatting-guards.md).
+
+Verification: the focused `StringInterpolationTest` run and the full
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon` suite passed.
+The full suite reports 350 tests, no failures, errors or skips. Four new tests
+cover semantic rejection, exact source labels, fail-fast CLI rendering,
+toolchain/output ordering, and native interpolation/return regressions on the
+current Windows host. `git diff --check` passed.
+
+Cross-platform requirement reaffirmed on 2026-10-30: Windows, Linux and macOS
+must remain first-class targets with the same Cloth feature contracts. Native
+startup/encoding adapters may differ by platform. Unicode argv work is tracked
+in [the cross-platform argument TODO](../../../../todo/unicode-command-line-arguments.md).
+This requirement does not establish native verification on all three systems;
+current execution evidence below remains Windows-only. Invalid native argument
+encoding policy is still unresolved.
+
+Function implementation chunk 8 (array values and function boundaries) is
+implemented. Array literals `[1, 2, 3]`, sized/unsized annotations in bindings,
+parameters and returns, inferred element types and extents, zero-based indexed
+reads, and nested arrays now parse, type-check and emit native code. The user's
+exact examples are covered, including diagnostics for both too few and too many
+initializers. `int[2][3]` uses C dimension order and nested literals such as
+`[[1, 2, 3], [4, 5, 6]]`. Known sizes are retained in inferred bindings and
+function signature keys. C3038 reports invalid construction, sizes or element
+types; C3039 reports invalid indexing operand/index types. Compilation remains
+fail-fast with one diagnostic.
+
+Initial implementation policies (not separately confirmed language decisions):
+
+- Unsized parameter/return dimensions accept matching element types of any
+  extent, recursively. Known extents must match sized contracts exactly; there
+  is no runtime conversion of unknown extents to sized contracts. A binding
+  initialized from a known-size value retains its size even with `[]` in its
+  annotation. An unsized function result retains its unknown static extent.
+  Unsized contextual return contracts also allow conditional branches to yield
+  different sizes; without such context, branch result types must still match.
+- Literal-inferred known dimensions are homogeneous and rectangular; the first element supplies
+  context for later integer literals. Numeric bindings are never implicitly
+  converted. Call context reaches array elements, including floating literals;
+  ordinary floating binding/return rules retain their previous behavior.
+- `[]` needs contextual element typing; `def<int[0]> empty = []` and
+  `fn<int[]> empty() = []` work. Inferred `def empty = []` is rejected.
+- Exact default types/shapes win overload resolution; otherwise a unique match
+  accepting ordinary array element types is preferred before literal adaptation.
+  Distinct explicit array extents can distinguish overloads.
+- All supported signed/unsigned integer widths may index an array. Invalid
+  negative or past-end indices terminate through a controlled runtime error.
+  Bounds are checked before deriving/dereferencing an element address.
+- Literals and indexed operands evaluate once in source order. Returns nested
+  in elements or indices stop subsequent evaluation. Local array copies and
+  parameters use descriptors; rebinding changes only the local binding. Array
+  element assignment, aliasing/mutation semantics and array equality remain
+  unimplemented and unconfirmed, rather than inheriting C ownership semantics.
+- Native startup constructs `string[]` from `argc`/`argv`, excluding the
+  executable name. The adapter borrows native narrow-string bytes and lengths;
+  platform-specific command-line Unicode transcoding is not implemented.
+
+`EmitArray` stores a `{ ptr, i64 }` descriptor with storage-typed elements,
+including byte storage for bools and descriptors for strings/nested arrays.
+Local literals use stack buffers. Array-returning functions receive the same
+private caller-arena parameter as string-returning functions. `EmitStringArena`
+now recursively copies array storage and all nested string bytes into the caller's
+arena, guarding size multiplication and allocation overflow. `EmitFunctionFrame`
+copies the outgoing value before releasing the current invocation's buffers.
+This remains temporary value storage, with no GC or changes to object lifetime
+rules. Native array parameters and returns no longer report C4030.
+
+`examples/Arrays.co` demonstrates construction, indexing, multidimensional
+arrays and function calls/returns. README describes the executable support.
+
+Verified on 2026-10-30: `gradlew.bat :Compiler:test --offline --console=plain
+--no-daemon` passed all 346 tests, with no failures, errors or skips. The 18 new
+`ArraysTest` cases cover the user's declarations, size inference and mismatches,
+strict element types and immutability, malformed syntax and source spans,
+sized/default-element overload selection, C dimension order, native primitive
+storage, nested string-array returns across recursion, source evaluation order,
+interrupted elements/indices, empty arrays, unsigned indexed-operand context,
+different-size conditional returns, controlled bounds failures, command-line
+arguments, library emission and the normal CLI example. An additional counted
+and poisoning allocator test checks deep copies and balanced cleanup on normal,
+early and discarded array-return paths, null allocations and multiplication
+overflow before allocation. Updated prior capability tests now expect supported
+array object/startup emission. A stale settings assertion was aligned with the
+existing `examples/StringFunctions.co` default. `git diff --check` passed.
+Native execution is verified on the current Windows host.
+
+Review audit on 2026-10-30: the existing full compiler suite passed again using
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`. Additional
+temporary probes found follow-up gaps that are not covered by those passing tests:
+
+- Array interpolation, including `fn main() { #"{[1]}" }`, passed semantic
+  checking but fails with C9000 (`Array printing is not implemented`) during
+  emission. Unsupported interpolation operands need a source-located semantic
+  diagnostic unless array formatting is separately designed and implemented.
+  The user deferred native type-formatting design and requested a dedicated
+  guard TODO: [native formatting guards](../../../../todo/native-formatting-guards.md).
+  This guard is now implemented as C3040; see the current-work record above.
+- Native `main(string[] args)` did not preserve the argument `é中😀` on the
+  current Windows host: comparison against the same source literal returned
+  status 1; the ASCII argument control returned 0. This reproduces the previously
+  documented native narrow-string/Unicode-transcoding limitation. Windows argv
+  construction needs lossless Unicode input converted to Cloth UTF-8 storage.
+- There is no source-level array length query; `args.length` reports C2003.
+  A length/count contract remains needed before programs can safely inspect
+  variable-length command-line input without assuming a minimum argument count.
+  Element mutation and array equality remain explicitly deferred design work.
+
+No implementation fixes were made during this review. Probe observations are
+saved in the ignored `build/review-chunk8/observations.txt`; the temporary probe
+test source was removed after execution.
+
+## Earlier milestone snapshots
+
+The following records describe prior chunks. Array limitations in those records
+are superseded by chunk 8 above; consult the current source map as well.
+
 Function implementation chunk 7 (string function boundaries and return lifetimes)
 is implemented. Native functions now accept and return the existing immutable
 UTF-8 `{ ptr, i64 }` string descriptor. Parameters borrow the caller's bytes for
@@ -873,7 +1040,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
 - The compiler is Kotlin/JVM in `Compiler`, built with Gradle. Its module declares
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
-  and native LLVM compilation. The CLI settings currently default to `examples/EX.co` and accept
+  and native LLVM compilation. The CLI settings currently default to `examples/StringFunctions.co` and accept
   `[source.co] [output] [--emit executable|object]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,
@@ -893,15 +1060,16 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   boolean, character, ordinary/interpolated/raw string literals, binding names, parentheses, unary `+`/`-`/`!`, and binary `+`, `-`, `*`, `/`, `%`, `**`, `&&`, `||`, `==`, `!=`, `<`, `>`, `<=`, `>=`
   with precedence, plus `-> Type` casts between arithmetic and comparison
   precedence levels, primitive `is Type` checks at comparison precedence, and
-  conditional expressions, and named function calls with comma-separated arguments.
-  Calls have separate name and typed resolution stages and native scalar emission.
+  conditional expressions, named function calls with comma-separated arguments,
+  array literals and chained indexed reads. Calls have separate name and typed
+  resolution stages and native scalar, string and array emission.
 - `cloth/parser/subs/DelimitedParser.kt` provides a generic delimiter wrapper
   with caller-supplied content parsing, including angle and parenthesis helpers.
   Binding type annotations, parenthesized expressions/conditions, and branch
   braces use this wrapper;
   recursive callbacks can handle nested delimiters. `TypeParser` reads an optional
   `unsigned` modifier, a type name, and an optional nested numeric width.
-  Function headers additionally enable unsized `[]` type suffix parsing.
+  Bindings and function headers enable sized `[N]` and unsized `[]` suffixes.
   In a cast, only a complete `<number>` suffix is consumed as a width; other
   following `<` tokens remain available for ordering comparisons.
   General generic type arguments are not implemented.
@@ -949,9 +1117,10 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   they generate verified declaration modules without synthesizing a native
   entry point. Scalar storage uses stable symbols and entry allocas, calls use
   selected symbols, and returns/merges respect continuing control flow. String
-  parameters/returns now work through chunk 7; arrays still report C4030.
-- `EmitFunctionFrame` joins normal exits, copies outgoing string bytes into the
-  caller's return storage, and releases the current frame's received string results.
+  parameters/returns work through chunk 7; array parameters/returns work through
+  chunk 8, including recursive copies of nested arrays and string elements.
+- `EmitFunctionFrame` joins normal exits, copies outgoing strings and arrays into
+  the caller's return storage, and releases the current frame's received buffers.
   `EmitStringArena` emits checked malloc/copy and free helpers using the native
   size_t ABI. Local formatting/concatenation buffers remain on the creating stack.
 - `cloth/emitter/LLVM.kt` and `cloth/emitter/types/EmitExpression.kt` emit LLVM
@@ -1100,6 +1269,11 @@ The following have not yet been settled. Ask about them when relevant, keeping
 the user's preference for one question at a time:
 
 - Type-narrowing behavior after reassignment and outside successful `if` branches.
+- Function-block capture escape/lifetime rules beyond reading surrounding locals
+  while their enclosing scope is active; whether blocks can be stored or escape
+  as computations rather than being evaluated to their results.
+- Assignment to a function-block binding: replacing its body, assigning a value,
+  and whether `:=` may make the computation binding immutable.
 - Default equality semantics for class instances: identity or field values.
 - Whether there are restrictions on individual source-to-target transition paths.
   The confirmed phrase "permitted states" means class-supported states, not an

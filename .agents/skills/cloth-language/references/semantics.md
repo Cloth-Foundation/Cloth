@@ -5,6 +5,21 @@ discussion on 2026-10-29 and 2026-10-30. `../../../../examples/Test.co` remains 
 clarify it and extend it where noted. This document describes intended behavior,
 not the compiler's current feature coverage.
 
+## Portability
+
+- Windows, Linux and macOS are all required targets. On 2026-10-30 the user
+  reaffirmed that implementation choices must support all three without
+  compromising behavior on the others.
+- Portable Cloth features must expose a shared language contract across these
+  systems. Platform-specific startup, ABI and encoding adapters are implementation
+  details used to fulfill that contract, not a reason to make an entire feature
+  depend on one operating system's mechanism.
+- `main(string[] args)` keeps the same Cloth interface across all three targets.
+  A Windows Unicode startup adapter must coexist with the Linux/macOS startup
+  paths; `wmain` is not a proposed universal native entry point.
+- Behavior for malformed Unicode or non-UTF-8 native argument bytes has not yet
+  been confirmed. The proposal to report a startup error remains a proposal.
+
 ## Concise syntax and bodies
 
 - Cloth aims to remove unnecessary ceremony. Use the compact forms established
@@ -59,6 +74,33 @@ not the compiler's current feature coverage.
 - These function-contract decisions were confirmed by the user on 2026-10-30;
   they describe intended semantics, not implemented function support.
 
+## Function blocks
+
+- A typed binding may name a deferred, parameterless function block:
+  `def<int> x = { ... }`. The explicit binding type declares the
+  block's return contract; inferred function-block return types are forbidden.
+- Declaring the block does not execute its body. Every evaluated occurrence of
+  its name executes the body again and produces the declared result type.
+  There is no first-use cache. For example, `consume(x)` executes the block
+  during argument evaluation and passes its result, not the block itself.
+- Existing evaluation order and short-circuit rules apply. `x + x` executes the
+  block twice, left to right. An occurrence skipped by short-circuit evaluation
+  does not execute. Call arguments still evaluate before the callee's body runs.
+- Blocks take no arguments and follow ordinary brace-delimited function return
+  rules: explicit value returns, strict return typing, and no non-void path
+  reaching the end without returning. A `return` exits the block itself, not
+  the enclosing function or method.
+- An ordinary binding initialized from a block's result stores that value:
+  `def<int> saved := x` executes `x` once at that declaration; later reads of
+  `saved` use the stored result.
+- The accepted example reads a surrounding local binding's current value on
+  each execution: changing that local between uses changes the next result.
+  Escaping capture lifetimes and assignment to the block binding remain open
+  design questions; do not infer a general closure or block-transfer mechanism.
+- The user confirmed execution on every use on 2026-10-30. Local function blocks
+  are implemented; see [development status](development.md) for coverage and
+  current restrictions.
+
 ## Program entry and executable statements
 
 - Executable statements are allowed only inside bodies, not directly at file
@@ -87,6 +129,23 @@ not the compiler's current feature coverage.
   argument-array construction.
 
 ## Function parameters
+
+Array syntax and construction were confirmed on 2026-10-30:
+
+- `def<int[]> unsized = [1, 2, 3]` infers a size of 3.
+- `def<float[5]> sized = [1.0, 2.0, 3.0, 4.0, 5.0]` supplies an explicit size.
+- `def inferredWithSize = [true, true, false]` infers `bool[3]`.
+- Explicit sizes require every member to be initialized, with no extra members:
+  `def<int[2]> oversized = [1]` and
+  `def<float[1]> undersized = [1.0, 2.0]` are errors.
+- `def<string[]> finalArray := ["Hello", "Cloth"]` uses the ordinary immutable
+  binding convention. Indexing is zero-based, following C: `finalArray[0]`
+  returns the string `"Hello"`.
+- Arrays must be constructable values that can be passed as function arguments,
+  beyond array syntax in declarations alone. Multidimensional arrays are allowed.
+- See development status for current nested-literal syntax and implementation
+  policies that have not been separately confirmed as language design, including
+  empty arrays, bounds failures, and mutation/copy behavior.
 
 - Parameter bindings are mutable inside the function by default. Reassignment,
   compound assignment, and standalone updates are permitted subject to the
@@ -359,6 +418,18 @@ not the compiler's current feature coverage.
   This does not change the strict string operand requirement for ordinary `+`.
   See development status for initial formatting and brace-escaping choices;
   those details have not been separately confirmed as language design decisions.
+- The native type-printing/conversion contract remains under design. On
+  2026-10-30 the user mentioned a possible `toString()` method and requested
+  documenting missing guards while deferring that design. The user subsequently
+  specified that, if introduced, `toString()` must be available on every data
+  type with a non-overridable implementation, and on future classes with
+  overridable behavior. This requirement does not authorize implementing it now
+  or settle the general member/override model, its relationship to interpolation,
+  or array formatting syntax. Track the current unsupported-array
+  interpolation guard in [the formatting TODO](../../../../todo/native-formatting-guards.md).
+- The user authorized the temporary unsupported-array interpolation diagnostic
+  while deferring `toString()` and array text formatting. This is a compiler
+  capability guard, not a permanent ban on array interpolation in the language.
 - The user selected string definitions after character support. Explicit
   `def<string>` and inferred declarations such as `def hello := "Hello World!"`
   follow the ordinary fixed-type binding and `=` / `:=` rules shown in

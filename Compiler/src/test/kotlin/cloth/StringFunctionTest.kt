@@ -267,14 +267,68 @@ class StringFunctionTest {
 	}
 
 	@Test
+	fun `array returns deep copy nested buffers and release them on normal and early exits`(@TempDir directory: Path) {
+		instrumented(directory, "array_cleanup", """
+			fn<string[][]> make(int n) {
+			    def local = [[#"value {n}", "Cloth" + "!"]]
+			    if (n > 0) { return make(n - 1) }
+			    return local
+			}
+			fn<string[][]> forward(string[][] a) = a
+			fn discard(bool early) {
+			    make(2)
+			    if (early) { return }
+			    forward(make(1)) -> void
+			}
+			fn<bool> test() {
+			    def saved = forward(make(4))
+			    discard(true)
+			    discard(false)
+			    return saved[0][0] == "value 0" && saved[0][1] == "Cloth!"
+			}
+		""")
+		instrumented(directory, "array_allocation_failure", "fn<int[]> make() = [1, 2]\nfn<bool> test() = make()[0] == 1", failAllocation = true)
+		instrumented(directory, "array_overflow", "fn<int[]> make() = [1, 2]\nfn<bool> test() = make()[0] == 1", oversizedResult = true, oversizedArray = true)
+	}
+
+	@Test
 	fun `return storage length overflow is rejected before calling the allocator`(@TempDir directory: Path) {
 		instrumented(directory, "overflow", "fn<string> echo(string value) = value\nfn<bool> test() = echo(\"text\") == \"text\"", oversizedResult = true)
+	}
+
+	@Test
+	fun `function blocks retain buffered results until the enclosing function releases them`(@TempDir directory: Path) {
+		instrumented(directory, "block_cleanup", """
+			fn<string> text(int n) = #"value {n}"
+			fn<string[][]> make(int n) {
+			    def<string[][]> x = {
+			        if (n == 0) { return [[text(n), "Cloth" + "!"]] }
+			        return make(n - 1)
+			    }
+			    return x
+			}
+			fn discard(bool early) {
+			    def<string[][]> x = { return make(2) }
+			    x
+			    x -> void
+			    if (early) { return }
+			    x
+			}
+			fn<bool> test() {
+			    def<string[][]> x = { return make(3) }
+			    def saved = x
+			    def other = x
+			    discard(true)
+			    discard(false)
+			    return saved[0][0] == "value 0" && saved[0][1] == "Cloth!" && other[0][0] == "value 0"
+			}
+		""")
 	}
 
 	/** Replace only the module's native allocation imports with counted test wrappers.
 	 * Observe the heap after test() returns, independently of the generated cleanup shape.
 	 */
-	private fun instrumented(directory: Path, name: String, source: String, expectAllocation: Boolean = true, failAllocation: Boolean = false, oversizedResult: Boolean = false) {
+	private fun instrumented(directory: Path, name: String, source: String, expectAllocation: Boolean = true, failAllocation: Boolean = false, oversizedResult: Boolean = false, oversizedArray: Boolean = false) {
 		val emitter = LLVMEmitter()
 		val abi = NativeCABI.native()
 		val configuration = ToolchainResolver.native(abi, LinkOptions())
@@ -292,7 +346,7 @@ class StringFunctionTest {
 						it.put(0, LLVMConstNull(pointer)); it.put(1, LLVMConstInt(size, -1, 0))
 						LLVMConstStructInContext(context, it, 2, 0)
 					}
-					LLVMReplaceAllUsesWith(LLVMGetParam(LLVMGetNamedFunction(module, "cloth.rt.string.copy"), 1), invalid)
+					LLVMReplaceAllUsesWith(LLVMGetParam(LLVMGetNamedFunction(module, if (oversizedArray) "cloth.rt.array.copy.0" else "cloth.rt.string.copy"), 1), invalid)
 				}
 				val zero = LLVMConstInt(integer, 0, 0)
 				val one = LLVMConstInt(integer, 1, 0)
@@ -362,7 +416,7 @@ class StringFunctionTest {
 			} finally { LLVMDisposeBuilder(builder) }
 		}
 		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
-		if (failAllocation || oversizedResult) assertProgram(executable, 1, "Unable to allocate returned string storage" + System.lineSeparator()) else assertProgram(executable)
+		if (failAllocation || oversizedResult) assertProgram(executable, 1, "Unable to allocate returned ${if (oversizedArray) "array" else "string"} storage" + System.lineSeparator()) else assertProgram(executable)
 	}
 
 	private fun native(directory: Path, name: String, source: String, options: LinkOptions = LinkOptions()) {

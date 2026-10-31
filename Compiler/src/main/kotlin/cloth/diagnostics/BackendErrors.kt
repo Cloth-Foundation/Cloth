@@ -5,7 +5,7 @@ import cloth.token.TokenSpan
 
 object BackendErrors {
 
-	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_FUNCTION_ABI, "Native function parameters and returns of type '${type.spelling}' are not implemented yet", listOf(SourceLabel(span, "unsupported function boundary type")), "Numeric types, bool, char, string and void are supported; array storage is a later stage.")
+	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_FUNCTION_ABI, "Native function parameters and returns of type '${type.spelling}' are not implemented yet", listOf(SourceLabel(span, "unsupported function boundary type")), "Numeric types, bool, char, string, arrays of supported element types and void returns are supported.")
 
 	fun target(details: String) = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to find the native target", guidance = details)
 	fun machine() = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to create the native target machine")

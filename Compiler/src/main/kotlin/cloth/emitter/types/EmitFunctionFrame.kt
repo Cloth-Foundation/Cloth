@@ -6,7 +6,7 @@ import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Every normal exit joins here, so temporary return buffers are released exactly once.
- * String results are copied into the caller's frame before this invocation is released.
+ * String and array results copy into the caller's frame before this invocation is released.
  */
 internal class EmitFunctionFrame(
 	private val context: LLVMContextRef,

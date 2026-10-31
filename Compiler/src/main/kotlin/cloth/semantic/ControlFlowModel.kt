@@ -44,6 +44,9 @@ class ControlFlowModel {
 	}
 	fun of(expression: Expression): ControlFlow = expressions.getOrPut(expression) {
 		when (expression) {
+			// Declaring a deferred block executes none of its statements. Its returns
+			// belong to a separate contract and never complete the enclosing function.
+			is FunctionBlockExpression -> ControlFlow.CONTINUE
 			is ArrayLiteral -> expression.elements.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
 			is IndexExpression -> of(expression.array).then(of(expression.index))
 			is UnaryExpression -> of(expression.operand)

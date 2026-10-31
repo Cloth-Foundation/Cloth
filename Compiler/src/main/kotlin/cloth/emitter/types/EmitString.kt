@@ -13,7 +13,6 @@ import org.bytedeco.llvm.global.LLVM.*
  * their bytes into caller-owned storage before that invocation exits.
  */
 internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
-	val arrays = EmitArray(context, builder, abi)
 
 	private val types = LLVMTypes(context)
 	private val lengthType = LLVMInt64TypeInContext(context)

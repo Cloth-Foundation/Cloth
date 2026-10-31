@@ -1,0 +1,30 @@
+// A block is evaluated on each read, including each argument occurrence.
+fn<int> combine(int first, int second) = first * 10 + second
+
+fn<int> main() {
+    def value = 10
+    def<int> doubled = {
+        return value * 2
+    }
+
+    def saved := doubled // Stores 20, rather than copying the computation.
+    value = 30
+    if (doubled != 60 || saved != 20) { return 1 }
+
+    def count = 0
+    def<int> next = {
+        count += 1
+        return count
+    }
+    if (count != 0) { return 2 } // Declaring next did not execute it.
+    if (combine(next, next) != 12 || count != 2) { return 3 }
+
+    // Explicitly type the local as well as the block for this larger result.
+    def<int<64>> power = {
+        def<int<64>> a = 10 ** 10
+        return a
+    }
+    if (power != 10000000000) { return 4 }
+
+    return 0
+}
