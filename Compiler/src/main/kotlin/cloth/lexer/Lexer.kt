@@ -204,18 +204,21 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 	/** Scan holes with the ordinary lexer so quotes, comments and nested strings own their braces. */
 	private fun interpolatedString() {
 		val opening = span()
-		fun mark() { start = current; cStart = cAt }
+		fun mark() {
+			start = current; cStart = cAt
+		}
 		mark()
 		while (!isAtEnd()) {
 			when (peek()) {
-				'"' -> {
+				'"'        -> {
 					addToken(TokenType.StringSegment)
 					mark()
 					advance()
 					addToken(TokenType.InterpolationEnd)
 					return
 				}
-				'{', '}' -> {
+
+				'{', '}'   -> {
 					val brace = peek()
 					if (source.getOrNull(current + 1) == brace) {
 						advance(); advance()
@@ -243,15 +246,17 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 						mark()
 					}
 				}
-				'\\' -> {
+
+				'\\'       -> {
 					advance()
 					if (isAtEnd()) break
 					if (peek() == '\n' || peek() == '\r') throw LexerErrors.multiline(span())
 					val escaped = advance()
 					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "string")
 				}
+
 				'\n', '\r' -> throw LexerErrors.multiline(span())
-				else -> advanceStringScalar()
+				else       -> advanceStringScalar()
 			}
 		}
 		throw LexerErrors.string(opening.through(span()))

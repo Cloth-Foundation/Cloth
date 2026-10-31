@@ -1,24 +1,35 @@
 package cloth
 
 import cloth.diagnostics.SourceFile
-import cloth.emitter.*
+import cloth.emitter.LLVMEmitter
+import cloth.emitter.NativeCABI
+import cloth.emitter.NativeLinker
+import cloth.emitter.ToolchainResolver
 import cloth.emitter.types.EmitEntryPoint
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.ProgramKind
 import cloth.semantic.ProgramModel
-import cloth.settings.*
+import cloth.settings.ApplicationSubsystem
+import cloth.settings.LinkOptions
+import cloth.settings.LinkerDriver
+import cloth.settings.RuntimeLinkage
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class UnicodeArgumentsTest {
+
 	private val native = NativeCABI.native()
 	private val windows = native.profile == NativeCABI.Profile.WINDOWS_LLP64
 	private val unixProfiles = listOf("x86_64-unknown-linux-gnu", "x86_64-apple-darwin").map(NativeCABI::forTarget)
@@ -31,23 +42,32 @@ class UnicodeArgumentsTest {
 		// Use its strict quoting mode so the child actually receives the test data.
 		val property = "jdk.lang.Process.allowAmbiguousCommands"
 		val previous = if (windows) System.setProperty(property, "false") else null
-		val process = try { ProcessBuilder(listOf(executable.toString()) + arguments).redirectErrorStream(true).start() }
-		finally { if (windows) { if (previous == null) System.clearProperty(property) else System.setProperty(property, previous) } }
+		val process = try {
+			ProcessBuilder(listOf(executable.toString()) + arguments).redirectErrorStream(true).start()
+		} finally {
+			if (windows) {
+				if (previous == null) System.clearProperty(property) else System.setProperty(property, previous)
+			}
+		}
 		try {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), executable.toString())
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(status, process.exitValue(), output)
 			if (error == null) assertEquals("", output) else assertEquals(error + System.lineSeparator(), output)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 
-	@Test fun `native startup preserves Unicode empty arguments quoting and argument order`(@TempDir directory: Path) {
+	@Test
+	fun `native startup preserves Unicode empty arguments quoting and argument order`(@TempDir directory: Path) {
 		val values = listOf("Cloth", "", "é中😀", "é", "é", "two words", "a\"b", "trailing\\", "%s%llu", "\t\n", "�", "\uFEFF")
 		val executable = LLVMEmitter().compile(parse(sourceFor(values)), directory.resolve("Unicode é中😀/arguments"))
 		run(executable, values)
 	}
 
-	@Test fun `startup preserves main return behavior with and without argument parameters`(@TempDir directory: Path) {
+	@Test
+	fun `startup preserves main return behavior with and without argument parameters`(@TempDir directory: Path) {
 		for ((index, source) in listOf("fn main() {}", "fn main() { return }", "fn<int> main() = 7", "fn main(string[] args) {}", "fn<int> main(string[] args) = 7").withIndex()) {
 			val executable = LLVMEmitter().compile(parse(source), directory.resolve("empty_$index"))
 			run(executable, status = if (source.contains("= 7")) 7 else 0)
@@ -55,20 +75,15 @@ class UnicodeArgumentsTest {
 		}
 	}
 
-	@Test fun `Windows Unicode startup supports static dynamic GUI and MSVC linker choices`(@TempDir directory: Path) {
+	@Test
+	fun `Windows Unicode startup supports static dynamic GUI and MSVC linker choices`(@TempDir directory: Path) {
 		if (!windows) return
 		val values = listOf("é中😀", "", "with spaces", "a\"b\\")
-		for ((index, options) in listOf(
-			LinkOptions(runtime = RuntimeLinkage.STATIC),
-			LinkOptions(runtime = RuntimeLinkage.DYNAMIC),
-			LinkOptions(subsystem = ApplicationSubsystem.WINDOWS),
-			LinkOptions(runtime = RuntimeLinkage.DYNAMIC, subsystem = ApplicationSubsystem.WINDOWS),
-			LinkOptions(driver = LinkerDriver.MSVC),
-			LinkOptions(driver = LinkerDriver.MSVC, subsystem = ApplicationSubsystem.WINDOWS)
-		).withIndex()) run(LLVMEmitter(options).compile(parse(sourceFor(values)), directory.resolve("options_$index")), values)
+		for ((index, options) in listOf(LinkOptions(runtime = RuntimeLinkage.STATIC), LinkOptions(runtime = RuntimeLinkage.DYNAMIC), LinkOptions(subsystem = ApplicationSubsystem.WINDOWS), LinkOptions(runtime = RuntimeLinkage.DYNAMIC, subsystem = ApplicationSubsystem.WINDOWS), LinkOptions(driver = LinkerDriver.MSVC), LinkOptions(driver = LinkerDriver.MSVC, subsystem = ApplicationSubsystem.WINDOWS)).withIndex()) run(LLVMEmitter(options).compile(parse(sourceFor(values)), directory.resolve("options_$index")), values)
 	}
 
-	@Test fun `every supported platform emits the appropriate verified native adapter`() {
+	@Test
+	fun `every supported platform emits the appropriate verified native adapter`() {
 		for (triple in listOf("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "arm64-apple-darwin")) {
 			val profile = NativeCABI.forTarget(triple)
 			for (parameters in listOf("", "string[] args")) {
@@ -78,7 +93,11 @@ class UnicodeArgumentsTest {
 					EmitEntryPoint(context, module, profile).emit(ProgramModel(ProgramKind.EXECUTABLE, semantics, semantics.declarations.functions.single()), functions)
 					emitter.verify(module)
 					val printed = LLVMPrintModuleToString(module)
-					val ir = try { printed.string } finally { LLVMDisposeMessage(printed) }
+					val ir = try {
+						printed.string
+					} finally {
+						LLVMDisposeMessage(printed)
+					}
 					val wide = profile.profile == NativeCABI.Profile.WINDOWS_LLP64
 					assertContains(ir, "define i32 @${if (wide) "wmain" else "main"}(i32")
 					assertContains(ir, "Invalid Unicode in command-line argument")
@@ -94,7 +113,8 @@ class UnicodeArgumentsTest {
 		}
 	}
 
-	@Test fun `Unix adapters preserve all UTF-8 boundaries without normalization or replacement`(@TempDir directory: Path) {
+	@Test
+	fun `Unix adapters preserve all UTF-8 boundaries without normalization or replacement`(@TempDir directory: Path) {
 		val values = listOf("", "\u0001\u007f", "\u0080\u07ff", "\u0800\ud7ff", "\ue000\uffff", String(Character.toChars(0x10000)), String(Character.toChars(0x10ffff)), "é中😀", "é", "�", "\ufeff")
 		for ((index, profile) in unixProfiles.withIndex()) {
 			val executable = synthetic(directory, "utf8_valid_$index", sourceFor(values), profile, listOf(values.map { units(it, false) }))
@@ -102,18 +122,10 @@ class UnicodeArgumentsTest {
 		}
 	}
 
-	private val invalidUtf8 = listOf(
-		intArrayOf(0x80), intArrayOf(0xbf), intArrayOf(0xc0, 0x80), intArrayOf(0xc1, 0xbf),
-		intArrayOf(0xc2), intArrayOf(0xc2, 0x7f), intArrayOf(0xdf, 0xc0),
-		intArrayOf(0xe0, 0x9f, 0xbf), intArrayOf(0xe0, 0xa0), intArrayOf(0xe1, 0x80),
-		intArrayOf(0xed, 0xa0, 0x80), intArrayOf(0xed, 0xbf, 0xbf), intArrayOf(0xef, 0xbf),
-		intArrayOf(0xf0, 0x8f, 0xbf, 0xbf), intArrayOf(0xf0, 0x90, 0x80),
-		intArrayOf(0xf1, 0x80, 0x7f, 0x80), intArrayOf(0xf4, 0x90, 0x80, 0x80),
-		intArrayOf(0xf5, 0x80, 0x80, 0x80), intArrayOf(0xf8), intArrayOf(0xff),
-		intArrayOf(0x41, 0xf0, 0x90, 0x80, 0x41), intArrayOf(0xc2, 0x80, 0x80)
-	)
+	private val invalidUtf8 = listOf(intArrayOf(0x80), intArrayOf(0xbf), intArrayOf(0xc0, 0x80), intArrayOf(0xc1, 0xbf), intArrayOf(0xc2), intArrayOf(0xc2, 0x7f), intArrayOf(0xdf, 0xc0), intArrayOf(0xe0, 0x9f, 0xbf), intArrayOf(0xe0, 0xa0), intArrayOf(0xe1, 0x80), intArrayOf(0xed, 0xa0, 0x80), intArrayOf(0xed, 0xbf, 0xbf), intArrayOf(0xef, 0xbf), intArrayOf(0xf0, 0x8f, 0xbf, 0xbf), intArrayOf(0xf0, 0x90, 0x80), intArrayOf(0xf1, 0x80, 0x7f, 0x80), intArrayOf(0xf4, 0x90, 0x80, 0x80), intArrayOf(0xf5, 0x80, 0x80, 0x80), intArrayOf(0xf8), intArrayOf(0xff), intArrayOf(0x41, 0xf0, 0x90, 0x80, 0x41), intArrayOf(0xc2, 0x80, 0x80))
 
-	@Test fun `Unix adapters reject malformed UTF-8 before both forms of main and stop before later arguments`(@TempDir directory: Path) {
+	@Test
+	fun `Unix adapters reject malformed UTF-8 before both forms of main and stop before later arguments`(@TempDir directory: Path) {
 		for ((index, profile) in unixProfiles.withIndex()) for ((form, parameters) in listOf("", "string[] args").withIndex()) {
 			// A null later argument would crash if the adapter kept validating after its first error.
 			val cases = invalidUtf8.map { listOf(units("valid é中😀", false), it, null) }
@@ -122,7 +134,8 @@ class UnicodeArgumentsTest {
 		}
 	}
 
-	@Test fun `Windows rejects unpaired surrogates before both forms of main and stops at first invalid argument`(@TempDir directory: Path) {
+	@Test
+	fun `Windows rejects unpaired surrogates before both forms of main and stops at first invalid argument`(@TempDir directory: Path) {
 		if (!windows) return
 		val malformed = listOf(intArrayOf(0xd800), intArrayOf(0xdbff), intArrayOf(0xdc00), intArrayOf(0xdfff), intArrayOf(0xd800, 0x41), intArrayOf(0xd800, 0xd800), intArrayOf(0xdc00, 0xd800), intArrayOf(0xd800, 0xdc00, 0xdc00))
 		for ((index, parameters) in listOf("", "string[] args").withIndex()) {
@@ -132,13 +145,15 @@ class UnicodeArgumentsTest {
 		}
 	}
 
-	@Test fun `valid scalar boundaries survive Windows UTF-16 conversion`(@TempDir directory: Path) {
+	@Test
+	fun `valid scalar boundaries survive Windows UTF-16 conversion`(@TempDir directory: Path) {
 		if (!windows) return
 		val values = listOf("", "\ud7ff\ue000\uffff", String(Character.toChars(0x10000)), String(Character.toChars(0x10ffff)), "é中😀", "é", "�", "\ufeff", "a\"b\\")
 		run(synthetic(directory, "utf16_valid", sourceFor(values), native, listOf(values.map { units(it, true) })))
 	}
 
-	@Test fun `converted arguments and copied returned values release all startup storage`(@TempDir directory: Path) {
+	@Test
+	fun `converted arguments and copied returned values release all startup storage`(@TempDir directory: Path) {
 		val source = """
 			fn<string[]> identity(string[] a) = a
 			fn<int> main(string[] args) {
@@ -151,7 +166,8 @@ class UnicodeArgumentsTest {
 		run(synthetic(directory, "cleanup", source, native, listOf(listOf(units("é中😀", windows), intArrayOf())), checkBalance = true))
 	}
 
-	@Test fun `Unix startup emits objects for separate native platform verification`() {
+	@Test
+	fun `Unix startup emits objects for separate native platform verification`() {
 		// Retain runnable fixtures for native Linux/macOS checks outside the host
 		// JVM. Object emission alone does not establish execution on either OS.
 		val architecture = if (native.architecture == NativeCABI.Architecture.X86_64) "x86_64" else "aarch64"
@@ -196,9 +212,11 @@ class UnicodeArgumentsTest {
 				fun signature(result: LLVMTypeRef, vararg params: LLVMTypeRef) = PointerPointer<LLVMTypeRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMFunctionType(result, values, params.size, 0)
 				}
+
 				fun call(type: LLVMTypeRef, function: LLVMValueRef, vararg params: LLVMValueRef) = PointerPointer<LLVMValueRef>(params.size.toLong()).use { values ->
 					params.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMBuildCall2(builder, type, function, values, params.size, "")
 				}
+
 				var outstanding: LLVMValueRef? = null
 				if (checkBalance) {
 					outstanding = LLVMAddGlobal(module, integer, "test.outstanding")
@@ -254,9 +272,15 @@ class UnicodeArgumentsTest {
 				}
 				emitter.verify(module)
 				emitter.emitObject(module, objectFile)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
-		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
+		try {
+			NativeLinker.link(objectFile, executable, configuration)
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 		return executable
 	}
 }

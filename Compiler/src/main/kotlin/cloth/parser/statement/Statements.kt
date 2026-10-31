@@ -19,6 +19,7 @@ data class AssignmentStatement(val name: Token, val value: Expression) : Stateme
 }
 
 data class ElementAssignmentStatement(val target: IndexExpression, val value: Expression) : Statement {
+
 	override val span get() = target.span.through(value.span)
 }
 

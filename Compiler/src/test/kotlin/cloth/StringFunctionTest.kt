@@ -1,6 +1,8 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.SourceFile
 import cloth.emitter.*
 import cloth.emitter.types.EmitRuntimeError
 import cloth.lexer.Lexer
@@ -8,7 +10,8 @@ import cloth.parser.Parser
 import cloth.settings.LinkOptions
 import cloth.settings.RuntimeLinkage
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -18,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class StringFunctionTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("strings.co", source.trimIndent())).scanTokens()).parse()
 
 	@Test
@@ -198,8 +202,7 @@ class StringFunctionTest {
 	fun `string array boundaries emit and string type errors remain semantic`(@TempDir directory: Path) {
 		val output = directory.resolve("absent/object.o")
 		assertTrue(Files.size(LLVMEmitter().compileObject(parse("fn take(string[] args) {}"), output)) > 0)
-		for ((source, code) in listOf("fn<string> wrong() = 1" to DiagnosticCode.RETURN_TYPE,
-			"fn<string> wrong(final string value) { value = \"x\"\n return value }" to DiagnosticCode.IMMUTABLE_BINDING)) {
+		for ((source, code) in listOf("fn<string> wrong() = 1" to DiagnosticCode.RETURN_TYPE, "fn<string> wrong(final string value) { value = \"x\"\n return value }" to DiagnosticCode.IMMUTABLE_BINDING)) {
 			val failure = assertFailsWith<ClothDiagnostic> { LLVMEmitter().emit(parse(source)) }
 			assertEquals(code, failure.diagnosticCode)
 			assertLocated(failure)
@@ -409,18 +412,22 @@ class StringFunctionTest {
 				fun counter(label: String): LLVMValueRef = LLVMAddGlobal(module, integer, label).also {
 					LLVMSetInitializer(it, zero); LLVMSetLinkage(it, LLVMPrivateLinkage)
 				}
+
 				val outstanding = counter("outstanding")
 				val allocated = counter("allocations")
 				fun update(slot: LLVMValueRef, increment: Boolean) {
 					val current = LLVMBuildLoad2(builder, integer, slot, "count")
 					LLVMBuildStore(builder, if (increment) LLVMBuildAdd(builder, current, one, "increment") else LLVMBuildSub(builder, current, one, "decrement"), slot)
 				}
+
 				fun signature(result: LLVMTypeRef, parameter: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(1L).use {
 					it.put(0, parameter); LLVMFunctionType(result, it, 1, 0)
 				}
+
 				fun forward(type: LLVMTypeRef, function: LLVMValueRef, argument: LLVMValueRef, label: String): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use {
 					it.put(0, argument); LLVMBuildCall2(builder, type, function, it, 1, label)
 				}
+
 				val malloc = LLVMGetNamedFunction(module, "malloc")
 				LLVMSetValueName2(malloc, "test.allocate", 13)
 				LLVMSetLinkage(malloc, LLVMInternalLinkage)
@@ -469,9 +476,15 @@ class StringFunctionTest {
 				LLVMBuildRet(builder, LLVMBuildSelect(builder, success, zero, one, "status"))
 				emitter.verify(module)
 				emitter.emitObject(module, objectFile)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
-		try { NativeLinker.link(objectFile, executable, configuration) } finally { Files.deleteIfExists(objectFile) }
+		try {
+			NativeLinker.link(objectFile, executable, configuration)
+		} finally {
+			Files.deleteIfExists(objectFile)
+		}
 		if (failAllocation || oversizedResult) assertProgram(executable, 1, "Unable to allocate returned ${if (oversizedArray) "array" else "string"} storage" + System.lineSeparator()) else assertProgram(executable)
 	}
 
@@ -487,6 +500,8 @@ class StringFunctionTest {
 			val actual = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(status, process.exitValue(), actual)
 			assertEquals(output, actual)
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 }

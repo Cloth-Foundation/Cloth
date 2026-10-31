@@ -4,7 +4,9 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -189,8 +191,7 @@ class FunctionParsingTest {
 
 	@Test
 	fun `declaration entry rejects executable statements and unsupported declaration contexts`() {
-		for (source in listOf("10", "def x = 10", "return", "if (true) {}", "mt work() {}",
-			"fn work() { fn nested() {} }", "fn work() { mt nested() {} }", "fn work() {}\n10")) {
+		for (source in listOf("10", "def x = 10", "return", "if (true) {}", "mt work() {}", "fn work() { fn nested() {} }", "fn work() { mt nested() {} }", "fn work() {}\n10")) {
 			val failure = assertFailsWith<SyntaxException>(source) { parse(source) }
 			assertLocated(failure)
 		}
@@ -200,19 +201,7 @@ class FunctionParsingTest {
 
 	@Test
 	fun `malformed headers bodies returns and calls fail immediately with source diagnostics`() {
-		val malformed = listOf(
-			"fn", "pub", "pub pub fn work() {}", "fn<> work() {}", "fn<int work() {}",
-			"fn<int>> work() {}", "fn () {}", "fn work {}", "fn work(", "fn work()",
-			"fn work() := 10", "fn work() =", "fn work() {", "fn work(int) {}",
-			"fn work(final) {}", "fn work(final final int value) {}", "fn work(int final value) {}",
-			"fn work(def<int> value) {}", "fn work(int value = 1) {}", "fn work(int a int b) {}",
-			"fn work(int a,) {}", "fn work(,int a) {}", "fn work(string[ args) {}",
-			"fn work(string[x] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20",
-			"fn work() { return + }", "fn work() { return 1 return 2 }",
-			"fn work() = calculate(", "fn work() = calculate(1,)", "fn work() = calculate(,1)",
-			"fn work() = calculate(1 2)", "fn work() = calculate(1,,2)", "fn work() = calculate(1}",
-			"fn work() { calculate() calculate() }", "fn work() = return 1"
-		)
+		val malformed = listOf("fn", "pub", "pub pub fn work() {}", "fn<> work() {}", "fn<int work() {}", "fn<int>> work() {}", "fn () {}", "fn work {}", "fn work(", "fn work()", "fn work() := 10", "fn work() =", "fn work() {", "fn work(int) {}", "fn work(final) {}", "fn work(final final int value) {}", "fn work(int final value) {}", "fn work(def<int> value) {}", "fn work(int value = 1) {}", "fn work(int a int b) {}", "fn work(int a,) {}", "fn work(,int a) {}", "fn work(string[ args) {}", "fn work(string[x] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20", "fn work() { return + }", "fn work() { return 1 return 2 }", "fn work() = calculate(", "fn work() = calculate(1,)", "fn work() = calculate(,1)", "fn work() = calculate(1 2)", "fn work() = calculate(1,,2)", "fn work() = calculate(1}", "fn work() { calculate() calculate() }", "fn work() = return 1")
 		for (source in malformed) {
 			val failure = assertFailsWith<SyntaxException>(source) { parse(source) }
 			assertLocated(failure)
