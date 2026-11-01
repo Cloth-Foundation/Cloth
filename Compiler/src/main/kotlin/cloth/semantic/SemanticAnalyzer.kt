@@ -34,6 +34,16 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 
 			override fun statement(statement: Statement) {
 				when (statement) {
+					is BindingGroupDeclaration    -> {
+						val seen = mutableMapOf<String, Token>()
+						for (target in statement.targets) if (target is ReceivingTarget.Named) {
+							scopes.last()[target.token.lexeme]?.let { throw SemanticErrors.duplicate(target.token, it.declaration) }
+							seen.putIfAbsent(target.token.lexeme, target.token)?.let { throw SemanticErrors.duplicate(target.token, it) }
+						}
+						val plan = definitionPlan(statement)
+						for (slot in plan.slots) if (slot.target is ReceivingTarget.Named) scopes.last()[slot.target.token.lexeme] = Binding(slot.type, statement.mutable, slot.target.token)
+					}
+
 					is BindingDeclaration         -> {
 						scopes.last()[statement.name.lexeme]?.let { throw SemanticErrors.duplicate(statement.name, it.declaration) }
 						val declaredType = statement.type?.let { resolveType(it) }
@@ -52,15 +62,10 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 					}
 
 					is MultiAssignmentStatement   -> {
-						val targets = statement.names.map { name ->
-							lookup(name).also { if (!it.mutable) throw SemanticErrors.immutable(name, it.declaration) }
+						val targets = statement.targets.map { target ->
+							if (target is ReceivingTarget.Discard) null else lookup(target.token).also { if (!it.mutable) throw SemanticErrors.immutable(target.token, it.declaration) }
 						}
-						val actual = typeOf(statement.value, targets.first().type)
-						for ((name, binding) in statement.names.zip(targets)) {
-							checkType(binding.type, actual, name, statement.value, binding.declaration)
-						}
-						model.multiAssignmentTypes[statement] = targets.map { it.type }
-						model.statements[statement] = targets.first().type
+						assignmentPlan(statement, targets.map { it?.type }, targets.map { it?.declaration })
 					}
 
 					is UpdateStatement            -> {

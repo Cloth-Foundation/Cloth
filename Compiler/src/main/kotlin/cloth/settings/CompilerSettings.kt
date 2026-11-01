@@ -6,7 +6,9 @@ import java.io.File
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
-enum class OutputKind { EXECUTABLE, OBJECT }
+enum class OutputKind { EXECUTABLE,
+	OBJECT
+}
 
 class CompilerSettings(val args: Array<String>) {
 
@@ -90,7 +92,7 @@ class CompilerSettings(val args: Array<String>) {
 		targetTriple = selectedTarget
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Fib.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/MultiReturns.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 

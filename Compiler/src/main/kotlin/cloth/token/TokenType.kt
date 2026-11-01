@@ -2,11 +2,24 @@ package cloth.token
 
 enum class TokenType {
 
-	EOF, Unknown, NewLine,
+	EOF,
+	Unknown,
+	NewLine,
 
-	Identifier, Keyword, Operator,
+	Identifier,
+	Keyword,
+	Operator,
 
-	FloatingPointLiteral, IntegerLiteral, StringLiteral, RawStringLiteral, CharacterLiteral, InterpolationStart, StringSegment, InterpolationOpen, InterpolationClose, InterpolationEnd;
+	FloatingPointLiteral,
+	IntegerLiteral,
+	StringLiteral,
+	RawStringLiteral,
+	CharacterLiteral,
+	InterpolationStart,
+	StringSegment,
+	InterpolationOpen,
+	InterpolationClose,
+	InterpolationEnd;
 
 	override fun toString(): String {
 		return this.name

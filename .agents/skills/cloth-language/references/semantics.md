@@ -82,6 +82,47 @@ not the compiler's current feature coverage.
 - These function-contract decisions were confirmed by the user on 2026-10-30;
   they describe intended semantics, not implemented function support.
 
+## Multiple function and method results
+
+- On 2026-11-01 the user established the design direction of ordered multiple
+  return types, for example `fn<string, int> nameAndAge(string name, int age)`,
+  with `return name, age` returning the corresponding values. Multiple results
+  require destructuring at a receiving declaration rather than storing the
+  results together in one ordinary binding.
+- The supplied receiving forms are `def<string, int> name, age = nameAndAge(...)`
+  and `def name, age = nameAndAge(...)`, with explicit or inferred types for
+  the individual bindings. These forms now have syntax, semantic and native
+  execution support for implemented value types. Existing multiple-name
+  declarations receiving one result retain their separately confirmed once-total
+  evaluation and copy rules.
+- On 2026-11-01 the user chose `_` for discarded receiving positions. A
+  discarded position still appears in an explicit positional type list, as in
+  `def<string, int> name, _ = nameAndAge(...)`. The earlier `void` target
+  spelling was provisional and is superseded by this decision.
+- The user retained implicit returns after `=`: the shorthand is
+  `fn<string, int> nameAndAge(string name, int age) = name, age`. Brace bodies
+  use `return name, age`; no explicit `return` is added after `=`.
+- Multiple results also extend to value-producing conditional expressions.
+  The user's example is `def x, _ = if (true) { true, false } else { false, true }`.
+  Its branches supply two boolean results, enabling destructuring without a
+  function signature. This does not introduce return-type inference for an
+  unannotated `fn`, which continues to mean void.
+- Preserve existing single-result multiple-name definitions and assignments
+  alongside positional destructuring. Their distinction follows the RHS result
+  shape, rather than whether the RHS syntax is a function call or conditional.
+  Existing arithmetic compound assignments and updates also retain their rules.
+- Detailed rules for result evaluation/snapshot order, result forwarding,
+  destructuring assignment to existing bindings, and other uses of multiple
+  results remain design recommendations in the
+  [implementation plan](multi-return-implementation.md), not separately
+  confirmed decisions. All five implementation stages are complete: syntax parsing, ordered
+  producer/return typing, positional reception and native emission, including
+  the plan's whole-result forwarding, explicit discards and typed reception
+  plans, integration and documentation. Native execution is verified on Windows
+  x64/x86, with verified LLVM IR across all nine supported target profiles. See
+  development status for coverage, implementation choices and the remaining
+  unsupported-feature diagnostics.
+
 ## Function blocks
 
 - A typed binding may name a deferred, parameterless function block:
@@ -297,6 +338,21 @@ those result types for the supported primitives, arrays, strings and metadata.
 - `addr` is deferred and must remain unavailable in phase 3. Its address meaning,
   receiver forms, result type and lifetime contract require a separate design.
   The user confirmed this scope decision on 2026-10-31.
+- On 2026-11-01 the user accepted the design direction of explicit unsafe
+  acknowledgement for raw memory handles: `unsafe def memory = thing::addr`
+  may acquire a handle outside an unsafe block, while reading or writing through
+  it requires an unsafe context. Copying a handle must preserve its restrictions
+  and require acknowledgement; passing one to a native API also requires an
+  unsafe context. This is language design only; `addr` remains unimplemented.
+  The handle's type spelling, unsafe parameter contracts, escape and
+  lifetime rules, and the precise boundary with normal deletion guarantees
+  remain under discussion. The previously illustrated `read()` and `write()`
+  names and single-statement unsafe form are proposals, not settled syntax.
+- On 2026-11-01 the user confirmed that an `unsafe fn` makes its entire body
+  an unsafe context; memory operations inside it do not require nested unsafe
+  blocks. Calling an unsafe function requires an unsafe context, which may be
+  an unsafe block or another unsafe function's body. This settles the scope of
+  acknowledgement, not raw-handle parameter spelling or runtime memory safety.
 - On metadata describing an integer or floating-point type, `width` returns
   the bit width as `usize`. Reject access for other represented
   types at compile time when known; otherwise produce a controlled runtime

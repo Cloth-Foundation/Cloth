@@ -1,0 +1,44 @@
+fn<isize> main() {
+    def<string, int> name, age = nameAndAge("Mike", 25)
+    def name1, age1 := forwarded("Sarah", 26)
+    def<string, int> name2, _ = nameAndAge("John", 31)
+    def _, age2 = nameAndAge("Bill", 14)
+    if (name != "Mike" || age != 25 || name1 != "Sarah" || age1 != 26) { return 1 }
+    if (name2 != "John" || age2 != 14) { return 2 }
+
+    // Conditional expressions can also produce multiple results.
+    def x, _ = if (true) { true, false } else { false, true }
+    if (!x) { return 3 }
+
+    // Existing bindings receive results after the whole RHS is evaluated.
+    name, age = forwarded("Cloth", 7)
+    age += 1
+    if (name != "Cloth" || age != 8) { return 4 }
+    def left, right = 1, 2
+    left, right = right, left
+    if (left != 2 || right != 1) { return 5 }
+
+    // One-result producers still broadcast once to all receiving names.
+    def count = 0
+    def<int> next = { count += 1
+        return count }
+    def first, second = next
+    first++
+    if (count != 1 || first != 2 || second != 1) { return 6 }
+
+    // Each array result is an independent value, even with the same source.
+    def source = [1, 2]
+    def a, b := source, source
+    a[0] = 99
+    if (source[0] != 1 || b[0] != 1) { return 7 }
+
+    println(#"{name}: {age}")
+    return 0
+}
+
+// Multiple results bind by position; '_' discards a result without skipping it.
+fn<string, int> nameAndAge(string name, int age) = name, age
+
+fn<string, int> forwarded(string name, int age) {
+    return nameAndAge(name, age)
+}

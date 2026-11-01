@@ -28,6 +28,14 @@ boilerplate or silently inventing additional shorthand.
 - Read [development status](references/development.md) when working on the
   compiler, assessing support, or deciding what work comes next. Recheck relevant
   source before relying on its implementation snapshot.
+- For multi-return functions, positional destructuring, `_` discards, or
+  multi-result conditionals, read the
+  [implementation plan](references/multi-return-implementation.md). It separates
+  confirmed direction from implementation details. All five stages are complete:
+  syntax, ordered result typing, positional reception and native multiple-result
+  emission, with native Windows x64/x86 integration and verified IR across the
+  nine supported target profiles. Preserve that coverage and the documented
+  boundaries when extending the implementation.
 - For `usize`, target-sized counts, or migration of compiler data result types,
   read the [staged implementation plan](references/usize-implementation.md).
   The implemented contracts use exact target-sized usize results and native

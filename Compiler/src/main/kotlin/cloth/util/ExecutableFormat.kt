@@ -5,7 +5,9 @@ import cloth.diagnostics.ToolchainErrors
 import java.nio.file.Path
 import java.util.*
 
-enum class ExecutableFormat(val extension: String) { PE(".exe"), ELF(""), MACH_O("");
+enum class ExecutableFormat(val extension: String) { PE(".exe"),
+	ELF(""),
+	MACH_O("");
 
 	fun executablePath(path: Path): Path {
 		val name = path.fileName?.toString() ?: throw CliErrors.path(path.toString())

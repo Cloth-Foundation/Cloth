@@ -384,6 +384,44 @@ class StringFunctionTest {
 		""")
 	}
 
+	@Test
+	fun `multiple buffered return positions survive recursion and release every poisoned allocation`(@TempDir directory: Path) {
+		instrumented(directory, "multi_result_cleanup", """
+			fn<string[][], string[][], string> pair(int depth) {
+			    if (depth == 0) {
+			        def source = [[#"value {depth}"], ["é中😀"]]
+			        return source, source, #"text {depth}"
+			    }
+			    def a, b, text = pair(depth - 1)
+			    a[0][0] = a[0][0] + "!"
+			    return a, b, #"text {depth}"
+			}
+			fn discard() = pair(2) -> void
+			fn<bool> test() {
+			    def a, b, text = pair(3)
+			    if (a[0][0] != "value 0!!!" || b[0][0] != "value 0" || text != "text 3") { return false }
+			    a[0][0] = "changed"
+			    if (b[0][0] != "value 0" || b[1][0] != "é中😀") { return false }
+			    pair(1)
+			    def _, _, _ = pair(2)
+			    _, _, _ = pair(3)
+			    discard()
+			    return true
+			}
+		""")
+	}
+
+	@Test
+	fun `allocation failure in a discarded result stops before later result effects`(@TempDir directory: Path) {
+		instrumented(directory, "multi_result_null", """
+			fn<int> later() { print("later")
+			    return 1 }
+			fn<string, int> pair() = "Cloth", later()
+			fn<bool> test() { def _, _ = pair()
+			    return true }
+		""", failAllocation = true)
+	}
+
 	/** Replace only the module's native allocation imports with counted test wrappers.
 	 * Observe the heap after test() returns, independently of the generated cleanup shape.
 	 */

@@ -12,6 +12,7 @@ import cloth.parser.statement.*
 import cloth.parser.subs.DelimitedParser
 import cloth.parser.subs.ExpressionParser
 import cloth.parser.subs.TypeParser
+import cloth.parser.type.TypeReference
 import cloth.token.*
 
 class Parser(private val tokens: List<Token>) {
@@ -59,9 +60,7 @@ class Parser(private val tokens: List<Token>) {
 		val visibility = if (atKeyword(Keywords.PUBLIC)) advance() else null
 		if (!atKeyword(Keywords.FUNCTION)) throw SyntaxErrors.expected("a 'fn' declaration", peek())
 		val keyword = advance()
-		val returnType = if (peek().lexeme == Operators.LESS.character) {
-			delimited.angles { typeParser.parse(allowArrays = true) }
-		} else null
+		val returnTypes = parseTypeList()
 		val name = expect(TokenType.Identifier, "a function name")
 		val parameters = delimited.parentheses {
 			delimited.commaSeparated(Operators.PAREN_CLOSE) {
@@ -78,13 +77,13 @@ class Parser(private val tokens: List<Token>) {
 				Operators.BRACE_OPEN.character -> parseBlock()
 				Operators.ASSIGN.character     -> {
 					val equals = advance()
-					val expression = expressionParser.parseExpression()
+					val expression = parseResults()
 					ExpressionBody(equals, expression, equals.span.through(previous().span))
 				}
 
 				else                           -> throw SyntaxErrors.expected("a function body ('{' or '=')", peek())
 			}
-			return FunctionDeclaration(keyword, name, returnType, parameters, body, visibility)
+			return FunctionDeclaration(keyword, name, returnTypes, parameters, body, visibility)
 		} finally {
 			inFunctionBody = previousContext
 		}
@@ -157,18 +156,18 @@ class Parser(private val tokens: List<Token>) {
 			if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
 			val keyword = advance()
 			val bare = peek().type in setOf(TokenType.NewLine, TokenType.EOF) || peek().lexeme == Operators.BRACE_CLOSE.character
-			val value = if (bare) null else expressionParser.parseExpression()
+			val value = if (bare) null else parseResults()
 			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 		}
-		if (peek().type == TokenType.Identifier && peek(1).lexeme == Operators.COMMA.character) {
-			val names = mutableListOf(advance())
+		if (startsAssignmentList()) {
+			val targets = mutableListOf(ReceivingTarget.of(advance()))
 			while (peek().lexeme == Operators.COMMA.character) {
 				advance()
-				names.add(expect(TokenType.Identifier, "an assignment target name"))
+				targets.add(parseReceivingTarget())
 			}
 			if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
 			expect(Operators.ASSIGN)
-			return MultiAssignmentStatement(names, expressionParser.parseExpression())
+			return MultiAssignmentStatement(targets, parseResults())
 		}
 		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
@@ -178,7 +177,7 @@ class Parser(private val tokens: List<Token>) {
 			val operator = advance()
 			val update = operator.lexeme in setOf(Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
 			if (update) return UpdateStatement(name, operator)
-			val right = expressionParser.parseExpression()
+			val right = if (operator.lexeme == Operators.ASSIGN.character) parseResults() else expressionParser.parseExpression()
 			// Local binding targets have no evaluation side effects. Reuse ordinary
 			// arithmetic and assignment checks, including exact result-type matching.
 			val value = if (operator.lexeme == Operators.ASSIGN.character) right else {
@@ -186,6 +185,7 @@ class Parser(private val tokens: List<Token>) {
 			}
 			return AssignmentStatement(name, value)
 		}
+		val expressionStart = peek().span
 		val expression = expressionParser.parseExpression(stopAtAssignment = true)
 		if (expression is ProviderAccessExpression && (peek().lexeme in assignmentOperators || peek().lexeme == Operators.FINAL_ASSIGN.character)) {
 			throw SyntaxErrors.readOnlyProvider(expression.name)
@@ -194,20 +194,65 @@ class Parser(private val tokens: List<Token>) {
 		if (peek().lexeme == Operators.ASSIGN.character) {
 			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
 			advance()
-			return ElementAssignmentStatement(expression, expressionParser.parseExpression())
+			return ElementAssignmentStatement(expression, parseResults())
 		}
-		return ExpressionStatement(expression)
+		return ExpressionStatement(parseResults(expression, expressionStart))
 	}
 
-	private fun parseBindings(): List<BindingDeclaration> {
-		val keyword = advance() // def
-		val type = if (peek().type == TokenType.Operator && peek().lexeme == Operators.LESS.character) {
-			delimited.angles { typeParser.parse(allowArrays = true) }
-		} else null
-		val names = mutableListOf(expect(TokenType.Identifier, "a binding name"))
+	/** An identifier result list is an assignment only when followed by '=' or ':='. */
+	private fun startsAssignmentList(): Boolean {
+		if (!isReceivingTarget(peek())) return false
+		var offset = 1
+		while (peek(offset).lexeme == Operators.COMMA.character) {
+			if (!isReceivingTarget(peek(offset + 1))) return false
+			offset += 2
+		}
+		return (offset > 1 || peek().lexeme == "_") && peek(offset).lexeme in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)
+	}
+
+	private fun isReceivingTarget(token: Token) = token.type == TokenType.Identifier || (token.type == TokenType.Operator && token.lexeme == Operators.UNDERSCORE.character)
+
+	private fun parseReceivingTarget(): ReceivingTarget {
+		if (!isReceivingTarget(peek())) throw SyntaxErrors.expected("a binding or assignment target name or '_'", peek())
+		return ReceivingTarget.of(advance())
+	}
+
+	/** Only callers at result-producing boundaries opt into comma-separated results. */
+	private fun parseResults(first: Expression? = null, start: TokenSpan = first?.span ?: peek().span): Expression {
+		val initial = first ?: expressionParser.parseExpression()
+		if (peek().lexeme != Operators.COMMA.character) return initial
+		val values = mutableListOf(initial)
 		while (peek().lexeme == Operators.COMMA.character) {
 			advance()
-			names.add(expect(TokenType.Identifier, "a binding name"))
+			skipNewlines()
+			values.add(expressionParser.parseExpression())
+		}
+		return ResultListExpression(values, start.through(previous().span))
+	}
+
+	private fun parseTypeList(): List<TypeReference> {
+		if (peek().lexeme != Operators.LESS.character) return emptyList()
+		return delimited.angles {
+			skipNewlines()
+			val types = mutableListOf(typeParser.parse(allowArrays = true))
+			skipNewlines()
+			while (peek().lexeme == Operators.COMMA.character) {
+				advance()
+				skipNewlines()
+				types.add(typeParser.parse(allowArrays = true))
+				skipNewlines()
+			}
+			types
+		}
+	}
+
+	private fun parseBindings(): List<Statement> {
+		val keyword = advance() // def
+		val types = parseTypeList()
+		val targets = mutableListOf(parseReceivingTarget())
+		while (peek().lexeme == Operators.COMMA.character) {
+			advance()
+			targets.add(parseReceivingTarget())
 		}
 		val assignment = peek()
 		if (assignment.type != TokenType.Operator || assignment.lexeme !in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)) {
@@ -216,23 +261,28 @@ class Parser(private val tokens: List<Token>) {
 		advance()
 		val initializerStart = currentIndex
 		val block = peek().lexeme == Operators.BRACE_OPEN.character
-		return names.mapIndexed { index, name ->
-			// Ordinary initializers execute once. Later bindings copy the first
-			// stored value through the existing scalar/array assignment machinery.
-			// Function blocks declare deferred computations instead of stored values;
-			// give each its own body and syntax identities, without executing it.
-			val initializer = if (index > 0 && !block) NameExpression(names.first()) else if (block) {
+		val type = types.singleOrNull()
+		// Existing multiple-name function blocks are independent deferred computations.
+		// Reparse each body so their symbols and analysis facts keep separate identities.
+		if (block && types.size <= 1 && targets.all { it is ReceivingTarget.Named }) {
+			return targets.map { target ->
 				currentIndex = initializerStart
 				val previousContext = inFunctionBody
 				inFunctionBody = true
-				try {
-					FunctionBlockExpression(FunctionDeclaration(keyword, name, type, emptyList(), parseBlock()))
+				val initializer = try {
+					FunctionBlockExpression(FunctionDeclaration(keyword, target.token, types, emptyList(), parseBlock()))
 				} finally {
 					inFunctionBody = previousContext
 				}
-			} else expressionParser.parseExpression()
-			BindingDeclaration(type, name, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(previous().span))
+				BindingDeclaration(type, target.token, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(previous().span))
+			}
 		}
+		val initializer = if (block) FunctionBlockExpression(FunctionDeclaration(keyword, targets.first().token, types, emptyList(), parseBlock())) else parseResults()
+		val span = keyword.span.through(previous().span)
+		val mutable = assignment.lexeme == Operators.ASSIGN.character
+		return listOf(if (targets.size == 1 && targets.single() is ReceivingTarget.Named && types.size <= 1) {
+			BindingDeclaration(type, targets.single().token, initializer, mutable, span)
+		} else BindingGroupDeclaration(types, targets, initializer, mutable, span))
 	}
 
 	fun expect(type: TokenType, description: String): Token {

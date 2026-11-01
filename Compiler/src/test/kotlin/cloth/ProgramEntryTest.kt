@@ -1,7 +1,7 @@
 package cloth
 
-import cloth.data.CInt
 import cloth.data.CISize
+import cloth.data.CInt
 import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
@@ -120,10 +120,7 @@ class ProgramEntryTest {
 		val native = NativeCABI.native()
 		val targets = if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
 		for (abi in targets) {
-			val expressions = listOf("0" to 0, "-2" to -2, "int<64>::size -> isize" to 8, "-2147483648" to Int.MIN_VALUE,
-				"isize::min" to if (abi.layout.sizeBits == 64) 0 else Int.MIN_VALUE,
-				"isize::max" to if (abi.layout.sizeBits == 64) -1 else Int.MAX_VALUE) +
-				if (abi.layout.sizeBits == 64) listOf("2147483648" to Int.MIN_VALUE, "4294967303" to 7, "-4294967303" to -7) else emptyList()
+			val expressions = listOf("0" to 0, "-2" to -2, "int<64>::size -> isize" to 8, "-2147483648" to Int.MIN_VALUE, "isize::min" to if (abi.layout.sizeBits == 64) 0 else Int.MIN_VALUE, "isize::max" to if (abi.layout.sizeBits == 64) -1 else Int.MAX_VALUE) + if (abi.layout.sizeBits == 64) listOf("2147483648" to Int.MIN_VALUE, "4294967303" to 7, "-4294967303" to -7) else emptyList()
 			for ((index, pair) in expressions.withIndex()) for ((form, parameters) in listOf("", "string[] args").withIndex()) {
 				val value = if (parameters.isEmpty()) pair.first else "if (args::size == 2 && args[0] == \"é😀\" && args[1] == \"\") { ${pair.first} } else { 99 }"
 				val source = if (form == 0) "fn<isize> main() = $value" else "fn<isize> main($parameters) { return $value }"

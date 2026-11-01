@@ -198,7 +198,9 @@ class ExpressionParser(val parser: Parser) {
 		private const val TYPE_CHECK_PRECEDENCE = 7
 		private const val POWER_PRECEDENCE = 30
 
-		enum class Associativity { LEFT, RIGHT }
+		enum class Associativity { LEFT,
+			RIGHT
+		}
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 

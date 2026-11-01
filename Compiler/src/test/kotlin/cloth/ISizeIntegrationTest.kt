@@ -15,7 +15,10 @@ import java.math.BigInteger
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ISizeIntegrationTest {
 
@@ -203,9 +206,9 @@ class ISizeIntegrationTest {
 			val status = if (name == "Builtins" && abi.layout.sizeBits == 64) 1 else 0
 			val actual = run(executable, status = status)
 			when (name) {
-				"ISize" -> assertEquals("isize${System.lineSeparator()}${abi.layout.sizeBits}${System.lineSeparator()}-1${System.lineSeparator()}" + processCompletion(), actual)
+				"ISize"    -> assertEquals("isize${System.lineSeparator()}${abi.layout.sizeBits}${System.lineSeparator()}-1${System.lineSeparator()}" + processCompletion(), actual)
 				"Builtins" -> assertTrue(actual.startsWith("Hello, Cloth!"), actual)
-				"Fib" -> assertContains(actual, "Fibonacci Series (25 terms):")
+				"Fib"      -> assertContains(actual, "Fibonacci Series (25 terms):")
 			}
 			assertTrue(actual.endsWith(processCompletion(status)), actual)
 		}

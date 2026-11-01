@@ -42,6 +42,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 		memo[expression]?.let { return it }
 		if (!active.add(expression)) return unknown
 		val result = when (expression) {
+			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any { it is CArray })) { result, value -> result + effects(value) }
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Effects()
 			is NameExpression                                                                                    -> {
 				val symbol = functions?.declarations?.symbolOf(expression)
@@ -55,7 +56,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 					val selected = functions.selectedCall(expression)
 					if (selected is ResolvedCall.Builtin) unknown else {
 						val type = selected.type
-						expression.arguments.fold(Effects(type.returns is CArray || type.parameters.any { it is CArray })) { result, argument -> result + effects(argument) }
+						expression.arguments.fold(Effects(type.results.values.any { it is CArray } || type.parameters.any { it is CArray })) { result, argument -> result + effects(argument) }
 					}
 				}
 			}
@@ -70,7 +71,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is CastExpression                                                                                    -> effects(expression.operand)
 			is TypeCheckExpression                                                                               -> effects(expression.operand)
 			is InterpolatedString                                                                                -> expression.parts.fold(Effects()) { result, part -> result + effects(part) }
-			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.typeOf(expression) is CArray)) { result, branch ->
+			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any { it is CArray })) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())
 

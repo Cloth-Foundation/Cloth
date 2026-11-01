@@ -9,7 +9,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.BindingGroupDeclaration
 import cloth.semantic.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -44,11 +44,13 @@ class MultiBindingsTest {
 	@Test
 	fun `all names infer int and retain ordinary mutability`() {
 		val unit = parse("fn test() { def x, y, z = 10 }")
-		val declarations = ((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.map { assertIs<BindingDeclaration>(it) }
-		assertEquals(listOf("x", "y", "z"), declarations.map { it.name.lexeme })
+		val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
+		assertEquals(listOf("x", "y", "z"), group.targets.map { it.token.lexeme })
 		val model = FunctionAnalyzer().analyze(unit)
+		val declarations = model.declarations.symbolsOf(group).filterNotNull()
+		assertEquals(listOf("x", "y", "z"), declarations.map { it.name.lexeme })
 		for (declaration in declarations) {
-			assertNull(declaration.type)
+			assertNull(declaration.declaredType)
 			assertTrue(declaration.mutable)
 			assertEquals(ValueType.INT, model.typeOf(declaration))
 		}
@@ -59,8 +61,9 @@ class MultiBindingsTest {
 	fun `other initializer types propagate to every name`() {
 		for (initializer in listOf("1.5", "true", "'a'", "\"hello\"", "[1, 2]", "int<64>::type")) {
 			val unit = parse("fn test() { def x, y, z = $initializer }")
-			val declarations = ((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements
+			val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
 			val model = FunctionAnalyzer().analyze(unit)
+			val declarations = model.declarations.symbolsOf(group).filterNotNull()
 			val first = model.typeOf(declarations.first())
 			for (declaration in declarations) assertEquals(first, model.typeOf(declaration))
 		}
@@ -70,8 +73,9 @@ class MultiBindingsTest {
 	fun `annotations and immutable assignment apply to every name`() {
 		for (assignment in listOf("=", ":=")) {
 			val unit = parse("fn test() { def<unsigned int<8>> x, y, z $assignment 255 }")
-			val declarations = ((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.map { it as BindingDeclaration }
+			val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
 			val model = FunctionAnalyzer().analyze(unit)
+			val declarations = model.declarations.symbolsOf(group).filterNotNull()
 			for (declaration in declarations) {
 				assertEquals(assignment == "=", declaration.mutable)
 				assertEquals("unsigned int<8>", model.typeOf(declaration).spelling)
@@ -96,8 +100,8 @@ class MultiBindingsTest {
 	}
 
 	@Test
-	fun `malformed lists and multiple initializers fail at the first syntax error`() {
-		for (declaration in listOf("def , x = 10", "def x, = 10", "def x,,y = 10", "def x, y", "def x, y =", "def x, y = 1, 2", "def x, y = 1 def z = 2")) {
+	fun `malformed lists fail at the first syntax error`() {
+		for (declaration in listOf("def , x = 10", "def x, = 10", "def x,,y = 10", "def x, y", "def x, y =", "def x, y = 1 def z = 2")) {
 			assertFailsWith<ClothDiagnostic>(declaration) { parse("fn test() { $declaration }") }
 		}
 	}

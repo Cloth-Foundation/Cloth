@@ -2,6 +2,285 @@
 
 ## Current work
 
+### Multi-return final review: discarded array constraints (2026-11-01)
+
+The final source audit found one runtime validation gap: an explicitly typed
+discard such as `def<int[2], bool> _, ready = pair()` could accept a dynamically
+sized one-element array. Named positions enforced their receiving extents, but
+discarded positions skipped those guards; an all-discard declaration bypassed
+receiving constraints altogether. This also affected scalar broadcast discards
+such as `def<int[2]> _ = array()`.
+
+`EmitStatement` now validates discarded positional array extents alongside named
+positions before creating bindings. `EmitExpression` validates all-discard
+receiving plans before releasing producer temporaries, without allocating discard
+storage or copying discarded arrays. Producer evaluation remains once-total,
+and the existing conservative lifetime for captured publishing writes remains.
+
+`MultiReturnReviewTest` adds five regressions: mismatching discarded first/last/
+all positions, scalar broadcasts and nested dimensions; valid constraints with
+captured writes; all arithmetic compound assignments and updates on received
+values; rejection of result groups in scalar compound operations; and runtime
+division/remainder guards. Native checks reuse each AST on Windows x64/x86.
+Compound tests include reading the old target before an RHS destructuring write,
+once-only deferred effects, Unicode string snapshots, half arithmetic, unsigned
+wrapping, isize arithmetic, scopes and broadcast independence. The initial
+four-test run reproduced the discarded-shape defect; after the fix, the focused
+seven-suite assignment/lifetime run passed all 88 tests, zero failures/errors/skips.
+
+The full `gradlew.bat :Compiler:test --offline --console=plain` run then passed
+all 721 tests across 55 suites, zero failures/errors/skips. Additional explicit
+discard constraints were added to the existing poisoned-buffer cleanup probes:
+pure scalar/mixed producers still release all temporary bytes before the next
+statement, while captured publishing writes preserve live buffers. The final
+`MultiReturnReviewTest`/`ArrayTemporaryCleanupTest` run passed all 21 tests across
+two suites, zero failures/errors/skips. Whitespace checks and 50 local Markdown
+links passed. No compound-assignment regression or further actionable defect was
+found within this review's covered behavior. Foreign coverage remains verified
+IR for the supported profiles; native execution coverage is Windows x64/x86.
+
+### Multi-return stage 5: final integration and documentation (2026-11-01)
+
+`examples/MultiReturns.co` is the runnable name/age example, covering explicit
+and inferred receiving types, `_`, conditional results, mutable/immutable
+bindings, positional reassignment/swaps, compound updates, once-total scalar
+broadcasts and independent array values. The user's provisional spellings in
+`examples/Test.co` now use `_` and implicit `=` returns, preserving the rest of
+the broader intended-design example. `Test.co` still includes unrelated language
+features outside the compiler's current execution coverage. README documents the
+implemented contract, runnable commands, value lifetimes and remaining boundaries.
+
+`MultiReturnIntegrationTest` adds five integration cases. One parsed program runs
+on Windows x64, x86 and x64 again, checking PE machine headers, runtime target
+width, Unicode arguments, mixed half/bool/usize/isize/metadata/string-array
+results, recursive buffer copies, captured mutations, conditional literal
+contexts, broadcast/destructuring effects, short-circuit skipping, scopes and
+metadata swaps. Another reuses parsed source across all nine canonical existing
+triples: Windows x86/x64/ARM64 MSVC, Linux x64/ARM64 GNU and musl, and macOS
+x64/ARM64. Each module is LLVM-verified with its target triple, carrier widths,
+half decoding, boolean storage, aggregate phis, recursive copies and shape guards.
+These are IR checks for foreign targets, not native Linux/macOS execution or
+additional target/ABI support.
+
+CLI fixtures check 13 failure categories through executable/object modes on both
+native widths (50 failing invocations; the entry-only main restriction does not
+apply in object mode). Each reports one expected located diagnostic before any
+output directory or missing-linker work. The runnable example compiles/executes
+through the CLI and also emits objects at both widths, printing `Cloth: 8` and
+PEC: 0. Four runtime failure fixtures run at both widths, checking once-only
+earlier effects, skipped later effects, array shape/index guards and invalid
+target-sized casts, without normal PEC output.
+
+The five focused multi-return suites passed all 70 tests, zero failures/errors/
+skips. The full `gradlew.bat :Compiler:test --offline --console=plain` run passed
+all 716 tests across 54 suites, zero failures/errors/skips. Changed/new-file
+whitespace checks and 50 local Markdown links passed. All five multi-return
+stages are complete within the plan's documented boundaries. Stage 5 adds
+integration tests, examples and documentation; no additional compiler runtime
+changes were needed.
+
+### Multi-return stage 4: native transport, snapshots and lifetime preservation (2026-11-01)
+
+`EmitResults` represents multiple results as an internal LLVM aggregate of ordered
+per-position ABI types. Single-result and void layouts remain unchanged. Half
+results use raw i16 fields at the aggregate/function boundary and decode to
+ordinary half values on reception; booleans, numeric signedness/width identities,
+characters, metadata and target-sized integers retain existing value rules. This
+does not introduce a source tuple type, tuple storage or a foreign C aggregate ABI.
+
+`EmitFunctions` declares ordered result carriers and supplies a caller arena when
+any position is buffered. `EmitFunctionFrame` joins encoded result carriers,
+copies each outgoing string/array into that caller's arena, then releases the
+callee frame. Copies recurse through nested arrays and string elements, keeping
+result positions independent even when their sources alias. Whole-result
+forwarding, direct/mutual recursion, early returns and mixed buffered/scalar
+results use the same boundary.
+
+Result lists evaluate and snapshot each position before evaluating the next.
+Strings copy conservatively; arrays retain the existing one-use transfer proof
+or recursively copy. Carrier ownership is tracked separately from scalar array
+freshness, consumed on extraction and reset with temporary checkpoints. Value
+conditionals merge carriers using actual continuing predecessor blocks; branches
+that return contribute no incoming value. Native reception prepares every
+positional RHS snapshot before any binding/write and then stores named targets
+in source order. Discards execute and validate their producers but own no binding
+storage. Scalar broadcasts retain their existing semantics and copy behavior.
+
+Temporary analysis now understands result lists and multiple-result calls/ifs.
+Safe all-discard calls can release their buffers before the next statement;
+captured writes keep the conservative frame lifetime so published arrays stay
+alive. Non-continuing lists fall back to frame cleanup after outgoing values
+have been copied. The C4030 stage gate for valid result-list/multiple-result
+emission is removed across source, object and snippet paths. Existing semantic
+and unsupported-type checks still run before emission. C3053 remains for the
+separately unresolved multiple-result/discard function-block declarations.
+
+`MultiReturnEmissionTest` adds eight native cases covering the user's examples,
+swaps, repeated destinations, snapshots before captured mutations, nested buffer
+recursion/forwarding, runtime conditional merges, half/bool/numeric/char/metadata
+ABI fields, early/partial-list returns, mutual recursion and controlled runtime
+failures. Mixed carriers and nested buffered recursion execute on Windows x64
+and x86. Two new `StringFunctionTest` probes count allocations and poison freed
+buffers to check recursive multi-result lifetime/balance and an allocation failure
+that must skip later result effects. Two `ArrayTemporaryCleanupTest` probes check
+immediate all-discard cleanup and captured writes that must retain buffers.
+Prior stage-boundary tests now check successful source/object/snippet emission.
+The focused six-suite run passed all 108 tests, zero failures/errors/skips.
+
+The full `gradlew.bat :Compiler:test --offline --console=plain` run passed all
+711 tests across 53 suites, zero failures/errors/skips. Changed/new-file whitespace
+and 44 local Markdown links passed. Native execution coverage is Windows x64/x86;
+the final integration/foreign-target matrix and runnable example remain stage 5.
+
+### Multi-return stage 3: reception plans, discards and broadcast compatibility (2026-11-01)
+
+Grouped declarations and assignment lists now record a `ReceptionPlan` from the
+typed RHS: scalar broadcast, positional results, or non-continuation. Each slot
+retains its original target, checked/inferred type and source result index.
+Positional plans require snapshots of all RHS results before any destination
+write; actual positional native emission remains stage 4. Metadata assignment
+already snapshots all positional facts before source-ordered target updates.
+
+`DeclarationAnalyzer` resolves the complete producer in the enclosing scope
+before declaring any receiving name. Named positions have stable `GroupLocalSymbol`
+identities. Discards have no symbol or local storage and may repeat. Duplicate
+names, parameter collisions, ordinary shadowing, mutability, fixed types, inferred
+array extents and subsequent assignment-shape rules remain checked. Receiving
+lists never copy through the first binding or depend on a discarded first slot.
+The scalar compatibility expansion and its synthetic binding ASTs were removed.
+
+`ExpressionTyping` shares reception checking between source functions and legacy
+snippets. Separate scalar and positional contexts preserve one exact scalar
+type for broadcast assignments and independent literal contexts for positional
+assignments, without fake wildcard value types. Calls still select overloads
+from arguments, independently of the receiver. Per-position metadata facts flow
+into receiving bindings and through swaps; repeated destinations receive writes
+in source order, so the last slot supplies their final metadata fact. Reception
+plans join the semantic facts copied through overload probes/commits.
+
+Stage 3 implements the plan's defaults: a single annotation is shared only by
+scalar broadcast; explicitly typed multiple results require a complete positional
+type list. Scalar broadcasts may include discards, with the first named assignment
+target supplying their shared context. Repeated assignment destinations are
+allowed and retain source order after all positional snapshots. These choices
+describe implementation policy, not additional separately confirmed user syntax.
+C3057 reports receiving arity mismatch; C3058 reports invalid annotation lists.
+Discarded annotated positions retain type/range/shape checks. Void cannot supply
+a receiving value. C3053 remains only for unresolved multiple-result/discard
+function-block declaration combinations; existing independent scalar blocks stay
+deferred and preserve separate syntax identities.
+
+The scalar emitter now consumes broadcast plans directly: evaluate once, skip
+discard storage, and copy arrays independently into named bindings. Native
+multiple-result reception remains guarded by C4030 before output creation,
+including source/object and snippet emission paths. `DestructuringTest` adds 23
+cases covering positional functions/conditionals, typed/inferred/discard lists,
+arity/type/range errors, scopes, mutability, swaps/repeated targets, array shapes,
+metadata snapshots, non-continuation, overload transactions, target-width reuse,
+and backend boundaries. A native scalar broadcast test executes on Windows x64
+and x86, proving once-total effects, independent copies, discarded first/all
+positions, no `_` local alloca, and non-continuing producers. The seven-suite
+focused run passed 128 tests, zero failures/errors/skips.
+
+The full `gradlew.bat :Compiler:test --offline --console=plain` run passed all
+699 tests across 52 suites, zero failures/errors/skips. Changed/new-file whitespace
+and 44 local Markdown links passed. Native scalar broadcast execution is verified
+on Windows x64/x86; positional reception is verified semantically and through
+metadata plans, with explicit rejection before native emission until stage 4.
+
+### Multi-return stage 2: result contracts, conditional typing and flow (2026-11-01)
+
+`ResultShape` distinguishes no results, one ordinary value, multiple ordered
+values, and non-continuation without adding a tuple `ValueType` or tuple storage.
+`FunctionType.results`, `SemanticModel.resultOf`, and function-model result APIs
+retain full ordered contracts and expression/statement result facts. Scalar
+helpers reject multiple results rather than selecting the first slot. Overload
+forks/commits retain result and per-position metadata facts.
+
+Function analysis resolves all return annotations, contextually checks integer
+literals per position, validates exact result count/type and completion, and
+supports complete-result forwarding through explicit or implicit returns. Void
+still means no results; void positions in a multiple-result annotation are
+rejected. Unannotated functions remain void. Return type/count does not change
+overload identity or parameter-based selection. Floating return literals retain
+their existing rules; no implicit width changes were introduced.
+
+Value-producing conditionals merge continuing results by count and position,
+using ordinary scalar and array compatibility rules. Terminating branches do
+not provide merge values. All source is still checked, including skipped branch
+bodies and later result positions. Producer inference works independently of
+a receiving declaration or function return annotation. Standalone calls and
+`-> void` can semantically discard all results. Metadata traversal follows
+each produced position, retaining represented-type facts separately from the
+carrier and conservatively merging facts from executable continuing paths.
+
+C3054 reports return-count mismatch, C3055 multiple results in a scalar context,
+and C3056 incompatible conditional result counts. Existing scalar return and
+branch diagnostics retain their codes; positional return mismatches label the
+offending result and its annotation. Executable main still rejects multiple
+results with C3037; library main remains an ordinary function.
+
+Reception remains stage 3: explicit positional/discard forms receive C3053;
+inferred ordinary groups still use the scalar-broadcast bridge and reject a
+multiple-result RHS with C3055. Native multi-result emission remains stage 4:
+valid producers receive C4030 before LLVM emission/output creation, including
+discarded or non-continuing result-list syntax. Scalar native layouts remain.
+
+`MultiReturnTypingTest` adds 21 cases covering ordered contracts, contextual
+integer widths and strict floating/typed results, arity/type/void diagnostics,
+independent conditional inference, recursive forwarding, overload selection,
+termination, scalar misuse, arrays, positional metadata and invalid metadata
+in ignored results, overload fact transactions, target-width reuse, main policy,
+and rejection before native output. Stage 1 parser assertions now distinguish
+the remaining reception boundary from supported producer typing. The focused
+seven-suite run passed all 137 tests, zero failures/errors/skips.
+
+The full `gradlew.bat :Compiler:test --offline --console=plain` run passed all
+676 tests across 51 suites, zero failures/errors/skips. Changed-file/new-file
+whitespace and 44 local Markdown links passed. Existing native Windows x64/x86
+regressions remain green; new multiple-result coverage is semantic and native
+preflight rejection, with actual multi-result execution still pending stage 4.
+
+### Multi-return stage 1: syntax and retained receiving groups (2026-11-01)
+
+The user confirmed `_` receiving-position discards and implicit return lists
+after `=`, and extended the intended design to multi-result conditionals such
+as `def x, _ = if (true) { true, false } else { false, true }`. Existing scalar
+broadcast definitions/assignments and arithmetic compound assignments must
+remain available. The [five-stage plan](multi-return-implementation.md) records
+the audited parser/semantic/emission changes, recommended additional contracts,
+verification gates, and unresolved choices. Stage 1 is implemented; later stages
+remain pending.
+
+Function annotations retain ordered return-type references. A result-list AST
+node handles implicit/explicit returns, receiving RHSs and conditional tails;
+named/discard targets and stored receiving groups keep their original source
+tokens. Assignment-list lookahead distinguishes named branch results from actual
+assignment syntax. Calls, arrays, indexing, interpolation and nested type widths
+retain their own comma boundaries. Exact `_` remains a discard/operator token;
+underscore-prefixed identifiers now lex without splitting their prefix.
+
+A guarded scalar-broadcast compatibility path preserves existing resolution,
+typing, metadata and native behavior with stable binding identities. It does not
+choose positional reception by target count or drop extra annotations/results.
+Deferred multiple-name blocks retain separate bodies and execute on every use.
+Multiple-result/discard syntax parses but produces one located C3053 diagnostic
+during semantic analysis; result typing/reception/emission remain later stages.
+
+The focused new parser suite plus existing broadcast, function parsing, function
+block and assignment operator suites passed 71 tests across five suites, zero
+failures/errors/skips. The 13 new parser tests cover source spans including CRLF,
+result/target lists, nested conditionals, delimiter isolation, block identities,
+first syntax errors and unsupported semantic boundaries.
+
+The full `gradlew.bat :Compiler:test --offline --console=plain` rerun passed all
+655 tests across 50 suites, zero failures/errors/skips. An initial full run found
+one obsolete syntax-error expectation in `MultiAssignmentTest`; named result
+tails and positional RHS lists now intentionally parse, so those expectations
+were removed and their accepted ASTs are checked by the new parser tests.
+Changed-file whitespace and 44 local Markdown links pass. The existing native
+regressions include Windows x64/x86; multi-result execution remains unimplemented.
+
 ### isize step 3: cross-width integration and final documentation (2026-11-01)
 
 The final stage of the [isize plan](isize-implementation.md) adds four

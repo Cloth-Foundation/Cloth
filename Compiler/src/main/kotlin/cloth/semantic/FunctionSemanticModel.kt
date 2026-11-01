@@ -9,7 +9,10 @@ import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import java.util.*
 
-data class FunctionType(val parameters: List<ValueType>, val returns: ValueType)
+data class FunctionType(val parameters: List<ValueType>, val results: ResultShape) { constructor(parameters: List<ValueType>, returns: ValueType) : this(parameters, ResultShape.of(returns))
+
+	val returns get() = results.scalar()
+}
 
 /** Committed call choices and expression types; rejected candidate facts never escape. */
 class FunctionSemanticModel internal constructor(val declarations: DeclarationModel, internal val signatures: Map<FunctionSymbol, FunctionType>, val controlFlow: ControlFlowModel = ControlFlowModel()) {
@@ -19,6 +22,8 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 	internal val bindings = IdentityHashMap<BindingSymbol, ValueType>()
 	internal val calls = IdentityHashMap<CallExpression, ResolvedCall>()
 	fun typeOf(expression: Expression) = types.typeOf(expression)
+	fun resultOf(expression: Expression) = types.resultOf(expression)
+	fun resultOf(statement: Statement) = types.resultOf(statement)
 	fun typeOf(statement: Statement) = types.typeOf(statement)
 	fun typeOf(binding: BindingSymbol): ValueType = bindings.getValue(binding)
 	fun typeOf(function: FunctionSymbol): FunctionType = signatures.getValue(function)
@@ -31,8 +36,11 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		bindings.clear(); bindings.putAll(other.bindings)
 		calls.clear(); calls.putAll(other.calls)
 		types.expressions.clear(); types.expressions.putAll(other.types.expressions)
+		types.expressionResults.clear(); types.expressionResults.putAll(other.types.expressionResults)
+		types.statementResults.clear(); types.statementResults.putAll(other.types.statementResults)
+		types.resultMetadata.clear(); types.resultMetadata.putAll(other.types.resultMetadata)
 		types.statements.clear(); types.statements.putAll(other.types.statements)
-		types.multiAssignmentTypes.clear(); types.multiAssignmentTypes.putAll(other.types.multiAssignmentTypes)
+		types.receptions.clear(); types.receptions.putAll(other.types.receptions)
 		types.typeChecks.clear(); types.typeChecks.putAll(other.types.typeChecks)
 		types.providers.clear(); types.providers.putAll(other.types.providers)
 		types.metadata.clear(); types.metadata.putAll(other.types.metadata)

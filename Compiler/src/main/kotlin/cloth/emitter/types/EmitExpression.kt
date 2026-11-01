@@ -9,10 +9,7 @@ import cloth.parser.statement.ElementAssignmentStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
-import cloth.semantic.FunctionSemanticModel
-import cloth.semantic.ProviderAccess
-import cloth.semantic.ResolvedCall
-import cloth.semantic.SemanticModel
+import cloth.semantic.*
 import cloth.semantic.symbols.LocalSymbol
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
@@ -22,9 +19,10 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, private val abi: NativeCABI, private val functions: EmitFunctions? = null, private val functionSemantics: FunctionSemanticModel? = null, private val returnType: ValueType? = null, private val frame: EmitFunctionFrame? = null) {
+internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, private val abi: NativeCABI, private val functions: EmitFunctions? = null, private val functionSemantics: FunctionSemanticModel? = null, private val returnResults: ResultShape? = null, private val frame: EmitFunctionFrame? = null) {
 
 	private val types = LLVMTypes(context, abi.layout)
+	private val results = EmitResults(context, abi.layout)
 	private val arrays = EmitArray(context, builder, abi)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
@@ -42,9 +40,38 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	// One-use ownership of recursively independent buffers in this physical frame.
 	// Storing a value consumes its freshness; reading the binding never restores it.
 	private val freshArrays = mutableSetOf<Long>()
+	private val freshCarriers = mutableSetOf<Long>()
 	private fun freshArray(value: LLVMValueRef, type: ValueType): LLVMValueRef {
 		if (type is CArray) freshArrays.add(value.address())
 		return value
+	}
+
+	private fun freshResults(value: LLVMValueRef, shape: ResultShape): LLVMValueRef {
+		if (shape is ResultShape.Multiple) freshCarriers.add(value.address())
+		else if (shape is ResultShape.Single) freshArray(value, shape.type)
+		return value
+	}
+
+	/** Taking a carrier consumes its ownership proof. Each array field can then
+	 * transfer once; extracting an old carrier again never creates fresh ownership.
+	 */
+	fun takeResults(value: LLVMValueRef, shape: ResultShape): List<LLVMValueRef> {
+		val owned = shape is ResultShape.Multiple && freshCarriers.remove(value.address())
+		return results.unpack(builder, value, shape).also { slots ->
+			if (owned) slots.forEachIndexed { index, slot -> freshArray(slot, shape.values[index]) }
+		}
+	}
+
+	private fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
+		type is CArray           -> transferArrayValue(value, type)
+		type == ValueType.STRING -> checkNotNull(frame).copyValue(value, type)
+		else                     -> value
+	}
+
+	private fun snapshotResults(value: LLVMValueRef, shape: ResultShape): LLVMValueRef {
+		if (shape !is ResultShape.Multiple) return transferArrayValue(value, (shape as ResultShape.Single).type)
+		val snapshots = takeResults(value, shape).mapIndexed { index, slot -> snapshotValue(slot, shape.values[index]) }
+		return freshResults(results.pack(builder, snapshots, shape), shape)
 	}
 
 	fun terminated(): Boolean {
@@ -98,8 +125,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			LLVMBuildBr(builder, target.exit)
 			return
 		}
-		val type = returnType ?: throw InternalErrors.invariant("Return outside emitted function")
-		checkNotNull(frame).emitReturn(if (type == ValueType.VOID) null else checkNotNull(functions).encode(builder, checkNotNull(value), type))
+		val shape = returnResults ?: throw InternalErrors.invariant("Return outside emitted function")
+		checkNotNull(frame).emitReturn(if (shape == ResultShape.Empty) null else results.encode(builder, checkNotNull(value), shape))
 	}
 
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
@@ -138,6 +165,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun transferBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
 		val shape = if (type is CArray && type.arrayDimensions.any { it == null }) bindings.initialArrayShape(key) else null
 		return transferArrayValue(value, type, shape, "Array shape mismatch: assignment must preserve the binding's initial shape")
+	}
+
+	/** Ignored positions still enforce explicit extents, without allocating storage. */
+	fun validateDiscardedResult(value: LLVMValueRef, type: ValueType) {
+		if (type is CArray) arrays.constrain(value, type)
 	}
 
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
@@ -220,26 +252,37 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return null
 	}
 
-	private fun emit(expression: Expression, discard: Boolean): LLVMValueRef? {
+	fun emitDiscarded(plan: ReceptionPlan): LLVMValueRef? {
+		val constrained = plan.slots.filter { it.type is CArray && it.type.arrayDimensions.any { extent -> extent != null } }
+		if (constrained.isEmpty()) return emitDiscarded(plan.producer)
+		emit(plan.producer, discard = true) { value ->
+			val slots = takeResults(value, plan.results)
+			for (slot in constrained) validateDiscardedResult(slots[slot.sourceIndex], slot.type)
+		}
+		return null
+	}
+
+	private fun emit(expression: Expression, discard: Boolean, consume: ((LLVMValueRef) -> Unit)? = null): LLVMValueRef? {
 		if (terminated()) return null
-		val reclaim = temporaryDepth == 0 && (discard || !semantics.typeOf(expression).buffered) && temporaryAnalysis.canReclaim(expression)
-		if (!reclaim) return try {
-			emitInternal(expression)
+		fun produce(): LLVMValueRef? = try {
+			emitInternal(expression).also { value -> if (!terminated() && value != null) consume?.invoke(value) }
 		} catch (_: Terminated) {
 			null
 		}
+
+		val reclaim = temporaryDepth == 0 && (discard || semantics.resultOf(expression).values.none { it.buffered }) && temporaryAnalysis.canReclaim(expression)
+		if (!reclaim) return produce()
 		val checkpoint = checkNotNull(frame).temporaryCheckpoint()
 		val previousFresh = freshArrays.toSet()
+		val previousCarriers = freshCarriers.toSet()
 		temporaryDepth++
 		return try {
-			val result = try {
-				emitInternal(expression)
-			} catch (_: Terminated) {
-				null
-			}
+			// Receiving constraints consume descriptors before their buffers are released.
+			val result = produce()
 			// Early exits still use the ordinary frame cleanup, after copying returns.
 			if (!terminated()) frame.releaseTemporaries(checkpoint)
 			freshArrays.retainAll(previousFresh)
+			freshCarriers.retainAll(previousCarriers)
 			result
 		} finally {
 			temporaryDepth--
@@ -248,6 +291,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitInternal(expression: Expression): LLVMValueRef? {
 		return when (expression) {
+			is ResultListExpression     -> {
+				// Snapshot each buffered position before subsequent expressions can mutate
+				// its source. Even discarded positions execute and retain runtime guards.
+				val snapshots = expression.values.map { item -> snapshotValue(emitValue(item), semantics.typeOf(item)) }
+				if (terminated()) null else freshResults(results.pack(builder, snapshots, semantics.resultOf(expression)), semantics.resultOf(expression))
+			}
+
 			is ProviderAccessExpression -> if (semantics.typeOf(expression) == ValueType.NEVER) emit(expression.receiver)
 			else emitProvider(semantics.providerAccess(expression))
 
@@ -266,7 +316,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				if (fresh) freshArray(value, semantics.typeOf(expression)) else value
 			}
 
-			is IfExpression             -> emitConditional(expression, requireValue = semantics.typeOf(expression) !in setOf(ValueType.VOID, ValueType.Never))
+			is IfExpression             -> emitConditional(expression, requireValue = semantics.resultOf(expression) !in setOf(ResultShape.Empty, ResultShape.Never))
 			is TypeCheckExpression      -> {
 				// Preserve evaluation (and any side effects) even for a statically known check.
 				emitValue(expression.operand)
@@ -280,7 +330,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				if (block != null) emitBlock(block) else bindings.read(symbol ?: expression.name.lexeme)
 			}
 
-			is CallExpression           -> emitCall(expression)?.let { freshArray(it, semantics.typeOf(expression)) }
+			is CallExpression           -> emitCall(expression)?.let { freshResults(it, semantics.resultOf(expression)) }
 			is IntegerLiteral           -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
 			is FloatingPointLiteral     -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral           -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
@@ -405,7 +455,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		fun emitBody(body: List<Statement>) {
 			val value = bindings.withScope { emitStatements(body, preserveLastValue = requireValue) }
 			if (!terminated()) {
-				if (requireValue) values.add(transferArrayValue(checkNotNull(value), semantics.typeOf(expression)))
+				if (requireValue) values.add(snapshotResults(checkNotNull(value), semantics.resultOf(expression)))
 				// Nested conditionals, casts, and strings can move the insertion block.
 				ends.add(LLVMGetInsertBlock(builder))
 				LLVMBuildBr(builder, merge)
@@ -445,7 +495,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 		if (!requireValue) return null
 
-		val result = LLVMBuildPhi(builder, types.value(semantics.typeOf(expression)), "if_value")
+		val result = LLVMBuildPhi(builder, results.valueType(semantics.resultOf(expression)), "if_value")
 		PointerPointer<LLVMValueRef>(values.size.toLong()).use { incomingValues ->
 			PointerPointer<LLVMBasicBlockRef>(ends.size.toLong()).use { incomingBlocks ->
 				values.forEachIndexed { index, value -> incomingValues.put(index.toLong(), value) }
@@ -453,7 +503,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				LLVMAddIncoming(result, incomingValues, incomingBlocks, values.size)
 			}
 		}
-		return freshArray(result, semantics.typeOf(expression))
+		return freshResults(result, semantics.resultOf(expression))
 	}
 
 	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {

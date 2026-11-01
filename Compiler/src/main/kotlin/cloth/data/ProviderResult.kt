@@ -8,7 +8,9 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigDecimal
 import java.math.BigInteger
 
-internal enum class ProviderReceiverForm { TYPE, VALUE }
+internal enum class ProviderReceiverForm { TYPE,
+	VALUE
+}
 
 /** Type receivers carry no runtime value; value receivers have already been evaluated. */
 internal sealed interface ProviderReceiver {
