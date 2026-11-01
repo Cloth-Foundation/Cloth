@@ -11,7 +11,7 @@ class CompilerSettingsTest {
 
 	@Test
 	fun `existing positional CLI and default source remain available`() {
-		assertEquals(Path.of("examples", "Builtins.co"), CompilerSettings(emptyArray()).getSourceFile().toPath())
+		assertEquals(Path.of("examples", "Fib.co"), CompilerSettings(emptyArray()).getSourceFile().toPath())
 		val settings = CompilerSettings(arrayOf("source.co", "program"))
 		assertEquals("source.co", settings.getSourceFile().path)
 		assertEquals("program", settings.getOutputFile()!!.path)

@@ -35,10 +35,16 @@ boilerplate or silently inventing additional shorthand.
   records the supported 32-bit ABI, SSE2 baseline and assembly evidence.
   All seven migration steps are complete; preserve exact usize identity and
   the documented target coverage when extending this implementation.
-  The later entry-point extension also accepts usize main returns, using the
-  existing native exit-bit normalization documented in confirmed semantics.
+  The earlier usize-main extension is superseded by the signed-isize entry
+  policy implemented in isize step 2: unsigned main returns are rejected.
   Keep its completed steps and unresolved decisions current; planning is not
   evidence that a feature has been implemented or verified.
+- For `isize`, read the [three-step implementation plan](references/isize-implementation.md).
+  It reuses the shared integer and target machinery. Keep measurements as usize,
+  preserve distinct isize identity and the implemented signed-only main policy.
+  All three steps are complete, including real Windows x64/x86 integration and
+  verified IR for the supported foreign targets. Preserve that coverage when
+  extending the implementation; other 32-bit targets remain unsupported.
 - Distinguish intended design, verified implementation, proposals, and unresolved
   questions. Missing implementation does not invalidate intended syntax.
 - Ask focused questions when a necessary semantic choice is unresolved. In the

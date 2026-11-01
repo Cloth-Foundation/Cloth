@@ -7,10 +7,15 @@ implements the contracts in [confirmed semantics](../.agents/skills/cloth-langua
 for the supported types. All seven migration steps are complete. Final
 verification passed 624 tests across 46 suites with no failures/errors/skips;
 the portable usize example also ran through both x64 and x86 CLI builds.
+The later [isize implementation](../.agents/skills/cloth-language/references/isize-implementation.md)
+adds the signed primitive using the same provider rules; measurements remain
+usize and numeric bounds retain their exact receiver type.
+Its final regression run passed 642 tests across 49 suites, with no
+failures/errors/skips, including the provider/effect and example CLI checks.
 
 | Provider | Meaning | Exact result type |
 | --- | --- | --- |
-| Scalar `size` | Storage bytes for integers (including usize), floats, bool and char | Target `usize` |
+| Scalar `size` | Storage bytes for integers (including usize/isize), floats, bool and char | Target `usize` |
 | Array `size` | Outer element count; known-outer-extent type receiver or value | Target `usize` |
 | String `size` | Unicode scalar count; value receiver only | Target `usize` |
 | Metadata `rank`, `extent`, `width` | Array rank, known outer extent, numeric bit width | Target `usize` |
@@ -20,7 +25,7 @@ the portable usize example also ran through both x64 and x86 CLI builds.
 | Scalar/metadata `str` | Shared scalar/interpolation formatting or normalized type spelling | `string` |
 
 Already-typed results follow strict binding, call and return contracts, including
-on targets where usize and a fixed unsigned integer have equal machine widths.
+on targets where usize/isize and fixed integers have equal machine widths.
 Explicit casts cross those type boundaries. Read-only access, receiver restrictions
 and once-only receiver evaluation remain in force.
 
@@ -35,8 +40,10 @@ Real execution coverage is Windows x64 and Windows x86/MSVC with SSE2 on the
 Windows x64 host. Select x86 with `--target i686-pc-windows-msvc`; see the
 [validation and assembly record](../.agents/skills/cloth-language/references/usize-x86-validation.md).
 Foreign 64-bit IR/object checks do not establish native Linux/macOS execution.
-Other 32-bit targets remain unsupported. `addr`, array/class text conversion,
-isize and programmer-visible pointers are not added by this migration.
+Other 32-bit targets remain unsupported. Isize is implemented by the subsequent
+three-step feature, independently of the original usize migration. `addr` and
+array/class text conversion remain deferred; no programmer-visible pointer
+syntax is introduced.
 
 ## Historical phase record (before usize)
 

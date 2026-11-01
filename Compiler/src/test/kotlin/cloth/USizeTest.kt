@@ -119,8 +119,11 @@ class USizeTest {
 			failure("fn bad() { usize::max = 1 }", DiagnosticCode.READ_ONLY_PROVIDER, target)
 			failure("fn bad() { usize::max / 0 }", DiagnosticCode.INTEGER_ZERO_DIVISOR, target)
 		}
-		val main = ProgramAnalyzer().analyze(unit("fn<usize> main() = 0"))
-		assertEquals(CUSize(main.functions.target.sizeBits), main.functions.typeOf(checkNotNull(main.entryPoint)).returns)
+		for (target in listOf(synthetic32(), NativeCABI.native().layout)) {
+			val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(target).analyze(unit("fn<usize> main() = 0")) }
+			assertEquals(DiagnosticCode.INVALID_MAIN_RETURN, diagnostic.diagnosticCode)
+			assertLocated(diagnostic)
+		}
 	}
 
 	@Test
