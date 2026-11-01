@@ -126,6 +126,15 @@ not the compiler's current feature coverage.
 - An integer returned by `main` becomes the program's process exit status.
   Normal completion of a void `main`, including a bare `return`, produces
   process exit status `0`.
+- On 2026-10-31 the user confirmed the completion format `PEC: N`, where PEC
+  means Process Exit Code. After the entry-point `main` returns, the executable
+  prints `PEC: N`, where `N` is the normalized native exit status, and returns
+  that same status.
+  Void completion reports `0`. The message is preceded and followed by a
+  newline, so it remains separate from explicit `print` output. Calls to `main`
+  inside Cloth code do not independently report completion. Startup/runtime
+  errors that terminate before the entry-point call returns retain their error
+  output without a normal-completion message.
 - At the native exit-code boundary, signed results narrower than the target's
   native exit-code integer are sign-extended; wider results retain the low bits,
   following Cloth's explicit integer-cast rules. In particular, an `int<64>`
@@ -527,6 +536,25 @@ Array syntax and construction were confirmed on 2026-10-30:
   and `:=` binding behavior as inferred declarations.
 - Omitting the type annotation infers the binding's type from its initializer,
   for example `def x = 10` and `def y := x + 2`.
+- On 2026-10-31 the user confirmed comma-separated names sharing a definition
+  initializer: `def x, y, z = 10` creates three bindings, each inferred as `int`
+  and initialized to 10. Each follows ordinary definition and assignment rules;
+  an explicit annotation and the `=` or `:=` form apply to every name.
+- The user confirmed once-total initializer evaluation: `def x, y, z = make()`
+  calls `make()` once and gives each binding an independent copy of its result
+  under ordinary value-copy rules. In particular, array bindings do not alias
+  each other's mutable element storage.
+- On 2026-10-31 the user also confirmed `x, y, z = value` for existing named
+  bindings: evaluate the RHS once and assign its result to every target under
+  ordinary assignment rules. Each target must exist and permit reassignment;
+  its fixed type and initial array shape remain in force. Array values copy
+  independently, and the compiler still stops at the first detected error.
+- The user confirmed one exact RHS result type for multiple assignment, even
+  for contextual integer literals. The first target supplies ordinary assignment
+  context; the resolved value must satisfy every other target without implicit
+  conversion. Thus `int<8>` and `int<64>` targets cannot share `= 20` just because
+  the literal fits both ranges. Array extent compatibility retains its ordinary
+  static/runtime checks rather than demanding identical extent annotations.
 - A binding's declared or inferred type stays fixed. Reassignment must satisfy
   that type; assigning a different type does not change the binding's type.
 - `=` creates a mutable binding.
@@ -588,6 +616,15 @@ Array syntax and construction were confirmed on 2026-10-30:
 - Unsigned arithmetic wraps at the selected width: for example, adding one to
   the maximum value gives zero, and subtracting one from zero gives the maximum.
   Unsigned division, remainder, and ordering use the full nonnegative value.
+- On 2026-10-31 the user confirmed guards for integer division and remainder:
+  a zero divisor is invalid, including `0 / 0`, and a signed minimum operand
+  with divisor -1 is invalid for both operations. Diagnose known constant cases
+  during compilation; guard other cases at runtime and terminate on the first
+  invalid executed operation, with its source location. This includes `/=` and
+  `%=`. Evaluate operands once, left to right, before runtime validation; ordinary
+  short-circuit and return behavior still applies. These integer guards do not
+  change floating-point arithmetic. The user clarified that unsigned integers
+  cannot be negative; signed integers retain their negative range.
 - Existing mixed integer/float expression promotion also accepts unsigned
   operands, converting their nonnegative value to float before arithmetic or
   comparison. The existing float32 rounding policy still applies. This does not

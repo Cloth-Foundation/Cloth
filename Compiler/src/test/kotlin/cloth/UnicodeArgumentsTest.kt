@@ -53,7 +53,7 @@ class UnicodeArgumentsTest {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), executable.toString())
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(status, process.exitValue(), output)
-			if (error == null) assertEquals("", output) else assertEquals(error + System.lineSeparator(), output)
+			if (error == null) assertEquals(processCompletion(status), output) else assertEquals(error + System.lineSeparator(), output)
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}
@@ -101,6 +101,8 @@ class UnicodeArgumentsTest {
 					val wide = profile.profile == NativeCABI.Profile.WINDOWS_LLP64
 					assertContains(ir, "define i32 @${if (wide) "wmain" else "main"}(i32")
 					assertContains(ir, "Invalid Unicode in command-line argument")
+					assertContains(ir, "PEC: %d")
+					assertEquals(1, ir.lineSequence().count { it.startsWith("declare i32 @printf(") })
 					if (wide) {
 						assertContains(ir, "@WideCharToMultiByte(i32 65001, i32 128")
 						assertFalse(ir.contains("@cloth.rt.argument.utf8"))

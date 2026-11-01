@@ -5,27 +5,66 @@ import kotlin.enums.enumEntries
 
 enum class Operators(val character: String) {
 
-	PLUS("+"), PLUS_PLUS("++"), PLUS_EQUAL("+="),
+	PLUS("+"),
+	PLUS_PLUS("++"),
+	PLUS_EQUAL("+="),
 
-	MINUS("-"), MINUS_MINUS("--"), MINUS_EQUAL("-="),
+	MINUS("-"),
+	MINUS_MINUS("--"),
+	MINUS_EQUAL("-="),
 
-	MULTIPLY("*"), MUL_MUL("**"), MUL_EQUAL("*="), DIVIDE("/"), DIV_EQUAL("/="), MODULO("%"), MOD_EQUAL("%="),
+	MULTIPLY("*"),
+	MUL_MUL("**"),
+	MUL_EQUAL("*="),
+	DIVIDE("/"),
+	DIV_EQUAL("/="),
+	MODULO("%"),
+	MOD_EQUAL("%="),
 
-	ASSIGN("="), FINAL_ASSIGN(":="),
+	ASSIGN("="),
+	FINAL_ASSIGN(":="),
 
-	EQUAL("=="), NOT_EQUAL("!="), NOT("!"), AND("&&"), OR("||"),
+	EQUAL("=="),
+	NOT_EQUAL("!="),
+	NOT("!"),
+	AND("&&"),
+	OR("||"),
 
-	GREATER(">"), LESS("<"), GREATER_EQUAL(">="), LESS_EQUAL("<="),
+	GREATER(">"),
+	LESS("<"),
+	GREATER_EQUAL(">="),
+	LESS_EQUAL("<="),
 
-	POINTER_RIGHT("->"), POINTER_LEFT("<-"),
+	POINTER_RIGHT("->"),
+	POINTER_LEFT("<-"),
 
-	QUESTION("?"), ELVIS("?:"), RANGE(".."), RANGE_INCLUSIVE("..="),
+	QUESTION("?"),
+	ELVIS("?:"),
+	RANGE(".."),
+	RANGE_INCLUSIVE("..="),
 
-	FOR("for"), WHILE("while"), DO("do"),
+	FOR("for"),
+	WHILE("while"),
+	DO("do"),
 
-	PAREN_OPEN("("), PAREN_CLOSE(")"), BRACE_OPEN("{"), BRACE_CLOSE("}"), BRACKET_OPEN("["), BRACKET_CLOSE("]"),
+	PAREN_OPEN("("),
+	PAREN_CLOSE(")"),
+	BRACE_OPEN("{"),
+	BRACE_CLOSE("}"),
+	BRACKET_OPEN("["),
+	BRACKET_CLOSE("]"),
 
-	COMMA(","), DOT("."), COLON(":"), BACKTICK("`"), QUOTATION("'"), DOUBLE_QUOTATION("\""), TILDE("~"), POUND("#"), COLON_COLON("::"), SEMICOLON(";"), UNDERSCORE("_");
+	COMMA(","),
+	DOT("."),
+	COLON(":"),
+	BACKTICK("`"),
+	QUOTATION("'"),
+	DOUBLE_QUOTATION("\""),
+	TILDE("~"),
+	POUND("#"),
+	COLON_COLON("::"),
+	SEMICOLON(";"),
+	UNDERSCORE("_");
 
 	override fun toString(): String {
 		return character

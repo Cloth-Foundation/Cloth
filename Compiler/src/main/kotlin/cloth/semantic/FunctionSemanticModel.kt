@@ -29,6 +29,7 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		calls.clear(); calls.putAll(other.calls)
 		types.expressions.clear(); types.expressions.putAll(other.types.expressions)
 		types.statements.clear(); types.statements.putAll(other.types.statements)
+		types.multiAssignmentTypes.clear(); types.multiAssignmentTypes.putAll(other.types.multiAssignmentTypes)
 		types.typeChecks.clear(); types.typeChecks.putAll(other.types.typeChecks)
 		types.providers.clear(); types.providers.putAll(other.types.providers)
 		types.metadata.clear(); types.metadata.putAll(other.types.metadata)

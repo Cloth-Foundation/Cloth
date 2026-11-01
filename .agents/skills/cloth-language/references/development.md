@@ -2,6 +2,183 @@
 
 ## Current work
 
+### Completion output aligned with manual PEC edits (2026-10-31)
+
+The user's manual edits selected `PEC: N`, including the colon, in the native
+entry-point output and explicit entry/startup/error test checks. The shared
+`processCompletion()` expectation still used `PEC N`; it now matches `PEC: N`.
+README and confirmed semantics describe the same spelling, and the emitter's
+completed TODO was removed. Multiple-assignment native tests again check the
+complete expected output using the shared helper instead of ignoring the
+completion banner. The earlier completion-mismatch failure below is historical.
+
+Verified with `gradlew.bat :Compiler:test --offline --console=plain`: all 588
+tests across 40 suites passed, with zero failures/errors/skips. Native tests ran
+on Windows; entry/startup IR checks also cover Linux/macOS profiles. The files
+changed for this completion-output fix pass `git diff --check`.
+
+### Multiple assignment to existing bindings (2026-10-31)
+
+`x, y, z = value` is implemented for existing named bindings. A
+`MultiAssignmentStatement` retains one RHS expression and the original target
+tokens. Name resolution applies ordinary target checks to every name, including
+immutable/final bindings, deferred block bindings and function names. The shared
+RHS is typed once using the first target's ordinary assignment context; every
+target must accept that same result type. The user explicitly confirmed exact
+result typing even when an integer literal fits several different integer types.
+
+LLVM evaluates the RHS once before storing to targets in source order. Every
+destination uses the ordinary assignment transfer path, including independent
+recursive array copies and captured initial-shape checks. Checking each target
+against the original RHS type preserves known array-shape diagnostics instead
+of losing extent information by rereading the first assigned binding. Metadata
+analysis propagates the one represented-type result to every target, and control
+flow follows the one RHS so returns skip all stores. Semantic-model forks retain
+the per-target types for overload/array-inference probes. Compilation still
+fails at the first detected error.
+
+The 13 `MultiAssignmentTest` tests pass, covering syntax, named-target rules,
+first-error reporting, exact widths/signedness, contextual literals, metadata,
+once-only calls and captures, repeated targets, parameter copies, nested scopes,
+recursive array isolation, static/runtime shape errors, skipped bodies and early
+returns. Native execution ran on Windows. `examples/Bindings.co` and README
+include existing-binding assignment lists.
+
+Verification: `gradlew.bat :Compiler:test --tests cloth.MultiAssignmentTest
+--offline --console=plain` passed all 13 tests. The full suite ran 588 tests
+across 40 suites: 461 passed and 127 failed, with zero errors/skips. Those
+failures compare the expected `PEC N` completion banner with the existing
+entry-point emitter's `Process finished with exit code N` output; that unrelated
+edit was preserved. All new multiple-assignment tests passed in the full run.
+The changed files pass `git diff --check`; unrelated existing whitespace in
+`Operators.kt` prevents a clean repository-wide check.
+
+### Multiple binding definitions (2026-10-31)
+
+`def x, y, z = 10` now creates three mutable bindings, each inferred as `int`.
+Explicit annotations and `:=` apply to every name. The initializer executes
+once, as confirmed by the user; later names copy the first stored value through
+ordinary binding machinery. Array copies retain independent recursive storage.
+No new semantic or emission path is needed for stored values: the parser expands
+the list into ordinary binding declarations, retaining the original name tokens
+for duplicate and assignment diagnostics. Compilation still fails at its first
+error.
+
+Typed function blocks retain deferred execution. Each name receives a separate
+body with distinct syntax identities so lexical resolution and semantic facts
+cannot overwrite another block's analysis. Declaring the names executes no body.
+
+`MultiBindingsTest` covers inference, annotations, mutable/immutable assignment,
+duplicate-name locations, malformed lists, nested scopes, strings, recursive
+array copies, once-only calls and deferred results, and multiple function blocks.
+`examples/Bindings.co` now exercises inferred and explicitly typed name lists.
+
+Verified with `gradlew.bat :Compiler:test --offline --console=plain`: all 575
+tests across 39 suites passed, with zero failures/errors/skips, including all
+10 multiple-binding tests. Native execution ran on Windows through the existing
+shared LLVM copy/emission paths. `git diff --check` passed.
+
+### Integer division and remainder guards (2026-10-31)
+
+Integer `/` and `%` now validate both a zero divisor and signed minimum with -1
+before emitting the native operation. `EmitIntegerDivision` shares this path
+across all integer widths, including desugared `/=` and `%=`. Its failures use
+the existing non-returning runtime-error path with the operator's source file
+and span, exit status 1 and no PEC completion report. Operands have already
+executed once, left to right; short circuits and returns still skip operations.
+Floating-point arithmetic is unchanged.
+
+Semantic analysis rejects literal/sign and integer-provider constant zero
+divisors with C3050, and known signed minimum/-1 pairs with C3051, before LLVM
+emission, toolchain lookup or output creation. This is deliberately limited
+constant recognition, not binding propagation or general constant folding;
+other values retain runtime guards. Overflow can reject an overload candidate
+without preventing a valid wider contextual match. Intrinsic zero-divisor
+diagnostics survive overload probes. Negative unsigned literals already use
+the existing range diagnostic; signed negative values remain valid.
+
+`IntegerDivisionTest` covers every signed/unsigned width, zero-over-zero,
+literal/provider diagnostics, wrapped unary minima, semantic-before-output
+ordering, first-error CLI reporting, runtime failures and valid boundary results,
+computed constants, compound assignments, operand effects, skipped operations,
+early returns and contextual overload selection. The focused division,
+assignment-operator, return-contract and overload suites passed. Full validation
+with `gradlew.bat :Compiler:test --offline --console=plain` passed all 565 tests
+across 38 suites, with zero failures/errors/skips. Native execution ran on Windows;
+the common integer guard path uses target-independent LLVM integer operations.
+`git diff --check` passed.
+
+### PEC completion format confirmed (2026-10-31)
+
+The user confirmed `PEC N`, meaning Process Exit Code, as the intended completion
+format. The native adapter already emits it; the shared native-output expectation,
+entry/startup IR assertions, runtime-error absence check, README and confirmed
+semantics now use the same spelling. Existing newline, exit-status and once-only
+reporting behavior is unchanged. This resolves the format mismatch found in the
+foundation audit below; its failed run describes the earlier test expectations.
+
+Verified with `gradlew.bat :Compiler:test --offline --console=plain`: all 556
+tests across 37 suites passed, with zero failures/errors/skips. Native execution
+ran on Windows; startup IR checks also cover Linux/macOS profiles.
+`git diff --check` passed.
+
+### Foundation audit (2026-10-31)
+
+Source inspection confirms the implemented procedural core: named functions,
+overloads and recursion; executable `main` and object emission; strict return
+contracts and control-flow validation; built-in output; typed compiler-data
+providers and `typeinfo`; numeric, boolean, character and string values;
+bindings, conditionals and rectangular value arrays. Source-file declarations
+currently parse only functions. Classes, methods, object construction/destruction
+and state-machine execution are intended language features still to implement.
+
+At audit time, the working tree's completion format was `PEC %d`, whereas its
+documented contract and test helper expected `Process finished with exit code N`.
+The user's subsequent PEC confirmation above resolves that mismatch.
+
+Verification: `gradlew.bat :Compiler:test --console=plain` completed 556 tests
+across 37 suites: 437 passed, 119 failed, zero skipped. Inspection of every XML
+failure attributes all reported failures to the completion format: 106 text
+comparisons, 11 byte comparisons and two IR substring assertions. These failures
+can stop test methods before their later scenarios/assertions, so this run does
+not establish that all remaining native behavior passes. Compiler source was
+left unchanged by the audit. `git diff --check` passed.
+
+The audit also found unguarded integer division/remainder. The user's subsequent
+guard decision and implementation above resolve that gap for zero divisors and
+signed minimum with -1.
+
+The older milestone snapshots below are historical. Current accessor contracts
+and supported operations are recorded above them and in the semantics reference.
+Native Windows console encoding, buffered output flush failures and native macOS
+startup execution remain verification/design gaps as recorded in those sections.
+
+### Executable completion status (2026-10-31)
+
+The native startup adapter now prints `PEC N` (Process Exit Code) after
+the entry-point call returns and argument storage is released. The reported
+value is the same native C `int` returned by the adapter: void completion uses
+0, narrower signed results are sign-extended and wider results retain their low
+bits. A newline before and after the message separates it from explicit output.
+Recursive/source calls to `main` do not emit their own completion messages.
+Declaration/object emission, test snippet adapters and terminating startup/runtime
+errors do not emit this normal-completion message. Compilation itself still
+returns its own independent compiler status.
+
+Native output expectations now include the completion message. Entry tests cover
+void completion, explicit/bare/expression returns, every signed integer width,
+wide truncation, negative Windows statuses, output ordering, recursive `main`,
+and absence of completion output after a runtime error. Unicode adapter tests
+also verify the completion format and single native printf declaration for
+Windows, Linux and macOS ABI profiles.
+
+Verified on 2026-10-31 with
+`gradlew.bat :Compiler:test --offline --console=plain --no-daemon`: all 556 tests
+across 37 suites passed with zero failures/errors/skips. Native execution ran on
+Windows; Linux/macOS adapter IR was verified. The full run also exposed a stale
+default-source test expecting `FunctionBlocks.co`; its expectation now matches
+the compiler's existing `Builtins.co` default. `git diff --check` passed.
+
 ### Built-in function registry and explicit output (2026-10-31)
 
 `BuiltinFunctions` now centrally declares `PRINT = register("print", ::PrintFunction)`
@@ -1813,7 +1990,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
 - The compiler is Kotlin/JVM in `Compiler`, built with Gradle. Its module declares
   Kotlin 2.4.20, JDK toolchain 25, and Bytedeco LLVM bindings.
 - `Compiler/src/main/kotlin/cloth/Entry.kt` wires source loading, lexer, parser,
-  and native LLVM compilation. The CLI settings currently default to `examples/FunctionBlocks.co` and accept
+  and native LLVM compilation. The CLI settings currently default to `examples/Builtins.co` and accept
   `[source.co] [output] [--emit executable|object]`, preserving source paths and using a separate output.
 - `cloth/lexer/Lexer.kt`, `cloth/token/Keywords.kt`, and `Operators.kt` contain
   broader lexical machinery. Recognizing a token does not establish parser,
@@ -2041,15 +2218,11 @@ are not language specification boundaries.
 The following have not yet been settled. Ask about them when relevant, keeping
 the user's preference for one question at a time:
 
-- **Compiler data access** is the working name for deferred compiler-provided,
-  type-specific data access (2026-10-31), intended for more than arrays. The
-  proposed receiver form is `a::size`, producing 2 for `def a = [1, 2]`, without
-  parentheses. Array length/count access is deferred into this design. Result
-  types, multidimensional meaning, existing `::` interactions and the exploratory
-  soft/hard system-call categories remain unresolved; `.length` and its suggested
-  `int` result were not adopted. See the dedicated
-  [design note](../../../../todo/compiler-data-access.md). Array iteration syntax
-  and array equality semantics also remain unresolved.
+- **Compiler data access:** the implemented `::` contracts, result types and size
+  meanings are settled for the supported types; see the dedicated
+  [design note](../../../../todo/compiler-data-access.md). `addr`, array/class text
+  formatting and the exploratory soft/hard system-call categories remain deferred.
+  Array iteration syntax and array equality semantics also remain unresolved.
 - Type-narrowing behavior after reassignment and outside successful `if` branches.
 - Function-block capture escape/lifetime rules beyond reading surrounding locals
   while their enclosing scope is active; whether blocks can be stored or escape

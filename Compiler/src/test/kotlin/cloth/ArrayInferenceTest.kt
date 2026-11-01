@@ -40,7 +40,7 @@ class ArrayInferenceTest {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), name)
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(0, process.exitValue(), output)
-			assertEquals("", output)
+			assertEquals(processCompletion(), output)
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}

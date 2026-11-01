@@ -60,6 +60,8 @@ object SemanticErrors {
 	}
 
 	fun negativeExponent(span: TokenSpan) = issue(DiagnosticCode.NEGATIVE_EXPONENT, "Integer exponentiation requires a nonnegative exponent", span)
+	fun zeroDivisor(operator: Token, divisor: Expression) = SemanticException(DiagnosticCode.INTEGER_ZERO_DIVISOR, "Integer ${if (operator.lexeme == "%") "remainder" else "division"} by zero", listOf(SourceLabel(operator.span, "invalid operation"), SourceLabel(divisor.span, "divisor is zero")))
+	fun divisionOverflow(operator: Token, type: CInt) = issue(DiagnosticCode.INTEGER_DIVISION_OVERFLOW, "Signed integer ${if (operator.lexeme == "%") "remainder" else "division"} overflow: minimum value of '${type.spelling}' with -1", operator.span)
 	fun integer(value: BigInteger, type: CInt, span: TokenSpan) = issue(DiagnosticCode.INTEGER_RANGE, "Integer literal '$value' is out of range for '${type.spelling}'", span, "'${type.spelling}' accepts values from ${type.minimum} through ${type.maximum}.")
 	fun missingElse(span: TokenSpan) = issue(DiagnosticCode.MISSING_ELSE, "A value-producing 'if' requires a final 'else'", span, "Add an 'else' branch that produces a value.")
 	fun condition(expression: Expression) = issue(DiagnosticCode.NON_BOOLEAN_CONDITION, "An 'if' condition requires a boolean value", expression.span)

@@ -11,7 +11,7 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-/** Native startup adapter; a Cloth main result is a status, never implicit output. */
+/** Native startup adapter; reports the normalized process status after Cloth main returns. */
 internal class EmitEntryPoint(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI) {
 
 	fun emit(program: ProgramModel, functions: EmitFunctions) {
@@ -43,6 +43,17 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 				else                         -> result
 			}
 			argumentsEmitter.release(builder)
+			val outputType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
+				parameters.put(0, pointer)
+				LLVMFunctionType(nativeType, parameters, 1, 1)
+			}
+			val existing = LLVMGetNamedFunction(module, "printf")
+			val printf = if (existing == null || existing.isNull) LLVMAddFunction(module, "printf", outputType) else existing
+			PointerPointer<LLVMValueRef>(2L).use { values ->
+				values.put(0, LLVMBuildGlobalStringPtr(builder, "\nPEC: %d\n", "process_finished"))
+				values.put(1, status)
+				LLVMBuildCall2(builder, outputType, printf, values, 2, "")
+			}
 			LLVMBuildRet(builder, status)
 		} finally {
 			LLVMDisposeBuilder(builder)

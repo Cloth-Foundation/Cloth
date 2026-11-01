@@ -142,7 +142,7 @@ class BindingsTest {
 			// Absolute paths exercise source selection and the separate output argument.
 			main(arrayOf(Path.of("examples", file).toAbsolutePath().toString(), output.toString()))
 			val executable = cloth.util.ExecutableFormat.current.executablePath(output)
-			assertOutput(executable, "") // Each main checks its result and returns status 0.
+			assertOutput(executable, processCompletion().trim())
 		}
 	}
 

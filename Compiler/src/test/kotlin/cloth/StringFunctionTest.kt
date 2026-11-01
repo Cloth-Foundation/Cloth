@@ -490,7 +490,7 @@ class StringFunctionTest {
 
 	private fun native(directory: Path, name: String, source: String, options: LinkOptions = LinkOptions()) {
 		val program = source + "\nfn<int> main() = if (test()) { 0 } else { 1 }"
-		assertProgram(LLVMEmitter(options).compile(parse(program), directory.resolve(name)))
+		assertProgram(LLVMEmitter(options).compile(parse(program), directory.resolve(name)), output = processCompletion())
 	}
 
 	private fun assertProgram(executable: Path, status: Int = 0, output: String = "") {

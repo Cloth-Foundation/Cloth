@@ -1,7 +1,7 @@
 // Returns 0 when this example passes its checks, or 1 on failure.
 fn<int> main() {
     // Infer int from a literal or expression; '=' is mutable, ':=' is immutable.
-    def x = 10
+    def x, untouched, alsoUntouched = 10
     def y := x + 2
 
     // Explicit types can be mixed with inferred bindings.
@@ -21,6 +21,14 @@ fn<int> main() {
     def adjustment := 0.25
     def<float> initialScale := scale
     scale = scale + adjustment
+
+    // Comma-separated definitions keep their own values when x is reassigned.
+    if (untouched != 10 || alsoUntouched != 10) { return 1 }
+    def<int<64>> wideA, wideB := 10
+    if (wideA != 10 || wideB != 10) { return 1 }
+
+    untouched, alsoUntouched = 20
+    if (untouched != 20 || alsoUntouched != 20 || x != 15) { return 1 }
 
     return if (intTotal + scale + initialScale == 76.25) { 0 } else { 1 }
 

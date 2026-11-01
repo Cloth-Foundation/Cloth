@@ -250,7 +250,7 @@ class BuiltinFunctionsTest {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), "$name timed out")
 			val bytes = process.inputStream.readBytes()
 			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			assertContentEquals(expected.replace("\n", System.lineSeparator()).toByteArray(Charsets.UTF_8), bytes, name)
+			assertContentEquals((expected.replace("\n", System.lineSeparator()) + processCompletion()).toByteArray(Charsets.UTF_8), bytes, name)
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}

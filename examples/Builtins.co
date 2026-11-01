@@ -1,4 +1,4 @@
-fn main() {
+fn<int> main() {
     print("Hello, ")
     println("Cloth!")
     println()
@@ -8,4 +8,9 @@ fn main() {
     println(true)
     println('😀')
     println(#"Type: {int[3]::type}")
+    def<typeinfo> info = float::type
+    println(info)
+    println(true)
+
+    return int::max - 1
 }
