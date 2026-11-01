@@ -26,13 +26,15 @@ Arguments and returns use strict types, with contextual integer literals and
 contextual floating literals at call sites. Overloads prefer the default `int`
 or `float` literal type when an exact match exists.
 
-A void `main` exits with status 0; a signed integer or `usize` main supplies the
+A void `main` exits with status 0; a signed integer or `isize` main supplies the
 process exit status. Signed integer widths 8, 16, 32 and 64 and target-sized
-usize are accepted, with or without a string[] argument parameter. The native
-adapter extends narrow results according to signedness and retains the low bits
-of wider results, following Cloth's explicit integer-cast rules. PEC reports
-that signed native C int value: `usize::max - 1` produces `PEC: -2` on Windows
-x64 and x86.
+isize are accepted, with or without a string[] argument parameter. Unsigned
+returns, including `usize`, are rejected. The native adapter sign-extends narrow
+results and retains the low bits of wider results, following Cloth's explicit
+integer-cast rules. PEC reports that signed native C int value: an isize return
+of `-2` produces `PEC: -2` on Windows x64 and x86. Measurements remain usize;
+returning one from an isize main requires an explicit conversion, for example
+`return values::size -> isize`.
 After `main` returns, the executable prints `PEC: N` (Process Exit Code),
 using that native status (`0` for void), preceded and followed by a newline.
 Startup and runtime failures terminate through their existing error path without
@@ -123,10 +125,17 @@ examples below are body fragments.
 
 ## Target-sized integers
 
-`usize` is a distinct unsigned primitive whose width follows the compilation
-target. Explicit `int<8>`, `int<16>`, `int<32>` and `int<64>` keep their fixed
-widths; plain `int` stays 32-bit. `usize` takes no width argument or unsigned
-modifier. Already-typed fixed integers require explicit conversions to/from it.
+`usize` and `isize` are distinct primitives whose widths follow the compilation
+target. `usize` is unsigned; `isize` is signed. Explicit `int<8>`, `int<16>`,
+`int<32>` and `int<64>` keep their fixed widths; plain `int` stays 32-bit.
+Neither target-sized primitive takes a width argument or unsigned modifier.
+Already-typed integers require explicit conversions between these types,
+even when their machine widths match.
+
+| Type | 32-bit target | 64-bit target | Common uses |
+| --- | --- | --- | --- |
+| `usize` | Unsigned 32-bit | Unsigned 64-bit | Sizes, counts, extents and indices |
+| `isize` | Signed 32-bit | Signed 64-bit | Signed differences, indices and `main` returns |
 
 ```cloth
 fn<usize> next(usize index) = index + 1
@@ -145,6 +154,16 @@ conversions produce controlled errors. Min/max preserve usize identity; metadata
 prints `usize` and reports its numeric width through `usize::type::width`.
 See `examples/USize.co` for a runnable example.
 
+`isize` follows the existing signed integer rules: wrapping arithmetic, signed
+comparisons/division/remainder and checked float-to-integer casts. Integer casts
+can truncate or change the interpretation of the same bits; `usize::max -> isize`
+produces `-1`. Metadata prints `isize`, reports the target width and preserves
+its distinction from fixed-width signed integers. Its min/max return isize,
+while its size and metadata width still return usize. Signed indices use the
+existing bounds checks; negative indices are invalid. See
+[examples/ISize.co](examples/ISize.co) for a runnable signed example with an
+isize main and explicit conversion of a small array count.
+
 Scalar/array/string `size` and metadata `rank`, `extent` and `width` return
 `usize`. Numeric min/max retain their receiver type. Already-typed measurement
 results require explicit casts when a fixed-width integer is needed, for example
@@ -162,8 +181,10 @@ OS/ABI combinations remain unsupported.
 Integration fixtures compile the same parsed program for Windows x64, Windows
 x86 and x64 again, checking exact provider types, deferred effects, nested copies,
 returned-text lifetimes and first-error behavior. See the
-[implementation record](.agents/skills/cloth-language/references/usize-implementation.md)
-for verification results and target coverage.
+[usize implementation record](.agents/skills/cloth-language/references/usize-implementation.md)
+and [isize implementation record](.agents/skills/cloth-language/references/isize-implementation.md)
+for verification results and target coverage. Both primitives use the existing
+ABI profiles; adding isize introduces no pointer syntax or new target support.
 
 ## Multiple bindings
 

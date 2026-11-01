@@ -36,8 +36,8 @@ internal sealed class ProviderResult<out T : ValueType> {
 
 	fun emit(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
 		val resultType = type
-		if (resultType is CUSize && resultType.width != context.target.sizeBits) {
-			throw InternalErrors.invariant("Provider usize result belongs to a different target layout")
+		if ((resultType is CUSize || resultType is CISize) && resultType.bits != context.target.sizeBits) {
+			throw InternalErrors.invariant("Provider ${resultType.spelling} result belongs to a different target layout")
 		}
 		if (receiver.type != receiverType || receiver.form !in receiverForms || (receiver is ProviderReceiver.Value && LLVMTypeOf(receiver.value).address() != receiverType.llvmValue(context.context, context.target).address())) {
 			throw InternalErrors.invariant("Provider receiver does not match '${receiverType.spelling}'")

@@ -12,7 +12,7 @@ fn<int<64>> printFib(int<64> n) {
 
 }
 
-fn<usize> main () {
+fn<isize> main () {
 
     printFib(25) -> void
 

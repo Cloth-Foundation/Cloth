@@ -1,4 +1,4 @@
-fn<usize> main() {
+fn<isize> main() {
     print("Hello, ")
     println("Cloth!")
     println()
@@ -12,5 +12,5 @@ fn<usize> main() {
     println(info)
     println(true)
 
-    return if (usize::size >= 8) { 1 } else { 0 }
+    return if (isize::size >= 8) { 1 } else { 0 }
 }

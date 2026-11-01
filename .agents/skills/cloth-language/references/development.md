@@ -2,7 +2,95 @@
 
 ## Current work
 
-### usize return support for main (2026-11-01)
+### isize step 3: cross-width integration and final documentation (2026-11-01)
+
+The final stage of the [isize plan](isize-implementation.md) adds four
+ISizeIntegrationTest cases. One AST runs on Windows x64, x86 and x64 again,
+checking executable machine headers and runtime width with exact identities,
+deferred provider/block effects, assignment lists, short-circuit skipping,
+scopes, nested array copies, returned-text lifetime, maximum empty shapes and
+negative wide conversions. CLI fixtures retain first-error semantics across
+passes; runtime failures evaluate operands once in order and stop before later
+effects or PEC output. Existing backend/entry tests retain foreign IR coverage
+and real x64/x86 signed numeric and exit-boundary checks.
+
+The new examples/ISize.co and the two existing Builtins.co/Fib.co examples compile
+and execute through the CLI on both Windows widths. The existing examples only
+change their main return annotations from usize to isize; their bodies, output
+and return behavior are preserved. CompilerSettingsTest's stale Builtins.co
+expectation now matches the existing Fib.co default; CLI behavior is unchanged.
+README and compiler-data-access notes now describe both primitives and the
+unsigned measurement contract.
+
+The focused integration, primitive, backend, entry and settings suites passed
+all 47 tests across 5 suites, zero failures/errors/skips. The full
+`gradlew.bat :Compiler:test --offline --console=plain` run passed all 642 tests
+across 49 suites, zero failures/errors/skips. All three isize stages are complete.
+Whitespace and manual skill frontmatter/placeholder checks passed; 54 local
+Markdown links resolve across the seven updated documentation files. The
+standard skill validator remains unavailable without PyYAML. Native execution
+coverage is Windows x64 and x86; supported foreign target coverage remains
+verified IR, not native Linux/macOS execution or additional 32-bit support.
+
+### isize step 2: signed integration and executable entry (2026-11-01)
+
+Step 2 of the [isize plan](isize-implementation.md) is implemented. ProgramAnalyzer
+accepts isize, signed fixed-width int and void for executable main; usize and all
+fixed unsigned integers are rejected. C3037 names isize in its message/help.
+Library main functions remain ordinary functions. README entry guidance and
+the prior usize-main regression expectations now match the corrected policy.
+
+The integration audit found that shared integer handling already supplies signed
+comparisons, wrapping arithmetic, guarded division/remainder and exponentiation,
+checked casts, native signed formatting, signatures/storage and checked indexing.
+Those paths needed verification, not type-specific backend changes. Measurements
+and array counts remain usize; step 1's exact identity and target isolation remain.
+The native entry adapter retains signed PEC reporting and low-bit exit narrowing.
+
+ISizeBackendTest adds five cases checking all supported target IR and real Windows
+x64/x86 numeric behavior, casts, formatting, function/array transport, providers,
+checked failures and CLI rejection before output/linker work. ProgramEntryTest
+now executes isize main at signed boundaries with both argument forms, Unicode
+arguments and positive/negative wide exit values. The focused ISizeTest,
+ISizeBackendTest, ProgramEntryTest and USizeTest run passed all 50 tests across
+4 suites, zero failures/errors/skips. The full regression run completed 638 tests
+across 48 suites: 637 passed, one failed, zero errors/skips. The sole failure is
+the existing CompilerSettingsTest Fib.co/Builtins.co default-path mismatch from
+step 1, reconfirmed against HEAD; those files were preserved. Whitespace and
+manual skill frontmatter/placeholders passed, and 44 local links resolve; the
+standard skill validator still lacks PyYAML. Broader integration/once-only
+effects and final cross-width coverage were left for step 3 above.
+
+At step 2 user-edited examples/Builtins.co and examples/Fib.co still declared
+usize main and received C3037. Step 3 migrates their main annotations to isize.
+
+### isize step 1: primitive and semantic contract (2026-11-01)
+
+The user requested a signed pointer-sized isize primitive and revoked the
+earlier usize-main allowance. The [three-step isize plan](isize-implementation.md)
+tracks the work. Step 1 adds CISize over CInteger, keyword/parser/resolver support,
+target-specific bounds/literals, distinct identity and canonical metadata.
+Size/rank/extent/width remain usize. Provider emission now rejects isize bound
+recipes from a different target width, as it already did for usize results.
+
+ISizeTest checks semantic contracts on Windows x64/x86 layouts and reuse of the
+same AST across widths, signed bounds/static division errors, strict typing,
+overloads, explicit conversion typing, provider results and verified LLVM
+signatures/metadata. The focused ISizeTest/USizeTest/SharedIntegersTest run passed
+20 tests across 3 suites, zero failures/errors/skips. The full regression run
+completed 633 tests across 47 suites: 632 passed, one failed, zero errors/skips.
+The existing CompilerSettingsTest default-path assertion expects Builtins.co
+while CompilerSettings defaults to Fib.co; both are already present in commit
+cc32806 and were preserved. All isize checks passed. At this milestone native
+isize integration and executable entry changes remained steps 2 and 3. Whitespace, skill
+frontmatter/placeholders and 43 local links were checked; the standard validator
+requires PyYAML, absent from the available Python runtimes.
+
+At step 1 ProgramAnalyzer and C3037 were unchanged: usize main was still accepted
+and isize main rejected. Step 2 above corrects that intermediate policy and
+replaces the prior acceptance tests.
+
+### Earlier usize return support for main (superseded design, 2026-11-01)
 
 The user explicitly extended the executable entry contract to accept usize in
 addition to void and signed fixed-width int. ProgramAnalyzer accepts the distinct

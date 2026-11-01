@@ -1,7 +1,7 @@
 # Confirmed Cloth semantics
 
 These decisions were confirmed directly by the user during the language design
-discussion from 2026-10-29 through 2026-10-31. `../../../../examples/Test.co` remains the main syntax example; these rules
+discussion from 2026-10-29 through 2026-11-01. `../../../../examples/Test.co` remains the main syntax example; these rules
 clarify it and extend it where noted. This document describes intended behavior,
 not the compiler's current feature coverage.
 
@@ -115,14 +115,15 @@ not the compiler's current feature coverage.
   scope. File-level declarations remain distinct from executable statements.
 - Executable programs start in `main`. Libraries do not require a `main`.
 - `main` may take no parameters or one `string[] args` parameter. Either
-  parameter form may return `void`, `usize` or signed `int` at any supported integer width:
+  parameter form may return `void`, `isize` or signed `int` at any supported integer width:
   `int<8>`, `int<16>`, `int<32>`, or `int<64>`. Plain `int` retains its default
   32-bit width, and an omitted return annotation means `void` as usual.
   For example, `fn main()`, `fn<void> main(string[] args)`,
-  `fn<int> main()`, `fn<int<64>> main(string[] args)` and `fn<usize> main()`
-  are valid headers. The user explicitly added usize return support on
-  2026-11-01. Fixed-width unsigned int return types remain outside the entry
-  contract; usize retains its distinct identity.
+  `fn<int> main()`, `fn<int<64>> main(string[] args)` and `fn<isize> main()`
+  are valid headers. On 2026-11-01 the user revoked the earlier usize-main
+  extension in favor of signed isize. All unsigned return types, including
+  usize, are outside the entry contract. Step 2 of the
+  [isize plan](isize-implementation.md) implements this compiler entry policy.
 - Each executable must have exactly one entry-point `main`. Defining both
   `main()` and `main(string[] args)` is a compile-time error; startup does not
   select between entry-point overloads.
@@ -139,16 +140,15 @@ not the compiler's current feature coverage.
   errors that terminate before the entry-point call returns retain their error
   output without a normal-completion message.
 - At the native exit-code boundary, signed results narrower than the target's
-  native exit-code integer are sign-extended, and narrower unsigned usize
-  results would zero-extend. Wider results retain the low bits,
+  native exit-code integer are sign-extended. Wider results retain the low bits,
   following Cloth's explicit integer-cast rules. In particular, an `int<64>`
   result outside the native exit-code range is truncated rather than producing
   a runtime error. The user confirmed low-bit truncation on 2026-10-30.
-- A usize main uses that same native C int exit boundary. Equal-width values
+- An isize main uses that same native C int exit boundary. Equal-width values
   preserve their bits and wider values retain the low native bits; PEC reports
-  the resulting signed C int. On current 32/64-bit targets, usize::max reports
-  PEC: -1 and usize::max - 1 reports PEC: -2. Native operating-system process
-  status interpretation still applies; this adds no checked exit-range failure.
+  the resulting signed C int. A negative isize result such as -2 therefore
+  reports PEC: -2. Native operating-system process status interpretation still
+  applies; this adds no checked exit-range failure or pointer-width exit status.
 - These rules were confirmed by the user on 2026-10-30. File-level executable
   snippets now exist only in internal test helpers, not the source-file grammar.
   See [development status](development.md) for native entry support and pending
@@ -656,6 +656,32 @@ Array syntax and construction were confirmed on 2026-10-30:
 - Integration checks preserve Cloth's first detected error across compiler
   passes. This does not promise source-order priority between different passes,
   diagnostic recovery or reporting multiple errors.
+
+## Target-sized signed integer (isize)
+
+- On 2026-11-01 the user requested `isize` as a signed pointer-sized integer,
+  alongside unsigned pointer-sized `usize`. Its width comes from the compilation
+  target: 32 bits on supported 32-bit profiles and 64 bits on supported 64-bit
+  profiles. Explicit fixed integer widths and plain int's default do not change.
+- Isize has its own primitive identity, distinct from same-width fixed signed
+  int and usize. Typed assignments, arguments, returns and mixed integer
+  operations retain exact-type rules; conversions require explicit casts.
+- It follows existing signed integer arithmetic and conversion rules. Bounds
+  are -2^(N-1) through 2^(N-1)-1; arithmetic wraps at N bits. Division/remainder
+  retain zero-divisor and minimum/-1 guards. Integer casts retain low bits when
+  narrowing and extend by source signedness when widening. Float-to-integer
+  casts remain checked and truncate toward zero.
+- Source spelling is `isize`, with no numeric width suffix or unsigned modifier.
+  Normalized metadata uses `"isize"` and array forms such as `"isize[3]"`.
+  Its metadata is numeric and signed; equality preserves its own identity.
+  Min/max return isize, while size/rank/extent/width still return usize.
+- The user explicitly retained all other usize behavior, including unsigned
+  array/string counts and metadata measurements. Signed isize indices use
+  existing checked indexing; negative indices remain invalid. This adds no
+  source pointer or pointer-arithmetic facility.
+- All three implementation stages are complete: the primitive, signed
+  numeric/entry integration and broader cross-width validation. See the
+  [isize implementation record](isize-implementation.md) for verified coverage.
 
 ## Integer signedness and widths
 

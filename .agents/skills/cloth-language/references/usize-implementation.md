@@ -2,6 +2,11 @@
 
 Status: all seven steps implemented and verified (2026-11-01).
 
+The later user decision introducing signed isize revokes the usize-main
+extension below. Step 2 of the [isize plan](isize-implementation.md) implements
+its replacement: isize main is accepted and usize main is rejected. All other
+usize contracts and completed migration steps are retained.
+
 The user requested a documented implementation plan after a discussion-only
 backend review, then explicitly authorized steps 1 through 7 with continuing skill updates.
 The records below preserve each milestone; use the final contracts and target
@@ -18,10 +23,11 @@ Read [confirmed semantics](semantics.md) and
   64-bit targets use 32-bit and 64-bit representations respectively.
 - Explicit `int<8>`, `int<16>`, `int<32>` and `int<64>` retain exactly their
   specified widths, signed or unsigned. Plain `int` retains its 32-bit default.
-- After the migration the user explicitly extended main to allow usize returns
+- After the migration the user initially extended main to allow usize returns
   (2026-11-01). The native C int exit boundary keeps low bits when narrowing;
   PEC reports the normalized signed native value. Earlier milestone references
-  to the signed-int-only main policy below are historical.
+  to the signed-int-only main policy below are historical. This extension was
+  subsequently revoked by the isize decision linked above.
   This follow-up passed 626 tests across 46 suites, including native x64/x86
   usize entry returns and the existing Builtins.co returning usize::max - 1.
 - Migrate scalar/array/string `size` and metadata `rank`, `extent` and `width`

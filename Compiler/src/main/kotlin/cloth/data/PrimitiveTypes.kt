@@ -13,7 +13,20 @@ import kotlin.math.log10
 /** Contextual spellings only; these names are not globally reserved lexer keywords. */
 enum class CompilerDataProviders(val spelling: String) {
 
-	SIZE("size"), MAX("max"), MIN("min"), ADDR("addr"), TYPE("type"), STR("str"), ELEMENT("element"), ISARRAY("isarray"), RANK("rank"), HASEXTENT("hasextent"), EXTENT("extent"), WIDTH("width"), ISUNSIGNED("isunsigned"), ISNUMERIC("isnumeric");
+	SIZE("size"),
+	MAX("max"),
+	MIN("min"),
+	ADDR("addr"),
+	TYPE("type"),
+	STR("str"),
+	ELEMENT("element"),
+	ISARRAY("isarray"),
+	RANK("rank"),
+	HASEXTENT("hasextent"),
+	EXTENT("extent"),
+	WIDTH("width"),
+	ISUNSIGNED("isunsigned"),
+	ISNUMERIC("isnumeric");
 
 	override fun toString(): String = spelling
 

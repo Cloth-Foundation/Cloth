@@ -1,0 +1,24 @@
+fn<isize> next(isize index) = index + 1
+fn<isize> difference(isize left, isize right) = left - right
+
+fn<isize> main() {
+    def values = [10, 20, 30]
+    def<isize> index = next(0)
+    if (values[index] != 20) { return 1 }
+
+    // Counts stay unsigned. This small count fits isize on both target widths.
+    def<usize> count = values::size
+    def<isize> last = (count -> isize) - 1
+    def<isize> delta = difference(index, last)
+    if (delta != -1 || count::type != usize::type) { return 2 }
+
+    // Equal machine widths do not make isize an alias of a fixed-width int.
+    if (!(delta is isize) || delta::type::str != "isize") { return 3 }
+    if (isize::max + 1 != isize::min || (usize::max -> isize) != -1) { return 4 }
+    if (isize::type::isunsigned || !isize::type::isnumeric) { return 5 }
+
+    println(delta::type)
+    println(isize::type::width)
+    println(delta)
+    return 0
+}

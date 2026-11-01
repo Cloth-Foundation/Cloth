@@ -24,6 +24,7 @@ internal class TypeResolver(val target: TargetLayout) {
 			if (annotation.width != null) throw SemanticErrors.type(annotation)
 			when (name) {
 				Keywords.USIZE.toString()     -> CUSize(target.sizeBits)
+				Keywords.ISIZE.toString()     -> CISize(target.sizeBits)
 				Keywords.BOOLEAN.toString()   -> ValueType.BOOL
 				Keywords.CHARACTER.toString() -> ValueType.CHAR
 				Keywords.STRING.toString()    -> ValueType.STRING
