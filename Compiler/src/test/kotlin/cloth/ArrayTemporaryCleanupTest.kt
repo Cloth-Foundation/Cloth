@@ -235,6 +235,49 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 2, peak = 16)
 	}
 
+	@Test
+	fun `discarded mixed result carriers release all returned buffers before the next statement`(@TempDir directory: Path) {
+		probe(directory, "multi_discarded", """
+			$make
+			fn<int[], string> pair(int n) = [n, n], #"value {n}"
+			fn discard() = pair(5) -> void
+			fn<int> sample() {
+			    pair(1)
+			    if (liveBytes() != 0) { return 1 }
+			    def _, _ = pair(2)
+			    if (liveBytes() != 0) { return 2 }
+			    _, _ = pair(3)
+			    if (liveBytes() != 0) { return 3 }
+			    pair(4) -> void
+			    if (liveBytes() != 0) { return 4 }
+			    discard()
+			    if (liveBytes() != 0) { return 5 }
+			    def<int[2], string> _, _ = pair(6)
+			    if (liveBytes() != 0) { return 6 }
+			    def<int[2]> _ = make(7)
+			    if (liveBytes() != 0) { return 7 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `discarding a list with captured writes keeps published buffers alive`(@TempDir directory: Path) {
+		probe(directory, "multi_captured", """
+			$make
+			fn<int> sample() {
+			    def keep = [0, 0]
+			    def<int[]> publish = { keep = make(9)
+			        return [3, 3] }
+			    _, _ = publish, make(4)
+			    if (keep[0] != 9 || keep[1] != 9 || liveBytes() == 0) { return 1 }
+			    def<int[2], int[2]> _, _ = publish, make(5)
+			    if (keep[0] != 9 || keep[1] != 9 || liveBytes() == 0) { return 2 }
+			    return 0
+			}
+		""")
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

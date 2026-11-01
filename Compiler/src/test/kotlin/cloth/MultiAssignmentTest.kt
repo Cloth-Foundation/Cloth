@@ -91,7 +91,7 @@ class MultiAssignmentTest {
 
 	@Test
 	fun `malformed lists and unsupported assignment forms are syntax errors`() {
-		for (statement in listOf("x, = 20", "x,,y = 20", "x, y", "x, y =", "x, y := 20", "x, y += 20", "x, y = 1, 2", "x, y[0] = 20", "x, int::size = 20", "x, y = 20 def z = 1")) {
+		for (statement in listOf("x, = 20", "x,,y = 20", "x, y =", "x, y := 20", "x, y += 20", "x, y[0] = 20", "x, int::size = 20", "x, y = 20 def z = 1")) {
 			assertFailsWith<ClothDiagnostic>(statement) { parse("fn test() { $statement }") }
 		}
 	}

@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.data.CArray
 import cloth.data.ValueType
+import cloth.semantic.ResultShape
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -9,7 +10,9 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Every normal exit joins here, so temporary return buffers are released exactly once.
  * String and array results copy into the caller's frame before this invocation is released.
  */
-internal class EmitFunctionFrame(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val returnType: ValueType, private val abiReturnType: LLVMTypeRef, private val strings: EmitStringArena, private val callerArena: LLVMValueRef?) {
+internal class EmitFunctionFrame(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val returns: ResultShape, private val abiReturnType: LLVMTypeRef, private val strings: EmitStringArena, private val callerArena: LLVMValueRef?) {
+
+	constructor(context: LLVMContextRef, builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, returnType: ValueType, abiReturnType: LLVMTypeRef, strings: EmitStringArena, callerArena: LLVMValueRef?) : this(context, builder, entry, ResultShape.of(returnType), abiReturnType, strings, callerArena)
 
 	private val exit = LLVMAppendBasicBlockInContext(context, LLVMGetBasicBlockParent(entry), "return")
 	private val predecessors = mutableListOf<Pair<LLVMBasicBlockRef, LLVMValueRef?>>()
@@ -23,6 +26,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 	}
 
 	fun copyArray(value: LLVMValueRef, type: CArray): LLVMValueRef = strings.copyValue(builder, stringReturnArena(), value, type)
+	fun copyValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.copyValue(builder, stringReturnArena(), value, type)
 
 	fun emitReturn(value: LLVMValueRef?) {
 		predecessors.add(LLVMGetInsertBlock(builder) to value)
@@ -36,7 +40,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 			return
 		}
 		val value = when {
-			returnType == ValueType.VOID -> null
+			returns == ResultShape.Empty -> null
 			predecessors.size == 1       -> checkNotNull(predecessors.single().second)
 			else                         -> {
 				val phi = LLVMBuildPhi(builder, abiReturnType, "return_value")
@@ -51,7 +55,13 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 				phi
 			}
 		}
-		val result = if (returnType.buffered) strings.copyValue(builder, checkNotNull(callerArena), checkNotNull(value), returnType) else value
+		var result = value
+		if (returns is ResultShape.Single && returns.type.buffered) result = strings.copyValue(builder, checkNotNull(callerArena), checkNotNull(value), returns.type)
+		if (returns is ResultShape.Multiple) for ((index, type) in returns.values.withIndex()) if (type.buffered) {
+			val slot = LLVMBuildExtractValue(builder, checkNotNull(value), index, "outgoing_$index")
+			val copied = strings.copyValue(builder, checkNotNull(callerArena), slot, type)
+			result = LLVMBuildInsertValue(builder, checkNotNull(result), copied, index, "outgoing_results")
+		}
 		arena?.let { strings.release(builder, it) }
 		if (result == null) LLVMBuildRetVoid(builder) else LLVMBuildRet(builder, result)
 	}

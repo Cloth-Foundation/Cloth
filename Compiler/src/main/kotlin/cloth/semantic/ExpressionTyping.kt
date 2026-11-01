@@ -4,10 +4,10 @@ import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
-import cloth.parser.statement.ExpressionStatement
-import cloth.parser.statement.Statement
+import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
 import cloth.token.Operators
+import cloth.token.Token
 import cloth.token.TokenSpan
 import java.math.BigInteger
 
@@ -21,6 +21,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected abstract fun statement(statement: Statement)
 	protected abstract fun withScope(action: () -> Unit)
 	protected open fun callType(expression: CallExpression): ValueType = throw SemanticErrors.unknownName(expression.name)
+	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.CONTINUE
 	protected open fun completion(statements: List<Statement>): ControlFlow = ControlFlow.CONTINUE
 	protected fun reject(diagnostic: () -> SemanticException): Nothing {
@@ -119,6 +120,131 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	fun typeOf(expression: Expression, expected: ValueType? = null, requireValue: Boolean = true, contextualFloat: Boolean = false, allowVoidResult: Boolean = false): ValueType {
+		val result = resultOf(expression, expected?.let { ResultShape.of(it) }, requireValue, contextualFloat, allowVoidResult)
+		// No parameter context can make multiple intrinsic results into one argument.
+		return result.scalarOrNull() ?: throw SemanticErrors.scalarResults(result, expression.span)
+	}
+
+	fun resultOf(expression: Expression, expected: ResultShape? = null, requireValue: Boolean = true, contextualFloat: Boolean = false, allowVoidResult: Boolean = false, receptionContext: ReceptionContext? = null): ResultShape {
+		model.metadata.remove(expression)
+		val result = when (expression) {
+			is CallExpression                                                                     -> callResults(expression)
+			is ResultListExpression                                                               -> {
+				val values = expression.values.mapIndexed { index, value ->
+					typeOf(value, receptionContext?.positional?.getOrNull(index) ?: expected?.values?.getOrNull(index), contextualFloat = contextualFloat)
+				}
+				if (values.any { it == ValueType.NEVER }) ResultShape.Never else ResultShape.of(values)
+			}
+
+			is IfExpression                                                                       -> conditionalResults(expression, expected, requireValue, contextualFloat, allowVoidResult, receptionContext)
+			is CastExpression if declarations && resolveType(expression.target) == ValueType.VOID -> {
+				resultOf(expression.operand, requireValue = false)
+				ResultShape.Empty
+			}
+
+			else                                                                                  -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), requireValue, contextualFloat, allowVoidResult))
+		}
+		val completed = if (completion(expression).canContinue) result else ResultShape.Never
+		if (requireValue && !allowVoidResult && completed == ResultShape.Empty) reject { SemanticErrors.voidValue(expression.span) }
+		model.recordResult(expression, completed)
+		return completed
+	}
+
+	private fun conditionalResults(expression: IfExpression, expected: ResultShape?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean, receptionContext: ReceptionContext?): ResultShape {
+		if (requireValue && completion(expression).canContinue && expression.otherwise == null) reject { SemanticErrors.missingElse(expression.span) }
+		for (branch in expression.branches) {
+			val condition = typeOf(branch.condition)
+			if (condition != ValueType.BOOL && condition != ValueType.NEVER) reject { SemanticErrors.condition(branch.condition) }
+		}
+		var result: ResultShape? = null
+		var firstSpan: TokenSpan? = null
+		val bodies = expression.branches.map { it.statements to it.span } + listOfNotNull(expression.otherwise?.let { it to checkNotNull(expression.otherwiseSpan) })
+		for ((statements, bodySpan) in bodies) {
+			val needsValue = requireValue && completion(statements).canContinue
+			if (needsValue && statements.lastOrNull() !is ExpressionStatement) reject { SemanticErrors.branchValue(bodySpan) }
+			withScope {
+				for ((index, item) in statements.withIndex()) {
+					if (needsValue && index == statements.lastIndex) {
+						val next = resultOf((item as ExpressionStatement).expression, expected, contextualFloat = contextualFloat, allowVoidResult = allowVoidResult, receptionContext = receptionContext)
+						model.recordResult(item, next)
+						if (next != ResultShape.Never) {
+							val previous = result
+							result = if (previous == null || previous == next) next else {
+								if (previous.values.size != next.values.size) {
+									if (previous !is ResultShape.Multiple && next !is ResultShape.Multiple) reject { SemanticErrors.branchTypes(previous.scalar(), next.scalar(), checkNotNull(firstSpan), item.span) }
+									reject { SemanticErrors.branchResultArity(previous, next, checkNotNull(firstSpan), item.span) }
+								}
+								ResultShape.of(previous.values.zip(next.values).mapIndexed { position, (left, right) ->
+									val context = (if (next is ResultShape.Multiple) receptionContext?.positional?.getOrNull(position) else receptionContext?.broadcast) ?: expected?.values?.getOrNull(position)
+									if (left == right) left else if (context is CArray && context.accepts(left) && context.accepts(right)) context
+									else reject { SemanticErrors.branchTypes(left, right, checkNotNull(firstSpan), item.span) }
+								})
+							}
+							firstSpan = firstSpan ?: item.span
+						}
+					} else statement(item)
+				}
+			}
+		}
+		return if (requireValue) result ?: ResultShape.Never else ResultShape.Empty
+	}
+
+	fun definitionPlan(group: BindingGroupDeclaration): ReceptionPlan {
+		if (group.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(group.span)
+		val annotations = group.types.map { annotation ->
+			resolveType(annotation).also { if (it == ValueType.VOID) reject { SemanticErrors.voidType(annotation.span) } }
+		}
+		if (annotations.size > 1 && annotations.size != group.targets.size) reject {
+			SemanticErrors.receptionAnnotations("Expected ${group.targets.size} positional type annotations, got ${annotations.size}", group.span)
+		}
+		val context = ReceptionContext(annotations.singleOrNull(), if (annotations.size > 1) annotations else List(group.targets.size) { null })
+		val actual = resultOf(group.initializer, receptionContext = context)
+		if (actual is ResultShape.Multiple && annotations.size == 1) reject {
+			SemanticErrors.receptionAnnotations("A multiple-result definition requires one explicit type per position, or an inferred type list", group.types.single().span)
+		}
+		if (actual is ResultShape.Single && annotations.size > 1) reject {
+			SemanticErrors.receptionAnnotations("A scalar broadcast accepts one shared type annotation", group.span)
+		}
+		val expected = if (annotations.size == 1) List(group.targets.size) { annotations.single() } else List(group.targets.size) { annotations.getOrNull(it) }
+		return receive(group, group.initializer, group.targets, actual, expected, group.targets.map { it.token }, definition = true, group = group)
+	}
+
+	fun assignmentPlan(statement: MultiAssignmentStatement, types: List<ValueType?>, declarations: List<Token?>): ReceptionPlan {
+		val context = ReceptionContext(types.firstOrNull { it != null }, types)
+		val actual = resultOf(statement.value, receptionContext = context)
+		return receive(statement, statement.value, statement.targets, actual, types, declarations, definition = false)
+	}
+
+	private fun receive(statement: Statement, producer: Expression, targets: List<ReceivingTarget>, actual: ResultShape, expected: List<ValueType?>, declarations: List<Token?>, definition: Boolean, group: BindingGroupDeclaration? = null): ReceptionPlan {
+		val kind = when (actual) {
+			is ResultShape.Single   -> ReceptionKind.BROADCAST
+			is ResultShape.Multiple -> {
+				if (actual.values.size != targets.size) reject { SemanticErrors.receptionArity(targets.size, actual, statement.span) }
+				ReceptionKind.POSITIONAL
+			}
+
+			ResultShape.Never       -> ReceptionKind.NONCONTINUING
+			ResultShape.Empty       -> reject { SemanticErrors.voidValue(producer.span) }
+		}
+		val slots = targets.mapIndexed { index, target ->
+			val source = if (kind == ReceptionKind.BROADCAST) 0 else index
+			val value = if (actual == ResultShape.Never) ValueType.NEVER else actual.values[source]
+			val required = expected[index]
+			val location = if (kind == ReceptionKind.POSITIONAL && producer is ResultListExpression) producer.values[source] else producer
+			if (required != null && !required.accepts(value)) reject {
+				if (target is ReceivingTarget.Discard) SemanticErrors.discardedType(required, value, index, location.span, group?.types?.getOrNull(index)?.span ?: target.span)
+				else SemanticErrors.typeMismatch(required, value, target.token, location, declarations[index] ?: target.token)
+			}
+			val type = if (definition && required is CArray && value is CArray) required.inferArraySizes(value) else required ?: value
+			ReceptionSlot(target, type, source)
+		}
+		return ReceptionPlan(producer, actual, kind, slots).also {
+			model.receptions[statement] = it
+			model.recordResult(statement, it.statementResult)
+		}
+	}
+
+	private fun scalarTypeOf(expression: Expression, expected: ValueType?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean): ValueType {
 		model.metadata.remove(expression)
 		val type = when (expression) {
 			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
@@ -201,35 +327,6 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				typeOf(expression.operand)
 				model.typeChecks[expression] = resolveType(expression.target)
 				ValueType.BOOL
-			}
-
-			is IfExpression             -> {
-				if (requireValue && completion(expression).canContinue && expression.otherwise == null) reject { SemanticErrors.missingElse(expression.span) }
-				for (branch in expression.branches) {
-					val condition = typeOf(branch.condition)
-					if (condition != ValueType.BOOL && condition != ValueType.NEVER) reject { SemanticErrors.condition(branch.condition) }
-				}
-				var resultType: ValueType? = null
-				var resultSpan: TokenSpan? = null
-				val bodies = expression.branches.map { it.statements to it.span } + listOfNotNull(expression.otherwise?.let { it to checkNotNull(expression.otherwiseSpan) })
-				for ((statements, bodySpan) in bodies) {
-					val needsValue = requireValue && completion(statements).canContinue
-					if (needsValue && statements.lastOrNull() !is ExpressionStatement) reject { SemanticErrors.branchValue(bodySpan) }
-					withScope {
-						for ((index, item) in statements.withIndex()) {
-							if (needsValue && index == statements.lastIndex) {
-								val branchType = typeOf((item as ExpressionStatement).expression, expected, contextualFloat = contextualFloat, allowVoidResult = allowVoidResult)
-								model.statements[item] = branchType
-								resultType = if (resultType != null && branchType != resultType) {
-									if (expected is CArray && expected.accepts(checkNotNull(resultType)) && expected.accepts(branchType)) expected
-									else reject { SemanticErrors.branchTypes(checkNotNull(resultType), branchType, checkNotNull(resultSpan), item.span) }
-								} else branchType
-								resultSpan = item.span
-							} else statement(item)
-						}
-					}
-				}
-				if (requireValue) resultType ?: ValueType.NEVER else ValueType.VOID
 			}
 
 			is CastExpression           -> {

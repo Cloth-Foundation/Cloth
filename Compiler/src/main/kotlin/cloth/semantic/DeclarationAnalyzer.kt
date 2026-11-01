@@ -73,6 +73,20 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
+				is BindingGroupDeclaration    -> {
+					if (statement.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(statement.span)
+					val seen = mutableMapOf<String, Token>()
+					for (target in statement.targets) if (target is ReceivingTarget.Named) {
+						scope.checkAvailable(target.token)
+						seen.putIfAbsent(target.token.lexeme, target.token)?.let { throw SemanticErrors.duplicate(target.token, it) }
+					}
+					// All producer positions resolve before any receiving name is introduced.
+					expression(statement.initializer, scope)
+					model.groupSymbols[statement] = statement.targets.mapIndexed { index, target ->
+						if (target is ReceivingTarget.Discard) null else GroupLocalSymbol(statement, index).also { scope.declare(it) }
+					}
+				}
+
 				is BindingDeclaration         -> {
 					scope.checkAvailable(statement.name)
 					// An initializer can read an outer binding before its local shadow exists.
@@ -88,7 +102,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 				}
 
 				is MultiAssignmentStatement   -> {
-					model.multiAssignments[statement] = statement.names.map { assignmentTarget(it, scope) }
+					model.multiAssignments[statement] = statement.targets.map { if (it is ReceivingTarget.Discard) null else assignmentTarget(it.token, scope) }
 					expression(statement.value, scope)
 				}
 
@@ -106,6 +120,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun expression(expression: Expression, scope: LexicalScope) {
 			when (expression) {
+				is ResultListExpression                                                                              -> expression.values.forEach { expression(it, scope) }
 				is TypeReceiverExpression                                                                            -> Unit
 				is ProviderAccessExpression                                                                          -> expression(expression.receiver, scope)
 				is StateCallExpression                                                                               -> {

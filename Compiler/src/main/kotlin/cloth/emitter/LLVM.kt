@@ -160,7 +160,8 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 				result = statementEmitter.emit(statement)
 			}
 
-			if (forcePrint && result != null) emitPrint(context, module, builder, result, ast.statements.lastOrNull()?.let { semantics.typeOf(it) } ?: ValueType.INT, casts, strings)
+			val resultShape = ast.statements.lastOrNull()?.let { semantics.resultOf(it) } ?: ResultShape.Single(ValueType.INT)
+			if (forcePrint && result != null && resultShape is ResultShape.Single) emitPrint(context, module, builder, result, resultShape.type, casts, strings)
 
 			frame.emitReturn(LLVMConstInt(nativeIntType, 0L, 0))
 			frame.finish()

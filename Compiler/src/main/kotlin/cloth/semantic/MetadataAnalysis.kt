@@ -48,6 +48,15 @@ internal class MetadataAnalysis(
 	fun statements(body: List<Statement>): ValueType? {
 		var result: ValueType? = null
 		for (item in body) result = when (item) {
+			is BindingGroupDeclaration    -> {
+				expression(item.initializer)
+				val facts = model.representedResultsOf(item.initializer)
+				for (slot in model.receptionOf(item).slots) if (slot.target is ReceivingTarget.Named) {
+					scopes.last()[slot.target.token.lexeme] = Slot(facts.getOrNull(slot.sourceIndex), item.mutable)
+				}
+				null
+			}
+
 			is BindingDeclaration         -> {
 				val block = item.initializer as? FunctionBlockExpression
 				val represented = if (block == null) expression(item.initializer) else {
@@ -69,8 +78,10 @@ internal class MetadataAnalysis(
 			}
 
 			is MultiAssignmentStatement   -> {
-				val represented = expression(item.value)
-				item.names.forEach { lookup(it.lexeme)?.represented = represented }
+				expression(item.value)
+				// Snapshot all represented result facts before writing even the first target.
+				val facts = model.representedResultsOf(item.value)
+				for (slot in model.receptionOf(item).slots) if (slot.target is ReceivingTarget.Named) lookup(slot.target.token.lexeme)?.represented = facts.getOrNull(slot.sourceIndex)
 				null
 			}
 
@@ -90,7 +101,13 @@ internal class MetadataAnalysis(
 	}
 
 	fun expression(value: Expression): ValueType? {
+		model.resultMetadata.remove(value)
 		val represented: ValueType? = when (value) {
+			is ResultListExpression     -> {
+				model.resultMetadata[value] = value.values.map { expression(it) }
+				null
+			}
+
 			is NameExpression           -> {
 				val slot = lookup(value.name.lexeme)
 				if (slot?.block != null) {
@@ -154,6 +171,12 @@ internal class MetadataAnalysis(
 			is IfExpression             -> {
 				val paths = mutableListOf<Map<Slot, ValueType?>>()
 				val results = mutableListOf<ValueType?>()
+				val positionalResults = mutableListOf<List<ValueType?>>()
+				fun resultFacts(body: List<Statement>, scalar: ValueType?): List<ValueType?> {
+					val tail = (body.lastOrNull() as? ExpressionStatement)?.expression
+					return tail?.let { model.representedResultsOf(it) } ?: listOf(scalar)
+				}
+
 				var reachesCondition = true
 				for (branch in value.branches) {
 					expression(branch.condition)
@@ -164,6 +187,7 @@ internal class MetadataAnalysis(
 					// All source is checked, but only continuing, executable paths contribute facts.
 					if (tested && truth != false && flow.of(branch.statements).canContinue) {
 						results.add(represented)
+						positionalResults.add(resultFacts(branch.statements, represented))
 						paths.add(snapshot())
 					}
 					restore(nextCondition)
@@ -173,15 +197,27 @@ internal class MetadataAnalysis(
 				val represented = otherwise?.let { scoped(it) }
 				if (reachesCondition && (otherwise == null || flow.of(otherwise).canContinue)) {
 					results.add(represented)
+					positionalResults.add(otherwise?.let { resultFacts(it, represented) } ?: emptyList())
 					paths.add(snapshot())
 				}
 				merge(paths)
+				if (model.resultOf(value) is ResultShape.Multiple) {
+					model.resultMetadata[value] = model.resultOf(value).values.indices.map { index ->
+						val first = positionalResults.firstOrNull()?.getOrNull(index)
+						first.takeIf { positionalResults.all { it.getOrNull(index) == first } }
+					}
+				}
 				results.firstOrNull().takeIf { first -> results.all { it == first } }
 			}
 
 			else                        -> null
 		}
 		if (represented == null) model.metadata.remove(value) else model.metadata[value] = represented
+		when (val result = model.resultOf(value)) {
+			is ResultShape.Single   -> model.resultMetadata[value] = listOf(represented)
+			is ResultShape.Multiple -> if (!model.resultMetadata.containsKey(value)) model.resultMetadata[value] = result.values.map { null }
+			else                    -> model.resultMetadata.remove(value)
+		}
 		return represented
 	}
 }

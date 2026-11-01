@@ -32,7 +32,8 @@ class ClothObject(val name: String, val ext: FileExtension = FileExtension.CO, v
 	}
 }
 
-enum class FileExtension { CO, CLIB;
+enum class FileExtension { CO,
+	CLIB;
 
 	override fun toString(): String {
 		return name.lowercase()

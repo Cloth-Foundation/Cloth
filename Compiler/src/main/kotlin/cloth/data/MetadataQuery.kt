@@ -5,7 +5,14 @@ import cloth.target.TargetLayout
 /** Descriptor field layout and source query contracts are shared by checking and emission. */
 internal enum class MetadataQuery(val provider: CompilerDataProviders, val field: Int) {
 
-	ELEMENT(CompilerDataProviders.ELEMENT, 1), RANK(CompilerDataProviders.RANK, 2), EXTENT(CompilerDataProviders.EXTENT, 3), WIDTH(CompilerDataProviders.WIDTH, 4), ISARRAY(CompilerDataProviders.ISARRAY, 5), HASEXTENT(CompilerDataProviders.HASEXTENT, 6), ISUNSIGNED(CompilerDataProviders.ISUNSIGNED, 7), ISNUMERIC(CompilerDataProviders.ISNUMERIC, 8);
+	ELEMENT(CompilerDataProviders.ELEMENT, 1),
+	RANK(CompilerDataProviders.RANK, 2),
+	EXTENT(CompilerDataProviders.EXTENT, 3),
+	WIDTH(CompilerDataProviders.WIDTH, 4),
+	ISARRAY(CompilerDataProviders.ISARRAY, 5),
+	HASEXTENT(CompilerDataProviders.HASEXTENT, 6),
+	ISUNSIGNED(CompilerDataProviders.ISUNSIGNED, 7),
+	ISNUMERIC(CompilerDataProviders.ISNUMERIC, 8);
 
 	fun type(target: TargetLayout): ValueType = when (this) {
 		ELEMENT             -> CTypeInfo

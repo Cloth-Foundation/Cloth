@@ -14,12 +14,14 @@ sealed interface Declaration {
 data class FunctionDeclaration(
 	val keyword: Token,
 	val name: Token,
-	val returnType: TypeReference?,
+	val returnTypes: List<TypeReference>,
 	val parameters: List<ParameterDeclaration>,
 	val body: FunctionBody,
 	val visibility: Token? = null,
 ) : Declaration {
 
+	/** Compatibility for scalar consumers until ordered result typing is implemented. */
+	val returnType get() = returnTypes.singleOrNull()
 	override val span get() = (visibility ?: keyword).span.through(body.span)
 }
 

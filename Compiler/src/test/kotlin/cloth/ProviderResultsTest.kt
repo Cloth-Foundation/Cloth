@@ -312,7 +312,7 @@ class ProviderResultsTest {
 			bindings = EmitBindings(context, builder, entry)
 			strings = EmitString(context, builder, abi)
 			val casts = EmitCast(context, builder, semantics.types, abi)
-			expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, functions, semantics, returnType, frame)
+			expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, functions, semantics, cloth.semantic.ResultShape.of(returnType), frame)
 		}
 
 		fun receiver(name: String = "sample"): Expression = when (val body = semantics.declarations.functions.single { it.name.lexeme == name }.declaration.body) {

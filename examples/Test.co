@@ -155,6 +155,14 @@ pub fn<void> main (string[] args) {
     def<unsigned int> a = 10
 
     def<string> isUnsigned = if (a is unsigned int) { "is unsigned" } else if (a > 25) { "is above 25" } else { ":(" }
+
+    // Multiple results bind by position; '_' discards a receiving position.
+    def<string, int> name, age = nameAndAge("Mike", 25)
+    def name1, age1 = nameAndAge("Sarah", 25)
+    def<string, int> name2, _ = nameAndAge("John", 31) // age will be omitted
+    def _, age2 = nameAndAge("Bill", 14) // name will be omitted
+
+    def x, _ = if (true) { true, false } else { false, true }
 }
 
 // Function-level C executes when this function is called
@@ -231,3 +239,5 @@ fn functionBlocks () {
     println(x + x) // Executes twice, left to right, and passes 200.
 
 }
+
+fn<string, int> nameAndAge(string name, int age) = name, age

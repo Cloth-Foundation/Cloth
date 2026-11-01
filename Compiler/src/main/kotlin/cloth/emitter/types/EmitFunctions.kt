@@ -4,12 +4,12 @@ import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
-import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.CallExpression
 import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.ResultShape
 import cloth.semantic.symbols.FunctionSymbol
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -19,7 +19,7 @@ import java.util.*
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
 
-	private val types = LLVMTypes(context, abi.layout)
+	private val results = EmitResults(context, abi.layout)
 	private val functions = IdentityHashMap<FunctionSymbol, LLVMValueRef>()
 	private val functionTypes = IdentityHashMap<FunctionSymbol, LLVMTypeRef>()
 	private val stringStorage = EmitStringArena(context, module, abi)
@@ -27,19 +27,20 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun signature(function: FunctionSymbol): LLVMTypeRef = functionTypes.getValue(function)
 
 	/** Raw binary16 bits avoid requiring external half-precision ABI conversion helpers. */
-	private fun abiType(type: ValueType): LLVMTypeRef = if (type == ValueType.HALF) LLVMInt16TypeInContext(context) else types.value(type)
-	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, abiType(type), "half_argument_bits") else value
-	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, types.value(type), "half_result") else value
+	private fun abiType(type: ValueType): LLVMTypeRef = results.abiType(type)
+	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = results.encode(builder, value, type)
+	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = results.decode(builder, value, type)
 
 	fun emitAll() {
 		for ((index, function) in semantics.declarations.functions.withIndex()) {
 			val type = semantics.typeOf(function)
 			// String and array results copy into an invocation arena supplied by the caller.
-			val parameterCount = type.parameters.size + if (type.returns.buffered) 1 else 0
+			val buffered = type.results.values.any { it.buffered }
+			val parameterCount = type.parameters.size + if (buffered) 1 else 0
 			val signature = PointerPointer<LLVMTypeRef>(parameterCount.toLong()).use { parameters ->
 				type.parameters.forEachIndexed { position, parameter -> parameters.put(position.toLong(), abiType(parameter)) }
-				if (type.returns.buffered) parameters.put(type.parameters.size.toLong(), LLVMPointerTypeInContext(context, 0))
-				LLVMFunctionType(abiType(type.returns), parameters, parameterCount, 0)
+				if (buffered) parameters.put(type.parameters.size.toLong(), LLVMPointerTypeInContext(context, 0))
+				LLVMFunctionType(results.abiType(type.results), parameters, parameterCount, 0)
 			}
 			functionTypes[function] = signature
 			val value = LLVMAddFunction(module, "cloth.fn.$index.${function.name.lexeme}", signature)
@@ -56,7 +57,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val signature = semantics.typeOf(function)
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
-			val frame = EmitFunctionFrame(context, builder, entry, signature.returns, abiType(signature.returns), stringStorage, if (signature.returns.buffered) LLVMGetParam(value, signature.parameters.size) else null)
+			val frame = EmitFunctionFrame(context, builder, entry, signature.results, results.abiType(signature.results), stringStorage, if (signature.results.values.any { it.buffered }) LLVMGetParam(value, signature.parameters.size) else null)
 			val bindings = EmitBindings(context, builder, entry, abi.layout)
 			function.parameters.forEachIndexed { index, parameter ->
 				val argument = decode(builder, LLVMGetParam(value, index), signature.parameters[index])
@@ -64,20 +65,20 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 			val casts = EmitCast(context, builder, semantics.types, abi)
 			val strings = EmitString(context, builder, abi)
-			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.returns, frame)
+			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.results, frame)
 			when (val body = function.declaration.body) {
 				is BlockBody      -> {
 					expressions.emitStatements(body.statements)
 					if (!expressions.terminated()) {
-						if (signature.returns != ValueType.VOID) throw InternalErrors.invariant("Validated non-void function fell through during emission")
+						if (signature.results != ResultShape.Empty) throw InternalErrors.invariant("Validated non-void function fell through during emission")
 						frame.emitReturn(null)
 					}
 				}
 
 				is ExpressionBody -> {
-					val result = if (signature.returns == ValueType.VOID) expressions.emitDiscarded(body.expression) else expressions.emit(body.expression)
+					val result = if (signature.results == ResultShape.Empty) expressions.emitDiscarded(body.expression) else expressions.emit(body.expression)
 					if (!expressions.terminated()) {
-						frame.emitReturn(if (signature.returns == ValueType.VOID) null else encode(builder, checkNotNull(result), signature.returns))
+						frame.emitReturn(if (signature.results == ResultShape.Empty) null else results.encode(builder, checkNotNull(result), signature.results))
 					}
 				}
 			}
@@ -90,17 +91,18 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun emitCall(call: CallExpression, expressions: EmitExpression, builder: LLVMBuilderRef): LLVMValueRef? {
 		val selected = semantics.selectedFunction(call)
 		val type = semantics.typeOf(selected)
-		val argumentCount = call.arguments.size + if (type.returns.buffered) 1 else 0
+		val buffered = type.results.values.any { it.buffered }
+		val argumentCount = call.arguments.size + if (buffered) 1 else 0
 		val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { arguments ->
 			// Snapshot each argument in source order, before entering the callee.
 			call.arguments.forEachIndexed { index, expression ->
 				val snapshot = expressions.transferArrayValue(expressions.emitValue(expression), type.parameters[index])
 				arguments.put(index.toLong(), encode(builder, snapshot, type.parameters[index]))
 			}
-			if (type.returns.buffered) arguments.put(call.arguments.size.toLong(), expressions.stringReturnArena())
-			LLVMBuildCall2(builder, signature(selected), reference(selected), arguments, argumentCount, if (type.returns == ValueType.VOID) "" else "call_result")
+			if (buffered) arguments.put(call.arguments.size.toLong(), expressions.stringReturnArena())
+			LLVMBuildCall2(builder, signature(selected), reference(selected), arguments, argumentCount, if (type.results == ResultShape.Empty) "" else "call_result")
 		}
-		return if (type.returns == ValueType.VOID) null else decode(builder, result, type.returns)
+		return if (type.results == ResultShape.Empty) null else results.decode(builder, result, type.results)
 	}
 
 	companion object {
@@ -109,7 +111,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			fun supported(type: ValueType): Boolean = if (type is CArray) type.element != ValueType.VOID && supported(type.element) else type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
 			for (function in semantics.declarations.functions) {
 				val type = semantics.typeOf(function)
-				if (!supported(type.returns)) throw BackendErrors.functionType(type.returns, function.declaration.returnType?.span ?: function.name.span)
+				type.results.values.forEachIndexed { index, result ->
+					if (!supported(result)) throw BackendErrors.functionType(result, function.declaration.returnTypes[index].span)
+				}
 				function.parameters.forEachIndexed { index, parameter ->
 					if (!supported(type.parameters[index])) throw BackendErrors.functionType(type.parameters[index], parameter.declaration.type.span)
 				}

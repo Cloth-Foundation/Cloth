@@ -25,6 +25,11 @@ data class CallExpression(val name: Token, val arguments: List<Expression>, over
 
 data class ArrayLiteral(val elements: List<Expression>, override val span: TokenSpan) : Expression
 
+/** Ordered results at a return, receiving RHS, or statement/conditional boundary.
+ * Commas inside calls, arrays, and type annotations keep their own grammar.
+ */
+data class ResultListExpression(val values: List<Expression>, override val span: TokenSpan) : Expression
+
 data class IndexExpression(val array: Expression, val index: Expression, override val span: TokenSpan) : Expression
 
 data class UnaryExpression(val operator: Token, val operand: Expression) : Expression {

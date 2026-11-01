@@ -41,7 +41,9 @@ sealed class ValueType(val keyword: Keywords) {
 	abstract fun llvmValue(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef
 	open fun llvmStorage(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef = llvmValue(context, target)
 
-	enum class FloatingFormat(val bits: Int, val exponentBits: Int) { HALF(16, 5), SINGLE(32, 8), DOUBLE(64, 11)
+	enum class FloatingFormat(val bits: Int, val exponentBits: Int) { HALF(16, 5),
+		SINGLE(32, 8),
+		DOUBLE(64, 11)
 	}
 
 	/** Unknown extents may be resolved at runtime; conflicting known extents cannot merge. */

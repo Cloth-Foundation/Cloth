@@ -11,8 +11,15 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Explicit C ABI profiles selected from LLVM's normalized target triple. */
 internal class NativeCABI private constructor(val targetTriple: String, val profile: Profile, val architecture: Architecture, val environment: String) {
 
-	enum class Architecture { X86, X86_64, AARCH64 }
-	enum class Profile(val intBits: Int, val longBits: Int, val longLongBits: Int, val pointerBits: Int, val doubleFormat: ValueType.FloatingFormat, val executableFormat: ExecutableFormat) { WINDOWS_ILP32(32, 32, 64, 32, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.PE), WINDOWS_LLP64(32, 32, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.PE), LINUX_LP64(32, 64, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.ELF), DARWIN_LP64(32, 64, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.MACH_O)
+	enum class Architecture { X86,
+		X86_64,
+		AARCH64
+	}
+
+	enum class Profile(val intBits: Int, val longBits: Int, val longLongBits: Int, val pointerBits: Int, val doubleFormat: ValueType.FloatingFormat, val executableFormat: ExecutableFormat) { WINDOWS_ILP32(32, 32, 64, 32, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.PE),
+		WINDOWS_LLP64(32, 32, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.PE),
+		LINUX_LP64(32, 64, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.ELF),
+		DARWIN_LP64(32, 64, 64, 64, ValueType.FloatingFormat.DOUBLE, ExecutableFormat.MACH_O)
 	}
 
 	val layout = TargetLayout(targetTriple, profile.pointerBits, cIntBits = profile.intBits, cLongBits = profile.longBits, cLongLongBits = profile.longLongBits, cDoubleFormat = profile.doubleFormat)

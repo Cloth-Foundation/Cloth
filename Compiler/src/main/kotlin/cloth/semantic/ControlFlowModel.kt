@@ -42,6 +42,7 @@ class ControlFlowModel {
 		when (statement) {
 			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
+			is BindingGroupDeclaration    -> of(statement.initializer)
 			is AssignmentStatement        -> of(statement.value)
 			is MultiAssignmentStatement   -> of(statement.value)
 			is ElementAssignmentStatement -> of(statement.target).then(of(statement.value))
@@ -53,6 +54,7 @@ class ControlFlowModel {
 
 	fun of(expression: Expression): ControlFlow = expressions.getOrPut(expression) {
 		when (expression) {
+			is ResultListExpression                                                                                                 -> expression.values.fold(ControlFlow.CONTINUE) { flow, value -> flow.then(of(value)) }
 			is TypeReceiverExpression                                                                                               -> ControlFlow.CONTINUE
 			is ProviderAccessExpression                                                                                             -> of(expression.receiver)
 			is StateCallExpression                                                                                                  -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }

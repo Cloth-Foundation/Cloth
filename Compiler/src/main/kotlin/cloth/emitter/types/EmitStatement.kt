@@ -1,11 +1,12 @@
 package cloth.emitter.types
 
-import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.expression.IfExpression
 import cloth.parser.statement.*
 import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.ReceptionKind
+import cloth.semantic.ResultShape
 import cloth.semantic.SemanticModel
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 
@@ -14,6 +15,30 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 	fun emit(statement: Statement, discardResult: Boolean = false): LLVMValueRef? {
 		if (expressionEmitter.terminated()) return null
 		return when (statement) {
+			is BindingGroupDeclaration    -> {
+				val plan = semantics.receptionOf(statement)
+				if (plan.slots.none { it.target is ReceivingTarget.Named }) return expressionEmitter.emitDiscarded(plan)
+				val value = expressionEmitter.emit(plan.producer)
+				if (expressionEmitter.terminated()) return null
+				val symbols = functions?.declarations?.symbolsOf(statement)
+				val prepared = if (plan.kind == ReceptionKind.POSITIONAL) {
+					val slots = expressionEmitter.takeResults(checkNotNull(value), plan.results)
+					plan.slots.map { slot ->
+						if (slot.target is ReceivingTarget.Named) expressionEmitter.transferArrayValue(slots[slot.sourceIndex], slot.type)
+						else {
+							expressionEmitter.validateDiscardedResult(slots[slot.sourceIndex], slot.type); null
+						}
+					}
+				} else null
+				var stored = false
+				for ((index, slot) in plan.slots.withIndex()) if (slot.target is ReceivingTarget.Named) {
+					val snapshot = if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferArrayValue(checkNotNull(value), slot.type)
+					bindings.declare(symbols?.get(index) ?: slot.target.token.lexeme, slot.target.token.lexeme, slot.type, snapshot)
+					stored = true
+				}
+				if (stored && plan.kind == ReceptionKind.BROADCAST) value else null
+			}
+
 			is BindingDeclaration         -> {
 				// The declaration carries code, not an eagerly computed storage value.
 				if (statement.initializer is FunctionBlockExpression) return null
@@ -33,15 +58,24 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 			}
 
 			is MultiAssignmentStatement   -> {
-				val value = expressionEmitter.emit(statement.value)
+				val plan = semantics.receptionOf(statement)
+				if (plan.slots.none { it.target is ReceivingTarget.Named }) return expressionEmitter.emitDiscarded(plan)
+				val value = expressionEmitter.emit(plan.producer)
 				if (expressionEmitter.terminated()) return null
 				val targets = functions?.declarations?.targetsOf(statement)
-				val types = semantics.targetTypesOf(statement)
-				for ((index, name) in statement.names.withIndex()) {
-					val target = targets?.get(index) ?: name.lexeme
-					bindings.assign(target, expressionEmitter.transferBindingAssignment(target, checkNotNull(value), types[index]))
+				val prepared = if (plan.kind == ReceptionKind.POSITIONAL) {
+					val slots = expressionEmitter.takeResults(checkNotNull(value), plan.results)
+					plan.slots.mapIndexed { index, slot ->
+						if (slot.target is ReceivingTarget.Discard) null else expressionEmitter.transferBindingAssignment(targets?.get(index) ?: slot.target.token.lexeme, slots[slot.sourceIndex], slot.type)
+					}
+				} else null
+				var stored = false
+				for ((index, slot) in plan.slots.withIndex()) if (slot.target is ReceivingTarget.Named) {
+					val target = targets?.get(index) ?: slot.target.token.lexeme
+					bindings.assign(target, if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferBindingAssignment(target, checkNotNull(value), slot.type))
+					stored = true
 				}
-				value
+				if (stored && plan.kind == ReceptionKind.BROADCAST) value else null
 			}
 
 			is UpdateStatement            -> {
@@ -52,7 +86,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 
 			is ElementAssignmentStatement -> expressionEmitter.emitElementAssignment(statement)
 
-			is ExpressionStatement        -> if (discardResult) expressionEmitter.emitDiscarded(statement.expression) else if (statement.expression is IfExpression && semantics.typeOf(statement) == ValueType.VOID) {
+			is ExpressionStatement        -> if (discardResult) expressionEmitter.emitDiscarded(statement.expression) else if (statement.expression is IfExpression && semantics.resultOf(statement) == ResultShape.Empty) {
 				expressionEmitter.emitConditional(statement.expression, requireValue = false)
 			} else expressionEmitter.emit(statement.expression)
 
