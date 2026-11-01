@@ -7,6 +7,7 @@ build/
 !Compiler/src/test/
 .kotlin
 .idea
+README.md
 
 *.exe
 *.o
