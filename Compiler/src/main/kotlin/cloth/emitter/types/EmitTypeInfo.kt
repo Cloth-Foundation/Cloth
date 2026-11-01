@@ -8,6 +8,7 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
+import java.math.BigInteger
 
 /** Immutable, module-owned descriptors. No native handles escape into ValueType recipes.
  * Equality uses canonical type text so independently emitted descriptors compare equally.
@@ -17,12 +18,18 @@ internal class EmitTypeInfo(
 	private val abi: NativeCABI, private val strings: EmitString,
 ) {
 
-	private val pointer get() = CTypeInfo.llvmValue(context)
-	private val count get() = LLVMInt64TypeInContext(context)
-	private val bool get() = CBool.llvmValue(context)
+	private val target get() = strings.target
+	private val pointer get() = CTypeInfo.llvmValue(context, target)
+	private val count get() = BufferLayout.count(context, target)
+	private fun count(value: BigInteger): LLVMValueRef {
+		require(CUSize(target.sizeBits).acceptsLiteral(value)) { "Metadata count must fit target usize" }
+		return LLVMConstIntOfString(count, value.toString(), 10.toByte())
+	}
+
+	private val bool get() = CBool.llvmValue(context, target)
 	private val descriptor: LLVMTypeRef
 		get() = PointerPointer<LLVMTypeRef>(9L).use { fields ->
-			fields.put(0, CString.llvmValue(context)); fields.put(1, pointer)
+			fields.put(0, CString.llvmValue(context, target)); fields.put(1, pointer)
 			for (index in 2L..4L) fields.put(index, count)
 			for (index in 5L..8L) fields.put(index, bool)
 			LLVMStructTypeInContext(context, fields, 9, 0)
@@ -41,9 +48,9 @@ internal class EmitTypeInfo(
 		val values = listOf(
 			strings.literal(type.metadataSpelling),
 			array?.let { constant(it.element) } ?: LLVMConstNull(pointer),
-			LLVMConstInt(count, type.arrayDimensions.size.toLong(), 0),
-			array?.size?.let { LLVMConstIntOfString(count, it.toString(), 10.toByte()) } ?: LLVMConstInt(count, 0, 0),
-			LLVMConstInt(count, if (type.numeric) type.bits.toLong() else 0, 0),
+			count(type.arrayDimensions.size.toBigInteger()),
+			count(array?.size ?: BigInteger.ZERO),
+			count(if (type.numeric) type.bits.toBigInteger() else BigInteger.ZERO),
 			flag(array != null), flag(array?.size != null), flag(type.integer && type.unsigned), flag(type.numeric),
 		)
 		PointerPointer<LLVMValueRef>(values.size.toLong()).use { fields ->
@@ -58,7 +65,7 @@ internal class EmitTypeInfo(
 		return LLVMBuildLoad2(builder, type, address, "typeinfo_value")
 	}
 
-	fun text(value: LLVMValueRef): LLVMValueRef = field(value, 0, CString.llvmValue(context))
+	fun text(value: LLVMValueRef): LLVMValueRef = field(value, 0, CString.llvmValue(context, target))
 	fun equal(left: LLVMValueRef, right: LLVMValueRef): LLVMValueRef = strings.equal(text(left), text(right))
 
 	fun property(value: LLVMValueRef, query: MetadataQuery, location: String): LLVMValueRef {
@@ -72,6 +79,6 @@ internal class EmitTypeInfo(
 			EmitRuntimeError(context, builder, abi).emit("Type metadata ::${query.provider.spelling} requires ${query.requirement} at $location")
 			LLVMPositionBuilderAtEnd(builder, success)
 		}
-		return field(value, query.field, query.type.llvmValue(context))
+		return field(value, query.field, query.type(target).llvmValue(context, target))
 	}
 }

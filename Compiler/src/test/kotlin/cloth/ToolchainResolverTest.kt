@@ -62,6 +62,20 @@ class ToolchainResolverTest {
 	}
 
 	@Test
+	fun `Windows x86 selects x86 SDK CRT linker and wide GUI startup`(@TempDir root: Path) {
+		val tools = root.resolve("tools")
+		val sdk = root.resolve("sdk")
+		windowsLibraries(tools, sdk.resolve("Lib/10.0.26100.0"), "x86")
+		val executable = file(tools.resolve("bin/Hostx64/x86/link.exe"))
+		val config = ToolchainResolver(emptyMap(), { "Microsoft Incremental Linker" }).resolve(NativeCABI.forTarget("i686-pc-windows-msvc"), LinkOptions(linker = executable, driver = LinkerDriver.MSVC, subsystem = ApplicationSubsystem.WINDOWS, msvcTools = tools, windowsSDK = sdk))
+		assertContains(config.flags, "/machine:x86")
+		assertTrue(config.libraryPaths.all { it.fileName.toString() == "x86" })
+		assertTrue(config.runtimeLibraries.all { it.parent.fileName.toString() == "x86" })
+		assertContains(config.withWideEntryPoint().flags, "/entry:wmainCRTStartup")
+		assertContains(config.flags, "/entry:mainCRTStartup")
+	}
+
+	@Test
 	fun `Windows ARM64 dynamic runtime and GUI use matching libraries and CRT main startup`(@TempDir root: Path) {
 		val tools = root.resolve("tools")
 		val sdk = root.resolve("sdk")

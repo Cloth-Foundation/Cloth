@@ -26,10 +26,13 @@ Arguments and returns use strict types, with contextual integer literals and
 contextual floating literals at call sites. Overloads prefer the default `int`
 or `float` literal type when an exact match exists.
 
-A void `main` exits with status 0; a signed integer `main` supplies the process
-exit status. Signed integer widths 8, 16, 32 and 64 are accepted. The current
-native adapter sign-extends narrow results to C `int` and retains the low bits of
-wider results, following Cloth's explicit integer-cast rules.
+A void `main` exits with status 0; a signed integer or `usize` main supplies the
+process exit status. Signed integer widths 8, 16, 32 and 64 and target-sized
+usize are accepted, with or without a string[] argument parameter. The native
+adapter extends narrow results according to signedness and retains the low bits
+of wider results, following Cloth's explicit integer-cast rules. PEC reports
+that signed native C int value: `usize::max - 1` produces `PEC: -2` on Windows
+x64 and x86.
 After `main` returns, the executable prints `PEC: N` (Process Exit Code),
 using that native status (`0` for void), preceded and followed by a newline.
 Startup and runtime failures terminate through their existing error path without
@@ -117,6 +120,50 @@ explicit casts. Literal-only arrays keep their existing defaults and range
 checks. Inference also considers typed elements in later rows of nested arrays.
 Console I/O is separate future library work. The smaller code
 examples below are body fragments.
+
+## Target-sized integers
+
+`usize` is a distinct unsigned primitive whose width follows the compilation
+target. Explicit `int<8>`, `int<16>`, `int<32>` and `int<64>` keep their fixed
+widths; plain `int` stays 32-bit. `usize` takes no width argument or unsigned
+modifier. Already-typed fixed integers require explicit conversions to/from it.
+
+```cloth
+fn<usize> next(usize index) = index + 1
+fn<usize> count(int[] values) = values::size
+
+fn<int> main() {
+    def values = [10, 20, 30]
+    def<usize> index = next(0)
+    return values[index] - 20
+}
+```
+
+Arithmetic wraps at the selected width. Explicit numeric casts follow the
+existing unsigned rules: integer casts can truncate, while invalid float-to-integer
+conversions produce controlled errors. Min/max preserve usize identity; metadata
+prints `usize` and reports its numeric width through `usize::type::width`.
+See `examples/USize.co` for a runnable example.
+
+Scalar/array/string `size` and metadata `rank`, `extent` and `width` return
+`usize`. Numeric min/max retain their receiver type. Already-typed measurement
+results require explicit casts when a fixed-width integer is needed, for example
+`values::size -> unsigned int<64>`. Array size counts the outer dimension;
+string size counts Unicode scalars.
+
+The [staged migration](.agents/skills/cloth-language/references/usize-implementation.md)
+also carries target width through metadata fields, buffer descriptors and count
+loops; inner array dimensions retain a separate known flag. Static extents must
+fit target usize, including metadata-only types. Windows x86/MSVC is validated
+with 32-bit usize and an SSE2 baseline, alongside the existing 64-bit target
+profiles. See examples/USizeX86.co and the build command below. Other 32-bit
+OS/ABI combinations remain unsupported.
+
+Integration fixtures compile the same parsed program for Windows x64, Windows
+x86 and x64 again, checking exact provider types, deferred effects, nested copies,
+returned-text lifetimes and first-error behavior. See the
+[implementation record](.agents/skills/cloth-language/references/usize-implementation.md)
+for verification results and target coverage.
 
 ## Multiple bindings
 
@@ -342,10 +389,24 @@ $LASTEXITCODE # 0 when the example's checks pass
 ```
 
 Use `./gradlew` on Linux or macOS. The compiler selects its native target from
-LLVM's default target triple and validates an explicit C ABI profile. Linking
+LLVM's default target triple unless --target TRIPLE is supplied, and validates
+an explicit C ABI profile. Linking
 resolves an installed toolchain for that ABI before generating code.
 Successful compilation exits with status 0, independently of the generated
 program's later exit status.
+
+To build the validated Windows x86 target from the current compiler, install
+the matching Visual Studio x86 CRT and Windows SDK libraries, then run:
+
+```powershell
+.\gradlew.bat :Compiler:run --args="--target i686-pc-windows-msvc examples/USizeX86.co build/usize-x86/USizeX86"
+& .\build\usize-x86\USizeX86.exe "é😀" ""
+```
+
+This produces a PE32 executable, prints 32 and exits with PEC: 0. The x86
+baseline requires SSE2. Explicit fixed integers retain their widths, including
+int<64>. [Validation notes](.agents/skills/cloth-language/references/usize-x86-validation.md)
+include reproduced execution and assembly evidence.
 
 To emit an object module without requiring `main` or invoking a linker:
 
@@ -366,6 +427,7 @@ Build options can appear before or after the source and output arguments:
 
 | Option | Meaning |
 | --- | --- |
+| `--target TRIPLE` | Select a supported LLVM/C ABI target; linking requires a matching installed toolchain and runtime. Defaults to LLVM's native target. |
 | `--emit executable\|object` | Select executable startup/linking or an object module without an entry point. |
 | `--linker PATH` | Override the linker executable or C linker driver. Paths containing spaces are single arguments. |
 | `--linker-driver lld\|msvc\|cc` | Select generic LLD in Windows link flavor, an MSVC-compatible command interface (`link.exe` or `lld-link`), or a Unix GCC/Clang linker driver. |
@@ -374,7 +436,7 @@ Build options can appear before or after the source and output arguments:
 | `-L DIR`, `--library-path DIR` | Add a library search directory; repeat to add more. |
 | `-l NAME`, `--library NAME` | Link an additional named library; repeat to add more. |
 | `--sysroot DIR` | Select a Linux sysroot or macOS SDK. |
-| `--msvc-tools DIR` | Select a versioned MSVC tools root containing `lib/x64` or `lib/arm64`. |
+| `--msvc-tools DIR` | Select a versioned MSVC tools root containing the target's `lib/x86`, `lib/x64` or `lib/arm64`. |
 | `--windows-sdk DIR` | Select a Windows SDK root containing `Lib/<version>`. |
 | `--windows-sdk-version VERSION` | Pin the Windows SDK library version. |
 
@@ -387,4 +449,5 @@ libraries using the development environment or Visual Studio's `vswhere` utility
 Linux/macOS use `CC` or `cc`, verify its reported target, and query its library
 search paths. macOS uses `SDKROOT` or `xcrun` for SDK discovery. Compiler drivers
 are used for linking and toolchain queries; Cloth source is compiled directly
-through LLVM. Compilation remains native only.
+through LLVM. Explicit target selection does not install tools or enable
+unsupported ABI profiles; Linux/macOS linker drivers must report a matching target.

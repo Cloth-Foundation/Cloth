@@ -10,7 +10,7 @@ import org.bytedeco.llvm.global.LLVM.*
 internal class EmitCharacter(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
 
 	fun print(module: LLVMModuleRef, value: LLVMValueRef) {
-		val intType = LLVMTypes(context).value(abi.intType)
+		val intType = LLVMTypes(context, abi.layout).value(abi.intType)
 		val putcharType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 			parameters.put(0, intType)
 			LLVMFunctionType(intType, parameters, 1, 0)

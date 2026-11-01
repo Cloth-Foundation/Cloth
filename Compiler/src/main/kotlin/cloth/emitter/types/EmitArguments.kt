@@ -3,6 +3,7 @@ package cloth.emitter.types
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -10,15 +11,15 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Validate every user argument before entering Cloth, including parameterless main.
  * Windows uses UTF-16 CRT arguments; Unix arguments must already be well-formed UTF-8.
  */
-internal class EmitArguments(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI) {
+internal class EmitArguments(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val target: TargetLayout = abi.layout) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, target)
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val integer = types.value(abi.intType)
-	private val size = types.value(abi.sizeType)
+	private val size = cloth.data.BufferLayout.count(context, target)
 	private val byte = LLVMInt8TypeInContext(context)
-	private val windows = abi.profile == NativeCABI.Profile.WINDOWS_LLP64
-	private val strings = EmitStringArena(context, module, abi)
+	private val windows = abi.windows
+	private val strings = EmitStringArena(context, module, abi, target)
 	private var arena: LLVMValueRef? = null
 	private fun count(value: Long) = LLVMConstInt(size, value, 0)
 	private fun int(value: Long) = LLVMConstInt(integer, value, 0)
@@ -50,18 +51,21 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		val invalid = LLVMAppendBasicBlockInContext(context, function, "argument_invalid")
 		LLVMBuildCondBr(builder, valid, ok, invalid)
 		LLVMPositionBuilderAtEnd(builder, invalid)
-		EmitRuntimeError(context, builder, abi).emit("Invalid Unicode in command-line argument %llu (expected $encoding)", index)
+		val printedIndex = EmitMemory(context, builder, abi, target).resize(index, LLVMInt64TypeInContext(context))
+		EmitRuntimeError(context, builder, abi).emit("Invalid Unicode in command-line argument %llu (expected $encoding)", printedIndex)
 		LLVMPositionBuilderAtEnd(builder, ok)
 	}
 
 	fun emit(builder: LLVMBuilderRef, argc: LLVMValueRef, argv: LLVMValueRef, withValues: Boolean): LLVMValueRef? {
-		val arrays = EmitArray(context, builder, abi)
+		val arrays = EmitArray(context, builder, abi, target)
 		val start = LLVMGetInsertBlock(builder)
 		val function = LLVMGetBasicBlockParent(start)
 		if (windows && withValues) arena = strings.create(start)
 		val users = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntSGT, argc, int(1), "has_arguments"), LLVMBuildSub(builder, argc, int(1), "user_arguments"), int(0), "argument_count")
-		val length = LLVMBuildZExt(builder, users, size, "argument_length")
-		val data = if (withValues) LLVMBuildArrayAlloca(builder, types.storage(ValueType.STRING), length, "argument_strings") else null
+		val memory = EmitMemory(context, builder, abi, target)
+		val length = memory.resize(users)
+		val data = if (withValues) memory.stack(types.storage(ValueType.STRING), length, "argument_strings", "Command-line argument array is too large") else null
+		val loopStart = LLVMGetInsertBlock(builder)
 		val check = LLVMAppendBasicBlockInContext(context, function, "args_check")
 		val item = LLVMAppendBasicBlockInContext(context, function, "args_convert")
 		val done = LLVMAppendBasicBlockInContext(context, function, "args_done")
@@ -88,7 +92,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		PointerPointer<LLVMValueRef>(2L).use { values ->
 			PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
 				values.put(0, count(0)); values.put(1, next)
-				blocks.put(0, start); blocks.put(1, end)
+				blocks.put(0, loopStart); blocks.put(1, end)
 				LLVMAddIncoming(index, values, blocks, 2)
 			}
 		}
@@ -103,7 +107,11 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 	// CP_UTF8 and WC_ERR_INVALID_CHARS make unpaired UTF-16 surrogates errors.
 	private fun wideCall(builder: LLVMBuilderRef, input: LLVMValueRef, output: LLVMValueRef, capacity: LLVMValueRef): LLVMValueRef {
 		val type = signature(integer, integer, integer, pointer, integer, pointer, integer, pointer, pointer)
-		return call(builder, type, external("WideCharToMultiByte", type), "converted_bytes", int(65001), int(0x80), input, int(-1), output, capacity, LLVMConstNull(pointer), LLVMConstNull(pointer))
+		val function = external("WideCharToMultiByte", type)
+		LLVMSetFunctionCallConv(function, abi.windowsAPICallConvention)
+		return call(builder, type, function, "converted_bytes", int(65001), int(0x80), input, int(-1), output, capacity, LLVMConstNull(pointer), LLVMConstNull(pointer)).also {
+			LLVMSetInstructionCallConv(it, abi.windowsAPICallConvention)
+		}
 	}
 
 	private fun wideLength(builder: LLVMBuilderRef, input: LLVMValueRef, index: LLVMValueRef): LLVMValueRef {
@@ -126,11 +134,12 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			val capacity = wideLength(builder, input, index)
 			// This buffer is local to the conversion helper, so repeated arguments do
 			// not accumulate stack allocations in the startup loop.
-			val buffer = LLVMBuildArrayAlloca(builder, byte, LLVMBuildZExt(builder, capacity, size, "utf8_capacity"), "utf8_buffer")
+			val memory = EmitMemory(context, builder, abi, target)
+			val buffer = memory.stack(byte, memory.resize(capacity), "utf8_buffer", "Command-line argument is too large")
 			val written = wideCall(builder, input, buffer, capacity)
 			guard(builder, LLVMBuildICmp(builder, LLVMIntEQ, written, capacity, "conversion_complete"), index, "UTF-16")
-			val length = LLVMBuildZExt(builder, LLVMBuildSub(builder, capacity, int(1), "without_terminator"), size, "utf8_length")
-			val value = EmitArray(context, builder, abi).descriptor(buffer, length)
+			val length = memory.resize(LLVMBuildSub(builder, capacity, int(1), "without_terminator"))
+			val value = EmitArray(context, builder, abi, target).descriptor(buffer, length)
 			LLVMBuildRet(builder, strings.copy(builder, LLVMGetParam(function, 1), value))
 		} finally {
 			LLVMDisposeBuilder(builder)
@@ -172,6 +181,10 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			LLVMBuildBr(builder, check)
 			LLVMPositionBuilderAtEnd(builder, check)
 			val index = LLVMBuildPhi(builder, size, "byte_index")
+			val bounded = block("bounded_position")
+			val memory = EmitMemory(context, builder, abi, target)
+			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, memory.constant(memory.maximumBytes), "argument_position_fits"), bounded, invalid)
+			LLVMPositionBuilderAtEnd(builder, bounded)
 			val current = LLVMBuildLoad2(builder, byte, offset(builder, byte, LLVMGetParam(function, 0), index), "octet")
 			val pending = LLVMBuildLoad2(builder, integer, remaining, "pending")
 			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, current, octet(0), "end"), terminator, read)

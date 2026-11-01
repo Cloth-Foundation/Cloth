@@ -48,6 +48,7 @@ class ProviderResultsTest {
 
 	@Test
 	fun `provider spellings are contextual and unresolved accessors stay unavailable`() {
+		val target = NativeCABI.native().layout
 		for (provider in CompilerDataProviders.entries) {
 			assertEquals(provider, CompilerDataProviders.fromSpelling(provider.spelling))
 			assertEquals(TokenType.Identifier, Lexer(provider.spelling).scanTokens().first().type)
@@ -56,16 +57,16 @@ class ProviderResultsTest {
 		assertNull(CInt().provider("unknown"))
 		assertNull(CInt().provider("addr"))
 		assertIs<ProviderResult.TypeMetadata>(CInt().provider("type"))
-		assertEquals(setOf(CompilerDataProviders.MIN, CompilerDataProviders.MAX, CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CFloat().providers.keys)
-		for (type in listOf(CBool, CChar, CString)) assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), type.providers.keys)
-		assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.TYPE), CArray(CInt()).providers.keys)
-		assertEquals(setOf(CompilerDataProviders.TYPE), ValueType.VOID.providers.keys)
-		assertTrue(ValueType.NEVER.providers.isEmpty())
+		assertEquals(setOf(CompilerDataProviders.MIN, CompilerDataProviders.MAX, CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CFloat().providers(target).keys)
+		for (type in listOf(CBool, CChar, CString)) assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), type.providers(target).keys)
+		assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.TYPE), CArray(CInt()).providers(target).keys)
+		assertEquals(setOf(CompilerDataProviders.TYPE), ValueType.VOID.providers(target).keys)
+		assertTrue(ValueType.NEVER.providers(target).isEmpty())
 		val ast = Parser(Lexer("1").scanTokens()).parseSnippet()
 		val semantics = SemanticAnalyzer().analyze(ast)
 		val expression = (ast.statements.single() as cloth.parser.statement.ExpressionStatement).expression
 		assertEquals(CInt(), assertNotNull(semantics.providerAccess(expression, "max")).type)
-		assertEquals(CInt(64, true), assertNotNull(semantics.providerAccess(expression, "size")).type)
+		assertEquals(CUSize(target.sizeBits), assertNotNull(semantics.providerAccess(expression, "size")).type)
 	}
 
 	@Test

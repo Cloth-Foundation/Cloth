@@ -1,0 +1,20 @@
+// Compile with --target i686-pc-windows-msvc and an installed Windows x86 CRT/SDK.
+fn<usize> next(usize value) = value + 1
+fn<unsigned int<64>> wide(unsigned int<64> value) = value + 1
+fn<int> index(int[] values, usize position) = values[position]
+fn<usize> count(string value) = value::size
+fn<string[]> copy(string[] values) = values
+fn<unsigned int<64>> unsigned64(float<64> value) = value -> unsigned int<64>
+fn<int<64>> signed64(float<64> value) = value -> int<64>
+fn<float<64>> real64(unsigned int<64> value) = value -> float<64>
+
+fn<int> main(string[] args) {
+    if (usize::type::width != 32 || usize::size != 4 || usize::max != 4294967295) { return 1 }
+    if (next(usize::max) != 0 || wide(4294967295) != 4294967296) { return 2 }
+    if (index([10, 20], 1) != 20 || count("é😀") != 2) { return 3 }
+    def saved = copy(args)
+    if (saved::size != args::size || saved::size::type != usize::type) { return 4 }
+    if (unsigned64(4294967297.0) != 4294967297 || signed64(-4294967297.0) != -4294967297 || real64(4294967296) != 4294967296.0) { return 5 }
+    println(usize::type::width)
+    return 0
+}

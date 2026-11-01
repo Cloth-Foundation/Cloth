@@ -1,5 +1,49 @@
 # Compiler data access
 
+## Current contracts (2026-11-01)
+
+The [usize migration](../.agents/skills/cloth-language/references/usize-implementation.md)
+implements the contracts in [confirmed semantics](../.agents/skills/cloth-language/references/semantics.md)
+for the supported types. All seven migration steps are complete. Final
+verification passed 624 tests across 46 suites with no failures/errors/skips;
+the portable usize example also ran through both x64 and x86 CLI builds.
+
+| Provider | Meaning | Exact result type |
+| --- | --- | --- |
+| Scalar `size` | Storage bytes for integers (including usize), floats, bool and char | Target `usize` |
+| Array `size` | Outer element count; known-outer-extent type receiver or value | Target `usize` |
+| String `size` | Unicode scalar count; value receiver only | Target `usize` |
+| Metadata `rank`, `extent`, `width` | Array rank, known outer extent, numeric bit width | Target `usize` |
+| Numeric `min`, `max` | Representable bounds, with finite floating bounds | Receiver's exact numeric type |
+| Metadata predicates | Array, known-extent, unsigned-integer and numeric tests | `bool` |
+| `type`, metadata `element` | Static type description or immediate array element type | `typeinfo` |
+| Scalar/metadata `str` | Shared scalar/interpolation formatting or normalized type spelling | `string` |
+
+Already-typed results follow strict binding, call and return contracts, including
+on targets where usize and a fixed unsigned integer have equal machine widths.
+Explicit casts cross those type boundaries. Read-only access, receiver restrictions
+and once-only receiver evaluation remain in force.
+
+Descriptors, native count loops, metadata fields and loads use the target width.
+Each inner array axis has a separate known flag, preserving every valid count.
+Every static extent must fit target usize, including metadata-only types; checked
+allocation bytes also respect LLVM's signed pointer-index limit. The unregistered
+raw ArrayExtent recipe alone retains its legacy 64-bit/-1 encoding, independently
+of the source metadata extent provider. It does not define public result types.
+
+Real execution coverage is Windows x64 and Windows x86/MSVC with SSE2 on the
+Windows x64 host. Select x86 with `--target i686-pc-windows-msvc`; see the
+[validation and assembly record](../.agents/skills/cloth-language/references/usize-x86-validation.md).
+Foreign 64-bit IR/object checks do not establish native Linux/macOS execution.
+Other 32-bit targets remain unsupported. `addr`, array/class text conversion,
+isize and programmer-visible pointers are not added by this migration.
+
+## Historical phase record (before usize)
+
+The phase descriptions below retain the earlier fixed unsigned-64 result types
+and descriptor layouts for development history. The current contracts above
+supersede those spellings and implementation snapshots.
+
 Status: phase 3 implemented for currently supported types (2026-10-31).
 Chunks 3.1 through 3.4 implement source accessor syntax, numeric bounds, sizes,
 scalar text conversion and built-in type metadata. `addr` and array/class text
@@ -15,7 +59,7 @@ data access. The motivating example is this function-body fragment:
 
 ```cloth
 def a = [1, 2]
-def count = a::size // Produces 2 as unsigned int<64>.
+def count = a::size // Produces 2 as usize.
 ```
 
 Array count access is implemented under the confirmed contract below. Neither

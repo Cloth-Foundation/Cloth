@@ -126,7 +126,7 @@ class ProviderIntegrationTest {
 	@Test
 	fun `dynamic joins still check invalid metadata at runtime`(@TempDir directory: Path) {
 		native(directory, "dynamic", """
-			fn<unsigned int<64>> inspect(bool numeric) {
+			fn<usize> inspect(bool numeric) {
 			    def info = if (numeric) { int::type } else { string::type }
 			    return info::width
 			}
@@ -144,7 +144,7 @@ class ProviderIntegrationTest {
 			    info = float<64>::type
 			    if (independent != unsigned int<16>[]::type || independent::element::width != 16) { return 1 }
 			    if (identity(info)::str::size != #"{info}"::size || info::width::str != "64") { return 2 }
-			    if ("é😀\0"::str::size::type != unsigned int<64>::type || '😀'::str::size != 1) { return 3 }
+			    if ("é😀\0"::str::size::type != usize::type || '😀'::str::size != 1) { return 3 }
 			    def text = #"{independent} {'😀'}"
 			    if (text != "unsigned int<16>[] 😀" || text::size != 20) { return 4 }
 			    return 0

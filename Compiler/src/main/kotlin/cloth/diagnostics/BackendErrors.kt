@@ -10,9 +10,10 @@ object BackendErrors {
 	fun target(details: String) = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to find the native target", guidance = details)
 	fun machine() = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to create the native target machine")
 	fun objectCode(details: String) = ClothDiagnostic(DiagnosticCode.LLVM_OBJECT, "Unable to emit native object code", guidance = details)
+	fun bufferSize(span: TokenSpan?) = ClothDiagnostic(DiagnosticCode.BUFFER_SIZE, "String storage exceeds the target's addressable allocation size", span?.let { listOf(SourceLabel(it, "UTF-8 storage including its terminator is too large")) } ?: emptyList())
 	fun initialize(component: String) = ClothDiagnostic(DiagnosticCode.LLVM_INITIALIZATION, "Unable to initialize the native LLVM $component")
 	fun invalidIR(details: String) = ClothDiagnostic(DiagnosticCode.INVALID_IR, "Internal compiler error: invalid LLVM module", guidance = details)
-	fun layout(profile: String, target: String) = ClothDiagnostic(DiagnosticCode.ABI_LAYOUT, "Internal compiler error: C ABI profile '$profile' does not match LLVM's pointer width for '$target'")
+	fun layout(profile: String, target: String) = ClothDiagnostic(DiagnosticCode.ABI_LAYOUT, "Internal compiler error: C ABI profile '$profile' does not match LLVM's pointer layout for '$target'")
 }
 
 object InternalErrors {

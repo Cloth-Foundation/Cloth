@@ -1,6 +1,7 @@
 package cloth.data
 
 import cloth.diagnostics.InternalErrors
+import cloth.target.TargetLayout
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
@@ -20,13 +21,12 @@ sealed class ValueType(val keyword: Keywords) {
 	open val arrayDimensions: List<BigInteger?> get() = emptyList()
 
 	/** Every source type describes itself without constructing an instance. */
-	internal open val providers: Map<CompilerDataProviders, ProviderResult<*>>
-		get() = mapOf(CompilerDataProviders.TYPE to ProviderResult.TypeMetadata(this))
+	internal open fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = mapOf(CompilerDataProviders.TYPE to ProviderResult.TypeMetadata(this))
 
-	internal fun provider(spelling: String): ProviderResult<*>? = CompilerDataProviders.fromSpelling(spelling)?.let(providers::get)
+	internal fun provider(spelling: String, target: TargetLayout = TargetLayout.native()): ProviderResult<*>? = CompilerDataProviders.fromSpelling(spelling)?.let { providers(target)[it] }
 
-	/** Metadata text is canonical and always includes numeric widths. Diagnostics keep spelling. */
-	val metadataSpelling: String
+	/** Fixed numeric metadata includes widths; distinct primitives may supply their canonical name. */
+	open val metadataSpelling: String
 		get() = when (this) {
 			is CArray -> {
 				var base: ValueType = this
@@ -38,8 +38,8 @@ sealed class ValueType(val keyword: Keywords) {
 		}
 
 	/** LLVM types belong to the supplied context; descriptors never cache native handles. */
-	abstract fun llvmValue(context: LLVMContextRef): LLVMTypeRef
-	open fun llvmStorage(context: LLVMContextRef): LLVMTypeRef = llvmValue(context)
+	abstract fun llvmValue(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef
+	open fun llvmStorage(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef = llvmValue(context, target)
 
 	enum class FloatingFormat(val bits: Int, val exponentBits: Int) { HALF(16, 5), SINGLE(32, 8), DOUBLE(64, 11)
 	}
@@ -63,17 +63,17 @@ sealed class ValueType(val keyword: Keywords) {
 	/** A standalone conditional executes branches without yielding a value. */
 	data object Void : ValueType(Keywords.VOID) {
 
-		override fun llvmValue(context: LLVMContextRef): LLVMTypeRef = LLVMVoidTypeInContext(context)
-		override fun llvmStorage(context: LLVMContextRef): LLVMTypeRef = throw InternalErrors.invariant("A void statement has no binding storage")
+		override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMVoidTypeInContext(context)
+		override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A void statement has no binding storage")
 	}
 
 	/** Internal bottom type: evaluation returns from the enclosing function. No source spelling. */
 	data object Never : ValueType(Keywords.VOID) {
 
-		override val providers: Map<CompilerDataProviders, ProviderResult<*>> get() = emptyMap()
+		override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = emptyMap()
 		override val spelling: String = "<no continuation>"
-		override fun llvmValue(context: LLVMContextRef): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no LLVM value")
-		override fun llvmStorage(context: LLVMContextRef): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no storage")
+		override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no LLVM value")
+		override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no storage")
 	}
 
 	companion object {

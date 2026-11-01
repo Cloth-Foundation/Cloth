@@ -28,6 +28,17 @@ boilerplate or silently inventing additional shorthand.
 - Read [development status](references/development.md) when working on the
   compiler, assessing support, or deciding what work comes next. Recheck relevant
   source before relying on its implementation snapshot.
+- For `usize`, target-sized counts, or migration of compiler data result types,
+  read the [staged implementation plan](references/usize-implementation.md).
+  The implemented contracts use exact target-sized usize results and native
+  buffer counts; [Windows x86 validation](references/usize-x86-validation.md)
+  records the supported 32-bit ABI, SSE2 baseline and assembly evidence.
+  All seven migration steps are complete; preserve exact usize identity and
+  the documented target coverage when extending this implementation.
+  The later entry-point extension also accepts usize main returns, using the
+  existing native exit-bit normalization documented in confirmed semantics.
+  Keep its completed steps and unresolved decisions current; planning is not
+  evidence that a feature has been implemented or verified.
 - Distinguish intended design, verified implementation, proposals, and unresolved
   questions. Missing implementation does not invalidate intended syntax.
 - Ask focused questions when a necessary semantic choice is unresolved. In the

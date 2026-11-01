@@ -1,0 +1,24 @@
+fn<usize> next(usize index) = index + 1
+fn<usize> count(int[] values) = values::size
+
+fn<int> main() {
+    def values = [10, 20, 30]
+    def<usize> index = 0
+    index = next(index)
+    if (values[index] != 20) { return 1 }
+
+    // usize keeps its identity even when its width matches a fixed integer.
+    if (!(index is usize) || index::type::str != "usize") { return 2 }
+    if (usize::max + 1 != 0) { return 3 }
+
+    // Sizes and numeric metadata return usize, preserving its exact type.
+    def<usize> length = count(values)
+    def<usize> rank = values::type::rank
+    def<usize> width = int<64>::type::width
+    if (length != 3 || rank != 1 || width != 64) { return 4 }
+    if (length::type != usize::type || "é😀"::size != 2) { return 5 }
+
+    println(index)
+    println(index::type)
+    return 0
+}

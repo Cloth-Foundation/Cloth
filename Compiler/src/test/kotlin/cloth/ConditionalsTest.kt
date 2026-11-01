@@ -158,7 +158,7 @@ class ConditionalsTest {
 		""", "true")
 		val ir = LLVMEmitter().emitSnippet(parse("def flag = true\ndef result = if (flag) { \"a\" + \"b\" } else { \"c\" + \"d\" }\nresult"))
 		assertContains(ir, "phi { ptr, i64 }")
-		assertContains(ir, "concat_valid")
+		assertContains(ir, "memory_valid")
 	}
 
 	@Test

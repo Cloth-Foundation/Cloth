@@ -28,26 +28,25 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		throw diagnostic()
 	}
 
-	protected fun resolveType(type: TypeReference) = TypeResolver.resolve(type, declarations)
+	protected fun resolveType(type: TypeReference) = model.typeResolver.resolve(type, declarations)
 
 	/** Only literal signs and constant providers; bindings/calls keep runtime checks. */
-	private fun integerConstant(expression: Expression, type: CInt): BigInteger? {
+	private fun integerConstant(expression: Expression, type: CInteger): BigInteger? {
 		val value = when (expression) {
 			is IntegerLiteral           -> expression.value
 			is UnaryExpression          -> {
 				val operand = integerConstant(expression.operand, type) ?: return null
 				when (expression.operator.lexeme) {
-					Operators.PLUS.character -> operand
+					Operators.PLUS.character  -> operand
 					Operators.MINUS.character -> -operand
-					else -> return null
+					else                      -> return null
 				}
 			}
 
 			is ProviderAccessExpression -> (model.providers[expression]?.result as? ProviderResult.IntegerConstant)?.value ?: return null
 			else                        -> return null
 		}
-		val bits = value.mod(BigInteger.ONE.shiftLeft(type.bits))
-		return if (!type.unsigned && bits.testBit(type.bits - 1)) bits - BigInteger.ONE.shiftLeft(type.bits) else bits
+		return type.wrap(value)
 	}
 
 	private fun operandContext(expression: Expression, floating: Boolean): ValueType? = when (expression) {
@@ -62,9 +61,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	private fun integer(literal: IntegerLiteral, expected: ValueType?, negative: Boolean = false): ValueType {
-		val type = expected as? CInt ?: ValueType.INT
+		val type = expected as? CInteger ?: ValueType.INT
 		val value = if (negative) -literal.value else literal.value
-		if (value < type.minimum || value > type.maximum) reject { SemanticErrors.integer(value, type, literal.span) }
+		if (!type.acceptsLiteral(value)) reject { SemanticErrors.integer(value, type, literal.span) }
 		model.expressions[literal] = type
 		return type
 	}
@@ -127,11 +126,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is ProviderAccessExpression -> {
 				val receiver = expression.receiver
 				val receiverType = if (receiver is TypeReceiverExpression) {
-					TypeResolver.resolve(receiver.annotation, declarations = true).also { model.expressions[receiver] = it }
+					model.typeResolver.resolve(receiver.annotation, declarations = true).also { model.expressions[receiver] = it }
 				} else typeOf(receiver)
 				if (receiverType == ValueType.NEVER) ValueType.NEVER else {
 					// Availability is independent of the enclosing overload's return/argument context.
-					val result = receiverType.provider(expression.name.lexeme) ?: throw SemanticErrors.provider(receiverType, expression.name)
+					val result = receiverType.provider(expression.name.lexeme, model.target) ?: throw SemanticErrors.provider(receiverType, expression.name)
 					val access = ProviderAccess(receiver, result, expression.name.span)
 					if (access.receiverForm !in result.receiverForms) throw SemanticErrors.providerReceiver(receiverType, expression.name)
 					model.providers[expression] = access
@@ -261,7 +260,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					if (exponent is UnaryExpression && exponent.operator.lexeme == Operators.MINUS.character && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) reject { SemanticErrors.negativeExponent(exponent.span) }
 				}
 				if (numeric && left.integer && right.integer && left != right) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, mixedIntegers = true) }
-				if (expression.operator.lexeme in setOf(Operators.DIVIDE.character, Operators.MODULO.character) && left is CInt && right == left) {
+				if (expression.operator.lexeme in setOf(Operators.DIVIDE.character, Operators.MODULO.character) && left is CInteger && right == left) {
 					val divisor = integerConstant(expression.right, left)
 					if (divisor == BigInteger.ZERO) throw SemanticErrors.zeroDivisor(expression.operator, expression.right)
 					if (!left.unsigned && divisor == -BigInteger.ONE && integerConstant(expression.left, left) == left.minimum) {

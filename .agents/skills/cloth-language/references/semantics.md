@@ -115,11 +115,14 @@ not the compiler's current feature coverage.
   scope. File-level declarations remain distinct from executable statements.
 - Executable programs start in `main`. Libraries do not require a `main`.
 - `main` may take no parameters or one `string[] args` parameter. Either
-  parameter form may return `void` or `int` at any supported integer width:
+  parameter form may return `void`, `usize` or signed `int` at any supported integer width:
   `int<8>`, `int<16>`, `int<32>`, or `int<64>`. Plain `int` retains its default
   32-bit width, and an omitted return annotation means `void` as usual.
   For example, `fn main()`, `fn<void> main(string[] args)`,
-  `fn<int> main()`, and `fn<int<64>> main(string[] args)` are valid headers.
+  `fn<int> main()`, `fn<int<64>> main(string[] args)` and `fn<usize> main()`
+  are valid headers. The user explicitly added usize return support on
+  2026-11-01. Fixed-width unsigned int return types remain outside the entry
+  contract; usize retains its distinct identity.
 - Each executable must have exactly one entry-point `main`. Defining both
   `main()` and `main(string[] args)` is a compile-time error; startup does not
   select between entry-point overloads.
@@ -136,16 +139,27 @@ not the compiler's current feature coverage.
   errors that terminate before the entry-point call returns retain their error
   output without a normal-completion message.
 - At the native exit-code boundary, signed results narrower than the target's
-  native exit-code integer are sign-extended; wider results retain the low bits,
+  native exit-code integer are sign-extended, and narrower unsigned usize
+  results would zero-extend. Wider results retain the low bits,
   following Cloth's explicit integer-cast rules. In particular, an `int<64>`
   result outside the native exit-code range is truncated rather than producing
   a runtime error. The user confirmed low-bit truncation on 2026-10-30.
+- A usize main uses that same native C int exit boundary. Equal-width values
+  preserve their bits and wider values retain the low native bits; PEC reports
+  the resulting signed C int. On current 32/64-bit targets, usize::max reports
+  PEC: -1 and usize::max - 1 reports PEC: -2. Native operating-system process
+  status interpretation still applies; this adds no checked exit-range failure.
 - These rules were confirmed by the user on 2026-10-30. File-level executable
   snippets now exist only in internal test helpers, not the source-file grammar.
   See [development status](development.md) for native entry support and pending
   argument-array construction.
 
 ## Compiler data access (phase 3 implemented for supported types)
+
+The later `usize` decision below supersedes the earlier fixed unsigned-64 result
+types for size/count/width providers. Those source contracts now specify
+`usize`; step 5 of the [usize migration](usize-implementation.md) implements
+those result types for the supported primitives, arrays, strings and metadata.
 
 - Chunks 3.1 through 3.4 implement the confirmed contracts below for the
   currently supported primitive/array types and built-in `typeinfo`. Class/state
@@ -199,7 +213,8 @@ not the compiler's current feature coverage.
   the smallest positive normal or subnormal value.
 - Scalar `size` for integers, floats, booleans and characters means storage
   size in bytes. It supports both type and value receivers and returns
-  `unsigned int<64>`. The user confirmed this on 2026-10-31. For example,
+  `usize`. Its earlier unsigned-64 result was superseded by the later
+  `usize` decision on 2026-10-31. For example,
   `int::size` is 4, `float<16>::size` is 2, `float<64>::size` is 8,
   `bool::size` is 1 and `char::size` is 4. This uses the scalar's storage
   representation, so a boolean's one-bit LLVM value still reports one byte.
@@ -207,7 +222,7 @@ not the compiler's current feature coverage.
   `"é😀"` has size 2; a base character followed by a combining mark counts as two
   scalars. The user confirmed this on 2026-10-31. The current UTF-8 descriptor's
   byte length is not the source-level scalar count.
-- String `size` supports value receivers only, returns `unsigned int<64>` and
+- String `size` supports value receivers only, returns `usize` and
   yields 0 for an empty string. A type receiver such as `string::size` is a
   compile-time error because no string contents are supplied. The user
   confirmed this on 2026-10-31.
@@ -244,12 +259,15 @@ not the compiler's current feature coverage.
   `typeinfo` binding can be reassigned from `int::type` to `float<64>::type`
   under ordinary binding rules. The user confirmed this on 2026-10-31.
 - `typeinfo` value receivers support `str`, returning a normalized Cloth type
-  spelling with numeric widths always explicit, including default widths.
+  spelling with fixed numeric widths always explicit, including default widths.
   Interpolation of `typeinfo` uses the same text. Thus `int::type::str` and
   `int<32>::type::str` both yield `"int<32>"`, and an array of default-width
   integers includes that width in its spelling. The user confirmed this on
   2026-10-31, overriding the proposed omission of default widths. Other
   diagnostic/source type spellings are not changed by this decision.
+- The later usize decision uses `"usize"` for its normalized metadata text,
+  including in arrays such as `"usize[3]"`. Its numeric width is exposed by
+  `usize::type::width`; it is never normalized into a fixed unsigned int type.
 - A `typeinfo` value describing an array exposes `element`, returning the
   immediate element's `typeinfo` and removing exactly one array dimension.
   Thus `int[3]::type::element` describes `int<32>`, while
@@ -263,7 +281,7 @@ not the compiler's current feature coverage.
   permits guarding array-specific metadata operations such as `element`.
   The user confirmed this on 2026-10-31.
 - Every `typeinfo` value exposes `rank`, returning the represented array's
-  dimension count as `unsigned int<64>`, or 0 for a non-array type. Unspecified
+  dimension count as `usize`, or 0 for a non-array type. Unspecified
   extents still count as dimensions: `int[]` has rank 1 and `int[2][3]` has
   rank 2. The user confirmed this on 2026-10-31.
 - Every `typeinfo` value exposes `hasextent`, returning `bool`. It is true for
@@ -272,7 +290,7 @@ not the compiler's current feature coverage.
   lengths do not affect this static metadata query. The user confirmed this
   on 2026-10-31.
 - On array metadata with a statically known outer extent, `extent` returns
-  that count as `unsigned int<64>`, including 0. Reject `extent` on a non-array
+  that count as `usize`, including 0. Reject `extent` on a non-array
   or an array with an unspecified outer extent at compile time when known;
   otherwise produce a controlled runtime error. Never substitute a runtime
   array length for the static extent. The user confirmed this on 2026-10-31.
@@ -280,7 +298,7 @@ not the compiler's current feature coverage.
   receiver forms, result type and lifetime contract require a separate design.
   The user confirmed this scope decision on 2026-10-31.
 - On metadata describing an integer or floating-point type, `width` returns
-  the bit width as `unsigned int<64>`. Reject access for other represented
+  the bit width as `usize`. Reject access for other represented
   types at compile time when known; otherwise produce a controlled runtime
   error. The user confirmed this on 2026-10-31. This query reports numeric
   format width, not storage bytes or array dimensions.
@@ -293,9 +311,10 @@ not the compiler's current feature coverage.
 - Array `size` counts elements in the outer dimension. An empty outer array
   yields 0. For `[[1, 2, 3], [4, 5, 6]]`, the outer array's `size` is 2 and
   either row's `size` is 3. The user confirmed this on 2026-10-31.
-- Array `size` returns `unsigned int<64>`. On 2026-10-31 the user revised the
-  earlier unsigned 32-bit choice to unsigned 64-bit. This is a fixed source
-  result type, independent of machine register or pointer width.
+- Array `size` returns `usize`. On 2026-10-31 the user first revised the
+  earlier unsigned 32-bit choice to unsigned 64-bit, then accepted the
+  target-sized primitive and migration of compiler-provided sizes/counts.
+  The later `usize` decision supersedes that fixed-width result contract.
 - Reject a `size` access at compile time if its count is known to exceed the
   result type's range; otherwise, a count overflow produces a controlled runtime
   error. Never silently wrap or truncate the count. The user confirmed this
@@ -579,6 +598,64 @@ Array syntax and construction were confirmed on 2026-10-30:
   expressions are not supported by the language design; there is no old/new
   expression-result distinction. The user confirmed this on 2026-10-30.
 - See development status for current support and initial exponentiation choices.
+
+## Target-sized unsigned integer (usize)
+
+- On 2026-10-31 the user accepted `usize` as a primitive type and requested a
+  staged implementation plan. It is an unsigned integer with its own Cloth
+  identity and a width selected from the compilation target. It is not an alias
+  of a fixed-width integer just because their representations match.
+- Conventional 32-bit targets use a 32-bit `usize`; conventional 64-bit targets
+  use a 64-bit `usize`. Width selection happens during compilation, independently
+  of the compiler host and without runtime adaptation.
+- Explicit `int<8>`, `int<16>`, `int<32>` and `int<64>` retain exactly those
+  widths, signed or unsigned, on every target. Plain `int` stays 32-bit. The
+  user explicitly checked and accepted this distinction before requesting the plan.
+- During step 3 the user confirmed the existing unsigned numeric rules for
+  usize: arithmetic wraps at the target width, integer casts retain low bits
+  when narrowing and extend according to source signedness when widening, and
+  float-to-integer conversions use the existing checked, truncation-toward-zero
+  contract. This does not relax exact typing for bindings, arguments or returns;
+  equally wide fixed unsigned integers require explicit conversions.
+- The user confirmed normalized metadata text `"usize"`, with array spellings
+  such as `"usize[3]"`. `usize::type::width` reports the target-selected width;
+  `isunsigned` and `isnumeric` are true. Metadata equality retains usize's own
+  identity even on a target where its bits match a fixed unsigned integer.
+- Scalar/array/string `size` and metadata `rank`, `extent` and `width` return
+  `usize`. Numeric `min` and `max` retain the exact
+  receiver type. This changes measurement result types, not their meanings.
+- The migration includes internal counts, descriptors, loops, bounds checks and
+  allocation operations, rather than only changing the source provider names.
+  It introduces no source pointers, pointer arithmetic facility or `addr` contract.
+- During step 4 the user confirmed that every static array extent must fit the
+  compilation target's usize, including extents used only in type metadata.
+  A 32-bit target therefore accepts extents through 4,294,967,295 and rejects
+  larger ones at type resolution. Empty shapes can retain a maximum inner count;
+  type/shape representability does not imply that corresponding storage can be
+  allocated. Actual allocation byte calculations remain checked separately.
+- Existing signed/unsigned integer indexing and fixed-int conversions continue;
+  adding usize does not authorize rejecting those indices. Negative and
+  out-of-range indices fail before native-width narrowing. Checked size
+  production remains required independently of ordinary numeric casts.
+- The user selected Windows x86/MSVC as the first real 32-bit validation target
+  during step 6. The implemented i686-pc-windows-msvc profile uses 32-bit usize
+  and requires SSE2 for the existing floating-point rounding contract. This is
+  target implementation scope, not a claim that all 32-bit OS/ABI variants work.
+- All seven migration steps are implemented and integrated: target layout,
+  shared integer behavior,
+  the primitive, native buffer counts and public measurement provider contracts.
+  The implemented spelling is `usize`, without a width suffix or unsigned
+  modifier. Size/rank/extent/width results have exact usize identity and follow
+  ordinary strict assignment/argument/return rules; conversion to an equally
+  wide fixed integer still requires an explicit cast. Internal descriptors,
+  metadata fields and loops use target-width counts with separate inner-shape
+  known flags. Current ABI profiles include the validated Windows x86 target
+  and the existing 64-bit Windows/Linux/macOS targets. Other 32-bit targets
+  require their own ABI/toolchain/execution validation. See
+  [development status](development.md) for verified coverage.
+- Integration checks preserve Cloth's first detected error across compiler
+  passes. This does not promise source-order priority between different passes,
+  diagnostic recovery or reporting multiple errors.
 
 ## Integer signedness and widths
 

@@ -2,6 +2,7 @@ package cloth.data
 
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.ProviderEmissionContext
+import cloth.target.TargetLayout
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigDecimal
@@ -34,11 +35,15 @@ internal sealed class ProviderResult<out T : ValueType> {
 	open val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.VALUE)
 
 	fun emit(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
-		if (receiver.type != receiverType || receiver.form !in receiverForms || (receiver is ProviderReceiver.Value && LLVMTypeOf(receiver.value).address() != receiverType.llvmValue(context.context).address())) {
+		val resultType = type
+		if (resultType is CUSize && resultType.width != context.target.sizeBits) {
+			throw InternalErrors.invariant("Provider usize result belongs to a different target layout")
+		}
+		if (receiver.type != receiverType || receiver.form !in receiverForms || (receiver is ProviderReceiver.Value && LLVMTypeOf(receiver.value).address() != receiverType.llvmValue(context.context, context.target).address())) {
 			throw InternalErrors.invariant("Provider receiver does not match '${receiverType.spelling}'")
 		}
 		val result = emitValue(context, receiver)
-		if (LLVMTypeOf(result).address() != type.llvmValue(context.context).address()) {
+		if (LLVMTypeOf(result).address() != type.llvmValue(context.context, context.target).address()) {
 			throw InternalErrors.invariant("Provider result does not match '${type.spelling}'")
 		}
 		return result
@@ -53,26 +58,26 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.metadata(receiverType)
 	}
 
-	data class MetadataProperty(val query: MetadataQuery) : ProviderResult<ValueType>() {
+	data class MetadataProperty(val query: MetadataQuery, val target: TargetLayout) : ProviderResult<ValueType>() {
 
 		override val receiverType: CTypeInfo get() = CTypeInfo
-		override val type: ValueType get() = query.type
+		override val type: ValueType get() = query.type(target)
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.metadataProperty((receiver as ProviderReceiver.Value).value, query)
 	}
 
 	data class IntegerConstant(
-		override val type: CInt,
+		override val type: CInteger,
 		val value: BigInteger,
 		override val receiverType: ValueType = type,
-	) : ProviderResult<CInt>() {
+	) : ProviderResult<CInteger>() {
 
 		override val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE)
 
 		init {
-			require(value >= type.minimum && value <= type.maximum) { "Provider constant is out of range for '${type.spelling}'" }
+			require(type.acceptsLiteral(value)) { "Provider constant is out of range for '${type.spelling}'" }
 		}
 
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstIntOfString(type.llvmValue(context.context), value.toString(), 10.toByte())
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstIntOfString(type.llvmValue(context.context, context.target), value.toString(), 10.toByte())
 	}
 
 	data class FloatingConstant(
@@ -87,44 +92,55 @@ internal sealed class ProviderResult<out T : ValueType> {
 			require(type.acceptsLiteral(value)) { "Provider constant is out of range for '${type.spelling}'" }
 		}
 
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstRealOfString(type.llvmValue(context.context), value.toPlainString())
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstRealOfString(type.llvmValue(context.context, context.target), value.toPlainString())
 	}
 
-	/** Raw native extent metadata, including the existing -1 sentinel for an unwitnessed
-	 * inner dimension. This operation does not define the source-level meaning of size.
+	/** Legacy raw extent boundary: unknown inner axes still return -1 here, while
+	 * native descriptors keep a separate known flag. This does not define source size.
 	 */
 	data class ArrayExtent(
 		override val receiverType: CArray,
 		val dimension: Int,
-		override val type: CInt,
-	) : ProviderResult<CInt>() {
+		override val type: CInteger,
+	) : ProviderResult<CInteger>() {
 
 		init {
 			require(dimension in receiverType.arrayDimensions.indices) { "Invalid array extent dimension" }
-			require(type.width == 64) { "Native array extents require a 64-bit result type" }
+			require(type.width == 64) { "Legacy raw extent recipes require a 64-bit result type" }
 		}
 
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
 			val known = receiverType.arrayDimensions[dimension]
-			if (known != null) return LLVMConstIntOfString(type.llvmValue(context.context), known.toString(), 10.toByte())
+			if (known != null) return LLVMConstIntOfString(type.llvmValue(context.context, context.target), known.toString(), 10.toByte())
 			val raw = LLVMBuildExtractValue(context.builder, (receiver as ProviderReceiver.Value).value, dimension + 1, "provider_extent")
-			return if (dimension == 0) raw else LLVMBuildTrunc(context.builder, raw, type.llvmValue(context.context), "raw_extent_bits")
+			if (dimension == 0) return legacyBits(context, raw)
+			val count = legacyBits(context, LLVMBuildExtractValue(context.builder, raw, 0, "raw_extent_count"))
+			val knownFlag = LLVMBuildExtractValue(context.builder, raw, 1, "raw_extent_known")
+			return LLVMBuildSelect(context.builder, knownFlag, count, LLVMConstAllOnes(type.llvmValue(context.context, context.target)), "raw_extent_bits")
+		}
+
+		/** This unregistered internal recipe retains its historical 64-bit raw encoding. */
+		private fun legacyBits(context: ProviderEmissionContext, value: LLVMValueRef): LLVMValueRef {
+			val result = type.llvmValue(context.context, context.target)
+			return if (LLVMTypeOf(value).address() == result.address()) value else LLVMBuildZExt(context.builder, value, result, "raw_extent_widen")
 		}
 	}
 
 	/** Source size: the outer extent only, with no narrowing or byte-count arithmetic. */
-	data class ArraySize(override val receiverType: CArray) : ProviderResult<CInt>() {
+	data class ArraySize(override val receiverType: CArray, override val type: CUSize) : ProviderResult<CUSize>() {
 
-		override val type: CInt get() = CInt(64, unsigned = true)
+		init {
+			require(receiverType.arrayDimensions.all { it == null || type.acceptsLiteral(it) }) { "Array extent must fit target usize" }
+		}
+
 		override val receiverForms: Set<ProviderReceiverForm>
 			get() = if (receiverType.size != null) setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE) else setOf(ProviderReceiverForm.VALUE)
 
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = receiverType.size?.let { LLVMConstIntOfString(type.llvmValue(context.context), it.toString(), 10.toByte()) } ?: LLVMBuildExtractValue(context.builder, (receiver as ProviderReceiver.Value).value, 1, "provider_size")
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = receiverType.size?.let { LLVMConstIntOfString(type.llvmValue(context.context, context.target), it.toString(), 10.toByte()) } ?: LLVMBuildExtractValue(context.builder, (receiver as ProviderReceiver.Value).value, 1, "provider_size")
 	}
 
-	data class StringSize(override val receiverType: CString = CString) : ProviderResult<CInt>() {
+	data class StringSize(override val type: CUSize, override val receiverType: CString = CString) : ProviderResult<CUSize>() {
 
-		override val type: CInt get() = CInt(64, unsigned = true)
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.stringScalarCount((receiver as ProviderReceiver.Value).value)
 	}
 

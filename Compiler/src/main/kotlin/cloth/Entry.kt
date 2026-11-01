@@ -2,6 +2,7 @@ package cloth
 
 import cloth.diagnostics.*
 import cloth.emitter.LLVMEmitter
+import cloth.emitter.NativeCABI
 import cloth.file.ClothObject
 import cloth.lexer.Lexer
 import cloth.parser.Parser
@@ -28,7 +29,8 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 		val source = SourceFile(clothObject.path.toString(), clothObject.getContents())
 		val output = compilerSettings.getOutputFile()?.toPath() ?: clothObject.path.resolveSibling(clothObject.name + if (compilerSettings.outputKind == OutputKind.OBJECT) ".o" else "")
 		val unit = Parser(Lexer(source).scanTokens()).parse()
-		val emitter = LLVMEmitter(compilerSettings.linkOptions)
+		val abi = compilerSettings.targetTriple?.let(NativeCABI::forTarget) ?: NativeCABI.native()
+		val emitter = LLVMEmitter(abi, compilerSettings.linkOptions)
 		when (compilerSettings.outputKind) {
 			OutputKind.EXECUTABLE -> emitter.compile(unit, output)
 			OutputKind.OBJECT     -> emitter.compileObject(unit, output)

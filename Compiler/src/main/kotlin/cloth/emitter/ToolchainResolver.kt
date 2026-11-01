@@ -25,8 +25,8 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 	fun resolve(abi: NativeCABI, options: LinkOptions): LinkerConfiguration {
 		options.libraries.forEach { if (!it.matches(Regex("[A-Za-z0-9_+][A-Za-z0-9_+.-]*"))) throw ToolchainErrors.libraryName(it) }
 		return when (abi.profile) {
-			NativeCABI.Profile.WINDOWS_LLP64                              -> windows(abi, options)
-			NativeCABI.Profile.LINUX_LP64, NativeCABI.Profile.DARWIN_LP64 -> unix(abi, options)
+			NativeCABI.Profile.WINDOWS_ILP32, NativeCABI.Profile.WINDOWS_LLP64 -> windows(abi, options)
+			NativeCABI.Profile.LINUX_LP64, NativeCABI.Profile.DARWIN_LP64      -> unix(abi, options)
 		}
 	}
 
@@ -35,6 +35,7 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 		val driver = options.driver ?: LinkerDriver.LLD
 		if (driver == LinkerDriver.CC) throw ToolchainErrors.options("Target '${abi.targetTriple}' requires an MSVC-compatible linker (lld or msvc)")
 		val arch = when (abi.architecture) {
+			NativeCABI.Architecture.X86     -> "x86"
 			NativeCABI.Architecture.X86_64  -> "x64"
 			NativeCABI.Architecture.AARCH64 -> "arm64"
 		}

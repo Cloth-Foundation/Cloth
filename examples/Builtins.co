@@ -1,4 +1,4 @@
-fn<int> main() {
+fn<usize> main() {
     print("Hello, ")
     println("Cloth!")
     println()
@@ -12,5 +12,5 @@ fn<int> main() {
     println(info)
     println(true)
 
-    return int::max - 1
+    return if (usize::size >= 8) { 1 } else { 0 }
 }

@@ -47,7 +47,7 @@ class PrimitiveTypesTest {
 				add(CString to "{ ptr, i64 }")
 				add(ValueType.TYPEINFO to "ptr")
 				add(CArray(CInt(), 0) to "{ ptr, i64 }")
-				add(CArray(CArray(CArray(CInt()), 0), 2) to "{ ptr, i64, i65, i65 }")
+				add(CArray(CArray(CArray(CInt()), 0), 2) to "{ ptr, i64, { i64, i1 }, { i64, i1 } }")
 				add(ValueType.VOID to "void")
 			}
 			for ((type, expected) in cases) {

@@ -1,0 +1,21 @@
+fn<int<64>> printFib(int<64> n) {
+
+    def<int<64>> first = 0
+    def<int<64>> second = 1
+    def<string> heading = #"Fibonacci Series ({n} terms): \n"
+
+    print(heading)
+
+    println("You dont have for loops yet 😞")
+
+    return 0 -> int<64>
+
+}
+
+fn<usize> main () {
+
+    printFib(25) -> void
+
+    return 0
+}
+

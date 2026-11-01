@@ -4,19 +4,20 @@ import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Invocation-owned return buffers. This is temporary value storage, not object ownership or GC.
- * Each allocation contains a next pointer followed by bytes; releasing a frame frees the list.
+ * Each allocation contains a next pointer, alignment padding and bytes; releasing a frame frees the list.
  * The private copy ABI takes a caller's head slot and always copies before the callee exits.
  */
-internal class EmitStringArena(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI) {
+internal class EmitStringArena(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val target: TargetLayout = abi.layout) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, target)
 	private val pointer = LLVMPointerTypeInContext(context, 0)
-	private val size = types.value(abi.sizeType)
+	private val size = cloth.data.BufferLayout.count(context, target)
 	private val text = types.value(ValueType.STRING)
 	private val byte = LLVMInt8TypeInContext(context)
 	private val nullPointer get() = LLVMConstNull(pointer)
@@ -37,20 +38,15 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
 				LLVMPositionBuilderAtEnd(body, entry)
 				val arena = LLVMGetParam(function, 0)
-				val arrays = EmitArray(context, body, abi)
+				val arrays = EmitArray(context, body, abi, target)
 				val input = arrays.constrain(LLVMGetParam(function, 1), valueType)
 				val length = LLVMBuildExtractValue(body, input, 1, "element_count")
-				val stride = LLVMSizeOf(types.storage(valueType.element))
-				val allocate = LLVMAppendBasicBlockInContext(context, function, "allocate")
-				val invalid = LLVMAppendBasicBlockInContext(context, function, "invalid")
-				val maximum = LLVMBuildUDiv(body, LLVMConstAllOnes(size), stride, "maximum_elements")
-				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntULE, length, maximum, "byte_count_fits"), allocate, invalid)
-				LLVMPositionBuilderAtEnd(body, invalid)
-				EmitRuntimeError(context, body, abi).emit("Unable to allocate returned array storage")
-				LLVMPositionBuilderAtEnd(body, allocate)
-				val bytes = LLVMBuildMul(body, length, stride, "byte_count")
+				val memory = EmitMemory(context, body, abi, target)
+				val bytes = memory.elementBytes(length, types.storage(valueType.element), "Unable to allocate returned array storage")
+				val allocate = LLVMGetInsertBlock(body)
 				val raw = arrays.descriptor(LLVMBuildExtractValue(body, input, 0, "source"), bytes)
-				val copied = copy(body, arena, raw)
+				val alignment = LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), types.storage(valueType.element))
+				val copied = copyAligned(body, arena, raw, alignment)
 				val result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
 				if (valueType.element.buffered) {
 					val check = LLVMAppendBasicBlockInContext(context, function, "check")
@@ -117,11 +113,16 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 		}
 	}
 
-	fun copy(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef): LLVMValueRef {
+	fun copy(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef): LLVMValueRef = copyAligned(builder, destination, value, 1)
+
+	private fun copyAligned(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, alignment: Int): LLVMValueRef {
+		val pointerBytes = target.pointerBits / 8
+		val headerBytes = (pointerBytes + alignment - 1) / alignment * alignment
+		val name = if (headerBytes == pointerBytes) "cloth.rt.string.copy" else "cloth.rt.buffer.copy.align$alignment"
 		val type = signature(text, pointer, text)
-		var function = LLVMGetNamedFunction(module, "cloth.rt.string.copy")
+		var function = LLVMGetNamedFunction(module, name)
 		if (function == null || function.isNull) {
-			function = LLVMAddFunction(module, "cloth.rt.string.copy", type)
+			function = LLVMAddFunction(module, name, type)
 			LLVMSetLinkage(function, LLVMInternalLinkage)
 			val body = LLVMCreateBuilderInContext(context)
 			try {
@@ -134,9 +135,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val input = LLVMGetParam(function, 1)
 				val length = LLVMBuildExtractValue(body, input, 1, "length")
 				val nonempty = LLVMBuildSelect(body, LLVMBuildICmp(body, LLVMIntEQ, length, LLVMConstInt(size, 0, 0), "empty"), LLVMConstInt(size, 1, 0), length, "byte_capacity")
-				val header = LLVMConstInt(size, (abi.pointerBits / 8).toLong(), 0)
-				val capacity = LLVMBuildAdd(body, nonempty, header, "capacity")
-				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntUGE, capacity, nonempty, "capacity_fits"), allocate, invalid)
+				val header = LLVMConstInt(size, headerBytes.toLong(), 0)
+				val capacity = EmitMemory(context, body, abi, target).add(nonempty, header, "Unable to allocate returned string storage")
+				LLVMBuildBr(body, allocate)
 				LLVMPositionBuilderAtEnd(body, allocate)
 				val mallocType = signature(pointer, size)
 				val node = call(body, mallocType, external("malloc", mallocType), "allocation", capacity)

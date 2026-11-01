@@ -4,12 +4,15 @@ import cloth.data.ValueType
 import cloth.parser.expression.Expression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.expression.TypeCheckExpression
-import cloth.parser.statement.Statement
 import cloth.parser.statement.MultiAssignmentStatement
+import cloth.parser.statement.Statement
+import cloth.target.TargetLayout
 import java.util.*
 
 /** Identity keys distinguish equal-looking syntax used in different type contexts. */
-class SemanticModel {
+class SemanticModel(val target: TargetLayout = TargetLayout.native()) {
+
+	internal val typeResolver = TypeResolver(target)
 
 	internal val expressions = IdentityHashMap<Expression, ValueType>()
 	internal val statements = IdentityHashMap<Statement, ValueType>()
@@ -23,6 +26,6 @@ class SemanticModel {
 	fun typeOf(statement: Statement): ValueType = statements.getValue(statement)
 	internal fun targetTypesOf(statement: MultiAssignmentStatement): List<ValueType> = multiAssignmentTypes.getValue(statement)
 	fun targetTypeOf(expression: TypeCheckExpression): ValueType = typeChecks.getValue(expression)
-	internal fun providerAccess(receiver: Expression, spelling: String): ProviderAccess? = typeOf(receiver).provider(spelling)?.let { ProviderAccess(receiver, it) }
+	internal fun providerAccess(receiver: Expression, spelling: String): ProviderAccess? = typeOf(receiver).provider(spelling, target)?.let { ProviderAccess(receiver, it) }
 	internal fun providerAccess(expression: ProviderAccessExpression): ProviderAccess = providers.getValue(expression)
 }

@@ -1,6 +1,7 @@
 package cloth
 
 import cloth.data.CInt
+import cloth.data.CUSize
 import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
@@ -76,14 +77,57 @@ class ProgramEntryTest {
 	}
 
 	@Test
-	fun `main permits void and each signed integer width but rejects other return types`() {
+	fun `main permits void usize and each signed integer width but rejects other return types`() {
 		for (header in listOf("fn main()", "fn<void> main()")) ProgramAnalyzer().analyze(parse("$header {}"))
 		for (width in ValueType.INTEGER_WIDTHS) {
 			val program = ProgramAnalyzer().analyze(parse("pub fn<int<$width>> main() = 0"))
 			assertEquals(CInt(width), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
 		}
-		for ((type, expression) in listOf("bool" to "true", "char" to "'x'", "float" to "1.0", "string" to "\"x\"", "unsigned int" to "0", "int[]" to "main()")) {
+		for (abi in listOf(NativeCABI.native(), NativeCABI.forTarget("i686-pc-windows-msvc"))) for (parameters in listOf("", "string[] args")) {
+			val program = ProgramAnalyzer(abi.layout).analyze(parse("fn<usize> main($parameters) = 0"))
+			assertEquals(CUSize(abi.layout.sizeBits), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
+		}
+		for ((type, expression) in listOf("bool" to "true", "char" to "'x'", "float" to "1.0", "string" to "\"x\"", "unsigned int" to "0", "int[]" to "main()") + ValueType.INTEGER_WIDTHS.map { "unsigned int<$it>" to "0" }) {
 			failure("fn<$type> main() = $expression", DiagnosticCode.INVALID_MAIN_RETURN)
+		}
+	}
+
+	@Test
+	fun `usize entry IR preserves native width and truncates wider results to C int`() {
+		for (triple in listOf("i686-pc-windows-msvc", "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin")) {
+			val abi = NativeCABI.forTarget(triple)
+			for (parameters in listOf("", "string[] args")) {
+				val ir = LLVMEmitter(abi).emitExecutable(parse("fn<usize> main($parameters) = usize::max - 1"))
+				assertContains(ir, "call i${abi.layout.sizeBits} @cloth.fn.0.main(")
+				if (abi.layout.sizeBits > abi.intType.bits) assertContains(ir, "trunc i64 %exit_status to i32")
+				else assertFalse(ir.contains("trunc i32 %exit_status"), ir)
+				assertFalse(ir.contains("sext i32 %exit_status"), ir)
+				assertContains(ir, "PEC: %d")
+			}
+		}
+	}
+
+	@Test
+	fun `usize main executes with both parameter forms and preserves native exit bits`(@TempDir directory: Path) {
+		val native = NativeCABI.native()
+		val targets = if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
+		for (abi in targets) {
+			val expressions = listOf("0" to 0, "int<64>::size" to 8, "2147483647" to Int.MAX_VALUE, "2147483648" to Int.MIN_VALUE, "4294967295" to -1, "usize::max - 1" to -2) + if (abi.layout.sizeBits == 64) listOf("4294967303" to 7) else emptyList()
+			for ((index, pair) in expressions.withIndex()) for ((form, parameters) in listOf("", "string[] args").withIndex()) {
+				val value = if (parameters.isEmpty()) pair.first else "if (args::size == 2 && args[0] == \"é😀\" && args[1] == \"\") { ${pair.first} } else { 99 }"
+				val source = if (form == 0) "fn<usize> main() = $value" else "fn<usize> main($parameters) { return $value }"
+				val executable = LLVMEmitter(abi).compile(parse(source), directory.resolve("usize_${abi.layout.sizeBits}_${index}_$form"))
+				val process = ProcessBuilder(listOf(executable.toString()) + listOf("é😀", "")).redirectErrorStream(true).start()
+				try {
+					assertTrue(process.waitFor(15, TimeUnit.SECONDS), "usize main timed out")
+					val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+					val expectedStatus = if (abi.windows) pair.second else pair.second and 255
+					assertEquals(expectedStatus, process.exitValue(), output)
+					assertEquals(processCompletion(pair.second), output)
+				} finally {
+					if (process.isAlive) process.destroyForcibly()
+				}
+			}
 		}
 	}
 

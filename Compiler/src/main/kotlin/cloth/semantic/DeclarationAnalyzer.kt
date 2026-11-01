@@ -10,10 +10,11 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
+import cloth.target.TargetLayout
 import cloth.token.Token
 
 /** Collects every function signature, then resolves lexical names in each body. */
-class DeclarationAnalyzer {
+class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
 
 	fun analyze(unit: SourceUnit): DeclarationModel {
 		val fileScope = LexicalScope()
@@ -30,7 +31,7 @@ class DeclarationAnalyzer {
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val model = DeclarationModel(fileScope, functions.toList())
+		val model = DeclarationModel(fileScope, functions.toList(), target)
 		for (function in functions) {
 			model.functionSymbols[function.declaration] = function
 			val scope = LexicalScope(fileScope)

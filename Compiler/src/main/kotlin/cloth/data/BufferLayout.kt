@@ -1,0 +1,25 @@
+package cloth.data
+
+import cloth.target.TargetLayout
+import org.bytedeco.javacpp.PointerPointer
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.global.LLVM.*
+
+/** Shared native buffer layout. Inner extents keep knownness outside the count. */
+internal object BufferLayout {
+
+	fun count(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMIntTypeInContext(context, target.sizeBits)
+	fun extent(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = PointerPointer<LLVMTypeRef>(2L).use { fields ->
+		fields.put(0, count(context, target))
+		fields.put(1, LLVMInt1TypeInContext(context))
+		LLVMStructTypeInContext(context, fields, 2, 0)
+	}
+
+	fun descriptor(context: LLVMContextRef, target: TargetLayout, dimensions: Int): LLVMTypeRef = PointerPointer<LLVMTypeRef>((dimensions + 1).toLong()).use { fields ->
+		fields.put(0, LLVMPointerTypeInContext(context, 0))
+		fields.put(1, count(context, target))
+		for (index in 2..dimensions) fields.put(index.toLong(), extent(context, target))
+		LLVMStructTypeInContext(context, fields, dimensions + 1, 0)
+	}
+}

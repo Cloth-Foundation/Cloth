@@ -9,16 +9,17 @@ import cloth.parser.expression.Expression
 import cloth.parser.expression.IfExpression
 import cloth.parser.expression.NameExpression
 import cloth.parser.statement.*
+import cloth.target.TargetLayout
 import cloth.token.Token
 
 /** Legacy snippet checking; declaration bodies share its expression rules. */
-class SemanticAnalyzer {
+class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
 
 	private data class Binding(val type: ValueType, val mutable: Boolean, val declaration: Token)
 
 	fun analyze(ast: ASTStructure): SemanticModel {
 		val scopes = mutableListOf(mutableMapOf<String, Binding>())
-		val model = SemanticModel()
+		val model = SemanticModel(target)
 		fun lookup(name: Token): Binding = scopes.asReversed().firstNotNullOfOrNull { it[name.lexeme] } ?: throw SemanticErrors.unknown(name)
 		val typing = object : ExpressionTyping(model) {
 			override fun nameType(expression: NameExpression) = lookup(expression.name).type

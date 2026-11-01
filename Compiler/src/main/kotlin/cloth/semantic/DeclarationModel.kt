@@ -12,10 +12,11 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.MultiAssignmentStatement
 import cloth.parser.statement.UpdateStatement
 import cloth.semantic.symbols.*
+import cloth.target.TargetLayout
 import java.util.*
 
 /** Declaration identities and name resolutions, before expression/call type checking. */
-class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>) {
+class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>, val target: TargetLayout) {
 
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()
 	internal val parameterSymbols = IdentityHashMap<ParameterDeclaration, ParameterSymbol>()

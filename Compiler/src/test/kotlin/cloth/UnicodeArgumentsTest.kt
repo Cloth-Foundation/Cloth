@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 class UnicodeArgumentsTest {
 
 	private val native = NativeCABI.native()
-	private val windows = native.profile == NativeCABI.Profile.WINDOWS_LLP64
+	private val windows = native.windows
 	private val unixProfiles = listOf("x86_64-unknown-linux-gnu", "x86_64-apple-darwin").map(NativeCABI::forTarget)
 	private fun parse(source: String) = Parser(Lexer(SourceFile("unicode-args.co", source.trimIndent())).scanTokens()).parse()
 	private fun literal(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\""
@@ -87,9 +87,8 @@ class UnicodeArgumentsTest {
 		for (triple in listOf("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "arm64-apple-darwin")) {
 			val profile = NativeCABI.forTarget(triple)
 			for (parameters in listOf("", "string[] args")) {
-				val emitter = LLVMEmitter()
+				val emitter = LLVMEmitter(profile)
 				emitter.withFunctions(parse("fn main($parameters) {}")) { context, module, functions, semantics ->
-					LLVMSetTarget(module, profile.targetTriple)
 					EmitEntryPoint(context, module, profile).emit(ProgramModel(ProgramKind.EXECUTABLE, semantics, semantics.declarations.functions.single()), functions)
 					emitter.verify(module)
 					val printed = LLVMPrintModuleToString(module)
@@ -140,9 +139,9 @@ class UnicodeArgumentsTest {
 	fun `Windows rejects unpaired surrogates before both forms of main and stops at first invalid argument`(@TempDir directory: Path) {
 		if (!windows) return
 		val malformed = listOf(intArrayOf(0xd800), intArrayOf(0xdbff), intArrayOf(0xdc00), intArrayOf(0xdfff), intArrayOf(0xd800, 0x41), intArrayOf(0xd800, 0xd800), intArrayOf(0xdc00, 0xd800), intArrayOf(0xd800, 0xdc00, 0xdc00))
-		for ((index, parameters) in listOf("", "string[] args").withIndex()) {
+		for (profile in listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple }) for ((index, parameters) in listOf("", "string[] args").withIndex()) {
 			val cases = malformed.map { listOf(units("valid é中😀", true), it, null) }
-			val executable = synthetic(directory, "utf16_invalid_$index", "fn<int> main($parameters) = 77", native, cases)
+			val executable = synthetic(directory, "utf16_invalid_${profile.architecture}_$index", "fn<int> main($parameters) = 77", profile, cases)
 			for (case in cases.indices) run(executable, listOf(case.toString()), 1, "Invalid Unicode in command-line argument 2 (expected UTF-16)")
 		}
 	}
@@ -151,7 +150,7 @@ class UnicodeArgumentsTest {
 	fun `valid scalar boundaries survive Windows UTF-16 conversion`(@TempDir directory: Path) {
 		if (!windows) return
 		val values = listOf("", "\ud7ff\ue000\uffff", String(Character.toChars(0x10000)), String(Character.toChars(0x10ffff)), "é中😀", "é", "�", "\ufeff", "a\"b\\")
-		run(synthetic(directory, "utf16_valid", sourceFor(values), native, listOf(values.map { units(it, true) })))
+		for (profile in listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple }) run(synthetic(directory, "utf16_valid_${profile.architecture}", sourceFor(values), profile, listOf(values.map { units(it, true) })))
 	}
 
 	@Test
@@ -165,7 +164,8 @@ class UnicodeArgumentsTest {
 			    return 0
 			}
 		"""
-		run(synthetic(directory, "cleanup", source, native, listOf(listOf(units("é中😀", windows), intArrayOf())), checkBalance = true))
+		val profiles = if (windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
+		for (profile in profiles) run(synthetic(directory, "cleanup_${profile.architecture}", source, profile, listOf(listOf(units("é中😀", windows), intArrayOf())), checkBalance = true))
 	}
 
 	@Test
@@ -178,9 +178,8 @@ class UnicodeArgumentsTest {
 		for ((platform, triple) in listOf("linux" to "$architecture-unknown-linux-gnu", "macos" to "$architecture-apple-darwin")) {
 			val profile = NativeCABI.forTarget(triple)
 			for ((name, source) in listOf("arguments" to sourceFor(expected), "noargs" to "fn<int> main() = 77", "trap" to "fn<int> main(string[] args) = 77")) {
-				val emitter = LLVMEmitter()
+				val emitter = LLVMEmitter(profile)
 				emitter.withFunctions(parse(source)) { context, module, functions, semantics ->
-					LLVMSetTarget(module, profile.targetTriple)
 					val main = semantics.declarations.functions.single { it.name.lexeme == "main" }
 					EmitEntryPoint(context, module, profile).emit(ProgramModel(ProgramKind.EXECUTABLE, semantics, main), functions)
 					emitter.verify(module)
@@ -196,14 +195,15 @@ class UnicodeArgumentsTest {
 	 * shared-adapter coverage, not a claim of native execution on another OS.
 	 */
 	private fun synthetic(directory: Path, name: String, source: String, profile: NativeCABI, cases: List<List<IntArray?>>, checkBalance: Boolean = false): Path {
-		val emitter = LLVMEmitter()
-		val configuration = ToolchainResolver.native(native, LinkOptions())
-		val executable = native.executableFormat.executablePath(directory.resolve(name))
+		val target = if (profile.profile == NativeCABI.Profile.WINDOWS_ILP32) profile else native
+		val emitter = LLVMEmitter(target)
+		val configuration = ToolchainResolver.native(target, LinkOptions())
+		val executable = target.executableFormat.executablePath(directory.resolve(name))
 		val objectFile = directory.resolve("$name.o")
 		emitter.withFunctions(parse(source)) { context, module, functions, semantics ->
 			val selected = semantics.declarations.functions.single { it.name.lexeme == "main" }
 			EmitEntryPoint(context, module, profile).emit(ProgramModel(ProgramKind.EXECUTABLE, semantics, selected), functions)
-			val startup = LLVMGetNamedFunction(module, if (profile.profile == NativeCABI.Profile.WINDOWS_LLP64) "wmain" else "main")
+			val startup = LLVMGetNamedFunction(module, if (profile.windows) "wmain" else "main")
 			LLVMSetValueName2(startup, "test.startup", 12)
 			LLVMSetLinkage(startup, LLVMInternalLinkage)
 			val builder = LLVMCreateBuilderInContext(context)
@@ -228,7 +228,7 @@ class UnicodeArgumentsTest {
 						assertFalse(original == null || original.isNull)
 						LLVMSetValueName2(original, "test.$name", (name.length + 5).toLong())
 						LLVMSetLinkage(original, LLVMInternalLinkage)
-						val type = signature(if (allocate) pointer else LLVMVoidTypeInContext(context), if (allocate) LLVMInt64TypeInContext(context) else pointer)
+						val type = signature(if (allocate) pointer else LLVMVoidTypeInContext(context), if (allocate) LLVMIntTypeInContext(context, target.layout.sizeBits) else pointer)
 						val real = LLVMAddFunction(module, name, type)
 						LLVMPositionBuilderAtEnd(builder, LLVMAppendBasicBlockInContext(context, original, "entry"))
 						val previous = LLVMBuildLoad2(builder, integer, outstanding, "previous")
@@ -253,7 +253,7 @@ class UnicodeArgumentsTest {
 				}
 				for ((caseIndex, values) in cases.withIndex()) {
 					LLVMPositionBuilderAtEnd(builder, targets[caseIndex])
-					val element = if (profile.profile == NativeCABI.Profile.WINDOWS_LLP64) LLVMInt16TypeInContext(context) else LLVMInt8TypeInContext(context)
+					val element = if (profile.windows) LLVMInt16TypeInContext(context) else LLVMInt8TypeInContext(context)
 					val argv = LLVMBuildArrayAlloca(builder, pointer, int(values.size + 1), "synthetic_argv")
 					val all = listOf<IntArray?>(null) + values // argv[0] is deliberately unreadable and must be excluded.
 					for ((index, units) in all.withIndex()) {

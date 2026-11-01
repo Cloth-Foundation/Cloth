@@ -4,16 +4,17 @@ import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Length-aware UTF-8 output, with one lazily generated helper per native module. */
-internal class EmitOutput(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+internal class EmitOutput(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI, private val target: TargetLayout = abi.layout) {
 
 	fun write(module: LLVMModuleRef, text: LLVMValueRef) {
 		val signature = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
-			parameters.put(0, ValueType.STRING.llvmValue(context))
+			parameters.put(0, ValueType.STRING.llvmValue(context, target))
 			LLVMFunctionType(LLVMVoidTypeInContext(context), parameters, 1, 0)
 		}
 		val existing = LLVMGetNamedFunction(module, "cloth.runtime.write.stdout")
@@ -33,8 +34,8 @@ internal class EmitOutput(private val context: LLVMContextRef, private val build
 	private fun emitBody(module: LLVMModuleRef, function: LLVMValueRef) {
 		val bodyBuilder = LLVMCreateBuilderInContext(context)
 		try {
-			val intType = LLVMTypes(context).value(abi.intType)
-			val indexType = LLVMInt64TypeInContext(context)
+			val intType = LLVMTypes(context, target).value(abi.intType)
+			val indexType = cloth.data.BufferLayout.count(context, target)
 			val byteType = LLVMInt8TypeInContext(context)
 			val putcharType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 				parameters.put(0, intType)
