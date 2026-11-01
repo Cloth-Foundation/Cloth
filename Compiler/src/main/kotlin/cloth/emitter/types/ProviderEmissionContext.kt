@@ -15,6 +15,8 @@ internal class ProviderEmissionContext(
 	private val location: String,
 ) {
 
+	val target get() = strings.target
+
 	fun formatScalar(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.interpolate(value, type, casts, location)
 	fun stringScalarCount(value: LLVMValueRef): LLVMValueRef = strings.scalarCount(value)
 	fun metadata(type: ValueType): LLVMValueRef = strings.metadata.constant(type)

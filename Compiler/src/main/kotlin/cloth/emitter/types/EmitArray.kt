@@ -1,9 +1,11 @@
 package cloth.emitter.types
 
+import cloth.data.BufferLayout
 import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -12,24 +14,35 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
 
 /** Array descriptors carry a data address and every dimension's extent, even after an empty axis. */
-internal class EmitArray(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+internal class EmitArray(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI, private val target: TargetLayout = abi.layout) {
 
-	private val types = LLVMTypes(context)
-	private val countType = LLVMInt64TypeInContext(context)
-	private val shapeType = LLVMIntTypeInContext(context, 65)
-	private fun extent(dimension: Int, value: BigInteger): LLVMValueRef = LLVMConstIntOfString(if (dimension == 0) countType else shapeType, value.toString(), 10.toByte())
-	private fun unknown(value: LLVMValueRef, dimension: Int): LLVMValueRef = if (dimension == 0) LLVMConstInt(LLVMInt1TypeInContext(context), 0, 0)
-	else LLVMBuildICmp(builder, LLVMIntEQ, value, LLVMConstAllOnes(shapeType), "extent_unknown")
+	private val types = LLVMTypes(context, target)
+	private val memory = EmitMemory(context, builder, abi, target)
+	private val shapeType = BufferLayout.extent(context, target)
+	private val boolType = LLVMInt1TypeInContext(context)
+	private fun known(value: Boolean) = LLVMConstInt(boolType, if (value) 1 else 0, 0)
+	private fun inner(count: LLVMValueRef, known: LLVMValueRef = known(true)): LLVMValueRef {
+		val value = LLVMBuildInsertValue(builder, LLVMGetUndef(shapeType), count, 0, "inner_count")
+		return LLVMBuildInsertValue(builder, value, known, 1, "inner_known")
+	}
 
-	fun count(value: Long): LLVMValueRef = LLVMConstInt(countType, value, 0)
+	private fun extent(dimension: Int, value: BigInteger): LLVMValueRef = if (dimension == 0) memory.constant(value) else inner(memory.constant(value))
+	private fun extentCount(value: LLVMValueRef, dimension: Int): LLVMValueRef = if (dimension == 0) value else LLVMBuildExtractValue(builder, value, 0, "shape_count")
+	private fun unknown(value: LLVMValueRef, dimension: Int): LLVMValueRef = if (dimension == 0) known(false) else LLVMBuildNot(builder, LLVMBuildExtractValue(builder, value, 1, "shape_known"), "extent_unknown")
+	private fun choose(condition: LLVMValueRef, yes: LLVMValueRef, no: LLVMValueRef, dimension: Int): LLVMValueRef {
+		val count = LLVMBuildSelect(builder, condition, extentCount(yes, dimension), extentCount(no, dimension), "selected_extent")
+		return if (dimension == 0) count else inner(count, LLVMBuildSelect(builder, condition, LLVMBuildExtractValue(builder, yes, 1, "yes_known"), LLVMBuildExtractValue(builder, no, 1, "no_known"), "selected_known"))
+	}
+
+	fun count(value: Long): LLVMValueRef = memory.count(value)
 	fun descriptor(data: LLVMValueRef, length: LLVMValueRef, type: CArray = CArray(ValueType.INT), row: LLVMValueRef? = null): LLVMValueRef {
 		var result = LLVMBuildInsertValue(builder, LLVMGetUndef(types.value(type)), data, 0, "array_data")
 		result = LLVMBuildInsertValue(builder, result, length, 1, "array_length")
 		for (dimension in 1 until type.arrayDimensions.size) {
 			val extent = row?.let {
 				val raw = LLVMBuildExtractValue(builder, it, dimension, "row_extent")
-				if (dimension == 1) LLVMBuildZExt(builder, raw, shapeType, "inner_extent") else raw
-			} ?: type.arrayDimensions[dimension]?.let { extent(dimension, it) } ?: LLVMConstAllOnes(shapeType)
+				if (dimension == 1) inner(raw) else raw
+			} ?: type.arrayDimensions[dimension]?.let { extent(dimension, it) } ?: inner(count(0), known(false))
 			result = LLVMBuildInsertValue(builder, result, extent, dimension + 1, "array_shape")
 		}
 		return result
@@ -45,7 +58,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		LLVMPositionBuilderAtEnd(builder, ok)
 	}
 
-	/** The 65-bit -1 sentinel cannot collide with a valid unsigned 64-bit extent. */
+	/** A separate known flag preserves every valid native count, including its maximum. */
 	fun matchShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean = false, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
 		var result = value
 		for (dimension in type.arrayDimensions.indices) {
@@ -53,9 +66,9 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 			val expected = LLVMBuildExtractValue(builder, reference, dimension + 1, "expected_extent")
 			val actualUnknown = unknown(actual, dimension)
 			val expectedUnknown = unknown(expected, dimension)
-			val equal = LLVMBuildICmp(builder, LLVMIntEQ, actual, expected, "same_extent")
+			val equal = LLVMBuildICmp(builder, LLVMIntEQ, extentCount(actual, dimension), extentCount(expected, dimension), "same_extent")
 			guard(LLVMBuildOr(builder, equal, LLVMBuildOr(builder, actualUnknown, expectedUnknown, "unconstrained_extent"), "matching_shape"), message)
-			val extent = if (merge) LLVMBuildSelect(builder, actualUnknown, expected, actual, "merged_extent") else expected
+			val extent = if (merge) choose(actualUnknown, expected, actual, dimension) else expected
 			result = LLVMBuildInsertValue(builder, result, extent, dimension + 1, "matched_shape")
 		}
 		return result
@@ -68,7 +81,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 			val extent = LLVMBuildExtractValue(builder, value, dimension + 1, "extent")
 			val unknown = unknown(extent, dimension)
 			val required = extent(dimension, expected)
-			val equal = LLVMBuildICmp(builder, LLVMIntEQ, extent, required, "extent_matches")
+			val equal = LLVMBuildICmp(builder, LLVMIntEQ, extentCount(extent, dimension), extentCount(required, dimension), "extent_matches")
 			guard(LLVMBuildOr(builder, unknown, equal, "extent_valid"), "Array size mismatch: expected $expected elements")
 			result = LLVMBuildInsertValue(builder, result, required, dimension + 1, "constrained_shape")
 		}
@@ -81,8 +94,8 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		for (dimension in type.arrayDimensions.indices) {
 			val raw = LLVMBuildExtractValue(builder, parent, dimension + 2, "parent_extent")
 			val extent = if (dimension == 0) {
-				guard(LLVMBuildICmp(builder, LLVMIntNE, raw, LLVMConstAllOnes(shapeType), "row_extent_known"), "Unable to determine indexed array shape")
-				LLVMBuildTrunc(builder, raw, countType, "row_count")
+				guard(LLVMBuildExtractValue(builder, raw, 1, "row_extent_known"), "Unable to determine indexed array shape")
+				LLVMBuildExtractValue(builder, raw, 0, "row_count")
 			} else raw
 			reference = LLVMBuildInsertValue(builder, reference, extent, dimension + 1, "row_shape")
 		}
@@ -103,7 +116,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun literal(element: ValueType, elements: List<() -> LLVMValueRef>): LLVMValueRef {
-		val data = LLVMBuildArrayAlloca(builder, types.storage(element), count(maxOf(1, elements.size).toLong()), "array_elements")
+		val data = memory.stack(types.storage(element), count(maxOf(1, elements.size).toLong()), "array_elements", "Unable to allocate array literal storage")
 		var reference: LLVMValueRef? = null
 		elements.forEachIndexed { index, emit ->
 			var value = emit()
@@ -117,9 +130,15 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun checkedAddress(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
-		val converted = if (indexType.bits == 64) index else if (indexType.unsigned) LLVMBuildZExt(builder, index, countType, "array_index") else LLVMBuildSExt(builder, index, countType, "array_index")
+		// Compare in the original operand's range before any narrowing for addressing.
+		val width = maxOf(indexType.bits, target.sizeBits)
+		val compareType = LLVMIntTypeInContext(context, width)
+		val converted = if (indexType.bits == width) index else if (indexType.unsigned) LLVMBuildZExt(builder, index, compareType, "array_index") else LLVMBuildSExt(builder, index, compareType, "array_index")
 		val length = LLVMBuildExtractValue(builder, array, 1, "array_length")
-		val valid = LLVMBuildICmp(builder, LLVMIntULT, converted, length, "array_in_bounds")
+		val bound = memory.resize(length, compareType)
+		val inBounds = LLVMBuildICmp(builder, LLVMIntULT, converted, bound, "array_in_bounds")
+		val nonnegative = if (indexType.unsigned) known(true) else LLVMBuildICmp(builder, LLVMIntSGE, index, LLVMConstInt(LLVMTypeOf(index), 0, 0), "array_index_nonnegative")
+		val valid = LLVMBuildAnd(builder, nonnegative, inBounds, "array_index_valid")
 		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
 		val ok = LLVMAppendBasicBlockInContext(context, function, "array_read")
 		val invalid = LLVMAppendBasicBlockInContext(context, function, "array_invalid_index")
@@ -127,7 +146,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		LLVMPositionBuilderAtEnd(builder, invalid)
 		EmitRuntimeError(context, builder, abi).emit("Array index out of bounds")
 		LLVMPositionBuilderAtEnd(builder, ok)
-		return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, converted)
+		return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, memory.resize(converted))
 	}
 
 	fun index(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {

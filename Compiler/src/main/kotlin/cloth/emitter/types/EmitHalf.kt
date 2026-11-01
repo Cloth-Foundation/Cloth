@@ -3,15 +3,16 @@ package cloth.emitter.types
 import cloth.data.CFloat
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
+import cloth.target.TargetLayout
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** IEEE binary16 storage and round-to-nearest-even conversions without native half runtime helpers. */
-internal class EmitHalf(private val context: LLVMContextRef, private val builder: LLVMBuilderRef) {
+internal class EmitHalf(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val target: TargetLayout = TargetLayout.native()) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, target)
 	private val half = ValueType.HALF
 	private val single = ValueType.SINGLE
 	private val fractionMask = (1L shl half.fractionBits) - 1

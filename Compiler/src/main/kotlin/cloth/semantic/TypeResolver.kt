@@ -1,14 +1,12 @@
 package cloth.semantic
 
-import cloth.data.CArray
-import cloth.data.CFloat
-import cloth.data.CInt
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.type.TypeReference
+import cloth.target.TargetLayout
 import cloth.token.Keywords
 
-internal object TypeResolver {
+internal class TypeResolver(val target: TargetLayout) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme
@@ -25,6 +23,7 @@ internal object TypeResolver {
 		} else {
 			if (annotation.width != null) throw SemanticErrors.type(annotation)
 			when (name) {
+				Keywords.USIZE.toString()     -> CUSize(target.sizeBits)
 				Keywords.BOOLEAN.toString()   -> ValueType.BOOL
 				Keywords.CHARACTER.toString() -> ValueType.CHAR
 				Keywords.STRING.toString()    -> ValueType.STRING
@@ -37,8 +36,8 @@ internal object TypeResolver {
 		return annotation.arraySuffixes.indices.reversed().fold(base) { element, index ->
 			val token = annotation.arraySizes.getOrNull(index)
 			val size = token?.lexeme?.toBigIntegerOrNull()
-			if (token != null && (size == null || size.signum() < 0 || size > CInt(64, unsigned = true).maximum)) {
-				throw SemanticErrors.array("Array count exceeds unsigned int<64>", token.span)
+			if (token != null && (size == null || size.signum() < 0 || size > CUSize(target.sizeBits).maximum)) {
+				throw SemanticErrors.array("Array count exceeds usize (${target.sizeBits}-bit target)", token.span)
 			}
 			CArray(element, size)
 		}

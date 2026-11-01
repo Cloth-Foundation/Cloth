@@ -10,7 +10,7 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Both operands have already been evaluated, once and in source order. */
 internal class EmitPower(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, abi.layout)
 
 	fun emit(base: LLVMValueRef, exponent: LLVMValueRef, type: ValueType, location: String): LLVMValueRef {
 		if (type.floating) return floating(base, exponent, type)

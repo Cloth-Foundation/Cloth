@@ -69,7 +69,7 @@ class ScalarProvidersTest {
 	}
 
 	@Test
-	fun `source scalar providers preserve float widths and use unsigned 64 bit byte counts`() {
+	fun `source scalar providers preserve float widths and use usize byte counts`() {
 		for (width in listOf(16, 32, 64)) for (source in listOf("float<$width>::min::max", "(1 -> float<$width>)::min")) {
 			val ast = snippet(source)
 			assertEquals(CFloat(width), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()), source)
@@ -79,7 +79,7 @@ class ScalarProvidersTest {
 			val semantics = SemanticAnalyzer().analyze(ast)
 			for (statement in ast.statements.drop(1)) {
 				val expression = (statement as ExpressionStatement).expression as ProviderAccessExpression
-				assertEquals(CInt(64, true), semantics.typeOf(expression), spelling)
+				assertEquals(CUSize(semantics.target.sizeBits), semantics.typeOf(expression), spelling)
 				assertEquals(BigDecimal(bytes).toBigIntegerExact(), assertIs<ProviderResult.IntegerConstant>(semantics.providerAccess(expression).result).value)
 			}
 		}
@@ -126,7 +126,7 @@ class ScalarProvidersTest {
 	@Test
 	fun `scalar byte sizes execute for all widths signedness and receiver forms`(@TempDir directory: Path) {
 		val declarations = buildString {
-			for ((index, scalar) in scalars().withIndex()) appendLine("fn<unsigned int<64>> bytes$index(${scalar.first} value) = value::size")
+			for ((index, scalar) in scalars().withIndex()) appendLine("fn<usize> bytes$index(${scalar.first} value) = value::size")
 		}
 		val checks = buildString {
 			for ((index, scalar) in scalars().withIndex()) {
@@ -176,7 +176,8 @@ class ScalarProvidersTest {
 			fn<int> pick(float<16> value) = 1
 			fn<int> pick(float<64> value) = 2
 			fn<int> sizes(unsigned int<32> value, int<8> other) = 3
-			fn<int> sizes(unsigned int<64> value, int<64> other) = 4
+			fn<int> sizes(usize value, int<64> other) = 4
+			fn<int> sizes(unsigned int<64> value, int<32> other) = 5
 			fn<int> main() {
 			    if (pick(float<16>::max) != 1 || pick(float<64>::min) != 2 || sizes(bool::size, 1) != 4) { return 1 }
 			    return 0

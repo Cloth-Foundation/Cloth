@@ -98,7 +98,7 @@ class TypeInfoTest {
 				if ($spelling::type::str != "${type.metadataSpelling}" || #"{$spelling::type}" != "${type.metadataSpelling}") { return 3 }
 			""".trimIndent()
 		}
-		native(directory, "numeric_metadata", "fn<unsigned int<64>> width(typeinfo value) = value::width\nfn<int> main() {\n$checks\nreturn 0\n}")
+		native(directory, "numeric_metadata", "fn<usize> width(typeinfo value) = value::width\nfn<int> main() {\n$checks\nreturn 0\n}")
 	}
 
 	@Test
@@ -106,7 +106,7 @@ class TypeInfoTest {
 		native(directory, "array_metadata", """
 			fn<bool> same(typeinfo left, typeinfo right) = left == right
 			fn<typeinfo> child(typeinfo info) = info::element
-			fn<unsigned int<64>> extent(typeinfo info) = info::extent
+			fn<usize> extent(typeinfo info) = info::extent
 			fn<typeinfo> staticType(int[][] values) = values::type
 			fn<int> main() {
 			    def info = unsigned int<8>[2][0][]::type
@@ -115,7 +115,7 @@ class TypeInfoTest {
 			    if (info::element::element != unsigned int<8>[]::type || info::element::element::hasextent || info::element::element::rank != 1) { return 3 }
 			    if (info::element::element::element != unsigned int<8>::type || info::element::element::element::rank != 0) { return 4 }
 			    if (!same(int[]::type, int[]::type) || same(int[]::type, int[3]::type) || same(int[2][3]::type, int[2][]::type)) { return 5 }
-			    if (extent(int[18446744073709551615][]::type) != unsigned int<64>::max || extent(int[0][]::type) != 0) { return 6 }
+			    if (extent(int[18446744073709551615][]::type) != usize::max || extent(int[0][]::type) != 0) { return 6 }
 			    if (staticType([[1,2],[3,4]]) != int[][]::type || staticType([[1,2],[3,4]])::hasextent) { return 7 }
 			    if (int[][2]::type::element != int[2]::type || int[][2]::type::hasextent) { return 8 }
 			    return 0
@@ -126,8 +126,8 @@ class TypeInfoTest {
 	@Test
 	fun `non-numeric metadata predicates are total and guarded queries are safe`(@TempDir directory: Path) {
 		native(directory, "guards", """
-			fn<unsigned int<64>> bits(typeinfo value) = if (value::isnumeric) { value::width } else { 0 }
-			fn<unsigned int<64>> count(typeinfo value) = if (value::hasextent) { value::extent } else { 0 }
+			fn<usize> bits(typeinfo value) = if (value::isnumeric) { value::width } else { 0 }
+			fn<usize> count(typeinfo value) = if (value::hasextent) { value::extent } else { 0 }
 			fn<typeinfo> elementOrSelf(typeinfo value) = if (value::isarray) { value::element } else { value }
 			fn<int> main() {
 			    def values = [bool::type, char::type, string::type, typeinfo::type, void::type, int[]::type]
@@ -142,7 +142,7 @@ class TypeInfoTest {
 
 	@Test
 	fun `unknown invalid metadata operations terminate with controlled source-located errors`(@TempDir directory: Path) {
-		for ((query, argument, returns) in listOf(Triple("element", "int::type", "typeinfo"), Triple("extent", "int[]::type", "unsigned int<64>"), Triple("extent", "string::type", "unsigned int<64>"), Triple("width", "bool::type", "unsigned int<64>"))) {
+		for ((query, argument, returns) in listOf(Triple("element", "int::type", "typeinfo"), Triple("extent", "int[]::type", "usize"), Triple("extent", "string::type", "usize"), Triple("width", "bool::type", "usize"))) {
 			native(directory, "invalid_${query}_${argument.hashCode().toUInt()}", "fn<$returns> inspect(typeinfo value) = value::$query\nfn main() { inspect($argument) }", "Type metadata ::$query requires")
 		}
 	}

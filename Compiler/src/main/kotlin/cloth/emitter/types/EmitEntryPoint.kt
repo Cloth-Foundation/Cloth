@@ -17,7 +17,7 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 	fun emit(program: ProgramModel, functions: EmitFunctions) {
 		val selected = checkNotNull(program.entryPoint)
 		val type = program.functions.typeOf(selected).returns
-		val types = LLVMTypes(context)
+		val types = LLVMTypes(context, abi.layout)
 		val builder = LLVMCreateBuilderInContext(context)
 		try {
 			val nativeType = types.value(abi.intType)
@@ -27,7 +27,7 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 				parameters.put(0, nativeType); parameters.put(1, pointer)
 				LLVMFunctionType(nativeType, parameters, 2, 0)
 			}
-			val main = LLVMAddFunction(module, if (abi.profile == NativeCABI.Profile.WINDOWS_LLP64) "wmain" else "main", signature)
+			val main = LLVMAddFunction(module, if (abi.windows) "wmain" else "main", signature)
 			val entry = LLVMAppendBasicBlockInContext(context, main, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
 			val argumentsEmitter = EmitArguments(context, module, abi)
@@ -38,7 +38,7 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 			}
 			val status = when {
 				type == ValueType.VOID       -> LLVMConstInt(nativeType, 0, 0)
-				type.bits < abi.intType.bits -> LLVMBuildSExt(builder, result, nativeType, "widen_exit_status")
+				type.bits < abi.intType.bits -> if (type.unsigned) LLVMBuildZExt(builder, result, nativeType, "widen_exit_status") else LLVMBuildSExt(builder, result, nativeType, "widen_exit_status")
 				type.bits > abi.intType.bits -> LLVMBuildTrunc(builder, result, nativeType, "narrow_exit_status")
 				else                         -> result
 			}

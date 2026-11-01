@@ -13,12 +13,14 @@ class CompilerSettings(val args: Array<String>) {
 	private val positional = mutableListOf<String>()
 	val linkOptions: LinkOptions
 	val outputKind: OutputKind
+	val targetTriple: String?
 	var debug: Boolean = false
 		private set
 
 	init {
 		var options = LinkOptions()
 		var emission = OutputKind.EXECUTABLE
+		var selectedTarget: String? = null
 		var index = 0
 		var literalArguments = false
 		while (index < args.size) {
@@ -45,6 +47,9 @@ class CompilerSettings(val args: Array<String>) {
 			}
 			val value = attached ?: args.getOrNull(index)?.takeUnless { it.startsWith("-") }?.also { index++ }
 			if (value.isNullOrBlank()) throw CliErrors.missing(name, usage)
+			if (name == "--target") {
+				selectedTarget = value; continue
+			}
 			if (name == "--emit") {
 				emission = when (value) {
 					"executable" -> OutputKind.EXECUTABLE
@@ -82,16 +87,17 @@ class CompilerSettings(val args: Array<String>) {
 		if (positional.size > 2) throw CliErrors.arguments(usage)
 		linkOptions = options
 		outputKind = emission
+		targetTriple = selectedTarget
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Builtins.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Fib.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 
 	companion object {
 
-		private val optionNames = setOf("--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
-		private const val usage = "Usage: cloth [source.co] [output] [--emit executable|object] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]"
+		private val optionNames = setOf("--target", "--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
+		private const val usage = "Usage: cloth [source.co] [output] [--target TRIPLE] [--emit executable|object] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]"
 		private fun errorValue(name: String, value: String, expected: String): Nothing = throw CliErrors.value(name, value, expected)
 		private fun path(value: String): Path = try {
 			Path.of(value)

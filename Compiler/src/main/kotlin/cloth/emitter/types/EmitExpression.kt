@@ -24,7 +24,7 @@ import org.bytedeco.llvm.global.LLVM.*
 
 internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val semantics: SemanticModel, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, private val abi: NativeCABI, private val functions: EmitFunctions? = null, private val functionSemantics: FunctionSemanticModel? = null, private val returnType: ValueType? = null, private val frame: EmitFunctionFrame? = null) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, abi.layout)
 	private val arrays = EmitArray(context, builder, abi)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
@@ -285,7 +285,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is FloatingPointLiteral     -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral           -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
 			is CharacterLiteral         -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
-			is StringLiteral            -> strings.literal(expression.value)
+			is StringLiteral            -> strings.literal(expression.value, expression.span)
 			is InterpolatedString       -> {
 				var result: LLVMValueRef? = null
 				for (part in expression.parts) {
@@ -385,7 +385,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					Operators.DIVIDE.toString(), Operators.MODULO.toString() -> {
 						val span = expression.operator.span
 						val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
-						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInt, expression.operator.lexeme == Operators.MODULO.character, location)
+						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInteger, expression.operator.lexeme == Operators.MODULO.character, location)
 					}
 
 					else                                                     -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")

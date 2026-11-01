@@ -3,6 +3,7 @@ package cloth.emitter.types
 import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
+import cloth.target.TargetLayout
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -10,12 +11,12 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for bindings in the current function; names are checked by semantic analysis. */
-internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef? = null) {
+internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef? = null, private val target: TargetLayout = TargetLayout.native()) {
 
 	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val initialShape: LLVMValueRef?)
 
 	private val bindings = mutableMapOf<Any, Storage>()
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, target)
 
 	/** Restore lexical names after a branch; stores to enclosing bindings persist. */
 	fun <T> withScope(action: () -> T): T {

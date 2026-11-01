@@ -4,7 +4,7 @@ import java.nio.file.Path
 
 object ToolchainErrors {
 
-	fun target(original: String, normalized: String) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_TARGET, "Unsupported native C ABI target '$original' (normalized: '$normalized'). " + "Supported targets: x86_64/aarch64 Windows MSVC, Linux GNU/musl, and macOS.")
+	fun target(original: String, normalized: String) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_TARGET, "Unsupported native C ABI target '$original' (normalized: '$normalized'). " + "Supported targets: i686 Windows MSVC; x86_64/aarch64 Windows MSVC, Linux GNU/musl, and macOS.")
 	fun host(os: String) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_TARGET, "Unsupported operating system: $os")
 	fun options(message: String) = ClothDiagnostic(DiagnosticCode.TOOLCHAIN_OPTIONS, message)
 	fun libraryName(name: String) = ClothDiagnostic(DiagnosticCode.INVALID_LIBRARY_NAME, "Invalid library name '$name'")

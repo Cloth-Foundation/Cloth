@@ -14,7 +14,7 @@ internal class EmitRuntimeError(private val context: LLVMContextRef, private val
 
 	fun emit(message: String, vararg details: LLVMValueRef) {
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
-		val intType = LLVMTypes(context).value(abi.intType)
+		val intType = LLVMTypes(context, abi.layout).value(abi.intType)
 		PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
 			val formatted = details.isNotEmpty()

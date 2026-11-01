@@ -1,7 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CFloat
-import cloth.data.CInt
+import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
@@ -16,8 +16,8 @@ import java.math.BigInteger
 /** Numeric value conversions. The caller evaluates the source exactly once. */
 internal class EmitCast(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val semantics: SemanticModel, private val abi: NativeCABI) {
 
-	private val half = EmitHalf(context, builder)
-	private val types = LLVMTypes(context)
+	private val half = EmitHalf(context, builder, abi.layout)
+	private val types = LLVMTypes(context, abi.layout)
 
 	fun toFloating(value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef = when {
 		source == target          -> value
@@ -42,7 +42,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		if (target.floating) return toFloating(value, source, target)
 		val integerType = types.value(target)
 		if (source.floating) {
-			guardFloatToInteger(expression, value, source, target as CInt)
+			guardFloatToInteger(expression, value, source, target as CInteger)
 			val operand = if (source == ValueType.HALF) half.toFloat(value) else value
 			return if (target.unsigned) LLVMBuildFPToUI(builder, operand, integerType, "cast_unsigned")
 			else LLVMBuildFPToSI(builder, operand, integerType, "cast_signed")
@@ -55,7 +55,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		}
 	}
 
-	private fun guardFloatToInteger(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: CInt) {
+	private fun guardFloatToInteger(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: CInteger) {
 		// Check the range after truncation toward zero, before fptosi/fptoui can
 		// produce poison. Use an exclusive lower bound when minimum - 1 is
 		// representable; otherwise the minimum itself is an inclusive bound.

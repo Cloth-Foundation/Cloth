@@ -2,8 +2,11 @@ package cloth.emitter.types
 
 import cloth.data.CFloat
 import cloth.data.ValueType
+import cloth.diagnostics.BackendErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.target.TargetLayout
+import cloth.token.TokenSpan
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -13,12 +16,13 @@ import org.bytedeco.llvm.global.LLVM.*
  * local buffers stay valid throughout the creating invocation. Function returns copy
  * their bytes into caller-owned storage before that invocation exits.
  */
-internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
+internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI, val target: TargetLayout = abi.layout) {
 
 	val metadata by lazy { EmitTypeInfo(context, builder, abi, this) }
 
-	private val types = LLVMTypes(context)
-	private val lengthType = LLVMInt64TypeInContext(context)
+	private val types = LLVMTypes(context, target)
+	private val memory = EmitMemory(context, builder, abi, target)
+	private val lengthType = memory.size
 	private val boolType = types.value(ValueType.BOOL)
 
 	private fun descriptor(data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
@@ -39,13 +43,13 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 
 		// Decimal int64/uint64 and %g with at most 17 significant digits fit in 64 bytes,
 		// including sign, decimal point, exponent and NUL. Check snprintf's result anyway.
-		val capacity = LLVMConstInt(types.value(abi.sizeType), 64, 0)
-		val data = LLVMBuildArrayAlloca(builder, LLVMInt8TypeInContext(context), capacity, "formatted_bytes")
+		val capacity = LLVMConstInt(lengthType, 64, 0)
+		val data = memory.stack(LLVMInt8TypeInContext(context), capacity, "formatted_bytes", "Unable to allocate formatting storage")
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 		val nativeInt = types.value(abi.intType)
 		val functionType = PointerPointer<LLVMTypeRef>(3L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
-			parameters.put(1, types.value(abi.sizeType))
+			parameters.put(1, lengthType)
 			parameters.put(2, LLVMPointerTypeInContext(context, 0))
 			LLVMFunctionType(nativeInt, parameters, 3, 1)
 		}
@@ -74,7 +78,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		LLVMPositionBuilderAtEnd(builder, invalid)
 		EmitRuntimeError(context, builder, abi).emit("String interpolation formatting failed at $location")
 		LLVMPositionBuilderAtEnd(builder, valid)
-		return descriptor(data, LLVMBuildZExt(builder, length, lengthType, "format_length"))
+		return descriptor(data, memory.resize(length))
 	}
 
 	/** Encode one scalar; unused bytes are outside the descriptor's length. */
@@ -92,20 +96,20 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		val lead = select(one, value, select(two, LLVMBuildOr(builder, shift(6), constant(0xc0), "utf8_lead2"), select(three, LLVMBuildOr(builder, shift(12), constant(0xe0), "utf8_lead3"), LLVMBuildOr(builder, shift(18), constant(0xf0), "utf8_lead4"))))
 		val bytes = listOf(lead, select(two, continuation(0), select(three, continuation(6), continuation(12))), select(three, continuation(0), continuation(6)), continuation(0))
 		val byteType = LLVMInt8TypeInContext(context)
-		val data = LLVMBuildArrayAlloca(builder, byteType, constant(4), "char_bytes")
+		val data = memory.stack(byteType, memory.count(4), "char_bytes", "Unable to allocate character storage")
 		for ((index, byte) in bytes.withIndex()) {
 			val address = PointerPointer<LLVMValueRef>(1L).use { indices ->
-				indices.put(0, constant(index))
+				indices.put(0, memory.count(index.toLong()))
 				LLVMBuildInBoundsGEP2(builder, byteType, data, indices, 1, "char_byte_address")
 			}
 			LLVMBuildStore(builder, LLVMBuildTrunc(builder, byte, byteType, "char_byte"), address)
 		}
-		return descriptor(data, LLVMBuildZExt(builder, length, lengthType, "char_length"))
+		return descriptor(data, memory.resize(length))
 	}
 
 	/** All Cloth strings are well-formed UTF-8. Count leading bytes, including NUL,
 	 * without allocating or exposing the descriptor's byte length as a scalar count.
-	 * Count never exceeds byte length, so an i64 count cannot overflow here.
+	 * Count never exceeds byte length, so the native count cannot overflow here.
 	 */
 	fun scalarCount(value: LLVMValueRef): LLVMValueRef {
 		val data = LLVMBuildExtractValue(builder, value, 0, "scalar_bytes")
@@ -145,8 +149,9 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		return count
 	}
 
-	fun literal(text: String): LLVMValueRef {
+	fun literal(text: String, span: TokenSpan? = null): LLVMValueRef {
 		val bytes = text.toByteArray(Charsets.UTF_8)
+		if (java.math.BigInteger.valueOf(bytes.size.toLong() + 1) > memory.maximumBytes) throw BackendErrors.bufferSize(span)
 		val constant = BytePointer(*bytes).use { buffer ->
 			LLVMConstStringInContext2(context, buffer, bytes.size.toLong(), 0)
 		}
@@ -157,7 +162,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		LLVMSetLinkage(data, LLVMPrivateLinkage)
 		PointerPointer<LLVMValueRef>(2L).use { fields ->
 			fields.put(0, data)
-			fields.put(1, LLVMConstInt(LLVMInt64TypeInContext(context), bytes.size.toLong(), 0))
+			fields.put(1, memory.count(bytes.size.toLong()))
 			return LLVMConstStructInContext(context, fields, 2, 0)
 		}
 	}
@@ -165,18 +170,11 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 	fun concatenate(left: LLVMValueRef, right: LLVMValueRef, location: String): LLVMValueRef {
 		val leftLength = LLVMBuildExtractValue(builder, left, 1, "concat_left_length")
 		val rightLength = LLVMBuildExtractValue(builder, right, 1, "concat_right_length")
-		val length = LLVMBuildAdd(builder, leftLength, rightLength, "concat_length")
-		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
-		val valid = LLVMAppendBasicBlockInContext(context, function, "concat_valid")
-		val invalid = LLVMAppendBasicBlockInContext(context, function, "concat_invalid")
-		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntUGE, length, leftLength, "concat_length_fits"), valid, invalid)
-		LLVMPositionBuilderAtEnd(builder, invalid)
-		EmitRuntimeError(context, builder, abi).emit("String concatenation is too large at $location")
-		LLVMPositionBuilderAtEnd(builder, valid)
+		val length = memory.add(leftLength, rightLength, "String concatenation is too large at $location")
 
 		// A valid address even for empty strings; no terminator is needed with a stored length.
 		val allocationLength = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, length, LLVMConstInt(lengthType, 0, 0), "concat_empty"), LLVMConstInt(lengthType, 1, 0), length, "concat_storage_length")
-		val bytes = LLVMBuildArrayAlloca(builder, LLVMInt8TypeInContext(context), allocationLength, "concat_bytes")
+		val bytes = memory.stack(LLVMInt8TypeInContext(context), allocationLength, "concat_bytes", "String concatenation is too large at $location")
 		LLVMBuildMemCpy(builder, bytes, 1, LLVMBuildExtractValue(builder, left, 0, "concat_left_bytes"), 1, leftLength)
 		val tail = PointerPointer<LLVMValueRef>(1L).use { indices ->
 			indices.put(0, leftLength)
@@ -202,7 +200,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		val memcmpType = PointerPointer<LLVMTypeRef>(3L).use { parameters ->
 			parameters.put(0, LLVMPointerTypeInContext(context, 0))
 			parameters.put(1, LLVMPointerTypeInContext(context, 0))
-			parameters.put(2, types.value(abi.sizeType))
+			parameters.put(2, lengthType)
 			LLVMFunctionType(intType, parameters, 3, 0)
 		}
 		val existing = LLVMGetNamedFunction(module, "memcmp")
@@ -235,5 +233,5 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		write(module, literal("\n"))
 	}
 
-	fun write(module: LLVMModuleRef, value: LLVMValueRef) = EmitOutput(context, builder, abi).write(module, value)
+	fun write(module: LLVMModuleRef, value: LLVMValueRef) = EmitOutput(context, builder, abi, target).write(module, value)
 }

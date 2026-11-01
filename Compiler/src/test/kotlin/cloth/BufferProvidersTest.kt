@@ -45,14 +45,14 @@ class BufferProvidersTest {
 	@Test
 	fun `fixed type sizes preserve the entire unsigned range and reject known overflow`() {
 		val maximum = "18446744073709551615"
-		val ast = unit("fn<unsigned int<64>> maximum() = int[$maximum]::size\nfn<unsigned int<64>> zero() = int[0][]::size")
+		val ast = unit("fn<usize> maximum() = int[$maximum]::size\nfn<usize> zero() = int[0][]::size")
 		val ir = LLVMEmitter().emit(ast)
 		assertContains(ir, "ret i64 -1")
 		assertContains(ir, "ret i64 0")
 		assertFalse(ir.contains("alloca"))
 		for (count in listOf("18446744073709551616", "99999999999999999999999999999999999999")) {
-			val error = failure("fn<unsigned int<64>> bad() = int[$count]::size", DiagnosticCode.INVALID_ARRAY)
-			assertContains(error.summary, "unsigned int<64>")
+			val error = failure("fn<usize> bad() = int[$count]::size", DiagnosticCode.INVALID_ARRAY)
+			assertContains(error.summary, "usize")
 		}
 	}
 
@@ -60,7 +60,7 @@ class BufferProvidersTest {
 	fun `array size counts only the outer axis for values types and runtime lengths`(@TempDir directory: Path) {
 		native(directory, "array_sizes", """
 			fn<int[]> varying(bool many) = if (many) { [1, 2, 3] } else { [1] }
-			fn<unsigned int<64>> count(int[] values) = values::size
+			fn<usize> count(int[] values) = values::size
 			fn<int[][]> matrix() = [[1, 2, 3], [4, 5, 6]]
 			fn<int> main() {
 			    def<int[]> empty = []
@@ -69,7 +69,7 @@ class BufferProvidersTest {
 			    if (matrix()::size != 2 || matrix()[0]::size != 3) { return 2 }
 			    if (varying(true)::size != 3 || varying(false)::size != 1 || count(varying(true)) != 3) { return 3 }
 			    if (int[2][]::size != 2 || int[0][3]::size != 0 || int[4294967296]::size != 4294967296) { return 4 }
-			    if (int[18446744073709551615]::size != unsigned int<64>::max) { return 5 }
+			    if (int[18446744073709551615]::size != usize::max) { return 5 }
 			    def copied = rows::size
 			    copied += 1
 			    if (copied != 3 || rows::size != 2 || rows::size::str != "2") { return 6 }
@@ -95,7 +95,7 @@ class BufferProvidersTest {
 		val checks = values.map { (value, expected) ->
 			"if (${quoted(value)}::size != $expected || count(${quoted(value)}) != $expected) { return 1 }"
 		}.joinToString("\n")
-		native(directory, "unicode_counts", "fn<unsigned int<64>> count(string text) = text::size\nfn<int> main() {\n$checks\nreturn 0\n}")
+		native(directory, "unicode_counts", "fn<usize> count(string text) = text::size\nfn<int> main() {\n$checks\nreturn 0\n}")
 	}
 
 	@Test
@@ -177,7 +177,8 @@ class BufferProvidersTest {
 		failure("fn take(int value) {}\nfn take(string value) {}\nfn main() { take(string::size) }", DiagnosticCode.INVALID_PROVIDER_RECEIVER)
 		native(directory, "overloads", """
 			fn<int> pick(unsigned int<32> n, int<8> other) = 1
-			fn<int> pick(unsigned int<64> n, int<64> other) = 2
+			fn<int> pick(usize n, int<64> other) = 2
+			fn<int> pick(unsigned int<64> n, int<32> other) = 5
 			fn<int> text(string s) = 3
 			fn<int> text(int n) = 4
 			fn<int> main() {

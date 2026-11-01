@@ -1,6 +1,7 @@
 package cloth.semantic
 
 import cloth.data.ValueType
+import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.Expression
 import cloth.parser.statement.Statement
@@ -13,7 +14,8 @@ data class FunctionType(val parameters: List<ValueType>, val returns: ValueType)
 /** Committed call choices and expression types; rejected candidate facts never escape. */
 class FunctionSemanticModel internal constructor(val declarations: DeclarationModel, internal val signatures: Map<FunctionSymbol, FunctionType>, val controlFlow: ControlFlowModel = ControlFlowModel()) {
 
-	val types = SemanticModel()
+	val target get() = declarations.target
+	val types = SemanticModel(target)
 	internal val bindings = IdentityHashMap<BindingSymbol, ValueType>()
 	internal val calls = IdentityHashMap<CallExpression, ResolvedCall>()
 	fun typeOf(expression: Expression) = types.typeOf(expression)
@@ -25,6 +27,7 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 
 	internal fun fork() = FunctionSemanticModel(declarations, signatures, controlFlow).also { it.commit(this) }
 	internal fun commit(other: FunctionSemanticModel) {
+		if (target != other.target) throw InternalErrors.invariant("Cannot commit semantic facts from a different compilation target")
 		bindings.clear(); bindings.putAll(other.bindings)
 		calls.clear(); calls.putAll(other.calls)
 		types.expressions.clear(); types.expressions.putAll(other.types.expressions)

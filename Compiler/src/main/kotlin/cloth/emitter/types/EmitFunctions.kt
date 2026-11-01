@@ -19,7 +19,7 @@ import java.util.*
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
 
-	private val types = LLVMTypes(context)
+	private val types = LLVMTypes(context, abi.layout)
 	private val functions = IdentityHashMap<FunctionSymbol, LLVMValueRef>()
 	private val functionTypes = IdentityHashMap<FunctionSymbol, LLVMTypeRef>()
 	private val stringStorage = EmitStringArena(context, module, abi)
@@ -57,7 +57,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
 			val frame = EmitFunctionFrame(context, builder, entry, signature.returns, abiType(signature.returns), stringStorage, if (signature.returns.buffered) LLVMGetParam(value, signature.parameters.size) else null)
-			val bindings = EmitBindings(context, builder, entry)
+			val bindings = EmitBindings(context, builder, entry, abi.layout)
 			function.parameters.forEachIndexed { index, parameter ->
 				val argument = decode(builder, LLVMGetParam(value, index), signature.parameters[index])
 				bindings.declare(parameter, parameter.name.lexeme, signature.parameters[index], argument)

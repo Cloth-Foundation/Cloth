@@ -20,23 +20,26 @@ import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.BuiltinGroupSymbol
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
+import cloth.target.TargetLayout
 import cloth.token.TokenSpan
 
 /** Stage 3 checks calls; FunctionAnalyzer enables stage 4 return validation. */
-class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
+class CallAnalyzer internal constructor(private val validateReturns: Boolean, private val target: TargetLayout? = null) {
 
-	constructor() : this(false)
+	constructor(target: TargetLayout? = null) : this(false, target)
 
-	fun analyze(unit: SourceUnit): FunctionSemanticModel = analyze(DeclarationAnalyzer().analyze(unit))
+	fun analyze(unit: SourceUnit): FunctionSemanticModel = analyze(DeclarationAnalyzer(target ?: TargetLayout.native()).analyze(unit))
 
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
+		if (target != null && target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
+		val resolver = TypeResolver(declarations.target)
 		val signatures = declarations.functions.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
-				TypeResolver.resolve(parameter.declaredType, declarations = true).also {
+				resolver.resolve(parameter.declaredType, declarations = true).also {
 					if (it == ValueType.VOID) throw SemanticErrors.voidType(parameter.declaration.type.span)
 				}
 			}
-			FunctionType(parameters, function.declaration.returnType?.let { TypeResolver.resolve(it, declarations = true) } ?: ValueType.VOID)
+			FunctionType(parameters, function.declaration.returnType?.let { resolver.resolve(it, declarations = true) } ?: ValueType.VOID)
 		}
 		val model = FunctionSemanticModel(declarations, signatures)
 		for (function in declarations.functions) function.parameters.forEachIndexed { index, parameter -> model.bindings[parameter] = signatures.getValue(function).parameters[index] }
@@ -219,7 +222,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 				val arguments = expression.arguments.mapIndexed { index, argument ->
 					val parameter = overload.parameters[index]
 					val actual = checker.typeOf(argument, if (contextual) parameter.expectedType else null, contextualFloat = contextual && parameter.expectedType != null)
-					parameter.bind(actual) ?: return null
+					parameter.bind(actual, trial.target) ?: return null
 				}
 				return BoundBuiltinCall(definition, overload, arguments)
 			}
@@ -232,7 +235,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 				val arguments = expression.arguments.mapIndexed { index, argument ->
 					val parameter = overload.parameters[index]
 					val actual = checker.typeOf(argument, parameter.expectedType, contextualFloat = parameter.expectedType != null)
-					parameter.bind(actual) ?: throw SemanticErrors.builtinArgument(expression, argument, actual, parameter)
+					parameter.bind(actual, facts.target) ?: throw SemanticErrors.builtinArgument(expression, argument, actual, parameter)
 				}
 				facts.calls[expression] = ResolvedCall.Builtin(BoundBuiltinCall(definition, overload, arguments))
 				return overload.returns

@@ -2,6 +2,310 @@
 
 ## Current work
 
+### usize return support for main (2026-11-01)
+
+The user explicitly extended the executable entry contract to accept usize in
+addition to void and signed fixed-width int. ProgramAnalyzer accepts the distinct
+CUSize descriptor, preserving rejection of fixed-width unsigned int and other
+unsupported entry return types. C3037 guidance now includes usize.
+
+The startup adapter applies the existing integer exit normalization: preserve
+equal-width bits, keep low native C int bits when narrowing, and choose signed
+or zero extension by source signedness if widening is needed. PEC remains a
+signed native C int report, so usize::max - 1 reports -2 on supported Windows
+x64 and x86 targets. Source function returns still retain exact usize identity.
+
+ProgramEntryTest adds verified startup IR across supported platforms and native
+execution on x64/x86 for both main parameter forms, expression/brace returns,
+zero, ordinary provider results, signed-boundary bit patterns, maximum usize
+and 64-bit-to-32-bit truncation. The earlier USizeTest main-rejection assertion
+now checks acceptance. Focused entry/usize/x86/Unicode suites passed, followed by
+the full `gradlew.bat :Compiler:test --offline --console=plain` run: 626 tests
+across 46 suites, zero failures/errors/skips. The unchanged examples/Builtins.co
+compiled through the CLI for native x64 and Windows x86; both executions printed
+PEC: -2 and returned process status -2. Whitespace and skill/documentation link
+checks passed. Foreign target IR checks remain separate from native execution.
+
+### usize step 7: integration complete (2026-11-01)
+
+Step 7 of the [usize implementation plan](usize-implementation.md) adds three
+USizeIntegrationTest cases. One parsed source executes on x64, x86, then x64
+again, checking target isolation together with exact measurement overloads,
+provider chains, deferred receiver effects, assignment lists, nested copies,
+returned-text lifetimes, empty maximum shapes and explicit 64-bit conversions.
+Executable machine headers and printed runtime width verify the chosen target.
+
+CLI fixtures check one diagnostic before linker/output work for both widths:
+strict count typing, read-only results, invalid receiver/metadata, static extent
+overflow and name-resolution errors. This preserves first detected error across
+compiler passes rather than imposing source-order priority. Runtime fixtures
+verify once-only operand effects and stopping at the first controlled failure.
+
+The implementation review found no additional production changes necessary.
+Focused integration/usize/provider/target/diagnostic checks passed, followed by
+`gradlew.bat :Compiler:test --offline --console=plain`: all 624 tests across
+46 suites passed with zero failures/errors/skips. The portable examples/USize.co
+compiled through the CLI and ran for native x64 and explicit Windows x86,
+printing 1, usize and PEC: 0 on each. Whitespace and skill/documentation link
+checks passed.
+
+At the step 7 milestone, the entry-point contract permitted void or signed
+fixed-width int returns. A separate edit to examples/Builtins.co declaring
+fn<usize> main was preserved and then reported C3037. The later explicit user
+decision above extends that entry contract to usize.
+
+All seven migration steps are complete. Current contracts are separated from
+historical phase snapshots in the compiler-data-access note, and the skill,
+plan, semantics and validation records agree. Execution coverage is Windows x64 and SSE2 Windows x86
+on the Windows x64 host; foreign IR/object checks do not establish native
+Linux/macOS execution, and other 32-bit ABI targets remain unsupported.
+
+### usize step 6: real Windows x86 target (2026-11-01)
+
+Step 6 of the [usize implementation plan](usize-implementation.md) is implemented
+for the user's selected Windows x86/MSVC ABI. i686-pc-windows-msvc has a distinct
+WINDOWS_ILP32 profile: pointers, size_t, usize, C int and C long are 32-bit;
+explicit int<64>, C long long and binary64 remain 64-bit. Existing x86 LLVM
+registration supports the new width; data layout installation/validation still
+occurs before emission. Other 32-bit OS/ABI profiles remain unsupported.
+
+Windows x86 linking selects x86 MSVC CRT/SDK libraries and machine flags, with
+the matching MSVC linker host/target directory. Both Windows widths use wmain
+startup. WideCharToMultiByte uses explicit x86 stdcall at declaration and call
+sites; CRT calls use cdecl. The CLI accepts --target TRIPLE for both object and
+executable modes, with existing supported-target/toolchain validation. Its
+default remains the native LLVM target.
+
+Real execution exposed generic x86 excess x87 precision in float32 arithmetic.
+The x86 backend now requires SSE2 and preserves the declared-width rounding
+contract. A regression checks float32(16,777,216) + 1. The internal assembly
+emission hook uses the same generic/+sse2, default code-generation optimization,
+PIC/default code-model settings as object emission; no IR optimization pipeline
+was added. [Validation and assembly evidence](usize-x86-validation.md) records
+observed count/index/copy code and explicit 64-bit carry arithmetic.
+
+Five new WindowsX86Test cases check ABI/IR, actual PE32 machine/header values,
+numeric and buffer operations, metadata, CLI selection and assembly artifacts.
+They execute static/dynamic CRT, LLD/MSVC and console/GUI variants, both main
+parameter forms and normalized process returns. Existing Unicode fixtures now
+also execute valid/malformed UTF-16 and balanced startup cleanup as x86; allocation
+guard fixtures execute real 32-bit overflow and negative-index failures before
+memory access. ABI/layout/toolchain suites include the new profile.
+
+Focused checks pass. The CLI compiled examples/USizeX86.co and its PE32 executable
+ran with Unicode arguments, printing 32 and PEC: 0. The full
+`gradlew.bat :Compiler:test --offline --console=plain` run passed all 621 tests
+across 45 suites with zero failures/errors/skips. Whitespace and skill/documentation
+link checks passed. Native execution is on the Windows x64 host for Windows
+x64 and x86 binaries. This establishes neither other 32-bit targets nor native
+execution on Linux/macOS. Final integration is recorded in step 7 above.
+
+### usize step 5: compiler data result contracts (2026-11-01)
+
+Step 5 of the [usize implementation plan](usize-implementation.md) is implemented.
+Scalar/array/string size and metadata rank/extent/width results now have exact
+target-selected CUSize identity through bindings, inference, arrays, function
+arguments/returns and overload selection. Numeric min/max preserve the receiver
+type. Predicates, type/element and str preserve their bool/typeinfo/string results.
+
+Provider maps supply the selected target when creating storage/array/string
+recipes and metadata queries. Metadata fields, checked constants and loads share
+the target's native count width. The temporary unsigned-64 public count adapter
+is removed; runtime array/string counts already use the matching native width.
+Cross-target usize recipes fail an internal invariant before emission. The
+unregistered raw ArrayExtent recipe alone retains its legacy 64-bit unknown-axis
+encoding, independently of source metadata extent.
+
+Static extents still use exact target-usize checks, including metadata-only
+types and empty outer shapes with maximum inner counts. Array-size recipe
+construction validates the selected width, and metadata constant construction
+checks representability before creating integer constants. Fixed int widths,
+existing integer index acceptance, once-only receiver effects and first-error
+diagnostics remain unchanged.
+
+Existing scalar/buffer/metadata/provider/target/usize regressions are migrated.
+Two new USizeTest cases cover measurement identity and strict contracts on
+interleaved synthetic 32-bit/native layouts, plus native overloads competing
+with equally wide fixed integers, value effects and explicit conversions.
+One new BufferCountsTest checks native metadata fields/constants/loads, maximum
+extents and cross-target recipe rejection. Supported target IR checks include
+dynamic size/rank/extent/width functions. Focused checks pass. The updated
+examples/USize.co compiled through the CLI and ran successfully, printing 1,
+usize and PEC: 0. The full `gradlew.bat :Compiler:test --offline --console=plain`
+run passed all 615 tests across 44 suites with zero failures/errors/skips.
+Changed-file whitespace and skill/documentation link checks passed.
+
+At the step 5 milestone execution remained on Windows x64; synthetic 32-bit
+semantic/helper IR and foreign target IR checks did not establish execution
+there. Step 6 above supplies real Windows x86 ABI/toolchain validation; final
+cross-target integration is recorded in step 7 above.
+
+### usize step 4: native buffer counts
+
+Step 4 of the [usize implementation plan](usize-implementation.md) is implemented.
+The user confirmed that every static array extent must fit target usize,
+including metadata-only extents. `TypeResolver` validates these with BigInteger;
+32-bit semantic tests accept 4,294,967,295 and reject larger counts.
+
+`BufferLayout` centralizes target-width array/string descriptors. Outer lengths
+are iN, and each inner axis is `{iN, i1}` for count/knownness. This replaces i65
+while retaining maximum counts after empty axes and preserving rectangular shape
+checks. Literal/global/argument/return/copy producers and consumers agree on
+this layout. UTF-8 scalar counting, byte output, recursive array copying and
+Unicode startup use native-width indices; metadata text uses native descriptors.
+
+`EmitMemory` checks stride multiplication and allocation sums against native
+size range and LLVM's signed pointer-index byte limit before allocation. It uses
+the installed module data layout's ABI strides and pads copied-array headers to
+the element's ABI alignment (which may exceed pointer alignment). Header storage,
+concatenation, stack buffers and native size_t/memcpy boundaries use coherent count widths;
+oversized string globals fail with C3052. Bounds checks preserve wide indices
+until after validation and explicitly reject signed negatives. UTF-8 startup
+also bounds its scan position before loading a byte.
+
+Seven new `BufferCountsTest` cases verify synthetic 32/64-bit descriptor layouts,
+zero/maximum/unknown shapes, target-specific type-only extents, checked index
+narrowing, string/array/metadata/provider integration, and both Unicode startup
+paths. A tiny synthetic address space checks UTF-8 global limits including the
+terminator and source-located C3052 errors. Native guard tests fail before memory
+access for stride/header/concatenation overflow and negative indices; boundary
+arithmetic passes. Existing string/conditional IR assertions now check the shared
+pre-allocation guards and retain their short-circuit placement checks.
+Focused buffer/provider/Unicode/usize tests and copy/cleanup regressions pass.
+The full `gradlew.bat :Compiler:test --offline --console=plain` run passed all
+612 tests across 44 suites with zero failures/errors/skips. Changed-file
+whitespace and skill/documentation link checks passed.
+
+At the step 4 milestone public size/rank/extent/width result types still returned
+unsigned int<64>, with explicit widening adapters for smaller native counts.
+Step 5 above supersedes that public contract and removes its adapter. Raw internal extent
+recipes retain their legacy unknown-result encoding at that adapter only.
+Existing integer index operands and the signed fixed-int main contract remain.
+Native execution is on Windows. Synthetic 32-bit helper IR is separate from
+real 32-bit ABI/toolchain/execution coverage, which remains step 6.
+
+### usize step 3: primitive source support (2026-10-31)
+
+Step 3 of the [usize implementation plan](usize-implementation.md) is implemented.
+The user confirmed existing unsigned arithmetic/cast rules and canonical
+metadata spelling `usize`, with the numeric width queried through `::width`.
+`CUSize` extends `CInteger` with distinct data-class identity and target-resolved
+width. `TypeResolver` uses the selected `TargetLayout.sizeBits`; type parsing
+recognizes the existing usize keyword in annotations, casts, type checks, array
+suffixes and type receivers. Explicit usize width arguments and the unsigned
+modifier are rejected by existing type/modifier validation.
+
+Generic integer/function/array paths provide contextual literals, strict
+assignments/returns/arguments, overload selection, arithmetic, comparisons,
+conversions, deferred blocks, name lists, independent array transport and
+formatting. Min/max return the exact CUSize type. Metadata uses `usize` and
+`usize[3]` spellings, retaining identity separately from equally wide fixed
+integers, with numeric width/signedness facts from the descriptor. There is no
+primitive boxing, source pointer syntax or runtime metadata allocation.
+
+Eight new `USizeTest` cases check synthetic 32-bit/native target isolation,
+range errors, same-width identity, overloads, all fixed-integer conversion widths
+and floating formats, operators, arrays/blocks/copies/recursion, metadata/provider
+effects, controlled runtime errors and verified IR for x86-64/AArch64 across
+Windows/Linux/macOS. Focused usize/target/shared-integer/provider checks passed;
+`gradlew.bat :Compiler:test --offline --console=plain` passed all 605 tests across
+43 suites with zero failures/errors/skips. `examples/USize.co` compiled and ran
+through the CLI, printing 1, usize and PEC: 0. Native execution is on Windows;
+synthetic 32-bit semantic/LLVM scalar checks and foreign IR are separate coverage.
+`examples/USize.co` is the runnable example.
+
+At the step 3 milestone, internal lengths/descriptors still used their existing
+representation; step 4 above supersedes that implementation snapshot.
+At that milestone size accessors, including usize's storage size, and metadata
+rank/extent/width still returned unsigned int<64>; step 5 supersedes that snapshot.
+Existing integer index acceptance
+and the signed fixed-int main policy are retained. Step 4 applies the user's
+target-sized static extent limit. Real
+32-bit ABI/toolchain support remains step 6.
+
+### usize step 2: shared integer descriptors (2026-10-31)
+
+Step 2 of the [usize implementation plan](usize-implementation.md) is implemented.
+`CInteger` now owns integer width/signedness facts, exact bounds, contextual literal
+validation, normalization for existing constant checks, min/max/size/str providers
+and LLVM integer mapping. `CInt` retains its fixed-width data-class identity and
+supported-width validation. Integer bound/extent recipes preserve the concrete
+descriptor through the common contract.
+
+Literal typing and diagnostics, static division checks, float-to-integer guards,
+runtime division/remainder emission and native printf adaptation now accept
+`CInteger`. Other arithmetic, comparisons, exponentiation, signatures, assignment,
+arrays and metadata flags already use shared numeric facts or exact identity.
+Canonical metadata spelling can be overridden by a future distinct primitive;
+fixed-int spellings and equality remain unchanged. Native C representation types,
+the signed fixed-int main policy and existing unsigned-64 size/extent/metadata
+result contracts remain deliberate concrete CInt uses.
+
+Three `SharedIntegersTest` cases exercise a test-only distinct integer across all
+existing widths/signedness: common bounds and providers, exact source identity
+despite equal LLVM representation, contextual literals and first-error diagnostics,
+array element identity, and verified cast/division/power/formatting/metadata IR.
+The parser's existing global literal limit still precedes semantic range checks;
+descriptor checks cover values beyond it without changing parser behavior.
+
+Focused existing numeric/cast/division/provider/metadata/call regressions passed,
+and all three new shared-integer cases pass. The full
+`gradlew.bat :Compiler:test --offline --console=plain` run passed all 597 tests
+across 42 suites with zero failures/errors/skips. Changed-file whitespace and
+skill-reference checks passed. Native regression execution is on Windows;
+the distinct test descriptor has
+semantic/verified-IR coverage. The usize primitive remains step 3 and provider
+result migration remains step 5; no new source type has been implemented here.
+
+### usize step 1: shared target layout (2026-10-31)
+
+Step 1 of the [usize implementation plan](usize-implementation.md) is implemented.
+`cloth.target.TargetLayout` records immutable target size/pointer widths, pointer
+alignment, byte order and C numeric ABI facts without retaining LLVM handles.
+`NativeCABI` supplies the selected layout and derives native numeric types from
+it. The emitter selects that configuration before semantic analysis; declaration
+and expression models, type resolution, overload forks, deferred blocks,
+provider lookup (including built-in text adaptation), LLVM type/storage mappings
+and runtime services share it. Explicitly mixed semantic targets are rejected.
+
+LLVM module creation now installs the target-machine data layout before emitting
+bodies or layout-dependent helpers. It validates pointer width/alignment and
+endianness, and object emission rejects a conflicting existing target/layout.
+The supported x86-64/AArch64 backends are registered for foreign layout queries;
+an internal emitter constructor injects supported ABIs. Native defaults remain;
+the CLI and accepted target matrix have not gained 32-bit compilation support.
+
+Six new `TargetLayoutTest` cases check native ABI/default facts, interleaved
+synthetic 32-bit/native semantic analyses, overload/fork/block/provider context,
+fixed integer widths and storage, cross-target rejection, and module layouts for
+both supported architectures across Windows/Linux/macOS. Existing provider-map
+tests now supply a target; foreign Unicode startup fixtures select their ABI
+before generating function bodies instead of changing the module target later.
+
+Focused target/ABI/descriptor/provider/call tests and corrected Unicode startup
+checks passed. `gradlew.bat :Compiler:test --offline --console=plain` passed all
+594 tests across 41 suites with zero failures/errors/skips. `git diff --check`
+passed. Native execution is verified on Windows; synthetic 32-bit semantic and
+foreign layout/IR/object checks are separate from native execution coverage.
+`usize` itself, provider result migration and internal size representation
+changes remain steps 2 onward.
+
+### usize migration plan recorded (2026-10-31; not implemented)
+
+The user accepted a primitive target-sized unsigned integer and migration of
+scalar/array/string size plus metadata rank/extent/width results to `usize`.
+Explicit fixed integer widths and the plain-int 32-bit default remain part of
+the intended contract. See [confirmed semantics](semantics.md) and the
+[staged implementation plan](usize-implementation.md) for decisions, source
+touchpoints, dependencies and per-step completion checks.
+
+At the time of this planning entry, all steps remained incomplete and no compiler
+source or implementation tests were changed. Step 1's later implementation is
+recorded above. Existing unsigned-64 provider results,
+i64/i65 buffer descriptors and 64-bit-only ABI support are the implementation
+baseline, not a claim that `usize` or 32-bit compilation already works. Earlier
+phase records below describe that pre-migration implementation.
+
 ### Completion output aligned with manual PEC edits (2026-10-31)
 
 The user's manual edits selected `PEC: N`, including the colon, in the native

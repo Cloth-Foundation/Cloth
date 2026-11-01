@@ -204,8 +204,8 @@ class StringsTest {
 			def b = "b"
 			false && (a + b == "ab")
 		"""))
-		assertContains(ir, "concat_length_fits")
-		assertContains(ir, "concat_invalid")
+		assertContains(ir, "byte_sum_fits")
+		assertContains(ir, "memory_invalid")
 		assertContains(ir, "@llvm.memcpy")
 		assertContains(ir, "declare i32 @memcmp(ptr, ptr, i64)")
 		assertTrue(ir.indexOf("logic_rhs:") < ir.indexOf("%concat_bytes = alloca"))

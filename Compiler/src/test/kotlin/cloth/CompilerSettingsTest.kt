@@ -25,11 +25,12 @@ class CompilerSettingsTest {
 		assertEquals("program", settings.getOutputFile()!!.path)
 		assertEquals(LinkOptions(linker = Path.of("tools with spaces/lld.exe"), driver = LinkerDriver.LLD, runtime = RuntimeLinkage.DYNAMIC, subsystem = ApplicationSubsystem.WINDOWS, libraryPaths = listOf(Path.of("libs with spaces"), Path.of("more")), libraries = listOf("custom", "other"), msvcTools = Path.of("MSVC tools"), windowsSDK = Path.of("Windows SDK"), windowsSDKVersion = "10.0.26100.0"), settings.linkOptions)
 		assertEquals(Path.of("target root"), CompilerSettings(arrayOf("--sysroot=target root")).linkOptions.sysroot)
+		assertEquals("i686-pc-windows-msvc", CompilerSettings(arrayOf("--target=i686-pc-windows-msvc")).targetTriple)
 	}
 
 	@Test
 	fun `CLI rejects unknown missing and invalid options and supports the positional delimiter`() {
-		for (arguments in listOf(arrayOf("--unknown"), arrayOf("--target=x86_64-linux-gnu"), arrayOf("--runtime"), arrayOf("--runtime", "--subsystem=console"), arrayOf("--runtime=invalid"), arrayOf("--subsystem=invalid"), arrayOf("--linker-driver=invalid"), arrayOf("--library-path="), arrayOf("-L"), arrayOf("-l"), arrayOf("one", "two", "three"))) assertFailsWith<ClothDiagnostic>(arguments.toList().toString()) { CompilerSettings(arguments) }
+		for (arguments in listOf(arrayOf("--unknown"), arrayOf("--target="), arrayOf("--target"), arrayOf("--runtime"), arrayOf("--runtime", "--subsystem=console"), arrayOf("--runtime=invalid"), arrayOf("--subsystem=invalid"), arrayOf("--linker-driver=invalid"), arrayOf("--library-path="), arrayOf("-L"), arrayOf("-l"), arrayOf("one", "two", "three"))) assertFailsWith<ClothDiagnostic>(arguments.toList().toString()) { CompilerSettings(arguments) }
 		val literal = CompilerSettings(arrayOf("--", "-source.co", "-output"))
 		assertEquals("-source.co", literal.getSourceFile().path)
 		assertEquals("-output", literal.getOutputFile()!!.path)

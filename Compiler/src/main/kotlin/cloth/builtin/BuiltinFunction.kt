@@ -6,6 +6,7 @@ import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.BuiltinEmissionContext
+import cloth.target.TargetLayout
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.LLVMTypeOf
 
@@ -38,21 +39,21 @@ internal sealed interface BuiltinParameter {
 
 	val expectedType: ValueType? get() = null
 
-	fun bind(actual: ValueType): BuiltinArgument?
+	fun bind(actual: ValueType, target: TargetLayout = TargetLayout.native()): BuiltinArgument?
 
 	data class Exact(val type: ValueType) : BuiltinParameter {
 
 		override val spelling get() = type.spelling
 		override val expectedType get() = type
-		override fun bind(actual: ValueType) = if (type.accepts(actual)) BuiltinArgument(actual, type) else null
+		override fun bind(actual: ValueType, target: TargetLayout) = if (type.accepts(actual)) BuiltinArgument(actual, type) else null
 	}
 
 	data object Text : BuiltinParameter {
 
 		override val spelling = "printable value"
-		override fun bind(actual: ValueType): BuiltinArgument? {
+		override fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument? {
 			if (actual == ValueType.NEVER) return BuiltinArgument(actual, ValueType.STRING)
-			val provider = actual.provider("str") ?: return null
+			val provider = actual.provider("str", target) ?: return null
 			if (ProviderReceiverForm.VALUE !in provider.receiverForms || provider.type != ValueType.STRING) return null
 			return BuiltinArgument(actual, ValueType.STRING, provider)
 		}
@@ -73,7 +74,7 @@ internal data class BoundBuiltinCall(val definition: BuiltinDefinition<*>, val o
 		val result = overload.body.emit(context, adapted)
 		if (overload.returns == ValueType.VOID) {
 			if (result != null) throw InternalErrors.invariant("Void built-in returned an LLVM value")
-		} else if (result == null || LLVMTypeOf(result).address() != overload.returns.llvmValue(context.context).address()) {
+		} else if (result == null || LLVMTypeOf(result).address() != overload.returns.llvmValue(context.context, context.abi.layout).address()) {
 			throw InternalErrors.invariant("Built-in result does not match '${overload.returns.spelling}'")
 		}
 		return result
