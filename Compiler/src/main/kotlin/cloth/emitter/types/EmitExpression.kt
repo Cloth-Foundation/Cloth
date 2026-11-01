@@ -379,16 +379,16 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					}
 					casts.toFloating(result, workingType!!, commonType)
 				} else when (expression.operator.lexeme) {
-					Operators.PLUS.toString()     -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
-					Operators.MINUS.toString()    -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
-					Operators.MULTIPLY.toString() -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
-					Operators.DIVIDE.toString()   -> if (unsigned) LLVMBuildUDiv(builder, left, right, LLVM_DIV_TEMPORARY)
-					else LLVMBuildSDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+					Operators.PLUS.toString()                                -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
+					Operators.MINUS.toString()                               -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
+					Operators.MULTIPLY.toString()                            -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
+					Operators.DIVIDE.toString(), Operators.MODULO.toString() -> {
+						val span = expression.operator.span
+						val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
+						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInt, expression.operator.lexeme == Operators.MODULO.character, location)
+					}
 
-					Operators.MODULO.toString()   -> if (unsigned) LLVMBuildURem(builder, left, right, LLVM_MOD_TEMPORARY)
-					else LLVMBuildSRem(builder, left, right, LLVM_MOD_TEMPORARY)
-
-					else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
+					else                                                     -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
 				}
 			}
 

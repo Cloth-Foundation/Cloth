@@ -9,6 +9,7 @@ import cloth.parser.statement.Statement
 import cloth.parser.type.TypeReference
 import cloth.token.Operators
 import cloth.token.TokenSpan
+import java.math.BigInteger
 
 /** A rejected overload probe is not a compiler diagnostic or error recovery. */
 internal class CandidateMismatch : RuntimeException(null, null, false, false)
@@ -29,13 +30,33 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	protected fun resolveType(type: TypeReference) = TypeResolver.resolve(type, declarations)
 
+	/** Only literal signs and constant providers; bindings/calls keep runtime checks. */
+	private fun integerConstant(expression: Expression, type: CInt): BigInteger? {
+		val value = when (expression) {
+			is IntegerLiteral           -> expression.value
+			is UnaryExpression          -> {
+				val operand = integerConstant(expression.operand, type) ?: return null
+				when (expression.operator.lexeme) {
+					Operators.PLUS.character -> operand
+					Operators.MINUS.character -> -operand
+					else -> return null
+				}
+			}
+
+			is ProviderAccessExpression -> (model.providers[expression]?.result as? ProviderResult.IntegerConstant)?.value ?: return null
+			else                        -> return null
+		}
+		val bits = value.mod(BigInteger.ONE.shiftLeft(type.bits))
+		return if (!type.unsigned && bits.testBit(type.bits - 1)) bits - BigInteger.ONE.shiftLeft(type.bits) else bits
+	}
+
 	private fun operandContext(expression: Expression, floating: Boolean): ValueType? = when (expression) {
 		is NameExpression           -> nameType(expression).takeIf { if (floating) it.floating else it.integer }
 		is CastExpression           -> resolveType(expression.target).takeIf { if (floating) it.floating else it.integer }
 		is CallExpression           -> callType(expression).takeIf { if (floating) it.floating else it.integer }
 		is IndexExpression          -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
 		is ProviderAccessExpression -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
-		is UnaryExpression          -> if (expression.operator.lexeme in setOf("+", "-")) operandContext(expression.operand, floating) else null
+		is UnaryExpression          -> if (expression.operator.lexeme in setOf(Operators.PLUS.character, Operators.MINUS.character)) operandContext(expression.operand, floating) else null
 		is BinaryExpression         -> if (expression.operator.lexeme in arithmeticOperators) operandContext(expression.left, floating) ?: operandContext(expression.right, floating) else null
 		else                        -> null
 	}
@@ -55,7 +76,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		is IntegerLiteral       -> null
 		is FloatingPointLiteral -> if (contextualFloat) null else ValueType.FLOAT
 		is ArrayLiteral         -> arrayElementContext(expression.elements, contextualFloat)?.let { CArray(it, expression.elements.size) }
-		is UnaryExpression      -> if (expression.operator.lexeme in setOf("+", "-")) {
+		is UnaryExpression      -> if (expression.operator.lexeme in setOf(Operators.PLUS.character, Operators.MINUS.character)) {
 			arrayElementHint(expression.operand, contextualFloat)?.let { typeOf(expression, it, contextualFloat = contextualFloat) }
 		} else typeOf(expression)
 
@@ -221,8 +242,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			}
 
 			is UnaryExpression          -> {
-				val operand = if (expression.operator.lexeme == "-" && expression.operand is IntegerLiteral) integer(expression.operand, expected, negative = true)
-				else typeOf(expression.operand, if (expression.operator.lexeme == "!") null else expected, contextualFloat = contextualFloat)
+				val operand = if (expression.operator.lexeme == Operators.MINUS.character && expression.operand is IntegerLiteral) integer(expression.operand, expected, negative = true)
+				else typeOf(expression.operand, if (expression.operator.lexeme == Operators.NOT.character) null else expected, contextualFloat = contextualFloat)
 				if (expression.operator.lexeme == Operators.NOT.character) {
 					if (operand != ValueType.BOOL && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = true) }
 				} else if (!operand.numeric && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = false) }
@@ -237,9 +258,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat)
 				if (expression.operator.lexeme == Operators.MUL_MUL.character && left.integer && right.integer) {
 					val exponent = expression.right
-					if (exponent is UnaryExpression && exponent.operator.lexeme == "-" && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) reject { SemanticErrors.negativeExponent(exponent.span) }
+					if (exponent is UnaryExpression && exponent.operator.lexeme == Operators.MINUS.character && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) reject { SemanticErrors.negativeExponent(exponent.span) }
 				}
 				if (numeric && left.integer && right.integer && left != right) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, mixedIntegers = true) }
+				if (expression.operator.lexeme in setOf(Operators.DIVIDE.character, Operators.MODULO.character) && left is CInt && right == left) {
+					val divisor = integerConstant(expression.right, left)
+					if (divisor == BigInteger.ZERO) throw SemanticErrors.zeroDivisor(expression.operator, expression.right)
+					if (!left.unsigned && divisor == -BigInteger.ONE && integerConstant(expression.left, left) == left.minimum) {
+						reject { SemanticErrors.divisionOverflow(expression.operator, left) }
+					}
+				}
 				when (expression.operator.lexeme) {
 					Operators.EQUAL.character, Operators.NOT_EQUAL.character                                                                                                                                                -> {
 						if (left is CArray || right is CArray || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
@@ -269,7 +297,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	companion object {
 
-		private val arithmeticOperators = setOf("+", "-", "*", "/", "%", "**")
+		private val arithmeticOperators = setOf(Operators.PLUS.character, Operators.MINUS.character, Operators.MULTIPLY.character, Operators.DIVIDE.character, Operators.MODULO.character, Operators.MUL_MUL.character)
 		private val comparisonOperators = setOf("<", ">", "<=", ">=", "==", "!=")
 	}
 }

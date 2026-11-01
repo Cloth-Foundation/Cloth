@@ -32,6 +32,18 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				value
 			}
 
+			is MultiAssignmentStatement   -> {
+				val value = expressionEmitter.emit(statement.value)
+				if (expressionEmitter.terminated()) return null
+				val targets = functions?.declarations?.targetsOf(statement)
+				val types = semantics.targetTypesOf(statement)
+				for ((index, name) in statement.names.withIndex()) {
+					val target = targets?.get(index) ?: name.lexeme
+					bindings.assign(target, expressionEmitter.transferBindingAssignment(target, checkNotNull(value), types[index]))
+				}
+				value
+			}
+
 			is UpdateStatement            -> {
 				val value = expressionEmitter.emitUpdate(statement, semantics.typeOf(statement))
 				bindings.assign(functions?.declarations?.targetOf(statement) ?: statement.name.lexeme, value)

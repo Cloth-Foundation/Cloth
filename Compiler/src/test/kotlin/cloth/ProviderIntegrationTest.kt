@@ -159,7 +159,7 @@ class ProviderIntegrationTest {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), "$name timed out")
 			val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
 			if (expectedError == null) {
-				assertEquals(0, process.exitValue(), "$name: $output"); assertEquals("", output)
+				assertEquals(0, process.exitValue(), "$name: $output"); assertEquals(processCompletion(), output)
 			} else {
 				assertNotEquals(0, process.exitValue(), name); assertContains(output, expectedError)
 			}

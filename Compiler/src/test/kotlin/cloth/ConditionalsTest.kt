@@ -230,20 +230,20 @@ class ConditionalsTest {
 		val output = directory.resolve("conditional_example")
 		main(arrayOf(Path.of("examples", "Conditionals.co").toAbsolutePath().toString(), output.toString()))
 		val executable = if (Files.exists(output)) output else Path.of("$output.exe")
-		assertOutput(executable, null) // The example checks its result through main's status.
+		assertOutput(executable, null, processCompletion())
 	}
 
 	private fun assertProgram(output: Path, source: String, expected: String?) {
 		assertOutput(LLVMEmitter().compileSnippet(parse(source), output), expected)
 	}
 
-	private fun assertOutput(executable: Path, expected: String?) {
+	private fun assertOutput(executable: Path, expected: String?, completion: String = "") {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $executable")
 			val bytes = process.inputStream.use { it.readBytes() }
 			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			val expectedOutput = if (expected == null) "" else (expected + "\n").replace("\n", System.lineSeparator())
+			val expectedOutput = (if (expected == null) "" else (expected + "\n").replace("\n", System.lineSeparator())) + completion
 			assertContentEquals(expectedOutput.toByteArray(Charsets.UTF_8), bytes, executable.toString())
 		} finally {
 			if (process.isAlive) process.destroyForcibly()

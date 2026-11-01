@@ -103,7 +103,8 @@ class Parser(private val tokens: List<Token>) {
 			if (peek().type == TokenType.NewLine) {
 				advance()
 			} else {
-				statements.add(parseStatement())
+				if (atKeyword(Keywords.DEFINITION)) statements.addAll(parseBindings())
+				else statements.add(parseStatement())
 				if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
 					throw SyntaxErrors.newline(peek())
 				}
@@ -159,8 +160,15 @@ class Parser(private val tokens: List<Token>) {
 			val value = if (bare) null else expressionParser.parseExpression()
 			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 		}
-		if (peek().type == TokenType.Keyword && peek().lexeme == Keywords.DEFINITION.toString()) {
-			return parseBinding()
+		if (peek().type == TokenType.Identifier && peek(1).lexeme == Operators.COMMA.character) {
+			val names = mutableListOf(advance())
+			while (peek().lexeme == Operators.COMMA.character) {
+				advance()
+				names.add(expect(TokenType.Identifier, "an assignment target name"))
+			}
+			if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
+			expect(Operators.ASSIGN)
+			return MultiAssignmentStatement(names, expressionParser.parseExpression())
 		}
 		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
@@ -191,27 +199,40 @@ class Parser(private val tokens: List<Token>) {
 		return ExpressionStatement(expression)
 	}
 
-	private fun parseBinding(): BindingDeclaration {
+	private fun parseBindings(): List<BindingDeclaration> {
 		val keyword = advance() // def
 		val type = if (peek().type == TokenType.Operator && peek().lexeme == Operators.LESS.character) {
 			delimited.angles { typeParser.parse(allowArrays = true) }
 		} else null
-		val name = expect(TokenType.Identifier, "a binding name")
+		val names = mutableListOf(expect(TokenType.Identifier, "a binding name"))
+		while (peek().lexeme == Operators.COMMA.character) {
+			advance()
+			names.add(expect(TokenType.Identifier, "a binding name"))
+		}
 		val assignment = peek()
 		if (assignment.type != TokenType.Operator || assignment.lexeme !in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)) {
 			throw SyntaxErrors.expected("'${Operators.ASSIGN.character}' or '${Operators.FINAL_ASSIGN.character}'", assignment)
 		}
 		advance()
-		val initializer = if (peek().lexeme == Operators.BRACE_OPEN.character) {
-			val previousContext = inFunctionBody
-			inFunctionBody = true
-			try {
-				FunctionBlockExpression(FunctionDeclaration(keyword, name, type, emptyList(), parseBlock()))
-			} finally {
-				inFunctionBody = previousContext
-			}
-		} else expressionParser.parseExpression()
-		return BindingDeclaration(type, name, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(initializer.span))
+		val initializerStart = currentIndex
+		val block = peek().lexeme == Operators.BRACE_OPEN.character
+		return names.mapIndexed { index, name ->
+			// Ordinary initializers execute once. Later bindings copy the first
+			// stored value through the existing scalar/array assignment machinery.
+			// Function blocks declare deferred computations instead of stored values;
+			// give each its own body and syntax identities, without executing it.
+			val initializer = if (index > 0 && !block) NameExpression(names.first()) else if (block) {
+				currentIndex = initializerStart
+				val previousContext = inFunctionBody
+				inFunctionBody = true
+				try {
+					FunctionBlockExpression(FunctionDeclaration(keyword, name, type, emptyList(), parseBlock()))
+				} finally {
+					inFunctionBody = previousContext
+				}
+			} else expressionParser.parseExpression()
+			BindingDeclaration(type, name, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(previous().span))
+		}
 	}
 
 	fun expect(type: TokenType, description: String): Token {

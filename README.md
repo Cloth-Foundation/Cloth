@@ -30,6 +30,10 @@ A void `main` exits with status 0; a signed integer `main` supplies the process
 exit status. Signed integer widths 8, 16, 32 and 64 are accepted. The current
 native adapter sign-extends narrow results to C `int` and retains the low bits of
 wider results, following Cloth's explicit integer-cast rules.
+After `main` returns, the executable prints `PEC: N` (Process Exit Code),
+using that native status (`0` for void), preceded and followed by a newline.
+Startup and runtime failures terminate through their existing error path without
+this completion message.
 `main(string[] args)` receives Unicode arguments in their original order,
 excluding the executable name. Startup converts Windows UTF-16 arguments to
 UTF-8 and validates UTF-8 arguments on Linux/macOS. The first invalid argument
@@ -114,6 +118,34 @@ checks. Inference also considers typed elements in later rows of nested arrays.
 Console I/O is separate future library work. The smaller code
 examples below are body fragments.
 
+## Multiple bindings
+
+List names before one initializer to give each its own binding:
+
+```cloth
+def x, y, z = 10 // Three mutable bindings, each inferred as int.
+def<int<64>> a, b := 10 // Two immutable int<64> bindings.
+```
+
+Ordinary inference, fixed types, assignment checks and duplicate-name errors
+apply to each name. The annotation and `=` or `:=` apply to the whole list.
+The initializer runs once: `def x, y, z = make()` calls `make()` once and gives
+each name an independent value under ordinary copy rules, including for arrays.
+Typed function-block declarations keep their existing deferred behavior: each
+name denotes a computation that runs when read.
+
+Use the same name list without `def` to assign existing bindings:
+
+```cloth
+x, y, z = 20
+```
+
+The RHS runs once. Every target must be mutable and accept the result under
+ordinary type and array-shape rules; arrays receive independent copies.
+The first target supplies the usual context for literals, and the RHS has one
+exact result type. Different integer widths or signedness cannot share an
+assignment merely because the same literal fits each target.
+
 ## Function blocks
 
 An explicitly typed binding can name a parameterless computation:
@@ -145,6 +177,11 @@ produce results rather than escaping as callbacks. `examples/FunctionBlocks.co`
 demonstrates repeated reads, saved values, argument order and 64-bit results.
 
 ## Compound assignments
+
+Integer division and remainder reject a zero divisor (including `0 / 0`) and
+the signed minimum value with a divisor of -1. Literal/provider constants are
+diagnosed during compilation; other values receive source-located runtime
+checks. Invalid executed operations terminate before producing a result.
 
 ```cloth
 def x = 19

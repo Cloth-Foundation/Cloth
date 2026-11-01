@@ -5,6 +5,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.token.Operators
 
 /** Definite metadata facts follow evaluation order, independently of overload/type previews.
  * Unknown facts are not errors: the provider emits its checked runtime operation.
@@ -64,6 +65,12 @@ internal class MetadataAnalysis(
 			is AssignmentStatement        -> {
 				val represented = expression(item.value)
 				lookup(item.name.lexeme)?.represented = represented
+				null
+			}
+
+			is MultiAssignmentStatement   -> {
+				val represented = expression(item.value)
+				item.names.forEach { lookup(it.lexeme)?.represented = represented }
 				null
 			}
 
@@ -133,9 +140,9 @@ internal class MetadataAnalysis(
 				expression(value.left)
 				val before = snapshot()
 				expression(value.right)
-				if (value.operator.lexeme in setOf("&&", "||")) {
+				if (value.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
 					val truth = flow.booleanValue(value.left)
-					val runsWhen = value.operator.lexeme == "&&"
+					val runsWhen = value.operator.lexeme == Operators.AND.character
 					val paths = mutableListOf<Map<Slot, ValueType?>>()
 					if (truth != runsWhen) paths.add(before)
 					if ((truth == null || truth == runsWhen) && flow.of(value.right).canContinue) paths.add(snapshot())

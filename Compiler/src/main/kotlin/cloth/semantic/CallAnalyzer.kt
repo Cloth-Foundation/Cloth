@@ -122,6 +122,17 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean) {
 					model.statements[statement] = type
 				}
 
+				is MultiAssignmentStatement   -> {
+					val targets = facts.declarations.targetsOf(statement)
+					val types = targets.map { facts.bindings.getValue(it) }
+					val actual = typeOf(statement.value, types.first())
+					for ((index, type) in types.withIndex()) {
+						if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.names[index], statement.value, targets[index].name) }
+					}
+					model.multiAssignmentTypes[statement] = types
+					model.statements[statement] = types.first()
+				}
+
 				is UpdateStatement            -> {
 					val type = facts.bindings.getValue(facts.declarations.targetOf(statement))
 					if (!type.numeric && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }

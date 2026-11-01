@@ -7,6 +7,7 @@ import cloth.parser.declaration.FunctionBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.token.Operators
 import java.util.*
 
 /** Possible completion modes; returning and continuing paths can coexist. */
@@ -42,6 +43,7 @@ class ControlFlowModel {
 			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
 			is AssignmentStatement        -> of(statement.value)
+			is MultiAssignmentStatement   -> of(statement.value)
 			is ElementAssignmentStatement -> of(statement.target).then(of(statement.value))
 			is ExpressionStatement        -> of(statement.expression)
 			is UpdateStatement            -> ControlFlow.CONTINUE
@@ -109,7 +111,7 @@ class ControlFlowModel {
 		if (truths.containsKey(expression)) return truths[expression]
 		val result = when (expression) {
 			is BooleanLiteral   -> expression.value
-			is UnaryExpression  -> if (expression.operator.lexeme == "!") truth(expression.operand)?.not() else null
+			is UnaryExpression  -> if (expression.operator.lexeme == Operators.NOT.character) truth(expression.operand)?.not() else null
 			is BinaryExpression -> {
 				val left = truth(expression.left)
 				val right = truth(expression.right)

@@ -86,6 +86,11 @@ class DeclarationAnalyzer {
 					expression(statement.value, scope)
 				}
 
+				is MultiAssignmentStatement   -> {
+					model.multiAssignments[statement] = statement.names.map { assignmentTarget(it, scope) }
+					expression(statement.value, scope)
+				}
+
 				is ElementAssignmentStatement -> {
 					expression(statement.target, scope)
 					expression(statement.value, scope)

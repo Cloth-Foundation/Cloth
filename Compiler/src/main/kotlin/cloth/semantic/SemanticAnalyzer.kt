@@ -50,6 +50,18 @@ class SemanticAnalyzer {
 						model.statements[statement] = binding.type
 					}
 
+					is MultiAssignmentStatement   -> {
+						val targets = statement.names.map { name ->
+							lookup(name).also { if (!it.mutable) throw SemanticErrors.immutable(name, it.declaration) }
+						}
+						val actual = typeOf(statement.value, targets.first().type)
+						for ((name, binding) in statement.names.zip(targets)) {
+							checkType(binding.type, actual, name, statement.value, binding.declaration)
+						}
+						model.multiAssignmentTypes[statement] = targets.map { it.type }
+						model.statements[statement] = targets.first().type
+					}
+
 					is UpdateStatement            -> {
 						val binding = lookup(statement.name)
 						if (!binding.mutable) throw SemanticErrors.immutable(statement.name, binding.declaration)

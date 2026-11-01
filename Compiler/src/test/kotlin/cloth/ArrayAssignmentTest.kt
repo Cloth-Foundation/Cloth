@@ -37,7 +37,7 @@ class ArrayAssignmentTest {
 			assertTrue(process.waitFor(15, TimeUnit.SECONDS), name)
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			if (error == null) {
-				assertEquals(0, process.exitValue(), output); assertEquals("", output)
+				assertEquals(0, process.exitValue(), output); assertEquals(processCompletion(), output)
 			} else {
 				assertNotEquals(0, process.exitValue()); assertContains(output, error)
 			}

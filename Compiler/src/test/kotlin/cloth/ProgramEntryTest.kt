@@ -100,16 +100,19 @@ class ProgramEntryTest {
 	}
 
 	@Test
-	fun `executable IR adds one native adapter without implicit output`() {
+	fun `executable IR adds one native adapter and completion report without expression output`() {
 		val unit = parse("fn main() {\n 19 + 1\n}")
 		val declarationIR = LLVMEmitter().emit(unit)
 		assertFalse(declarationIR.contains("@main("))
+		assertFalse(declarationIR.contains("PEC: "))
 		val executableIR = LLVMEmitter().emitExecutable(unit)
 		val entry = if (NativeCABI.native().profile == NativeCABI.Profile.WINDOWS_LLP64) "wmain" else "main"
 		assertEquals(1, executableIR.lineSequence().count { it.startsWith("define i32 @$entry(") })
 		assertContains(executableIR, "call void @cloth.fn.0.main()")
 		assertContains(executableIR, "ret i32 0")
 		assertContains(executableIR, "Invalid Unicode in command-line argument")
+		assertContains(executableIR, "PEC: %d")
+		assertEquals(1, executableIR.lineSequence().count { it.startsWith("declare i32 @printf(") })
 		assertFalse(executableIR.contains("@putchar("))
 	}
 
@@ -121,14 +124,14 @@ class ProgramEntryTest {
 	}
 
 	@Test
-	fun `void main fallthrough bare return and void expression return exit zero without output`(@TempDir directory: Path) {
+	fun `void main fallthrough bare return and void expression return report and exit zero`(@TempDir directory: Path) {
 		for ((index, source) in listOf("fn main() {}", "fn main() { return }", "fn main() {\n def x = 10\n x + 1\n}", "fn cleanup() {}\nfn main() { return cleanup() }", "fn cleanup() {}\nfn main() = cleanup()").withIndex()) {
 			assertProgram(LLVMEmitter().compile(parse(source), directory.resolve("void_$index")), 0)
 		}
 	}
 
 	@Test
-	fun `integer main results become process status rather than printed results`(@TempDir directory: Path) {
+	fun `integer main results become the reported process status`(@TempDir directory: Path) {
 		for ((index, source) in listOf("fn<int> main() { return 7 }", "fn<int> main() = 7", "pub fn<int> main() = 7").withIndex()) {
 			assertProgram(LLVMEmitter().compile(parse(source), directory.resolve("status_$index")), 7)
 		}
@@ -145,6 +148,33 @@ class ProgramEntryTest {
 	fun `signed negative statuses preserve native signed bits on Windows`(@TempDir directory: Path) {
 		if (ExecutableFormat.current != ExecutableFormat.PE) return
 		for (width in ValueType.INTEGER_WIDTHS) assertProgram(LLVMEmitter().compile(parse("fn<int<$width>> main() = -7"), directory.resolve("negative_$width")), -7)
+	}
+
+	@Test
+	fun `completion is reported once after output even when main is called recursively`(@TempDir directory: Path) {
+		assertProgram(LLVMEmitter().compile(parse("fn main() { print(\"hello\") }"), directory.resolve("printed_void")), 0, "hello")
+		assertProgram(LLVMEmitter().compile(parse("""
+			fn<int> main(string[] args) {
+			    print("hello")
+			    if (args::size == 0) { return main(["nested"]) }
+			    return 7
+			}
+		"""), directory.resolve("printed_integer")), 7, "hellohello")
+	}
+
+	@Test
+	fun `runtime failures do not report normal main completion`(@TempDir directory: Path) {
+		val executable = LLVMEmitter().compile(parse("fn main() { def values = [1]\nvalues[8] }"), directory.resolve("runtime_error"))
+		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
+		try {
+			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out")
+			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+			assertNotEquals(0, process.exitValue(), output)
+			assertContains(output, "Array index out of bounds")
+			assertFalse(output.contains("PEC: "))
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 
 	@Test
@@ -267,13 +297,13 @@ class ProgramEntryTest {
 		assertEquals(2, FunctionAnalyzer().analyze(parse("fn main() {}\nfn main(string[] args) {}")).declarations.functions.size)
 	}
 
-	private fun assertProgram(executable: Path, expectedStatus: Int) {
+	private fun assertProgram(executable: Path, expectedStatus: Int, expectedOutput: String = "") {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out")
 			val bytes = process.inputStream.readBytes()
 			assertEquals(expectedStatus, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			assertTrue(bytes.isEmpty(), "Programs do not implicitly print expression results: ${bytes.toString(Charsets.UTF_8)}")
+			assertEquals(expectedOutput + processCompletion(expectedStatus), bytes.toString(Charsets.UTF_8))
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}

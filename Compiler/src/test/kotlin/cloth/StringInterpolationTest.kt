@@ -133,7 +133,7 @@ class StringInterpolationTest {
 			    return 1
 			}
 		"""), directory.resolve("hole_returns"))
-		assertExecutable(executable, null)
+		assertExecutable(executable, null, processCompletion())
 	}
 
 	@Test
@@ -228,7 +228,7 @@ class StringInterpolationTest {
 		val output = StringBuilder()
 		val target = directory.resolve("EX")
 		assertEquals(0, runCompiler(arrayOf("examples/EX.co", target.toString()), DiagnosticReporter(output)), output.toString())
-		assertExecutable(cloth.util.ExecutableFormat.current.executablePath(target), null)
+		assertExecutable(cloth.util.ExecutableFormat.current.executablePath(target), null, processCompletion())
 	}
 
 	@Test
@@ -268,13 +268,13 @@ class StringInterpolationTest {
 
 	private fun parseProgram(source: String) = Parser(Lexer(SourceFile("interpolation.co", source.trimIndent())).scanTokens()).parse()
 
-	private fun assertExecutable(executable: Path, expected: String?) {
+	private fun assertExecutable(executable: Path, expected: String?, completion: String = "") {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
 			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out")
 			val bytes = process.inputStream.use { it.readBytes() }
 			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			assertContentEquals((expected?.let { (it + "\n").replace("\n", System.lineSeparator()) } ?: "").toByteArray(Charsets.UTF_8), bytes)
+			assertContentEquals(((expected?.let { (it + "\n").replace("\n", System.lineSeparator()) } ?: "") + completion).toByteArray(Charsets.UTF_8), bytes)
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}
