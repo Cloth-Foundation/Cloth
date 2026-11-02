@@ -19,3 +19,8 @@ For Cloth language design, examples, documentation, or compiler behavior, read
 [the Cloth language skill](.agents/skills/cloth-language/SKILL.md). It links to
 confirmed semantics, unresolved questions, and the current implementation status.
 Keep those records current as decisions are made and features are implemented.
+
+For every compiler feature or implementation stage being integrated, use
+[the feature integration skill](.agents/skills/cloth-feature-integration/SKILL.md).
+Integration is not complete until the feature has concrete, discoverable skill
+coverage with confirmed behavior, implementation scope, and verification evidence.

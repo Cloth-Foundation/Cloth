@@ -509,6 +509,10 @@ cloth.MultiReturnReviewTest --offline --console=plain`. Whitespace checks and
 
 ## Boundaries and remaining choices
 
+- Numeric result selection such as `myFunc().1` is recorded in a separate
+  [deferred RFC](../../../../todo/result-selection-rfc.md). It is outside this
+  completed implementation and has no scheduled implementation work. Recording
+  the proposal does not add tuple indexing or argument spreading.
 - The representation should be reusable for methods when method/class execution
   is implemented; this work does not require implementing unrelated class or
   state machinery.

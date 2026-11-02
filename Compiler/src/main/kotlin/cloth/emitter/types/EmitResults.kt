@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
@@ -15,10 +16,19 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Internal ordered-result carrier. Multiple results use ABI-encoded fields;
  * scalar expressions retain their ordinary representation and existing ABI.
  */
-internal class EmitResults(private val context: LLVMContextRef, target: TargetLayout) {
+internal class EmitResults(private val context: LLVMContextRef, private val target: TargetLayout) {
 
 	private val types = LLVMTypes(context, target)
-	fun abiType(type: ValueType): LLVMTypeRef = if (type == ValueType.HALF) LLVMInt16TypeInContext(context) else types.value(type)
+	fun abiType(type: ValueType): LLVMTypeRef = when {
+		type == ValueType.HALF                              -> LLVMInt16TypeInContext(context)
+		type is CNullable && type.payload == ValueType.HALF -> PointerPointer<LLVMTypeRef>(2L).use { fields ->
+			fields.put(0, types.value(ValueType.BOOL)); fields.put(1, LLVMInt16TypeInContext(context))
+			LLVMStructTypeInContext(context, fields, 2, 0)
+		}
+
+		else                                                -> types.value(type)
+	}
+
 	fun abiType(shape: ResultShape): LLVMTypeRef = when (shape) {
 		ResultShape.Empty       -> LLVMVoidTypeInContext(context)
 		is ResultShape.Single   -> abiType(shape.type)
@@ -31,8 +41,18 @@ internal class EmitResults(private val context: LLVMContextRef, target: TargetLa
 	}
 
 	fun valueType(shape: ResultShape): LLVMTypeRef = if (shape is ResultShape.Single) types.value(shape.type) else abiType(shape)
-	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, abiType(type), "half_argument_bits") else value
-	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = if (type == ValueType.HALF) LLVMBuildBitCast(builder, value, types.value(type), "half_result") else value
+	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
+		type == ValueType.HALF                              -> LLVMBuildBitCast(builder, value, abiType(type), "half_argument_bits")
+		type is CNullable && type.payload == ValueType.HALF -> EmitNullable(context, builder, target).map(value, abiType(type)) { LLVMBuildBitCast(builder, it, LLVMInt16TypeInContext(context), "nullable_half_bits") }
+		else                                                -> value
+	}
+
+	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
+		type == ValueType.HALF                              -> LLVMBuildBitCast(builder, value, types.value(type), "half_result")
+		type is CNullable && type.payload == ValueType.HALF -> EmitNullable(context, builder, target).map(value, types.value(type)) { LLVMBuildBitCast(builder, it, types.value(type.payload), "nullable_half_result") }
+		else                                                -> value
+	}
+
 	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, shape: ResultShape): LLVMValueRef = if (shape is ResultShape.Single) encode(builder, value, shape.type) else value
 	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, shape: ResultShape): LLVMValueRef = if (shape is ResultShape.Single) decode(builder, value, shape.type) else value
 	fun pack(builder: LLVMBuilderRef, values: List<LLVMValueRef>, shape: ResultShape): LLVMValueRef {

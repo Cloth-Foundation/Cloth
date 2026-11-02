@@ -5,6 +5,7 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.global.LLVM.LLVMInt1TypeInContext
 import org.bytedeco.llvm.global.LLVM.LLVMVoidTypeInContext
 import java.math.BigInteger
 
@@ -18,6 +19,7 @@ sealed class ValueType(val keyword: Keywords) {
 	open val floating: Boolean get() = false
 	val numeric: Boolean get() = integer || floating
 	open val buffered: Boolean get() = false
+	open val containsNullability: Boolean get() = false
 	open val arrayDimensions: List<BigInteger?> get() = emptyList()
 
 	/** Every source type describes itself without constructing an instance. */
@@ -76,6 +78,15 @@ sealed class ValueType(val keyword: Keywords) {
 		override val spelling: String = "<no continuation>"
 		override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no LLVM value")
 		override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A non-continuing expression has no storage")
+	}
+
+	/** Context-free absence in permitted expression contexts, never a binding type. */
+	internal data object Null : ValueType(Keywords.NULL) {
+
+		override val spelling = "null"
+		override val containsNullability = true
+		override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = emptyMap()
+		override fun llvmValue(context: LLVMContextRef, target: TargetLayout) = LLVMInt1TypeInContext(context)
 	}
 
 	companion object {

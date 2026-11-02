@@ -158,7 +158,7 @@ class BufferCountsTest {
 				val other = CUSize(if (bits == 32) 64 else 32)
 				assertFailsWith<ClothDiagnostic> { ProviderResult.IntegerConstant(other, BigInteger.ONE, source).emit(providers, ProviderReceiver.Type(source)) }
 			}
-			assertContains(ir, "private constant { { ptr, i$bits }, ptr, i$bits, i$bits, i$bits, i1, i1, i1, i1 }")
+			assertContains(ir, "private constant { { ptr, i$bits }, ptr, i$bits, i$bits, i$bits, i1, i1, i1, i1, i1 }")
 			if (bits == 32) {
 				assertContains(ir, "%typeinfo_value = load i32, ptr")
 				assertFalse(ir.contains("load i64"), ir)

@@ -32,9 +32,11 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 			LLVMPositionBuilderAtEnd(builder, entry)
 			val argumentsEmitter = EmitArguments(context, module, abi)
 			val arguments = argumentsEmitter.emit(builder, LLVMGetParam(main, 0), LLVMGetParam(main, 1), withArguments)
-			val result = PointerPointer<LLVMValueRef>(if (withArguments) 1L else 0L).use { values ->
+			val argumentCount = (if (withArguments) 1 else 0) + functions.omissionCount(selected)
+			val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { values ->
 				if (arguments != null) values.put(0, arguments)
-				LLVMBuildCall2(builder, functions.signature(selected), functions.reference(selected), values, if (withArguments) 1 else 0, if (type == ValueType.VOID) "" else "exit_status")
+				repeat(functions.omissionCount(selected)) { values.put(((if (withArguments) 1 else 0) + it).toLong(), LLVMConstInt(LLVMInt1TypeInContext(context), 0, 0)) }
+				LLVMBuildCall2(builder, functions.signature(selected), functions.reference(selected), values, argumentCount, if (type == ValueType.VOID) "" else "exit_status")
 			}
 			val status = when {
 				type == ValueType.VOID       -> LLVMConstInt(nativeType, 0, 0)

@@ -7,7 +7,7 @@ internal sealed interface ResolvedCall {
 
 	val type: FunctionType
 
-	data class Source(val function: FunctionSymbol, override val type: FunctionType) : ResolvedCall
+	data class Source(val function: FunctionSymbol, override val type: FunctionType, val binding: ArgumentBinding) : ResolvedCall
 
 	data class Builtin(val call: BoundBuiltinCall) : ResolvedCall {
 

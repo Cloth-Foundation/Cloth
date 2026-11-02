@@ -28,11 +28,11 @@ internal class EmitTypeInfo(
 
 	private val bool get() = CBool.llvmValue(context, target)
 	private val descriptor: LLVMTypeRef
-		get() = PointerPointer<LLVMTypeRef>(9L).use { fields ->
+		get() = PointerPointer<LLVMTypeRef>(10L).use { fields ->
 			fields.put(0, CString.llvmValue(context, target)); fields.put(1, pointer)
 			for (index in 2L..4L) fields.put(index, count)
-			for (index in 5L..8L) fields.put(index, bool)
-			LLVMStructTypeInContext(context, fields, 9, 0)
+			for (index in 5L..9L) fields.put(index, bool)
+			LLVMStructTypeInContext(context, fields, 10, 0)
 		}
 
 	fun constant(type: ValueType): LLVMValueRef {
@@ -43,15 +43,16 @@ internal class EmitTypeInfo(
 		val global = LLVMAddGlobal(module, descriptor, name)
 		LLVMSetGlobalConstant(global, 1)
 		LLVMSetLinkage(global, LLVMPrivateLinkage)
-		val array = type as? CArray
+		val subject = (type as? CNullable)?.payload ?: type
+		val array = subject as? CArray
 		fun flag(value: Boolean) = LLVMConstInt(bool, if (value) 1 else 0, 0)
 		val values = listOf(
 			strings.literal(type.metadataSpelling),
 			array?.let { constant(it.element) } ?: LLVMConstNull(pointer),
-			count(type.arrayDimensions.size.toBigInteger()),
+			count(subject.arrayDimensions.size.toBigInteger()),
 			count(array?.size ?: BigInteger.ZERO),
-			count(if (type.numeric) type.bits.toBigInteger() else BigInteger.ZERO),
-			flag(array != null), flag(array?.size != null), flag(type.integer && type.unsigned), flag(type.numeric),
+			count(if (subject.numeric) subject.bits.toBigInteger() else BigInteger.ZERO),
+			flag(array != null), flag(array?.size != null), flag(subject.integer && subject.unsigned), flag(subject.numeric), flag(type is CNullable),
 		)
 		PointerPointer<LLVMValueRef>(values.size.toLong()).use { fields ->
 			values.forEachIndexed { index, value -> fields.put(index.toLong(), value) }
@@ -60,9 +61,9 @@ internal class EmitTypeInfo(
 		return global
 	}
 
-	private fun field(value: LLVMValueRef, index: Int, type: LLVMTypeRef): LLVMValueRef {
+	private fun field(value: LLVMValueRef, index: Int, type: LLVMTypeRef, name: String = "typeinfo_value"): LLVMValueRef {
 		val address = LLVMBuildStructGEP2(builder, descriptor, value, index, "typeinfo_field")
-		return LLVMBuildLoad2(builder, type, address, "typeinfo_value")
+		return LLVMBuildLoad2(builder, type, address, name)
 	}
 
 	fun text(value: LLVMValueRef): LLVMValueRef = field(value, 0, CString.llvmValue(context, target))

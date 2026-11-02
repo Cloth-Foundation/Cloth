@@ -24,6 +24,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private val types = LLVMTypes(context, abi.layout)
 	private val results = EmitResults(context, abi.layout)
 	private val arrays = EmitArray(context, builder, abi)
+	private val nullable = EmitNullable(context, builder, abi.layout)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
 	private val temporaryAnalysis = ArrayTemporaryAnalysis(semantics, functionSemantics)
@@ -120,16 +121,26 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val value = statement.value?.let { emit(it) }
 		if (terminated()) return
 		blockReturns.lastOrNull()?.let { target ->
-			val result = if (target.type == ValueType.VOID) null else transferArrayValue(checkNotNull(value), target.type)
+			val result = if (target.type == ValueType.VOID) null else transferArrayValue(adaptValue(checkNotNull(value), semantics.typeOf(checkNotNull(statement.value)), target.type), target.type)
 			target.predecessors.add(LLVMGetInsertBlock(builder) to result)
 			LLVMBuildBr(builder, target.exit)
 			return
 		}
 		val shape = returnResults ?: throw InternalErrors.invariant("Return outside emitted function")
-		checkNotNull(frame).emitReturn(if (shape == ResultShape.Empty) null else results.encode(builder, checkNotNull(value), shape))
+		checkNotNull(frame).emitReturn(if (shape == ResultShape.Empty) null else results.encode(builder, adaptResults(checkNotNull(value), semantics.resultOf(checkNotNull(statement.value)), shape), shape))
 	}
 
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
+
+	fun adaptValue(value: LLVMValueRef, source: ValueType, destination: ValueType): LLVMValueRef = if (source == destination || source is CArray && destination is CArray && destination.accepts(source)) value
+	else nullable.adapt(value, source, destination)
+
+	fun adaptResults(value: LLVMValueRef, source: ResultShape, destination: ResultShape): LLVMValueRef {
+		if (source == destination) return value
+		if (source.values.size != destination.values.size) throw InternalErrors.invariant("Validated result adaptation changed arity")
+		val values = takeResults(value, source).mapIndexed { index, item -> adaptValue(item, source.values[index], destination.values[index]) }
+		return freshResults(results.pack(builder, values, destination), destination)
+	}
 
 	private fun emitCall(call: CallExpression): LLVMValueRef? = when (val selected = checkNotNull(functionSemantics).selectedCall(call)) {
 		is ResolvedCall.Source  -> checkNotNull(functions).emitCall(call, this, builder)
@@ -230,7 +241,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
-		val operand = bindings.read(functionSemantics?.declarations?.targetOf(statement) ?: statement.name.lexeme)
+		val stored = bindings.read(functionSemantics?.declarations?.targetOf(statement) ?: statement.name.lexeme)
+		val operand = if (semantics.updatePayloads.containsKey(statement)) nullable.payload(stored) else stored
 		val increment = statement.operator.lexeme == Operators.PLUS_PLUS.character
 		if (type is CFloat) {
 			val workingType = EmitHalf.arithmeticType(type)
@@ -291,6 +303,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitInternal(expression: Expression): LLVMValueRef? {
 		return when (expression) {
+			is NullLiteral              -> (semantics.typeOf(expression) as? CNullable)?.let(nullable::absent) ?: LLVMConstNull(types.value(ValueType.Null))
+			is ElvisExpression          -> emitElvis(expression)
 			is ResultListExpression     -> {
 				// Snapshot each buffered position before subsequent expressions can mutate
 				// its source. Even discarded positions execute and retain runtime guards.
@@ -327,7 +341,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is NameExpression           -> {
 				val symbol = functionSemantics?.declarations?.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				if (block != null) emitBlock(block) else bindings.read(symbol ?: expression.name.lexeme)
+				if (block != null) emitBlock(block) else {
+					val stored = bindings.read(symbol ?: expression.name.lexeme)
+					if (semantics.payloadReads.containsKey(expression)) nullable.payload(stored) else stored
+				}
 			}
 
 			is CallExpression           -> emitCall(expression)?.let { freshResults(it, semantics.resultOf(expression)) }
@@ -340,7 +357,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				var result: LLVMValueRef? = null
 				for (part in expression.parts) {
 					if (part is StringLiteral && part.value.isEmpty()) continue
-					val value = strings.interpolate(emitValue(part), semantics.typeOf(part), casts, part.span.toString())
+					val raw = emitValue(part)
+					val type = semantics.typeOf(part)
+					val value = when (type) {
+						ValueType.Null -> strings.literal("null")
+						is CNullable   -> checkNotNull(nullable.choose(nullable.present(raw), types.value(ValueType.STRING), { strings.interpolate(nullable.payload(raw), type.payload, casts, part.span.toString()) }, { strings.literal("null") }))
+						else           -> strings.interpolate(raw, type, casts, part.span.toString())
+					}
 					result = result?.let { strings.concatenate(it, value, part.span.toString()) } ?: value
 				}
 				result ?: strings.literal("")
@@ -368,6 +391,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			}
 
 			is BinaryExpression         -> {
+				semantics.nullableComparisons[expression]?.let { return emitNullableEquality(expression, it) }
 				if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
 					return emitLogical(expression)
 				}
@@ -446,6 +470,58 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
+	private fun emitElvis(expression: ElvisExpression): LLVMValueRef? {
+		val left = emitValue(expression.left)
+		val leftType = semantics.typeOf(expression.left) as CNullable
+		if (expression.left is NullLiteral) {
+			val fallback = emit(expression.fallback)
+			return if (terminated()) null else adaptValue(checkNotNull(fallback), semantics.typeOf(expression.fallback), semantics.typeOf(expression))
+		}
+		val result = semantics.typeOf(expression)
+		return nullable.choose(nullable.present(left), types.value(result), {
+			adaptValue(nullable.payload(left), leftType.payload, result)
+		}, {
+			val fallback = emit(expression.fallback)
+			if (terminated()) null else adaptValue(checkNotNull(fallback), semantics.typeOf(expression.fallback), result)
+		})
+	}
+
+	private fun emitNullableEquality(expression: BinaryExpression, payloadType: ValueType): LLVMValueRef {
+		// Both expressions are captured before inspecting presence, preserving effects.
+		val left = emitValue(expression.left)
+		val right = emitValue(expression.right)
+		val leftType = semantics.typeOf(expression.left)
+		val rightType = semantics.typeOf(expression.right)
+		fun presence(value: LLVMValueRef, type: ValueType) = when (type) {
+			is CNullable   -> nullable.present(value)
+			ValueType.Null -> LLVMConstInt(boolType, 0, 0)
+			else           -> LLVMConstInt(boolType, 1, 0)
+		}
+
+		fun payload(value: LLVMValueRef, type: ValueType) = when (type) {
+			is CNullable   -> nullable.payload(value)
+			ValueType.Null -> LLVMConstNull(types.value(payloadType))
+			else           -> value
+		}
+
+		val hasLeft = presence(left, leftType)
+		val hasRight = presence(right, rightType)
+		val equal = checkNotNull(nullable.choose(LLVMBuildAnd(builder, hasLeft, hasRight, "nullable_both_present"), boolType, {
+			val a = payload(left, leftType)
+			val b = payload(right, rightType)
+			when (payloadType) {
+				is CFloat          -> {
+					val working = EmitHalf.arithmeticType(payloadType)
+					LLVMBuildFCmp(builder, LLVMRealOEQ, casts.toFloating(a, payloadType, working), casts.toFloating(b, payloadType, working), "nullable_float_equal")
+				}
+
+				ValueType.TYPEINFO -> strings.metadata.equal(a, b)
+				else               -> LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
+			}
+		}, { LLVMBuildICmp(builder, LLVMIntEQ, hasLeft, hasRight, "nullable_absence_equal") }))
+		return if (expression.operator.lexeme == "!=") LLVMBuildNot(builder, equal, "nullable_not_equal") else equal
+	}
+
 	fun emitConditional(expression: IfExpression, requireValue: Boolean): LLVMValueRef? {
 		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
 		val merge = LLVMAppendBasicBlockInContext(context, function, "if_end")
@@ -455,7 +531,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		fun emitBody(body: List<Statement>) {
 			val value = bindings.withScope { emitStatements(body, preserveLastValue = requireValue) }
 			if (!terminated()) {
-				if (requireValue) values.add(snapshotResults(checkNotNull(value), semantics.resultOf(expression)))
+				if (requireValue) {
+					val adapted = adaptResults(checkNotNull(value), semantics.resultOf(body.last()), semantics.resultOf(expression))
+					values.add(snapshotResults(adapted, semantics.resultOf(expression)))
+				}
 				// Nested conditionals, casts, and strings can move the insertion block.
 				ends.add(LLVMGetInsertBlock(builder))
 				LLVMBuildBr(builder, merge)

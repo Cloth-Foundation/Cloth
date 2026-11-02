@@ -1,0 +1,50 @@
+---
+name: cloth-multiple-results
+description: Design, explain, or extend Cloth ordered multiple function results, result-list returns and conditionals, positional destructuring, discard positions, forwarding, or reception plans.
+---
+
+# Cloth multiple results
+
+Read [confirmed result semantics](references/semantics.md), then the
+[implementation plan and completed stages](../cloth-language/references/multi-return-implementation.md).
+The plan separates confirmed direction, implementation choices, and remaining
+boundaries. All five stages are complete for implemented value types.
+
+## Preserve the integrated contract
+
+- Ordered result lists are not first-class tuples. Each received slot has its own
+  type and ordinary binding behavior. Example: `fn<int, bool> pair() = 1, true`
+  with `def number, valid = pair()`.
+- `_` discards one receiving position without suppressing producer evaluation or
+  that position's explicit type/shape constraints. Explicit positional type lists
+  retain discarded positions: `def<int, bool> number, _ = pair()`.
+- A scalar-result RHS can broadcast to several names; a multi-result RHS maps
+  positionally. Preserve both paths, including assignment to existing bindings.
+- Preserve ordered snapshots, side effects, forwarding, early termination and
+  complete producer execution. Buffered results are independent and follow
+  [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md).
+- Keep result-shape typing separate from ordinary scalar expression typing and
+  complete semantic reception plans before emission. Preserve the implemented
+  runtime validation/write order; a discard cannot bypass an array shape guard.
+- Multi-result conditionals use the same continuing-flow rules as
+  [control flow](../cloth-control-flow/SKILL.md); unannotated functions still mean void.
+
+## Source, evidence, and boundaries
+
+Inspect [ResultShape](../../../Compiler/src/main/kotlin/cloth/semantic/ResultShape.kt),
+[ReceptionPlan](../../../Compiler/src/main/kotlin/cloth/semantic/ReceptionPlan.kt),
+[FunctionSemanticModel](../../../Compiler/src/main/kotlin/cloth/semantic/FunctionSemanticModel.kt),
+[EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitResults.kt),
+and [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt).
+Example: [MultiReturns.co](../../../examples/MultiReturns.co), including its
+optional-parameter declaration, is now executable. Read [optional arguments](../cloth-optional-arguments/SKILL.md)
+when changing named argument placement or default evaluation around result producers.
+
+Relevant suites: `MultiReturnParsingTest`, `MultiReturnTypingTest`,
+`DestructuringTest`, `MultiReturnEmissionTest`, `MultiReturnIntegrationTest`,
+and `MultiReturnReviewTest`. Recorded verification covers Windows x64/x86 native
+execution and verified IR across nine profiles. Keep those scopes distinct.
+See the [final review](../cloth-language/references/multi-return-implementation.md#final-review)
+for discarded-array constraints and remaining implementation boundaries.
+Numeric result selection (`call().1`) remains a
+[deferred RFC](../../../todo/result-selection-rfc.md), not implemented syntax.

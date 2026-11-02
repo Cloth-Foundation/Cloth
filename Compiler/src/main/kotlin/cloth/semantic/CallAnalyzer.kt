@@ -5,6 +5,7 @@ import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
 import cloth.data.CArray
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
@@ -44,6 +45,14 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		}
 		val model = FunctionSemanticModel(declarations, signatures)
 		for (function in declarations.functions) function.parameters.forEachIndexed { index, parameter -> model.bindings[parameter] = signatures.getValue(function).parameters[index] }
+		val presence = NullFlowAnalysis(model)
+		for (function in declarations.functions) presence.analyze(function.declaration)
+		for (function in declarations.functions) {
+			val checker = BodyTyping(model, function.declaration, signatures.getValue(function).results, validateReturns)
+			function.parameters.forEachIndexed { index, parameter ->
+				parameter.declaration.defaultValue?.let { checker.checkDefault(it, signatures.getValue(function).parameters[index], parameter.name) }
+			}
+		}
 		for (function in declarations.functions) {
 			val checker = BodyTyping(model, function.declaration, signatures.getValue(function).results, validateReturns)
 			when (val body = function.declaration.body) {
@@ -58,6 +67,9 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			}
 		}
 		for (function in declarations.functions) {
+			function.parameters.forEachIndexed { index, parameter ->
+				parameter.declaration.defaultValue?.let { MetadataAnalysis(model.types, function.parameters.take(index).map { it.name.lexeme to false }, model.controlFlow).expression(it) }
+			}
 			val metadata = MetadataAnalysis(model.types, function.parameters.map { it.name.lexeme to it.mutable }, model.controlFlow)
 			when (val body = function.declaration.body) {
 				is BlockBody      -> metadata.statements(body.statements)
@@ -68,6 +80,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 	}
 
 	private class BodyTyping(private val facts: FunctionSemanticModel, private val function: FunctionDeclaration, private val returnResults: ResultShape, private val validateReturns: Boolean, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe, declarations = true) {
+
+		override val supportsNullable = true
 
 		override fun completion(expression: Expression) = if (validateReturns) facts.controlFlow.of(expression) else ControlFlow.CONTINUE
 		override fun completion(statements: List<Statement>) = if (validateReturns) facts.controlFlow.of(statements) else ControlFlow.CONTINUE
@@ -89,6 +103,11 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			}
 		}
 
+		fun checkDefault(expression: Expression, expected: ValueType, name: cloth.token.Token) {
+			val actual = typeOf(expression, expected, contextualFloat = true)
+			if (!compatible(actual, expected)) throw SemanticErrors.typeMismatch(expected, actual, name, expression, name)
+		}
+
 		fun checkExpressionBody(body: ExpressionBody) {
 			val actual = resultOf(body.expression, returnResults, requireValue = validateReturns, allowVoidResult = validateReturns)
 			if (validateReturns) checkReturnedResults(actual, body.expression)
@@ -97,7 +116,14 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		override fun nameType(expression: NameExpression): ValueType {
 			val symbol = facts.declarations.symbolOf(expression)
 			if (symbol !is BindingSymbol) reject { SemanticErrors.functionValue(expression.name) }
-			return facts.bindings.getValue(symbol)
+			val declared = facts.bindings.getValue(symbol)
+			return if (declared is CNullable && expression in facts.presentNames) {
+				model.payloadReads[expression] = declared
+				declared.payload
+			} else {
+				model.payloadReads.remove(expression)
+				declared
+			}
 		}
 
 		override fun withScope(action: () -> Unit) = action() // Resolved symbols already encode lexical scope.
@@ -130,6 +156,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 					}
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
+					if (expected == null && actual.containsNullability) throw SemanticErrors.nullableContext(statement.initializer.span)
 					val type = if (expected is CArray && actual is CArray && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.initializer, statement.name) }
 					facts.bindings[symbol] = type
@@ -150,7 +177,12 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 				}
 
 				is UpdateStatement            -> {
-					val type = facts.bindings.getValue(facts.declarations.targetOf(statement))
+					val declared = facts.bindings.getValue(facts.declarations.targetOf(statement))
+					val type = if (declared is CNullable) {
+						if (statement !in facts.presentUpdates) throw SemanticErrors.nullablePayload(declared, statement.span)
+						model.updatePayloads[statement] = declared
+						declared.payload
+					} else declared
 					if (!type.numeric && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }
 					model.statements[statement] = type
 				}
@@ -187,48 +219,63 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			val target = facts.declarations.candidatesOf(expression)
 			if (target is BuiltinGroupSymbol) return ResultShape.of(builtinCallType(expression, target.definition))
 			val group = (target as FunctionGroupSymbol).overloads
-			val candidates = group.filter { facts.typeOf(it).parameters.size == expression.arguments.size }
-			if (candidates.isEmpty()) throw SemanticErrors.callArity(expression, group)
+			ArgumentBinder.validate(expression.suppliedArguments)
+			data class Candidate(val function: FunctionSymbol, val binding: ArgumentBinding)
 
-			// Prefer a whole-argument exact match using each expression's ordinary type.
+			var firstProblem: BindingProblem? = null
+			val candidates = group.mapNotNull { candidate ->
+				val attempt = ArgumentBinder.bind(expression, candidate)
+				if (firstProblem == null) firstProblem = attempt.problem
+				attempt.binding?.let { Candidate(candidate, it) }
+			}
+			if (candidates.isEmpty()) {
+				// Preserve the established required-only positional arity diagnostic.
+				if (expression.suppliedArguments.all { it.label == null } && group.all { fn -> fn.parameters.none { it.declaration.optional } }) throw SemanticErrors.callArity(expression, group)
+				throw checkNotNull(firstProblem).diagnostic()
+			}
+
 			val ordinary = facts.fork()
-			val defaults = try {
+			val ordinaryTypes = try {
 				val checker = BodyTyping(ordinary, function, returnResults, validateReturns, probe = true)
 				expression.arguments.map { checker.typeOf(it) }
 			} catch (_: CandidateMismatch) {
 				null
 			}
-			val exact = candidates.singleOrNull { facts.typeOf(it).parameters == defaults } ?: candidates.singleOrNull { candidate -> defaults != null && facts.typeOf(candidate).parameters.zip(defaults).all { (parameter, actual) -> parameter.accepts(actual) } }
-			if (exact != null) {
-				facts.commit(ordinary)
-				facts.calls[expression] = ResolvedCall.Source(exact, facts.typeOf(exact))
-				return facts.typeOf(exact).results
-			}
 
-			var selected: FunctionSymbol? = null
-			var selectedFacts: FunctionSemanticModel? = null
-			for (candidate in candidates) {
+			fun suppliedTypes(candidate: Candidate) = candidate.binding.parameterForArgument.map { facts.typeOf(candidate.function).parameters[it] }
+			data class Match(val candidate: Candidate, val trial: FunctionSemanticModel)
+
+			val exact = if (ordinaryTypes == null) emptyList() else candidates.filter { suppliedTypes(it) == ordinaryTypes }
+			val ordinaryCompatible = if (ordinaryTypes == null) emptyList() else candidates.filter { candidate -> suppliedTypes(candidate).zip(ordinaryTypes).all { (parameter, actual) -> parameter.accepts(actual) } }
+			val preferred = exact.ifEmpty { ordinaryCompatible }
+			val matches = if (preferred.isNotEmpty()) preferred.map { Match(it, ordinary) } else candidates.mapNotNull { candidate ->
 				val trial = facts.fork()
 				val checker = BodyTyping(trial, function, returnResults, validateReturns, probe = true)
+				val parameters = suppliedTypes(candidate)
 				val matches = try {
-					val parameters = facts.typeOf(candidate).parameters
 					expression.arguments.indices.all { index -> compatible(checker.typeOf(expression.arguments[index], parameters[index], contextualFloat = true), parameters[index]) }
 				} catch (_: CandidateMismatch) {
 					false
 				}
-				if (matches) {
-					if (selected != null) throw SemanticErrors.ambiguousCall(expression, listOf(selected, candidate))
-					selected = candidate
-					selectedFacts = trial
-				}
+				if (matches) Match(candidate, trial) else null
 			}
-			if (selected == null) throw SemanticErrors.noMatchingCall(expression, candidates)
-			facts.commit(checkNotNull(selectedFacts))
-			facts.calls[expression] = ResolvedCall.Source(selected, facts.typeOf(selected))
-			return facts.typeOf(selected).results
+			if (matches.isEmpty()) throw SemanticErrors.noMatchingCall(expression, candidates.map { it.function })
+			// Omission count breaks ties only between identical supplied type contracts.
+			// Incomparable contextual matches remain ambiguous.
+			val best = if (matches.map { suppliedTypes(it.candidate) }.distinct().size == 1) {
+				val minimum = matches.minOf { it.candidate.binding.omittedParameters.size }
+				matches.filter { it.candidate.binding.omittedParameters.size == minimum }
+			} else matches
+			if (best.size > 1) throw SemanticErrors.ambiguousCall(expression, best.map { it.candidate.function })
+			val selected = best.single()
+			facts.commit(selected.trial)
+			val candidate = selected.candidate
+			facts.calls[expression] = ResolvedCall.Source(candidate.function, facts.typeOf(candidate.function), candidate.binding)
+			return facts.typeOf(candidate.function).results
 		}
 
 		private fun builtinCallType(expression: CallExpression, definition: BuiltinDefinition<*>): ValueType {
+			if (expression.suppliedArguments.any { it.label != null }) throw SemanticErrors.argumentBinding("Built-in functions do not publish named argument labels yet", expression.span)
 			val candidates = definition.function.overloads.filter { it.parameters.size == expression.arguments.size }
 			if (candidates.isEmpty()) throw SemanticErrors.builtinArity(expression, definition)
 

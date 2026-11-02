@@ -20,6 +20,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected abstract fun nameType(expression: NameExpression): ValueType
 	protected abstract fun statement(statement: Statement)
 	protected abstract fun withScope(action: () -> Unit)
+	protected open val supportsNullable: Boolean = false
 	protected open fun callType(expression: CallExpression): ValueType = throw SemanticErrors.unknownName(expression.name)
 	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.CONTINUE
@@ -29,7 +30,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		throw diagnostic()
 	}
 
-	protected fun resolveType(type: TypeReference) = model.typeResolver.resolve(type, declarations)
+	protected fun resolveType(type: TypeReference) = model.typeResolver.resolve(type, declarations).also {
+		if (it.containsNullability && !supportsNullable) throw SemanticErrors.nullablePending(type.span)
+	}
 
 	/** Only literal signs and constant providers; bindings/calls keep runtime checks. */
 	private fun integerConstant(expression: Expression, type: CInteger): BigInteger? {
@@ -62,7 +65,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	private fun integer(literal: IntegerLiteral, expected: ValueType?, negative: Boolean = false): ValueType {
-		val type = expected as? CInteger ?: ValueType.INT
+		val type = (if (expected is CNullable) expected.payload else expected) as? CInteger ?: ValueType.INT
 		val value = if (negative) -literal.value else literal.value
 		if (!type.acceptsLiteral(value)) reject { SemanticErrors.integer(value, type, literal.span) }
 		model.expressions[literal] = type
@@ -126,6 +129,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	fun resultOf(expression: Expression, expected: ResultShape? = null, requireValue: Boolean = true, contextualFloat: Boolean = false, allowVoidResult: Boolean = false, receptionContext: ReceptionContext? = null): ResultShape {
+		if (!supportsNullable && (expression is NullLiteral || expression is ElvisExpression)) throw SemanticErrors.nullablePending(expression.span)
 		model.metadata.remove(expression)
 		val result = when (expression) {
 			is CallExpression                                                                     -> callResults(expression)
@@ -166,6 +170,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				for ((index, item) in statements.withIndex()) {
 					if (needsValue && index == statements.lastIndex) {
 						val next = resultOf((item as ExpressionStatement).expression, expected, contextualFloat = contextualFloat, allowVoidResult = allowVoidResult, receptionContext = receptionContext)
+						for ((position, type) in next.values.withIndex()) if (type.containsNullability) {
+							val context = receptionContext?.positional?.getOrNull(position) ?: receptionContext?.broadcast ?: expected?.values?.getOrNull(position)
+							if (context !is CNullable) reject { SemanticErrors.nullableContext(item.span) }
+						}
 						model.recordResult(item, next)
 						if (next != ResultShape.Never) {
 							val previous = result
@@ -176,7 +184,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 								}
 								ResultShape.of(previous.values.zip(next.values).mapIndexed { position, (left, right) ->
 									val context = (if (next is ResultShape.Multiple) receptionContext?.positional?.getOrNull(position) else receptionContext?.broadcast) ?: expected?.values?.getOrNull(position)
-									if (left == right) left else if (context is CArray && context.accepts(left) && context.accepts(right)) context
+									if (left == right) left else if ((context is CArray || context is CNullable) && context.accepts(left) && context.accepts(right)) context
 									else reject { SemanticErrors.branchTypes(left, right, checkNotNull(firstSpan), item.span) }
 								})
 							}
@@ -231,6 +239,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			val value = if (actual == ResultShape.Never) ValueType.NEVER else actual.values[source]
 			val required = expected[index]
 			val location = if (kind == ReceptionKind.POSITIONAL && producer is ResultListExpression) producer.values[source] else producer
+			if (definition && target is ReceivingTarget.Named && required == null && value.containsNullability) throw SemanticErrors.nullableContext(location.span)
 			if (required != null && !required.accepts(value)) reject {
 				if (target is ReceivingTarget.Discard) SemanticErrors.discardedType(required, value, index, location.span, group?.types?.getOrNull(index)?.span ?: target.span)
 				else SemanticErrors.typeMismatch(required, value, target.token, location, declarations[index] ?: target.token)
@@ -247,16 +256,26 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun scalarTypeOf(expression: Expression, expected: ValueType?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean): ValueType {
 		model.metadata.remove(expression)
 		val type = when (expression) {
+			is NullLiteral              -> expected as? CNullable ?: ValueType.Null
+			is ElvisExpression          -> elvisType(expression, expected, contextualFloat)
 			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
 			is StateCallExpression      -> throw SemanticErrors.stateCall(expression.name)
 			is ProviderAccessExpression -> {
 				val receiver = expression.receiver
 				val receiverType = if (receiver is TypeReceiverExpression) {
-					model.typeResolver.resolve(receiver.annotation, declarations = true).also { model.expressions[receiver] = it }
+					model.typeResolver.resolve(receiver.annotation, declarations = true).also {
+						if (it.containsNullability && !supportsNullable) throw SemanticErrors.nullablePending(receiver.span)
+						model.expressions[receiver] = it
+					}
 				} else typeOf(receiver)
 				if (receiverType == ValueType.NEVER) ValueType.NEVER else {
 					// Availability is independent of the enclosing overload's return/argument context.
-					val result = receiverType.provider(expression.name.lexeme, model.target) ?: throw SemanticErrors.provider(receiverType, expression.name)
+					val result = receiverType.provider(expression.name.lexeme, model.target) ?: run {
+						if (receiverType is CNullable && receiver is TypeReceiverExpression) throw SemanticErrors.nullablePending(expression.name.span, "Nullable type providers other than '::type' are not implemented yet")
+						if (receiverType is CNullable && receiverType.payload.provider(expression.name.lexeme, model.target) != null) throw SemanticErrors.nullablePayload(receiverType, receiver.span)
+						if (receiverType == ValueType.Null) throw SemanticErrors.nullableContext(receiver.span)
+						throw SemanticErrors.provider(receiverType, expression.name)
+					}
 					val access = ProviderAccess(receiver, result, expression.name.span)
 					if (access.receiverForm !in result.receiverForms) throw SemanticErrors.providerReceiver(receiverType, expression.name)
 					model.providers[expression] = access
@@ -264,7 +283,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 						is ProviderResult.TypeMetadata     -> model.metadata[expression] = receiverType
 						is ProviderResult.MetadataProperty -> model.metadata[receiver]?.let { represented ->
 							if (!result.query.accepts(represented)) throw SemanticErrors.metadata(represented, expression.name, result.query.requirement)
-							if (result.query == MetadataQuery.ELEMENT) model.metadata[expression] = (represented as CArray).element
+							if (result.query == MetadataQuery.ELEMENT) model.metadata[expression] = (result.query.subject(represented) as CArray).element
 						}
 
 						else                               -> Unit
@@ -277,6 +296,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				val context = expected as? CArray
 				if (context?.size != null && context.size != expression.elements.size.toBigInteger()) reject { SemanticErrors.array("Expected ${context.size} array elements, got ${expression.elements.size}; every element must be initialized", expression.span) }
 				val elementContext = context?.element ?: arrayElementContext(expression.elements, contextualFloat)
+				if (context == null && elementContext?.containsNullability == true) throw SemanticErrors.nullableContext(expression.span)
 				var element: ValueType? = null
 				for (item in expression.elements) {
 					val actual = typeOf(item, elementContext ?: element, contextualFloat = contextualFloat)
@@ -302,7 +322,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 			is IntegerLiteral           -> integer(expression, expected)
 			is FloatingPointLiteral     -> {
-				val type = if (contextualFloat) expected as? CFloat ?: ValueType.FLOAT else ValueType.FLOAT
+				val type = if (contextualFloat) (if (expected is CNullable) expected.payload else expected) as? CFloat ?: ValueType.FLOAT else ValueType.FLOAT
 				if (!type.acceptsLiteral(expression.value.toBigDecimal())) reject { SemanticErrors.floating(expression.value, type, expression.span) }
 				type
 			}
@@ -315,7 +335,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is InterpolatedString       -> {
 				expression.parts.forEach { part ->
 					val type = typeOf(part)
-					if (!type.numeric && type != ValueType.BOOL && type != ValueType.CHAR && type != ValueType.STRING && type != ValueType.TYPEINFO && type != ValueType.NEVER) {
+					val payload = if (type is CNullable) type.payload else type
+					if (!payload.numeric && payload != ValueType.BOOL && payload != ValueType.CHAR && payload != ValueType.STRING && payload != ValueType.TYPEINFO && payload != ValueType.NEVER && payload != ValueType.Null) {
 						// Holes receive no overload context; this failure cannot be fixed by another candidate.
 						throw SemanticErrors.interpolation(type, part.span)
 					}
@@ -324,15 +345,20 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			}
 
 			is TypeCheckExpression      -> {
-				typeOf(expression.operand)
-				model.typeChecks[expression] = resolveType(expression.target)
+				val source = typeOf(expression.operand)
+				if (source == ValueType.Null) throw SemanticErrors.nullableContext(expression.operand.span)
+				val target = resolveType(expression.target)
+				model.typeChecks[expression] = target
 				ValueType.BOOL
 			}
 
 			is CastExpression           -> {
 				val target = resolveType(expression.target)
-				val source = typeOf(expression.operand, requireValue = !(declarations && target == ValueType.VOID))
-				if (source != ValueType.NEVER && source != target && !(source.numeric && target.numeric) && !(declarations && target == ValueType.VOID)) reject { SemanticErrors.cast(source, target, expression.span) }
+				val source = typeOf(expression.operand, expected = (target as? CNullable)?.takeIf { expression.operand is NullLiteral }, requireValue = !(declarations && target == ValueType.VOID))
+				if ((source is CNullable || source == ValueType.Null) && target !is CNullable && target != ValueType.VOID) throw SemanticErrors.nullablePayload(source, expression.operand.span)
+				val sourcePayload = (source as? CNullable)?.payload ?: source
+				val targetPayload = (target as? CNullable)?.payload ?: target
+				if (source != ValueType.NEVER && sourcePayload != targetPayload && !(sourcePayload.numeric && targetPayload.numeric) && !(declarations && target == ValueType.VOID)) reject { SemanticErrors.cast(source, target, expression.span) }
 				if (target == ValueType.TYPEINFO) model.metadata[expression.operand]?.let { model.metadata[expression] = it }
 				target
 			}
@@ -340,6 +366,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is UnaryExpression          -> {
 				val operand = if (expression.operator.lexeme == Operators.MINUS.character && expression.operand is IntegerLiteral) integer(expression.operand, expected, negative = true)
 				else typeOf(expression.operand, if (expression.operator.lexeme == Operators.NOT.character) null else expected, contextualFloat = contextualFloat)
+				if (operand is CNullable || operand == ValueType.Null) throw SemanticErrors.nullablePayload(operand, expression.operand.span)
 				if (expression.operator.lexeme == Operators.NOT.character) {
 					if (operand != ValueType.BOOL && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = true) }
 				} else if (!operand.numeric && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = false) }
@@ -347,11 +374,17 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			}
 
 			is BinaryExpression         -> {
+				if (expression.operator.lexeme in setOf("==", "!=")) {
+					val nullable = nullableEquality(expression, contextualFloat)
+					if (nullable != null) return nullable.also { model.expressions[expression] = it }
+				}
 				val numeric = expression.operator.lexeme in arithmeticOperators || expression.operator.lexeme in comparisonOperators
 				val intContext = if (numeric) operandContext(expression.left, false) ?: operandContext(expression.right, false) ?: expected?.takeIf { it.integer && expression.operator.lexeme in arithmeticOperators } else null
 				val floatContext = if (numeric && contextualFloat) operandContext(expression.left, true) ?: operandContext(expression.right, true) ?: expected?.takeIf { it.floating && expression.operator.lexeme in arithmeticOperators } else null
 				val left = typeOf(expression.left, intContext ?: floatContext, contextualFloat = contextualFloat)
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat)
+				if (left is CNullable || left == ValueType.Null) throw SemanticErrors.nullablePayload(left, expression.left.span)
+				if (right is CNullable || right == ValueType.Null) throw SemanticErrors.nullablePayload(right, expression.right.span)
 				if (expression.operator.lexeme == Operators.MUL_MUL.character && left.integer && right.integer) {
 					val exponent = expression.right
 					if (exponent is UnaryExpression && exponent.operator.lexeme == Operators.MINUS.character && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) reject { SemanticErrors.negativeExponent(exponent.span) }
@@ -389,6 +422,51 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		if (requireValue && !allowVoidResult && completedType == ValueType.VOID) reject { SemanticErrors.voidValue(expression.span) }
 		model.expressions[expression] = completedType
 		return completedType
+	}
+
+	private fun elvisType(expression: ElvisExpression, expected: ValueType?, contextualFloat: Boolean): ValueType {
+		val context = (expected as? CNullable)?.payload ?: expected?.takeUnless { it == ValueType.VOID || it == ValueType.NEVER || it == ValueType.Null }
+		if (expression.left is NullLiteral && context == null) {
+			val fallback = typeOf(expression.fallback, contextualFloat = contextualFloat)
+			val payload = (fallback as? CNullable)?.payload ?: fallback
+			if (payload in setOf(ValueType.Null, ValueType.VOID, ValueType.NEVER)) throw SemanticErrors.nullableContext(expression.span)
+			typeOf(expression.left, CNullable(payload))
+			return fallback
+		}
+		val left = typeOf(expression.left, if (expression.left is NullLiteral) context?.let(::CNullable) else expected as? CNullable, contextualFloat = contextualFloat)
+		if (left == ValueType.NEVER) {
+			typeOf(expression.fallback, expected, contextualFloat = contextualFloat)
+			return ValueType.NEVER
+		}
+		if (left !is CNullable) throw SemanticErrors.elvis("The left operand of '?:' requires a nullable source type", expression.left.span)
+		val fallback = typeOf(expression.fallback, if (expected is CNullable) left else left.payload, contextualFloat = contextualFloat)
+		if (fallback == ValueType.NEVER) return left.payload
+		if (!left.accepts(fallback)) throw SemanticErrors.elvis("Fallback requires '${left.payload.spelling}' or '${left.spelling}', got '${fallback.spelling}'", expression.fallback.span)
+		return if (fallback is CNullable || fallback == ValueType.Null) left else left.payload
+	}
+
+	/** Only inspect fixed source contracts; literals keep the peer payload's context. */
+	private fun equalityHint(value: Expression): ValueType? = when (value) {
+		is NameExpression                                                   -> nameType(value)
+		is CallExpression                                                   -> callType(value)
+		is CastExpression                                                   -> resolveType(value.target)
+		is IndexExpression, is ProviderAccessExpression, is ElvisExpression -> typeOf(value)
+		else                                                                -> null
+	}
+
+	private fun nullableEquality(expression: BinaryExpression, contextualFloat: Boolean): ValueType? {
+		val leftHint = equalityHint(expression.left)
+		val rightHint = equalityHint(expression.right)
+		val context = (leftHint as? CNullable) ?: (rightHint as? CNullable)
+		if (context == null && expression.left !is NullLiteral && expression.right !is NullLiteral) return null
+		val left = typeOf(expression.left, if (expression.left is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
+		val right = typeOf(expression.right, if (expression.right is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
+		val wrapper = left as? CNullable ?: right as? CNullable
+		if (wrapper == null) throw SemanticErrors.nullComparison("A null comparison requires a typed nullable operand", expression.span)
+		val payload = wrapper.payload
+		if (!wrapper.accepts(left) || !wrapper.accepts(right) || payload is CArray) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		model.nullableComparisons[expression] = payload
+		return if (completion(expression).canContinue) ValueType.BOOL else ValueType.NEVER
 	}
 
 	companion object {

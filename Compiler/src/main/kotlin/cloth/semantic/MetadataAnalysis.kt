@@ -121,7 +121,7 @@ internal class MetadataAnalysis(
 					is ProviderResult.TypeMetadata     -> result.receiverType
 					is ProviderResult.MetadataProperty -> {
 						if (receiver != null && !result.query.accepts(receiver)) throw SemanticErrors.metadata(receiver, value.name, result.query.requirement)
-						if (result.query == MetadataQuery.ELEMENT) (receiver as? CArray)?.element else null
+						if (result.query == MetadataQuery.ELEMENT && receiver != null) (result.query.subject(receiver) as? CArray)?.element else null
 					}
 
 					else                               -> null
@@ -151,6 +151,18 @@ internal class MetadataAnalysis(
 
 			is UnaryExpression          -> {
 				expression(value.operand); null
+			}
+
+			is ElvisExpression          -> {
+				val left = expression(value.left)
+				val before = snapshot()
+				val right = expression(value.fallback)
+				if (value.left is NullLiteral) right else {
+					val continuing = mutableListOf(before)
+					if (flow.of(value.fallback).canContinue) continuing.add(snapshot())
+					merge(continuing)
+					left.takeIf { !flow.of(value.fallback).canContinue || left == right }
+				}
 			}
 
 			is BinaryExpression         -> {

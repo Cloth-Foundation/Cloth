@@ -25,10 +25,11 @@ data class FunctionDeclaration(
 	override val span get() = (visibility ?: keyword).span.through(body.span)
 }
 
-data class ParameterDeclaration(val type: TypeReference, val name: Token, val finalKeyword: Token? = null) {
+data class ParameterDeclaration(val type: TypeReference, val name: Token, val finalKeyword: Token? = null, val optKeyword: Token? = null, val defaultDelimiter: Token? = null, val defaultValue: Expression? = null) {
 
 	val mutable get() = finalKeyword == null
-	val span get() = (finalKeyword?.span ?: type.span).through(name.span)
+	val optional get() = optKeyword != null
+	val span get() = (optKeyword?.span ?: finalKeyword?.span ?: type.span).through(defaultValue?.span ?: name.span)
 }
 
 sealed interface FunctionBody {

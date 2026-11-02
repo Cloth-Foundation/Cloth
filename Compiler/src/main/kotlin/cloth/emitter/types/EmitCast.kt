@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.data.CFloat
 import cloth.data.CInteger
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
@@ -38,6 +39,15 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 	fun emit(expression: CastExpression, value: LLVMValueRef): LLVMValueRef {
 		val source = semantics.typeOf(expression.operand)
 		val target = semantics.typeOf(expression)
+		if (target is CNullable) {
+			val nullable = EmitNullable(context, builder, abi.layout)
+			return if (source is CNullable) nullable.map(value, types.value(target)) { payload -> convert(expression, payload, source.payload, target.payload) }
+			else nullable.wrap(convert(expression, value, source, target.payload), target)
+		}
+		return convert(expression, value, source, target)
+	}
+
+	private fun convert(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef {
 		if (source == target) return value
 		if (target.floating) return toFloating(value, source, target)
 		val integerType = types.value(target)

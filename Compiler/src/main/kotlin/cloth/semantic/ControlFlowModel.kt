@@ -54,21 +54,22 @@ class ControlFlowModel {
 
 	fun of(expression: Expression): ControlFlow = expressions.getOrPut(expression) {
 		when (expression) {
-			is ResultListExpression                                                                                                 -> expression.values.fold(ControlFlow.CONTINUE) { flow, value -> flow.then(of(value)) }
-			is TypeReceiverExpression                                                                                               -> ControlFlow.CONTINUE
-			is ProviderAccessExpression                                                                                             -> of(expression.receiver)
-			is StateCallExpression                                                                                                  -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }
+			is ResultListExpression                                                                                                                 -> expression.values.fold(ControlFlow.CONTINUE) { flow, value -> flow.then(of(value)) }
+			is TypeReceiverExpression                                                                                                               -> ControlFlow.CONTINUE
+			is ProviderAccessExpression                                                                                                             -> of(expression.receiver)
+			is StateCallExpression                                                                                                                  -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }
 			// Declaring a deferred block executes none of its statements. Its returns
 			// belong to a separate contract and never complete the enclosing function.
-			is FunctionBlockExpression                                                                                              -> ControlFlow.CONTINUE
-			is ArrayLiteral                                                                                                         -> expression.elements.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
-			is IndexExpression                                                                                                      -> of(expression.array).then(of(expression.index))
-			is UnaryExpression                                                                                                      -> of(expression.operand)
-			is CastExpression                                                                                                       -> of(expression.operand)
-			is TypeCheckExpression                                                                                                  -> of(expression.operand)
-			is CallExpression                                                                                                       -> expression.arguments.fold(ControlFlow.CONTINUE) { flow, argument -> flow.then(of(argument)) }
-			is InterpolatedString                                                                                                   -> expression.parts.fold(ControlFlow.CONTINUE) { flow, part -> flow.then(of(part)) }
-			is BinaryExpression                                                                                                     -> {
+			is FunctionBlockExpression                                                                                                              -> ControlFlow.CONTINUE
+			is ArrayLiteral                                                                                                                         -> expression.elements.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
+			is IndexExpression                                                                                                                      -> of(expression.array).then(of(expression.index))
+			is UnaryExpression                                                                                                                      -> of(expression.operand)
+			is CastExpression                                                                                                                       -> of(expression.operand)
+			is ElvisExpression                                                                                                                      -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.CONTINUE.or(of(expression.fallback)))
+			is TypeCheckExpression                                                                                                                  -> of(expression.operand)
+			is CallExpression                                                                                                                       -> expression.arguments.fold(ControlFlow.CONTINUE) { flow, argument -> flow.then(of(argument)) }
+			is InterpolatedString                                                                                                                   -> expression.parts.fold(ControlFlow.CONTINUE) { flow, part -> flow.then(of(part)) }
+			is BinaryExpression                                                                                                                     -> {
 				val left = of(expression.left)
 				val right = of(expression.right)
 				when (expression.operator.lexeme) {
@@ -84,7 +85,7 @@ class ControlFlowModel {
 				}
 			}
 
-			is IfExpression                                                                                                         -> {
+			is IfExpression                                                                                                                         -> {
 				var remaining = ControlFlow.CONTINUE
 				var result = ControlFlow.NONE
 				for (branch in expression.branches) {
@@ -103,8 +104,8 @@ class ControlFlowModel {
 				result.or(remaining.then(expression.otherwise?.let { of(it) } ?: ControlFlow.CONTINUE))
 			}
 
-			is NameExpression, is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> ControlFlow.CONTINUE
-			else                                                                                                                    -> throw InternalErrors.invariant("Unsupported expression during flow analysis: $expression")
+			is NullLiteral, is NameExpression, is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> ControlFlow.CONTINUE
+			else                                                                                                                                    -> throw InternalErrors.invariant("Unsupported expression during flow analysis: $expression")
 		}
 	}
 

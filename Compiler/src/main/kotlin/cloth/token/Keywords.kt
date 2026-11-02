@@ -15,6 +15,7 @@ enum class Keywords(val keyword: String? = null) {
 	NEW,
 	DELETE,
 	FINAL,
+	OPT,
 
 	CLASS,
 	STRUCT,

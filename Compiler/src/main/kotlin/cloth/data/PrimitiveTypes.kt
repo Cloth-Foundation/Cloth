@@ -129,6 +129,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	}
 
 	override val buffered: Boolean get() = true
+	override val containsNullability: Boolean get() = element.containsNullability
 	override val arrayDimensions: List<BigInteger?> get() = listOf(size) + element.arrayDimensions
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = super.providers(target) + mapOf(CompilerDataProviders.SIZE to ProviderResult.ArraySize(this, CUSize(target.sizeBits)))
 

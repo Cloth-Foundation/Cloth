@@ -24,7 +24,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				val prepared = if (plan.kind == ReceptionKind.POSITIONAL) {
 					val slots = expressionEmitter.takeResults(checkNotNull(value), plan.results)
 					plan.slots.map { slot ->
-						if (slot.target is ReceivingTarget.Named) expressionEmitter.transferArrayValue(slots[slot.sourceIndex], slot.type)
+						if (slot.target is ReceivingTarget.Named) expressionEmitter.transferArrayValue(expressionEmitter.adaptValue(slots[slot.sourceIndex], plan.results.values[slot.sourceIndex], slot.type), slot.type)
 						else {
 							expressionEmitter.validateDiscardedResult(slots[slot.sourceIndex], slot.type); null
 						}
@@ -32,7 +32,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				} else null
 				var stored = false
 				for ((index, slot) in plan.slots.withIndex()) if (slot.target is ReceivingTarget.Named) {
-					val snapshot = if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferArrayValue(checkNotNull(value), slot.type)
+					val snapshot = if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferArrayValue(expressionEmitter.adaptValue(checkNotNull(value), plan.results.values.single(), slot.type), slot.type)
 					bindings.declare(symbols?.get(index) ?: slot.target.token.lexeme, slot.target.token.lexeme, slot.type, snapshot)
 					stored = true
 				}
@@ -44,7 +44,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				if (statement.initializer is FunctionBlockExpression) return null
 				val value = expressionEmitter.emit(statement.initializer)
 				if (expressionEmitter.terminated()) return null
-				val snapshot = expressionEmitter.transferArrayValue(checkNotNull(value), semantics.typeOf(statement))
+				val snapshot = expressionEmitter.transferArrayValue(expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.initializer), semantics.typeOf(statement)), semantics.typeOf(statement))
 				bindings.declare(functions?.declarations?.symbolOf(statement) ?: statement.name.lexeme, statement.name.lexeme, semantics.typeOf(statement), snapshot)
 				value
 			}
@@ -53,7 +53,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				val value = expressionEmitter.emit(statement.value)
 				if (expressionEmitter.terminated()) return null
 				val target = functions?.declarations?.targetOf(statement) ?: statement.name.lexeme
-				bindings.assign(target, expressionEmitter.transferBindingAssignment(target, checkNotNull(value), semantics.typeOf(statement)))
+				bindings.assign(target, expressionEmitter.transferBindingAssignment(target, expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.value), semantics.typeOf(statement)), semantics.typeOf(statement)))
 				value
 			}
 
@@ -66,13 +66,13 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 				val prepared = if (plan.kind == ReceptionKind.POSITIONAL) {
 					val slots = expressionEmitter.takeResults(checkNotNull(value), plan.results)
 					plan.slots.mapIndexed { index, slot ->
-						if (slot.target is ReceivingTarget.Discard) null else expressionEmitter.transferBindingAssignment(targets?.get(index) ?: slot.target.token.lexeme, slots[slot.sourceIndex], slot.type)
+						if (slot.target is ReceivingTarget.Discard) null else expressionEmitter.transferBindingAssignment(targets?.get(index) ?: slot.target.token.lexeme, expressionEmitter.adaptValue(slots[slot.sourceIndex], plan.results.values[slot.sourceIndex], slot.type), slot.type)
 					}
 				} else null
 				var stored = false
 				for ((index, slot) in plan.slots.withIndex()) if (slot.target is ReceivingTarget.Named) {
 					val target = targets?.get(index) ?: slot.target.token.lexeme
-					bindings.assign(target, if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferBindingAssignment(target, checkNotNull(value), slot.type))
+					bindings.assign(target, if (prepared != null) checkNotNull(prepared[index]) else expressionEmitter.transferBindingAssignment(target, expressionEmitter.adaptValue(checkNotNull(value), plan.results.values.single(), slot.type), slot.type))
 					stored = true
 				}
 				if (stored && plan.kind == ReceptionKind.BROADCAST) value else null
@@ -80,7 +80,8 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 
 			is UpdateStatement            -> {
 				val value = expressionEmitter.emitUpdate(statement, semantics.typeOf(statement))
-				bindings.assign(functions?.declarations?.targetOf(statement) ?: statement.name.lexeme, value)
+				val stored = semantics.updatePayloads[statement]?.let { expressionEmitter.adaptValue(value, it.payload, it) } ?: value
+				bindings.assign(functions?.declarations?.targetOf(statement) ?: statement.name.lexeme, stored)
 				value
 			}
 

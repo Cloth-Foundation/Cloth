@@ -44,6 +44,13 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		for (function in functions) {
 			val resolver = BodyResolver(model)
 			val scope = model.scopeOf(function.declaration)
+			val defaultScope = LexicalScope(fileScope)
+			for ((index, parameter) in function.parameters.withIndex()) {
+				parameter.declaration.defaultValue?.let { fallback ->
+					BodyResolver(model, defaultContext = true, unavailable = function.parameters.drop(index).map { it.name.lexeme }.toSet()).expression(fallback, defaultScope)
+				}
+				defaultScope.declare(parameter)
+			}
 			when (val body = function.declaration.body) {
 				is BlockBody      -> {
 					model.blockScopes[body] = scope
@@ -56,12 +63,16 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		return model
 	}
 
-	private class BodyResolver(private val model: DeclarationModel) {
+	private class BodyResolver(private val model: DeclarationModel, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
 
-		private fun lookup(name: Token, scope: LexicalScope): Symbol = scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) } ?: throw SemanticErrors.unknownName(name)
+		private fun lookup(name: Token, scope: LexicalScope): Symbol {
+			if (name.lexeme in unavailable && scope.lookup(name.lexeme) !is LocalSymbol && scope.lookup(name.lexeme) !is GroupLocalSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
+			return scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) } ?: throw SemanticErrors.unknownName(name)
+		}
 
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
 			val symbol = lookup(name, scope)
+			if (defaultContext && symbol is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameters are read-only in defaults", name.span)
 			if (symbol !is BindingSymbol) throw SemanticErrors.bindingRequired(name, symbol.name.takeUnless { symbol is BuiltinGroupSymbol })
 			if (symbol is LocalSymbol && symbol.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.blockAssignment(name, symbol.name)
 			if (!symbol.mutable) {
@@ -108,57 +119,70 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 				is ElementAssignmentStatement -> {
 					expression(statement.target, scope)
+					var root: Expression = statement.target.array
+					while (root is IndexExpression) root = root.array
+					if (defaultContext && root is NameExpression && model.symbolOf(root) is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
 					expression(statement.value, scope)
 				}
 
 				is UpdateStatement            -> model.updates[statement] = assignmentTarget(statement.name, scope)
 				is ExpressionStatement        -> expression(statement.expression, scope)
-				is ReturnStatement            -> statement.value?.let { expression(it, scope) }
+				is ReturnStatement            -> {
+					if (defaultContext && !allowDefaultReturn) throw SemanticErrors.parameterDefault("A return cannot escape from a parameter default", statement.span)
+					statement.value?.let { expression(it, scope) }
+				}
+
 				else                          -> throw InternalErrors.invariant("Unsupported statement during name resolution: $statement")
 			}
 		}
 
 		fun expression(expression: Expression, scope: LexicalScope) {
 			when (expression) {
-				is ResultListExpression                                                                              -> expression.values.forEach { expression(it, scope) }
-				is TypeReceiverExpression                                                                            -> Unit
-				is ProviderAccessExpression                                                                          -> expression(expression.receiver, scope)
-				is StateCallExpression                                                                               -> {
+				is ResultListExpression                                                                                              -> expression.values.forEach { expression(it, scope) }
+				is TypeReceiverExpression                                                                                            -> Unit
+				is ProviderAccessExpression                                                                                          -> expression(expression.receiver, scope)
+				is StateCallExpression                                                                                               -> {
 					expression(expression.receiver, scope)
 					expression.arguments.forEach { expression(it, scope) }
 				}
 
-				is FunctionBlockExpression                                                                           -> {
+				is FunctionBlockExpression                                                                                           -> {
 					if (expression.declaration.returnType == null) throw SemanticErrors.blockReturnType(expression.declaration.name)
 					val body = expression.declaration.body as BlockBody
 					val child = LexicalScope(scope)
 					model.blockScopes[body] = child
-					statements(body.statements, child)
+					BodyResolver(model, defaultContext, unavailable, allowDefaultReturn = true).statements(body.statements, child)
 				}
 
-				is ArrayLiteral                                                                                      -> expression.elements.forEach { expression(it, scope) }
-				is IndexExpression                                                                                   -> {
+				is ArrayLiteral                                                                                                      -> expression.elements.forEach { expression(it, scope) }
+				is IndexExpression                                                                                                   -> {
 					expression(expression.array, scope); expression(expression.index, scope)
 				}
 
-				is NameExpression                                                                                    -> model.names[expression] = lookup(expression.name, scope)
-				is CallExpression                                                                                    -> {
+				is NameExpression                                                                                                    -> model.names[expression] = lookup(expression.name, scope)
+				is CallExpression                                                                                                    -> {
+					ArgumentBinder.validate(expression.suppliedArguments)
 					val symbol = lookup(expression.name, scope)
 					if (symbol !is CallableGroupSymbol) throw SemanticErrors.notCallable(expression.name, symbol.name)
 					model.calls[expression] = symbol
 					expression.arguments.forEach { expression(it, scope) }
 				}
 
-				is UnaryExpression                                                                                   -> expression(expression.operand, scope)
-				is BinaryExpression                                                                                  -> {
+				is UnaryExpression                                                                                                   -> expression(expression.operand, scope)
+				is ElvisExpression                                                                                                   -> {
+					expression(expression.left, scope)
+					expression(expression.fallback, scope)
+				}
+
+				is BinaryExpression                                                                                                  -> {
 					expression(expression.left, scope)
 					expression(expression.right, scope)
 				}
 
-				is CastExpression                                                                                    -> expression(expression.operand, scope)
-				is TypeCheckExpression                                                                               -> expression(expression.operand, scope)
-				is InterpolatedString                                                                                -> expression.parts.forEach { expression(it, scope) }
-				is IfExpression                                                                                      -> {
+				is CastExpression                                                                                                    -> expression(expression.operand, scope)
+				is TypeCheckExpression                                                                                               -> expression(expression.operand, scope)
+				is InterpolatedString                                                                                                -> expression.parts.forEach { expression(it, scope) }
+				is IfExpression                                                                                                      -> {
 					for (branch in expression.branches) {
 						expression(branch.condition, scope)
 						val child = LexicalScope(scope)
@@ -172,8 +196,8 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					}
 				}
 
-				is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Unit
-				else                                                                                                 -> throw InternalErrors.invariant("Unsupported expression during name resolution: $expression")
+				is NullLiteral, is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Unit
+				else                                                                                                                 -> throw InternalErrors.invariant("Unsupported expression during name resolution: $expression")
 			}
 		}
 	}

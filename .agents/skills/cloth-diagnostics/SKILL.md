@@ -1,0 +1,48 @@
+---
+name: cloth-diagnostics
+description: Design or extend Cloth compiler diagnostics, stable error codes, structured source labels, span propagation, CLI failure statuses, or fail-fast runtime error paths.
+---
+
+# Cloth diagnostics
+
+Read [confirmed diagnostic semantics](references/semantics.md). Cloth stops on
+the first detected error. Never add recovery, diagnostic accumulation, or a
+multi-error reporter. Multiple labels may explain that same error.
+
+## Development rules and implemented boundaries
+
+- Use shared structured diagnostic definitions with stable codes and original
+  source spans. Preserve intrinsic errors during overload probing rather than
+  replacing them with an unrelated generic no-match diagnostic.
+- Keep source snapshots with tokens/nodes. Internal positions are one-based UTF-16
+  with exclusive ends; Yvette ranges are zero-based. Preserve CRLF, EOF/empty
+  final lines, interpolation spans, and four-column tab stops.
+- Pass facts and locations to diagnostic definitions instead of assembling raw
+  JVM exception messages at checks. Declaration labels help explain duplicate,
+  reassignment and immutable-binding errors without implying separate errors.
+- Diagnose unsupported source behavior in the earliest appropriate checker before
+  output/linker work. Existing stage-specific APIs still retain their boundaries;
+  target-dependent checks may need target selection before validation.
+- JVM diagnostic rendering and generated native runtime errors are separate paths.
+  Expected compiler failures return 1; internal failures return 2. `--debug` may
+  reveal retained causes. Terminal theme/encoding detection chooses Unicode or
+  readable ASCII drawing. Existing wide/combining display-width limits remain.
+- Runtime guards preserve once-only operand effects, source locations and the
+  first executed failure. Do not print ordinary PEC completion after fatal exit.
+
+## Source and verification
+
+Start with [ClothDiagnostic](../../../Compiler/src/main/kotlin/cloth/diagnostics/ClothDiagnostic.kt),
+[DiagnosticCode](../../../Compiler/src/main/kotlin/cloth/diagnostics/DiagnosticCode.kt),
+[DiagnosticReporter](../../../Compiler/src/main/kotlin/cloth/diagnostics/DiagnosticReporter.kt),
+[SourceFile](../../../Compiler/src/main/kotlin/cloth/diagnostics/SourceFile.kt),
+[Entry](../../../Compiler/src/main/kotlin/cloth/Entry.kt), and
+[EmitRuntimeError](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitRuntimeError.kt).
+
+Use `DiagnosticsTest` and the relevant feature's CLI/error tests. Check located
+codes, labels, first-error termination, encoding fallback, debug causes, and
+whether failure happens before outputs are created. Runtime cases must execute
+the guard to verify effect/failure order. See
+[development history](../cloth-language/references/development.md#earlier-milestone-snapshots)
+for recorded renderer integration evidence; stable passing historical tests do
+not establish a new feature's diagnostic coverage.

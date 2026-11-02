@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CArray
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.target.TargetLayout
@@ -17,6 +18,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 
 	private val bindings = mutableMapOf<Any, Storage>()
 	private val types = LLVMTypes(context, target)
+	private val nullable = EmitNullable(context, builder, target)
 
 	/** Restore lexical names after a branch; stores to enclosing bindings persist. */
 	fun <T> withScope(action: () -> T): T {
@@ -54,12 +56,17 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	fun read(key: Any): LLVMValueRef {
 		val storage = bindings.getValue(key)
 		val value = LLVMBuildLoad2(builder, types.storage(storage.type), storage.address, "${storage.name}_value")
+		if (storage.type is CNullable) return nullable.load(value, storage.type)
 		return if (storage.type == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(storage.type), "${storage.name}_bool") else value
 	}
 
 	fun assign(key: Any, value: LLVMValueRef) {
 		val storage = bindings.getValue(key)
-		val storedValue = if (storage.type == ValueType.BOOL) LLVMBuildZExt(builder, value, types.storage(storage.type), "${storage.name}_byte") else value
+		val storedValue = when {
+			storage.type is CNullable      -> nullable.store(value, storage.type)
+			storage.type == ValueType.BOOL -> LLVMBuildZExt(builder, value, types.storage(storage.type), "${storage.name}_byte")
+			else                           -> value
+		}
 		LLVMBuildStore(builder, storedValue, storage.address)
 	}
 }
