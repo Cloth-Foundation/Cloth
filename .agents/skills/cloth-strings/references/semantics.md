@@ -32,11 +32,16 @@ the parent skill for current implementation boundaries and source/test routing.
   type with a non-overridable implementation, and on future classes with
   overridable behavior. This requirement does not authorize implementing it now
   or settle the general member/override model, its relationship to interpolation,
-  or array formatting syntax. Track the current unsupported-array
-  interpolation guard in [the formatting TODO](../../../../todo/native-formatting-guards.md).
+  or array formatting syntax. The historical unsupported-array guard is recorded
+  in [the formatting TODO](../../../../todo/native-formatting-guards.md).
 - The user authorized the temporary unsupported-array interpolation diagnostic
   while deferring `toString()` and array text formatting. This is a compiler
   capability guard, not a permanent ban on array interpolation in the language.
+- On 2026-11-02 the user confirmed recursive contents for array interpolation,
+  printing and `::str`, superseding that temporary restriction for supported
+  arrays. Read [the output contract](../../cloth-output/references/semantics.md#recursive-array-text)
+  for formatting and once-only evaluation. `::addr`, class formatting and the
+  proposed `toString()` API remain deferred.
 - The user selected string definitions after character support. Explicit
   `def<string>` and inferred declarations such as `def hello := "Hello World!"`
   follow the ordinary fixed-type binding and `=` / `:=` rules shown in

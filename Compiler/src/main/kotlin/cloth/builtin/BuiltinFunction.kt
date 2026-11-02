@@ -52,7 +52,7 @@ internal sealed interface BuiltinParameter {
 			if (actual == ValueType.NEVER) return BuiltinArgument(actual, ValueType.STRING)
 			if (actual == ValueType.Null) return BuiltinArgument(actual, ValueType.STRING)
 			val payload = if (actual is CNullable) actual.payload else actual
-			val provider = payload.provider("str", target) ?: return null
+			val provider = payload.provider(CompilerDataProviders.STR.toString(), target) ?: return null
 			if (ProviderReceiverForm.VALUE !in provider.receiverForms || provider.type != ValueType.STRING) return null
 			return BuiltinArgument(actual, ValueType.STRING, provider)
 		}
@@ -61,10 +61,10 @@ internal sealed interface BuiltinParameter {
 
 internal data class BuiltinArgument(val sourceType: ValueType, val parameterType: ValueType, val text: ProviderResult<*>? = null) {
 
-	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = when {
-		sourceType == ValueType.Null -> context.nullText()
-		sourceType is CNullable      -> context.nullableText(value, sourceType) { payload -> checkNotNull(text).emit(context.providers, ProviderReceiver.Value(sourceType.payload, payload)) }
-		else                         -> text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
+	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = when (sourceType) {
+		ValueType.Null -> context.nullText()
+		is CNullable   -> context.nullableText(value, sourceType) { payload -> checkNotNull(text).emit(context.providers, ProviderReceiver.Value(sourceType.payload, payload)) }
+		else           -> text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
 	}
 }
 

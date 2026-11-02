@@ -43,4 +43,4 @@ fn<string, int> forwarded(string name, int age) {
     return nameAndAge(name, age)
 }
 
-fn<void> myFunc(opt string name ?: "Jack", opt string surname ?: "Smith") = println(#"{name} {surname}")
+fn<void> myFunc(opt<string> name ?: "Jack", opt<string> surname ?: "Smith") = println(#"{name} {surname}")

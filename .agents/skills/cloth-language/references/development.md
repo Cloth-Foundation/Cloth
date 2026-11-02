@@ -7,6 +7,218 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### For-loop parsing: Stage 1 (2026-11-02)
+
+Implemented the confirmed range/foreach header syntax, located loop AST,
+original stepper operators and braced/single-statement bodies. Range operators
+remain loop-source delimiters rather than ordinary expression values. Stage 1
+rejects malformed/legacy headers at the first error and deliberately gates
+well-formed loops with C3067 before downstream semantic/execution/output work.
+
+`ForParsingTest` (15 tests) and `ForStageGateTest` (5 tests), together with
+`SemicolonsTest`, `FunctionParsingTest`, `DiagnosticsTest` and `ConditionalsTest`,
+passed all 71 focused tests. The subsequent full compiler suite passed **833
+tests**, with no failures, errors or skips. Commands, source ownership, span and
+CLI/output-creation evidence are in the
+[stage record](../../cloth-control-flow/references/for-implementation.md).
+
+Parsing is target-independent and verification ran on Windows. No loop IR,
+native loop execution, or new native Linux/macOS coverage is claimed. Stages 2-5
+remain pending; parsed loop syntax does not establish scopes, inference, numeric
+guards, foreach snapshot storage or repeated-flow correctness. Skill metadata and
+links are checked directly because both inspected Python runtimes lack PyYAML
+and cannot run the dedicated validator.
+
+### Semicolon placement correction (2026-11-02)
+
+The user clarified that optional semicolons follow valid terminator positions,
+with `fn main() { ... };` explicitly rejected. The earlier broad boundary
+acceptance below is superseded by this correction and the current
+[semicolon skill](../../cloth-semicolons/SKILL.md).
+
+Parser now accepts one optional terminator only for expression-bodied functions,
+rejects semicolons after brace-bodied functions and standalone file-level empty
+statements, and preserves body-level optional terminators. Conditional lookahead
+crosses newlines only: a semicolon before `else` now fails instead of silently
+joining the branches. Bindings initialized by deferred blocks or conditional
+expressions still accept terminators. Existing empty statements inside function
+bodies remain tolerated, without changing final branch values or source spans.
+
+The user's array-printing source now fails at its final semicolon; removing that
+character produces verified LLVM IR. `SemicolonsTest` adds exact-location
+regressions for the example, function boundaries across comments/newlines,
+file-level empty statements, expression-bodied conditional functions, and
+semicolons splitting `else` chains. The native program with terminated returns,
+bindings, calls and updates still executes with exit code 11 on Windows x64.
+
+The focused command recorded below passed all 81 tests across the same five
+suites, including twelve semicolon tests, with no failures, errors or skips.
+No native Linux/macOS or other architecture execution was run. Skill validation
+uses direct metadata/local-link checks because bundled Python lacks PyYAML.
+
+### Optional semicolons (2026-11-02)
+
+The user confirmed optional semicolons, including `return 10;`, unless a syntax
+explicitly requires them. The [semicolon skill](../../cloth-semicolons/SKILL.md)
+owns the contract, parser invariants and verification routing.
+
+Parser accepts semicolons alongside newline separators in source units and body
+fragments, including empty/repeated terminators, same-line declarations and
+statements, bare returns, and conditional-chain separators before `else`.
+ExpressionParser leaves the semicolon for its enclosing grammar rather than
+rejecting it as an unsupported operator. Lists, operands and headers retain
+their grammar checks; the lexer does not discard semicolons. Source spans and
+final branch values remain intact, without empty AST statements. Missing-separator
+help now mentions `;`, retaining the existing diagnostic code and first-error flow.
+
+Verification: `./gradlew.bat :Compiler:test --tests cloth.SemicolonsTest --tests
+cloth.FunctionParsingTest --tests cloth.FunctionReturnsTest --tests
+cloth.DiagnosticsTest --tests cloth.ConditionalsTest --offline --console=plain
+--no-daemon` passed all 79 tests across five suites (no failures, errors or skips).
+Ten new cases cover acceptance, malformed syntax, spans, results, branch values,
+snippets, first-error behavior, literals/comments, verified IR and a native
+Windows x64 executable that returns 11. Linux/macOS native execution and other
+architectures were not run for this parser change.
+The skill validator could not run because bundled Python lacks PyYAML; direct
+metadata and local-link checks passed, as did git diff --check.
+
+
+### Recursive array text (2026-11-02)
+
+The user selected recursive contents for print, interpolation and `::str`, leaving
+`::addr` deferred. The [output skill](../../cloth-output/SKILL.md#recursive-array-text)
+and [confirmed contract](../../cloth-output/references/semantics.md#recursive-array-text)
+own the feature; array, string and compiler-data skills route to them.
+
+`CArray.providers` registers a value-only `ProviderResult.ArrayText` when the
+element supports text conversion, retaining the recursive element recipe.
+`ProviderEmissionContext` delegates to `EmitArrayText` through `EmitString`;
+print built-ins need no array-specific branch. Interpolation now uses the same
+provider capability and emission path instead of a scalar whitelist.
+
+Formatting uses brackets and comma-space separators, including `[]` for empty
+arrays and `[[], []]` for empty rows. Scalar/metadata leaf providers retain their
+existing text, with raw string/character contents including Unicode and NULs.
+The implementation measures checked target-sized byte counts, then fills a single
+buffer directly across nested rows. Per-leaf stack checkpoints bound temporary
+numeric/character scratch. Both passes consume the already evaluated receiver;
+normal buffered return handling preserves results before frame cleanup.
+
+`ArrayTextTest` adds eight tests covering dynamic/empty/nested arrays, all supported
+leaf types, shared print/interpolation/provider output, once-only evaluation,
+captured writes, early returns, recursive returned strings, a 16,384-element
+matrix, native Windows x86 execution and verified IR/object output on all nine
+supported ABI profiles. `StringInterpolationTest` replaces the old array rejection
+expectations with acceptance and native snippet coverage, retaining first-error
+checks for malformed arrays. Provider/output suites reflect the new capability;
+`BufferCountsTest` adds 32/64-bit helper verification and controlled measurement
+overflow probes that fail before reading synthetic string payloads.
+
+Verification:
+
+- Final `./gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+  ran 801 tests across 62 suites: 800 passed, one failed, with no errors or skips.
+  The sole failure was the pre-existing `CompilerSettingsTest` default-source
+  mismatch: the working-tree setting uses `examples/Arr.co`, while the test
+  expects `examples/MultiReturns.co`. This unrelated setting was preserved.
+  All array, provider, interpolation, output, nullable and buffer-lifetime suites
+  passed, including the updated provider-capability expectation and native
+  snippet cases.
+- The user then clarified that the no-argument example source is only a local
+  development convenience and will not be part of the production compiler.
+  Removed the filename assertion from `CompilerSettingsTest`, retaining explicit
+  source/output and link-option coverage. A focused rerun with `--tests
+  cloth.CompilerSettingsTest` passed all three tests. The
+  [toolchain skill](../../cloth-toolchains/SKILL.md) records that this filename
+  must not be treated as a tested compiler contract.
+- All eight `ArrayTextTest` cases and all eight `BufferCountsTest` cases passed.
+  Native formatting executed on Windows x64/x86; foreign target checks verify
+  IR and object emission, without claiming native Linux/macOS or AArch64 execution.
+- `./gradlew.bat :Compiler:run --args="examples/ArrayPrinting.co tmp/array-printing-review"
+  --offline --console=plain --no-daemon` compiled the maintained example. Running
+  it printed the expected five lines and exited with PEC 0; the temporary
+  executable was removed.
+- The bundled skill validator cannot run because its Python lacks PyYAML.
+  Direct metadata and local-link validation supplies the fallback; whitespace
+  checks use `git diff --check`.
+
+### Optional syntax final review (2026-11-02)
+
+The final review found one parameter source-span defect: a parenthesized default
+such as `opt<int> value ?: (1)` omitted its closing parenthesis from the parameter
+span because the expression AST discards grouping delimiters. A new regression
+reproduced this failure before the fix. Parser now captures the parameter span
+through the last consumed token; the underlying type/default expression and all
+omission, evaluation, overload and runtime behavior are unchanged. The
+[optional skill](../../cloth-optional-arguments/SKILL.md) records this invariant.
+
+Additional tests cover comments between modifier/wrapper/type tokens, comparisons
+inside defaults, names beginning with reserved-word prefixes, EOF inside wrappers
+or defaults, direct metadata/static type identity, and writes to elements of a
+final optional array. Parenthesized integer, nested floating and helper-call
+defaults retain their full parameter spans. Earlier malformed wrapper, modifier,
+nullable/array, signature and runtime regressions remain in place.
+
+The scan covered all 66 `.co` examples and `.agents` Markdown files: no obsolete
+unbracketed optional declarations remain. One obsolete declaration sample was
+removed from an older history entry while retaining its historical verification
+results. Legacy forms in compiler tests are deliberate rejection cases; malformed
+wrapper examples in semantic guidance are explicitly documented as rejected.
+
+Verification:
+
+- `./gradlew.bat :Compiler:test --tests 'cloth.OptionalArguments*' --tests
+  cloth.FunctionParsingTest --tests cloth.DiagnosticsTest --offline
+  --console=plain --no-daemon` passed all 58 focused tests after the span fix.
+- `./gradlew.bat :Compiler:test --offline --console=plain --no-daemon` passed
+  all 793 tests, including 34 optional-argument tests, with no failures,
+  errors or skips. Native optional cases execute on Windows x64/x86; shared
+  fixtures verify LLVM IR across the nine supported profiles. This does not
+  establish native Linux/macOS execution.
+- Skill metadata/scaffold checks, local documentation file links, old-syntax scans
+  and `git diff --check` passed. The bundled validator was attempted but lacks
+  PyYAML; direct checks supplied the fallback. Temporary review scripts were
+  removed before delivery.
+
+### Optional parameter syntax: final opt<T> (2026-11-02)
+
+The user selected `opt<T>` / `final opt<T>` declarations while preserving the
+existing omission and default semantics. Parser order is now optional `final`,
+optional `opt<...>` around the complete ordinary type, parameter name, then the
+required `?:` fallback for optional parameters. Numeric widths, unsignedness,
+arrays and nullability stay inside the brackets. The parameter AST retains the
+underlying T as its TypeReference, with separate wrapper tokens/span and a whole
+span beginning at final when present. Binder, overload ranking, default evaluation
+and native calling conventions are unchanged. This introduces no runtime wrapper
+or new general type; old unbracketed optional declarations are deliberately rejected.
+
+All optional test fixtures, runnable examples and current skill/plan examples
+use the new syntax. The [owning skill](../../cloth-optional-arguments/SKILL.md) and
+[confirmed semantics](../../cloth-optional-arguments/references/semantics.md)
+document modifier order, enclosed types and rejection boundaries. Earlier dated
+entries retain their historical verification results; this migration supersedes
+the prior declaration spelling.
+
+Verification:
+
+- `./gradlew.bat :Compiler:test --tests 'cloth.OptionalArguments*' --tests
+  cloth.FunctionParsingTest --offline --console=plain --no-daemon` passed all
+  45 tests: 30 optional-argument and 15 function-parsing tests.
+- `./gradlew.bat :Compiler:test --offline --console=plain --no-daemon` passed
+  all 789 tests with zero failures, errors or skips.
+- New grammar cases cover nested widths (`opt<float<64>>`), unsigned/nullable and
+  rectangular array types, multiline wrappers, CRLF and exact source spans,
+  malformed/empty/multiple/nested wrappers, missing defaults, misplaced final,
+  rejection of old syntax and rejection outside parameters.
+- Migrated emission fixtures execute on Windows x64/x86 and verify IR across
+  nine target profiles. They retain named evaluation order, nullable null versus
+  omission, recursive/per-call/skipped defaults, array independence, shape checks,
+  returned buffer lifetime, early returns and runtime failure ordering. Foreign
+  IR verification does not establish native Linux/macOS execution.
+- Skill metadata/scaffold checks, local Markdown links and diff whitespace checks
+  passed. The bundled validator was attempted but still lacks PyYAML; direct
+  metadata/scaffold and link checks supplied the fallback.
+
 ### Optional arguments and runtime defaults (2026-11-01)
 
 The user requested implementation of the optional/default plan and explicitly
@@ -18,9 +230,10 @@ there. The [plan](../../../../todo/optional-arguments-plan.md) records ordinary
 function stages 0-4 and final ordinary-function verification as complete while
 retaining future method/state/constructor and foreign ABI decisions separately.
 
-Implementation includes reserved `opt`, canonical `opt final Type name ?:`
-declarations (`final` optional), structured named arguments and a shared
-deterministic candidate binder. Defaults resolve/type-check in declaration scope
+Implementation includes reserved `opt`, optional parameter declarations,
+structured named arguments and a shared deterministic candidate binder. The
+declaration spelling was subsequently migrated as recorded in the 2026-11-02
+syntax entry above. Defaults resolve/type-check in declaration scope
 with read-only earlier parameter views; self/later reads, parameter writes,
 caller/body-local capture and escaping returns fail before emission. Existing
 strict typing and ordinary numeric/payload overload preference precede omission

@@ -10,8 +10,8 @@ import cloth.token.TokenType
 
 class ExpressionParser(val parser: Parser) {
 
-	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false): Expression {
-		var left = parseUnary()
+	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false, stopAtRange: Boolean = false): Expression {
+		var left = parseUnary(stopAtRange)
 
 		while (true) {
 			val operator = parser.peek()
@@ -24,7 +24,10 @@ class ExpressionParser(val parser: Parser) {
 			}
 			if (operator.type != TokenType.Operator) break
 			val kind = Operators.fromCharacter(operator.lexeme)
-			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE, Operators.BRACKET_CLOSE, Operators.COMMA)) break
+			// Only a loop-source caller admits a range boundary. Nested call/array/
+			// parenthesized expressions retain ordinary expression grammar.
+			if (stopAtRange && kind in setOf(Operators.RANGE, Operators.RANGE_INCLUSIVE)) break
+			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE, Operators.BRACKET_CLOSE, Operators.COMMA, Operators.SEMICOLON)) break
 			if (kind == Operators.POINTER_RIGHT) {
 				if (CAST_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -43,7 +46,7 @@ class ExpressionParser(val parser: Parser) {
 				Associativity.LEFT  -> operatorPrecedence.precedence + 1
 				Associativity.RIGHT -> operatorPrecedence.precedence
 			}
-			val right = parseExpression(rightPrecedence)
+			val right = parseExpression(rightPrecedence, stopAtRange = stopAtRange)
 
 			left = if (kind == Operators.ELVIS) ElvisExpression(left, operator, right) else BinaryExpression(left, operator, right)
 		}
@@ -51,12 +54,12 @@ class ExpressionParser(val parser: Parser) {
 		return left
 	}
 
-	fun parseUnary(): Expression {
+	fun parseUnary(stopAtRange: Boolean = false): Expression {
 		val token = parser.peek()
 
 		if (token.type == TokenType.Operator && token.lexeme in setOf("+", "-", "!")) {
 			parser.advance()
-			return UnaryExpression(token, if (token.lexeme == "!") parseUnary() else parseExpression(POWER_PRECEDENCE))
+			return UnaryExpression(token, if (token.lexeme == "!") parseUnary(stopAtRange) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange))
 		}
 
 		var value = parsePrimary()

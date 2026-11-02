@@ -3,7 +3,9 @@
 These user decisions were moved intact from the shared semantics reference.
 Read the [parent skill](../SKILL.md) for current implementation boundaries,
 source ownership and verification. Intended buffered/class behavior remains
-separate from executable scalar support.
+separate from executable scalar support. Optional examples below use the
+2026-11-02 user-selected `opt<T>` / `final opt<T>` spelling; their omission and
+nullable-value behavior is unchanged.
 
 ## Nullable values and optional parameters
 
@@ -27,13 +29,13 @@ separate from executable scalar support.
   `fn<void?> something() { return null }` is invalid. Ordinary void functions
   retain their existing return contract; null is not a void result.
 - The user chose `opt` with a required `?:` fallback for optional parameters,
-  for example `opt string name ?: "Jack"`. A parameter can be both optional and
-  nullable, for example `opt string? name ?: null`.
+  for example `opt<string> name ?: "Jack"`. A parameter can be both optional and
+  nullable, for example `opt<string?> name ?: null`.
 - A parameter fallback applies when its argument is omitted. Explicitly passing
   null supplies a value and does not select that omission fallback; the parameter
   must be nullable to accept it. Optionality does not weaken a non-null type.
 - The user explicitly intends `nameAndAge(25)` to supply age and use the name
-  fallback for `fn<string, int> nameAndAge(opt string name ?: "Jack", int age)`.
+  fallback for `fn<string, int> nameAndAge(opt<string> name ?: "Jack", int age)`.
   Optional parameters may precede required ones. Named arguments such as
   `nameAndAge(name="Mike", age=25)` are intended to select parameters explicitly,
   and the mechanism must be reusable for future methods and constructors.

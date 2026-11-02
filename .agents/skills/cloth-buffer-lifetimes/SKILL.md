@@ -29,6 +29,14 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
 - Keep checked allocation/count arithmetic target-sized. Preserve source failures,
   evaluation order, surviving aliases, and independent arrays. This mechanism
   introduces neither GC, reference counting, nor automatic class destruction.
+- For planned array foreach, preserve the confirmed once-per-entry independent
+  contents/shape snapshot across traversal. Original-source changes must not alter
+  later elements visited; copy elision requires the same independence and lifetime
+  proofs. Each element binding receives a mutable independent value, initialized
+  anew; row writes cannot mutate the snapshot, and saved rows must survive later
+  iterations. Iteration remains unimplemented; read the
+  [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+  before extending iteration cleanup or source transfer.
 
 ## Source and evidence
 

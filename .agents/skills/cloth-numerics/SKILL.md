@@ -9,6 +9,34 @@ Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
 [bindings](../cloth-bindings/SKILL.md) for assignment/update syntax.
 
+Integer and float range syntax is parsed in Stage 1; numeric range typing and
+execution remain deferred behind C3067. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+and [implementation plan](../../../todo/for-loops-plan.md) own their scope.
+Range counters are non-nullable signed/unsigned integers at existing widths,
+usize/isize, or 16/32/64-bit floats. Bool/char/nullable counter types are rejected
+in this slice; nullable endpoint expressions use ordinary proof/fallback rules.
+Foreach element types retain their existing independent support boundaries.
+Ordinary float comparisons and rounding with no snapping or tolerance are
+confirmed, as are finite-only float ranges and exact typed endpoint/counter
+matching. An unchanged explicit/default range update is a runtime error if
+another iteration would run. Endpoint expressions/calls evaluate, validate and
+store their results once per entry, starting endpoint before ending endpoint.
+Descending ranges with explicit decreasing steppers use `>` / `>=`; the default
+remains `+1`, so reversed unstepped ranges are empty. Saved range bounds stay
+fixed while step direction may change freely; leave the loop when a tested
+counter is outside either boundary. Bodies may update the counter; the stepper
+uses its current value after normal body completion, followed by the range test.
+Integer overflow in the header counter update ends traversal after executing
+stepper effects once, without storing a wrapped value. Body and step-expression
+arithmetic retain ordinary wrapping; float non-finite updates retain their errors.
+Loop binding inference is confirmed: infer one fixed type from endpoints or array
+element type with ordinary literal defaults/context and exact typed compatibility;
+the body/stepper cannot supply type context. Loop bindings are local to the
+body/stepper, with endpoints/source resolved in surrounding scope before the new
+binding is introduced. Ordinary arithmetic promotion is not endpoint binding conversion.
+Equal endpoints make an exclusive range empty and an inclusive range a singleton,
+using ordinary comparisons and the existing update/stalled-counter rules.
+
 ## Development rules and current policies
 
 - Preserve signed/unsigned 8/16/32/64-bit integers and 16/32/64-bit floats with

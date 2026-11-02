@@ -29,8 +29,8 @@ the parent skill for current implementation boundaries and source/test routing.
   `string`, and keep ordinary expression typing and literal defaults. This
   is an internal parameter constraint rather than a boxed source type or a
   general implicit conversion to string. Formatting matches interpolation and
-  `::str`, including canonical `typeinfo` text. Array/class value formatting
-  remains deferred; metadata describing arrays is printable now.
+  `::str`, including canonical `typeinfo` text. Array values use the recursive
+  contract below; class value formatting remains deferred.
 - Ordinary lexical lookup takes precedence over built-ins. A local or parameter
   binding shadows a built-in even in call position. A file-level function group
   shadows the entire same-named built-in group; a mismatched call does not fall
@@ -46,3 +46,34 @@ the parent skill for current implementation boundaries and source/test routing.
   terminate through the controlled runtime-error path; already-written bytes
   are not rolled back. Native Windows console/code-page behavior and failures
   delayed until a buffered flush still need separate verification and design.
+
+## Recursive array text
+
+- On 2026-11-02 the user confirmed recursive array contents for printing,
+  interpolation and `::str`, while explicitly leaving `::addr` deferred.
+  This adds array value text independently of unsafe memory handles and the
+  separately proposed `toString()` method.
+- The current formatting policy surrounds each array with `[` and `]` and
+  separates elements with `, `. Empty arrays produce `[]`; nested empty rows
+  produce `[[], []]`. For `values = [[1, 2], [3, 4]]`, `println(values)`,
+  `println(#"{values}")` and `println(values::str)` produce the same line,
+  `[[1, 2], [3, 4]]`. Unsized function signatures use actual runtime lengths.
+- Each element uses its existing value-receiver `str` provider, recursively.
+  Supported leaves are fixed/target integers, floats, bool, char, string and
+  typeinfo. Strings and characters preserve their original contents without
+  added quotes or escaping, including Unicode, NULs, newlines and punctuation.
+  This is readable contents text, not a serialization or round-trip format.
+- `array::str` returns an ordinary string. Array type receivers such as
+  `int[2]::str` are rejected; metadata text such as `int[2]::type::str` retains
+  its canonical type spelling. Arrays gain the capability only when their
+  elements support a string-producing value-receiver `str` provider.
+- Receiver expressions execute once, in the established source order. Internal
+  sizing/filling passes do not reevaluate expressions. A completed conversion
+  preserves its text across later source-array writes and function returns.
+  Early returns suppress conversion and output on that path. Existing array
+  shape/bounds checks and first-error diagnostics remain in force.
+- Byte counts use checked target-sized arithmetic, including brackets and
+  separators; overflow terminates through the controlled runtime-error path
+  before filling or printing. Temporary storage follows existing function-frame
+  rules. Nullable arrays/elements retain their separate unsupported boundary;
+  class formatting and raw memory access are not introduced by this feature.

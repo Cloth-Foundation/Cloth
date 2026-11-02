@@ -74,7 +74,7 @@ the parent skill for current implementation boundaries and source/test routing.
 ## Optional parameters and named calls
 
 Read [confirmed optional-argument semantics](../../cloth-optional-arguments/references/semantics.md)
-for `opt`, omission-only defaults, named/mixed calls, earlier-parameter scope,
+for `opt<T>` / `final opt<T>`, omission-only defaults, named/mixed calls, earlier-parameter scope,
 ordered runtime evaluation and overload ranking. These rules extend the strict
 parameter contracts below.
 

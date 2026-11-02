@@ -59,7 +59,7 @@ class ProviderResultsTest {
 		assertIs<ProviderResult.TypeMetadata>(CInt().provider("type"))
 		assertEquals(setOf(CompilerDataProviders.MIN, CompilerDataProviders.MAX, CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CFloat().providers(target).keys)
 		for (type in listOf(CBool, CChar, CString)) assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), type.providers(target).keys)
-		assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.TYPE), CArray(CInt()).providers(target).keys)
+		assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CArray(CInt()).providers(target).keys)
 		assertEquals(setOf(CompilerDataProviders.TYPE), ValueType.VOID.providers(target).keys)
 		assertTrue(ValueType.NEVER.providers(target).isEmpty())
 		val ast = Parser(Lexer("1").scanTokens()).parseSnippet()

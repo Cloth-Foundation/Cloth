@@ -19,13 +19,14 @@ returned text, interpolation buffers, or nested string arrays; use
   NULs. Equality compares exact contents without Unicode normalization or case
   folding. `+` requires two strings and never converts another value implicitly.
 - Interpolation uses `#"value: {expression}"`. Check holes even in skipped code;
-  evaluate them once, left to right, preserving early returns. Supported scalar
-  formatting shares the compiler data `str` conversion machinery.
+  evaluate them once, left to right, preserving early returns. Formatting resolves
+  value-receiver `str` providers, including recursive array contents; see the
+  [array text contract](../cloth-output/references/semantics.md#recursive-array-text).
 - Current interpolation policy uses `{{`/`}}` for literal braces, ordinary quoted
   escapes in text, no literal text line breaks, and no custom format specifiers
   or raw interpolated strings. Preserve original hole spans through nested lexing.
   These are implementation choices unless separately confirmed.
-- Unsupported array value interpolation must fail with a located capability
+- Unsupported value interpolation must fail with a located capability
   diagnostic before emission/toolchain/output work. Future `toString()` and class
   formatting remain design work. String indexing and content mutation are not
   implemented; do not infer support from arrays or other languages.
@@ -40,7 +41,7 @@ Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
 
-Relevant suites are `CharactersTest`, `StringsTest`, `StringInterpolationTest`,
+Relevant suites are `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
 recursion and balanced cleanup. Read the

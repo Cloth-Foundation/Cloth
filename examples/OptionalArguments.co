@@ -1,24 +1,37 @@
 // Defaults belong to declarations and apply only when the argument is omitted.
-fn<string, int> nameAndAge(opt string name ?: "Jack", int age) = name, age
-fn<int> area(int width, opt final int height ?: width) = width * height
-fn<int?> chosen(opt int? value ?: 7) = value
-fn<int[]> numbers(opt int[] values ?: [1, 2]) {
+fn<string, int> nameAndAge(opt<string> name ?: "Jack", int age) = name, age
+
+fn<int> area(int width, final opt<int> height ?: width) = width * height
+
+fn<int?> chosen(opt<int?> value ?: 7) = value
+
+fn<int[]> numbers(opt<int[]> values ?: [1, 2]) {
     values[0] = values[0] + 1
     return values
 }
 
 fn<int> main() {
     def name, age = nameAndAge(25)
+
     if (name != "Jack" || age != 25) { return 1 }
+
     name, age = nameAndAge(25, name="Mike")
+
     if (name != "Mike" || age != 25) { return 2 }
+
     name, age = nameAndAge(age=26, name="Sarah")
+
     if (name != "Sarah" || age != 26) { return 3 }
+
     if (area(5) != 25 || area(height=3, width=5) != 15) { return 4 }
+
     if (chosen() != 7 || chosen(null) != null || chosen(9) != 9) { return 5 }
+
     def first = numbers()
     def second = numbers()
     first[0] = 99
+
     if (second[0] != 2) { return 6 }
+
     return 0
 }

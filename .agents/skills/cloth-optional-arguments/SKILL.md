@@ -1,6 +1,6 @@
 ---
 name: cloth-optional-arguments
-description: Design, explain, or extend Cloth opt parameters, omission-only defaults, named arguments, deterministic argument placement, and default-aware overload resolution.
+description: Design, explain, or extend Cloth opt<T> and final opt<T> parameters, omission-only defaults, named arguments, deterministic argument placement, and default-aware overload resolution.
 ---
 
 # Cloth optional arguments and defaults
@@ -12,17 +12,18 @@ payloads, and [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) for snapsho
 
 ## Current executable scope
 
-Ordinary functions support required `opt`/`?:` pairing, named and mixed calls,
-runtime defaults with earlier parameter reads, declaration-order defaults,
-source-order supplied snapshots, strict types and omission-aware overload ranking.
+Ordinary functions support `opt<T>` or `final opt<T>` with required `?:` defaults,
+named and mixed calls, runtime defaults with earlier parameter reads,
+declaration-order defaults, source-order supplied snapshots, strict types and
+omission-aware overload ranking.
 All existing executable scalar, string and array types work, including nullable
 scalars. Nullable buffers retain the separate nullability gate. Methods, state
 dispatch, constructors and foreign default ABIs remain deferred. Built-ins reject
 named labels until their public labels are defined.
 
 ```cloth
-fn<string, int> nameAndAge(opt string name ?: "Jack", int age) = name, age
-fn<int> area(int width, opt final int height ?: width) = width * height
+fn<string, int> nameAndAge(opt<string> name ?: "Jack", int age) = name, age
+fn<int> area(int width, final opt<int> height ?: width) = width * height
 // nameAndAge(25), nameAndAge(25, name="Mike"), area(width=5)
 ```
 
@@ -33,8 +34,17 @@ qualifiers do not supersede the subsequently accepted ordinary-function contract
 
 ## Source ownership and invariants
 
-- `ParameterDeclaration` retains `opt`, `final`, fallback delimiter and expression
-  spans. `CallArgument` is shared by ordinary/state-call syntax; its labels are
+- `Parser` reads `final` first, then encloses the entire ordinary type in
+  `opt<...>` for optional parameters. Widths, unsignedness, arrays and nullability
+  stay inside the wrapper; `TypeReference` retains the underlying T unchanged.
+  `ParameterDeclaration` preserves `optOpening`/`optClosing`, `optionalTypeSpan`,
+  `final`, fallback delimiter and expression spans. The parser captures the
+  complete parameter span through the last consumed token, including closing
+  parentheses around a default. Its whole span starts at `final` when present;
+  never reconstruct its end solely from the unparenthesized expression AST.
+  Keep `opt<T>` out of the general type grammar and reject
+  legacy unbracketed forms rather than supporting two declaration syntaxes.
+  `CallArgument` is shared by ordinary/state-call syntax; its labels are
   metadata rather than name reads or assignment expressions. The computed
   `arguments` view preserves written order for flow, effects and cleanup walkers.
 - [ArgumentBinder](../../../Compiler/src/main/kotlin/cloth/semantic/ArgumentBinding.kt)
@@ -78,7 +88,9 @@ effects, recursive defaults, early returns/failure, independent recursive arrays
 outgoing Unicode strings, nullable half and other carriers, startup and CLI errors.
 Cross-target IR verification does not establish native Linux/macOS execution.
 
-See the [dated integration evidence](../cloth-language/references/development.md#optional-arguments-and-runtime-defaults-2026-11-01)
+See the [final syntax review](../cloth-language/references/development.md#optional-syntax-final-review-2026-11-02),
+the [syntax migration evidence](../cloth-language/references/development.md#optional-parameter-syntax-final-optt-2026-11-02)
+and [original integration evidence](../cloth-language/references/development.md#optional-arguments-and-runtime-defaults-2026-11-01)
 for actual results. Future dispatch must settle visible parameter/default contracts,
 state revalidation, allocation and constructor delegation ordering before adopting
 this binder; recording reusable argument plans implements none of those runtimes.

@@ -75,7 +75,7 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   payload properties with ordinary compile/runtime capability checks. Nullable
   scalar `::size` includes presence storage and target ABI padding for type and
   value receivers, even when absent or narrowed. Value receivers evaluate once.
-- Keep argument omission separate: `opt` uses a required omission-only `?:`
+- Keep argument omission separate: `opt<T>` uses a required omission-only `?:`
   fallback. Explicit null is a supplied nullable value, not an omitted argument.
   [Optional-argument implementation](../cloth-optional-arguments/SKILL.md)
   owns ordinary-function default evaluation and call placement.

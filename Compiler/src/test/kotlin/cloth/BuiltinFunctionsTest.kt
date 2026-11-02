@@ -64,16 +64,12 @@ class BuiltinFunctionsTest {
 	}
 
 	@Test
-	fun `arity unsupported arrays void misuse and invalid expressions fail at their source`() {
+	fun `arity void misuse and invalid expressions fail at their source`() {
 		for (call in listOf("print()", "print(1, 2)", "println(1, 2)")) {
 			val error = failure("fn main() { $call }", DiagnosticCode.CALL_ARITY)
 			assertContains(error.guidance.orEmpty(), "Built-in signatures")
 			assertEquals(1, error.sourceLabels.size)
 		}
-		val array = failure("fn main() { println([1, 2]) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
-		assertContains(array.summary, "int[2]")
-		assertEquals(1, array.sourceLabels.size)
-		assertContains(array.guidance.orEmpty(), "str provider")
 		failure("fn main() { println(println(1)) }", DiagnosticCode.VOID_VALUE)
 		failure("fn main() { def x = print(1) }", DiagnosticCode.VOID_VALUE)
 		failure("fn<int> value() = println(1)", DiagnosticCode.RETURN_TYPE)

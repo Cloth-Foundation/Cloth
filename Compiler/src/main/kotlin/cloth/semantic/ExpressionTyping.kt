@@ -336,7 +336,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				expression.parts.forEach { part ->
 					val type = typeOf(part)
 					val payload = if (type is CNullable) type.payload else type
-					if (!payload.numeric && payload != ValueType.BOOL && payload != ValueType.CHAR && payload != ValueType.STRING && payload != ValueType.TYPEINFO && payload != ValueType.NEVER && payload != ValueType.Null) {
+					val text = payload.provider(CompilerDataProviders.STR.toString(), model.target)
+					if (payload != ValueType.NEVER && payload != ValueType.Null && (text?.type != ValueType.STRING || ProviderReceiverForm.VALUE !in text.receiverForms)) {
 						// Holes receive no overload context; this failure cannot be fixed by another candidate.
 						throw SemanticErrors.interpolation(type, part.span)
 					}

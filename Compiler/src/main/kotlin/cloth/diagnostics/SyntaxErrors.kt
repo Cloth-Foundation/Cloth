@@ -13,7 +13,7 @@ object SyntaxErrors {
 	}
 
 	fun expected(description: String, token: Token) = SyntaxException(DiagnosticCode.EXPECTED_TOKEN, "Expected $description, found ${found(token)}", token.span)
-	fun newline(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_NEWLINE, "Expected a newline after statement, found ${found(token)}", token.span, "Start the next statement on a new line.")
+	fun newline(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_NEWLINE, "Expected a newline or ';' after statement, found ${found(token)}", token.span, "Start the next statement on a new line or separate it with ';'.")
 	fun reassignment(token: Token) = SyntaxException(DiagnosticCode.INVALID_REASSIGNMENT, "':=' is only allowed in a binding declaration; use '=' for reassignment", token.span)
 	fun readOnlyProvider(name: Token) = SyntaxException(DiagnosticCode.READ_ONLY_PROVIDER, "Compiler data accessor '${name.lexeme}' is read-only", name.span, "Copy the result into a mutable binding before changing that independent value.")
 	fun operator(token: Token) = SyntaxException(DiagnosticCode.UNSUPPORTED_OPERATOR, "Unsupported operator '${token.lexeme}'", token.span)

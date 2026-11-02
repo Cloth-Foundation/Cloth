@@ -1,6 +1,6 @@
 ---
 name: cloth-control-flow
-description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, or branch result merging.
+description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch result merging, for-loop parsing, or range design.
 ---
 
 # Cloth control flow
@@ -8,6 +8,38 @@ description: Design, explain, or extend Cloth if/else expressions and statements
 Read [confirmed checks and conditional semantics](references/semantics.md).
 Keep confirmed language decisions distinct from the current implementation's
 final-else, branch compatibility and final-expression policies.
+
+The reference also owns [confirmed for-loop and range design](references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred).
+Both forms use `<-`; only numeric ranges admit a required `; stepper` clause.
+Preserve the accepted fixed-bound/free-direction, strict typing, default `+1`,
+finite-float, integer header-overflow and independent foreach-value contracts
+when implementing later stages. The [implementation plan](../../../todo/for-loops-plan.md)
+maps the accepted contract to compiler stages and verification requirements.
+
+## For loops: Stage 1 parser support
+
+Read [stage scope, source ownership and verification](references/for-implementation.md)
+before extending the parser or enabling semantics/execution. Stage 1 is complete:
+71 focused tests and all 833 compiler tests passed, including 20 new loop tests.
+Scope remains parser/AST plus deliberate semantic gates, not executable iteration.
+
+- `ForStatement.kt` retains a separate receiving binding, range/element source,
+  original stepper operator/RHS, body form and exact spans. Do not fabricate an
+  ordinary initializer or desugar away the original header update operator.
+- Parser supports typed/inferred syntax, both range delimiters, all eight single
+  counter assignment/update forms, mandatory `;` before a stepper, foreach without
+  a stepper, brace bodies and one supported source statement as an unbraced body.
+- Range boundaries are opt-in within a loop source. Preserve ordinary nested
+  expression grammar, precedence, declaration boundaries and `if`/`else` ownership.
+- Declaration/function/snippet/completion paths deliberately reject parsed loops
+  with C3067 at `for`, before output/linker work. Keep this fail-first boundary
+  until the corresponding downstream implementation is ready.
+- Stage 1 does not resolve loop scopes/types, validate numeric/array operands,
+  implement repeated flow, generate loop IR or execute any confirmed progression,
+  snapshot or lifetime behavior. See the staged plan rather than treating parsed
+  syntax as completed iteration support.
+
+Use `ForParsingTest` and `ForStageGateTest` plus affected parser/diagnostic suites.
 
 ## Development rules and current boundaries
 

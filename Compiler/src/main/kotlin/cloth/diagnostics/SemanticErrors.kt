@@ -20,6 +20,8 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
+	fun unsupportedFor(keyword: Token) = issue(DiagnosticCode.UNSUPPORTED_FOR_LOOP, "For-loop syntax is parsed, but loop semantic analysis and execution are not implemented yet", keyword.span)
+
 	fun argumentBinding(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_ARGUMENT_BINDING, message, listOfNotNull(SourceLabel(span, "argument binding here"), declaration?.let { SourceLabel(it, "parameter declared here") }))
 	fun parameterDefault(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_PARAMETER_DEFAULT, message, span)
 
@@ -46,7 +48,7 @@ object SemanticErrors {
 	fun blockAssignment(name: Token, declaration: Token) = SemanticException(DiagnosticCode.BLOCK_ASSIGNMENT, "Assignment to function block '${name.lexeme}' is not supported yet", listOf(SourceLabel(name.span, "assignment or update here"), SourceLabel(declaration.span, "function block declared here")), "Read the block to execute it, or store its result in an ordinary binding.")
 	fun array(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ARRAY, message, span)
 	fun index(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_INDEX, message, span)
-	fun interpolation(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, "String interpolation does not support values of type '${type.spelling}' yet", span, "Only integers, floats, booleans, characters, strings and typeinfo can be interpolated for now.")
+	fun interpolation(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, "String interpolation does not support values of type '${type.spelling}' yet", span, "Interpolation requires a supported value-receiver str provider, recursively for array elements.")
 
 	private fun issue(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null) = SemanticException(code, message, listOf(SourceLabel(span, "here")), help)
 	fun provider(type: ValueType, name: Token) = issue(DiagnosticCode.UNKNOWN_PROVIDER, "Type '${type.spelling}' does not expose compiler data '${name.lexeme}'", name.span, "Compiler data names are lowercase and depend on the receiver type.")

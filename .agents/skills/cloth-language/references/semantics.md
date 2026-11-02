@@ -35,6 +35,12 @@ their feature-owned reference.
 
 ## Concise syntax and bodies
 
+- Semicolons are optional at valid statement terminator positions unless
+  explicitly required by a particular syntax. A brace-bodied function ends at
+  `}` and cannot be followed by `;`; semicolons also cannot intervene before
+  `else`. Read [optional semicolons](../../cloth-semicolons/SKILL.md) for the
+  placement contract and supported grammar.
+
 - Cloth aims to remove unnecessary ceremony. Use the compact forms established
   by the language design; do not extrapolate unrelated syntax changes from this
   preference alone.
@@ -73,6 +79,10 @@ Read [Cloth program entry](../../cloth-program-entry/references/semantics.md#pro
 Read [Cloth compiler data access](../../cloth-compiler-data/references/semantics.md#compiler-data-access-phase-3-implemented-for-supported-types) and its
 [feature skill](../../cloth-compiler-data/SKILL.md).
 
+Recursive array contents for printing, interpolation and `::str` are owned by
+the [output contract](../../cloth-output/references/semantics.md#recursive-array-text)
+and [output skill](../../cloth-output/SKILL.md#recursive-array-text). `::addr` remains deferred.
+
 ## Function parameters
 
 Read [Cloth arrays](../../cloth-arrays/references/semantics.md#array-construction-and-value-semantics) and its
@@ -109,6 +119,16 @@ Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#type-
 
 Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#conditional-expressions-and-statements) and its
 [feature skill](../../cloth-control-flow/SKILL.md).
+
+## For loops and ranges
+
+Read [confirmed loop design](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred):
+integer/float range and array foreach loops use `<-`; ranges default to a step of one, and an
+explicit stepper requires a separating semicolon. Stage 1 parses loop syntax and
+retains its AST, while C3067 deliberately gates semantic analysis/execution.
+See [implementation scope](../../cloth-control-flow/references/for-implementation.md).
+The [semicolon skill](../../cloth-semicolons/SKILL.md) distinguishes
+this required header separator from optional statement terminators.
 
 ## Bindings
 
@@ -167,7 +187,7 @@ and the [cloth-nullability skill](../../cloth-nullability/SKILL.md). Optional
 argument omission remains distinct from nullable value absence. Read
 [confirmed optional-call semantics](../../cloth-optional-arguments/references/semantics.md)
 and [optional-argument implementation](../../cloth-optional-arguments/SKILL.md)
-for `opt`, named calls, defaults, evaluation order and overload ranking.
+for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overload ranking.
 
 ## Object lifetime and nullability
 

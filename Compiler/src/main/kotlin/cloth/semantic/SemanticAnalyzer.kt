@@ -34,6 +34,7 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 
 			override fun statement(statement: Statement) {
 				when (statement) {
+					is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
 					is BindingGroupDeclaration    -> {
 						val seen = mutableMapOf<String, Token>()
 						for (target in statement.targets) if (target is ReceivingTarget.Named) {

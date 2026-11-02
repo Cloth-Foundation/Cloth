@@ -1,6 +1,6 @@
 ---
 name: cloth-output
-description: Design, explain, or extend Cloth print and println, built-in registration and lookup, printable-value adaptation, or length-aware native UTF-8 output.
+description: Design, explain, or extend Cloth print and println, recursive array contents for output/interpolation/str, built-in registration and lookup, printable-value adaptation, or length-aware native UTF-8 output.
 ---
 
 # Cloth output and built-in functions
@@ -22,7 +22,9 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
   and reusable definitions free of per-emission LLVM handles.
 - Printable adaptation uses supported value-receiver `str` providers without
   changing ordinary expression typing or introducing general implicit conversion.
-  Preserve canonical metadata text. Array/class value formatting remains deferred.
+  Preserve canonical metadata text. Arrays recursively expose `str` when their
+  elements do; print, interpolation and `::str` share that recipe. Class value
+  formatting and `::addr` remain deferred.
 - Evaluate an argument once before conversion/output. If it exits its enclosing
   function, emit no output or added newline on that path. General multi-result
   expansion is not a print call convention.
@@ -47,3 +49,28 @@ bytes and interrupted argument behavior. The
 [built-in milestone](../cloth-language/references/development.md#built-in-function-registry-and-explicit-output-2026-10-31)
 records the integrated behavior and evidence; the current suite must be rerun
 before claiming new validation.
+
+## Recursive array text
+
+Read [the array text contract](references/semantics.md#recursive-array-text).
+`CArray.providers` in `PrimitiveTypes.kt` owns capability registration, and
+`ProviderResult.ArrayText` retains the element recipe. `ProviderEmissionContext`
+delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArrayText.kt)
+through `EmitString`. Keep the traversal out of print built-ins and reusable type
+descriptors. Interpolation resolves the same typed value-receiver providers.
+
+The emitter measures checked target-sized bytes, then fills one result buffer.
+Nested arrays write directly into it; do not concatenate growing prefixes or
+allocate an intermediate string for every row. Both passes traverse an already
+evaluated value and reuse side-effect-free leaf conversions. Per-leaf stack
+checkpoints reclaim numeric/character scratch only after consumption; the output
+buffer and all source storage predate those checkpoints. Ordinary buffered
+returns copy the result before its frame exits. No raw-address access is added.
+
+Example: [ArrayPrinting.co](../../../examples/ArrayPrinting.co). Use `ArrayTextTest`,
+`StringInterpolationTest`, `BufferProvidersTest`, `BuiltinFunctionsTest` and
+`BufferCountsTest`. Cover empty/nested/dynamic arrays, all supported leaf kinds,
+raw Unicode/NUL text, once-only effects, early exits, snapshots/returns, large
+inputs, checked overflow and target widths. The
+[integration record](../cloth-language/references/development.md#recursive-array-text-2026-11-02)
+records observed verification and target scope.
