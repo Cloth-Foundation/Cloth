@@ -10,6 +10,7 @@ internal class TypeResolver(val target: TargetLayout) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme
+		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'void' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
 		val widths = when (name) {
 			Keywords.INTEGER.toString() -> ValueType.INTEGER_WIDTHS
@@ -34,6 +35,13 @@ internal class TypeResolver(val target: TargetLayout) {
 			}
 		}
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)
+		// Qualifier positions are retained structurally, but array wrapper/row layout
+		// and descriptor transfers belong to the later array slice.
+		if (annotation.hasNullability && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.nullablePending(annotation.span)
+		if (annotation.nullable != null) {
+			if (base.buffered) throw SemanticErrors.nullablePending(annotation.span)
+			return CNullable(base)
+		}
 		return annotation.arraySuffixes.indices.reversed().fold(base) { element, index ->
 			val token = annotation.arraySizes.getOrNull(index)
 			val size = token?.lexeme?.toBigIntegerOrNull()

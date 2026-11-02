@@ -18,5 +18,5 @@ object SyntaxErrors {
 	fun readOnlyProvider(name: Token) = SyntaxException(DiagnosticCode.READ_ONLY_PROVIDER, "Compiler data accessor '${name.lexeme}' is read-only", name.span, "Copy the result into a mutable binding before changing that independent value.")
 	fun operator(token: Token) = SyntaxException(DiagnosticCode.UNSUPPORTED_OPERATOR, "Unsupported operator '${token.lexeme}'", token.span)
 	fun number(token: Token, floating: Boolean) = SyntaxException(if (floating) DiagnosticCode.INVALID_FLOAT else DiagnosticCode.INVALID_INTEGER, "Invalid or out-of-range ${if (floating) "float" else "int"} '${token.lexeme}'", token.span)
-	fun expression(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_EXPRESSION, "Expected a number, boolean, character, string, binding name, 'if', or '(', got ${found(token)}", token.span)
+	fun expression(token: Token) = SyntaxException(DiagnosticCode.EXPECTED_EXPRESSION, "Expected a number, boolean, character, string, 'null', binding name, 'if', or '(', got ${found(token)}", token.span)
 }

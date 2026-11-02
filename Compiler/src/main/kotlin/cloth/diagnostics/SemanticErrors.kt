@@ -20,6 +20,16 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
+	fun argumentBinding(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_ARGUMENT_BINDING, message, listOfNotNull(SourceLabel(span, "argument binding here"), declaration?.let { SourceLabel(it, "parameter declared here") }))
+	fun parameterDefault(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_PARAMETER_DEFAULT, message, span)
+
+	fun nullableType(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_NULLABLE_TYPE, message, span)
+	fun nullablePending(span: TokenSpan, message: String = "This nullable form is not implemented yet") = issue(DiagnosticCode.UNSUPPORTED_NULLABILITY, message, span, "The initial nullable slice supports scalar payloads; buffered values and later forms require their separate integration.")
+	fun nullableContext(span: TokenSpan) = issue(DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "A nullable value requires an explicit nullable destination type", span, "Declare a matching 'T?' type, or use a presence proof or non-null fallback to obtain a non-null value. Cloth never infers nullability.")
+	fun nullablePayload(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Access to '${type.spelling}' requires proof that its payload is present", span, "Check the value against null, or supply a non-null fallback with '?:'.")
+	fun elvis(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ELVIS, message, span)
+	fun nullComparison(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_NULL_COMPARISON, message, span)
+
 	fun blockReception(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_MULTIPLE_RESULTS, "Multiple-result or discard function-block declarations are not implemented yet", span, "Declare independent scalar function blocks, or destructure an evaluated result producer.")
 	fun receptionArity(expected: Int, actual: ResultShape, span: TokenSpan) = issue(DiagnosticCode.RECEPTION_ARITY, "Receiving list has $expected positions, but the producer supplies ${actual.values.size} results ${actual.spelling}", span, "Provide one receiving name or '_' for each result.")
 	fun receptionAnnotations(message: String, span: TokenSpan) = issue(DiagnosticCode.RECEPTION_ANNOTATIONS, message, span, "Use one shared type for a scalar broadcast, or a complete positional type list for multiple results.")

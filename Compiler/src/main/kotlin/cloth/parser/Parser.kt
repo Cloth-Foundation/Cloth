@@ -64,9 +64,19 @@ class Parser(private val tokens: List<Token>) {
 		val name = expect(TokenType.Identifier, "a function name")
 		val parameters = delimited.parentheses {
 			delimited.commaSeparated(Operators.PAREN_CLOSE) {
+				val optKeyword = if (atKeyword(Keywords.OPT)) advance() else null
 				val finalKeyword = if (atKeyword(Keywords.FINAL)) advance() else null
 				val type = typeParser.parse(allowArrays = true)
-				ParameterDeclaration(type, expect(TokenType.Identifier, "a parameter name"), finalKeyword)
+				val parameterName = expect(TokenType.Identifier, "a parameter name")
+				val delimiter = if (optKeyword != null) expect(Operators.ELVIS) else null
+				val previousContext = inFunctionBody
+				inFunctionBody = true
+				val fallback = try {
+					delimiter?.let { expressionParser.parseExpression() }
+				} finally {
+					inFunctionBody = previousContext
+				}
+				ParameterDeclaration(type, parameterName, finalKeyword, optKeyword, delimiter, fallback)
 			}
 		}
 		skipNewlines()

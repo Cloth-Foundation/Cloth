@@ -12,16 +12,16 @@ import cloth.token.Token
 import java.math.BigInteger
 
 /** A structural declaration key, not a resolved or validated language type. */
-data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }) {
+data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }) {
 
 	val spelling: String
-		get() = (if (unsigned) "unsigned " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "<$it>" } ?: "") + arraySizes.joinToString("") { "[${it ?: ""}]" }
+		get() = (if (unsigned) "unsigned " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "<$it>" } ?: "") + (if (nullable) "?" else "") + arraySizes.mapIndexed { index, size -> "[${size ?: ""}]" + if (arrayNullability.getOrNull(index) == true) "?" else "" }.joinToString("")
 
 	companion object {
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
-		fun of(type: TypeReference) = SignatureType(type.name.lexeme, type.unsigned, type.width?.lexeme?.toBigInteger() ?: if (type.name.lexeme in numericNames) defaultWidth else null, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.lexeme?.toBigInteger() })
+		fun of(type: TypeReference) = SignatureType(type.name.lexeme, type.unsigned, type.width?.lexeme?.toBigInteger() ?: if (type.name.lexeme in numericNames) defaultWidth else null, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.lexeme?.toBigInteger() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
 	}
 }
 

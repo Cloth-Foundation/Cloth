@@ -45,7 +45,7 @@ class ExpressionParser(val parser: Parser) {
 			}
 			val right = parseExpression(rightPrecedence)
 
-			left = BinaryExpression(left, operator, right)
+			left = if (kind == Operators.ELVIS) ElvisExpression(left, operator, right) else BinaryExpression(left, operator, right)
 		}
 
 		return left
@@ -72,7 +72,7 @@ class ExpressionParser(val parser: Parser) {
 					val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
 					if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
 						val arguments = parser.delimited.parentheses {
-							parser.delimited.commaSeparated(Operators.PAREN_CLOSE) { parseExpression() }
+							parseArguments()
 						}
 						StateCallExpression(value, name, arguments, value.span.through(parser.previous().span))
 					} else ProviderAccessExpression(value, name)
@@ -94,6 +94,11 @@ class ExpressionParser(val parser: Parser) {
 			}
 
 			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.parseIf()
+			TokenType.Keyword if token.lexeme == Keywords.NULL.toString()                                   -> {
+				parser.advance()
+				NullLiteral(token.span)
+			}
+
 			TokenType.Keyword if token.lexeme in setOf(Keywords.TRUE.toString(), Keywords.FALSE.toString()) -> {
 				parser.advance()
 				BooleanLiteral(token.lexeme == Keywords.TRUE.toString(), token.span)
@@ -105,7 +110,7 @@ class ExpressionParser(val parser: Parser) {
 				val name = parser.advance()
 				if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
 					val arguments = parser.delimited.parentheses {
-						parser.delimited.commaSeparated(Operators.PAREN_CLOSE) { parseExpression() }
+						parseArguments()
 					}
 					CallExpression(name, arguments, name.span.through(parser.previous().span))
 				} else NameExpression(name)
@@ -161,6 +166,13 @@ class ExpressionParser(val parser: Parser) {
 		}
 	}
 
+	private fun parseArguments(): List<CallArgument> = parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
+		val named = parser.peek().type == TokenType.Identifier && parser.peek(1).lexeme == Operators.ASSIGN.character
+		val label = if (named) parser.advance() else null
+		val equals = if (named) parser.advance() else null
+		CallArgument(parseExpression(), label, equals)
+	}
+
 	private fun parseInterpolation(): Expression {
 		val opening = parser.advance()
 		val parts = mutableListOf<Expression>()
@@ -204,6 +216,6 @@ class ExpressionParser(val parser: Parser) {
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 
-		val binaryOperators = mapOf(Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20), Operators.MUL_MUL to OperatorPrecedence(POWER_PRECEDENCE, Associativity.RIGHT))
+		val binaryOperators = mapOf(Operators.ELVIS to OperatorPrecedence(0, Associativity.RIGHT), Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20), Operators.MUL_MUL to OperatorPrecedence(POWER_PRECEDENCE, Associativity.RIGHT))
 	}
 }

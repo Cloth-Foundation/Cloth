@@ -21,7 +21,16 @@ data class FunctionBlockExpression(val declaration: FunctionDeclaration) : Expre
 }
 
 /** A named function call; overload resolution is a separate semantic stage. */
-data class CallExpression(val name: Token, val arguments: List<Expression>, override val span: TokenSpan) : Expression
+data class CallArgument(val expression: Expression, val label: Token? = null, val equals: Token? = null) {
+
+	val span get() = (label?.span ?: expression.span).through(expression.span)
+}
+
+data class CallExpression(val name: Token, val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : Expression {
+
+	/** Evaluation walks retain written order; placement belongs to the semantic call plan. */
+	val arguments: List<Expression> = suppliedArguments.map { it.expression }
+}
 
 data class ArrayLiteral(val elements: List<Expression>, override val span: TokenSpan) : Expression
 
@@ -41,6 +50,15 @@ data class BinaryExpression(val left: Expression, val operator: Token, val right
 
 	override val span get() = left.span.through(right.span)
 }
+
+/** Lazy null fallback; this is distinct from omission-only parameter defaults. */
+data class ElvisExpression(val left: Expression, val operator: Token, val fallback: Expression) : Expression {
+
+	override val span get() = left.span.through(fallback.span)
+}
+
+/** Contextual absence, never an ordinary inferred null-only source type. */
+data class NullLiteral(override val span: TokenSpan) : Expression
 
 data class CastExpression(val operand: Expression, val operator: Token, val target: TypeReference) : Expression {
 

@@ -51,6 +51,8 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 
 	private fun matchOperator(): Operators? {
 		for (op in OPERATORS) {
+			// A nullable type receiver uses '?' followed by '::', not Elvis and ':'.
+			if (op == Operators.ELVIS && source.startsWith("?::", current)) continue
 			val len = op.character.length
 			if (current + len <= source.length) {
 				val substring = source.substring(current, current + len)

@@ -146,6 +146,17 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.stringScalarCount((receiver as ProviderReceiver.Value).value)
 	}
 
+	/** Complete scalar storage, including nullable presence and ABI padding. */
+	data class StorageSize(override val receiverType: CNullable, override val type: CUSize) : ProviderResult<CUSize>() {
+
+		override val receiverForms get() = setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE)
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
+			val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(context.builder)))
+			val bytes = LLVMABISizeOfType(LLVMGetModuleDataLayout(module), receiverType.llvmStorage(context.context, context.target))
+			return LLVMConstInt(type.llvmValue(context.context, context.target), bytes, 0)
+		}
+	}
+
 	/** Source str and interpolation deliberately share one formatter. */
 	data class ScalarText(override val receiverType: ValueType) : ProviderResult<CString>() {
 

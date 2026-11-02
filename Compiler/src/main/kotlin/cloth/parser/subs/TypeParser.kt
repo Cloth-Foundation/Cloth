@@ -24,16 +24,27 @@ class TypeParser(private val parser: Parser) {
 		val width = if (parser.peek().lexeme == "<" && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == ">"))) {
 			parser.delimited.angles { parser.expect(TokenType.IntegerLiteral, "a numeric type width") }
 		} else null
+
+		fun nullableMarker(): cloth.token.TokenSpan? {
+			if (parser.peek().lexeme != Operators.QUESTION.character) return null
+			val marker = parser.advance().span
+			if (parser.peek().lexeme == Operators.QUESTION.character) throw SyntaxErrors.expected("only one '?' at this type position", parser.peek())
+			return marker
+		}
+
+		val nullable = nullableMarker()
 		val sizes = mutableListOf<Token?>()
+		val arrayNullability = mutableListOf<cloth.token.TokenSpan?>()
 		val arrays = buildList {
 			while (allowArrays && parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
 				val opening = parser.advance()
 				sizes.add(if (parser.peek().type == TokenType.IntegerLiteral) parser.advance() else null)
 				val closing = parser.expect(Operators.BRACKET_CLOSE)
 				add(opening.span.through(closing.span))
+				arrayNullability.add(nullableMarker())
 			}
 		}
-		return TypeReference(name, unsigned, width, start.through(parser.previous().span), arrays, sizes)
+		return TypeReference(name, unsigned, width, start.through(parser.previous().span), arrays, sizes, nullable, arrayNullability)
 	}
 
 	companion object {

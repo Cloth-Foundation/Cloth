@@ -28,11 +28,17 @@ internal enum class MetadataQuery(val provider: CompilerDataProviders, val field
 			else    -> null
 		}
 
-	fun accepts(represented: ValueType): Boolean = when (this) {
-		ELEMENT -> represented is CArray
-		EXTENT  -> represented is CArray && represented.size != null
-		WIDTH   -> represented.numeric
-		else    -> true
+	/** Inspection describes the payload structure; descriptor identity retains '?'. */
+	fun subject(represented: ValueType): ValueType = (represented as? CNullable)?.payload ?: represented
+
+	fun accepts(type: ValueType): Boolean {
+		val represented = subject(type)
+		return when (this) {
+			ELEMENT -> represented is CArray
+			EXTENT  -> represented is CArray && represented.size != null
+			WIDTH   -> represented.numeric
+			else    -> true
+		}
 	}
 
 	val requirement: String

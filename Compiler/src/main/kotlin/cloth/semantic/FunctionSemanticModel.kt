@@ -4,7 +4,9 @@ import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.Expression
+import cloth.parser.expression.NameExpression
 import cloth.parser.statement.Statement
+import cloth.parser.statement.UpdateStatement
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import java.util.*
@@ -21,6 +23,8 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 	val types = SemanticModel(target)
 	internal val bindings = IdentityHashMap<BindingSymbol, ValueType>()
 	internal val calls = IdentityHashMap<CallExpression, ResolvedCall>()
+	internal val presentNames = Collections.newSetFromMap(IdentityHashMap<NameExpression, Boolean>())
+	internal val presentUpdates = Collections.newSetFromMap(IdentityHashMap<UpdateStatement, Boolean>())
 	fun typeOf(expression: Expression) = types.typeOf(expression)
 	fun resultOf(expression: Expression) = types.resultOf(expression)
 	fun resultOf(statement: Statement) = types.resultOf(statement)
@@ -35,6 +39,8 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		if (target != other.target) throw InternalErrors.invariant("Cannot commit semantic facts from a different compilation target")
 		bindings.clear(); bindings.putAll(other.bindings)
 		calls.clear(); calls.putAll(other.calls)
+		presentNames.clear(); presentNames.addAll(other.presentNames)
+		presentUpdates.clear(); presentUpdates.addAll(other.presentUpdates)
 		types.expressions.clear(); types.expressions.putAll(other.types.expressions)
 		types.expressionResults.clear(); types.expressionResults.putAll(other.types.expressionResults)
 		types.statementResults.clear(); types.statementResults.putAll(other.types.statementResults)
@@ -44,5 +50,8 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		types.typeChecks.clear(); types.typeChecks.putAll(other.types.typeChecks)
 		types.providers.clear(); types.providers.putAll(other.types.providers)
 		types.metadata.clear(); types.metadata.putAll(other.types.metadata)
+		types.payloadReads.clear(); types.payloadReads.putAll(other.types.payloadReads)
+		types.nullableComparisons.clear(); types.nullableComparisons.putAll(other.types.nullableComparisons)
+		types.updatePayloads.clear(); types.updatePayloads.putAll(other.types.updatePayloads)
 	}
 }

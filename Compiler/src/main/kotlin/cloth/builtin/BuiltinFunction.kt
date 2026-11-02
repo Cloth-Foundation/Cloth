@@ -1,9 +1,6 @@
 package cloth.builtin
 
-import cloth.data.ProviderReceiver
-import cloth.data.ProviderReceiverForm
-import cloth.data.ProviderResult
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.BuiltinEmissionContext
 import cloth.target.TargetLayout
@@ -53,7 +50,9 @@ internal sealed interface BuiltinParameter {
 		override val spelling = "printable value"
 		override fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument? {
 			if (actual == ValueType.NEVER) return BuiltinArgument(actual, ValueType.STRING)
-			val provider = actual.provider("str", target) ?: return null
+			if (actual == ValueType.Null) return BuiltinArgument(actual, ValueType.STRING)
+			val payload = if (actual is CNullable) actual.payload else actual
+			val provider = payload.provider("str", target) ?: return null
 			if (ProviderReceiverForm.VALUE !in provider.receiverForms || provider.type != ValueType.STRING) return null
 			return BuiltinArgument(actual, ValueType.STRING, provider)
 		}
@@ -62,7 +61,11 @@ internal sealed interface BuiltinParameter {
 
 internal data class BuiltinArgument(val sourceType: ValueType, val parameterType: ValueType, val text: ProviderResult<*>? = null) {
 
-	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
+	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = when {
+		sourceType == ValueType.Null -> context.nullText()
+		sourceType is CNullable      -> context.nullableText(value, sourceType) { payload -> checkNotNull(text).emit(context.providers, ProviderReceiver.Value(sourceType.payload, payload)) }
+		else                         -> text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
+	}
 }
 
 /** Contains committed argument conversions, never AST evaluation or name lookup. */

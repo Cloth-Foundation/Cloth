@@ -1,0 +1,33 @@
+// Nullable-target casts preserve absence and convert only present payloads.
+fn<int<64>?> widen(int? value) = value -> int<64>?
+
+// Scalar `is` checks the expression type, including its nullable qualifier.
+fn<bool> nullableType(int? value) = value is int?
+
+fn<int> main() {
+    def<int?> value = null
+    def<int<64>?> wide = widen(value)
+    if (wide != null || !nullableType(value)) { return 1 }
+
+    // Metadata retains nullable identity and exposes payload properties.
+    if (value::type != int?::type || !value::type::isnumeric || value::type::width != 32) { return 2 }
+
+    // Size includes the presence flag and target alignment, even while absent.
+    def storage = value::size
+    if (storage != int?::size || storage <= int::size) { return 3 }
+
+    value = 25
+    if (value != null) {
+        // Ordinary reads narrow; binding metadata and storage size stay nullable.
+        if (!(value is int) || value is int? || value::type != int?::type || value::size != storage) { return 4 }
+        def copy = value
+        if (copy::type != int::type || copy::size != int::size) { return 5 }
+    }
+    wide = widen(value)
+    if (wide != (25 -> int<64>)) { return 6 }
+
+    // The fallback supplies the type; this result is an ordinary non-null int.
+    def fallback = null ?: 7
+    if (!(fallback is int) || fallback != 7) { return 7 }
+    return 0
+}

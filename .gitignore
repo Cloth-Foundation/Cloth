@@ -9,6 +9,8 @@ build/
 .idea
 README.md
 
+todo/
+
 *.exe
 *.o
 *.obj

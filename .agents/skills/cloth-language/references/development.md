@@ -1,6 +1,336 @@
 # Cloth development status
 
+For current feature guidance and focused source/test routing, use the
+[feature skill index](../SKILL.md#feature-skills). This file retains dated
+development and verification history; read the relevant milestone rather
+than treating every earlier snapshot as current behavior.
+
 ## Current work
+
+### Optional arguments and runtime defaults (2026-11-01)
+
+The user requested implementation of the optional/default plan and explicitly
+accepted its recommended ordinary-call contract. The new
+[cloth-optional-arguments skill](../../cloth-optional-arguments/SKILL.md) owns
+confirmed mapping, scope, evaluation and ranking semantics, implementation
+invariants and test routing. Language/function/nullable/result routing now links
+there. The [plan](../../../../todo/optional-arguments-plan.md) records ordinary
+function stages 0-4 and final ordinary-function verification as complete while
+retaining future method/state/constructor and foreign ABI decisions separately.
+
+Implementation includes reserved `opt`, canonical `opt final Type name ?:`
+declarations (`final` optional), structured named arguments and a shared
+deterministic candidate binder. Defaults resolve/type-check in declaration scope
+with read-only earlier parameter views; self/later reads, parameter writes,
+caller/body-local capture and escaping returns fail before emission. Existing
+strict typing and ordinary numeric/payload overload preference precede omission
+counts; incomparable contextual matches remain ambiguous. C3065/C3066 identify
+argument-binding/default-scope failures, retaining first-error behavior.
+
+The selected call retains source-index placement and omission plans. Supplied
+values snapshot in written order before callee entry. Internal omission flags
+drive a definition-owned prelude that initializes complete parameters in order,
+evaluates only omitted defaults, and never decodes omitted placeholders. This
+supports direct/recursive defaults without AST expansion and keeps null distinct
+from omission. Existing array transfers, return arenas, default-frame cleanup,
+bool/half ABI and target-sized values are preserved. The nullable-half decoder
+branches internally; default phis use its actual exit block. Nullable buffers
+remain gated, built-in labels unpublished, and class/state runtimes deferred.
+
+Verification:
+
+- `./gradlew.bat :Compiler:test --offline --console=plain --no-daemon` passed
+  784 tests with zero failures, errors or skips. This includes the initial 25
+  optional-argument tests and resolves the previously preserved `opt` declaration
+  failure in `MultiReturns.co`.
+- After adding explicit maintained-example and dynamic-default-shape coverage,
+  `./gradlew.bat :Compiler:test --tests 'cloth.OptionalArguments*' --offline
+  --console=plain --no-daemon` passed all 27 tests with zero failures/errors/skips.
+  Production code did not change after the successful full-suite run.
+- Execution covers Windows x64 and x86: optional-before-required/mixed placement,
+  source-order named effects, scalar/array snapshots, skipped/per-call defaults,
+  declaration-order dependencies, recursive defaults, early supplied returns,
+  failure before later defaults/body, nested deferred return boundaries, recursive
+  independent default arrays, returned Unicode buffers, fixed-shape checks,
+  supported scalar/nullable carriers and optional startup parameters.
+- One common fixture verifies LLVM IR across Windows x64/x86/ARM64, Linux
+  x64/ARM64 GNU and musl, and macOS x64/ARM64. This is not native Linux/macOS
+  execution evidence.
+- [OptionalArguments.co](../../../../examples/OptionalArguments.co) executes on
+  Windows x64/x86. Invalid call binding returns CLI status 1 before output creation.
+- Skill metadata/scaffold checks and 339 local Markdown links passed. The bundled
+  skill validator was attempted but lacks PyYAML; direct metadata/scaffold and
+  link validation supplied the fallback. `git diff --check` passed.
+
+
+### Dedicated nullability skill (2026-11-01)
+
+At the user's request, [cloth-nullability](../../cloth-nullability/SKILL.md) now
+owns the nullable system's feature guidance. Confirmed nullable semantics and
+scalar implementation evidence moved into its references; the shared semantics
+index and old nullable reference paths forward there. The language, numeric,
+compiler-data and control-flow skills route nullable work to the dedicated skill.
+The skill covers explicit typing, proofs/captures, equality, lazy Elvis, casts,
+formatting, metadata/storage, carrier invariants, tests and pending buffer stages.
+This documentation reorganization changes no compiler behavior or language rule;
+verification counts in the implementation record remain dated evidence.
+Required skill metadata, scaffold checks, all 324 local links across project
+skills/the nullable plan, and diff whitespace checks passed. The bundled skill
+validator still lacks PyYAML, so those checks used a direct fallback. Compiler
+tests were not rerun for this documentation-only change.
+
+### Nullable scalar rule completion (2026-11-01)
+
+The user requested the remaining scalar language rules and confirmed
+presence-preserving nullable-target casts, static expression-type `is`, payload
+metadata inspection with retained nullable identity, full nullable scalar storage
+sizes, and fallback-supplied context for bare-left-null Elvis. These are now
+implemented. Nullable strings/arrays/elements remain Stage 4 work. See
+[the rules record](../../cloth-nullability/references/implementation.md) for confirmed contracts,
+source ownership, rejection boundaries and verification commands; skill coverage
+is linked from the language, numeric, compiler-data and control-flow skills.
+
+`EmitCast` shares ordinary conversions with nullable mapping, so absent paths
+skip conversions and present paths retain range/NaN guards. Metadata inspection
+uses payload facts with ordinary capability guards across opaque calls.
+`ProviderResult.StorageSize` queries the module's target data layout for the
+complete nullable storage representation. Flow analysis preserves a binding's
+declared nullable receiver for scalar `::size`, independently of payload narrowing.
+Metadata analysis now visits Elvis fallbacks and merges captured-write effects.
+The runnable example is [NullableRules.co](../../../../examples/NullableRules.co).
+
+All ten follow-up tests pass, alongside the original 28 nullable tests. Native
+checks cover Windows x64/x86; verified IR covers all nine supported profiles,
+without claiming native Linux/macOS execution. The CLI rejection matrix now has
+40 invocations, including invalid numeric casts and forbidden nullable inference.
+The full compiler run completed 759 tests across 59 suites: 758 passed, with only
+the same preserved unsupported `opt` sketch in MultiReturns.co failing. No user
+example was moved. This milestone supersedes the scalar capability gates in the
+original implementation snapshot below.
+
+The final focused check, after enforcing the typed-source rule for bare-null
+`is`, passed all 85 tests across the
+four nullable suites and conditionals/metadata/casts/scalar-provider suites.
+Skill metadata, 175 local links and whitespace checks passed. The optional skill
+validator was unavailable because its PyYAML dependency is missing; metadata and
+relative links were checked separately.
+
+The user subsequently confirmed option 1 for the bare-null `is` question:
+`null is int?` is rejected, while `(null -> int?) is int?` is true. The existing
+implementation and tests already cover both forms, so this confirmation required
+only semantic/skill record updates, with no compiler changes or new test run.
+
+### Nullable scalar implementation (2026-11-01)
+
+Original milestone; the rule-completion entry above extends this initial slice.
+
+The bounded scalar slice in [the nullability plan](../../../../todo/nullability-plan.md)
+Stages 0-3 is implemented. Nullable fixed-width/target-sized integers, floats,
+bool, char and typeinfo support explicit bindings, calls/returns, multiple results,
+presence checks, exact lifting, equality, guarded payload use and lazy Elvis.
+Every new nullable binding needs an explicit type, including copies, result
+reception and nullable conditional results. Printing/interpolation accept nullable
+values and bare null, rendering absence as `null`; explicit `::str` still needs
+proof or a non-null fallback.
+
+The parser retains nullable marker placement/spans and gives Elvis its own AST
+node, right associativity and precedence below logic/comparisons. `CNullable`
+preserves canonical identity and native presence/payload carriers; an internal
+context-free absence marker is never an inferred binding type. `NullFlowAnalysis`
+computes symbol/occurrence proofs independently of overload probes, with capture
+entry isolation and transitive deferred-write invalidation. `EmitNullable` guards
+payload conversion, comparison and formatting. Bool payload storage stays byte
+sized and nullable half ABI payloads use raw i16 fields. Calls/results/reception
+preserve source snapshots and existing ordinary buffer lifetimes.
+
+Nullable strings/arrays/elements, nullable-target casts, nullable `is` checks and
+wrapper metadata inspection remain gated. Unknown wrapper metadata arriving
+through opaque calls has a controlled runtime capability guard. Bare-left-null
+Elvis currently requires explicit destination context. Classes, unsafe handles
+and optional parameters remain separate work. The planning history below
+describes the earlier state rather than current executable coverage.
+
+All 28 new nullability tests pass across three suites (9 parsing/identity, 10
+typing/flow and 9 emission/integration). Native execution covers Windows x64/x86;
+the same parsed carrier fixture produces verified IR for all nine supported
+profiles. Foreign IR is not native Linux/macOS execution evidence. Coverage
+includes all numeric extrema/identities, nullable half/bool/char/typeinfo transport,
+mixed results, snapshots, deferred effects, NaN, lazy/terminating fallbacks and
+absence-aware formatting with returned string lifetime. The runnable scalar
+example builds through the CLI on both widths; 28 invalid CLI invocations retain
+first-error diagnostics before output or linker work.
+
+The final full run completed 749 tests across 58 suites: 748 passed, one failed,
+zero errors/skips. The remaining failure is the existing `opt` sketch appended
+to `examples/MultiReturns.co`; its runnable-example integration check reports
+C2000 because optional parameters are still unimplemented. The user's location
+preference is pending, and that edit remains unchanged. The metadata layout
+assertion was updated for the internal nullable flag; a CLI-default assertion
+already stale in HEAD was aligned with the existing MultiReturns.co default.
+No runtime CLI default changed. Seventy-four local documentation links and
+whitespace checks passed.
+
+### Deferred result-selection RFC (2026-11-01)
+
+The user requested a formal [RFC](../../../../todo/result-selection-rfc.md) for
+`myFunc().1` to select the first returned value for immediate use, such as
+`println(myFunc().1)`. This is an unscheduled draft for future reference, not an
+accepted language contract or implementation request. It proposes one-based
+literal positions, exact selected types and complete call evaluation with normal
+discard effects/failures. Broader producers, scalar-call selection, lexical
+details and future method/class interactions remain open. Compiler code and
+current supported syntax are unchanged.
+
+### Optional-argument planning (2026-11-01)
+
+The user requested the standalone
+[optional-argument plan](../../../../todo/optional-arguments-plan.md) after the
+nullability plan. It preserves `opt` with required omission-only `?:` defaults,
+the intended optional-before-required `nameAndAge(25)` call, named arguments and
+reuse for future methods/constructors. Detailed mapping, runtime fallback scope
+and order, overload ranking and lowering remain recommendations, not confirmed
+rules. All implementation stages are pending; no compiler code changed.
+
+The source audit finds positional expression lists in call ASTs, type/name/final
+metadata without defaults in ParameterDeclaration, exact argument-count filtering
+in CallAnalyzer, and same-index argument/parameter emission in EmitFunctions.
+The plan proposes shared binding plans that separate source evaluation order
+from parameter placement, with isolated overload facts and presence-independent
+omission tracking. These observations are not evidence of implemented support.
+
+### Nullability planning (2026-11-01)
+
+Historical design/approval record; current scalar implementation is documented
+above.
+
+The user requested [a standalone nullability plan](../../../../todo/nullability-plan.md)
+before a separate plan for `opt` parameters and required `?:` fallbacks. The
+accepted distinction is value absence (`T?`, including `def<string?> x = null`)
+versus argument omission (`opt`); an explicitly supplied null does not trigger
+an optional-parameter fallback. The plan records proposed typing, inference,
+flow facts, expression Elvis, overload interaction, storage, staged work and
+verification separately from confirmed decisions. All stages were pending when
+the plan was written; this documentation adds no compiler support. The review
+follow-up below records the subsequent Stage 0 progress.
+
+The user subsequently confirmed that `void?` is invalid in every type position.
+The plan now records this as a settled rule, including the invalid nullable-void
+function example and required rejection coverage. Compiler implementation remains
+pending.
+
+The subsequent storage discussion is recorded in the plan: ordinary types are
+non-nullable by default; the shared nullable model uses conceptual presence and
+payload storage without separate nullable heap boxing or manual scalar cleanup.
+The plan explains the 32-bit int example, possible alignment overhead, stack and
+register storage, existing string/array buffer cleanup, and future class identity
+and explicit destruction. Exact native layouts remain implementation choices.
+This clarification adds no compiler support.
+
+A source audit confirms that NULL, QUESTION and ELVIS token entries already
+exist, but TypeReference/TypeParser do not model nullable qualifiers,
+ExpressionParser does not parse null/Elvis expressions, and ValueType/TypeResolver
+do not define ordinary nullable values. Existing Kotlin nullable fields and
+internal allocation-null checks are not Cloth nullability. The companion
+optional-argument plan now records the separately scoped call/default work.
+
+After implementation review, the user approved tightening the nullability plan
+and proceeding toward scalar implementation after Stage 0. Stage 0 contract
+review began with compiler stages 1-5 still pending. The follow-up
+records first-present array shape capture without reset on null, excludes mutable
+capture proofs inherited from a deferred block's declaration site, and identifies
+concrete array/string checks that must handle wrappers recursively before nullable
+buffers are enabled. Nullable-row rectangularity remains deferred to the array
+stage. The user explicitly selected `f(int)` over `f(int?)` for a proven-present
+`int?` argument, without changing the binding's declared nullable type. Other
+scalar contracts remain under review; no compiler code or executable coverage
+changed in this follow-up.
+
+The user then confirmed that ordinary non-nullable values cannot be compared
+with null. The plan and confirmed semantics record symmetric `==`/`!=` rejection,
+while retaining presence tests on declared nullable bindings after narrowing.
+
+The user also confirmed payload inference under a presence proof: inside the
+guard for an `int? x`, `def copy = x` infers `int` and stores an independent scalar
+snapshot. The plan includes a safe deferred-block example using that snapshot,
+alongside the rejected mutable nullable capture. Unproven copies remain nullable;
+an explicit nullable annotation is retained. This remains a recorded contract,
+not compiler implementation or test evidence.
+
+Nullable-to-payload equality is also confirmed: `int? n` supports `n == 5` and
+`n != 5` without a presence proof, including reversed operands. Null compares
+unequal to a present operand; present values use underlying equality. Both
+operands retain their normal evaluation effects. Compiler implementation remains
+pending.
+
+The literal/lifting priority is confirmed: `f(25)` selects `f(int?)` over
+`f(int<64>)`, preserving default `int` literal preference before nullable lifting.
+Existing typed numeric identities and whole-argument overload rules remain in
+force; no overload implementation changed.
+
+Lazy expression-level `left ?: fallback` is now confirmed: evaluate the left
+once and evaluate the fallback only when the left is null. Optional-parameter
+fallbacks remain omission-only. The user also confirmed right associativity and
+precedence below comparisons and logical operators: `a ?: b ?: c` groups to the
+right, and comparing a selected integer requires `(count ?: 0) == 1`. The user
+also confirmed that Elvis requires a nullable source type: `5 ?: 0` is rejected,
+while a declared nullable binding remains eligible after a presence proof and
+skips its fallback on that path. Elvis result nullability is also confirmed:
+`T? ?: T` produces `T`, while a `T?` or null fallback produces `T?`, retaining
+strict payload typing. Remaining Elvis boundaries stay under Stage 0 review;
+parsing, typing and execution are still pending.
+
+Ordinary casts are confirmed not to unwrap unproven nullable values. `n -> int`
+for `int? n` requires a presence proof or prior non-null fallback; payload casts
+then follow ordinary rules. Nullable-target conversions remain unspecified and
+may be gated in the initial slice. Existing void discards remain applicable.
+This is a contract update; no compiler implementation or verification changed.
+
+The user confirmed declared-type metadata for nullable bindings: `int? x` retains
+nullable `x::type` inside a presence guard, while a payload snapshot inferred
+there has non-null `int` metadata. Value receivers keep once-only evaluation
+without reading an absent payload. Remaining metadata/provider details stay
+under Stage 0 review; no compiler support is claimed by this decision.
+
+The user confirmed static proof or fallback for payload operations, explicitly
+excepting printing. `print`/`println` may render an absent nullable value as `null`
+without proof and use normal formatting when present; `::str` still requires
+payload proof. The source audit identifies `BuiltinParameter.Text`'s current
+reliance on `str`: nullable printing needs its own presence-aware adaptation
+without exposing an unchecked nullable provider. The plan's flow example now
+prints null after reassignment and rejects unproven `::str` instead. The user then
+confirmed the same absence-aware behavior for nullable interpolation: absent
+holes contribute `null` without proof, while explicit nullable `::str` still
+requires proof. Hole evaluation order, early returns and string lifetimes remain
+unchanged. The user also confirmed `print(null)`, `println(null)` and `#"{null}"`
+without payload context, while retaining the explicit nullable annotation needed
+by `def x = null`. The formatting adapter must not invent an arbitrary payload
+type or ordinary null-only binding type. No compiler code changed.
+
+The user rejected the proposed automatic nullable inference for a conditional
+with a null branch. Such conditionals require an explicit nullable type in either
+branch order, including all-null conditionals. The plan now records the rejected
+unannotated form and explicit `def<int?>` form. The user then confirmed that
+declared function return and parameter types also provide explicit nullable
+context, with no intermediate typed local; competing nullable overload contexts
+remain ambiguous. Array inference must not bypass this context requirement.
+Conditional nullable-context validation replaces the earlier automatic-inference
+recommendation; no compiler implementation changed.
+
+The user extended the explicit nullable-destination requirement to conditionals
+whose branch already has a known nullable type. The plan rejects inferred
+`def n = if (flag) { existing } else { 5 }` for `int? existing`; declared nullable
+bindings, returns and parameters can provide the required context. Proven
+payload inference retains its confirmed rule. This
+supersedes the proposed nullable branch-join inference and adds no compiler code.
+
+The user then stated the governing rule, "Cloth will never infer/assume null."
+The plan removes the conflicting proposal to infer nullable array elements from
+null/present literals; explicit nullable element context is required. The user
+confirmed that every new nullable binding needs its own explicit type, including
+known nullable copies, nullable function results and named destructuring positions.
+Proven payload inference remains non-null. The user also confirmed
+nullable-to-nullable equality for comparable payloads: both null equal, one null
+unequal, and both present use ordinary equality. No compiler code changed.
 
 ### Multi-return final review: discarded array constraints (2026-11-01)
 
@@ -2889,6 +3219,13 @@ are not language specification boundaries.
 The following have not yet been settled. Ask about them when relevant, keeping
 the user's preference for one question at a time:
 
+- **Unsafe memory and nullable integration:** the standalone
+  [deferred plan](../../../../todo/unsafe-memory-plan.md) records accepted unsafe
+  acknowledgement direction, proposed handle access/return syntax, compile-time
+  origin analysis, nullable/coalescing dependencies and conditional future stages.
+  Saving the plan implements none of them; `addr` remains unavailable. Final
+  qualifier semantics, native contracts and the boundary with ordinary deletion
+  guarantees remain unresolved.
 - **Compiler data access:** the implemented `::` contracts, result types and size
   meanings are settled for the supported types; see the dedicated
   [design note](../../../../todo/compiler-data-access.md). `addr`, array/class text

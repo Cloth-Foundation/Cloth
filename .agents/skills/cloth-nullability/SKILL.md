@@ -1,0 +1,130 @@
+---
+name: cloth-nullability
+description: Design, explain, or extend Cloth nullable types, null literals, presence proofs, lazy Elvis fallback, nullable casts and equality, or nullable formatting and metadata.
+---
+
+# Cloth nullability
+
+Read [confirmed nullable semantics](references/semantics.md) before deciding
+language behavior. For source ownership, verification and scalar follow-up rules,
+read [the implementation record](references/implementation.md). Consult the
+[staged plan](../../../todo/nullability-plan.md) when extending coverage, especially
+nullable buffers. Proposals in the plan do not establish new language rules.
+
+## Current scope
+
+Nullable fixed-width and target-sized integers, floats, bool, char and typeinfo
+execute through bindings, parameters, returns, ordered multiple results, equality,
+presence proofs, lazy Elvis, nullable-target casts, formatting and metadata.
+Nullable strings, arrays and elements remain gated pending buffer integration.
+Class lifetime and unsafe handles have separate runtime/design work. Ordinary
+optional arguments are implemented under [their own skill](../cloth-optional-arguments/SKILL.md),
+including explicit nullable scalar defaults; nullable buffers remain gated.
+
+Minimal supported example:
+
+```cloth
+fn<int> next(int? value) {
+    println(value) // Absence prints null without accessing a payload.
+    if (value != null) {
+        def copy = value // A proven-present snapshot infers plain int.
+        return copy + 1
+    }
+    return value ?: 0
+}
+```
+
+Maintained runnable examples: [NullableScalars.co](../../../examples/NullableScalars.co)
+and [NullableRules.co](../../../examples/NullableRules.co).
+
+## Preserve the language contracts
+
+- Cloth never infers or assumes nullability. Every new nullable binding needs an
+  explicit type, even for a known nullable copy, function result, named result
+  reception or nullable element type. Nullable conditional results also need an
+  explicit nullable destination; bindings, declared returns and declared
+  parameters can supply it. Discards create no binding. `def x = null` and
+  inferred nullable copies are rejected; `void?` is invalid everywhere.
+- Presence proofs change individual ordinary reads to their payload type, while
+  the binding keeps its declared nullable type. An inferred proven-present copy
+  is an independent snapshot. Such reads prefer the payload overload; ordinary
+  default numeric literal preference still precedes nullable lifting. Preserve
+  exact widths, signedness and usize/isize identity without implicit widening.
+- Payload operations require proof or a non-null fallback. Printing and
+  interpolation accept absent values and bare null, rendering exactly `null`.
+  Explicit `::str` still needs proof. Do not expose unchecked payload providers
+  merely to reuse formatting.
+- Null tests inspect presence. Equality between comparable nullable payloads, or
+  nullable and payload values, needs no proof: both absent are equal, one absent
+  is unequal, and two present use ordinary equality. Evaluate both operands once
+  in source order; preserve NaN rules. Reject ordinary non-nullable null tests.
+- Expression `?:` evaluates the left once and the fallback only on absence.
+  It is right-associative below comparisons/logical operators. `T? ?: T` yields
+  T; a nullable or null fallback retains T?. A declared nullable binding stays
+  eligible after narrowing; a plain `5 ?: 0` is rejected. Bare-left null can use
+  fallback context (`null ?: 5` is int); `null ?: null` needs explicit context.
+  Type-check skipped source and retain the explicit nullable-binding rule.
+- Nullable-target casts preserve absence and perform ordinary payload conversion
+  only when present. Plain values may convert and lift; `null -> int?` supplies
+  an explicit type. A non-nullable cast target still needs proof or fallback.
+- Scalar `is` compares flow-adjusted static expression types, including `?`.
+  Testing T? proves no presence. Bare `null is int?` is an error;
+  `(null -> int?) is int?` is true. The `is` target supplies no literal context.
+- A nullable binding's `::type` retains its declared type after narrowing.
+  Metadata text/equality retain nullable identity, while inspection exposes
+  payload properties with ordinary compile/runtime capability checks. Nullable
+  scalar `::size` includes presence storage and target ABI padding for type and
+  value receivers, even when absent or narrowed. Value receivers evaluate once.
+- Keep argument omission separate: `opt` uses a required omission-only `?:`
+  fallback. Explicit null is a supplied nullable value, not an omitted argument.
+  [Optional-argument implementation](../cloth-optional-arguments/SKILL.md)
+  owns ordinary-function default evaluation and call placement.
+
+## Compiler invariants and extension boundaries
+
+- [CNullable](../../../Compiler/src/main/kotlin/cloth/data/CNullable.kt) owns exact
+  structural identity and context-specific LLVM carriers, without nullable heap
+  boxing. Value presence uses i1; stored presence uses a byte. Preserve bool's
+  byte payload storage and nullable half's raw i16 call/result ABI transport in
+  [EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitResults.kt).
+  An internal absence marker is never an inferred source binding type.
+- [NullFlowAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+  records proofs per symbol/occurrence independently of contextual overload
+  probes. Assignments, joins, short-circuit paths and captured effects must remain
+  sound. Deferred declarations execute no effects; deferred bodies inherit no
+  mutable-capture presence proofs, and execution invalidates transitive writes.
+- [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+  and call checking own explicit contexts/adaptations. Keep candidate facts
+  isolated; emission must not invent unwraps or guess result nullability.
+- [EmitNullable](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitNullable.kt)
+  guards semantic payload extraction, conversion, formatting and comparison.
+  Absent payloads are deterministic and never treated as present. Branches and
+  phis use actual continuing predecessors, including nested returns and guards.
+  Scalar size queries use the emitted module's data layout, not a sum of bits.
+- Before admitting buffers, audit snapshots, returns, copy/transfer, freshness,
+  discarded-result validation and cleanup recursively through wrappers. A
+  `buffered` flag alone is insufficient. Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md)
+  and [arrays](../cloth-arrays/SKILL.md) for those changes. Nullable array shape
+  constraints persist independently of presence: first presence fixes unspecified
+  dimensions, and null never resets them. Nullable-row rectangularity is still
+  unresolved. Clearing a future class binding never implicitly deletes its object;
+  object presence and liveness remain separate.
+
+## Verification
+
+Relevant suites are `NullabilityParsingTest`, `NullabilityTypingTest`,
+`NullabilityEmissionTest` and `NullabilityRulesTest`. Run from the repository root:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests 'cloth.Nullability*' --offline --console=plain
+```
+
+Add the affected numeric, metadata, control-flow, multiple-result or buffer suites
+when changing their interaction. Preserve first-error diagnostics, including CLI
+failure before output/linking. The recorded nullable coverage is 38 tests;
+the final broader focused run passed 85. Native execution covers Windows x64/x86,
+with verified IR across nine target profiles, not native Linux/macOS evidence.
+The [implementation record](references/implementation.md#verification-evidence-2026-11-01)
+documents those historical runs. The former `opt` example failure is resolved
+by optional-argument integration; see its dated evidence for current full-suite
+results. Recheck source and run relevant tests before making fresh claims.

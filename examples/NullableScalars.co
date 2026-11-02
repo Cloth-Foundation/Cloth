@@ -1,0 +1,21 @@
+fn<int?> lookup(bool found) = if (found) { 25 } else { null }
+
+fn<int> main() {
+    // Every nullable binding declares its type explicitly.
+    def<int?> count = lookup(false)
+    println(#"count={count}")
+    println(count ?: 0)
+
+    count = lookup(true)
+    if (count != null) {
+        // This evaluated occurrence is proven present: snapshot is plain int.
+        def snapshot = count
+        println(snapshot + 1)
+        if (count::type != int?::type || snapshot::type != int::type) { return 1 }
+    }
+
+    // Printing and interpolation handle absence without a presence proof.
+    count = null
+    if (count != null) { return 2 }
+    return 0
+}

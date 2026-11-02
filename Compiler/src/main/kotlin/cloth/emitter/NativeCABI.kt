@@ -40,6 +40,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
 		is CArray       -> throw InternalErrors.invariant("Array printing is not implemented")
+		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
+		ValueType.Null  -> throw InternalErrors.invariant("Bare null formatting has no C vararg payload")
 		ValueType.Void  -> throw InternalErrors.invariant("A void statement has no printable value")
 		is CFloat       -> doubleType
 		is CInteger     -> {
@@ -57,6 +59,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
 		is CArray       -> throw InternalErrors.invariant("Array printing is not implemented")
+		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
+		ValueType.Null  -> throw InternalErrors.invariant("Bare null formatting has no C vararg payload")
 		ValueType.Void  -> throw InternalErrors.invariant("A void statement has no print format")
 		is CFloat       -> "g"
 		is CInteger     -> when {
