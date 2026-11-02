@@ -89,7 +89,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun loop(item: ForStatement, initial: Set<BindingSymbol>): Set<BindingSymbol> {
 		val entry = when (val source = item.source) {
-			is ForSource.Range -> expression(source.end, expression(source.start, initial).after).after
+			is ForSource.Range    -> expression(source.end, expression(source.start, initial).after).after
 			is ForSource.Elements -> expression(source.expression, initial).after
 		}
 		val repeated = item.body.statements + listOfNotNull(item.stepper?.value?.let { ExpressionStatement(it) })
@@ -200,10 +200,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		when (value) {
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is ArrayLiteral, is InterpolatedString, is BinaryExpression, is UnaryExpression, is ProviderAccessExpression, is IndexExpression, is TypeCheckExpression -> presentResults.add(value)
-			is CastExpression                                                                                                                                                                                                                                              -> if (!value.target.hasNullability && value.target.name.lexeme != "void") presentResults.add(value)
+			is CastExpression                                                                                                                                                                                                                                              -> if (!value.target.hasNullability && value.target.name.lexeme != Keywords.VOID.toString()) presentResults.add(value)
 			is CallExpression                                                                                                                                                                                                                                              -> {
 				val candidates = (model.declarations.candidatesOf(value) as? FunctionGroupSymbol)?.overloads
-				if (!candidates.isNullOrEmpty() && candidates.all { it.declaration.returnTypes.singleOrNull()?.let { type -> !type.hasNullability && type.name.lexeme != "void" } == true }) presentResults.add(value)
+				if (!candidates.isNullOrEmpty() && candidates.all { it.declaration.returnTypes.singleOrNull()?.let { type -> !type.hasNullability && type.name.lexeme != Keywords.VOID.toString() } == true }) presentResults.add(value)
 			}
 
 			else                                                                                                                                                                                                                                                           -> Unit
@@ -261,13 +261,17 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		for (item in body) when (item) {
 			is ForStatement               -> {
 				when (val source = item.source) {
-					is ForSource.Range -> { visit(source.start); visit(source.end) }
+					is ForSource.Range    -> {
+						visit(source.start); visit(source.end)
+					}
+
 					is ForSource.Elements -> visit(source.expression)
 				}
 				add(model.declarations.symbolOf(item))
 				addAll(writtenStatements(item.body.statements, visit))
 				item.stepper?.value?.let(visit)
 			}
+
 			is AssignmentStatement        -> {
 				add(model.declarations.targetOf(item)); visit(item.value)
 			}

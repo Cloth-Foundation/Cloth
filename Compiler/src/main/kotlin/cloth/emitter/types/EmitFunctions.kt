@@ -152,7 +152,6 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	companion object {
 
 		fun validate(semantics: FunctionSemanticModel) {
-			semantics.types.requireExecutableLoops()
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray    -> type.element != ValueType.VOID && supported(type.element)
 				is CNullable -> !type.buffered && supported(type.payload)

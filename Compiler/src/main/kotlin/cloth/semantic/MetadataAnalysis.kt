@@ -50,7 +50,10 @@ internal class MetadataAnalysis(
 		for (item in body) result = when (item) {
 			is ForStatement               -> {
 				when (val source = item.source) {
-					is ForSource.Range -> { expression(source.start); expression(source.end) }
+					is ForSource.Range    -> {
+						expression(source.start); expression(source.end)
+					}
+
 					is ForSource.Elements -> expression(source.expression)
 				}
 				// A single optimistic pass would reuse first-iteration metadata on
@@ -66,6 +69,7 @@ internal class MetadataAnalysis(
 				forgetMutable()
 				null
 			}
+
 			is BindingGroupDeclaration    -> {
 				expression(item.initializer)
 				val facts = model.representedResultsOf(item.initializer)

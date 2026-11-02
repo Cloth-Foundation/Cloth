@@ -3,9 +3,8 @@ package cloth.token
 import cloth.diagnostics.InternalErrors
 import kotlin.enums.enumEntries
 
-enum class Operators(private val character: String) {
-	// This comment has to exist so PLUS does not get put in line with the brace.
-	PLUS("+"),
+enum class Operators(private val character: String) { // This comment has to exist so PLUS does not get put in line with the brace.
+PLUS("+"),
 	PLUS_PLUS("++"),
 	PLUS_EQUAL("+="),
 
@@ -67,6 +66,16 @@ enum class Operators(private val character: String) {
 	}
 
 	fun toChar(): Char = character.first()
+
+	/** The binary operation used when lowering a compound assignment. */
+	fun compoundAssignmentBase(): Operators = when (this) {
+		PLUS_EQUAL  -> PLUS
+		MINUS_EQUAL -> MINUS
+		MUL_EQUAL   -> MULTIPLY
+		DIV_EQUAL   -> DIVIDE
+		MOD_EQUAL   -> MODULO
+		else        -> throw InternalErrors.invariant("Not a compound assignment: $this")
+	}
 
 	companion object {
 

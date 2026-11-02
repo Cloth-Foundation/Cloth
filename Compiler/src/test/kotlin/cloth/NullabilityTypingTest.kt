@@ -1,6 +1,7 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CNullable
+import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
@@ -8,11 +9,15 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.expression.*
-import cloth.parser.statement.*
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.IfExpression
+import cloth.parser.expression.ProviderAccessExpression
+import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.FunctionAnalyzer
 import org.junit.jupiter.api.Test
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 
 class NullabilityTypingTest {
 

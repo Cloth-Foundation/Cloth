@@ -5,12 +5,10 @@ import cloth.diagnostics.InternalErrors
 import cloth.emitter.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
-import cloth.parser.statement.ElementAssignmentStatement
-import cloth.parser.statement.ReturnStatement
-import cloth.parser.statement.Statement
-import cloth.parser.statement.UpdateStatement
+import cloth.parser.statement.*
 import cloth.semantic.*
 import cloth.semantic.symbols.LocalSymbol
+import cloth.token.Keywords
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
@@ -63,7 +61,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
-	private fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
+	fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
 		type is CArray           -> transferArrayValue(value, type)
 		type == ValueType.STRING -> checkNotNull(frame).copyValue(value, type)
 		else                     -> value
@@ -92,7 +90,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitValue(expression: Expression): LLVMValueRef {
 		val value = emit(expression)
 		if (terminated()) throw Terminated()
-		return value ?: throw InternalErrors.invariant("A value was required from a void expression")
+		return value ?: throw InternalErrors.invariant("A value was required from a ${Keywords.VOID} expression")
 	}
 
 	/** A provider consumes its receiver before any temporary cleanup can run. Buffered
@@ -255,6 +253,43 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return if (increment) LLVMBuildAdd(builder, operand, one, "increment") else LLVMBuildSub(builder, operand, one, "decrement")
 	}
 
+	fun emitFor(statement: ForStatement) {
+		val key = functionSemantics?.declarations?.symbolOf(statement) ?: statement.binding.name.lexeme
+		temporaryRegion(temporaryAnalysis.canReclaimLoop(statement)) {
+			when (statement.source) {
+				is ForSource.Range    -> EmitRangeLoop(context, builder, bindings, semantics, casts, abi, this).emit(statement, key)
+				is ForSource.Elements -> EmitForEach(context, builder, bindings, semantics, abi, this).emit(statement, key)
+			}
+		}
+	}
+
+	fun emitIteration(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimIteration(statement.body.statements), action)
+	fun emitStepper(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimStepper(statement), action)
+
+	/** Closed non-escape proof, independent of an enclosing expression's checkpoint.
+	 * Return paths bypass these releases and retain the ordinary owning-frame path.
+	 */
+	private fun temporaryRegion(reclaim: Boolean, action: () -> Unit) {
+		if (!reclaim) {
+			action(); return
+		}
+		val checkpoint = checkNotNull(frame).temporaryCheckpoint()
+		val stack = EmitStackScope(context, builder)
+		val stackCheckpoint = stack.save()
+		val previousFresh = freshArrays.toSet()
+		val previousCarriers = freshCarriers.toSet()
+		try {
+			action()
+			if (!terminated()) {
+				frame.releaseTemporaries(checkpoint)
+				stack.restore(stackCheckpoint)
+			}
+		} finally {
+			freshArrays.retainAll(previousFresh)
+			freshCarriers.retainAll(previousCarriers)
+		}
+	}
+
 	fun emit(expression: Expression): LLVMValueRef? {
 		return emit(expression, discard = false)
 	}
@@ -362,8 +397,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					val providers = ProviderEmissionContext(context, builder, strings, casts, part.span.toString())
 					fun text(value: LLVMValueRef, type: ValueType): LLVMValueRef = checkNotNull(type.provider("str", abi.layout)).emit(providers, ProviderReceiver.Value(type, value))
 					val value = when (type) {
-						ValueType.Null -> strings.literal("null")
-						is CNullable   -> checkNotNull(nullable.choose(nullable.present(raw), types.value(ValueType.STRING), { text(nullable.payload(raw), type.payload) }, { strings.literal("null") }))
+						ValueType.Null -> strings.literal(Keywords.NULL.toString())
+						is CNullable   -> checkNotNull(nullable.choose(nullable.present(raw), types.value(ValueType.STRING), { text(nullable.payload(raw), type.payload) }, { strings.literal(Keywords.NULL.toString()) }))
 						else           -> text(raw, type)
 					}
 					result = result?.let { strings.concatenate(it, value, part.span.toString()) } ?: value
@@ -410,7 +445,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 						Operators.PLUS.toString()      -> strings.concatenate(left, right, expression.operator.span.toString())
 						Operators.EQUAL.toString()     -> strings.equal(left, right)
 						Operators.NOT_EQUAL.toString() -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
-						else                          -> throw InternalErrors.invariant("Unsupported string operator: ${expression.operator}")
+						else                           -> throw InternalErrors.invariant("Unsupported string operator: ${expression.operator}")
 					}
 				}
 				val unsigned = leftType.unsigned
@@ -434,7 +469,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					Operators.GREATER.toString()       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
 					Operators.LESS_EQUAL.toString()    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
 					Operators.GREATER_EQUAL.toString() -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
-					else                              -> null
+					else                               -> null
 				}
 				if (comparison != null) {
 					return if (floatingPoint) {
@@ -521,7 +556,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				else               -> LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
 			}
 		}, { LLVMBuildICmp(builder, LLVMIntEQ, hasLeft, hasRight, "nullable_absence_equal") }))
-		return if (expression.operator.lexeme == "!=") LLVMBuildNot(builder, equal, "nullable_not_equal") else equal
+		return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "nullable_not_equal") else equal
 	}
 
 	fun emitConditional(expression: IfExpression, requireValue: Boolean): LLVMValueRef? {

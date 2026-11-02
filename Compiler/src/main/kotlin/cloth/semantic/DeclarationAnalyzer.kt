@@ -86,7 +86,10 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			for (statement in statements) when (statement) {
 				is ForStatement               -> {
 					when (val source = statement.source) {
-						is ForSource.Range -> { expression(source.start, scope); expression(source.end, scope) }
+						is ForSource.Range    -> {
+							expression(source.start, scope); expression(source.end, scope)
+						}
+
 						is ForSource.Elements -> expression(source.expression, scope)
 					}
 					val loopScope = LexicalScope(scope)
@@ -101,6 +104,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					model.loopBodyScopes[statement] = bodyScope
 					statements(statement.body.statements, bodyScope)
 				}
+
 				is BindingGroupDeclaration    -> {
 					if (statement.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(statement.span)
 					val seen = mutableMapOf<String, Token>()

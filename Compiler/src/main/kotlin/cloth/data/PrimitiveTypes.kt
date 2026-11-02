@@ -2,6 +2,7 @@ package cloth.data
 
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.Operators
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.global.LLVM.*
@@ -47,7 +48,7 @@ data class CInt(override val width: Int = DEFAULT_BITS, override val unsigned: B
 data class CFloat(val width: Int = DEFAULT_BITS) : CObject(Keywords.FLOAT) { constructor(format: FloatingFormat) : this(format.bits)
 
 	init {
-		require(width in FLOAT_WIDTHS) { "Unsupported float width: $width" }
+		require(width in FLOAT_WIDTHS) { "Unsupported ${Keywords.FLOAT} width: $width" }
 	}
 
 	override val bits: Int get() = width
@@ -125,7 +126,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	constructor(element: ValueType, size: Int) : this(element, size.toBigInteger())
 
 	init {
-		require(size == null || (size.signum() >= 0 && size <= CUSize(MAX_INTEGER_BITS).maximum)) { "Array extent exceeds the largest supported usize" }
+		require(size == null || (size.signum() >= 0 && size <= CUSize(MAX_INTEGER_BITS).maximum)) { "Array extent exceeds the largest supported ${Keywords.USIZE}" }
 	}
 
 	override val buffered: Boolean get() = true
@@ -141,7 +142,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		get() {
 			var base: ValueType = this
 			while (base is CArray) base = base.element
-			return base.spelling + arrayDimensions.joinToString("") { "[${it ?: ""}]" }
+			return base.spelling + arrayDimensions.joinToString("") { "${Operators.BRACKET_OPEN}${it ?: ""}${Operators.BRACKET_CLOSE}" }
 		}
 
 	override fun commonArrayShape(other: ValueType): ValueType? = when {

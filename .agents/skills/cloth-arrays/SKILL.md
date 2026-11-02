@@ -1,6 +1,6 @@
 ---
 name: cloth-arrays
-description: Design, explain, or extend Cloth arrays, including element inference, rectangular dimensions, fixed binding shapes, indexed reads and writes, and independent array values.
+description: Design, explain, or extend Cloth arrays, including element inference, rectangular dimensions, fixed binding shapes, indexed reads and writes, independent values and snapshot foreach traversal.
 ---
 
 # Cloth arrays
@@ -34,11 +34,12 @@ context for an empty literal, use C dimension order (`int[2][3]`), accept suppor
 integer indices, and terminate on invalid executed bounds. Recursive array value
 formatting is implemented for print, interpolation and `::str`; read the
 [output skill](../cloth-output/SKILL.md#recursive-array-text) and its contract.
-Indexed compound updates, iteration and equality are not implemented.
+Snapshot foreach is implemented through Stage 4. Indexed compound updates and
+array equality are not implemented.
 These implementation policies do not settle the remaining language decisions.
 
-Foreach source capture is confirmed design, with execution deferred: evaluate
-the source once per loop entry and traverse an independent contents/shape snapshot.
+Foreach evaluates the source once per loop entry and traverses an independent
+contents/shape snapshot.
 Original-source changes cannot affect later visited values; physical copies may
 be elided only under existing value-independence/lifetime proofs. See the
 [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
@@ -49,11 +50,12 @@ original source; retain ordinary type/shape checks and recursive independence.
 Foreach headers do not admit a `; stepper` clause; traversal advances through the
 snapshot automatically, independently of local element rebinding or row writes.
 Stage 2 resolves foreach scopes, element/row inference and received shape, with
-ordinary mutable assignment checks. C3067 rejects backend execution after those
-checks; actual snapshots, transfers and lifetimes remain deferred. Nullable array
-elements retain their existing gate. Read the
+ordinary mutable assignment checks. Stage 4 executes snapshots, independent
+element/row reception and conservative arena/stack cleanup. C3067 is retired;
+nullable array elements retain their existing gate. Read the
 [stage scope](../cloth-control-flow/references/for-implementation.md) before
-enabling iteration execution or lifetimes.
+extending traversal or lifetimes. `ForEachTest` and `ArrayTemporaryCleanupTest`
+cover executable independence, shape checks, saved values and bounded safe regions.
 
 ## Source and verification
 
@@ -61,7 +63,10 @@ Start with [CArray](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.
 [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
 and [EmitArray](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt).
 Runnable examples are [Arrays.co](../../../examples/Arrays.co) and
-[ArrayAssignment.co](../../../examples/ArrayAssignment.co).
+[ArrayAssignment.co](../../../examples/ArrayAssignment.co), plus
+[ForEach.co](../../../examples/ForEach.co) for independent snapshot traversal.
+`ForIntegrationTest` executes the foreach example on Windows x64/x86 and verifies
+loop IR/object emission across all supported ABI profiles.
 
 Relevant suites are `ArraysTest`, `ArrayInferenceTest`, `RectangularArraysTest`,
 `ArrayBindingShapeTest`, and `ArrayAssignmentTest`. Their existing coverage checks

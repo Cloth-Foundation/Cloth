@@ -29,12 +29,20 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
 - Keep checked allocation/count arithmetic target-sized. Preserve source failures,
   evaluation order, surviving aliases, and independent arrays. This mechanism
   introduces neither GC, reference counting, nor automatic class destruction.
-- For planned array foreach, preserve the confirmed once-per-entry independent
+- Stage 4 loop body, stepper and whole-loop proofs permit safe local definitions
+  and scalar writes, but reject buffered/indexed stores, unknown operations and
+  captured publication. Reclaim only proven regions: arena suffix first, then
+  stackrestore dynamic literals. Foreach body checkpoints precede receiver copying;
+  source snapshots remain alive throughout traversal. Buffered/unknown effects
+  retain frame lifetime. Early exits use existing copy/return cleanup, without
+  claiming arbitrary-loop bounded memory. See the
+  [stage record](../cloth-control-flow/references/for-implementation.md#stage-4-array-foreach-and-lifetime-integration-2026-11-02).
+- For array foreach, preserve the confirmed once-per-entry independent
   contents/shape snapshot across traversal. Original-source changes must not alter
   later elements visited; copy elision requires the same independence and lifetime
   proofs. Each element binding receives a mutable independent value, initialized
   anew; row writes cannot mutate the snapshot, and saved rows must survive later
-  iterations. Iteration remains unimplemented; read the
+  iterations. Read the
   [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
   before extending iteration cleanup or source transfer.
 
@@ -46,11 +54,16 @@ Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/type
 [ArrayTemporaryAnalysis](../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt),
 and the affected [array emitter](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt).
 
-Use `ArrayCopyElisionTest`, `ArrayTemporaryCleanupTest`, `StringFunctionTest`, and
+Use `ForEachTest`, `ArrayCopyElisionTest`, `ArrayTemporaryCleanupTest`, `StringFunctionTest`, and
 the array assignment/shape suites. Allocation counters and poisoned freed memory
 test observable independence, bounded temporary storage, and outgoing lifetimes;
 an IR allocation count alone cannot establish those properties. Add the
 [multiple-result skill](../cloth-multiple-results/SKILL.md) for result lists.
+
+The completed [loop stage record](../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02)
+records native Windows x64/x86 example execution and all-profile loop IR/objects.
+These extend portability evidence without expanding the closed cleanup proof
+or claiming bounded storage for unproven buffered/captured writes.
 
 Recorded evidence and exact optimization boundaries are in the
 [cleanup milestone](../cloth-language/references/development.md#conservative-early-array-temporary-cleanup-2026-10-31)

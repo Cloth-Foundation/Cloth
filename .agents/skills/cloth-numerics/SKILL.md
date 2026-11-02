@@ -9,8 +9,9 @@ Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
 [bindings](../cloth-bindings/SKILL.md) for assignment/update syntax.
 
-Integer and float range syntax/scopes/types are checked through Stage 2; C3067
-gates execution after semantic validation. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+Integer and float ranges execute through Stage 3; Stage 4 adds array foreach and
+conservative body/stepper cleanup. C3067 is retired.
+The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 and [implementation plan](../../../todo/for-loops-plan.md) own their scope.
 Range counters are non-nullable signed/unsigned integers at existing widths,
 usize/isize, or 16/32/64-bit floats. Bool/char/nullable counter types are rejected
@@ -67,6 +68,11 @@ using ordinary comparisons and the existing update/stalled-counter rules.
 
 ## Source and verification
 
+Range execution/closed constant validation lives in EmitRangeLoop and
+RangeConstants; [source invariants and verification](../cloth-control-flow/references/for-implementation.md#stage-3-numeric-range-execution-2026-11-02)
+cover all admitted formats/identities, finite failures and unchanged updates.
+Use `ForRangeTest` when changing numeric emission shared with loops.
+
 Inspect [CInteger](../../../Compiler/src/main/kotlin/cloth/data/CInteger.kt),
 [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
 [EmitCast](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCast.kt),
@@ -74,7 +80,10 @@ Inspect [CInteger](../../../Compiler/src/main/kotlin/cloth/data/CInteger.kt),
 [EmitIntegerDivision](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitIntegerDivision.kt),
 and [EmitPower](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitPower.kt).
 Examples: [Math.co](../../../examples/Math.co), [Casts.co](../../../examples/Casts.co),
-[Unsigned.co](../../../examples/Unsigned.co), [Booleans.co](../../../examples/Booleans.co).
+[Unsigned.co](../../../examples/Unsigned.co), [Booleans.co](../../../examples/Booleans.co),
+[ForRanges.co](../../../examples/ForRanges.co) and [FloatRanges.co](../../../examples/FloatRanges.co).
+`ForIntegrationTest` covers native Windows x86 counter overflow (including dynamic
+uint64 multiplication), float failures, and IR/object emission across ABI profiles.
 
 Relevant suites: `BindingsTest`, `UnsignedIntegersTest`, `NumericWidthsTest`,
 `CastsTest`, `AssignmentOperatorsTest`, `IntegerDivisionTest`, and

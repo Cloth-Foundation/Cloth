@@ -10,7 +10,7 @@ internal class TypeResolver(val target: TargetLayout) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme
-		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'void' has no value and cannot be nullable", annotation.span)
+		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'${Keywords.VOID}' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
 		val widths = when (name) {
 			Keywords.INTEGER.toString() -> ValueType.INTEGER_WIDTHS
@@ -46,7 +46,7 @@ internal class TypeResolver(val target: TargetLayout) {
 			val token = annotation.arraySizes.getOrNull(index)
 			val size = token?.lexeme?.toBigIntegerOrNull()
 			if (token != null && (size == null || size.signum() < 0 || size > CUSize(target.sizeBits).maximum)) {
-				throw SemanticErrors.array("Array count exceeds usize (${target.sizeBits}-bit target)", token.span)
+				throw SemanticErrors.array("Array count exceeds ${Keywords.USIZE} (${target.sizeBits}-bit target)", token.span)
 			}
 			CArray(element, size)
 		}

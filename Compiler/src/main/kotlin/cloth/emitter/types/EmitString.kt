@@ -7,6 +7,7 @@ import cloth.diagnostics.BackendErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.target.TargetLayout
+import cloth.token.Keywords
 import cloth.token.TokenSpan
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.PointerPointer
@@ -26,8 +27,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 	private val lengthType = memory.size
 	private val boolType = types.value(ValueType.BOOL)
 
-	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText, providers: ProviderEmissionContext, location: String): LLVMValueRef =
-		EmitArrayText(context, builder, abi, this, providers, location).emit(value, recipe)
+	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText, providers: ProviderEmissionContext, location: String): LLVMValueRef = EmitArrayText(context, builder, abi, this, providers, location).emit(value, recipe)
 
 	private fun descriptor(data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
 		val value = LLVMBuildInsertValue(builder, LLVMGetUndef(types.value(ValueType.STRING)), data, 0, "text_data")
@@ -39,8 +39,10 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		if (type == ValueType.STRING) return value
 		if (type == ValueType.TYPEINFO) return metadata.text(value)
 		if (type == ValueType.BOOL) {
-			val data = LLVMBuildSelect(builder, value, LLVMBuildGlobalStringPtr(builder, "true", "true_text"), LLVMBuildGlobalStringPtr(builder, "false", "false_text"), "bool_text")
-			val length = LLVMBuildSelect(builder, value, LLVMConstInt(lengthType, 4, 0), LLVMConstInt(lengthType, 5, 0), "bool_length")
+			val trueText = Keywords.TRUE.toString()
+			val falseText = Keywords.FALSE.toString()
+			val data = LLVMBuildSelect(builder, value, LLVMBuildGlobalStringPtr(builder, trueText, "true_text"), LLVMBuildGlobalStringPtr(builder, falseText, "false_text"), "bool_text")
+			val length = LLVMBuildSelect(builder, value, memory.count(trueText.toByteArray(Charsets.UTF_8).size.toLong()), memory.count(falseText.toByteArray(Charsets.UTF_8).size.toLong()), "bool_length")
 			return descriptor(data, length)
 		}
 		if (type == ValueType.CHAR) return character(value)

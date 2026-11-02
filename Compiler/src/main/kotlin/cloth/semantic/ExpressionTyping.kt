@@ -6,6 +6,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
+import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -43,7 +44,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				when (expression.operator.lexeme) {
 					Operators.PLUS.toString()  -> operand
 					Operators.MINUS.toString() -> -operand
-					else                      -> return null
+					else                       -> return null
 				}
 			}
 
@@ -126,10 +127,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected fun checkFor(statement: ForStatement, stepperExpression: Expression?, introduce: (ValueType) -> Unit) {
 		val annotation = statement.binding.type?.let { resolveType(it) }
 		fun invalid(message: String, span: TokenSpan): Nothing = throw SemanticErrors.forLoop(message, span, statement.binding.span)
-		if (annotation == ValueType.VOID) invalid("A loop binding cannot have type void", statement.binding.span)
+		if (annotation == ValueType.VOID) invalid("A loop binding cannot have type ${Keywords.VOID}", statement.binding.span)
 		var array: CArray? = null
 		val bindingType = when (val source = statement.source) {
-			is ForSource.Range -> {
+			is ForSource.Range    -> {
 				var required = annotation
 				if (required == null) for (endpoint in listOf(source.start, source.end)) {
 					val hint = arrayElementHint(endpoint, contextualFloat = true)?.takeUnless { it == ValueType.NEVER } ?: continue
@@ -137,17 +138,17 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					required = hint
 				}
 				if (required == null) {
-					required = typeOf(source.start, contextualFloat = true).takeUnless { it == ValueType.NEVER }
-						?: typeOf(source.end, contextualFloat = true).takeUnless { it == ValueType.NEVER }
-						?: invalid("Cannot infer a range counter from non-continuing endpoints; add a type annotation", statement.binding.span)
+					required = typeOf(source.start, contextualFloat = true).takeUnless { it == ValueType.NEVER } ?: typeOf(source.end, contextualFloat = true).takeUnless { it == ValueType.NEVER } ?: invalid("Cannot infer a range counter from non-continuing endpoints; add a type annotation", statement.binding.span)
 				}
 				if (!required.numeric) invalid("Range counters require a non-nullable numeric type, got '${required.spelling}'", statement.binding.type?.span ?: source.span)
 				for (endpoint in listOf(source.start, source.end)) {
 					val actual = typeOf(endpoint, required, contextualFloat = true)
 					if (actual != ValueType.NEVER && actual != required) invalid("Range endpoint requires '${required.spelling}', got '${actual.spelling}'; use an explicit cast", endpoint.span)
+					if (required is CFloat && RangeConstants(model).floating(endpoint)?.isFinite() == false) invalid("Float range endpoints must be finite", endpoint.span)
 				}
 				required
 			}
+
 			is ForSource.Elements -> {
 				if (annotation?.containsNullability == true) throw SemanticErrors.nullablePending(checkNotNull(statement.binding.type).span)
 				val actual = typeOf(source.expression, annotation?.let { CArray(it) }, contextualFloat = true)
@@ -162,7 +163,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 			}
 		}
-		if (bindingType == ValueType.VOID) invalid("A loop binding cannot have type void", statement.binding.span)
+		if (bindingType == ValueType.VOID) invalid("A loop binding cannot have type ${Keywords.VOID}", statement.binding.span)
 		model.loops[statement] = ForLoopPlan(model.target, bindingType, array, stepperExpression)
 		withScope {
 			introduce(bindingType)
@@ -170,6 +171,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			stepperExpression?.let { expression ->
 				val actual = typeOf(expression, bindingType)
 				if (!bindingType.accepts(actual)) throw SemanticErrors.typeMismatch(bindingType, actual, statement.binding.name, expression, statement.binding.name)
+				statement.stepper?.value?.let { value ->
+					if (bindingType is CFloat && RangeConstants(model).floating(value)?.isFinite() == false) invalid("Float range step values must be finite", value.span)
+				}
 			}
 		}
 		model.recordResult(statement, ResultShape.Empty)
@@ -324,7 +328,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (receiverType == ValueType.NEVER) ValueType.NEVER else {
 					// Availability is independent of the enclosing overload's return/argument context.
 					val result = receiverType.provider(expression.name.lexeme, model.target) ?: run {
-						if (receiverType is CNullable && receiver is TypeReceiverExpression) throw SemanticErrors.nullablePending(expression.name.span, "Nullable type providers other than '::type' are not implemented yet")
+						if (receiverType is CNullable && receiver is TypeReceiverExpression) throw SemanticErrors.nullablePending(expression.name.span, "Nullable type providers other than '${Operators.COLON_COLON}type' are not implemented yet")
 						if (receiverType is CNullable && receiverType.payload.provider(expression.name.lexeme, model.target) != null) throw SemanticErrors.nullablePayload(receiverType, receiver.span)
 						if (receiverType == ValueType.Null) throw SemanticErrors.nullableContext(receiver.span)
 						throw SemanticErrors.provider(receiverType, expression.name)
@@ -452,18 +456,18 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					}
 				}
 				when (expression.operator.lexeme) {
-					Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()                                                                                                                                                -> {
+					Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()                                                                                                                                               -> {
 						if (left is CArray || right is CArray || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 						ValueType.BOOL
 					}
 
 					Operators.PLUS.toString() if (left == ValueType.STRING || left == ValueType.NEVER) && (right == ValueType.STRING || right == ValueType.NEVER) && (left == ValueType.STRING || right == ValueType.STRING) -> ValueType.STRING
-					Operators.AND.toString(), Operators.OR.toString()                                                                                                                                                         -> {
+					Operators.AND.toString(), Operators.OR.toString()                                                                                                                                                        -> {
 						if ((left != ValueType.BOOL && left != ValueType.NEVER) || (right != ValueType.BOOL && right != ValueType.NEVER)) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, boolean = true) }
 						ValueType.BOOL
 					}
 
-					else                                                                                                                                                                                                    -> {
+					else                                                                                                                                                                                                     -> {
 						if ((!left.numeric && left != ValueType.NEVER) || (!right.numeric && right != ValueType.NEVER)) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right) }
 						if (expression.operator.lexeme in comparisonOperators) ValueType.BOOL else if (left.floating || right.floating) ValueType.commonFloating(left, right) else left
 					}
@@ -492,7 +496,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			typeOf(expression.fallback, expected, contextualFloat = contextualFloat)
 			return ValueType.NEVER
 		}
-		if (left !is CNullable) throw SemanticErrors.elvis("The left operand of '?:' requires a nullable source type", expression.left.span)
+		if (left !is CNullable) throw SemanticErrors.elvis("The left operand of '${Operators.ELVIS}' requires a nullable source type", expression.left.span)
 		val fallback = typeOf(expression.fallback, if (expected is CNullable) left else left.payload, contextualFloat = contextualFloat)
 		if (fallback == ValueType.NEVER) return left.payload
 		if (!left.accepts(fallback)) throw SemanticErrors.elvis("Fallback requires '${left.payload.spelling}' or '${left.spelling}', got '${fallback.spelling}'", expression.fallback.span)
@@ -516,7 +520,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val left = typeOf(expression.left, if (expression.left is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
 		val right = typeOf(expression.right, if (expression.right is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
 		val wrapper = left as? CNullable ?: right as? CNullable
-		if (wrapper == null) throw SemanticErrors.nullComparison("A null comparison requires a typed nullable operand", expression.span)
+		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
 		if (!wrapper.accepts(left) || !wrapper.accepts(right) || payload is CArray) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload

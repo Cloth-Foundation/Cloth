@@ -138,6 +138,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 						facts.bindings[facts.declarations.symbolOf(statement)] = type
 					}
 				}
+
 				is BindingGroupDeclaration    -> {
 					val plan = definitionPlan(statement)
 					facts.declarations.symbolsOf(statement).forEachIndexed { index, symbol ->

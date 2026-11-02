@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ArrayTextTest {
+
 	private fun unit(source: String) = Parser(Lexer(SourceFile("array-text.co", source.trimIndent())).scanTokens()).parse()
 
 	@Test

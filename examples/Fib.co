@@ -1,21 +1,20 @@
-fn<int<64>> printFib(int<64> n) {
+fn<int> fibonacci(int n) {
+    if (n <= 1) { return n }
 
-    def<int<64>> first = 0
-    def<int<64>> second = 1
-    def<string> heading = #"Fibonacci Series ({n} terms): \n"
+    def previous = 0
+    def current = 1
 
-    print(heading)
+    for (def i <- 2..=n) {
+        def next := previous + current
+        previous = current
+        current = next
+    }
 
-    println("You dont have for loops yet 😞")
-
-    return 0 -> int<64>
-
+    return current
 }
 
-fn<isize> main () {
-
-    printFib(25) -> void
-
-    return 0
+fn main() {
+    for (def n <- 0..10) {
+        println(fibonacci(n))
+    }
 }
-

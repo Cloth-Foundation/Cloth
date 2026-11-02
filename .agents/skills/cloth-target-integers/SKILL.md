@@ -47,3 +47,9 @@ Windows x64/x86 execution and verified IR for supported foreign 64-bit profiles.
 See [x86 ABI and assembly evidence](../cloth-language/references/usize-x86-validation.md).
 Other 32-bit targets remain unsupported; IR checks do not establish foreign native
 execution. Recheck source and rerun relevant suites for fresh verification claims.
+
+Loop publication adds `ForIntegrationTest`: native PE32 checks every integer
+counter identity/width and dynamic uint64 multiplication overflow, while one AST
+emits loop IR/objects across all supported 32/64-bit ABI profiles. Target usize
+foreach counts and counter types must stay local to that compilation. See the
+[loop portability evidence](../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02).

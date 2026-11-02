@@ -1,12 +1,13 @@
 package cloth
 
 import cloth.data.ValueType
-import cloth.diagnostics.*
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.expression.*
-import cloth.parser.statement.*
-import cloth.semantic.*
+import cloth.parser.statement.ForSource
+import cloth.semantic.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 

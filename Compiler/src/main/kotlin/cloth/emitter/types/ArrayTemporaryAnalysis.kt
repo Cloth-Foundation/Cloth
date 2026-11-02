@@ -3,9 +3,7 @@ package cloth.emitter.types
 import cloth.data.CArray
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
-import cloth.parser.statement.ExpressionStatement
-import cloth.parser.statement.ReturnStatement
-import cloth.parser.statement.Statement
+import cloth.parser.statement.*
 import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.ResolvedCall
 import cloth.semantic.SemanticModel
@@ -16,7 +14,8 @@ import java.util.*
  * newly allocated buffers into surrounding bindings. Ordinary Cloth functions
  * receive value arguments and can only return buffers into the caller; inline
  * function blocks need inspection because they can write captured bindings.
- * Unrecognized operations and all declarations/writes fall back to frame lifetime.
+ * The general expression proof rejects declarations/writes. Separate loop-region
+ * proofs below admit safe locals/scalar stores and reject buffered publication.
  */
 internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private val functions: FunctionSemanticModel?) {
 
@@ -29,6 +28,35 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	private val active = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
 	private val unknown = Effects(arrays = true, safe = false)
 	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.arrays && it.safe }
+
+	/** A loop has no continuing result. Declarations stay inside the iteration;
+	 * scalar stores cannot publish buffers. Buffered stores, indexed writes and
+	 * unrecognized/captured effects conservatively retain the owning frame.
+	 */
+	fun canReclaimIteration(body: List<Statement>): Boolean = body.all { statement ->
+		when (statement) {
+			is BindingDeclaration       -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
+			is BindingGroupDeclaration  -> effects(statement.initializer).safe
+			is AssignmentStatement      -> !types.typeOf(statement).buffered && effects(statement.value).safe
+			is MultiAssignmentStatement -> types.receptionOf(statement).slots.none { it.type.buffered } && effects(statement.value).safe
+			is UpdateStatement          -> !types.typeOf(statement).buffered
+			is ExpressionStatement      -> when (val expression = statement.expression) {
+				is IfExpression -> expression.branches.all { effects(it.condition).safe && canReclaimIteration(it.statements) } && (expression.otherwise?.let(::canReclaimIteration) ?: true)
+				else            -> effects(expression).safe
+			}
+
+			is ReturnStatement          -> statement.value?.let { effects(it).safe } ?: true
+			is ForStatement             -> canReclaimLoop(statement)
+			else                        -> false
+		}
+	}
+
+	fun canReclaimLoop(statement: ForStatement): Boolean = canReclaimIteration(statement.body.statements) && when (val source = statement.source) {
+		is ForSource.Elements -> effects(source.expression).safe
+		is ForSource.Range    -> effects(source.start).safe && effects(source.end).safe && (statement.stepper?.value?.let { effects(it).safe } ?: true)
+	}
+
+	fun canReclaimStepper(statement: ForStatement): Boolean = statement.stepper?.value?.let { effects(it).safe } ?: false
 
 	private fun statements(body: List<Statement>): Effects = body.fold(Effects()) { result, statement ->
 		result + when (statement) {

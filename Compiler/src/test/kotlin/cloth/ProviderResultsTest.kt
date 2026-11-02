@@ -50,8 +50,8 @@ class ProviderResultsTest {
 	fun `provider spellings are contextual and unresolved accessors stay unavailable`() {
 		val target = NativeCABI.native().layout
 		for (provider in CompilerDataProviders.entries) {
-			assertEquals(provider, CompilerDataProviders.fromSpelling(provider.spelling))
-			assertEquals(TokenType.Identifier, Lexer(provider.spelling).scanTokens().first().type)
+			assertEquals(provider, CompilerDataProviders.fromSpelling(provider.toString()))
+			assertEquals(TokenType.Identifier, Lexer(provider.toString()).scanTokens().first().type)
 		}
 		assertNull(CompilerDataProviders.fromSpelling("MAX"))
 		assertNull(CInt().provider("unknown"))

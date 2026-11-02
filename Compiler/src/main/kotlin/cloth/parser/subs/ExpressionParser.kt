@@ -15,7 +15,7 @@ class ExpressionParser(val parser: Parser) {
 
 		while (true) {
 			val operator = parser.peek()
-			if (stopAtAssignment && (operator.lexeme in setOf("=", ":=") || (left is ProviderAccessExpression && operator.lexeme in setOf("+=", "-=", "*=", "/=", "%=", "++", "--")))) break
+			if (stopAtAssignment && (operator.lexeme in setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString()) || (left is ProviderAccessExpression && operator.lexeme in setOf(Operators.PLUS_EQUAL.toString(), Operators.MINUS_EQUAL.toString(), Operators.MUL_EQUAL.toString(), Operators.DIV_EQUAL.toString(), Operators.MOD_EQUAL.toString(), Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())))) break
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -57,9 +57,9 @@ class ExpressionParser(val parser: Parser) {
 	fun parseUnary(stopAtRange: Boolean = false): Expression {
 		val token = parser.peek()
 
-		if (token.type == TokenType.Operator && token.lexeme in setOf("+", "-", "!")) {
+		if (token.type == TokenType.Operator && token.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString(), Operators.NOT.toString())) {
 			parser.advance()
-			return UnaryExpression(token, if (token.lexeme == "!") parseUnary(stopAtRange) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange))
+			return UnaryExpression(token, if (token.lexeme == Operators.NOT.toString()) parseUnary(stopAtRange) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange))
 		}
 
 		var value = parsePrimary()
@@ -81,7 +81,7 @@ class ExpressionParser(val parser: Parser) {
 					} else ProviderAccessExpression(value, name)
 				}
 
-				else                             -> return value
+				else                              -> return value
 			}
 		}
 	}
@@ -91,7 +91,7 @@ class ExpressionParser(val parser: Parser) {
 
 		return when (token.type) {
 			TokenType.Keyword if TypeParser.startsTypeReceiver(token)                                       -> TypeReceiverExpression(TypeParser(parser).parse(allowArrays = true))
-			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.toString()                          -> {
+			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.toString()                         -> {
 				val elements = parser.delimited.brackets { parser.delimited.commaSeparated(Operators.BRACKET_CLOSE) { parseExpression() } }
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
 			}
@@ -161,7 +161,7 @@ class ExpressionParser(val parser: Parser) {
 				FloatingPointLiteral(token.lexeme, token.span)
 			}
 
-			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.toString()                            -> {
+			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.toString()                           -> {
 				parser.delimited.parentheses { parseExpression() }
 			}
 
@@ -181,15 +181,15 @@ class ExpressionParser(val parser: Parser) {
 		val parts = mutableListOf<Expression>()
 		while (true) {
 			val segment = parser.expect(TokenType.StringSegment, "string text")
-			parts.add(StringLiteral(decodeString(segment.lexeme.replace("{{", "{").replace("}}", "}")), segment.span))
+			parts.add(StringLiteral(decodeString(segment.lexeme.replace(Operators.BRACE_OPEN.toString().repeat(2), Operators.BRACE_OPEN.toString()).replace(Operators.BRACE_CLOSE.toString().repeat(2), Operators.BRACE_CLOSE.toString())), segment.span))
 			if (parser.peek().type == TokenType.InterpolationEnd) {
 				return InterpolatedString(parts, opening.span.through(parser.advance().span))
 			}
-			parser.expect(TokenType.InterpolationOpen, "'{' before an interpolated expression")
+			parser.expect(TokenType.InterpolationOpen, "'${Operators.BRACE_OPEN}' before an interpolated expression")
 			while (parser.peek().type == TokenType.NewLine) parser.advance()
 			parts.add(parseExpression())
 			while (parser.peek().type == TokenType.NewLine) parser.advance()
-			parser.expect(TokenType.InterpolationClose, "'}' after an interpolated expression")
+			parser.expect(TokenType.InterpolationClose, "'${Operators.BRACE_CLOSE}' after an interpolated expression")
 		}
 	}
 

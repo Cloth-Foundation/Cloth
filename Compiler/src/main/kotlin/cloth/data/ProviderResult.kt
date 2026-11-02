@@ -3,6 +3,7 @@ package cloth.data
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.ProviderEmissionContext
 import cloth.target.TargetLayout
+import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigDecimal
@@ -132,7 +133,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 	data class ArraySize(override val receiverType: CArray, override val type: CUSize) : ProviderResult<CUSize>() {
 
 		init {
-			require(receiverType.arrayDimensions.all { it == null || type.acceptsLiteral(it) }) { "Array extent must fit target usize" }
+			require(receiverType.arrayDimensions.all { it == null || type.acceptsLiteral(it) }) { "Array extent must fit target ${Keywords.USIZE}" }
 		}
 
 		override val receiverForms: Set<ProviderReceiverForm>

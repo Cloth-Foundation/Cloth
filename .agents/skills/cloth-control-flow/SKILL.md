@@ -1,6 +1,6 @@
 ---
 name: cloth-control-flow
-description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch merging, or for-loop parsing, scopes, types and repeated flow.
+description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch merging, numeric range loops, array foreach and conservative loop cleanup.
 ---
 
 # Cloth control flow
@@ -13,15 +13,18 @@ The reference also owns [confirmed for-loop and range design](references/semanti
 Both forms use `<-`; only numeric ranges admit a required `; stepper` clause.
 Preserve the accepted fixed-bound/free-direction, strict typing, default `+1`,
 finite-float, integer header-overflow and independent foreach-value contracts
-when implementing later stages. The [implementation plan](../../../todo/for-loops-plan.md)
+when extending execution. The [implementation plan](../../../todo/for-loops-plan.md)
 maps the accepted contract to compiler stages and verification requirements.
 
-## For loops: Stage 2 semantic support
+## For loops: integrated range and foreach execution
 
 Read [stage scope, source ownership and verification](references/for-implementation.md)
-before extending loops or enabling execution. Stage 2 is complete: 105 focused
-and all 868 compiler tests pass, including 55 loop tests. Loop execution is
-still gated, independently of accepted static scopes/types/flow.
+before extending loops. Stages 1-4 implement syntax, scopes/types/repeated flow,
+numeric ranges, array foreach snapshots/independent elements and proven cleanup.
+Stage 5 adds runnable examples and integration coverage on native Windows x64/x86
+and verified IR/objects across all nine supported ABI profiles. All 936 compiler
+tests pass, including 112 loop tests and 27 cleanup tests. The agreed slice is
+complete; the linked record retains exact commands, evidence and deferred scope.
 
 - `ForStatement.kt` retains a separate receiving binding, range/element source,
   original stepper operator/RHS, body form and exact spans. Do not fabricate an
@@ -39,14 +42,33 @@ still gated, independently of accepted static scopes/types/flow.
 - Completion includes zero trips and real return ownership. Presence proofs are
   invalidated for repeated/captured writes before body checking; metadata forgets
   visible mutable represented types across the loop and keeps immutable facts.
-- Semantic APIs accept valid loops. C3068 labels invalid loop source/binding
-  contracts; existing earlier diagnostics stay intact. C3067 now gates only
-  backend execution before LLVM/linker/output work, after semantic validation.
-- No loop IR, runtime progression/finite/overflow guards, actual foreach snapshot
-  or value transfer, or iteration cleanup is implemented in this stage.
+- EmitRangeLoop saves and validates endpoints once in source order, uses both
+  fixed boundaries, and executes default/all explicit updates after normal body
+  completion. Preserve descending/free direction, body writes and early returns.
+- Integer header arithmetic overflow exits before storing; ordinary body/RHS
+  wrapping and integer division failures remain. Float updates round in their
+  declared format; finite and unchanged-update guards retain located failures.
+  Closed nonfinite endpoint/step constants get C3068; unknown values are guarded.
+- Loop/body binding allocation stays in the entry block, including snippets.
+  EmitForEach captures its source once, transfers fresh results or copies stored
+  values, traverses with usize counts, and receives a mutable independent value
+  each iteration. Preserve recursive row/string copies, shapes and saved values.
+- Closed body, stepper and whole-loop proofs enable arena suffix release plus
+  dynamic stack restoration after normal completion. Buffered/indexed writes,
+  captured publication and unknown effects retain frame lifetime. Early returns
+  bypass normal regions and use existing buffered copy/return cleanup.
+- C3068 labels invalid loop contracts, including known nonfinite range values;
+  existing earlier diagnostics stay intact. C3067 is retired and reserved;
+  valid range/foreach syntax reaches execution without a stage gate.
 
-Use `ForParsingTest`, `ForSemanticsTest`, `ForFlowTest` and `ForStageGateTest`, plus
+Use `ForIntegrationTest`, `ForEachTest`, `ForRangeTest`, `ForParsingTest`, `ForSemanticsTest`, `ForFlowTest`,
+`ForStageGateTest` and `ArrayTemporaryCleanupTest`, plus
 affected nullable, metadata, defaults and return suites.
+
+Runnable examples: [ForRanges.co](../../../examples/ForRanges.co),
+[FloatRanges.co](../../../examples/FloatRanges.co) and
+[ForEach.co](../../../examples/ForEach.co). Preserve Test.co's intended class/state
+syntax without treating it as a class-execution acceptance test.
 
 ## Development rules and current boundaries
 

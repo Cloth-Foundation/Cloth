@@ -1,8 +1,7 @@
 package cloth.token
 
-enum class Keywords(private val keyword: String? = null) {
-	// This comment has to exist so MODULE does not get put in line with the brace.
-	MODULE("mod"),
+enum class Keywords(private val keyword: String? = null) { // This comment has to exist so MODULE does not get put in line with the brace.
+MODULE("mod"),
 	DEFINITION("def"),
 	TYPEDEF,
 	USE,

@@ -278,6 +278,196 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
+	@Test
+	fun `foreach adopts fresh source storage and releases it after traversal`(@TempDir directory: Path) {
+		probe(directory, "foreach_fresh", """
+			fn<int[]> source() = [1, 2]
+			fn<int> sample() {
+			    def sum = 0
+			    for (def value <- source()) sum += value
+			    if (liveBytes() != 0) { return 1 }
+			    return sum - 3
+			}
+		""", allocations = 1, peak = 16)
+	}
+
+	@Test
+	fun `foreach snapshots borrowed storage without reclaiming original bindings`(@TempDir directory: Path) {
+		probe(directory, "foreach_borrowed", """
+			fn<int[]> source() = [1, 2]
+			fn<int> sample() {
+			    def values = source()
+			    def baseline = liveBytes()
+			    def sum = 0
+			    for (def value <- values) sum += value
+			    if (liveBytes() != baseline || values[1] != 2) { return 1 }
+			    return sum - 3
+			}
+		""", allocations = 2, peak = 32)
+	}
+
+	@Test
+	fun `received row buffers are reclaimed each safe iteration with fixed peak usage`(@TempDir directory: Path) {
+		probe(directory, "foreach_rows", """
+			fn<int[][]> matrix() = [[1, 2], [3, 4], [5, 6]]
+			fn<int> sample() {
+			    def baseline = 0 -> int<64>
+			    def count = 0
+			    def sum = 0
+			    for (def row <- matrix()) {
+			        if (count == 0) { baseline = liveBytes() }
+			        if (liveBytes() != baseline) { return 1 }
+			        def local = row
+			        sum += local[0]
+			        count++
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return sum - 9
+			}
+		""")
+	}
+
+	@Test
+	fun `received string storage is reclaimed between safe scalar consumers`(@TempDir directory: Path) {
+		probe(directory, "foreach_strings", """
+			fn<string[]> source() = ["Cloth", "Hello", "World"]
+			fn<int> length(string value) = value::size -> int
+			fn<int> sample() {
+			    def baseline = 0 -> int<64>
+			    def count = 0
+			    def sum = 0
+			    for (def value <- source()) {
+			        if (count == 0) { baseline = liveBytes() }
+			        if (liveBytes() != baseline) { return 1 }
+			        sum += length(value)
+			        count++
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return sum - 15
+			}
+		""")
+	}
+
+	@Test
+	fun `safe nested range and foreach reentry reclaim sources and temporary rows`(@TempDir directory: Path) {
+		probe(directory, "foreach_reentry", """
+			fn<int[][]> matrix() = [[1, 2], [3, 4]]
+			fn<int> sample() {
+			    def sum = 0
+			    for (def i <- 0..200) {
+			        for (def row <- matrix()) for (def value <- row) sum += value
+			        if (liveBytes() != 0) { return 1 }
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return sum - 2000
+			}
+		""")
+	}
+
+	@Test
+	fun `safe iteration restores literal stack storage and bounds arena peak`(@TempDir directory: Path) {
+		probe(directory, "loop_stack", """
+			fn<int> sample() {
+			    def total = 0
+			    for (def i <- 0..20000) {
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (liveBytes() != 264) { return 1 }
+			        total += local[0]
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return total - 20000
+			}
+		""", allocations = 20000, peak = 264)
+	}
+
+	@Test
+	fun `safe range steppers reclaim literal argument storage on every update`(@TempDir directory: Path) {
+		probe(directory, "loop_step_stack", """
+			fn<int> step(int[] values) = values[0]
+			fn<int> sample() {
+			    def count = 0
+			    for (def i <- 0..20000; i += step([${(1..64).joinToString(", ")}])) {
+			        if (liveBytes() != 0) { return 1 }
+			        count++
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return count - 20000
+			}
+		""", allocations = 20000, peak = 264)
+	}
+
+	@Test
+	fun `saved rows and borrowed strings survive later iterations and unrelated cleanup`(@TempDir directory: Path) {
+		probe(directory, "foreach_saved", """
+			fn<string[][]> source() = [[#"value {1}", "first"], [#"value {2}", "second"]]
+			fn<int> sample() {
+			    def saved = ["", ""]
+			    def text = ""
+			    for (def row <- source()) {
+			        saved = row
+			        text = row[0]
+			        row[0] = "changed"
+			    }
+			    def baseline = liveBytes()
+			    source()
+			    if (liveBytes() != baseline || saved[0] != "value 2" || saved[1] != "second" || text != "value 2") { return 1 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `transitive deferred captures disable loop cleanup for published rows`(@TempDir directory: Path) {
+		probe(directory, "foreach_capture", """
+			fn<int[][]> source() = [[1, 2], [3, 4]]
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    for (def row <- source()) {
+			        def<int> publish = { saved = row; return 0 }
+			        def<int> relay = { return publish }
+			        def ignored = relay
+			    }
+			    def baseline = liveBytes()
+			    source()
+			    if (liveBytes() != baseline || saved[0] != 3 || saved[1] != 4) { return 1 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `captured source writes stay alive across safe element iteration`(@TempDir directory: Path) {
+		probe(directory, "foreach_source_capture", """
+			$make
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    def<int[]> source = { saved = make(9); return make(1) }
+			    def sum = 0
+			    for (def value <- source) sum += value
+			    def baseline = liveBytes()
+			    make(2)
+			    if (liveBytes() != baseline || saved[0] != 9 || sum != 2) { return 1 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `foreach early array returns bypass region cleanup until copied to caller`(@TempDir directory: Path) {
+		probe(directory, "foreach_early", """
+			fn<string[][]> source() = [[#"value {1}", "first"], [#"value {2}", "second"]]
+			fn<string[]> first() { for (def row <- source()) return row; return ["bad", "bad"] }
+			fn<string[]> second() { for (def row <- source()) { if (row[0] == "value 2") { return row } }; return ["bad", "bad"] }
+			fn<int> sample() {
+			    def saved = first()
+			    def later = second()
+			    source()
+			    if (saved[0] != "value 1" || saved[1] != "first" || later[0] != "value 2" || later[1] != "second") { return 1 }
+			    return 0
+			}
+		""")
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

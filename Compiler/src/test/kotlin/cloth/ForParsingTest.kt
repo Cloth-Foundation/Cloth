@@ -254,7 +254,9 @@ class ForParsingTest {
 
 	@Test
 	fun `maintained array iteration design example parses without claiming execution`() {
-		val statements = body(Files.readString(Path.of("examples/Arr.co")))
+		// Arr.co may keep the traversal demonstration commented while foreach is gated.
+		val source = Files.readString(Path.of("examples/Arr.co"))
+		val statements = body(Regex("/\\*(for[\\s\\S]*?)\\*/").replace(source) { it.groupValues[1] })
 		assertEquals(4, statements.filterIsInstance<ForStatement>().size)
 		val outer = statements.filterIsInstance<ForStatement>().last()
 		assertIs<ForSource.Elements>(outer.source)

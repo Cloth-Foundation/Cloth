@@ -1,6 +1,5 @@
 package cloth
 
-import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
@@ -25,10 +24,12 @@ class NullabilityRulesTest {
 		assertEquals(code, error.diagnosticCode, error.summary)
 		assertLocated(error)
 	}
+
 	private fun targets(): List<NativeCABI> {
 		val native = NativeCABI.native()
 		return if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
 	}
+
 	private fun execute(directory: Path, name: String, source: String, error: String? = null) {
 		val ast = parse(source)
 		for (abi in targets()) {

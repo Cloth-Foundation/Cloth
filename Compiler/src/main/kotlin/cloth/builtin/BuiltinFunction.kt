@@ -4,6 +4,7 @@ import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.BuiltinEmissionContext
 import cloth.target.TargetLayout
+import cloth.token.Operators
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.LLVMTypeOf
 
@@ -13,7 +14,7 @@ internal data class BuiltinDefinition<out T : BuiltinFunction>(val name: String,
 
 	val signatures: String
 		get() = function.overloads.joinToString("; ") { overload ->
-			"$name(${overload.parameters.joinToString { it.spelling }}) -> ${overload.returns.spelling}"
+			"$name${Operators.PAREN_OPEN}${overload.parameters.joinToString("${Operators.COMMA} ") { it.spelling }}${Operators.PAREN_CLOSE} ${Operators.POINTER_RIGHT} ${overload.returns.spelling}"
 		}
 }
 

@@ -63,7 +63,7 @@ class BindingsTest {
 		val parser = Parser(Lexer("<outer<inner>>").scanTokens())
 		fun parseName(): String {
 			val name = parser.expect(TokenType.Identifier, "a name").lexeme
-			return if (parser.peek().lexeme == Operators.LESS.character) {
+			return if (parser.peek().lexeme == Operators.LESS.toString()) {
 				val nested = parser.delimited.angles { parseName() }
 				"$name($nested)"
 			} else name

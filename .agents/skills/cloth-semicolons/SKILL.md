@@ -47,7 +47,7 @@ The user used C/C++/Java as placement guidance, with the explicit rejection of
 brace-bodied function terminators as the Cloth rule. This is not a promise to
 adopt every empty-declaration or empty-statement rule of those languages.
 
-## Required loop-header separator (parser implemented; execution deferred)
+## Required loop-header separator
 
 On 2026-11-02 the user confirmed that an explicit range-loop stepper requires
 a semicolon separating it from the range:
@@ -60,8 +60,9 @@ for (def<int> i <- 5..100) println(i)
 The second form omits the entire stepper clause and increments by one. The
 semicolon in the first form is a required header separator, independent of
 optional statement terminators. Stage 1 implements this grammar and preserves
-the separator token/span. Stage 2 validates loop semantics; C3067 gates backend
-execution. Read the [stage scope and tests](../cloth-control-flow/references/for-implementation.md).
+the separator token/span. Stage 2 validates loop semantics; Stage 3 executes
+numeric ranges, and Stage 4 executes foreach with its snapshot contract. Read the
+[stage scope and tests](../cloth-control-flow/references/for-implementation.md).
 The [control-flow contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 owns loop syntax and behavior; both range and foreach bindings use `<-`.
 Only numeric range loops admit the `; stepper` clause. Array foreach headers
@@ -84,7 +85,10 @@ code and mention both a newline and `;`. Brace function boundaries use a located
 `EXPECTED_TOKEN` diagnostic without suggesting a semicolon. Preserve first-error
 termination. Only currently supported declarations/statements are implemented;
 this does not implement classes or methods. Loop header parsing is covered by
-the separate Stage 1 record linked above; loop execution remains deferred.
+the stage record linked above; numeric range execution is implemented in Stage 3.
+The executable [ForRanges.co](../../../examples/ForRanges.co) and
+[FloatRanges.co](../../../examples/FloatRanges.co) preserve the required separator
+and omitted-clause forms; ForIntegrationTest checks their native x64/x86 execution.
 
 ## Verification
 

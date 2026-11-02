@@ -1,15 +1,25 @@
 package cloth
 
 import cloth.data.*
-import cloth.diagnostics.*
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticCode
+import cloth.diagnostics.SourceFile
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.expression.*
-import cloth.parser.statement.*
-import cloth.semantic.*
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.NameExpression
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
+import cloth.parser.statement.ForSource
+import cloth.parser.statement.ForStatement
+import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.ResultShape
+import cloth.semantic.SemanticAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
@@ -27,6 +37,7 @@ class ForSemanticsTest {
 		assertEquals(facts.target, plan.target)
 		return plan.bindingType
 	}
+
 	private fun invalid(source: String, code: DiagnosticCode = DiagnosticCode.INVALID_FOR_LOOP): ClothDiagnostic {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)

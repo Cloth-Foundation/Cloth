@@ -29,9 +29,9 @@ result list; use [arrays](../cloth-arrays/SKILL.md) for shape and copy rules.
   class objects are frozen. A deferred function-block binding is not an ordinary
   stored result; use the [function skill](../cloth-functions/SKILL.md).
 
-Stage 2 checks range headers with one existing assignment/update to their declared
+Stage 3 executes range headers with one existing assignment/update to their declared
 counter. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
-owns the source/type rules and still-deferred execution/integer overflow exit.
+owns the source/type and implemented integer overflow-exit rules.
 Preserve the original stepper operator: arithmetic inside a plain assignment RHS
 retains ordinary wrapping, while header arithmetic update operators use the loop
 overflow rule. Existing division/remainder invalid-operation checks still apply.

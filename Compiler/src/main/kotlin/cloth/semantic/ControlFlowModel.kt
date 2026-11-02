@@ -42,13 +42,14 @@ class ControlFlowModel {
 		when (statement) {
 			is ForStatement               -> {
 				val entry = when (val source = statement.source) {
-					is ForSource.Range -> of(source.start).then(of(source.end))
+					is ForSource.Range    -> of(source.start).then(of(source.end))
 					is ForSource.Elements -> of(source.expression)
 				}
 				val iteration = of(statement.body.statements).then(statement.stepper?.value?.let { of(it) } ?: ControlFlow.CONTINUE)
 				// Even an always-returning body cannot establish that a loop executes.
 				entry.then(ControlFlow.CONTINUE.or(iteration))
 			}
+
 			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
 			is BindingGroupDeclaration    -> of(statement.initializer)
