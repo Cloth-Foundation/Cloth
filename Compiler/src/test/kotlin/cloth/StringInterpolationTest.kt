@@ -65,43 +65,34 @@ class StringInterpolationTest {
 	}
 
 	@Test
-	fun `array interpolation reports the unsupported hole in snippets and skipped branches`() {
+	fun `array interpolation is accepted in snippets and skipped branches`() {
 		for (source in listOf("#\"{[1]}\"", "def values = [1, 2]\n#\"{values}\"", "#\"{[[1], [2]]}\"", "false && (#\"{[1]}\" == \"\")", "true || (#\"{[1]}\" == \"\")", "if (false) { #\"{[1]}\" }", "if (true) {} else { #\"{[1]}\" }")) {
-			val error = assertFailsWith<ClothDiagnostic>(source) { SemanticAnalyzer().analyze(parse(source)) }
-			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode, source)
-			assertLocated(error)
-			assertEquals(1, error.sourceLabels.size)
+			SemanticAnalyzer().analyze(parse(source))
 		}
-		val error = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(parse("#\"{[1]}{[2, 3]}\"")) }
-		assertEquals(4, error.sourceLabels.single().span.startColumn)
-		assertEquals(7, error.sourceLabels.single().span.endColumn)
-		assertContains(error.summary, "int[1]")
-		assertFalse(error.summary.contains("int[2]"))
+		val ast = parse("#\"{[1]}{[2, 3]}\"")
+		assertEquals(ValueType.STRING, SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
 	}
 
 	@Test
-	fun `function interpolation rejects array values including return calls and overload arguments`() {
+	fun `function interpolation accepts array values including return calls and overload arguments`() {
 		val prelude = "fn<int[]> values() = [1, 2]\nfn consume(string text) {}\nfn consume(int value) {}\n"
 		for ((setup, hole) in listOf("" to "[1, 2]", "def data = [1, 2]" to "data", "" to "[[1], [2]]", "" to "values()", "" to "if (true) { [1] } else { [2] }", "" to "[[1]][0]", "def<int[0]> empty = []" to "empty", "" to "args")) {
 			for (expression in listOf("#\"{$hole}\"", "consume(#\"{$hole}\")", "if (false) { #\"{$hole}\" }")) {
 				val source = prelude + "fn main(string[] args) {\n$setup\n$expression\n}"
-				val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer().analyze(parseProgram(source)) }
-				assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode, source)
-				assertLocated(error)
-				val span = error.sourceLabels.single().span
-				assertEquals(hole, assertNotNull(span.source).text.lines()[span.startLine - 1].substring(span.startColumn - 1, span.endColumn - 1))
+				FunctionAnalyzer().analyze(parseProgram(source))
 			}
 		}
 	}
 
 	@Test
-	fun `unsupported interpolation fails before toolchain discovery emission and output creation`(@TempDir directory: Path) {
-		val source = "fn main() { #\"{[1]}{[2]}\" }"
+	fun `invalid array interpolation fails before toolchain discovery emission and output creation`(@TempDir directory: Path) {
+		val hole = "#\"{[1, true]}{[2]}\""
+		val source = "fn main() { $hole }"
 		val emitter = LLVMEmitter(LinkOptions(linker = directory.resolve("missing-linker")))
 		val output = directory.resolve("absent/program")
-		for (action in listOf<() -> Unit>({ emitter.compile(parseProgram(source), output) }, { emitter.compileObject(parseProgram(source), output) }, { emitter.emit(parseProgram(source)) }, { emitter.emitExecutable(parseProgram(source)) }, { emitter.emitSnippet(parse("#\"{[1]}\"")) }, { emitter.compileSnippet(parse("#\"{[1]}\""), output) })) {
+		for (action in listOf<() -> Unit>({ emitter.compile(parseProgram(source), output) }, { emitter.compileObject(parseProgram(source), output) }, { emitter.emit(parseProgram(source)) }, { emitter.emitExecutable(parseProgram(source)) }, { emitter.emitSnippet(parse(hole)) }, { emitter.compileSnippet(parse(hole), output) })) {
 			val error = assertFailsWith<ClothDiagnostic> { action() }
-			assertEquals(DiagnosticCode.UNSUPPORTED_INTERPOLATION_TYPE, error.diagnosticCode)
+			assertEquals(DiagnosticCode.INVALID_ARRAY, error.diagnosticCode)
 			assertLocated(error)
 			assertFalse(Files.exists(output.parent))
 		}
@@ -109,8 +100,7 @@ class StringInterpolationTest {
 		Files.writeString(input, source)
 		val rendered = StringBuilder()
 		assertEquals(1, runCompiler(arrayOf(input.toString(), output.toString()), DiagnosticReporter(rendered)))
-		assertEquals(1, Regex("C3040").findAll(rendered).count(), rendered.toString())
-		assertContains(rendered, "int[1]")
+		assertEquals(1, Regex(DiagnosticCode.INVALID_ARRAY.id).findAll(rendered).count(), rendered.toString())
 		assertFalse(rendered.contains("C9000"))
 		assertFalse(Files.exists(output.parent))
 	}
@@ -134,6 +124,14 @@ class StringInterpolationTest {
 			}
 		"""), directory.resolve("hole_returns"))
 		assertExecutable(executable, null, processCompletion())
+		assertProgram(directory.resolve("array_holes"), """
+			def values = [[1, 2], [3, 4]]
+			#"{values}|{values::str}|{values[1]}"
+		""", "[[1, 2], [3, 4]]|[[1, 2], [3, 4]]|[3, 4]")
+		assertProgram(directory.resolve("empty_arrays"), """
+			def<int[2][0]> values = [[], []]
+			#"{values}|{values[0]}"
+		""", "[[], []]|[]")
 	}
 
 	@Test

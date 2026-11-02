@@ -1,0 +1,12 @@
+fn<int[][]> matrix() = [[1, 2], [3, 4]]
+
+fn main() {
+    def values = matrix()
+    println(values)         // [[1, 2], [3, 4]]
+    println(#"{values}")    // [[1, 2], [3, 4]]
+    println(values::str)    // [[1, 2], [3, 4]]
+
+    def<int[2][0]> emptyRows = [[], []]
+    println(emptyRows)      // [[], []]
+    println(["Hello", "Cloth", "😀"]) // [Hello, Cloth, 😀]
+}

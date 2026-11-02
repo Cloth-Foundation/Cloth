@@ -1,6 +1,7 @@
 package cloth.semantic
 
 import cloth.diagnostics.InternalErrors
+import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionBody
@@ -40,6 +41,7 @@ class ControlFlowModel {
 	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
 	fun of(statement: Statement): ControlFlow = statements.getOrPut(statement) {
 		when (statement) {
+			is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
 			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
 			is BindingGroupDeclaration    -> of(statement.initializer)

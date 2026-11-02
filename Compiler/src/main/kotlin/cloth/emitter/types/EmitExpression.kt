@@ -359,10 +359,12 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					if (part is StringLiteral && part.value.isEmpty()) continue
 					val raw = emitValue(part)
 					val type = semantics.typeOf(part)
+					val providers = ProviderEmissionContext(context, builder, strings, casts, part.span.toString())
+					fun text(value: LLVMValueRef, type: ValueType): LLVMValueRef = checkNotNull(type.provider("str", abi.layout)).emit(providers, ProviderReceiver.Value(type, value))
 					val value = when (type) {
 						ValueType.Null -> strings.literal("null")
-						is CNullable   -> checkNotNull(nullable.choose(nullable.present(raw), types.value(ValueType.STRING), { strings.interpolate(nullable.payload(raw), type.payload, casts, part.span.toString()) }, { strings.literal("null") }))
-						else           -> strings.interpolate(raw, type, casts, part.span.toString())
+						is CNullable   -> checkNotNull(nullable.choose(nullable.present(raw), types.value(ValueType.STRING), { text(nullable.payload(raw), type.payload) }, { strings.literal("null") }))
+						else           -> text(raw, type)
 					}
 					result = result?.let { strings.concatenate(it, value, part.span.toString()) } ?: value
 				}

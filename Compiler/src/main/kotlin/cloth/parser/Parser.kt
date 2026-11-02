@@ -45,8 +45,16 @@ class Parser(private val tokens: List<Token>) {
 		val declarations = mutableListOf<FunctionDeclaration>()
 		skipNewlines()
 		while (peek().type != TokenType.EOF) {
-			declarations.add(parseFunction())
-			if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
+			val declaration = parseFunction()
+			declarations.add(declaration)
+			// Only expression bodies have an optional terminator. A brace-bodied
+			// function is already complete; file-level empty statements are invalid.
+			val terminated = declaration.body is ExpressionBody && isSemicolon(peek())
+			if (terminated) advance()
+			if (!terminated && peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
+				if (declaration.body is BlockBody) {
+					throw SyntaxErrors.expected("a newline or end of file after a brace-bodied function", peek())
+				}
 				throw SyntaxErrors.newline(peek())
 			}
 			skipNewlines()
@@ -64,9 +72,11 @@ class Parser(private val tokens: List<Token>) {
 		val name = expect(TokenType.Identifier, "a function name")
 		val parameters = delimited.parentheses {
 			delimited.commaSeparated(Operators.PAREN_CLOSE) {
-				val optKeyword = if (atKeyword(Keywords.OPT)) advance() else null
 				val finalKeyword = if (atKeyword(Keywords.FINAL)) advance() else null
+				val optKeyword = if (atKeyword(Keywords.OPT)) advance() else null
+				val optOpening = optKeyword?.let { expect(Operators.LESS).also { skipNewlines() } }
 				val type = typeParser.parse(allowArrays = true)
+				val optClosing = optKeyword?.let { skipNewlines(); expect(Operators.GREATER) }
 				val parameterName = expect(TokenType.Identifier, "a parameter name")
 				val delimiter = if (optKeyword != null) expect(Operators.ELVIS) else null
 				val previousContext = inFunctionBody
@@ -76,7 +86,8 @@ class Parser(private val tokens: List<Token>) {
 				} finally {
 					inFunctionBody = previousContext
 				}
-				ParameterDeclaration(type, parameterName, finalKeyword, optKeyword, delimiter, fallback)
+				val parameterSpan = (finalKeyword?.span ?: optKeyword?.span ?: type.span).through(previous().span)
+				ParameterDeclaration(type, parameterName, finalKeyword, optKeyword, delimiter, fallback, optOpening, optClosing, parameterSpan)
 			}
 		}
 		skipNewlines()
@@ -109,12 +120,12 @@ class Parser(private val tokens: List<Token>) {
 		val statements = mutableListOf<Statement>()
 
 		while (peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
-			if (peek().type == TokenType.NewLine) {
+			if (isStatementSeparator(peek())) {
 				advance()
 			} else {
 				if (atKeyword(Keywords.DEFINITION)) statements.addAll(parseBindings())
 				else statements.add(parseStatement())
-				if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
+				if (!isStatementSeparator(peek()) && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
 					throw SyntaxErrors.newline(peek())
 				}
 			}
@@ -123,7 +134,7 @@ class Parser(private val tokens: List<Token>) {
 		return statements
 	}
 
-	/** Newlines before an else belong to the chain; other newlines remain separators. */
+	/** Newlines before an else belong to the chain; semicolons end the statement. */
 	fun parseIf(): IfExpression {
 		val keyword = advance() // if
 		val branches = mutableListOf<ConditionalBranch>()
@@ -161,11 +172,16 @@ class Parser(private val tokens: List<Token>) {
 		while (peek().type == TokenType.NewLine) advance()
 	}
 
+	private fun isSemicolon(token: Token) = token.type == TokenType.Operator && token.lexeme == Operators.SEMICOLON.character
+
+	private fun isStatementSeparator(token: Token) = token.type == TokenType.NewLine || isSemicolon(token)
+
 	private fun parseStatement(): Statement {
+		if (peek().type == TokenType.Operator && peek().lexeme == Operators.FOR.character) return parseFor()
 		if (atKeyword(Keywords.RETURN)) {
 			if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
 			val keyword = advance()
-			val bare = peek().type in setOf(TokenType.NewLine, TokenType.EOF) || peek().lexeme == Operators.BRACE_CLOSE.character
+			val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.character
 			val value = if (bare) null else parseResults()
 			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 		}
@@ -207,6 +223,82 @@ class Parser(private val tokens: List<Token>) {
 			return ElementAssignmentStatement(expression, parseResults())
 		}
 		return ExpressionStatement(parseResults(expression, expressionStart))
+	}
+
+	private fun parseFor(): ForStatement {
+		val keyword = advance()
+		skipNewlines()
+		val opening = expect(Operators.PAREN_OPEN)
+		skipNewlines()
+		if (!atKeyword(Keywords.DEFINITION)) throw SyntaxErrors.expected("'def' before a loop binding", peek())
+		val definition = advance()
+		skipNewlines()
+		var annotationSpan: TokenSpan? = null
+		val type = if (peek().lexeme == Operators.LESS.character) {
+			val annotationOpening = peek()
+			delimited.angles {
+				skipNewlines()
+				typeParser.parse(allowArrays = true).also { skipNewlines() }
+			}.also { annotationSpan = annotationOpening.span.through(previous().span) }
+		} else null
+		skipNewlines()
+		val name = expect(TokenType.Identifier, "a loop binding name")
+		val binding = ForBinding(definition, type, name, annotationSpan)
+		skipNewlines()
+		val arrow = expect(Operators.POINTER_LEFT)
+		skipNewlines()
+		val sourceStart = peek().span
+		val first = expressionParser.parseExpression(stopAtRange = true)
+		val firstSpan = sourceStart.through(previous().span)
+		skipNewlines()
+		val source = if (peek().lexeme in setOf(Operators.RANGE.character, Operators.RANGE_INCLUSIVE.character)) {
+			val delimiter = advance()
+			skipNewlines()
+			val end = expressionParser.parseExpression()
+			ForSource.Range(first, delimiter, end, sourceStart.through(previous().span))
+		} else ForSource.Elements(first, firstSpan)
+		skipNewlines()
+		val separator = if (isSemicolon(peek())) advance() else null
+		if (separator != null && source !is ForSource.Range) {
+			throw SyntaxErrors.expected("')' after a foreach source; steppers are only allowed on numeric ranges", separator)
+		}
+		val stepper = separator?.let { parseForStepper(name) }
+		skipNewlines()
+		if (source is ForSource.Range && separator == null && peek().lexeme != Operators.PAREN_CLOSE.character) {
+			throw SyntaxErrors.expected("';' before a range stepper or ')' after the range", peek())
+		}
+		val closing = expect(Operators.PAREN_CLOSE)
+		skipNewlines()
+		val bodyStart = peek()
+		val body = if (bodyStart.lexeme == Operators.BRACE_OPEN.character) {
+			val block = parseBlock()
+			ForBody(block.statements, braced = true, block.span)
+		} else {
+			if (bodyStart.type == TokenType.EOF || bodyStart.lexeme in setOf(Operators.BRACE_CLOSE.character, Operators.SEMICOLON.character)) {
+				throw SyntaxErrors.expected("a for-loop body ('{' or a statement)", bodyStart)
+			}
+			val statements = if (atKeyword(Keywords.DEFINITION)) parseBindings() else listOf(parseStatement())
+			ForBody(statements, braced = false, bodyStart.span.through(previous().span))
+		}
+		return ForStatement(keyword, opening, binding, arrow, source, separator, stepper, closing, body)
+	}
+
+	private fun parseForStepper(counter: Token): ForStepper {
+		skipNewlines()
+		val target = expect(TokenType.Identifier, "the loop counter '${counter.lexeme}' as the stepper target")
+		if (target.lexeme != counter.lexeme) throw SyntaxErrors.expected("the loop counter '${counter.lexeme}' as the stepper target", target)
+		skipNewlines()
+		val operator = peek()
+		if (operator.type != TokenType.Operator || operator.lexeme !in assignmentOperators || operator.lexeme == Operators.FINAL_ASSIGN.character) {
+			throw SyntaxErrors.expected("a counter assignment/update operator (=, +=, -=, *=, /=, %=, ++ or --)", operator)
+		}
+		advance()
+		val postfix = operator.lexeme in setOf(Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
+		val value = if (postfix) null else {
+			skipNewlines()
+			expressionParser.parseExpression()
+		}
+		return ForStepper(target, operator, value, target.span.through(previous().span))
 	}
 
 	/** An identifier result list is an assignment only when followed by '=' or ':='. */

@@ -51,6 +51,9 @@ type-only overflow. For target width changes use
 [target integers](../cloth-target-integers/SKILL.md).
 
 The [provider milestone](../cloth-language/references/development.md#provider-integration-follow-up-chunk-35-2026-10-31)
-and subsequent usize migration record verification. `addr`, array/class value
-text conversion and state/class execution remain deferred. The
+and subsequent usize migration record verification. Array value `str` uses
+recursive contents through `CArray` and `ProviderResult.ArrayText`; read the
+[output skill](../cloth-output/SKILL.md#recursive-array-text) for its contract,
+implementation and verification. `addr`, class value text conversion and
+state/class execution remain deferred. The
 [unsafe-memory plan](../../../todo/unsafe-memory-plan.md) does not authorize them.

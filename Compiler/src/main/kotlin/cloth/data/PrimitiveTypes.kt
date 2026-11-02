@@ -28,7 +28,7 @@ enum class CompilerDataProviders(val spelling: String) {
 	ISUNSIGNED("isunsigned"),
 	ISNUMERIC("isnumeric");
 
-	override fun toString(): String = spelling
+	override fun toString(): String = spelling.lowercase()
 
 	companion object {
 
@@ -131,7 +131,11 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	override val buffered: Boolean get() = true
 	override val containsNullability: Boolean get() = element.containsNullability
 	override val arrayDimensions: List<BigInteger?> get() = listOf(size) + element.arrayDimensions
-	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = super.providers(target) + mapOf(CompilerDataProviders.SIZE to ProviderResult.ArraySize(this, CUSize(target.sizeBits)))
+	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
+		val providers = super.providers(target) + (CompilerDataProviders.SIZE to ProviderResult.ArraySize(this, CUSize(target.sizeBits)))
+		val text = element.provider("str", target)
+		return if (text?.type == CString && ProviderReceiverForm.VALUE in text.receiverForms) providers + (CompilerDataProviders.STR to ProviderResult.ArrayText(this, text)) else providers
+	}
 
 	override val spelling: String
 		get() {

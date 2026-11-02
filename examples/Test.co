@@ -185,12 +185,20 @@ const def<string> NAME := "Cloth"
 typedef<class> Loops {
 
     mt<void> testLoops () {
-        for (def<int> i = 0 : 0..10; i++) {
-            for (def<int> j = 0 : 0..=100; j++) {
-                //.. is range exclusive
-                //..= range inclusive
-                // ; 1 defines step
+        for (def<int> i <- 0..10; i++) {
+            for (def<int> j <- 0..=100; j += 2) {
+                // .. excludes the ending endpoint; ..= includes it.
+                // An explicit stepper requires the separating semicolon.
+                println(j)
             }
+        }
+
+        // The lower bound initializes i; an omitted stepper increments by one.
+        for (def<int> i <- 5..10) println(i)
+
+        def<int[][]> rows = [[1, 2, 3], [4, 5, 6]]
+        for (def<int[]> row <- rows) {
+            for (def<int> value <- row) println(value)
         }
     }
 

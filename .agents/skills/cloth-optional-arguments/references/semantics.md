@@ -4,17 +4,29 @@ On 2026-11-01 the user requested implementation of the optional/default plan and
 explicitly accepted its recommended ordinary-call contract: runtime defaults
 reading earlier parameters, supplied source order before defaults, deterministic
 mapping without type-based backtracking, positional before named arguments, and
-fewer omitted defaults as the final overload tiebreaker. The canonical modifier
-order and internal omission-flag ABI are implementation choices for that contract.
+fewer omitted defaults as the final overload tiebreaker. On 2026-11-02 the user
+selected `final opt<T>` spelling, with `final` optional, while retaining all omission
+and default semantics. The internal omission-flag ABI remains an implementation
+choice; `opt<T>` is a parameter declaration form, not a distinct runtime type.
 
 ## Declarations and values
 
-- Declare `opt Type name ?: expression`, or `opt final Type name ?: expression`.
-  `opt` is reserved parameter metadata, not a value type. The fallback is mandatory,
-  including for nullable parameters; reject defaults without `opt` and `= defaults`.
+- Declare `opt<T> name ?: expression`, or `final opt<T> name ?: expression`.
+  `final` precedes the optional form and controls binding mutability as usual.
+  `opt` remains reserved. The fallback is mandatory, including for nullable
+  parameters; reject defaults without `opt<T>` and `= defaults`.
+- Enclose the complete declared type: `opt<float<64>>`,
+  `final opt<unsigned int<64>?>`, `opt<int[2][3]>` and `opt<string[]>`.
+  Nullability and array suffixes belong inside the brackets. The body sees the
+  underlying T directly, with its ordinary arithmetic, overload and metadata
+  identity. There is no wrapper value to unwrap or allocate.
+- This syntax is parameter-only. Reject `opt<T>` in binding/return types, casts,
+  type receivers and nested `opt<opt<T>>` forms. Reject the former unbracketed
+  spelling, reversed `opt<final T>` order, missing/extra brackets, empty wrappers
+  and multiple enclosed types. These syntax errors retain first-error handling.
 - Optionality permits omission only. Nullability independently permits null.
-  `opt int? n ?: 7` yields 7 when omitted, null when supplied null, and the supplied
-  integer otherwise. `int? n` still requires an argument; `opt int n ?: 7` rejects
+  `opt<int?> n ?: 7` yields 7 when omitted, null when supplied null, and the supplied
+  integer otherwise. `int? n` still requires an argument; `opt<int> n ?: 7` rejects
   null. No nullable buffer support follows from optional argument support.
 - Defaults produce one value under the parameter's declared type context, using
   ordinary strict typing, contextual literals, nullability and array shape rules.
@@ -37,10 +49,10 @@ order and internal omission-flag ABI are implementation choices for that contrac
   already named. Otherwise omit it. Apply named supplies afterward; a named
   parameter already consumed positionally is a duplicate, not a reason to slide
   the positional value onward. Any unsupplied required parameter fails binding.
-- Type-check the resulting placement without backtracking. For `(opt int a ?: 0,
-  int b, opt string label ?: "Value")`, `(25, "Age")` binds a and b, then fails
+- Type-check the resulting placement without backtracking. For `(opt<int> a ?: 0,
+  int b, opt<string> label ?: "Value")`, `(25, "Age")` binds a and b, then fails
   b's type check. Use `b=25, label="Age"` for the intended alternative.
-- For `(opt string name ?: "Jack", int age)`, `(25)` binds age; `("Mike", 25)`
+- For `(opt<string> name ?: "Jack", int age)`, `(25)` binds age; `("Mike", 25)`
   binds both; `("Mike", age=25)` and `(25, name="Mike")` both bind the same values.
   A required-only pair `(int a, int b)` rejects `(1, a=2)` as duplicate supply.
   With multiple optionals, extra positional values select earlier optionals first.
@@ -82,8 +94,8 @@ choices are ambiguous, independent of declaration order or return context.
 Names can filter candidates, but default values never infer caller types or run
 during selection. No synthetic family of source overloads is created.
 
-For `(int n)` versus `(int n, opt bool flag ?: false)`, `(25)` selects the former.
-For `(int n, opt bool flag ?: false)` versus `(int<64> n)`, literal `(25)` retains
-the ordinary int preference. `(int<8> n)` versus `(int<64> n, opt bool flag ?: false)`
+For `(int n)` versus `(int n, opt<bool> flag ?: false)`, `(25)` selects the former.
+For `(int n, opt<bool> flag ?: false)` versus `(int<64> n)`, literal `(25)` retains
+the ordinary int preference. `(int<8> n)` versus `(int<64> n, opt<bool> flag ?: false)`
 remains ambiguous for `(25)`. Two equally good candidates each omitting one
 different parameter remain ambiguous unless a named supply distinguishes them.

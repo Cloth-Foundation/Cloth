@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CFloat
+import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.emitter.LLVMTypes
@@ -24,6 +25,9 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 	private val memory = EmitMemory(context, builder, abi, target)
 	private val lengthType = memory.size
 	private val boolType = types.value(ValueType.BOOL)
+
+	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText, providers: ProviderEmissionContext, location: String): LLVMValueRef =
+		EmitArrayText(context, builder, abi, this, providers, location).emit(value, recipe)
 
 	private fun descriptor(data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
 		val value = LLVMBuildInsertValue(builder, LLVMGetUndef(types.value(ValueType.STRING)), data, 0, "text_data")

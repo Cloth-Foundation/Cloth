@@ -31,9 +31,26 @@ argument snapshots, returned storage, or cleanup.
 Sized and unsized arrays, nested literals, indexing, plain indexed `=`, and
 function parameters/results are implemented. Current policies require element
 context for an empty literal, use C dimension order (`int[2][3]`), accept supported
-integer indices, and terminate on invalid executed bounds. Indexed compound
-updates, iteration, equality, and array value formatting are not implemented.
+integer indices, and terminate on invalid executed bounds. Recursive array value
+formatting is implemented for print, interpolation and `::str`; read the
+[output skill](../cloth-output/SKILL.md#recursive-array-text) and its contract.
+Indexed compound updates, iteration and equality are not implemented.
 These implementation policies do not settle the remaining language decisions.
+
+Foreach source capture is confirmed design, with execution deferred: evaluate
+the source once per loop entry and traverse an independent contents/shape snapshot.
+Original-source changes cannot affect later visited values; physical copies may
+be elided only under existing value-independence/lifetime proofs. See the
+[loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+and [implementation plan](../../../todo/for-loops-plan.md).
+Foreach element bindings are mutable independent values initialized anew for
+each element. Row mutation/rebinding cannot change the traversal snapshot or
+original source; retain ordinary type/shape checks and recursive independence.
+Foreach headers do not admit a `; stepper` clause; traversal advances through the
+snapshot automatically, independently of local element rebinding or row writes.
+Stage 1 parses foreach headers/bodies and their AST, but C3067 rejects them before
+array typing/snapshot execution. Read the [stage scope](../cloth-control-flow/references/for-implementation.md)
+before enabling array iteration semantics or lifetimes.
 
 ## Source and verification
 

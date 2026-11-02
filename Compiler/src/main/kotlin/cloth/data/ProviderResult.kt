@@ -158,6 +158,17 @@ internal sealed class ProviderResult<out T : ValueType> {
 	}
 
 	/** Source str and interpolation deliberately share one formatter. */
+	data class ArrayText(override val receiverType: CArray, val elementText: ProviderResult<*>) : ProviderResult<CString>() {
+
+		init {
+			require(elementText.receiverType == receiverType.element && elementText.type == CString && ProviderReceiverForm.VALUE in elementText.receiverForms)
+		}
+
+		override val type: CString get() = CString
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatArray((receiver as ProviderReceiver.Value).value, this)
+	}
+
+	/** Source str and interpolation deliberately share one formatter. */
 	data class ScalarText(override val receiverType: ValueType) : ProviderResult<CString>() {
 
 		init {

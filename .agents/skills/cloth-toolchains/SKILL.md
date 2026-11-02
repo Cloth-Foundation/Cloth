@@ -32,6 +32,9 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
   output artifacts. Static system CRT linking on macOS is rejected.
 - Keep build/runtime execution separate. A successful compiler status does not
   describe the emitted program's later status.
+- The no-argument example source is a developer convenience, not a production
+  compiler contract (user clarification, 2026-11-02). Do not pin its filename in
+  tests; verify explicit source/output arguments and supported CLI options.
 
 ## Source and verification
 

@@ -39,6 +39,7 @@ Choose tests for the affected behavior; report actual results and target scope.
 
 | Work area | Skill |
 | --- | --- |
+| Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
@@ -47,18 +48,25 @@ Choose tests for the affected behavior; report actual results and target scope.
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
-| opt parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
+| `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
-| Conditionals, is checks, short circuits, branch merges | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Conditionals, is checks, short circuits, branch merges, for-loop parsing/range design | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
-| print/println, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
+| print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |
 | Targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
 
-- `opt`, omission-only `?:` defaults and named arguments are implemented for
+- Integer/float range and array foreach loops use `<-`; the default range step is one and an
+  explicit stepper requires a semicolon. The [implementation plan](../../../todo/for-loops-plan.md)
+  records the confirmed contract, stages, source ownership and verification.
+  Core design review is complete. Stage 1 parsing/AST and C3067 stage gates are
+  complete and verified (833 full-suite tests). Semantic/execution
+  stages remain pending; see the [stage record](../cloth-control-flow/references/for-implementation.md).
+  Deferred extensions in the plan are not additional confirmed language rules.
+- `opt<T>` / `final opt<T>`, omission-only `?:` defaults and named arguments are implemented for
   ordinary functions; use [the feature skill](../cloth-optional-arguments/SKILL.md).
   The [plan](../../../todo/optional-arguments-plan.md) retains future dispatch and
   constructor questions separately from the accepted ordinary-call contract.

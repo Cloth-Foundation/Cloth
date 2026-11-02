@@ -29,6 +29,13 @@ result list; use [arrays](../cloth-arrays/SKILL.md) for shape and copy rules.
   class objects are frozen. A deferred function-block binding is not an ordinary
   stored result; use the [function skill](../cloth-functions/SKILL.md).
 
+Stage 1 parses range headers with one existing assignment/update to their declared
+counter. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+owns the still-deferred semantic/execution contract and integer update overflow exit.
+Preserve the original stepper operator: arithmetic inside a plain assignment RHS
+retains ordinary wrapping, while header arithmetic update operators use the loop
+overflow rule. Existing division/remainder invalid-operation checks still apply.
+
 ## Source and verification
 
 Inspect [Parser](../../../Compiler/src/main/kotlin/cloth/parser/Parser.kt),

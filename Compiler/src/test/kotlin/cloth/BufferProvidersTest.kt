@@ -26,10 +26,10 @@ class BufferProvidersTest {
 
 	@Test
 	fun `receiver forms reject unsized array types string types and type-only str`() {
-		for (expression in listOf("int[]::size", "int[][3]::size", "string::size", "int::str", "float::str", "bool::str", "char::str", "string::str")) {
+		for (expression in listOf("int[]::size", "int[][3]::size", "string::size", "int::str", "float::str", "bool::str", "char::str", "string::str", "int[2]::str", "int[]::str")) {
 			failure("fn main() { $expression }", DiagnosticCode.INVALID_PROVIDER_RECEIVER)
 		}
-		for (expression in listOf("[1, 2]::str", "int[2]::str", "int::addr", "\"x\"::SIZE")) {
+		for (expression in listOf("[1, 2]::addr", "int::addr", "\"x\"::SIZE")) {
 			failure("fn main() { $expression }", DiagnosticCode.UNKNOWN_PROVIDER)
 		}
 		failure("fn<int> wrong(string s) = s::size", DiagnosticCode.RETURN_TYPE)
@@ -191,6 +191,7 @@ class BufferProvidersTest {
 	@Test
 	fun `source sizes and text preserve bounds and shape failures before providing a result`(@TempDir directory: Path) {
 		native(directory, "index_before_text", "fn<int> main() {\ndef a = [\"x\"]\nreturn a[8]::str::size -> int\n}", "Array index out of bounds")
+		native(directory, "row_before_text", "fn<int> main() {\ndef a = [[1]]\nreturn a[8]::str::size -> int\n}", "Array index out of bounds")
 		native(directory, "shape_before_size", "fn<int[]> make() = [1]\nfn<int> main() {\ndef<int[2]> a = make()\nreturn a::size -> int\n}", "Array size mismatch")
 	}
 

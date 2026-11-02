@@ -10,8 +10,7 @@ import kotlin.test.assertFailsWith
 class CompilerSettingsTest {
 
 	@Test
-	fun `existing positional CLI and default source remain available`() {
-		assertEquals(Path.of("examples", "MultiReturns.co"), CompilerSettings(emptyArray()).getSourceFile().toPath())
+	fun `positional CLI preserves explicit source output and default link options`() {
 		val settings = CompilerSettings(arrayOf("source.co", "program"))
 		assertEquals("source.co", settings.getSourceFile().path)
 		assertEquals("program", settings.getOutputFile()!!.path)

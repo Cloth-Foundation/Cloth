@@ -108,6 +108,8 @@ class BufferCountsTest {
 				strings.metadata.text(strings.metadata.constant(CArray(CUSize(bits), 3)))
 				val row = arrays.literal(CString, listOf({ joined }, { strings.literal("é\u0000中") }))
 				val matrix = arrays.literal(CArray(CString), listOf({ row }, { row }))
+				val textRecipe = assertIs<ProviderResult.ArrayText>(CArray(CArray(CString)).provider("str", target))
+				textRecipe.emit(providers, ProviderReceiver.Value(textRecipe.receiverType, matrix))
 				val arena = EmitStringArena(context, module, abi, target)
 				val destination = arena.create(entry)
 				arena.copyValue(builder, destination, matrix, CArray(CArray(CString)))
@@ -225,7 +227,7 @@ class BufferCountsTest {
 				val atoiType = signature(integer, pointer)
 				val atoi = LLVMAddFunction(module, "atoi", atoiType)
 				val selected = PointerPointer<LLVMValueRef>(1L).use { values -> values.put(0, LLVMBuildLoad2(builder, pointer, address, "case_text")); LLVMBuildCall2(builder, atoiType, atoi, values, 1, "case") }
-				val cases = (0..5).map { LLVMAppendBasicBlockInContext(context, main, "case_$it") }
+				val cases = (0..7).map { LLVMAppendBasicBlockInContext(context, main, "case_$it") }
 				val switch = LLVMBuildSwitch(builder, selected, cases.first(), cases.size)
 				cases.forEachIndexed { index, block -> LLVMAddCase(switch, int(index), block) }
 				for ((index, block) in cases.withIndex()) {
@@ -256,6 +258,16 @@ class BufferCountsTest {
 							val correct = LLVMBuildAnd(builder, LLVMBuildICmp(builder, LLVMIntEQ, bytes, memory.constant(maximumCount * BigInteger.valueOf(8)), "correct_bytes"), LLVMBuildICmp(builder, LLVMIntEQ, sum, memory.constant(memory.maximumBytes), "correct_sum"), "valid_boundaries")
 							LLVMBuildRet(builder, LLVMBuildSelect(builder, correct, int(0), int(1), "status"))
 						}
+						6, 7 -> {
+							// A synthetic string descriptor exercises only the measure pass;
+							// overflow must terminate before any access to its fake payload.
+							val bytes = if (index == 6) memory.maximumBytes else memory.maximumBytes - BigInteger.ONE
+							val input = arrays.literal(CString, listOf({ arrays.descriptor(nullPointer, memory.constant(bytes)) }))
+							val recipe = assertIs<ProviderResult.ArrayText>(CArray(CString).provider("str", abi.layout))
+							val casts = EmitCast(context, builder, SemanticModel(abi.layout), abi)
+							val providers = ProviderEmissionContext(context, builder, strings, casts, "guard test")
+							recipe.emit(providers, ProviderReceiver.Value(recipe.receiverType, input))
+						}
 					}
 					if (index != 5) LLVMBuildRet(builder, int(0))
 				}
@@ -266,7 +278,7 @@ class BufferCountsTest {
 			}
 		}
 		NativeLinker.link(objectFile, executable, ToolchainResolver.native(abi, LinkOptions()))
-		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate returned array storage", "")
+		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate returned array storage", "", "Array text is too large", "Array text is too large")
 		for ((index, message) in messages.withIndex()) {
 			val process = ProcessBuilder(executable.toString(), index.toString()).redirectErrorStream(true).start()
 			try {

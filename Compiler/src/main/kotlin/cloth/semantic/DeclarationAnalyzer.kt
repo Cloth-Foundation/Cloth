@@ -84,6 +84,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
+				is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
 				is BindingGroupDeclaration    -> {
 					if (statement.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(statement.span)
 					val seen = mutableMapOf<String, Token>()

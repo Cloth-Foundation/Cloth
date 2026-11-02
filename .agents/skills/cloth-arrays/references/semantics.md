@@ -7,6 +7,11 @@ the parent skill for current implementation boundaries and source/test routing.
 
 ## Array construction and value semantics
 
+Recursive array contents for print, interpolation and `::str` were confirmed on
+2026-11-02. The [output contract](../../cloth-output/references/semantics.md#recursive-array-text)
+owns formatting policy, evaluation/lifetime guarantees and capability boundaries.
+`::addr` remains deferred.
+
 Array syntax and construction were confirmed on 2026-10-30:
 
 - `def<int[]> unsized = [1, 2, 3]` infers a size of 3.
@@ -89,3 +94,18 @@ Array syntax and construction were confirmed on 2026-10-30:
 - See development status for current nested-literal syntax and implementation
   policies that have not been separately confirmed as language design, including
   empty arrays and bounds failures.
+
+## Foreach source capture (design confirmed; implementation deferred)
+
+On 2026-11-02 the user confirmed source evaluation once per loop entry and
+traversal of an independent snapshot of array contents and shape. Changes to the
+original array during the body do not alter later visited values. Physical copies
+may be avoided only when the compiler proves the same observable behavior and
+preserves buffer lifetimes. Re-entering the loop captures a fresh source value.
+The user also confirmed ordinary mutable value reception, initialized anew for
+each element. Rebinding a loop variable or changing an array-valued row changes
+neither the snapshot nor the original source. Preserve recursive independence,
+ordinary type/shape rules and saved values surviving later iterations.
+The [loop contract](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+owns the iteration syntax and confirmed element-binding contract. This does not
+claim implemented foreach support or expand class-object copy semantics.

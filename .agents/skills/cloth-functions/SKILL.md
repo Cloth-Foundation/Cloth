@@ -36,7 +36,7 @@ For buffered parameters/results use [buffer lifetimes](../cloth-buffer-lifetimes
 
 Both `=` and `:=` block declarations work without memoization. Block binding
 assignment/updates are currently rejected (C3042); future replacement and escaping
-capture contracts remain unresolved. `opt`, named arguments and runtime defaults
+capture contracts remain unresolved. `opt<T>` / `final opt<T>`, named arguments and runtime defaults
 are implemented for ordinary functions; read [optional arguments](../cloth-optional-arguments/SKILL.md)
 for binding, declaration scope, evaluation, ranking and ABI invariants. Methods/classes
 are separate future callable forms.
