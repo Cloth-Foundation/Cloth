@@ -6,6 +6,7 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.ParameterDeclaration
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
+import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Token
@@ -79,4 +80,11 @@ class GroupLocalSymbol(val declaration: BindingGroupDeclaration, val position: I
 	override val name get() = declaration.targets[position].token
 	override val mutable get() = declaration.mutable
 	override val declaredType get() = if (declaration.types.size == 1) declaration.types.single() else declaration.types.getOrNull(position)
+}
+
+class LoopBindingSymbol(val declaration: ForStatement) : BindingSymbol {
+
+	override val name get() = declaration.binding.name
+	override val mutable get() = true
+	override val declaredType get() = declaration.binding.type
 }

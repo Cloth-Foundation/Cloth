@@ -48,6 +48,24 @@ internal class MetadataAnalysis(
 	fun statements(body: List<Statement>): ValueType? {
 		var result: ValueType? = null
 		for (item in body) result = when (item) {
+			is ForStatement               -> {
+				when (val source = item.source) {
+					is ForSource.Range -> { expression(source.start); expression(source.end) }
+					is ForSource.Elements -> expression(source.expression)
+				}
+				// A single optimistic pass would reuse first-iteration metadata on
+				// a later backedge. Unknown mutable metadata uses runtime checking.
+				forgetMutable()
+				scopes.add(mutableMapOf(item.binding.name.lexeme to Slot(null, true)))
+				try {
+					scoped(item.body.statements)
+					model.loopOf(item).stepperExpression?.let { expression(it) }
+				} finally {
+					scopes.removeAt(scopes.lastIndex)
+				}
+				forgetMutable()
+				null
+			}
 			is BindingGroupDeclaration    -> {
 				expression(item.initializer)
 				val facts = model.representedResultsOf(item.initializer)
@@ -169,9 +187,9 @@ internal class MetadataAnalysis(
 				expression(value.left)
 				val before = snapshot()
 				expression(value.right)
-				if (value.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
+				if (value.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					val truth = flow.booleanValue(value.left)
-					val runsWhen = value.operator.lexeme == Operators.AND.character
+					val runsWhen = value.operator.lexeme == Operators.AND.toString()
 					val paths = mutableListOf<Map<Slot, ValueType?>>()
 					if (truth != runsWhen) paths.add(before)
 					if ((truth == null || truth == runsWhen) && flow.of(value.right).canContinue) paths.add(snapshot())

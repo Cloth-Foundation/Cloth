@@ -53,13 +53,13 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 		for (op in OPERATORS) {
 			// A nullable type receiver uses '?' followed by '::', not Elvis and ':'.
 			if (op == Operators.ELVIS && source.startsWith("?::", current)) continue
-			val len = op.character.length
+			val len = op.toString().length
 			if (current + len <= source.length) {
 				val substring = source.substring(current, current + len)
-				if (substring == op.character) {
+				if (substring == op.toString()) {
 					// Word operators and '_' must not consume prefixes of identifiers.
 					val next = source.getOrNull(current + len)
-					if ((op.character.last().isLetter() || op == Operators.UNDERSCORE) && next != null && (next.isLetterOrDigit() || next == '_')) continue
+					if ((op.toString().last().isLetter() || op == Operators.UNDERSCORE) && next != null && (next.isLetterOrDigit() || next == '_')) continue
 					current += len
 					cAt = cAt.copy(column = cAt.column + len)
 					return op
@@ -101,7 +101,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 
 		val matchedOp = matchOperator()
 		if (matchedOp != null) {
-			addToken(TokenType.Operator, matchedOp.character)
+			addToken(TokenType.Operator, matchedOp.toString())
 			return
 		}
 
@@ -351,7 +351,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 
 	companion object {
 
-		private val OPERATORS = Operators.entries.toTypedArray().sortedByDescending { it.character.length }
+		private val OPERATORS = Operators.entries.toTypedArray().sortedByDescending { it.toString().length }
 		private val KEYWORDS = Keywords.entries.toTypedArray().sortedByDescending { it.toString().length }
 	}
 

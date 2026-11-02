@@ -4,7 +4,7 @@ fn<isize> main () {
     def<int[][]> y = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
     // An explicit stepper requires the separating semicolon.
-    for (def<int> i <- 0..100; i++) println(i)
+    /*for (def<int> i <- 0..100; i++) println(i)
     for (def<int> i <- 0..=100; i += 2) println(i)
 
     // Starts at 5 and increments by one without a stepper clause.
@@ -12,7 +12,7 @@ fn<isize> main () {
 
     for (def<int[]> row <- y) {
         for (def<int> value <- row) println(value)
-    }
+    }*/
 
     def<int> r = null ?: 10
 

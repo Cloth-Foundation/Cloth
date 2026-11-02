@@ -60,8 +60,8 @@ for (def<int> i <- 5..100) println(i)
 The second form omits the entire stepper clause and increments by one. The
 semicolon in the first form is a required header separator, independent of
 optional statement terminators. Stage 1 implements this grammar and preserves
-the separator token/span; C3067 gates downstream loop analysis/execution. Read the
-[parser-stage scope and tests](../cloth-control-flow/references/for-implementation.md).
+the separator token/span. Stage 2 validates loop semantics; C3067 gates backend
+execution. Read the [stage scope and tests](../cloth-control-flow/references/for-implementation.md).
 The [control-flow contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 owns loop syntax and behavior; both range and foreach bindings use `<-`.
 Only numeric range loops admit the `; stepper` clause. Array foreach headers

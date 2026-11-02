@@ -26,9 +26,9 @@ class TypeParser(private val parser: Parser) {
 		} else null
 
 		fun nullableMarker(): cloth.token.TokenSpan? {
-			if (parser.peek().lexeme != Operators.QUESTION.character) return null
+			if (parser.peek().lexeme != Operators.QUESTION.toString()) return null
 			val marker = parser.advance().span
-			if (parser.peek().lexeme == Operators.QUESTION.character) throw SyntaxErrors.expected("only one '?' at this type position", parser.peek())
+			if (parser.peek().lexeme == Operators.QUESTION.toString()) throw SyntaxErrors.expected("only one '?' at this type position", parser.peek())
 			return marker
 		}
 
@@ -36,7 +36,7 @@ class TypeParser(private val parser: Parser) {
 		val sizes = mutableListOf<Token?>()
 		val arrayNullability = mutableListOf<cloth.token.TokenSpan?>()
 		val arrays = buildList {
-			while (allowArrays && parser.peek().lexeme == Operators.BRACKET_OPEN.character) {
+			while (allowArrays && parser.peek().lexeme == Operators.BRACKET_OPEN.toString()) {
 				val opening = parser.advance()
 				sizes.add(if (parser.peek().type == TokenType.IntegerLiteral) parser.advance() else null)
 				val closing = parser.expect(Operators.BRACKET_CLOSE)

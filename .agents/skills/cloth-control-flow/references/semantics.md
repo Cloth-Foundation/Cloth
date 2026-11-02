@@ -212,13 +212,14 @@ for (def<int[]> row <- matrix) {
   each snapshot element. Changes to the local element variable belong in the
   body and cannot control traversal. This range design does not establish default
   initialization.
-- Stage 1 now parses the intended syntax into a located AST, with C3067 gates
-  before downstream analysis/execution. The rules above remain the language
-  contract; receiving types, scopes, progression and foreach execution are not
-  implemented merely because their syntax parses. Read the
+- Stage 1 parses syntax into a located AST. Stage 2 resolves scopes, exact
+  receiving/source types and repeated completion/presence/metadata flow; C3068
+  reports invalid loop contracts and C3067 now gates backend execution only.
+  Runtime progression, bound snapshots, guards, independent array transfers and
+  cleanup remain unimplemented. Read the
   [stage scope and evidence](for-implementation.md).
 
 The [implementation plan](../../../../todo/for-loops-plan.md) records the confirmed
 contract, source ownership, implementation stages and verification. Core design
-review is complete; later semantic/execution stages remain pending. Future
+review is complete; later execution/integration stages remain pending. Future
 extensions are separate from the confirmed rules above.

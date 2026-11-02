@@ -9,8 +9,8 @@ Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
 [bindings](../cloth-bindings/SKILL.md) for assignment/update syntax.
 
-Integer and float range syntax is parsed in Stage 1; numeric range typing and
-execution remain deferred behind C3067. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
+Integer and float range syntax/scopes/types are checked through Stage 2; C3067
+gates execution after semantic validation. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 and [implementation plan](../../../todo/for-loops-plan.md) own their scope.
 Range counters are non-nullable signed/unsigned integers at existing widths,
 usize/isize, or 16/32/64-bit floats. Bool/char/nullable counter types are rejected

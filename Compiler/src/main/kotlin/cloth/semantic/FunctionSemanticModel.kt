@@ -53,5 +53,6 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		types.payloadReads.clear(); types.payloadReads.putAll(other.types.payloadReads)
 		types.nullableComparisons.clear(); types.nullableComparisons.putAll(other.types.nullableComparisons)
 		types.updatePayloads.clear(); types.updatePayloads.putAll(other.types.updatePayloads)
+		types.loops.clear(); types.loops.putAll(other.types.loops)
 	}
 }

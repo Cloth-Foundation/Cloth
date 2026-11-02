@@ -95,8 +95,8 @@ class Parser(private val tokens: List<Token>) {
 		inFunctionBody = true
 		try {
 			val body = when (peek().lexeme) {
-				Operators.BRACE_OPEN.character -> parseBlock()
-				Operators.ASSIGN.character     -> {
+				Operators.BRACE_OPEN.toString() -> parseBlock()
+				Operators.ASSIGN.toString()     -> {
 					val equals = advance()
 					val expression = parseResults()
 					ExpressionBody(equals, expression, equals.span.through(previous().span))
@@ -119,13 +119,13 @@ class Parser(private val tokens: List<Token>) {
 	private fun parseStatements(inBlock: Boolean): List<Statement> {
 		val statements = mutableListOf<Statement>()
 
-		while (peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
+		while (peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.toString())) {
 			if (isStatementSeparator(peek())) {
 				advance()
 			} else {
 				if (atKeyword(Keywords.DEFINITION)) statements.addAll(parseBindings())
 				else statements.add(parseStatement())
-				if (!isStatementSeparator(peek()) && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.character)) {
+				if (!isStatementSeparator(peek()) && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.toString())) {
 					throw SyntaxErrors.newline(peek())
 				}
 			}
@@ -172,52 +172,52 @@ class Parser(private val tokens: List<Token>) {
 		while (peek().type == TokenType.NewLine) advance()
 	}
 
-	private fun isSemicolon(token: Token) = token.type == TokenType.Operator && token.lexeme == Operators.SEMICOLON.character
+	private fun isSemicolon(token: Token) = token.type == TokenType.Operator && token.lexeme == Operators.SEMICOLON.toString()
 
 	private fun isStatementSeparator(token: Token) = token.type == TokenType.NewLine || isSemicolon(token)
 
 	private fun parseStatement(): Statement {
-		if (peek().type == TokenType.Operator && peek().lexeme == Operators.FOR.character) return parseFor()
+		if (atKeyword(Keywords.FOR)) return parseFor()
 		if (atKeyword(Keywords.RETURN)) {
 			if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
 			val keyword = advance()
-			val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.character
+			val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString()
 			val value = if (bare) null else parseResults()
 			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 		}
 		if (startsAssignmentList()) {
 			val targets = mutableListOf(ReceivingTarget.of(advance()))
-			while (peek().lexeme == Operators.COMMA.character) {
+			while (peek().lexeme == Operators.COMMA.toString()) {
 				advance()
 				targets.add(parseReceivingTarget())
 			}
-			if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
+			if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) throw SyntaxErrors.reassignment(peek())
 			expect(Operators.ASSIGN)
 			return MultiAssignmentStatement(targets, parseResults())
 		}
 		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
-			if (peek().lexeme == Operators.FINAL_ASSIGN.character) {
+			if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) {
 				throw SyntaxErrors.reassignment(peek())
 			}
 			val operator = advance()
-			val update = operator.lexeme in setOf(Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
+			val update = operator.lexeme in setOf(Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())
 			if (update) return UpdateStatement(name, operator)
-			val right = if (operator.lexeme == Operators.ASSIGN.character) parseResults() else expressionParser.parseExpression()
+			val right = if (operator.lexeme == Operators.ASSIGN.toString()) parseResults() else expressionParser.parseExpression()
 			// Local binding targets have no evaluation side effects. Reuse ordinary
 			// arithmetic and assignment checks, including exact result-type matching.
-			val value = if (operator.lexeme == Operators.ASSIGN.character) right else {
+			val value = if (operator.lexeme == Operators.ASSIGN.toString()) right else {
 				BinaryExpression(NameExpression(name), Token(TokenType.Operator, operator.span, operator.lexeme.dropLast(1)), right)
 			}
 			return AssignmentStatement(name, value)
 		}
 		val expressionStart = peek().span
 		val expression = expressionParser.parseExpression(stopAtAssignment = true)
-		if (expression is ProviderAccessExpression && (peek().lexeme in assignmentOperators || peek().lexeme == Operators.FINAL_ASSIGN.character)) {
+		if (expression is ProviderAccessExpression && (peek().lexeme in assignmentOperators || peek().lexeme == Operators.FINAL_ASSIGN.toString())) {
 			throw SyntaxErrors.readOnlyProvider(expression.name)
 		}
-		if (peek().lexeme == Operators.FINAL_ASSIGN.character) throw SyntaxErrors.reassignment(peek())
-		if (peek().lexeme == Operators.ASSIGN.character) {
+		if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) throw SyntaxErrors.reassignment(peek())
+		if (peek().lexeme == Operators.ASSIGN.toString()) {
 			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
 			advance()
 			return ElementAssignmentStatement(expression, parseResults())
@@ -234,7 +234,7 @@ class Parser(private val tokens: List<Token>) {
 		val definition = advance()
 		skipNewlines()
 		var annotationSpan: TokenSpan? = null
-		val type = if (peek().lexeme == Operators.LESS.character) {
+		val type = if (peek().lexeme == Operators.LESS.toString()) {
 			val annotationOpening = peek()
 			delimited.angles {
 				skipNewlines()
@@ -251,7 +251,7 @@ class Parser(private val tokens: List<Token>) {
 		val first = expressionParser.parseExpression(stopAtRange = true)
 		val firstSpan = sourceStart.through(previous().span)
 		skipNewlines()
-		val source = if (peek().lexeme in setOf(Operators.RANGE.character, Operators.RANGE_INCLUSIVE.character)) {
+		val source = if (peek().lexeme in setOf(Operators.RANGE.toString(), Operators.RANGE_INCLUSIVE.toString())) {
 			val delimiter = advance()
 			skipNewlines()
 			val end = expressionParser.parseExpression()
@@ -264,17 +264,17 @@ class Parser(private val tokens: List<Token>) {
 		}
 		val stepper = separator?.let { parseForStepper(name) }
 		skipNewlines()
-		if (source is ForSource.Range && separator == null && peek().lexeme != Operators.PAREN_CLOSE.character) {
+		if (source is ForSource.Range && separator == null && peek().lexeme != Operators.PAREN_CLOSE.toString()) {
 			throw SyntaxErrors.expected("';' before a range stepper or ')' after the range", peek())
 		}
 		val closing = expect(Operators.PAREN_CLOSE)
 		skipNewlines()
 		val bodyStart = peek()
-		val body = if (bodyStart.lexeme == Operators.BRACE_OPEN.character) {
+		val body = if (bodyStart.lexeme == Operators.BRACE_OPEN.toString()) {
 			val block = parseBlock()
 			ForBody(block.statements, braced = true, block.span)
 		} else {
-			if (bodyStart.type == TokenType.EOF || bodyStart.lexeme in setOf(Operators.BRACE_CLOSE.character, Operators.SEMICOLON.character)) {
+			if (bodyStart.type == TokenType.EOF || bodyStart.lexeme in setOf(Operators.BRACE_CLOSE.toString(), Operators.SEMICOLON.toString())) {
 				throw SyntaxErrors.expected("a for-loop body ('{' or a statement)", bodyStart)
 			}
 			val statements = if (atKeyword(Keywords.DEFINITION)) parseBindings() else listOf(parseStatement())
@@ -289,11 +289,11 @@ class Parser(private val tokens: List<Token>) {
 		if (target.lexeme != counter.lexeme) throw SyntaxErrors.expected("the loop counter '${counter.lexeme}' as the stepper target", target)
 		skipNewlines()
 		val operator = peek()
-		if (operator.type != TokenType.Operator || operator.lexeme !in assignmentOperators || operator.lexeme == Operators.FINAL_ASSIGN.character) {
+		if (operator.type != TokenType.Operator || operator.lexeme !in assignmentOperators || operator.lexeme == Operators.FINAL_ASSIGN.toString()) {
 			throw SyntaxErrors.expected("a counter assignment/update operator (=, +=, -=, *=, /=, %=, ++ or --)", operator)
 		}
 		advance()
-		val postfix = operator.lexeme in setOf(Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
+		val postfix = operator.lexeme in setOf(Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())
 		val value = if (postfix) null else {
 			skipNewlines()
 			expressionParser.parseExpression()
@@ -305,14 +305,14 @@ class Parser(private val tokens: List<Token>) {
 	private fun startsAssignmentList(): Boolean {
 		if (!isReceivingTarget(peek())) return false
 		var offset = 1
-		while (peek(offset).lexeme == Operators.COMMA.character) {
+		while (peek(offset).lexeme == Operators.COMMA.toString()) {
 			if (!isReceivingTarget(peek(offset + 1))) return false
 			offset += 2
 		}
-		return (offset > 1 || peek().lexeme == "_") && peek(offset).lexeme in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)
+		return (offset > 1 || peek().lexeme == "_") && peek(offset).lexeme in setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString())
 	}
 
-	private fun isReceivingTarget(token: Token) = token.type == TokenType.Identifier || (token.type == TokenType.Operator && token.lexeme == Operators.UNDERSCORE.character)
+	private fun isReceivingTarget(token: Token) = token.type == TokenType.Identifier || (token.type == TokenType.Operator && token.lexeme == Operators.UNDERSCORE.toString())
 
 	private fun parseReceivingTarget(): ReceivingTarget {
 		if (!isReceivingTarget(peek())) throw SyntaxErrors.expected("a binding or assignment target name or '_'", peek())
@@ -322,9 +322,9 @@ class Parser(private val tokens: List<Token>) {
 	/** Only callers at result-producing boundaries opt into comma-separated results. */
 	private fun parseResults(first: Expression? = null, start: TokenSpan = first?.span ?: peek().span): Expression {
 		val initial = first ?: expressionParser.parseExpression()
-		if (peek().lexeme != Operators.COMMA.character) return initial
+		if (peek().lexeme != Operators.COMMA.toString()) return initial
 		val values = mutableListOf(initial)
-		while (peek().lexeme == Operators.COMMA.character) {
+		while (peek().lexeme == Operators.COMMA.toString()) {
 			advance()
 			skipNewlines()
 			values.add(expressionParser.parseExpression())
@@ -333,12 +333,12 @@ class Parser(private val tokens: List<Token>) {
 	}
 
 	private fun parseTypeList(): List<TypeReference> {
-		if (peek().lexeme != Operators.LESS.character) return emptyList()
+		if (peek().lexeme != Operators.LESS.toString()) return emptyList()
 		return delimited.angles {
 			skipNewlines()
 			val types = mutableListOf(typeParser.parse(allowArrays = true))
 			skipNewlines()
-			while (peek().lexeme == Operators.COMMA.character) {
+			while (peek().lexeme == Operators.COMMA.toString()) {
 				advance()
 				skipNewlines()
 				types.add(typeParser.parse(allowArrays = true))
@@ -352,17 +352,17 @@ class Parser(private val tokens: List<Token>) {
 		val keyword = advance() // def
 		val types = parseTypeList()
 		val targets = mutableListOf(parseReceivingTarget())
-		while (peek().lexeme == Operators.COMMA.character) {
+		while (peek().lexeme == Operators.COMMA.toString()) {
 			advance()
 			targets.add(parseReceivingTarget())
 		}
 		val assignment = peek()
-		if (assignment.type != TokenType.Operator || assignment.lexeme !in setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character)) {
-			throw SyntaxErrors.expected("'${Operators.ASSIGN.character}' or '${Operators.FINAL_ASSIGN.character}'", assignment)
+		if (assignment.type != TokenType.Operator || assignment.lexeme !in setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString())) {
+			throw SyntaxErrors.expected("'${Operators.ASSIGN}' or '${Operators.FINAL_ASSIGN}'", assignment)
 		}
 		advance()
 		val initializerStart = currentIndex
-		val block = peek().lexeme == Operators.BRACE_OPEN.character
+		val block = peek().lexeme == Operators.BRACE_OPEN.toString()
 		val type = types.singleOrNull()
 		// Existing multiple-name function blocks are independent deferred computations.
 		// Reparse each body so their symbols and analysis facts keep separate identities.
@@ -376,12 +376,12 @@ class Parser(private val tokens: List<Token>) {
 				} finally {
 					inFunctionBody = previousContext
 				}
-				BindingDeclaration(type, target.token, initializer, assignment.lexeme == Operators.ASSIGN.character, keyword.span.through(previous().span))
+				BindingDeclaration(type, target.token, initializer, assignment.lexeme == Operators.ASSIGN.toString(), keyword.span.through(previous().span))
 			}
 		}
 		val initializer = if (block) FunctionBlockExpression(FunctionDeclaration(keyword, targets.first().token, types, emptyList(), parseBlock())) else parseResults()
 		val span = keyword.span.through(previous().span)
-		val mutable = assignment.lexeme == Operators.ASSIGN.character
+		val mutable = assignment.lexeme == Operators.ASSIGN.toString()
 		return listOf(if (targets.size == 1 && targets.single() is ReceivingTarget.Named && types.size <= 1) {
 			BindingDeclaration(type, targets.single().token, initializer, mutable, span)
 		} else BindingGroupDeclaration(types, targets, initializer, mutable, span))
@@ -397,15 +397,15 @@ class Parser(private val tokens: List<Token>) {
 
 	fun expect(operator: Operators): Token {
 		val token = peek()
-		if (token.type != TokenType.Operator || token.lexeme != operator.character) {
-			throw SyntaxErrors.expected("'${operator.character}'", token)
+		if (token.type != TokenType.Operator || token.lexeme != operator.toString()) {
+			throw SyntaxErrors.expected("'$operator'", token)
 		}
 		return advance()
 	}
 
 	companion object {
 
-		private val assignmentOperators = setOf(Operators.ASSIGN.character, Operators.FINAL_ASSIGN.character, Operators.PLUS_EQUAL.character, Operators.MINUS_EQUAL.character, Operators.MUL_EQUAL.character, Operators.DIV_EQUAL.character, Operators.MOD_EQUAL.character, Operators.PLUS_PLUS.character, Operators.MINUS_MINUS.character)
+		private val assignmentOperators = setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString(), Operators.PLUS_EQUAL.toString(), Operators.MINUS_EQUAL.toString(), Operators.MUL_EQUAL.toString(), Operators.DIV_EQUAL.toString(), Operators.MOD_EQUAL.toString(), Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())
 	}
 
 }

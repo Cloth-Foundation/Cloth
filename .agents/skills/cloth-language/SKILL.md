@@ -50,7 +50,7 @@ Choose tests for the affected behavior; report actual results and target scope.
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
-| Conditionals, is checks, short circuits, branch merges, for-loop parsing/range design | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Conditionals, is checks, short circuits, branch merges, for-loop scopes/types/flow | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
@@ -62,9 +62,10 @@ Choose tests for the affected behavior; report actual results and target scope.
 - Integer/float range and array foreach loops use `<-`; the default range step is one and an
   explicit stepper requires a semicolon. The [implementation plan](../../../todo/for-loops-plan.md)
   records the confirmed contract, stages, source ownership and verification.
-  Core design review is complete. Stage 1 parsing/AST and C3067 stage gates are
-  complete and verified (833 full-suite tests). Semantic/execution
-  stages remain pending; see the [stage record](../cloth-control-flow/references/for-implementation.md).
+  Core design and Stage 1 are complete. Stage 2 implements scopes, strict types
+  and repeated flow (105 focused and all 868 compiler tests passed).
+  C3067 now gates backend execution; stages 3-5 remain pending. See the
+  [stage record](../cloth-control-flow/references/for-implementation.md).
   Deferred extensions in the plan are not additional confirmed language rules.
 - `opt<T>` / `final opt<T>`, omission-only `?:` defaults and named arguments are implemented for
   ordinary functions; use [the feature skill](../cloth-optional-arguments/SKILL.md).

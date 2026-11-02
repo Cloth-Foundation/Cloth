@@ -20,7 +20,8 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
-	fun unsupportedFor(keyword: Token) = issue(DiagnosticCode.UNSUPPORTED_FOR_LOOP, "For-loop syntax is parsed, but loop semantic analysis and execution are not implemented yet", keyword.span)
+	fun unsupportedFor(keyword: Token) = issue(DiagnosticCode.UNSUPPORTED_FOR_LOOP, "For-loop semantics are checked, but loop execution is not implemented yet", keyword.span)
+	fun forLoop(message: String, span: TokenSpan, binding: TokenSpan) = SemanticException(DiagnosticCode.INVALID_FOR_LOOP, message, listOf(SourceLabel(span, "invalid loop value here"), SourceLabel(binding, "loop binding declared here")))
 
 	fun argumentBinding(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_ARGUMENT_BINDING, message, listOfNotNull(SourceLabel(span, "argument binding here"), declaration?.let { SourceLabel(it, "parameter declared here") }))
 	fun parameterDefault(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_PARAMETER_DEFAULT, message, span)

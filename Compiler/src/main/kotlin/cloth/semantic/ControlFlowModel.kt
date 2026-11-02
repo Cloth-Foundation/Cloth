@@ -1,7 +1,6 @@
 package cloth.semantic
 
 import cloth.diagnostics.InternalErrors
-import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionBody
@@ -41,7 +40,15 @@ class ControlFlowModel {
 	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
 	fun of(statement: Statement): ControlFlow = statements.getOrPut(statement) {
 		when (statement) {
-			is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
+			is ForStatement               -> {
+				val entry = when (val source = statement.source) {
+					is ForSource.Range -> of(source.start).then(of(source.end))
+					is ForSource.Elements -> of(source.expression)
+				}
+				val iteration = of(statement.body.statements).then(statement.stepper?.value?.let { of(it) } ?: ControlFlow.CONTINUE)
+				// Even an always-returning body cannot establish that a loop executes.
+				entry.then(ControlFlow.CONTINUE.or(iteration))
+			}
 			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
 			is BindingGroupDeclaration    -> of(statement.initializer)
@@ -116,7 +123,7 @@ class ControlFlowModel {
 		if (truths.containsKey(expression)) return truths[expression]
 		val result = when (expression) {
 			is BooleanLiteral   -> expression.value
-			is UnaryExpression  -> if (expression.operator.lexeme == Operators.NOT.character) truth(expression.operand)?.not() else null
+			is UnaryExpression  -> if (expression.operator.lexeme == Operators.NOT.toString()) truth(expression.operand)?.not() else null
 			is BinaryExpression -> {
 				val left = truth(expression.left)
 				val right = truth(expression.right)

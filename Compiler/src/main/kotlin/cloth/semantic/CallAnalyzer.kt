@@ -130,7 +130,14 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		fun check(statements: List<Statement>) = statements.forEach { statement(it) }
 		override fun statement(statement: Statement) {
 			when (statement) {
-				is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
+				is ForStatement               -> {
+					// Loop contracts cannot be repaired by a surrounding argument candidate.
+					if (probe) {
+						BodyTyping(facts, function, returnResults, validateReturns).statement(statement)
+					} else checkFor(statement, facts.declarations.loopSteppers[statement]) { type ->
+						facts.bindings[facts.declarations.symbolOf(statement)] = type
+					}
+				}
 				is BindingGroupDeclaration    -> {
 					val plan = definitionPlan(statement)
 					facts.declarations.symbolsOf(statement).forEachIndexed { index, symbol ->

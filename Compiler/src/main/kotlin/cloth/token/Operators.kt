@@ -3,8 +3,8 @@ package cloth.token
 import cloth.diagnostics.InternalErrors
 import kotlin.enums.enumEntries
 
-enum class Operators(val character: String) {
-
+enum class Operators(private val character: String) {
+	// This comment has to exist so PLUS does not get put in line with the brace.
 	PLUS("+"),
 	PLUS_PLUS("++"),
 	PLUS_EQUAL("+="),
@@ -42,10 +42,6 @@ enum class Operators(val character: String) {
 	ELVIS("?:"),
 	RANGE(".."),
 	RANGE_INCLUSIVE("..="),
-
-	FOR("for"),
-	WHILE("while"),
-	DO("do"),
 
 	PAREN_OPEN("("),
 	PAREN_CLOSE(")"),
