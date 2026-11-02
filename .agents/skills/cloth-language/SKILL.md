@@ -35,6 +35,40 @@ For a focused verification run from the repository root, use
 substituting the suite identified by the feature skill. Use `./gradlew` on Unix.
 Choose tests for the affected behavior; report actual results and target scope.
 
+## Canonical operator and keyword spellings
+
+[Operators](../../../Compiler/src/main/kotlin/cloth/token/Operators.kt) and
+[Keywords](../../../Compiler/src/main/kotlin/cloth/token/Keywords.kt) own Cloth's
+operator and keyword spellings. Their `.toString()` methods are the source of
+truth wherever compiler code needs those spellings.
+
+- Use enum values for operator/keyword identity and dispatch. When comparing or
+  producing text, use `.toString()`, for example
+  `token.lexeme == Operators.UNDERSCORE.toString()` and
+  `Keywords.FUNCTION.toString()`. Use the existing enum lookup APIs where needed.
+- Apply this to lexer/parser checks, semantic checks, diagnostics, generated
+  Cloth source and any spelling tables. Do not hard-code duplicate spellings,
+  including keywords/operators embedded in longer diagnostic messages. Kotlin
+  interpolation of an enum, such as `"Expected '${Keywords.FUNCTION}'"`, calls
+  its `.toString()` and satisfies this rule.
+- Do not derive spellings from enum `.name`, lowercasing or a parallel mapping;
+  keyword aliases are defined by `Keywords.toString()`. For character-level
+  operator matching, use the existing `Operators.toChar()` helper.
+- Lower compound assignments through `Operators.compoundAssignmentBase()` and
+  render the returned enum with `.toString()` when constructing an arithmetic
+  token. Do not derive the binary operator by slicing its assignment spelling.
+  Range emission also keeps comparison and update identities as enum values.
+- Keep original token lexemes when reporting what the user actually wrote.
+  Literal Cloth examples and fixed source/spelling test fixtures may contain
+  syntax directly; compiler logic and dynamically constructed syntax must use
+  the canonical methods. This rule concerns Cloth syntax, not target-language
+  syntax such as LLVM IR.
+- When changing code that duplicates a spelling, replace it with the enum-based
+  form. Existing duplicates are cleanup work, not an alternative authority.
+
+The [compiler-wide migration record](references/development.md#canonical-operator-and-keyword-spellings-2026-11-02)
+captures implementation scope and regression evidence.
+
 ## Feature skills
 
 | Work area | Skill |
@@ -50,7 +84,7 @@ Choose tests for the affected behavior; report actual results and target scope.
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
-| Conditionals, is checks, short circuits, branch merges, for-loop scopes/types/flow | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Conditionals, is checks, short circuits, branch merges, ranges/foreach and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
@@ -62,9 +96,15 @@ Choose tests for the affected behavior; report actual results and target scope.
 - Integer/float range and array foreach loops use `<-`; the default range step is one and an
   explicit stepper requires a semicolon. The [implementation plan](../../../todo/for-loops-plan.md)
   records the confirmed contract, stages, source ownership and verification.
-  Core design and Stage 1 are complete. Stage 2 implements scopes, strict types
-  and repeated flow (105 focused and all 868 compiler tests passed).
-  C3067 now gates backend execution; stages 3-5 remain pending. See the
+  Stages 0-5 integrate design, parsing, scopes/strict types/repeated flow, numeric
+  ranges, array foreach, conservative lifetimes and publication. Ranges preserve saved
+  bounds, default/all explicit updates, finite/progress guards and overflow exits.
+  Foreach uses independent snapshots and mutable independent elements; proven
+  loop regions reclaim arena/stack temporaries. C3067 is retired. Runnable
+  [integer](../../../examples/ForRanges.co), [float](../../../examples/FloatRanges.co)
+  and [foreach](../../../examples/ForEach.co) examples execute on Windows x64/x86;
+  loop IR/objects verify across all nine supported ABI profiles. All 936 compiler
+  tests pass; the agreed loop slice is complete. See the
   [stage record](../cloth-control-flow/references/for-implementation.md).
   Deferred extensions in the plan are not additional confirmed language rules.
 - `opt<T>` / `final opt<T>`, omission-only `?:` defaults and named arguments are implemented for

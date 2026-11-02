@@ -20,6 +20,9 @@ multi-error reporter. Multiple labels may explain that same error.
 - Pass facts and locations to diagnostic definitions instead of assembling raw
   JVM exception messages at checks. Declaration labels help explain duplicate,
   reassignment and immutable-binding errors without implying separate errors.
+- Follow the shared [canonical spelling rule](../cloth-language/SKILL.md#canonical-operator-and-keyword-spellings):
+  render Cloth operators and keywords through their enum `.toString()` methods,
+  including within diagnostic prose; enum interpolation also calls `.toString()`.
 - Diagnose unsupported source behavior in the earliest appropriate checker before
   output/linker work. Existing stage-specific APIs still retain their boundaries;
   target-dependent checks may need target selection before validation.

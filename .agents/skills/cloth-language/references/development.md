@@ -7,6 +7,114 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Canonical operator and keyword spellings (2026-11-02)
+
+Applied the shared spelling rule across lexer delimiters and character checks,
+parser checks and synthesized tokens, null-flow checks, numeric range constant
+evaluation/emission, type and signature formatting, diagnostics, and emitted
+boolean/null/array text. Text uses the canonical enum `.toString()` methods
+(including Kotlin enum interpolation); identity-only range dispatch uses enums.
+Boolean text lengths derive from the canonical spellings' UTF-8 bytes.
+
+`Operators.compoundAssignmentBase()` maps the five supported compound assignments
+to their arithmetic operators. Ordinary assignment lowering, semantic range
+stepper expressions and range emission share this mapping instead of slicing
+spellings. Original token lexemes/spans remain available for source diagnostics.
+Literal source/spelling test fixtures and target/CLI syntax remain independent
+of this migration. No Cloth syntax or first-error behavior changed.
+
+Verification: the final
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed **936 tests**, zero failures/errors/skips, after the compound mapping
+and final diagnostic replacements. This includes existing native Windows and
+cross-target IR/object regressions; it establishes no additional native target
+coverage. The dedicated validator and relative-link checks passed for
+cloth-language and cloth-diagnostics using cached PyYAML extracted only under
+`tmp/`. Whitespace checks passed; temporary review/validation files were removed.
+
+### Loop publication and portability: Stage 5 (2026-11-02)
+
+Published executable ForRanges.co, FloatRanges.co and ForEach.co examples with
+self-checking ordinary main functions, plus README syntax/behavior guidance.
+Test.co retains its intended class/state design, and Arr.co's local commented
+demonstration remains intact. Existing feature skills own the integrated loop
+contract, implementation and support limits; no competing loop specification
+was added.
+
+ForIntegrationTest adds six tests: examples run on Windows x64 and real PE32 x86;
+x86 covers all integer counter domains, dynamic wide multiplication overflow and
+finite/progress failures with preserved effect order. One AST emits verified IR
+and objects for all nine supported Windows/Linux GNU/Linux musl/macOS ABI profiles.
+CLI object mode accepts explicit example paths without linker discovery. No native
+Linux/macOS/Windows ARM64 loop execution is claimed.
+
+All **305 focused tests passed**, zero failures/errors/skips, including all 112
+loop tests, existing x86/target/numeric/diagnostic regressions and 27 cleanup tests.
+The dedicated validator passed for ten changed skills using cached PyYAML 6.0.3
+in a temporary workspace target, resolving the prior validation dependency gap
+without changing global Python. All **936 compiler tests passed**, zero failures,
+errors or skips. All 325 relative links across 17 changed records resolve;
+whitespace checks pass, and temporary validator dependencies were removed.
+Stages 0-5 are complete for the agreed slice. Exact commands and the bounded
+completion scope are in the
+[Stage 5 record](../../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02).
+
+### Array foreach and lifetime integration: Stage 4 (2026-11-02)
+
+Implemented source capture once per entry as an independent contents/shape
+snapshot, transferring fresh owned arrays or recursively copying stored values.
+Foreach traverses with target usize counts and receives a fresh mutable value
+per element, including independent nested rows and string bytes. Original writes,
+receiver rebinding and row mutation cannot alter the snapshot or saved copies.
+Existing scopes, shape constraints, source failures, empty axes and buffered
+function/deferred-block returns remain intact. The C3067 gate is retired; existing
+nullable-array gates remain. No general iterator or break/continue support was added.
+
+Closed proofs now permit normal-path arena suffix release plus stack restoration
+for safe iteration bodies, range step expressions and complete loops. Received
+buffers are allocated after iteration checkpoints; saved sources remain outside.
+Buffered/indexed writes and unrecognized/captured publication retain frame
+lifetime. Returns bypass normal releases and keep existing outgoing-copy cleanup.
+This establishes bounded verified workloads, not universally bounded loop memory.
+
+All **248 focused tests passed**, including 19 new foreach tests and 11 new native
+allocation/poisoning/stack probes. Probes verify one-allocation fresh source
+transfer, an extra borrowed snapshot, safe row/string reclamation, saved/captured
+values, early buffered returns, and 20,000-iteration literal body/step workloads
+with 264-byte peak arena usage. Native execution ran on Windows x64; foreach IR
+verified for i686 Windows, x86_64 Windows/Linux GNU and aarch64 macOS. No foreign
+native foreach execution is claimed. The final **930-test compiler suite passed**
+with no failures, errors or skips;
+see [source ownership and evidence](../../cloth-control-flow/references/for-implementation.md#stage-4-array-foreach-and-lifetime-integration-2026-11-02).
+
+### Numeric range execution: Stage 3 (2026-11-02)
+
+Implemented saved start/end evaluation and validation, scoped counter storage,
+fixed-bound membership, default `+1` and all eight explicit header updates.
+Descending ranges, freely changing direction, body writes, singleton/equal bounds,
+fresh runtime step effects and actual function/deferred-block returns execute.
+Integer header arithmetic overflow exits before storing a wrapped value; body/RHS
+arithmetic and invalid division/remainder keep their ordinary rules. Half/single/
+double counters round per update with finite and unchanged-progress guards.
+Closed nonfinite endpoint/step constants receive C3068, including direct decimal
+half rounding; dynamic values receive located runtime failures. C3067 now gates
+array foreach only, including skipped/deferred source, before backend work.
+
+Binding allocation stays in function/snippet entry blocks. Existing buffered
+copies and return cleanup remain safe; unproven allocations keep frame lifetime,
+with no new general iteration-reclamation proof. Foreach snapshots, independent
+elements and iteration cleanup remain Stage 4. No while/do/break/continue support
+was added. Stale spelling-API tests and the commented Arr.co demonstration's parser
+test were adapted without changing the example or public API.
+
+All **203 focused tests passed**, and the additional integer-to-float rounding
+regression passed separately. Loop suites now contain 87 tests, including 32 new
+execution tests. The final **900-test compiler suite passed** with zero failures,
+errors or skips. Native range execution ran on Windows x64; IR verified for i686 Windows,
+x86_64 Windows and x86_64 Linux GNU. No new native Linux/macOS or x86 loop
+execution is claimed. Full-suite results and exact source/test ownership are in
+the [stage record](../../cloth-control-flow/references/for-implementation.md#stage-3-numeric-range-execution-2026-11-02).
+
 ### For-loop semantics: Stage 2 (2026-11-02)
 
 Implemented distinct loop binding symbols and header/body scopes, surrounding-

@@ -1,0 +1,28 @@
+fn<int[0][3]> emptyRows() = []
+
+fn<int> main() {
+    def matrix = [[1, 2, 3], [4, 5, 6]]
+    def saved = [0, 0, 0]
+    def total = 0
+    for (def<int[]> row <- matrix) {
+        // This write cannot change the independent traversal snapshot.
+        matrix[1][0] = 40
+        for (def value <- row) total += value
+        saved = row
+        row[0] = 99
+    }
+    if (total != 21 || matrix[0][0] != 1 || saved[0] != 4) { return 1 }
+    println(total)
+    println(saved[0])
+
+    def words = ["Cloth", "é中😀"]
+    for (def word <- words) {
+        println(word)
+        word = "changed"
+    }
+    if (words[0] != "Cloth") { return 2 }
+
+    // Empty sources retain their row shape and execute no body.
+    for (def<int[3]> row <- emptyRows()) return 3
+    return 0
+}

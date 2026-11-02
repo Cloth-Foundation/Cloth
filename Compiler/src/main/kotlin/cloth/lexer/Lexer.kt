@@ -52,14 +52,14 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 	private fun matchOperator(): Operators? {
 		for (op in OPERATORS) {
 			// A nullable type receiver uses '?' followed by '::', not Elvis and ':'.
-			if (op == Operators.ELVIS && source.startsWith("?::", current)) continue
+			if (op == Operators.ELVIS && source.startsWith(NULLABLE_TYPE_RECEIVER_PREFIX, current)) continue
 			val len = op.toString().length
 			if (current + len <= source.length) {
 				val substring = source.substring(current, current + len)
 				if (substring == op.toString()) {
 					// Word operators and '_' must not consume prefixes of identifiers.
 					val next = source.getOrNull(current + len)
-					if ((op.toString().last().isLetter() || op == Operators.UNDERSCORE) && next != null && (next.isLetterOrDigit() || next == '_')) continue
+					if ((op.toString().last().isLetter() || op == Operators.UNDERSCORE) && next != null && (next.isLetterOrDigit() || next == Operators.UNDERSCORE.toChar())) continue
 					current += len
 					cAt = cAt.copy(column = cAt.column + len)
 					return op
@@ -71,16 +71,15 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 	}
 
 	private fun scanToken() {
-		if (source.startsWith("#\"", current)) {
-			advance()
-			advance()
+		if (source.startsWith(INTERPOLATION_PREFIX, current)) {
+			repeat(INTERPOLATION_PREFIX.length) { advance() }
 			addToken(TokenType.InterpolationStart)
 			interpolatedString()
 			return
 		}
 
-		if (source.startsWith("\"\"\"", current)) {
-			repeat(3) { advance() } // Opening triple quotes.
+		if (source.startsWith(RAW_STRING_DELIMITER, current)) {
+			repeat(RAW_STRING_DELIMITER.length) { advance() } // Opening triple quotes.
 			rawString()
 			return
 		}
@@ -91,7 +90,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 			return
 		}
 
-		if (peek() == '\'') {
+		if (peek() == Operators.QUOTATION.toChar()) {
 			advance()
 			character()
 			return
@@ -185,7 +184,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 			TokenType.IntegerLiteral
 		}
 
-		val text = source.substring(start, current).replace("_", "")
+		val text = source.substring(start, current).replace(Operators.UNDERSCORE.toString(), "")
 		addToken(type, text)
 	}
 
@@ -212,7 +211,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 		mark()
 		while (!isAtEnd()) {
 			when (peek()) {
-				'"'        -> {
+				Operators.DOUBLE_QUOTATION.toChar()                           -> {
 					addToken(TokenType.StringSegment)
 					mark()
 					advance()
@@ -220,11 +219,11 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 					return
 				}
 
-				'{', '}'   -> {
+				Operators.BRACE_OPEN.toChar(), Operators.BRACE_CLOSE.toChar() -> {
 					val brace = peek()
 					if (source.getOrNull(current + 1) == brace) {
 						advance(); advance()
-					} else if (brace == '}') {
+					} else if (brace == Operators.BRACE_CLOSE.toChar()) {
 						throw LexerErrors.interpolationBrace(cursorSpan())
 					} else {
 						addToken(TokenType.StringSegment)
@@ -236,29 +235,29 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 						while (true) {
 							if (isAtEnd()) throw LexerErrors.interpolation(hole)
 							mark()
-							if (peek() == '}' && depth == 0) {
+							if (peek() == Operators.BRACE_CLOSE.toChar() && depth == 0) {
 								advance()
 								addToken(TokenType.InterpolationClose)
 								break
 							}
-							if (peek() == '{') depth++
-							if (peek() == '}') depth--
+							if (peek() == Operators.BRACE_OPEN.toChar()) depth++
+							if (peek() == Operators.BRACE_CLOSE.toChar()) depth--
 							scanToken()
 						}
 						mark()
 					}
 				}
 
-				'\\'       -> {
+				'\\'                                                          -> {
 					advance()
 					if (isAtEnd()) break
 					if (peek() == '\n' || peek() == '\r') throw LexerErrors.multiline(span())
 					val escaped = advance()
-					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "string")
+					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', Operators.QUOTATION.toChar(), Operators.DOUBLE_QUOTATION.toChar())) throw LexerErrors.escape(escaped, span(), "string")
 				}
 
-				'\n', '\r' -> throw LexerErrors.multiline(span())
-				else       -> advanceStringScalar()
+				'\n', '\r'                                                    -> throw LexerErrors.multiline(span())
+				else                                                          -> advanceStringScalar()
 			}
 		}
 		throw LexerErrors.string(opening.through(span()))
@@ -266,8 +265,8 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 
 	private fun rawString() {
 		while (!isAtEnd()) {
-			if (source.startsWith("\"\"\"", current)) {
-				repeat(3) { advance() } // Closing triple quotes.
+			if (source.startsWith(RAW_STRING_DELIMITER, current)) {
+				repeat(RAW_STRING_DELIMITER.length) { advance() } // Closing triple quotes.
 				addToken(TokenType.RawStringLiteral)
 				return
 			}
@@ -305,7 +304,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 					if (peek() == '\n' || peek() == '\r') throw LexerErrors.multiline(span())
 
 					val escaped = advance()
-					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "string")
+					if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', Operators.QUOTATION.toChar(), Operators.DOUBLE_QUOTATION.toChar())) throw LexerErrors.escape(escaped, span(), "string")
 				}
 
 				'\n', '\r'                          -> {
@@ -323,16 +322,16 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 		if (isAtEnd() || peek() == '\n' || peek() == '\r') throw LexerErrors.character(span())
 
 		when (advance()) {
-			'\'' -> throw LexerErrors.emptyCharacter(span())
+			Operators.QUOTATION.toChar() -> throw LexerErrors.emptyCharacter(span())
 
-			'\\' -> {
+			'\\'                         -> {
 				if (isAtEnd()) throw LexerErrors.character(span())
 
 				val escaped = advance()
-				if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', '\'', '"')) throw LexerErrors.escape(escaped, span(), "character")
+				if (escaped !in charArrayOf('n', 'r', 't', '0', '\\', Operators.QUOTATION.toChar(), Operators.DOUBLE_QUOTATION.toChar())) throw LexerErrors.escape(escaped, span(), "character")
 			}
 
-			else -> {
+			else                         -> {
 				val first = source[current - 1]
 				if (first.isHighSurrogate()) {
 					if (isAtEnd() || !peek().isLowSurrogate()) throw LexerErrors.unicode(span(), "character literal")
@@ -343,13 +342,17 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 			}
 		}
 
-		if (isAtEnd() || peek() != '\'') throw LexerErrors.characterLength(span())
+		if (isAtEnd() || peek() != Operators.QUOTATION.toChar()) throw LexerErrors.characterLength(span())
 
 		advance() // Closing quote.
 		addToken(TokenType.CharacterLiteral)
 	}
 
 	companion object {
+
+		private val NULLABLE_TYPE_RECEIVER_PREFIX = "${Operators.QUESTION}${Operators.COLON_COLON}"
+		private val INTERPOLATION_PREFIX = "${Operators.POUND}${Operators.DOUBLE_QUOTATION}"
+		private val RAW_STRING_DELIMITER = Operators.DOUBLE_QUOTATION.toString().repeat(3)
 
 		private val OPERATORS = Operators.entries.toTypedArray().sortedByDescending { it.toString().length }
 		private val KEYWORDS = Keywords.entries.toTypedArray().sortedByDescending { it.toString().length }

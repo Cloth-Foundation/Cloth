@@ -1,21 +1,24 @@
 package cloth
 
-import cloth.diagnostics.SourceFile
+import cloth.data.CFloat
+import cloth.data.CInt
+import cloth.data.ValueType
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
-import cloth.data.CInt
-import cloth.data.CFloat
-import cloth.data.ValueType
+import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class NullabilityEmissionTest {
 
@@ -24,6 +27,7 @@ class NullabilityEmissionTest {
 		val native = NativeCABI.native()
 		return if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
 	}
+
 	private fun run(executable: Path, expectedStatus: Int = 0): String {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
@@ -177,13 +181,15 @@ class NullabilityEmissionTest {
 			add("usize"); add("isize")
 		}
 		val declarations = spellings.mapIndexed { index, type -> "fn<$type?> identity$index($type? value) = value\nfn<bool> equals$index($type? left, $type? right) = left == right" }.joinToString("\n")
-		val checks = spellings.mapIndexed { index, type -> """
+		val checks = spellings.mapIndexed { index, type ->
+			"""
 			def<$type?> value$index = identity$index($type::min)
 			if (value$index == null) { return ${index + 1} }
 			if (value$index != $type::min || value$index::type != $type?::type) { return ${index + 20} }
 			value$index = identity$index($type::max)
 			if (value$index != $type::max || identity$index(null) != null || !equals$index(null, null) || equals$index(null, $type::max)) { return ${index + 40} }
-		""".trimIndent() }.joinToString("\n")
+		""".trimIndent()
+		}.joinToString("\n")
 		val ast = parse("$declarations\nfn<int> main() {\n$checks\nreturn 0\n}")
 		for (abi in targets()) assertEquals(processCompletion(), run(LLVMEmitter(abi).compile(ast, directory.resolve("numeric_${abi.layout.sizeBits}"))))
 	}

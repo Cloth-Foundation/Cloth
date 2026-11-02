@@ -37,7 +37,7 @@ sealed interface ResultShape {
 			Empty       -> Keywords.VOID.toString()
 			Never       -> "<no continuation>"
 			is Single   -> type.spelling
-			is Multiple -> values.joinToString(prefix = Operators.PAREN_OPEN.toString(), postfix = Operators.PAREN_CLOSE.toString()) { it.spelling }
+			is Multiple -> values.joinToString(separator = "${Operators.COMMA} ", prefix = Operators.PAREN_OPEN.toString(), postfix = Operators.PAREN_CLOSE.toString()) { it.spelling }
 		}
 
 	/** Existing scalar/backend APIs must never silently select the first result. */

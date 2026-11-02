@@ -1,6 +1,7 @@
 package cloth.parser.type
 
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -9,5 +10,5 @@ data class TypeReference(val name: Token, val unsigned: Boolean = false, val wid
 	val hasNullability get() = nullable != null || arrayNullability.any { it != null }
 
 	val spelling: String
-		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name.lexeme + (width?.let { "<${it.lexeme}>" } ?: "") + (if (nullable != null) "?" else "") + arraySuffixes.indices.joinToString("") { "[${arraySizes.getOrNull(it)?.lexeme ?: ""}]" + if (arrayNullability.getOrNull(it) != null) "?" else "" }
+		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name.lexeme + (width?.let { "${Operators.LESS}${it.lexeme}${Operators.GREATER}" } ?: "") + (if (nullable != null) Operators.QUESTION.toString() else "") + arraySuffixes.indices.joinToString("") { "${Operators.BRACKET_OPEN}${arraySizes.getOrNull(it)?.lexeme ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(it) != null) Operators.QUESTION.toString() else "" }
 }

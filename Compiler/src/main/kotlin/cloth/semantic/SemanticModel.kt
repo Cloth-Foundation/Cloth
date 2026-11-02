@@ -7,8 +7,8 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.expression.TypeCheckExpression
-import cloth.parser.statement.Statement
 import cloth.parser.statement.ForStatement
+import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
 import cloth.target.TargetLayout
 import java.util.*
@@ -31,13 +31,6 @@ class SemanticModel(val target: TargetLayout = TargetLayout.native()) {
 	internal val updatePayloads = IdentityHashMap<UpdateStatement, CNullable>()
 	internal val loops = IdentityHashMap<ForStatement, ForLoopPlan>()
 	fun loopOf(statement: ForStatement): ForLoopPlan = loops.getValue(statement)
-
-	/** Stage 2 admits semantics; backend stages must opt in before emitting loops. */
-	internal fun requireExecutableLoops() {
-		loops.keys.minWithOrNull(compareBy<ForStatement> { it.span.startLine }.thenBy { it.span.startColumn })?.let {
-			throw SemanticErrors.unsupportedFor(it.keyword)
-		}
-	}
 
 	/** Definite represented types, separate from the expression's common typeinfo value type. */
 	internal val metadata = IdentityHashMap<Expression, ValueType>()

@@ -15,6 +15,10 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 	fun emit(statement: Statement, discardResult: Boolean = false): LLVMValueRef? {
 		if (expressionEmitter.terminated()) return null
 		return when (statement) {
+			is ForStatement               -> {
+				expressionEmitter.emitFor(statement); null
+			}
+
 			is BindingGroupDeclaration    -> {
 				val plan = semantics.receptionOf(statement)
 				if (plan.slots.none { it.target is ReceivingTarget.Named }) return expressionEmitter.emitDiscarded(plan)

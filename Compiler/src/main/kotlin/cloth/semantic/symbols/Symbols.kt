@@ -9,6 +9,7 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.Token
 import java.math.BigInteger
 
@@ -16,7 +17,7 @@ import java.math.BigInteger
 data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }) {
 
 	val spelling: String
-		get() = (if (unsigned) "unsigned " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "<$it>" } ?: "") + (if (nullable) "?" else "") + arraySizes.mapIndexed { index, size -> "[${size ?: ""}]" + if (arrayNullability.getOrNull(index) == true) "?" else "" }.joinToString("")
+		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "${Operators.LESS}$it${Operators.GREATER}" } ?: "") + (if (nullable) Operators.QUESTION.toString() else "") + arraySizes.mapIndexed { index, size -> "${Operators.BRACKET_OPEN}${size ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(index) == true) Operators.QUESTION.toString() else "" }.joinToString("")
 
 	companion object {
 
@@ -29,7 +30,7 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 /** Return types, parameter names, visibility, and final do not distinguish overloads. */
 data class FunctionSignature(val name: String, val parameterTypes: List<SignatureType>) {
 
-	val spelling get() = "$name(${parameterTypes.joinToString { it.spelling }})"
+	val spelling get() = "$name${Operators.PAREN_OPEN}${parameterTypes.joinToString("${Operators.COMMA} ") { it.spelling }}${Operators.PAREN_CLOSE}"
 }
 
 /** Symbols use object identity; two declarations with identical syntax remain distinct. */

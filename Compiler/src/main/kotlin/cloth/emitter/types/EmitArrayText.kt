@@ -5,6 +5,7 @@ import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -18,6 +19,7 @@ internal class EmitArrayText(
 	private val abi: NativeCABI, private val strings: EmitString,
 	private val providers: ProviderEmissionContext, private val location: String,
 ) {
+
 	private val target = strings.target
 	private val types = LLVMTypes(context, target)
 	private val memory = EmitMemory(context, builder, abi, target)
@@ -48,7 +50,7 @@ internal class EmitArrayText(
 	}
 
 	private fun walk(value: LLVMValueRef, recipe: ProviderResult.ArrayText, offset: LLVMValueRef, destination: LLVMValueRef?): LLVMValueRef {
-		val initial = append(strings.literal("["), offset, destination)
+		val initial = append(strings.literal(Operators.BRACKET_OPEN.toString()), offset, destination)
 		val length = LLVMBuildExtractValue(builder, value, 1, "array_text_count")
 		val data = LLVMBuildExtractValue(builder, value, 0, "array_text_elements")
 		val start = LLVMGetInsertBlock(builder)
@@ -62,7 +64,7 @@ internal class EmitArrayText(
 		val position = LLVMBuildPhi(builder, memory.size, "array_text_position")
 		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, length, "array_text_has_element"), body, done)
 		LLVMPositionBuilderAtEnd(builder, body)
-		val separator = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, index, memory.count(0), "array_text_first"), strings.literal(""), strings.literal(", "), "array_text_separator")
+		val separator = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, index, memory.count(0), "array_text_first"), strings.literal(""), strings.literal("${Operators.COMMA} "), "array_text_separator")
 		val separated = append(separator, position, destination)
 		val elementType = recipe.receiverType.element
 		var element = LLVMBuildLoad2(builder, types.storage(elementType), arrays.address(data, elementType, index), "array_text_value")
@@ -87,7 +89,7 @@ internal class EmitArrayText(
 			}
 		}
 		LLVMPositionBuilderAtEnd(builder, done)
-		return append(strings.literal("]"), position, destination)
+		return append(strings.literal(Operators.BRACKET_CLOSE.toString()), position, destination)
 	}
 
 	private fun intrinsic(name: String, type: LLVMTypeRef): LLVMValueRef {

@@ -3,6 +3,7 @@ package cloth.emitter.types
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
+import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
@@ -20,7 +21,7 @@ internal class BuiltinEmissionContext(
 
 	fun writeStdout(text: LLVMValueRef) = strings.write(module, text)
 	fun writeNewline() = strings.write(module, strings.literal("\n"))
-	fun nullText() = strings.literal("null")
+	fun nullText() = strings.literal(Keywords.NULL.toString())
 	fun nullableText(value: LLVMValueRef, type: CNullable, format: (LLVMValueRef) -> LLVMValueRef): LLVMValueRef {
 		val nullable = EmitNullable(context, builder, abi.layout)
 		return checkNotNull(nullable.choose(nullable.present(value), ValueType.STRING.llvmValue(context, abi.layout), { format(nullable.payload(value)) }, ::nullText))

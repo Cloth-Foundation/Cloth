@@ -51,3 +51,10 @@ linking, actual execution, and assembly inspection in reports. See
 [Windows x86 validation](../cloth-language/references/usize-x86-validation.md)
 for reproduced native ABI/assembly evidence and commands. Use
 [target integers](../cloth-target-integers/SKILL.md) for width-sensitive semantics.
+
+`ForIntegrationTest` runs maintained range/foreach examples as Windows x64 and
+verified PE32 executables, checks x86 wide counter overflow/failures, and emits
+verified loop IR plus objects for all nine supported ABI profiles. Its CLI object
+test preserves linker-free publication. See the
+[completed loop record](../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02)
+for commands and limits; foreign objects do not establish native execution.

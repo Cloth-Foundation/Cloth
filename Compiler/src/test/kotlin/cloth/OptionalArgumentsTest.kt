@@ -7,13 +7,17 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.expression.*
+import cloth.parser.expression.ArrayLiteral
+import cloth.parser.expression.CallExpression
+import cloth.parser.expression.ElvisExpression
+import cloth.parser.expression.NameExpression
 import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.ResolvedCall
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class OptionalArgumentsTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("optional.co", source.trimIndent())).scanTokens()).parse()
 	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
@@ -21,6 +25,7 @@ class OptionalArgumentsTest {
 		assertEquals(code, error.diagnosticCode, error.summary)
 		assertLocated(error)
 	}
+
 	private fun plan(parameters: String, arguments: String): ResolvedCall.Source {
 		val model = analyze("fn take($parameters) {}\nfn test() = take($arguments)")
 		val call = (model.declarations.functions.last().declaration.body as ExpressionBody).expression as CallExpression

@@ -3,6 +3,7 @@ package cloth.data
 import cloth.diagnostics.InternalErrors
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.Operators
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.global.LLVM.LLVMInt1TypeInContext
@@ -33,10 +34,10 @@ sealed class ValueType(val keyword: Keywords) {
 			is CArray -> {
 				var base: ValueType = this
 				while (base is CArray) base = base.element
-				base.metadataSpelling + arrayDimensions.joinToString("") { "[${it ?: ""}]" }
+				base.metadataSpelling + arrayDimensions.joinToString("") { "${Operators.BRACKET_OPEN}${it ?: ""}${Operators.BRACKET_CLOSE}" }
 			}
 
-			else      -> if (numeric) (if (unsigned) "unsigned " else "") + "$keyword<$bits>" else spelling
+			else      -> if (numeric) (if (unsigned) "${Keywords.UNSIGNED} " else "") + "$keyword${Operators.LESS}$bits${Operators.GREATER}" else spelling
 		}
 
 	/** LLVM types belong to the supplied context; descriptors never cache native handles. */
@@ -61,14 +62,14 @@ sealed class ValueType(val keyword: Keywords) {
 		get() = buildString {
 			if (unsigned) append("${Keywords.UNSIGNED} ")
 			append(keyword)
-			if (numeric && bits != DEFAULT_BITS) append("<$bits>")
+			if (numeric && bits != DEFAULT_BITS) append("${Operators.LESS}$bits${Operators.GREATER}")
 		}
 
 	/** A standalone conditional executes branches without yielding a value. */
 	data object Void : ValueType(Keywords.VOID) {
 
 		override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMVoidTypeInContext(context)
-		override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A void statement has no binding storage")
+		override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw InternalErrors.invariant("A ${Keywords.VOID} statement has no binding storage")
 	}
 
 	/** Internal bottom type: evaluation returns from the enclosing function. No source spelling. */
@@ -83,7 +84,7 @@ sealed class ValueType(val keyword: Keywords) {
 	/** Context-free absence in permitted expression contexts, never a binding type. */
 	internal data object Null : ValueType(Keywords.NULL) {
 
-		override val spelling = "null"
+		override val spelling = Keywords.NULL.toString()
 		override val containsNullability = true
 		override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = emptyMap()
 		override fun llvmValue(context: LLVMContextRef, target: TargetLayout) = LLVMInt1TypeInContext(context)

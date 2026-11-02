@@ -1,0 +1,29 @@
+fn<int> main() {
+    def count = 0
+    for (def<float> x <- 0.0..=1.0; x += 0.25) count++
+    if (count != 5) { return 1 }
+    println(count)
+
+    count = 0
+    for (def<float<16>> x <- 0.0..=1.0; x += 0.25 -> float<16>) count++
+    if (count != 5) { return 2 }
+    println(count)
+
+    count = 0
+    for (def<float<64>> x <- 1.0..=0.0; x -= 0.25 -> float<64>) count++
+    if (count != 5) { return 3 }
+    println(count)
+
+    def total = 0.0
+    for (def<float> x <- 2.0..5.0) total += x
+    if (total != 9.0) { return 4 }
+    println(total)
+
+    // Ordinary float32 rounding can skip an inclusive endpoint; no snapping.
+    count = 0
+    def last = 0.0
+    for (def x <- 0.0..=1.0; x += 0.1) { count++; last = x }
+    if (count != 10 || last >= 1.0) { return 5 }
+    println(count)
+    return 0
+}

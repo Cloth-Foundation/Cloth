@@ -149,7 +149,7 @@ class BufferCountsTest {
 				assertEquals(type.maximum.toString(), LLVMConstIntGetZExtValue(extent).toULong().toString())
 				for (query in listOf(MetadataQuery.RANK, MetadataQuery.EXTENT, MetadataQuery.WIDTH)) {
 					val receiver = if (query == MetadataQuery.WIDTH) strings.metadata.constant(CInt(64)) else info
-					val recipe = assertNotNull(CTypeInfo.provider(query.provider.spelling, target))
+					val recipe = assertNotNull(CTypeInfo.provider(query.provider.toString(), target))
 					assertEquals(type, recipe.type)
 					assertEquals(bits, LLVMGetIntTypeWidth(LLVMTypeOf(recipe.emit(providers, ProviderReceiver.Value(CTypeInfo, receiver)))))
 				}
@@ -237,27 +237,28 @@ class BufferCountsTest {
 					val strings = EmitString(context, builder, abi)
 					val nullPointer = LLVMConstNull(pointer)
 					when (index) {
-						0 -> memory.stack(LLVMInt64TypeInContext(context), memory.constant(memory.maximum), "oversized", "stride overflow rejected")
-						1 -> {
+						0    -> memory.stack(LLVMInt64TypeInContext(context), memory.constant(memory.maximum), "oversized", "stride overflow rejected")
+						1    -> {
 							val arena = EmitStringArena(context, module, abi)
 							val destination = arena.create(cases[index])
 							arena.copy(builder, destination, arrays.descriptor(nullPointer, memory.constant(memory.maximumBytes)))
 						}
 
-						2 -> strings.concatenate(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
-						3 -> arrays.checkedAddress(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CInt(), LLVMConstInt(LLVMInt64TypeInContext(context), -2, 1), CInt(64))
-						4 -> {
+						2    -> strings.concatenate(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
+						3    -> arrays.checkedAddress(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CInt(), LLVMConstInt(LLVMInt64TypeInContext(context), -2, 1), CInt(64))
+						4    -> {
 							val arena = EmitStringArena(context, module, abi)
 							arena.copyValue(builder, arena.create(cases[index]), arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CArray(CInt(64)))
 						}
 
-						5 -> {
+						5    -> {
 							val maximumCount = memory.maximumBytes / BigInteger.valueOf(8)
 							val bytes = memory.elementBytes(memory.constant(maximumCount), LLVMInt64TypeInContext(context), "valid stride rejected")
 							val sum = memory.add(memory.constant(memory.maximumBytes - BigInteger.ONE), memory.count(1), "valid sum rejected")
 							val correct = LLVMBuildAnd(builder, LLVMBuildICmp(builder, LLVMIntEQ, bytes, memory.constant(maximumCount * BigInteger.valueOf(8)), "correct_bytes"), LLVMBuildICmp(builder, LLVMIntEQ, sum, memory.constant(memory.maximumBytes), "correct_sum"), "valid_boundaries")
 							LLVMBuildRet(builder, LLVMBuildSelect(builder, correct, int(0), int(1), "status"))
 						}
+
 						6, 7 -> {
 							// A synthetic string descriptor exercises only the measure pass;
 							// overflow must terminate before any access to its fake payload.

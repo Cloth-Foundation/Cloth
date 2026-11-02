@@ -1,9 +1,294 @@
 # For-loop implementation stages
 
+## Stage 5: regression, portability and feature publication (2026-11-02)
+
+Stages 0-5 are complete for the agreed numeric range/array foreach slice. The
+final compiler suite passes all 936 tests, with zero failures/errors/skips.
+Maintained ordinary-function examples, native Windows x64/x86 execution and
+all-profile IR/object coverage complete publication. Historical stages remain below.
+
+### Runnable examples and publication
+
+- [ForRanges.co](../../../../examples/ForRanges.co) demonstrates nonzero saved
+  endpoints, default/inclusive/descending steps, direction changes and unsigned
+  header overflow completion.
+- [FloatRanges.co](../../../../examples/FloatRanges.co) demonstrates all float
+  formats, default one, fractional/descending steps, and an inclusive endpoint
+  skipped by ordinary accumulated float32 rounding.
+- [ForEach.co](../../../../examples/ForEach.co) demonstrates nested independent
+  rows, original-source mutation, saved row values, string reception and empty
+  row shapes. Each example checks results and returns zero; output is asserted
+  by integration tests. Test.co retains intended class/state design, and Arr.co's
+  local commented demonstration is preserved.
+- [README](../../../../README.md#for-loops) publishes syntax and user-facing
+  behavior. Control-flow owns the confirmed loop contract and implementation
+  record; numeric, array, semicolon and buffer skills route the interactions.
+  No separate competing loop skill is necessary.
+
+### Portability and verification
+
+[ForIntegrationTest](../../../../Compiler/src/test/kotlin/cloth/ForIntegrationTest.kt)
+adds six tests. The three published examples execute on the Windows x64 host
+and as verified PE32/i686 programs. Native x86 checks all integer counter domains,
+including dynamic wide multiplication overflow, and finite/progress failures
+with preserved effects and locations. CLI object mode accepts explicit loop
+example paths even with an unavailable linker override.
+
+One canonical library AST with usize ranges, nested foreach, half-float ranges
+and dynamic uint64 multiplication emits verified IR and nonempty objects for
+all nine supported profiles: Windows MSVC i686/x86_64/aarch64; Linux GNU and musl
+on x86_64/aarch64; macOS on x86_64/aarch64. This verifies target selection and
+code generation, not foreign linking or execution. Native Linux/macOS and
+Windows ARM64 loop execution were not run; unsupported 32-bit Unix profiles
+remain rejected.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.ForIntegrationTest --tests cloth.ForEachTest --tests cloth.ForRangeTest --tests cloth.ForStageGateTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests cloth.ForParsingTest --tests cloth.ArrayTemporaryCleanupTest --tests cloth.ArrayCopyElisionTest --tests cloth.ArrayAssignmentTest --tests cloth.ArrayBindingShapeTest --tests cloth.RectangularArraysTest --tests cloth.StringFunctionTest --tests cloth.ArrayTextTest --tests cloth.NullabilityRulesTest --tests cloth.TypeInfoTest --tests cloth.WindowsX86Test --tests cloth.TargetLayoutTest --tests cloth.NumericWidthsTest --tests cloth.UnsignedIntegersTest --tests cloth.SemicolonsTest --tests cloth.DiagnosticsTest --offline --console=plain --no-daemon
+```
+
+Observed: **305 tests passed**, zero failures/errors/skips, including 112 loop
+tests and 27 cleanup tests. The final complete run also passed:
+
+```powershell
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+Observed: **936 tests passed**, zero failures/errors/skips, including all six
+Stage 5 integration tests and all five WindowsX86Test cases without skips.
+
+The dedicated validator passed for all ten changed skills using cached PyYAML
+6.0.3 in a temporary workspace-only target; no global Python installation was
+changed. All 325 relative links across 17 changed documentation records resolve,
+including README and the ignored plan. Git/new-file whitespace checks pass.
+The verified temporary dependency directory was removed after validation; tmp/
+is empty. Repeating dedicated validation requires supplying PyYAML to its runtime.
+
+### Completion boundary
+
+The agreed slice includes numeric ranges and supported array foreach, lexical
+scopes/inference/repeated flow, all admitted counter updates, finite/progress/
+overflow behavior, independent buffered reception and conservative cleanup.
+General iterators, string collections, range values outside headers, character
+ranges, break/continue, class/method execution and nullable buffers remain outside
+this completed slice. Buffered/indexed writes, captured publication and unknown
+effects retain frame lifetime; bounded storage is established only for proven
+regions/workloads. There is no GC, reference counting or changed object destruction.
+
+## Stage 4: array foreach and lifetime integration (2026-11-02)
+
+At this milestone all 930 compiler tests passed. Array foreach
+executed alongside numeric ranges. The C3067 execution gate
+is retired; its diagnostic enum entry remains reserved. Prior stages below are
+historical milestones. Stage 5 above owns final publication and portability evidence.
+
+### Snapshot and element execution
+
+```cloth
+for (def<int[]> row <- matrix) {
+    for (def value <- row) println(value)
+}
+```
+
+- [EmitForEach](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitForEach.kt)
+  evaluates its source once before introducing the receiver, then captures an
+  independent recursive contents/shape value through transferArrayValue. A fresh
+  owned result transfers once; a stored source is copied even when immutable.
+  Original element writes or whole-array replacement cannot affect traversal.
+  Reentry captures anew, and an early source return prevents capture/body work.
+- The saved count and hidden phi index use target usize. Test unsigned `index <
+  count`, receive the element, complete the body, increment, and join from the
+  actual final LLVM block. The final increment can reach the count without
+  overflowing usize. Empty sources perform no element access, including zero
+  outer counts with explicit/unknown inner shape metadata.
+- Receive through existing checked indexing/child-shape validation and ordinary
+  type adaptation. snapshotValue recursively copies array rows and string bytes;
+  each mutable receiver is initialized anew inside its iteration scope. Stored
+  row values retain their own initial shape and ordinary assignment constraints.
+  Binding slots stay in function entry. Body writes/rebinding affect neither
+  snapshot nor original; copying a row into an outer binding preserves its value
+  across later receiver writes and later iterations.
+- Scalars include all supported numeric identities/formats, bool, char and
+  typeinfo; buffered elements include strings and rectangular nested arrays.
+  Nullable buffers/elements remain under existing C3060 support gates. Header
+  steppers still belong only to numeric ranges. No iterator protocol, string-as-
+  collection, while/do/break/continue or new object-copy semantics is introduced.
+- Existing return frames copy outgoing buffered results before releasing owning
+  storage. Source/body returns retain function/deferred-block ownership; completed
+  traversal has no result. Nested conditionals, loops, guards and deferred sources
+  preserve evaluation order and actual predecessors. ForStageGateTest now checks
+  successful library/executable/object/snippet emission and ordinary diagnostic
+  priority, rather than expecting valid foreach to fail.
+
+### Conservative loop cleanup
+
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+  adds closed proofs for iteration bodies, numeric step expressions, and whole
+  loops. Permit local definitions with safe initializers, safe scalar stores and
+  updates, supported safe conditional branches, returns and nested loops. Deferred
+  block declarations themselves execute no work, but reading one still inspects
+  its transitive captured effects through the existing proof.
+- Buffered assignments (including local rebinding), indexed writes, buffered
+  multi-assignment targets, built-in calls and unrecognized/captured effects
+  conservatively disable the corresponding region. Ordinary source-function
+  calls with safe arguments can be proven safe under existing value reception.
+  Scalar source calls do not imply that captured blocks are safe. The old general
+  expression proof remains conservative for statement-bearing blocks; these loop
+  proofs do not turn every surrounding expression into a reclaimable region.
+- EmitExpression.temporaryRegion takes an arena checkpoint and an
+  [EmitStackScope](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStackScope.kt)
+  stacksave before a proven region. On normal completion, release the allocation
+  suffix, then stackrestore dynamic literal storage, and discard fresh-ownership
+  facts created inside it. Prior allocations and entry binding slots survive.
+- Foreach iteration checkpoints precede element copying, so safe received row/
+  string buffers are reclaimed after their last body use. Numeric bodies and safe
+  explicit RHS expressions receive separate regions; source capture stays outside
+  the body region. Whole-loop cleanup requires safe source/body/step effects and
+  releases the saved snapshot and other new entry buffers after traversal.
+- Return/fatal paths bypass normal region releases. Returns keep buffers until
+  the existing frame or consuming outer expression can copy/release them. Integer
+  update overflow can bypass its step region; the whole-loop or frame region
+  retains responsibility. Buffered writes/captures retain frame lifetime and
+  cannot be reclaimed merely because their lexical scope ended. There is no claim
+  of bounded memory for arbitrary escaping loops, and no GC/reference counting.
+
+### Stage 4 verification
+
+[ForEachTest](../../../../Compiler/src/test/kotlin/cloth/ForEachTest.kt) adds 19
+tests for snapshot independence, recursive mutable rows, once-per-entry sources,
+all supported element families, empty shapes, scopes, conditional/deferred sources,
+buffered returns, source failures, runtime shape constraints and snippets. One
+canonical AST emits verified IR for i686 Windows MSVC, x86_64 Windows MSVC,
+x86_64 Linux GNU and aarch64 macOS with target-sized counters and entry slots.
+
+[ArrayTemporaryCleanupTest](../../../../Compiler/src/test/kotlin/cloth/ArrayTemporaryCleanupTest.kt)
+adds 11 native allocation/poisoning probes for fresh transfer vs borrowed copying,
+safe row/string reception, nested reentry, 20,000-iteration literal bodies/steppers,
+saved values, source/transitive captured writes and early buffered returns.
+Fresh scalar sources allocate once; borrowed captures add one snapshot. Literal
+body/step probes bound peak requested arena storage to 264 bytes and restore stack
+storage. Normal frame exits balance every tracked allocation, including fallback
+cases. Native execution is Windows x64; foreign verified IR is not native evidence.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.ForEachTest --tests cloth.ForRangeTest --tests cloth.ForStageGateTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests cloth.ForParsingTest --tests cloth.ArrayTemporaryCleanupTest --tests cloth.ArrayCopyElisionTest --tests cloth.ArrayAssignmentTest --tests cloth.ArrayBindingShapeTest --tests cloth.RectangularArraysTest --tests cloth.StringFunctionTest --tests cloth.ArrayTextTest --tests cloth.NullabilityRulesTest --tests cloth.TypeInfoTest --offline --console=plain --no-daemon
+```
+
+Observed: **248 tests passed**, zero failures/errors/skips, including all 106 loop
+tests and 27 temporary-cleanup tests. This stage adds 30 tests. The final full
+compiler suite also passed:
+
+```powershell
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+Observed: **930 tests passed**, zero failures/errors/skips. Direct checks validate
+basic frontmatter and all 268 relative links across 14 changed records (eight
+skills, references and the ignored plan); whitespace checks pass. The dedicated
+skill validator still cannot import PyYAML; no dependency was installed.
+
+## Stage 3: numeric range execution (2026-11-02)
+
+At this milestone all 900 compiler tests passed and numeric ranges executed,
+with foreach gated until Stage 4. The current execution/cleanup scope is above;
+the numeric semantics and tests below remain relevant.
+
+### Execution ownership and invariants
+
+- [EmitRangeLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitRangeLoop.kt)
+  owns range execution, reached through EmitStatement and EmitExpression. Emit
+  the starting endpoint, validate its finite value, then emit/validate the ending
+  endpoint. Their SSA values dominate the loop and stay fixed on every backedge;
+  early return/failure prevents later evaluations. Reentry evaluates both anew.
+- EmitBindings gives the loop counter and body locals entry-block allocation in
+  functions and snippets. Restore lexical identities after the body/loop while
+  preserving outer stores. Body locals initialize on every executed iteration.
+  Membership tests include the starting boundary and exclude/include the ending
+  boundary as spelled. Explicit steppers admit descending bounds and direction
+  changes; reversed intervals without a stepper stay empty. Equal endpoints and
+  signed zero use ordinary comparison behavior.
+- After a normally completed body, load the counter before evaluating the header
+  RHS once. Default/postfix steps use one in the declared format; all eight
+  accepted header forms execute. Return from the body or RHS skips the update or
+  backedge, using the actual enclosing function/deferred-block return machinery.
+  Nested expressions and runtime guards use their actual final insertion block.
+- Integer `++`, `--`, `+=`, `-=`, `*=` calculate an exact double-width intermediate,
+  narrow and reextend to detect overflow, then branch directly to the loop exit
+  on overflow **before storing**. `/=` and `%=` reuse EmitIntegerDivision and its
+  ordinary zero/signed-minimum failures. Plain `=` has no checked arithmetic
+  operation; body and RHS arithmetic still wrap at their ordinary widths.
+- Half/single/double counters retain their declared format after every update.
+  Reuse EmitHalf/EmitCast for software half arithmetic and ordinary numeric RHS
+  conversion. There is no wider persistent accumulator, snapping or tolerance.
+  Exponent-bit guards reject nonfinite evaluated endpoints, supplied float step
+  operands and resulting counters, even on a would-be empty/overshooting path.
+  Do not execute a skipped stepper merely to validate it.
+- Compare the pre-update and resulting counters; if equal **and** the resulting
+  value is still a member, fail with `Range counter update made no progress`.
+  Label explicit failures at the stepper and implicit failures at the header.
+  Finite failures label the evaluated endpoint/operand or resulting update.
+  Normal overshoot and checked integer overflow end traversal without errors.
+- [RangeConstants](../../../../Compiler/src/main/kotlin/cloth/semantic/RangeConstants.kt)
+  diagnoses closed nonfinite float endpoint/step expressions with C3068 during
+  ExpressionTyping. It recognizes numeric literals/providers, signs, numeric
+  casts and basic arithmetic, with ordinary per-operation format rounding and
+  wrapping integer intermediates. Half decimal literals round directly from
+  decimal, and wide integers convert directly to the working float format,
+  avoiding false infinity from double rounding. Calls, bindings,
+  conditionals, powers and unrecognized effects retain runtime guards; this is
+  not general constant propagation. Integer failures keep their existing path.
+- SemanticModel.requireExecutableLoops now filters array foreach only, preserving
+  its located gate before LLVM/linker/output work, including skipped/deferred
+  foreach. Source/type errors still precede that gate. No while/do/break/continue
+  execution is introduced.
+
+### Lifetime boundary
+
+Existing frame arenas and recursive copy/return paths keep buffered values valid
+through repeated bodies and early exits. The closed ArrayTemporaryAnalysis proof
+still treats loop statements as unknown, and lexical exit does not justify new
+reclamation. Existing independently proven expression cleanup remains available;
+unproven allocations/replaced named buffers retain frame lifetime. Stage 3 does
+not claim bounded memory for arbitrary loops. Foreach snapshots, row copies and
+proven iteration cleanup remain Stage 4 work.
+
+### Stage 3 verification
+
+[ForRangeTest](../../../../Compiler/src/test/kotlin/cloth/ForRangeTest.kt) adds 32
+tests: native traversal/effect order, all stepper forms, fixed-bound backtracking,
+full byte domains and all integer extrema/identities, wrapping-vs-overflow exits,
+float formats/subnormals/rounding, compile/runtime finite failures, progress spans,
+nested scopes/returns, deferred blocks, buffered survival and snippets. Its IR
+test verifies i686 Windows MSVC, x86_64 Windows MSVC and x86_64 Linux GNU modules
+and checks that body-local allocation remains outside the backedge. Native range
+execution uses the Windows x64 host; foreign IR is not native execution evidence.
+ForStageGateTest's six cases now exercise foreach, and the parser test reads the
+maintained traversal demonstration even while Arr.co keeps it commented.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.ForRangeTest --tests cloth.ForStageGateTest --tests cloth.ForParsingTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests cloth.NumericWidthsTest --tests cloth.AssignmentOperatorsTest --tests cloth.IntegerDivisionTest --tests cloth.FunctionReturnsTest --tests cloth.FunctionBlocksTest --tests cloth.NullabilityRulesTest --tests cloth.TypeInfoTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon
+```
+
+Observed: **203 tests passed**, zero failures/errors/skips, including 86 loop
+tests. The additional wide-integer-to-float rounding regression also passed in
+a focused run. The current loop suites contain 87 tests, including 32 new
+execution tests. The final complete run passed:
+
+```powershell
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+Observed: **900 tests passed**, zero failures/errors/skips. This includes the
+final direct integer-to-float constant-rounding correction and regression.
+
+The skill validator still cannot import PyYAML; direct checks validated basic
+frontmatter and all 247 relative links across 12 changed records (including this
+stage's seven skills and the ignored plan). Git/new-source whitespace checks
+passed. No validation dependency was installed.
+
 ## Stage 2: names, types and repeated control flow (2026-11-02)
 
-Stage 2 is complete and verified: 105 focused and all 868 compiler tests pass.
-Stages 3-5, including all generated loop execution, remain pending.
+At this milestone, 105 focused and all 868 compiler tests passed. Stage 3 above
+supersedes this milestone's execution boundary; the semantic invariants remain.
 
 ### Semantic scope and source ownership
 
@@ -121,8 +406,8 @@ native iteration on those targets. No native Linux/macOS loop execution is claim
 ## Stage 1: syntax, AST and first-error diagnostics (2026-11-02)
 
 At this milestone, Stage 1 parser implementation, focused verification and full
-compiler regressions completed, with later stages pending. See Stage 2 above for
-the current semantic scope and moved execution gate; details below retain the
+compiler regressions completed, with later stages pending. See Stages 2-3 above
+for the semantic scope and current execution boundary; details below retain the
 original Stage 1 scope/evidence.
 
 ### Supported syntax

@@ -95,7 +95,7 @@ Array syntax and construction were confirmed on 2026-10-30:
   policies that have not been separately confirmed as language design, including
   empty arrays and bounds failures.
 
-## Foreach source capture (design confirmed; implementation deferred)
+## Foreach source capture
 
 On 2026-11-02 the user confirmed source evaluation once per loop entry and
 traversal of an independent snapshot of array contents and shape. Changes to the
@@ -108,4 +108,6 @@ neither the snapshot nor the original source. Preserve recursive independence,
 ordinary type/shape rules and saved values surviving later iterations.
 The [loop contract](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 owns the iteration syntax and confirmed element-binding contract. This does not
-claim implemented foreach support or expand class-object copy semantics.
+expand class-object copy semantics. Stage 4 implements this traversal for the
+currently supported array element types; see the
+[stage scope and evidence](../../cloth-control-flow/references/for-implementation.md#stage-4-array-foreach-and-lifetime-integration-2026-11-02).

@@ -4,6 +4,7 @@ import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.ToolchainErrors
 import cloth.target.TargetLayout
+import cloth.token.Keywords
 import cloth.util.ExecutableFormat
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.llvm.global.LLVM.*
@@ -41,8 +42,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
 		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
-		ValueType.Null  -> throw InternalErrors.invariant("Bare null formatting has no C vararg payload")
-		ValueType.Void  -> throw InternalErrors.invariant("A void statement has no printable value")
+		ValueType.Null  -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
+		ValueType.Void  -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no printable value")
 		is CFloat       -> doubleType
 		is CInteger     -> {
 			require(type.bits <= longLongType.bits) { "Native printing does not support ${type.spelling} on '$targetTriple'" }
@@ -60,8 +61,8 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
 		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
-		ValueType.Null  -> throw InternalErrors.invariant("Bare null formatting has no C vararg payload")
-		ValueType.Void  -> throw InternalErrors.invariant("A void statement has no print format")
+		ValueType.Null  -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
+		ValueType.Void  -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no print format")
 		is CFloat       -> "g"
 		is CInteger     -> when {
 			argument.unsigned && argument.bits > intType.bits -> "llu"

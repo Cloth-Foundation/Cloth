@@ -13,11 +13,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class OptionalArgumentsEmissionTest {
+
 	private fun parse(source: String) = Parser(Lexer(SourceFile("optional-execution.co", source.trimIndent())).scanTokens()).parse()
 	private fun targets(): List<NativeCABI> {
 		val native = NativeCABI.native()
 		return if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
 	}
+
 	private fun execute(directory: Path, name: String, source: String, expected: String = "", error: String? = null) {
 		for (abi in targets()) {
 			val executable = LLVMEmitter(abi).compile(parse(source), directory.resolve("${name}_${abi.layout.sizeBits}"))
@@ -34,7 +36,9 @@ class OptionalArgumentsEmissionTest {
 					assertContains(output, error)
 					assertFalse(output.contains("PEC:"))
 				}
-			} finally { if (process.isAlive) process.destroyForcibly() }
+			} finally {
+				if (process.isAlive) process.destroyForcibly()
+			}
 		}
 	}
 

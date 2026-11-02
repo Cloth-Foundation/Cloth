@@ -21,14 +21,14 @@ class TypeParser(private val parser: Parser) {
 		val name = parser.advance()
 		// After a cast, '<' may instead start an ordering comparison. Only a
 		// complete numeric width suffix belongs to the type in this context.
-		val width = if (parser.peek().lexeme == "<" && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == ">"))) {
+		val width = if (parser.peek().lexeme == Operators.LESS.toString() && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == Operators.GREATER.toString()))) {
 			parser.delimited.angles { parser.expect(TokenType.IntegerLiteral, "a numeric type width") }
 		} else null
 
 		fun nullableMarker(): cloth.token.TokenSpan? {
 			if (parser.peek().lexeme != Operators.QUESTION.toString()) return null
 			val marker = parser.advance().span
-			if (parser.peek().lexeme == Operators.QUESTION.toString()) throw SyntaxErrors.expected("only one '?' at this type position", parser.peek())
+			if (parser.peek().lexeme == Operators.QUESTION.toString()) throw SyntaxErrors.expected("only one '${Operators.QUESTION}' at this type position", parser.peek())
 			return marker
 		}
 

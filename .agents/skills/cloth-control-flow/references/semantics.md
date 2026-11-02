@@ -199,7 +199,7 @@ for (def<int[]> row <- matrix) {
   original source during the body do not change later values visited. The
   compiler may avoid physical copies only when it proves the same observable
   value independence and lifetime behavior. Re-entering the loop captures anew.
-  This is confirmed design; array iteration execution remains unimplemented.
+  Stage 4 implements this traversal for currently supported array elements.
 - Foreach variables are ordinary mutable value bindings, initialized anew from
   each element. Rebinding a scalar/row variable or modifying an array-valued row
   affects neither the traversal snapshot nor the original source. Preserve
@@ -213,13 +213,17 @@ for (def<int[]> row <- matrix) {
   body and cannot control traversal. This range design does not establish default
   initialization.
 - Stage 1 parses syntax into a located AST. Stage 2 resolves scopes, exact
-  receiving/source types and repeated completion/presence/metadata flow; C3068
-  reports invalid loop contracts and C3067 now gates backend execution only.
-  Runtime progression, bound snapshots, guards, independent array transfers and
-  cleanup remain unimplemented. Read the
+  receiving/source types and repeated completion/presence/metadata flow. Stage 3
+  executes integer/float ranges with saved bounds, all accepted updates, ordinary
+  rounding, overflow exits, finite/progress guards and real return ownership.
+  Stage 4 adds independent foreach snapshots/elements and proven arena/stack
+  region cleanup. C3068 reports invalid loop contracts or known nonfinite values;
+  C3067 is retired and reserved. Buffered/captured writes and unproven allocations
+  keep frame lifetime; no universal bounded-memory guarantee is implied. Read the
   [stage scope and evidence](for-implementation.md).
 
 The [implementation plan](../../../../todo/for-loops-plan.md) records the confirmed
-contract, source ownership, implementation stages and verification. Core design
-review is complete; later execution/integration stages remain pending. Future
+contract, source ownership, implementation stages and verification. Stages 0-5
+integrate the agreed executable slice and its maintained examples/portability
+coverage; the stage record retains exact verification and support limits. Future
 extensions are separate from the confirmed rules above.

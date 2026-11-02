@@ -102,7 +102,6 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 	/** Test instrumentation for isolated body fragments, not language program startup. */
 	internal fun compileSnippet(ast: ASTStructure, output: Path, forcePrint: Boolean = true): Path {
 		val semantics = SemanticAnalyzer(abi.layout).analyze(ast)
-		semantics.requireExecutableLoops()
 		val configuration = linker // Validate the toolchain before creating output files or generating code.
 		val executable = abi.executableFormat.executablePath(output).toAbsolutePath().normalize()
 		Files.createDirectories(executable.parent)
@@ -129,7 +128,6 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 	}
 
 	private fun <T> withModule(ast: ASTStructure, forcePrint: Boolean, semantics: SemanticModel = SemanticAnalyzer(abi.layout).analyze(ast), action: (LLVMModuleRef) -> T): T {
-		semantics.requireExecutableLoops()
 		if (semantics.target != abi.layout) throw InternalErrors.invariant("Snippet and emission targets differ")
 		val targetABI = abi // Resolve and reject unsupported targets before generating any IR.
 		val context = LLVMContextCreate()
@@ -149,7 +147,7 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 
 			LLVMPositionBuilderAtEnd(builder, entryBlock)
 
-			val bindings = EmitBindings(context, builder, target = targetABI.layout)
+			val bindings = EmitBindings(context, builder, entryBlock, targetABI.layout)
 			val casts = EmitCast(context, builder, semantics, targetABI)
 			val strings = EmitString(context, builder, targetABI)
 			val frame = EmitFunctionFrame(context, builder, entryBlock, targetABI.intType, nativeIntType, EmitStringArena(context, module, targetABI), null)

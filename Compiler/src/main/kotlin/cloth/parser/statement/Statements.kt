@@ -3,6 +3,7 @@ package cloth.parser.statement
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IndexExpression
 import cloth.parser.type.TypeReference
+import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -23,7 +24,7 @@ sealed interface ReceivingTarget {
 
 	companion object {
 
-		fun of(token: Token): ReceivingTarget = if (token.lexeme == "_") Discard(token) else Named(token)
+		fun of(token: Token): ReceivingTarget = if (token.lexeme == Operators.UNDERSCORE.toString()) Discard(token) else Named(token)
 	}
 }
 

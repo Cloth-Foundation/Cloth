@@ -43,8 +43,9 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   writes before publishing nullable occurrence proofs, preserving zero-trip
   exits. Guards inside an iteration can reestablish presence; body assignments
   can establish stepper presence. Endpoint proofs apply before body invalidation.
-  Metadata uses a separate conservative mutable-fact policy. Execution remains
-  gated; see [loop scope and tests](../cloth-control-flow/references/for-implementation.md).
+  Metadata uses a separate conservative mutable-fact policy. Stages 3-4 execute
+  numeric ranges and supported array foreach; nullable array elements remain gated. See
+  [loop scope and tests](../cloth-control-flow/references/for-implementation.md).
 - Cloth never infers or assumes nullability. Every new nullable binding needs an
   explicit type, even for a known nullable copy, function result, named result
   reception or nullable element type. Nullable conditional results also need an

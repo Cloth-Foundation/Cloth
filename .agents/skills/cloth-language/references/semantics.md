@@ -125,11 +125,17 @@ Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#condi
 Read [confirmed loop design](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred):
 integer/float range and array foreach loops use `<-`; ranges default to a step of one, and an
 explicit stepper requires a separating semicolon. Stage 1 parses loop syntax and
-retains its AST. Stage 2 resolves loop scopes, strict types and repeated flow;
-C3067 deliberately gates backend execution after semantic checking.
+retains its AST. Stage 2 resolves loop scopes, strict types and repeated flow.
+Stage 3 executes numeric ranges with saved bounds, default/explicit updates,
+finite/progress guards, integer overflow exits and early returns. Stage 4 executes
+array foreach with independent snapshots/element values and conservative arena/
+stack cleanup. C3067 is retired; nullable arrays retain their existing support gate.
 See [implementation scope](../../cloth-control-flow/references/for-implementation.md).
 The [semicolon skill](../../cloth-semicolons/SKILL.md) distinguishes
 this required header separator from optional statement terminators.
+The completed [publication/portability record](../../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02)
+links maintained executable examples and native Windows x64/x86 verification.
+Other supported profiles have verified loop IR/objects, not new native evidence.
 
 ## Bindings
 

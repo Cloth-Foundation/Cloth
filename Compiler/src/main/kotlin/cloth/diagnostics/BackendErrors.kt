@@ -1,11 +1,12 @@
 package cloth.diagnostics
 
 import cloth.data.ValueType
+import cloth.token.Keywords
 import cloth.token.TokenSpan
 
 object BackendErrors {
 
-	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_FUNCTION_ABI, "Native function parameters and returns of type '${type.spelling}' are not implemented yet", listOf(SourceLabel(span, "unsupported function boundary type")), "Numeric types, bool, char, string, arrays of supported element types and void returns are supported.")
+	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_FUNCTION_ABI, "Native function parameters and returns of type '${type.spelling}' are not implemented yet", listOf(SourceLabel(span, "unsupported function boundary type")), "Numeric types, ${Keywords.BOOLEAN}, ${Keywords.CHARACTER}, ${Keywords.STRING}, arrays of supported element types and ${Keywords.VOID} returns are supported.")
 
 	fun target(details: String) = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to find the native target", guidance = details)
 	fun machine() = ClothDiagnostic(DiagnosticCode.LLVM_TARGET, "Unable to create the native target machine")

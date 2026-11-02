@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.data.*
 import cloth.emitter.NativeCABI
+import cloth.token.Keywords
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -22,7 +23,7 @@ internal class EmitTypeInfo(
 	private val pointer get() = CTypeInfo.llvmValue(context, target)
 	private val count get() = BufferLayout.count(context, target)
 	private fun count(value: BigInteger): LLVMValueRef {
-		require(CUSize(target.sizeBits).acceptsLiteral(value)) { "Metadata count must fit target usize" }
+		require(CUSize(target.sizeBits).acceptsLiteral(value)) { "Metadata count must fit target ${Keywords.USIZE}" }
 		return LLVMConstIntOfString(count, value.toString(), 10.toByte())
 	}
 

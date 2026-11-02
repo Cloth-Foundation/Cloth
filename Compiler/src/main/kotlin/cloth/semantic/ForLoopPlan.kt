@@ -19,5 +19,5 @@ data class ForLoopPlan(val target: TargetLayout, val bindingType: ValueType, val
 internal fun forStepperExpression(stepper: ForStepper?): Expression? {
 	if (stepper?.value == null) return null
 	if (stepper.operator.lexeme == Operators.ASSIGN.toString()) return stepper.value
-	return BinaryExpression(NameExpression(stepper.target), Token(stepper.operator.type, stepper.operator.span, stepper.operator.lexeme.dropLast(1)), stepper.value)
+	return BinaryExpression(NameExpression(stepper.target), Token(stepper.operator.type, stepper.operator.span, Operators.fromCharacterRequired(stepper.operator.lexeme).compoundAssignmentBase().toString()), stepper.value)
 }
