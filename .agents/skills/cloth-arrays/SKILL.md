@@ -48,9 +48,12 @@ each element. Row mutation/rebinding cannot change the traversal snapshot or
 original source; retain ordinary type/shape checks and recursive independence.
 Foreach headers do not admit a `; stepper` clause; traversal advances through the
 snapshot automatically, independently of local element rebinding or row writes.
-Stage 1 parses foreach headers/bodies and their AST, but C3067 rejects them before
-array typing/snapshot execution. Read the [stage scope](../cloth-control-flow/references/for-implementation.md)
-before enabling array iteration semantics or lifetimes.
+Stage 2 resolves foreach scopes, element/row inference and received shape, with
+ordinary mutable assignment checks. C3067 rejects backend execution after those
+checks; actual snapshots, transfers and lifetimes remain deferred. Nullable array
+elements retain their existing gate. Read the
+[stage scope](../cloth-control-flow/references/for-implementation.md) before
+enabling iteration execution or lifetimes.
 
 ## Source and verification
 

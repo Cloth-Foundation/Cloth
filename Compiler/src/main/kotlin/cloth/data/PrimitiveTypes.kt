@@ -11,7 +11,7 @@ import kotlin.math.ceil
 import kotlin.math.log10
 
 /** Contextual spellings only; these names are not globally reserved lexer keywords. */
-enum class CompilerDataProviders(val spelling: String) {
+enum class CompilerDataProviders(private val spelling: String) {
 
 	SIZE("size"),
 	MAX("max"),

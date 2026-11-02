@@ -125,7 +125,8 @@ Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#condi
 Read [confirmed loop design](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred):
 integer/float range and array foreach loops use `<-`; ranges default to a step of one, and an
 explicit stepper requires a separating semicolon. Stage 1 parses loop syntax and
-retains its AST, while C3067 deliberately gates semantic analysis/execution.
+retains its AST. Stage 2 resolves loop scopes, strict types and repeated flow;
+C3067 deliberately gates backend execution after semantic checking.
 See [implementation scope](../../cloth-control-flow/references/for-implementation.md).
 The [semicolon skill](../../cloth-semicolons/SKILL.md) distinguishes
 this required header separator from optional statement terminators.

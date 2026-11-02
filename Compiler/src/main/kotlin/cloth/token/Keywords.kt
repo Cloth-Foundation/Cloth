@@ -1,7 +1,7 @@
 package cloth.token
 
-enum class Keywords(val keyword: String? = null) {
-
+enum class Keywords(private val keyword: String? = null) {
+	// This comment has to exist so MODULE does not get put in line with the brace.
 	MODULE("mod"),
 	DEFINITION("def"),
 	TYPEDEF,
@@ -45,7 +45,13 @@ enum class Keywords(val keyword: String? = null) {
 
 	IF,
 	ELSE,
-	IS;
+	IS,
+
+	FOR,
+	WHILE,
+	DO,
+	CONTINUE,
+	BREAK;
 
 	override fun toString(): String {
 		return keyword ?: this.name.lowercase()

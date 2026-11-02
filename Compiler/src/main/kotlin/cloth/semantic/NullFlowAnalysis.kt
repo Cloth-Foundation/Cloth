@@ -1,5 +1,6 @@
 package cloth.semantic
 
+import cloth.data.CompilerDataProviders
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
@@ -8,6 +9,8 @@ import cloth.parser.statement.*
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.LocalSymbol
+import cloth.token.Keywords
+import cloth.token.Operators
 import java.util.*
 
 /** Context-independent presence proofs for evaluated symbol occurrences.
@@ -38,6 +41,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun statements(body: List<Statement>, initial: Set<BindingSymbol>): Set<BindingSymbol> {
 		var facts = initial
 		for (item in body) facts = when (item) {
+			is ForStatement               -> loop(item, facts)
 			is BindingDeclaration         -> {
 				val deferred = item.initializer as? FunctionBlockExpression
 				if (deferred != null) {
@@ -83,13 +87,28 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return facts
 	}
 
+	private fun loop(item: ForStatement, initial: Set<BindingSymbol>): Set<BindingSymbol> {
+		val entry = when (val source = item.source) {
+			is ForSource.Range -> expression(source.end, expression(source.start, initial).after).after
+			is ForSource.Elements -> expression(source.expression, initial).after
+		}
+		val repeated = item.body.statements + listOfNotNull(item.stepper?.value?.let { ExpressionStatement(it) })
+		val changed = writes(repeated) + model.declarations.symbolOf(item)
+		// Invalidate before publishing occurrence facts: a fact true on entry may
+		// already be false on the second trip around this same source occurrence.
+		val afterBody = statements(item.body.statements, entry - changed)
+		item.stepper?.value?.let { expression(it, afterBody) }
+		// Include the zero-trip path and conservatively forget repeated writes.
+		return entry - changed
+	}
+
 	private fun expression(value: Expression, initial: Set<BindingSymbol>, sourceType: Boolean = false): Outcome {
 		val result = when (value) {
 			is NameExpression                          -> {
 				val symbol = binding(value)
 				val deferred = block(symbol)
 				if (deferred != null) {
-					if (deferred.declaration.returnType?.let { !it.hasNullability && it.name.lexeme != "void" } == true) presentResults.add(value)
+					if (deferred.declaration.returnType?.let { !it.hasNullability && it.name.lexeme != Keywords.VOID.toString() } == true) presentResults.add(value)
 					Outcome(initial - writes(deferred))
 				} else {
 					if (!sourceType && symbol != null && symbol in initial && nullable(symbol)) model.presentNames.add(value)
@@ -99,13 +118,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			}
 
 			is NullLiteral, is FunctionBlockExpression -> Outcome(initial)
-			is UnaryExpression                         -> expression(value.operand, initial).let { if (value.operator.lexeme == "!") Outcome(it.after, it.no, it.yes) else it }
+			is UnaryExpression                         -> expression(value.operand, initial).let { if (value.operator.lexeme == Operators.NOT.toString()) Outcome(it.after, it.no, it.yes) else it }
 			is BinaryExpression                        -> {
 				val op = value.operator.lexeme
-				val test = op in setOf("==", "!=") && (value.left is NullLiteral || value.right is NullLiteral)
+				val test = op in setOf(Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()) && (value.left is NullLiteral || value.right is NullLiteral)
 				val left = expression(value.left, initial, sourceType = test)
-				if (op == "&&" || op == "||") {
-					val and = op == "&&"
+				if (op == Operators.AND.toString() || op == Operators.OR.toString()) {
+					val and = op == Operators.AND.toString()
 					val right = expression(value.right, if (and) left.yes else left.no)
 					val skip = if (and) left.no else left.yes
 					val known = flow.booleanValue(value.left)
@@ -125,7 +144,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				} else {
 					val after = expression(value.right, left.after, sourceType = test).after
 					val symbol = if (test) stable(if (value.left is NullLiteral) value.right else value.left) else null
-					if (symbol == null) Outcome(after) else if (op == "!=") Outcome(after, after + symbol, after - symbol) else Outcome(after, after - symbol, after + symbol)
+					if (symbol == null) Outcome(after) else if (op == Operators.NOT_EQUAL.toString()) Outcome(after, after + symbol, after - symbol) else Outcome(after, after - symbol, after + symbol)
 				}
 			}
 
@@ -164,8 +183,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 			is ProviderAccessExpression                -> {
 				val annotation = stable(value.receiver)?.declaredType
-				val scalarSize = value.name.lexeme == "size" && annotation?.hasNullability == true && annotation.arraySuffixes.isEmpty() && annotation.name.lexeme != "string"
-				expression(value.receiver, initial, sourceType = value.name.lexeme == "type" || scalarSize)
+				val scalarSize = value.name.lexeme == CompilerDataProviders.SIZE.toString() && annotation?.hasNullability == true && annotation.arraySuffixes.isEmpty() && annotation.name.lexeme != Keywords.STRING.toString()
+				expression(value.receiver, initial, sourceType = value.name.lexeme == CompilerDataProviders.TYPE.toString() || scalarSize)
 			}
 
 			is TypeReceiverExpression                  -> Outcome(initial)
@@ -193,6 +212,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun writes(block: FunctionBlockExpression): Set<BindingSymbol> = effects.getOrPut(block) {
+		writes((block.declaration.body as BlockBody).statements)
+	}
+
+	private fun writes(body: List<Statement>): Set<BindingSymbol> {
 		val result = mutableSetOf<BindingSymbol>()
 		fun visit(value: Expression) {
 			when (value) {
@@ -230,12 +253,21 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				else                        -> Unit
 			}
 		}
-		result.addAll(writtenStatements((block.declaration.body as BlockBody).statements, ::visit))
-		result
+		result.addAll(writtenStatements(body, ::visit))
+		return result
 	}
 
 	private fun writtenStatements(body: List<Statement>, visit: (Expression) -> Unit): Set<BindingSymbol> = buildSet {
 		for (item in body) when (item) {
+			is ForStatement               -> {
+				when (val source = item.source) {
+					is ForSource.Range -> { visit(source.start); visit(source.end) }
+					is ForSource.Elements -> visit(source.expression)
+				}
+				add(model.declarations.symbolOf(item))
+				addAll(writtenStatements(item.body.statements, visit))
+				item.stepper?.value?.let(visit)
+			}
 			is AssignmentStatement        -> {
 				add(model.declarations.targetOf(item)); visit(item.value)
 			}

@@ -53,8 +53,8 @@ class FunctionParsingTest {
 	}
 
 	@Test
-	fun `word operator prefixes do not split declaration parameter or call names`() {
-		for (name in listOf("format", "forEach", "doubleValue", "whileReady", "do_work")) {
+	fun `keyword prefixes do not split declaration parameter or call names`() {
+		for (name in listOf("format", "forEach", "doubleValue", "whileReady", "do_work", "breakfast", "continueWork")) {
 			val declaration = function("fn<int> $name(int $name) = $name($name)")
 			assertEquals(name, declaration.name.lexeme)
 			assertEquals(name, declaration.parameters.single().name.lexeme)
@@ -62,7 +62,7 @@ class FunctionParsingTest {
 			assertEquals(name, call.name.lexeme)
 			assertEquals(name, assertIs<NameExpression>(call.arguments.single()).name.lexeme)
 		}
-		assertTrue(Lexer("for while do").scanTokens().take(3).all { it.type == TokenType.Operator })
+		assertTrue(Lexer("for while do continue break").scanTokens().take(5).all { it.type == TokenType.Keyword })
 	}
 
 	@Test

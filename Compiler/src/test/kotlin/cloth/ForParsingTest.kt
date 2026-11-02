@@ -32,7 +32,7 @@ class ForParsingTest {
 	fun `lexer preserves arrows range endpoints separators and word boundaries`() {
 		val tokens = Lexer("for forage for_each <- -> 0..100 0..=100 0.0..=1.0; i++").scanTokens().filter { it.type != TokenType.EOF }
 		assertEquals(listOf("for", "forage", "for_each", "<-", "->", "0", "..", "100", "0", "..=", "100", "0.0", "..=", "1.0", ";", "i", "++"), tokens.map { it.lexeme })
-		assertEquals(TokenType.Operator, tokens[0].type)
+		assertEquals(TokenType.Keyword, tokens[0].type)
 		assertEquals(TokenType.Identifier, tokens[1].type)
 		assertEquals(TokenType.Identifier, tokens[2].type)
 	}

@@ -77,7 +77,7 @@ internal class EmitTypeInfo(
 			val failure = LLVMAppendBasicBlockInContext(context, function, "metadata_invalid")
 			LLVMBuildCondBr(builder, valid, success, failure)
 			LLVMPositionBuilderAtEnd(builder, failure)
-			EmitRuntimeError(context, builder, abi).emit("Type metadata ::${query.provider.spelling} requires ${query.requirement} at $location")
+			EmitRuntimeError(context, builder, abi).emit("Type metadata ::${query.provider} requires ${query.requirement} at $location")
 			LLVMPositionBuilderAtEnd(builder, success)
 		}
 		return field(value, query.field, query.type(target).llvmValue(context, target))

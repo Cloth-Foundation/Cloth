@@ -1,6 +1,6 @@
 ---
 name: cloth-control-flow
-description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch result merging, for-loop parsing, or range design.
+description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch merging, or for-loop parsing, scopes, types and repeated flow.
 ---
 
 # Cloth control flow
@@ -16,12 +16,12 @@ finite-float, integer header-overflow and independent foreach-value contracts
 when implementing later stages. The [implementation plan](../../../todo/for-loops-plan.md)
 maps the accepted contract to compiler stages and verification requirements.
 
-## For loops: Stage 1 parser support
+## For loops: Stage 2 semantic support
 
 Read [stage scope, source ownership and verification](references/for-implementation.md)
-before extending the parser or enabling semantics/execution. Stage 1 is complete:
-71 focused tests and all 833 compiler tests passed, including 20 new loop tests.
-Scope remains parser/AST plus deliberate semantic gates, not executable iteration.
+before extending loops or enabling execution. Stage 2 is complete: 105 focused
+and all 868 compiler tests pass, including 55 loop tests. Loop execution is
+still gated, independently of accepted static scopes/types/flow.
 
 - `ForStatement.kt` retains a separate receiving binding, range/element source,
   original stepper operator/RHS, body form and exact spans. Do not fabricate an
@@ -31,15 +31,22 @@ Scope remains parser/AST plus deliberate semantic gates, not executable iteratio
   a stepper, brace bodies and one supported source statement as an unbraced body.
 - Range boundaries are opt-in within a loop source. Preserve ordinary nested
   expression grammar, precedence, declaration boundaries and `if`/`else` ownership.
-- Declaration/function/snippet/completion paths deliberately reject parsed loops
-  with C3067 at `for`, before output/linker work. Keep this fail-first boundary
-  until the corresponding downstream implementation is ready.
-- Stage 1 does not resolve loop scopes/types, validate numeric/array operands,
-  implement repeated flow, generate loop IR or execute any confirmed progression,
-  snapshot or lifetime behavior. See the staged plan rather than treating parsed
-  syntax as completed iteration support.
+- LoopBindingSymbol and separate header/body scopes preserve outer endpoint
+  lookup, body-local isolation, default-parameter shadowing and ordinary mutability.
+- Shared checkFor validates exact range types and foreach element/row shapes;
+  ForLoopPlan is target-aware and copied through semantic forks/commits. Body and
+  stepper cannot supply inference context. Nullable array elements remain gated.
+- Completion includes zero trips and real return ownership. Presence proofs are
+  invalidated for repeated/captured writes before body checking; metadata forgets
+  visible mutable represented types across the loop and keeps immutable facts.
+- Semantic APIs accept valid loops. C3068 labels invalid loop source/binding
+  contracts; existing earlier diagnostics stay intact. C3067 now gates only
+  backend execution before LLVM/linker/output work, after semantic validation.
+- No loop IR, runtime progression/finite/overflow guards, actual foreach snapshot
+  or value transfer, or iteration cleanup is implemented in this stage.
 
-Use `ForParsingTest` and `ForStageGateTest` plus affected parser/diagnostic suites.
+Use `ForParsingTest`, `ForSemanticsTest`, `ForFlowTest` and `ForStageGateTest`, plus
+affected nullable, metadata, defaults and return suites.
 
 ## Development rules and current boundaries
 

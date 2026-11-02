@@ -7,6 +7,32 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### For-loop semantics: Stage 2 (2026-11-02)
+
+Implemented distinct loop binding symbols and header/body scopes, surrounding-
+scope source lookup, strict range/foreach inference, exact numeric identities,
+received row shapes and ordinary assignment/update validation. Target-aware
+ForLoopPlan facts survive overload forks/commits without changing canonical ASTs.
+Completion preserves zero-trip paths and real return ownership; nullable facts
+are invalidated before repeated/captured writes can create stale proofs. Mutable
+represented-type metadata is conservatively forgotten across loops, while
+immutable/body-local facts remain usable. Existing nullable-array gates remain.
+
+Declaration/call/function/snippet/completion APIs now admit valid loops. C3068
+labels invalid loop contracts. C3067 moved to the backend validation boundary,
+after semantic checks and before LLVM/linker/output work. Numeric/foreach runtime
+progression, guards, snapshots, value transfers and cleanup remain stages 3-4.
+The current keyword migration was preserved, and parser/prefix regressions were
+aligned with `for` as a keyword without adding while/do/break/continue execution.
+
+All **105 focused tests** and the final **868-test compiler suite** passed with
+no failures, errors or skips. Loop suites contain 55 tests, 35 added since Stage 1.
+New tests perform semantic checks and backend-gate checks on Windows, including
+one AST alternating 32/64/32-bit target layouts; this is not loop IR or native
+iteration verification. No new native Linux/macOS loop execution is claimed.
+Source ownership, commands, conservative analysis boundaries and verification
+are in the [stage record](../../cloth-control-flow/references/for-implementation.md).
+
 ### For-loop parsing: Stage 1 (2026-11-02)
 
 Implemented the confirmed range/foreach header syntax, located loop AST,

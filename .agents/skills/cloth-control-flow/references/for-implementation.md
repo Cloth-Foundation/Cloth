@@ -1,9 +1,129 @@
 # For-loop implementation stages
 
+## Stage 2: names, types and repeated control flow (2026-11-02)
+
+Stage 2 is complete and verified: 105 focused and all 868 compiler tests pass.
+Stages 3-5, including all generated loop execution, remain pending.
+
+### Semantic scope and source ownership
+
+- [LoopBindingSymbol](../../../../Compiler/src/main/kotlin/cloth/semantic/symbols/Symbols.kt)
+  gives each reception its own mutable identity without fabricating a local
+  initializer. [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+  resolves endpoints/source in surrounding scope, then introduces the loop scope
+  and a separate body scope. Header steppers cannot read body locals; source
+  expressions and following code retain outer names. Unbraced declarations,
+  nested loops, shadowing, duplicate names and default-parameter shadowing use
+  existing lexical rules. DeclarationModel exposes loop binding/header/body scopes.
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+  shares range/foreach validation between functions and legacy snippets. Infer
+  one exact type from already-typed endpoints before defaulting contextual
+  literals, independent of endpoint order, body and stepper. Preserve fixed
+  widths, signedness and distinct target-sized integer identities. Float endpoint
+  literals use their annotated/inferred format; already-typed values never convert
+  to match. Both endpoints must produce a single compatible numeric value.
+- Numeric counters are non-nullable; ordinary presence proofs/fallback permit
+  nullable endpoint sources to supply a payload. Foreach requires an array and
+  receives its element type/remaining rectangular shape. An explicit receiver
+  supplies array-literal element context, including empty arrays; a typed source
+  array stays exact. Ordinary mutable element/row assignments retain shape checks.
+  Nullable array elements remain under their existing C3060 gate, even when a
+  nullable foreach annotation would otherwise supply literal context.
+- [ForLoopPlan](../../../../Compiler/src/main/kotlin/cloth/semantic/ForLoopPlan.kt)
+  records the selected TargetLayout, receiving type, array source descriptor when
+  available, and normalized stepper checking expression. Non-continuing sources
+  need a receiving annotation when inference has no concrete type; their bottom
+  result can satisfy a fixed annotation without inventing an actual value.
+  Plans live in SemanticModel, not the canonical AST. FunctionSemanticModel
+  fork/commit copies them with candidate facts. Original header operators remain
+  in syntax; synthetic compound expressions are resolved once for checking.
+- All eight stepper forms use ordinary assignment/arithmetic and division rules.
+  Postfix/default steps need no fabricated initializer/expression. Bodies and
+  steppers are checked even for empty/skipped loops. Intrinsic loop errors inside
+  an overload argument stay fatal instead of becoming an unrelated no-match.
+- The concurrent token migration reserves `for` as a keyword. Parser dispatch
+  now uses keyword lookup; prefix and exact-token regression assertions reflect
+  that classification. This does not implement while/do/break/continue behavior.
+
+### Repeated flow and metadata
+
+- [ControlFlowModel](../../../../Compiler/src/main/kotlin/cloth/semantic/ControlFlowModel.kt)
+  composes endpoint/source completion before a possible iteration. Preserve the
+  zero-trip continuation; an always-returning body alone does not satisfy a
+  required function return. Body/stepper returns belong to the enclosing function
+  or deferred block; an endpoint that unconditionally returns prevents continuation.
+  Nonempty ranges are not used as total-return proofs in this conservative stage.
+- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+  evaluates entry facts first, then invalidates bindings written by the repeated
+  body/stepper, including transitive deferred-block writes, **before** publishing
+  occurrence proofs. It does not publish an optimistic first-iteration pass.
+  Body guards can reestablish presence, body assignments can establish stepper
+  presence, and exits include zero iterations. Unaffected input facts survive.
+  Captured-effect scanning traverses nested loops, entry expressions and steppers.
+- [MetadataAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/MetadataAnalysis.kt)
+  conservatively forgets visible mutable represented-type metadata before a
+  repeated body and after the loop. Immutable metadata/body-local facts remain
+  definite; foreach typeinfo elements start unknown, not as the first element's
+  represented type. Unknown metadata retains existing runtime validation behavior.
+  This stage does not implement a precision-maximizing metadata fixed point.
+- Legacy snippets retain their previous function-call/nullable/return support
+  boundaries; loop source/body scoping and ordinary supported value inference
+  work without expanding that fragment language. Loops remain unknown to the
+  closed early-temporary-reclamation proof; no buffer cleanup is newly enabled.
+
+### Diagnostics and backend boundary
+
+**C3068 / INVALID_FOR_LOOP** reports invalid receiving/source types or incompatible
+typed endpoints, with labels for the invalid source and receiving binding. Keep
+ordinary literal/range, array-shape, nullable, return and division diagnostics
+when their existing checks fail first. No recovery or accumulation is added.
+
+C3067 now means **semantic analysis completed but loop execution is not
+implemented**. Declaration/call/function/snippet/completion APIs admit valid loops.
+The gate moved to EmitFunctions validation and snippet emission/compile boundaries,
+before LLVM construction, linker lookup or outputs. Semantic errors precede this
+gate; valid skipped/deferred loops are still gated when emitting their module.
+
+Runtime evaluation/storage order, range membership/progress/finite/overflow
+guards, generated loop IR, actual snapshot/copy reception and iteration cleanup
+remain stages 3-4 work. No loop runtime or loop IR verification is claimed.
+
+### Stage 2 verification
+
+[ForSemanticsTest](../../../../Compiler/src/test/kotlin/cloth/ForSemanticsTest.kt)
+has 19 tests for exact contextual inference, all admitted domains/steppers,
+single-result calls, arrays/shapes, mutability, scope identities, skipped errors,
+defaults, overload probes, snippets and one AST alternating Windows 32/64/32-bit
+semantic targets. [ForFlowTest](../../../../Compiler/src/test/kotlin/cloth/ForFlowTest.kt)
+has 15 tests for return ownership, zero-trip paths, body/stepper presence,
+captured effects and metadata. ForStageGateTest now has six tests for the later
+backend boundary, semantic diagnostic priority and absent outputs. ForParsingTest
+retains 15 grammar tests with updated keyword classification.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.ForParsingTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests cloth.ForStageGateTest --tests cloth.NullabilityRulesTest --tests cloth.NullabilityTypingTest --tests cloth.TypeInfoTest --tests cloth.OptionalArgumentsTest --offline --console=plain --no-daemon
+```
+
+Observed: **105 focused tests passed**, zero failures/errors/skips; 55 loop tests,
+35 added since Stage 1. The final full compiler run also passed:
+
+```powershell
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+Observed full result: **868 tests passed**, zero failures/errors/skips. The first
+full run exposed an old operator-classification assertion; it was aligned with
+the keyword migration while retaining prefix-identifier coverage, then the full
+suite passed. New loop tests analyze semantics and stage gates
+on Windows; alternating target layouts are semantic checks, not generated IR or
+native iteration on those targets. No native Linux/macOS loop execution is claimed.
+
 ## Stage 1: syntax, AST and first-error diagnostics (2026-11-02)
 
-Stage 1 parser implementation, focused verification and full compiler regressions
-are complete; stages 2-5 remain pending.
+At this milestone, Stage 1 parser implementation, focused verification and full
+compiler regressions completed, with later stages pending. See Stage 2 above for
+the current semantic scope and moved execution gate; details below retain the
+original Stage 1 scope/evidence.
 
 ### Supported syntax
 

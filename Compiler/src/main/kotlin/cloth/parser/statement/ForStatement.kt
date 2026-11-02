@@ -18,7 +18,7 @@ sealed interface ForSource {
 
 	data class Range(val start: Expression, val delimiter: Token, val end: Expression, override val span: TokenSpan) : ForSource {
 
-		val inclusive get() = delimiter.lexeme == Operators.RANGE_INCLUSIVE.character
+		val inclusive get() = delimiter.lexeme == Operators.RANGE_INCLUSIVE.toString()
 	}
 
 	data class Elements(val expression: Expression, override val span: TokenSpan) : ForSource

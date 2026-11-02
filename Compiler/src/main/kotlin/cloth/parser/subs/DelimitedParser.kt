@@ -24,12 +24,12 @@ class DelimitedParser(private val parser: Parser) {
 	/** Parses contents only. Empty lists are allowed; trailing commas are not. */
 	fun <T> commaSeparated(close: Operators, parseItem: () -> T): List<T> {
 		parser.skipNewlines()
-		if (parser.peek().lexeme == close.character) return emptyList()
+		if (parser.peek().lexeme == close.toString()) return emptyList()
 		return buildList {
 			while (true) {
 				add(parseItem())
 				parser.skipNewlines()
-				if (parser.peek().lexeme == close.character) break
+				if (parser.peek().lexeme == close.toString()) break
 				parser.expect(Operators.COMMA)
 				parser.skipNewlines()
 			}

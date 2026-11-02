@@ -66,7 +66,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 	private class BodyResolver(private val model: DeclarationModel, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
 
 		private fun lookup(name: Token, scope: LexicalScope): Symbol {
-			if (name.lexeme in unavailable && scope.lookup(name.lexeme) !is LocalSymbol && scope.lookup(name.lexeme) !is GroupLocalSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
+			if (name.lexeme in unavailable && scope.lookup(name.lexeme) !is LocalSymbol && scope.lookup(name.lexeme) !is GroupLocalSymbol && scope.lookup(name.lexeme) !is LoopBindingSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
 			return scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) } ?: throw SemanticErrors.unknownName(name)
 		}
 
@@ -84,7 +84,23 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
-				is ForStatement               -> throw SemanticErrors.unsupportedFor(statement.keyword)
+				is ForStatement               -> {
+					when (val source = statement.source) {
+						is ForSource.Range -> { expression(source.start, scope); expression(source.end, scope) }
+						is ForSource.Elements -> expression(source.expression, scope)
+					}
+					val loopScope = LexicalScope(scope)
+					val symbol = LoopBindingSymbol(statement)
+					loopScope.declare(symbol)
+					model.loopSymbols[statement] = symbol
+					model.loopScopes[statement] = loopScope
+					val stepper = forStepperExpression(statement.stepper)
+					model.loopSteppers[statement] = stepper
+					stepper?.let { expression(it, loopScope) }
+					val bodyScope = LexicalScope(loopScope)
+					model.loopBodyScopes[statement] = bodyScope
+					statements(statement.body.statements, bodyScope)
+				}
 				is BindingGroupDeclaration    -> {
 					if (statement.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(statement.span)
 					val seen = mutableMapOf<String, Token>()

@@ -65,15 +65,15 @@ class ExpressionParser(val parser: Parser) {
 		var value = parsePrimary()
 		while (true) {
 			value = when (parser.peek().lexeme) {
-				Operators.BRACKET_OPEN.character -> {
+				Operators.BRACKET_OPEN.toString() -> {
 					val index = parser.delimited.brackets { parseExpression() }
 					IndexExpression(value, index, value.span.through(parser.previous().span))
 				}
 
-				Operators.COLON_COLON.character  -> {
+				Operators.COLON_COLON.toString()  -> {
 					parser.advance()
 					val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
-					if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
+					if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
 						val arguments = parser.delimited.parentheses {
 							parseArguments()
 						}
@@ -91,7 +91,7 @@ class ExpressionParser(val parser: Parser) {
 
 		return when (token.type) {
 			TokenType.Keyword if TypeParser.startsTypeReceiver(token)                                       -> TypeReceiverExpression(TypeParser(parser).parse(allowArrays = true))
-			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.character                          -> {
+			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.toString()                          -> {
 				val elements = parser.delimited.brackets { parser.delimited.commaSeparated(Operators.BRACKET_CLOSE) { parseExpression() } }
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
 			}
@@ -111,7 +111,7 @@ class ExpressionParser(val parser: Parser) {
 
 			TokenType.Identifier                                                                            -> {
 				val name = parser.advance()
-				if (parser.peek().lexeme == Operators.PAREN_OPEN.character) {
+				if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
 					val arguments = parser.delimited.parentheses {
 						parseArguments()
 					}
@@ -161,7 +161,7 @@ class ExpressionParser(val parser: Parser) {
 				FloatingPointLiteral(token.lexeme, token.span)
 			}
 
-			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.character                            -> {
+			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.toString()                            -> {
 				parser.delimited.parentheses { parseExpression() }
 			}
 
@@ -170,7 +170,7 @@ class ExpressionParser(val parser: Parser) {
 	}
 
 	private fun parseArguments(): List<CallArgument> = parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
-		val named = parser.peek().type == TokenType.Identifier && parser.peek(1).lexeme == Operators.ASSIGN.character
+		val named = parser.peek().type == TokenType.Identifier && parser.peek(1).lexeme == Operators.ASSIGN.toString()
 		val label = if (named) parser.advance() else null
 		val equals = if (named) parser.advance() else null
 		CallArgument(parseExpression(), label, equals)

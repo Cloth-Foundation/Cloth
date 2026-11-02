@@ -243,7 +243,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
 		val stored = bindings.read(functionSemantics?.declarations?.targetOf(statement) ?: statement.name.lexeme)
 		val operand = if (semantics.updatePayloads.containsKey(statement)) nullable.payload(stored) else stored
-		val increment = statement.operator.lexeme == Operators.PLUS_PLUS.character
+		val increment = statement.operator.lexeme == Operators.PLUS_PLUS.toString()
 		if (type is CFloat) {
 			val workingType = EmitHalf.arithmeticType(type)
 			val value = casts.toFloating(operand, type, workingType)
@@ -394,7 +394,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			is BinaryExpression         -> {
 				semantics.nullableComparisons[expression]?.let { return emitNullableEquality(expression, it) }
-				if (expression.operator.lexeme in setOf(Operators.AND.character, Operators.OR.character)) {
+				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					return emitLogical(expression)
 				}
 				var left = emitValue(expression.left)
@@ -403,13 +403,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val rightType = semantics.typeOf(expression.right)
 				if (leftType == ValueType.TYPEINFO && rightType == ValueType.TYPEINFO) {
 					val equal = strings.metadata.equal(left, right)
-					return if (expression.operator.lexeme == Operators.NOT_EQUAL.character) LLVMBuildNot(builder, equal, "typeinfo_not_equal") else equal
+					return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "typeinfo_not_equal") else equal
 				}
 				if (leftType == ValueType.STRING && rightType == ValueType.STRING) {
 					return when (expression.operator.lexeme) {
-						Operators.PLUS.character      -> strings.concatenate(left, right, expression.operator.span.toString())
-						Operators.EQUAL.character     -> strings.equal(left, right)
-						Operators.NOT_EQUAL.character -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
+						Operators.PLUS.toString()      -> strings.concatenate(left, right, expression.operator.span.toString())
+						Operators.EQUAL.toString()     -> strings.equal(left, right)
+						Operators.NOT_EQUAL.toString() -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
 						else                          -> throw InternalErrors.invariant("Unsupported string operator: ${expression.operator}")
 					}
 				}
@@ -422,18 +422,18 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					left = casts.toFloating(left, leftType, workingType!!)
 					right = casts.toFloating(right, rightType, workingType)
 				}
-				if (expression.operator.lexeme == Operators.MUL_MUL.character) {
+				if (expression.operator.lexeme == Operators.MUL_MUL.toString()) {
 					val result = power.emit(left, right, workingType ?: leftType, expression.operator.span.toString())
 					return if (floatingPoint) casts.toFloating(result, workingType!!, commonType) else result
 				}
 				val comparison = when (expression.operator.lexeme) {
-					Operators.EQUAL.character         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
+					Operators.EQUAL.toString()         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
 					// Unordered != keeps NaN unequal to every value, including itself.
-					Operators.NOT_EQUAL.character     -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
-					Operators.LESS.character          -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
-					Operators.GREATER.character       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
-					Operators.LESS_EQUAL.character    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
-					Operators.GREATER_EQUAL.character -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
+					Operators.NOT_EQUAL.toString()     -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
+					Operators.LESS.toString()          -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
+					Operators.GREATER.toString()       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
+					Operators.LESS_EQUAL.toString()    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
+					Operators.GREATER_EQUAL.toString() -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
 					else                              -> null
 				}
 				if (comparison != null) {
@@ -461,7 +461,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					Operators.DIVIDE.toString(), Operators.MODULO.toString() -> {
 						val span = expression.operator.span
 						val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
-						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInteger, expression.operator.lexeme == Operators.MODULO.character, location)
+						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInteger, expression.operator.lexeme == Operators.MODULO.toString(), location)
 					}
 
 					else                                                     -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
@@ -588,7 +588,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitLogical(expression: BinaryExpression): LLVMValueRef {
-		val conjunction = expression.operator.lexeme == Operators.AND.character
+		val conjunction = expression.operator.lexeme == Operators.AND.toString()
 		val left = emitValue(expression.left)
 		val known = functionSemantics?.controlFlow?.booleanValue(expression.left)
 		if (known != null) {
