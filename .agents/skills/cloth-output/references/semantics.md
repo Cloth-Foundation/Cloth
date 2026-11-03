@@ -75,5 +75,9 @@ the parent skill for current implementation boundaries and source/test routing.
 - Byte counts use checked target-sized arithmetic, including brackets and
   separators; overflow terminates through the controlled runtime-error path
   before filling or printing. Temporary storage follows existing function-frame
-  rules. Nullable arrays/elements retain their separate unsupported boundary;
-  class formatting and raw memory access are not introduced by this feature.
+  rules. The later [nullable buffer integration](../../cloth-nullability/references/buffers.md)
+  admits whole nullable arrays and nullable scalar/string elements, printing
+  absent values as `null`. Nullable rows also execute under the
+  [row contract](../../cloth-arrays/references/nullable-rows.md), writing nested
+  present rows directly and absent rows as `null`. Class formatting and raw memory
+  access remain outside the executable scope.

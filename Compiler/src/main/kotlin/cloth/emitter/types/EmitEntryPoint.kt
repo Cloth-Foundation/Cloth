@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
@@ -34,7 +35,10 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 			val arguments = argumentsEmitter.emit(builder, LLVMGetParam(main, 0), LLVMGetParam(main, 1), withArguments)
 			val argumentCount = (if (withArguments) 1 else 0) + functions.omissionCount(selected)
 			val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { values ->
-				if (arguments != null) values.put(0, arguments)
+				if (arguments != null) {
+					val parameter = program.functions.typeOf(selected).parameters.single()
+					values.put(0, if (parameter is CNullable) EmitNullable(context, builder, abi.layout).wrap(arguments, parameter) else arguments)
+				}
 				repeat(functions.omissionCount(selected)) { values.put(((if (withArguments) 1 else 0) + it).toLong(), LLVMConstInt(LLVMInt1TypeInContext(context), 0, 0)) }
 				LLVMBuildCall2(builder, functions.signature(selected), functions.reference(selected), values, argumentCount, if (type == ValueType.VOID) "" else "exit_status")
 			}

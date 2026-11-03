@@ -23,6 +23,11 @@ the parent skill for current implementation boundaries and source/test routing.
 - Each executable must have exactly one entry-point `main`. Defining both
   `main()` and `main(string[] args)` is a compile-time error; startup does not
   select between entry-point overloads.
+- The 2026-11-03 nullable buffer integration also admits `string[]? args`,
+  including `opt<string[]?> args ?: null`. Startup always supplies a present
+  validated argument array, even when empty; ordinary calls may omit an optional
+  argument or supply null. Other entry parameter restrictions remain unchanged.
+  See the [buffer contract](../../cloth-nullability/references/buffers.md).
 - An integer returned by `main` becomes the program's process exit status.
   Normal completion of a void `main`, including a bare `return`, produces
   process exit status `0`.

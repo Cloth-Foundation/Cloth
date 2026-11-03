@@ -27,7 +27,7 @@ object SemanticErrors {
 	fun parameterDefault(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_PARAMETER_DEFAULT, message, span)
 
 	fun nullableType(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_NULLABLE_TYPE, message, span)
-	fun nullablePending(span: TokenSpan, message: String = "This nullable form is not implemented yet") = issue(DiagnosticCode.UNSUPPORTED_NULLABILITY, message, span, "The initial nullable slice supports scalar payloads; buffered values and later forms require their separate integration.")
+	fun nullablePending(span: TokenSpan, message: String = "This nullable form is not implemented yet") = issue(DiagnosticCode.UNSUPPORTED_NULLABILITY, message, span, "Nullable scalars, strings, whole arrays, elements and rectangular rows are supported in function bodies; this context does not support the requested nullable form.")
 	fun nullableContext(span: TokenSpan) = issue(DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "A nullable value requires an explicit nullable destination type", span, "Declare a matching 'T${Operators.QUESTION}' type, or use a presence proof or non-null fallback to obtain a non-null value. Cloth never infers nullability.")
 	fun nullablePayload(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Access to '${type.spelling}' requires proof that its payload is present", span, "Check the value against ${Keywords.NULL}, or supply a non-null fallback with '${Operators.ELVIS}'.")
 	fun elvis(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ELVIS, message, span)

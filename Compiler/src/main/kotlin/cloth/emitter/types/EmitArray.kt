@@ -2,11 +2,13 @@ package cloth.emitter.types
 
 import cloth.data.BufferLayout
 import cloth.data.CArray
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
+import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -45,7 +47,98 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 			} ?: type.arrayDimensions[dimension]?.let { extent(dimension, it) } ?: inner(count(0), known(false))
 			result = LLVMBuildInsertValue(builder, result, extent, dimension + 1, "array_shape")
 		}
+		if (type.hasNullableRows) {
+			val shape = memory.stack(shapeType, count(type.arrayDimensions.size.toLong()), "row_shape", "Unable to allocate array shape storage")
+			result = withShapePointer(result, type, shape)
+			remember(result, type, shape)
+		}
 		return result
+	}
+
+	fun shapePointer(value: LLVMValueRef, type: CArray): LLVMValueRef = LLVMBuildExtractValue(builder, value, type.arrayDimensions.size + 1, "row_shape_pointer")
+	fun withShapePointer(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef): LLVMValueRef = LLVMBuildInsertValue(builder, value, pointer, type.arrayDimensions.size + 1, "array_shared_shape")
+	private fun shapeAddress(pointer: LLVMValueRef, dimension: Int): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use { indices ->
+		indices.put(0, count(dimension.toLong()))
+		LLVMBuildInBoundsGEP2(builder, shapeType, pointer, indices, 1, "row_shape_dimension")
+	}
+
+	fun remember(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef) {
+		for (dimension in type.arrayDimensions.indices) {
+			val raw = LLVMBuildExtractValue(builder, value, dimension + 1, "remembered_extent")
+			LLVMBuildStore(builder, if (dimension == 0) inner(raw) else raw, shapeAddress(pointer, dimension))
+		}
+	}
+
+	private fun shapeReference(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef): LLVMValueRef {
+		var reference = value
+		for (dimension in type.arrayDimensions.indices) {
+			val stored = LLVMBuildLoad2(builder, shapeType, shapeAddress(pointer, dimension), "shared_extent")
+			val raw = if (dimension == 0) LLVMBuildSelect(builder, LLVMBuildExtractValue(builder, stored, 1, "shared_known"), LLVMBuildExtractValue(builder, stored, 0, "shared_count"), LLVMBuildExtractValue(builder, value, 1, "own_count"), "shared_outer_count") else stored
+			reference = LLVMBuildInsertValue(builder, reference, raw, dimension + 1, "shared_reference")
+		}
+		return reference
+	}
+
+	/** Descriptors can predate a later row write. Merge their inline witnesses with
+	 * the live shared constraints without publishing into a borrowed value.
+	 */
+	fun current(value: LLVMValueRef, type: CArray): LLVMValueRef = if (!type.hasNullableRows) value else matchRaw(value, shapeReference(value, type, shapePointer(value, type)), type, true, "Array shape mismatch: rectangular arrays require matching dimensions")
+
+	/** Attach an owned subtree to its receiving value's shared constraints. Never
+	 * use this on borrowed storage: copies need independent shape cells as well as data.
+	 */
+	fun share(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef): LLVMValueRef {
+		val actual = current(value, type)
+		val matched = matchRaw(actual, shapeReference(actual, type, pointer), type, true, "Array shape mismatch: rectangular arrays require matching dimensions")
+		remember(matched, type, pointer)
+		if (!type.hasNullableRows) return matched
+		val linked = withShapePointer(matched, type, pointer)
+		forEachRow(linked, type) { child -> shareChild(child, linked, type) }
+		return current(linked, type)
+	}
+
+	private fun row(type: ValueType): CArray? = ((type as? CNullable)?.payload ?: type) as? CArray
+	private fun mapRow(value: LLVMValueRef, type: ValueType, action: (LLVMValueRef, CArray) -> LLVMValueRef): LLVMValueRef {
+		val array = row(type) ?: return value
+		return if (type is CNullable) EmitNullable(context, builder, target).map(value, types.value(type)) { action(it, array) } else action(value, array)
+	}
+
+	fun readChild(value: LLVMValueRef, parent: LLVMValueRef, parentType: CArray): LLVMValueRef = mapRow(value, parentType.element) { child, type ->
+		matchShape(child, childShape(child, current(parent, parentType), type), type, merge = true)
+	}
+
+	fun shareChild(value: LLVMValueRef, parent: LLVMValueRef, parentType: CArray): LLVMValueRef = mapRow(value, parentType.element) { child, type ->
+		if (parentType.hasNullableRows) share(child, type, shapeAddress(shapePointer(parent, parentType), 1))
+		else matchShape(child, childShape(child, parent, type), type, merge = true)
+	}
+
+	private fun forEachRow(value: LLVMValueRef, type: CArray, action: (LLVMValueRef) -> LLVMValueRef) {
+		if (row(type.element) == null) return
+		val start = LLVMGetInsertBlock(builder)
+		val function = LLVMGetBasicBlockParent(start)
+		val check = LLVMAppendBasicBlockInContext(context, function, "shape_rows_check")
+		val body = LLVMAppendBasicBlockInContext(context, function, "shape_rows_body")
+		val done = LLVMAppendBasicBlockInContext(context, function, "shape_rows_done")
+		LLVMBuildBr(builder, check)
+		LLVMPositionBuilderAtEnd(builder, check)
+		val index = LLVMBuildPhi(builder, LLVMTypeOf(count(0)), "shape_row_index")
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, LLVMBuildExtractValue(builder, value, 1, "shape_rows_count"), "has_shape_row"), body, done)
+		LLVMPositionBuilderAtEnd(builder, body)
+		val address = address(LLVMBuildExtractValue(builder, value, 0, "shape_rows_data"), type.element, index)
+		var child = LLVMBuildLoad2(builder, types.storage(type.element), address, "shape_row")
+		if (type.element is CNullable) child = EmitNullable(context, builder, target).load(child, type.element)
+		storeAt(address, type.element, action(child))
+		val next = LLVMBuildAdd(builder, index, count(1), "next_shape_row")
+		val end = LLVMGetInsertBlock(builder)
+		LLVMBuildBr(builder, check)
+		PointerPointer<LLVMValueRef>(2L).use { values ->
+			PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+				values.put(0, count(0)); values.put(1, next)
+				blocks.put(0, start); blocks.put(1, end)
+				LLVMAddIncoming(index, values, blocks, 2)
+			}
+		}
+		LLVMPositionBuilderAtEnd(builder, done)
 	}
 
 	private fun guard(valid: LLVMValueRef, message: String) {
@@ -59,7 +152,8 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	/** A separate known flag preserves every valid native count, including its maximum. */
-	fun matchShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean = false, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
+	fun matchShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean = false, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef = matchRaw(current(value, type), current(reference, type), type, merge, message)
+	private fun matchRaw(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean, message: String): LLVMValueRef {
 		var result = value
 		for (dimension in type.arrayDimensions.indices) {
 			val actual = LLVMBuildExtractValue(builder, value, dimension + 1, "actual_extent")
@@ -75,10 +169,11 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun constrain(value: LLVMValueRef, type: CArray): LLVMValueRef {
-		var result = value
+		val actual = current(value, type)
+		var result = actual
 		for ((dimension, expected) in type.arrayDimensions.withIndex()) {
 			if (expected == null) continue
-			val extent = LLVMBuildExtractValue(builder, value, dimension + 1, "extent")
+			val extent = LLVMBuildExtractValue(builder, actual, dimension + 1, "extent")
 			val unknown = unknown(extent, dimension)
 			val required = extent(dimension, expected)
 			val equal = LLVMBuildICmp(builder, LLVMIntEQ, extentCount(extent, dimension), extentCount(required, dimension), "extent_matches")
@@ -94,8 +189,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		for (dimension in type.arrayDimensions.indices) {
 			val raw = LLVMBuildExtractValue(builder, parent, dimension + 2, "parent_extent")
 			val extent = if (dimension == 0) {
-				guard(LLVMBuildExtractValue(builder, raw, 1, "row_extent_known"), "Unable to determine indexed array shape")
-				LLVMBuildExtractValue(builder, raw, 0, "row_count")
+				LLVMBuildSelect(builder, LLVMBuildExtractValue(builder, raw, 1, "row_extent_known"), LLVMBuildExtractValue(builder, raw, 0, "row_count"), LLVMBuildExtractValue(builder, value, 1, "child_count"), "effective_row_count")
 			} else raw
 			reference = LLVMBuildInsertValue(builder, reference, extent, dimension + 1, "row_shape")
 		}
@@ -112,11 +206,21 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun storeAt(address: LLVMValueRef, element: ValueType, value: LLVMValueRef) {
-		LLVMBuildStore(builder, if (element == ValueType.BOOL) LLVMBuildZExt(builder, value, types.storage(element), "array_bool_byte") else value, address)
+		LLVMBuildStore(builder, when (element) {
+			is CNullable   -> EmitNullable(context, builder, target).store(value, element)
+			ValueType.BOOL -> LLVMBuildZExt(builder, value, types.storage(element), "array_bool_byte")
+			else           -> value
+		}, address)
 	}
 
 	fun literal(element: ValueType, elements: List<() -> LLVMValueRef>): LLVMValueRef {
 		val data = memory.stack(types.storage(element), count(maxOf(1, elements.size).toLong()), "array_elements", "Unable to allocate array literal storage")
+		val type = CArray(element, elements.size)
+		if (type.hasNullableRows) {
+			val array = descriptor(data, count(elements.size.toLong()), type)
+			elements.forEachIndexed { index, emit -> store(data, element, count(index.toLong()), shareChild(emit(), array, type)) }
+			return current(array, type)
+		}
 		var reference: LLVMValueRef? = null
 		elements.forEachIndexed { index, emit ->
 			var value = emit()
@@ -151,7 +255,8 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 
 	fun index(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
 		val value = LLVMBuildLoad2(builder, types.storage(element), checkedAddress(array, element, index, indexType), "array_value")
-		if (element is CArray) return matchShape(value, childShape(value, array, element), element)
+		if (element is CArray) return readChild(value, array, CArray(element))
+		if (element is CNullable) return readChild(EmitNullable(context, builder, target).load(value, element), array, CArray(element))
 		return if (element == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(element), "array_bool") else value
 	}
 }

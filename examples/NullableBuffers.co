@@ -1,0 +1,25 @@
+fn<string[]?> supplied(opt<string[]?> args ?: null) = args
+
+fn<string?[]> labels() = ["é" + "😀", null, "Cloth"]
+
+fn<int> main(opt<string[]?> args ?: null) {
+    // Startup supplies a present array, including when no arguments were passed.
+    println(args)
+    println(supplied())
+    println(supplied(null))
+    println(supplied(["provided"]))
+
+    def<string?[]?> values = labels()
+    def<string?[]?> independent = values
+    if (values != null) values[0] = "changed"
+    println(independent)
+
+    def<int?[][]?> matrix = null
+    matrix = [[1, null], [null, 4]]
+    matrix = null
+    matrix = [[null, 2], [3, null]] // Null did not reset the 2-by-2 shape.
+    println(matrix)
+
+    for (def<string?> label <- labels()) println(label ?: "missing")
+    return 0
+}

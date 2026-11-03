@@ -13,7 +13,9 @@ Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 ## Development rules
 
 - File scope accepts declarations. Executable validation requires exactly one
-  `main`, accepting no parameters or one `string[]`. Valid results are void,
+  `main`, accepting no parameters or one `string[]` or `string[]?`. Startup always
+  supplies a present array, including for `opt<string[]?> args ?: null`.
+  Valid results are void,
   signed fixed-width integers, or isize; all unsigned main results are rejected.
 - Separate library/function checking from executable entry validation. Object
   emission needs no main and emits no startup adapter or normal completion report.
@@ -37,7 +39,7 @@ Inspect [ProgramAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/Progr
 and [NativeCABI](../../../Compiler/src/main/kotlin/cloth/emitter/NativeCABI.kt).
 
 Relevant suites: `ProgramEntryTest`, `UnicodeArgumentsTest`, `WindowsX86Test`,
-`ISizeIntegrationTest`, and the `ProcessCompletion` test helper. Existing tests
+`ISizeIntegrationTest`, `NullableBuffersTest`, and the `ProcessCompletion` test helper. Existing tests
 exercise invalid encodings, no-argument main, quoting/empty inputs, native exit
 normalization, completion timing, link variants and startup storage cleanup.
 

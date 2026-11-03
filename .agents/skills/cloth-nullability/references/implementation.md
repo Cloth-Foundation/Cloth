@@ -3,7 +3,10 @@
 Confirmed decisions are maintained in [confirmed nullable semantics](semantics.md#nullable-values-and-optional-parameters).
 This record covers the implemented follow-up to Stages 0-3 of the
 [nullability plan](../../../../todo/nullability-plan.md), within the existing
-integer/float/bool/char/typeinfo slice. Nullable buffers remain deferred.
+integer/float/bool/char/typeinfo slice. This is the scalar milestone;
+the later [buffer integration](buffers.md) now admits nullable strings, whole
+arrays and scalar/string elements. Nullable rows now execute under the
+[rectangular row record](../../cloth-arrays/references/nullable-rows.md).
 
 ## Supported behavior and boundaries
 
@@ -41,8 +44,9 @@ integer/float/bool/char/typeinfo slice. Nullable buffers remain deferred.
 
 [NullableRules.co](../../../../examples/NullableRules.co) is the maintained runnable
 example. [NullableScalars.co](../../../../examples/NullableScalars.co) covers the
-original slice. Do not admit nullable strings, arrays, elements, class execution,
-unsafe handles or optional arguments on the strength of this implementation.
+original slice. Nullable strings/whole arrays/elements and optional arguments
+have since been integrated under their own records; they do not follow from
+this scalar milestone alone. Class execution and unsafe handles remain deferred.
 
 ## Compiler ownership and invariants
 

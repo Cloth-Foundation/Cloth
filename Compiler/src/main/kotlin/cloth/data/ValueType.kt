@@ -31,11 +31,7 @@ sealed class ValueType(val keyword: Keywords) {
 	/** Fixed numeric metadata includes widths; distinct primitives may supply their canonical name. */
 	open val metadataSpelling: String
 		get() = when (this) {
-			is CArray -> {
-				var base: ValueType = this
-				while (base is CArray) base = base.element
-				base.metadataSpelling + arrayDimensions.joinToString("") { "${Operators.BRACKET_OPEN}${it ?: ""}${Operators.BRACKET_CLOSE}" }
-			}
+			is CArray -> arraySpelling(true)
 
 			else      -> if (numeric) (if (unsigned) "${Keywords.UNSIGNED} " else "") + "$keyword${Operators.LESS}$bits${Operators.GREATER}" else spelling
 		}

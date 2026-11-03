@@ -18,10 +18,13 @@ fn<usize> recur(usize n) {
     return recur(n - 1) + recur(n - 2)
 }
 
-fn main() {
+fn main(opt<string[]?> args ?: null) {
     for (def<usize> n <- 0..10) {
         println(iter(n))
     }
+
+    println()
+    for (def<int<64>> i <- 2..=10_000; i += 2) println(i)
 
     /*def<usize> n = 50
     println(#"Printing recursive fibonacci for: {n}")

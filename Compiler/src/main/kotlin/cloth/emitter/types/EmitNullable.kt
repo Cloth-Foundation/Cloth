@@ -21,10 +21,11 @@ internal class EmitNullable(private val context: LLVMContextRef, private val bui
 	}
 
 	fun adapt(value: LLVMValueRef, source: ValueType, destination: ValueType): LLVMValueRef = when {
-		source == destination                                     -> value
-		destination is CNullable && source == ValueType.Null      -> absent(destination)
-		destination is CNullable && source == destination.payload -> wrap(value, destination)
-		else                                                      -> throw InternalErrors.invariant("Missing scalar adaptation from '${source.spelling}' to '${destination.spelling}'")
+		source == destination                                                          -> value
+		destination is CNullable && source == ValueType.Null                           -> absent(destination)
+		destination is CNullable && source is CNullable && destination.accepts(source) -> value
+		destination is CNullable && destination.payload.accepts(source)                -> wrap(value, destination)
+		else                                                                           -> throw InternalErrors.invariant("Missing scalar adaptation from '${source.spelling}' to '${destination.spelling}'")
 	}
 
 	/** Branch actions may themselves branch or return. Only actual continuing

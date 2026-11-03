@@ -38,7 +38,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 					plan.slots.map { slot ->
 						if (slot.target is ReceivingTarget.Named) expressionEmitter.transferArrayValue(expressionEmitter.adaptValue(slots[slot.sourceIndex], plan.results.values[slot.sourceIndex], slot.type), slot.type)
 						else {
-							expressionEmitter.validateDiscardedResult(slots[slot.sourceIndex], slot.type); null
+							expressionEmitter.validateDiscardedResult(expressionEmitter.adaptValue(slots[slot.sourceIndex], plan.results.values[slot.sourceIndex], slot.type), slot.type); null
 						}
 					}
 				} else null

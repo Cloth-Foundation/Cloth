@@ -146,9 +146,10 @@ class ForSemanticsTest {
 	}
 
 	@Test
-	fun `foreach annotations do not introduce nullable array element support`() {
-		invalid("fn main() { for (def<int?> value <- [null]) println(value) }", DiagnosticCode.UNSUPPORTED_NULLABILITY)
-		invalid("fn main() { for (def<int?> value <- []) println(value) }", DiagnosticCode.UNSUPPORTED_NULLABILITY)
+	fun `foreach nullable elements require explicit annotations`() {
+		valid("fn main() { for (def<int?> value <- [null]) println(value) }")
+		valid("fn main() { for (def<int?> value <- []) println(value) }")
+		invalid("fn main(int?[] values) { for (def value <- values) println(value) }", DiagnosticCode.EXPLICIT_NULLABLE_TYPE)
 		invalid("fn main() { for (def<void> value <- []) println(value) }")
 	}
 

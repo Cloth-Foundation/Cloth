@@ -16,10 +16,11 @@ internal object BufferLayout {
 		LLVMStructTypeInContext(context, fields, 2, 0)
 	}
 
-	fun descriptor(context: LLVMContextRef, target: TargetLayout, dimensions: Int): LLVMTypeRef = PointerPointer<LLVMTypeRef>((dimensions + 1).toLong()).use { fields ->
+	fun descriptor(context: LLVMContextRef, target: TargetLayout, dimensions: Int, sharedShape: Boolean = false): LLVMTypeRef = PointerPointer<LLVMTypeRef>((dimensions + 1 + if (sharedShape) 1 else 0).toLong()).use { fields ->
 		fields.put(0, LLVMPointerTypeInContext(context, 0))
 		fields.put(1, count(context, target))
 		for (index in 2..dimensions) fields.put(index.toLong(), extent(context, target))
-		LLVMStructTypeInContext(context, fields, dimensions + 1, 0)
+		if (sharedShape) fields.put((dimensions + 1).toLong(), LLVMPointerTypeInContext(context, 0))
+		LLVMStructTypeInContext(context, fields, dimensions + 1 + if (sharedShape) 1 else 0, 0)
 	}
 }

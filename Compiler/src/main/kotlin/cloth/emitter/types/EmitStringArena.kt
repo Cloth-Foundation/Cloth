@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CArray
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
@@ -25,6 +26,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
+		if (valueType is CNullable) return EmitNullable(context, builder, target).map(value, types.value(valueType)) { copyValue(builder, destination, it, valueType.payload) }
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
 		if (valueType !is CArray) return value
 		val (type, function) = arrayCopies[valueType] ?: run {
@@ -43,12 +45,20 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val length = LLVMBuildExtractValue(body, input, 1, "element_count")
 				val memory = EmitMemory(context, body, abi, target)
 				val bytes = memory.elementBytes(length, types.storage(valueType.element), "Unable to allocate returned array storage")
-				val allocate = LLVMGetInsertBlock(body)
 				val raw = arrays.descriptor(LLVMBuildExtractValue(body, input, 0, "source"), bytes)
 				val alignment = LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), types.storage(valueType.element))
 				val copied = copyAligned(body, arena, raw, alignment)
-				val result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
+				var result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
+				if (valueType.hasNullableRows) {
+					val shapeType = cloth.data.BufferLayout.extent(context, target)
+					val shapeBytes = memory.elementBytes(arrays.count(valueType.arrayDimensions.size.toLong()), shapeType, "Unable to allocate returned array shape storage")
+					val shape = copyAligned(body, arena, arrays.descriptor(arrays.shapePointer(input, valueType), shapeBytes), LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), shapeType))
+					val pointer = LLVMBuildExtractValue(body, shape, 0, "copied_shape")
+					result = arrays.withShapePointer(result, valueType, pointer)
+					arrays.remember(result, valueType, pointer)
+				}
 				if (valueType.element.buffered) {
+					val allocate = LLVMGetInsertBlock(body)
 					val check = LLVMAppendBasicBlockInContext(context, function, "check")
 					val item = LLVMAppendBasicBlockInContext(context, function, "element")
 					val done = LLVMAppendBasicBlockInContext(context, function, "done")
@@ -59,10 +69,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					LLVMPositionBuilderAtEnd(body, item)
 					val address = arrays.address(LLVMBuildExtractValue(body, result, 0, "elements"), valueType.element, index)
 					var element = LLVMBuildLoad2(body, types.storage(valueType.element), address, "element_value")
-					if (valueType.element is CArray) {
-						element = arrays.matchShape(element, arrays.childShape(element, input, valueType.element), valueType.element)
-					}
-					LLVMBuildStore(body, copyValue(body, arena, element, valueType.element), address)
+					if (valueType.element is CNullable) element = EmitNullable(context, body, target).load(element, valueType.element)
+					element = arrays.readChild(element, input, valueType)
+					arrays.storeAt(address, valueType.element, copyValue(body, arena, element, valueType.element))
 					val next = LLVMBuildAdd(body, index, LLVMConstInt(size, 1, 0), "next")
 					val end = LLVMGetInsertBlock(body)
 					LLVMBuildBr(body, check)
@@ -75,7 +84,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					}
 					LLVMPositionBuilderAtEnd(body, done)
 				}
-				LLVMBuildRet(body, result)
+				LLVMBuildRet(body, if (valueType.hasNullableRows) arrays.share(result, valueType, arrays.shapePointer(result, valueType)) else result)
 			} finally {
 				LLVMDisposeBuilder(body)
 			}

@@ -30,11 +30,12 @@ class ISizeIntegrationTest {
 
 	private fun run(executable: Path, arguments: List<String> = emptyList(), status: Int = 0): String {
 		val process = ProcessBuilder(listOf(executable.toString()) + arguments).redirectErrorStream(true).start()
+		val output = java.util.concurrent.CompletableFuture.supplyAsync { process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() } }
 		try {
 			assertTrue(process.waitFor(20, TimeUnit.SECONDS), "isize integration program timed out")
-			val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-			assertEquals(status, process.exitValue(), output)
-			return output
+			val text = output.get(5, TimeUnit.SECONDS)
+			assertEquals(status, process.exitValue(), text)
+			return text
 		} finally {
 			if (process.isAlive) process.destroyForcibly()
 		}
@@ -208,7 +209,7 @@ class ISizeIntegrationTest {
 			when (name) {
 				"ISize"    -> assertEquals("isize${System.lineSeparator()}${abi.layout.sizeBits}${System.lineSeparator()}-1${System.lineSeparator()}" + processCompletion(), actual)
 				"Builtins" -> assertTrue(actual.startsWith("Hello, Cloth!"), actual)
-				"Fib"      -> assertEquals(listOf(0, 1, 1, 2, 3, 5, 8, 13, 21, 34).joinToString(System.lineSeparator(), postfix = System.lineSeparator()) + processCompletion(), actual)
+				"Fib"      -> assertEquals((listOf("0", "1", "1", "2", "3", "5", "8", "13", "21", "34", "") + (2..10_000 step 2).map { it.toString() }).joinToString(System.lineSeparator(), postfix = System.lineSeparator()) + processCompletion(), actual)
 			}
 			assertTrue(actual.endsWith(processCompletion(status)), actual)
 		}

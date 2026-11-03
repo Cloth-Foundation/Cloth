@@ -7,6 +7,129 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Nullable type providers (2026-11-03)
+
+The user requested missing nullable type providers such as `int?::max`.
+`CNullable.providers` now delegates payload providers supporting TYPE receivers
+through a validated, type-only `ProviderResult.NullableType` recipe. Numeric
+min/max return the exact plain payload type, including fixed widths, unsignedness,
+usize/isize and finite float bounds. Nullable array types with known outer extents
+expose size as usize. Nullable-owned type metadata and full scalar storage sizes
+take precedence. No instance or nullable payload is evaluated for these queries.
+
+Unproven nullable value payload providers still require presence. Unsupported
+receiver forms now use the normal invalid-receiver diagnostic, unknown names
+remain unknown providers, and the blanket nullable-type-provider C3060 is removed.
+Numeric constant facts are forwarded by recipes so compile-time integer divisor
+checks and range checks retain their ordinary behavior through the adapter.
+
+The [provider contract](../../cloth-compiler-data/references/nullable-providers.md),
+compiler-data and nullability skills own current behavior and source routing.
+Runnable example: [NullableTypeProviders.co](../../../../examples/NullableTypeProviders.co).
+`NullableTypeProvidersTest` checks exact constants/types, defaults and overloads,
+array counts, nullable metadata/storage, valid range constants, strict receiver
+errors and the single-diagnostic executable/object CLI matrix on Windows x64/x86.
+Its mixed fixture verifies LLVM IR and emits objects across all nine profiles;
+native Linux/macOS execution is not claimed. The focused provider/nullable/metadata/
+range suites passed. The final
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+all 1,013 tests across 76 suites, with zero failures, errors or skips. Skill
+frontmatter, 342 local links across 21 changed Markdown files and
+`git diff --check` passed separate checks. The optional skill validator remains
+unavailable because its Python runtime lacks PyYAML.
+
+### Nullable row implementation (2026-11-03)
+
+Nullable rows now execute under the confirmed Cloth rectangular contract, with
+C# marker placement at every nullable array level and the existing C extent order.
+`int[]?[]` permits null rows and `int[]?[]?` also permits a null outer array.
+All-null rows provide no inner shape witness; first presence fixes unknown axes,
+present empty rows witness zero, and null does not reset retained dimensions.
+Known literal mismatches are compile-time errors; dynamic mismatches take the
+existing first-error runtime path. Jagged rows remain unsupported.
+
+Only array trees containing nullable rows gain a shared shape-vector pointer in
+their internal descriptors. Owned descendants use depth-offset slices of the
+same constraints; independent array copies and parameters have independent vectors.
+Binding replacement retains constraints even if every row is absent. Return
+copying moves both metadata and nested string/array data into the destination
+arena before callee cleanup. Read/validation paths do not publish shape changes
+into borrowed storage. Nullable row text writes directly into the existing
+two-pass recursive output buffer.
+
+The [row record](../../cloth-arrays/references/nullable-rows.md) owns source
+routing, invariants and verification; the array/nullability/lifetime/optional/
+control-flow/output skills link it. The maintained example is
+[NullableRows.co](../../../../examples/NullableRows.co).
+`NullableRowsTest` executes all-null initialization, first-presence and retained
+constraints, nested sibling writes, optional defaults, source-order snapshots,
+independent copies, returned arrays, explicit/zero extents, metadata, foreach
+and Unicode output on Windows x64/x86. Its mixed fixture verifies LLVM IR and
+emits objects across all nine supported target profiles. Native Linux/macOS
+execution is not claimed. The poisoned-memory cleanup probe also passes for
+returned shape metadata and nested Unicode buffers, with balanced allocations.
+The affected nullable/optional/array/lifetime suites passed. The full
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+all 1,007 tests across 75 suites with zero failures, errors or skips. Skill
+frontmatter, 317 local links across 18 changed Markdown files and
+`git diff --check` passed separate checks. The optional Python skill validator
+remains unavailable because its runtime lacks PyYAML.
+
+### Nullable rectangular row decision (2026-11-03)
+
+After reviewing the difference between C# jagged rows and Cloth rectangular
+arrays, the user selected Cloth rectangular rows. Null rows supply no shape
+witness; the first present row fixes unknown inner dimensions, all present rows
+must match recursively, and null never resets established constraints. Explicit
+extents apply before presence; present empty rows witness length zero.
+The [array contract](../../cloth-arrays/references/semantics.md#nullable-rectangular-rows)
+owns the decision. C# marker placement remains accepted. This is a design record;
+nullable-row implementation is still pending behind C3060.
+
+### Nullable strings and arrays (2026-11-03)
+
+The user requested nullable buffer execution for `opt<string[]?> args ?: null`,
+selected C# nullability marker placement, and kept nullable rows gated. Strings,
+whole arrays and nullable scalar/string elements now execute through ordinary
+bindings/calls/defaults, multiple returns, deferred blocks, branches, Elvis,
+exact nullable casts, metadata, recursive output and explicitly typed foreach.
+`int[][]?` wraps the whole array; `int[]?[]` retains C3060. Cloth's existing
+rectangular dimensions, explicit nullable destinations and independent values
+remain in force. Main accepts a nullable `string[]?`; startup supplies a present
+validated array even when empty and does not select an omission default.
+
+Presence branches guard recursive copies, transfers and discarded-result shape
+checks. Nullable array shape storage survives null and captures unspecified
+dimensions on first presence. Array elements encode/decode byte presence flags;
+nullable strings use content equality and recursive array formatting renders
+absence as `null`. Nullable wrappers conservatively copy without acquiring
+fresh-array ownership. The first-error diagnostic policy is unchanged.
+
+The [nullability skill](../../cloth-nullability/SKILL.md) and
+[buffer implementation record](../../cloth-nullability/references/buffers.md)
+own the contract, source routing and boundaries. The array, lifetime, optional,
+output, control-flow and entry skills link that record. Maintained runnable
+example: [NullableBuffers.co](../../../../examples/NullableBuffers.co).
+
+Verification: `NullableBuffersTest` runs mixed buffer carriers and the example
+on Windows x64/x86 and verifies LLVM IR across all nine supported target profiles.
+Its cases cover nullable element storage, recursive independent copies and
+returns, source-order snapshots, defaults/Elvis, shape retention, discards,
+foreach, startup Unicode/empty arrays, strict diagnostics and nullable-row gates.
+`ArrayTemporaryCleanupTest` adds actual allocation/live-byte observation and
+poisoned freed buffers for nullable string/array returns and absent defaults.
+The focused nullable/optional/cleanup run passed, as did the final focused
+entry/example run (41 tests). The final
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+all 1,000 tests across 74 suites, with zero failures, errors or skips.
+Native execution covers Windows x64/x86; the nine-profile buffer verification
+is LLVM IR evidence, not native Linux/macOS execution. The Fib fixture's default
+now uses null, while its existing added output loop is preserved and reflected
+in the expected output; the test drains that larger output concurrently.
+The standard skill validator could not run because Python lacks PyYAML;
+frontmatter and 288 local links across 16 changed Markdown files passed separate
+checks. `git diff --check` passed.
+
 ### Unbraced conditional bodies (2026-11-03)
 
 `IfParser` now accepts one source expression/statement instead of a braced

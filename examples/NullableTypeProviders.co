@@ -1,0 +1,19 @@
+fn<int> capped(opt<int> value ?: int?::max) = value
+
+fn main() {
+    println(int?::min)
+    println(int?::max)
+    println(unsigned int<8>?::max)
+    println(float<16>?::max)
+    println(int[2]?[3]?::size)
+    println(capped())
+
+    // Bounds are ordinary non-null values of the exact payload type.
+    def limit = int<8>?::max
+    println(limit::type)
+
+    // Nullable storage and nullable metadata keep their own meanings.
+    def<int?> value = null
+    println(value::size == int?::size)
+    println(int?::type)
+}

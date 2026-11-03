@@ -50,8 +50,7 @@ class IfParser(private val parser: Parser) {
 	private fun parseBranchBody(): BlockBody {
 		val start = parser.peek()
 		if (start.lexeme == Operators.BRACE_OPEN.toString()) return parser.parseBlock()
-		if (start.type == TokenType.EOF || parser.atKeyword(Keywords.ELSE) ||
-			start.lexeme in setOf(Operators.BRACE_CLOSE.toString(), Operators.SEMICOLON.toString())) {
+		if (start.type == TokenType.EOF || parser.atKeyword(Keywords.ELSE) || start.lexeme in setOf(Operators.BRACE_CLOSE.toString(), Operators.SEMICOLON.toString())) {
 			throw SyntaxErrors.expected("a conditional body ('${Operators.BRACE_OPEN}' or a statement)", start)
 		}
 		val statements = if (parser.atKeyword(Keywords.DEFINITION)) parser.bindingsParser.parseBindings() else listOf(parser.parseStatement())

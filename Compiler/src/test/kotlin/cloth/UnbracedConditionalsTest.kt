@@ -73,11 +73,10 @@ class UnbracedConditionalsTest {
 		for (prefix in listOf("", "while (false) ", "for (def i <- 0..1) ")) {
 			val outer = chain(body("fn test(bool a, bool b) { if (a) ${prefix}if (b) print(1) else print(2) }").single())
 			assertNull(outer.otherwise)
-			val statement = outer.branches.single().statements.single()
-			val inner = when (statement) {
+			val inner = when (val statement = outer.branches.single().statements.single()) {
 				is WhileStatement -> chain(statement.body.statements.single())
-				is ForStatement -> chain(statement.body.statements.single())
-				else -> chain(statement)
+				is ForStatement   -> chain(statement.body.statements.single())
+				else              -> chain(statement)
 			}
 			assertNotNull(inner.otherwise)
 		}

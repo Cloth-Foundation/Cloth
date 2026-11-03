@@ -38,7 +38,9 @@ complete; the linked record retains exact commands, evidence and deferred scope.
   lookup, body-local isolation, default-parameter shadowing and ordinary mutability.
 - Shared checkFor validates exact range types and foreach element/row shapes;
   ForLoopPlan is target-aware and copied through semantic forks/commits. Body and
-  stepper cannot supply inference context. Nullable array elements remain gated.
+  stepper cannot supply inference context. Nullable scalar/string foreach elements
+  and nullable row values execute with explicit receiving types. Read the
+  [buffer integration contract](../cloth-nullability/references/buffers.md).
 - Completion includes zero trips and real return ownership. Presence proofs are
   invalidated for repeated/captured writes before body checking; metadata forgets
   visible mutable represented types across the loop and keeps immutable facts.

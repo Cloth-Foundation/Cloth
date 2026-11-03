@@ -193,7 +193,7 @@ class OptionalArgumentsTest {
 		failure("fn f(int n, opt<int<64>> wide ?: n) {}", DiagnosticCode.TYPE_MISMATCH)
 		analyze("fn f(opt<float<64>> n ?: 1.0000000000000002, opt<unsigned int<8>> b ?: 255) {}")
 		failure("fn f(opt<int[2]> data ?: [1]) {}", DiagnosticCode.INVALID_ARRAY)
-		failure("fn f(opt<string?> text ?: null) {}", DiagnosticCode.UNSUPPORTED_NULLABILITY)
+		analyze("fn f(opt<string?> text ?: null, opt<string[]?> args ?: null) {}")
 	}
 
 	@Test

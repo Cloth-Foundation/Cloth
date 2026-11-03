@@ -58,7 +58,9 @@ nullable-value behavior is unchanged.
   nullability plan and proceeding toward scalar implementation after Stage 0.
   Nullable array bindings capture unspecified dimensions from their first present
   value under the existing shape rules; assigning null does not reset that shape
-  constraint. Nullable-row rectangularity remains open for the later array stage.
+  constraint. Nullable rows now follow the subsequently confirmed
+  [rectangular row contract](../../cloth-arrays/references/semantics.md#nullable-rectangular-rows),
+  with execution maintained in the [row record](../../cloth-arrays/references/nullable-rows.md).
 - Mutable captured bindings do not inherit presence facts from the declaration
   site of a deferred function block. Its body must establish its own proof or use
   a stable ordinary snapshot; a later execution may see a changed capture.
@@ -135,8 +137,8 @@ nullable-value behavior is unchanged.
   exception: `print` and `println` may accept nullable values without proof,
   render absence as the lowercase text `null`, and use ordinary formatting when
   present. Arguments still evaluate once, and existing output/newline rules hold.
-  This does not expose an unchecked nullable `::str` provider or implement deferred
-  array/class text formatting.
+  This does not expose an unchecked nullable `::str` provider. The later buffer
+  integration supplies recursive array text; class formatting remains deferred.
   Null tests, agreed nullable equality,
   Elvis and declared-type metadata retain their absence-aware behavior.
 - The user also confirmed absence-aware interpolation without a presence proof:
@@ -200,21 +202,23 @@ nullable-value behavior is unchanged.
   `int?::type::isnumeric` is true and `int?::type::width` is 32, but its metadata
   differs from `int::type`. Invalid payload queries retain ordinary compile-time
   errors when known and controlled runtime errors after opaque calls. This does
-  not admit nullable array values before the later array implementation stage.
+  not itself admit nullable array values; their later executable integration is
+  recorded in [buffer integration](buffers.md).
 - The user confirmed full nullable scalar storage size through type and value
   `::size`, returning usize and including presence storage and target alignment
   padding. `int?::size` and a declared `int? x`'s `x::size` agree while absent
   and after presence proofs. Value receivers still evaluate once. Nullable
   string/array value sizes retain content/count meanings and require presence;
-  their executable support remains deferred.
+  the buffer integration now executes their ordinary payload providers after proof.
 - The user confirmed fallback-supplied context for bare-left Elvis. Without a
   destination annotation, `null ?: 5` has plain int type and `null ?: "Jack"`
   has string type. A nullable fallback still requires an explicit nullable type
   for a new binding; `null ?: null` needs explicit payload context. This does
   not permit inference of nullable conditional results or automatic nullability.
-- The scalar slice is now executable for integer/float/bool/char/typeinfo payloads,
-  with the confirmed rules above. Nullable strings and arrays/elements remain
-  gated. Nullable-target scalar casts, scalar `is`, metadata inspection, scalar
+- The scalar slice is executable for integer/float/bool/char/typeinfo payloads,
+  with the confirmed rules above. Nullable strings, whole arrays and scalar/string
+  elements now execute under the [buffer contract](buffers.md). Nullable rows
+  execute under their rectangular contract. Nullable-target scalar casts, scalar `is`, metadata inspection, scalar
   storage sizes and fallback-supplied bare-null Elvis are implemented. The
   current proof subset covers stable local/parameter null tests, short-circuit
   composition, continuing joins, early returns, assignments and deferred effects;
@@ -222,4 +226,30 @@ nullable-value behavior is unchanged.
   [NullableScalars.co](../../../../examples/NullableScalars.co); the follow-up
   rules are demonstrated in [NullableRules.co](../../../../examples/NullableRules.co). See development
   status for verification evidence and implementation boundaries.
+
+- On 2026-11-03 the user selected C# nullability placement: `string?[]` has
+  nullable elements, `string[]?` is a nullable array, and `string?[]?` permits
+  both. A trailing array marker applies to the whole array (`int[][]?`);
+  an earlier array marker denotes nullable rows (`int[]?[]`). The user explicitly
+  kept nullable rows gated. Cloth's existing C dimension order, rectangularity,
+  independent copies and explicit nullable destinations remain in force.
+  See [buffer integration](buffers.md) for concrete behavior and ownership.
+
+- Later on 2026-11-03 the user confirmed Cloth rectangular rows rather than
+  C# jagged row shapes. Null rows supply no shape witness, the first present row
+  fixes unknown inner dimensions, and all present rows must match recursively.
+  Null assignments never reset those constraints. Explicit extents apply before
+  presence; a present empty row supplies a zero-length witness. The
+  [array-owned contract](../../cloth-arrays/references/semantics.md#nullable-rectangular-rows)
+  owns this design. The user subsequently requested its implementation; the
+  [row integration record](../../cloth-arrays/references/nullable-rows.md) owns
+  the executable scope and verification.
+
+- The user subsequently requested nullable type-provider integration, including
+  `int?::max`. Nullable type receivers now expose instance-independent payload
+  providers: numeric min/max return the plain exact numeric payload type, and
+  fixed-size nullable array type size returns usize. Nullable-owned type metadata
+  and scalar storage size take precedence. This adds no unchecked nullable value
+  payload access. The [provider-owned contract](../../cloth-compiler-data/references/nullable-providers.md)
+  retains exact behavior, source ownership and rejection boundaries.
 

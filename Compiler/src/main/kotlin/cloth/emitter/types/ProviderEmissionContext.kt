@@ -1,8 +1,11 @@
 package cloth.emitter.types
 
 import cloth.data.MetadataQuery
+import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
+import cloth.emitter.LLVMTypes
+import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -20,6 +23,13 @@ internal class ProviderEmissionContext(
 
 	fun formatScalar(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.interpolate(value, type, casts, location)
 	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef = strings.formatArray(value, recipe, this, location)
+	fun formatNullable(value: LLVMValueRef, recipe: ProviderResult.NullableText): LLVMValueRef {
+		val nullable = EmitNullable(context, builder, target)
+		return checkNotNull(nullable.choose(nullable.present(value), LLVMTypes(context, target).value(ValueType.STRING), {
+			recipe.payloadText.emit(this, ProviderReceiver.Value(recipe.receiverType.payload, nullable.payload(value)))
+		}, { strings.literal(Keywords.NULL.toString()) }))
+	}
+
 	fun stringScalarCount(value: LLVMValueRef): LLVMValueRef = strings.scalarCount(value)
 	fun metadata(type: ValueType): LLVMValueRef = strings.metadata.constant(type)
 	fun metadataProperty(value: LLVMValueRef, query: MetadataQuery): LLVMValueRef = strings.metadata.property(value, query, location)

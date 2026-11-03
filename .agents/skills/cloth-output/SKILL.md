@@ -59,6 +59,14 @@ delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/typ
 through `EmitString`. Keep the traversal out of print built-ins and reusable type
 descriptors. Interpolation resolves the same typed value-receiver providers.
 
+Nullable whole arrays, rows and scalar/string elements render absence as `null`.
+`ProviderResult.NullableText` is an internal element recipe; `EmitArrayText` must
+decode stored nullable carriers and branch on presence in both passes. It does
+not expose unproven nullable `::str`. See the
+[nullable buffer record](../cloth-nullability/references/buffers.md) and
+[row implementation](../cloth-arrays/references/nullable-rows.md). Nested nullable
+rows branch on presence while writing directly into the shared text buffer.
+
 The emitter measures checked target-sized bytes, then fills one result buffer.
 Nested arrays write directly into it; do not concatenate growing prefixes or
 allocate an intermediate string for every row. Both passes traverse an already

@@ -8,12 +8,7 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.parser.subs.BindingsParser
-import cloth.parser.subs.DelimitedParser
-import cloth.parser.subs.ExpressionParser
-import cloth.parser.subs.FunctionParser
-import cloth.parser.subs.IfParser
-import cloth.parser.subs.TypeParser
+import cloth.parser.subs.*
 import cloth.parser.subs.loops.ForLoopParser
 import cloth.parser.subs.loops.WhileLoopParser
 import cloth.parser.type.TypeReference

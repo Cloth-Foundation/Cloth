@@ -16,10 +16,17 @@ data class CNullable(val payload: ValueType) : ValueType(payload.keyword) {
 
 	override val buffered get() = payload.buffered
 	override val containsNullability get() = true
+	override val arrayDimensions get() = payload.arrayDimensions
 	override val spelling get() = payload.spelling + Operators.QUESTION.toString()
 	override val metadataSpelling get() = payload.metadataSpelling + Operators.QUESTION.toString()
-	override fun accepts(actual: ValueType) = super.accepts(actual) || actual == Null || payload == actual
-	override fun providers(target: TargetLayout) = super.providers(target) + if (!payload.buffered) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
+	override fun accepts(actual: ValueType) = super.accepts(actual) || actual == Null || payload.accepts((actual as? CNullable)?.payload ?: actual)
+	override fun inferArraySizes(actual: ValueType): ValueType = if (actual == Null) this else CNullable(payload.inferArraySizes((actual as? CNullable)?.payload ?: actual))
+	override fun commonArrayShape(other: ValueType): ValueType? = if (other is CNullable) payload.commonArrayShape(other.payload)?.let(::CNullable) else null
+	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
+		val own = super.providers(target) + if (!payload.buffered) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
+		val inherited = payload.providers(target).filter { (name, provider) -> name !in own && ProviderReceiverForm.TYPE in provider.receiverForms }
+		return inherited.mapValues { (_, provider) -> ProviderResult.NullableType(this, provider) } + own
+	}
 
 	private fun carrier(context: LLVMContextRef, target: TargetLayout, storage: Boolean): LLVMTypeRef = PointerPointer<LLVMTypeRef>(2L).use { fields ->
 		fields.put(0, if (storage) LLVMInt8TypeInContext(context) else LLVMInt1TypeInContext(context))

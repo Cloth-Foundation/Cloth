@@ -66,12 +66,12 @@ class ProgramEntryTest {
 
 	@Test
 	fun `main accepts no arguments or one string array regardless of binding name and final`() {
-		for (parameters in listOf("", "string[] args", "final string[] values")) {
+		for (parameters in listOf("", "string[] args", "final string[] values", "string[]? args", "final opt<string[]?> args ?: null")) {
 			val program = ProgramAnalyzer().analyze(parse("fn main($parameters) {}"))
 			assertEquals("main", program.entryPoint?.name?.lexeme)
 			assertEquals(ProgramKind.EXECUTABLE, program.kind)
 		}
-		for (parameters in listOf("int value", "string value", "string[][] args", "string[] args, int count", "bool flag")) {
+		for (parameters in listOf("int value", "string value", "string[][] args", "string?[] args", "string?[]? args", "string[] args, int count", "bool flag")) {
 			failure("fn main($parameters) {}", DiagnosticCode.INVALID_MAIN_PARAMETERS)
 		}
 	}
