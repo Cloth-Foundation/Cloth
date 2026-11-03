@@ -40,8 +40,11 @@ class StringAttachments : PrimitiveAttachment {
 	// Contains numbers and letters
 	val isAlphanumeric: Attachment = Attachment("isAlphanumeric") { }
 
+	// something like x.toValue(int<64>), would fail if isNumeric is false
+	val toValue: Attachment = Attachment("toValue") { }
+
 	override fun registerAttachment(): Array<Attachment> {
-		return arrayOf(isEmpty, charAt, contains, startsWith, endsWith, indexOf, toUpperCase, toLowerCase, substring, replace, trim, trimLeft, trimRight, toChars, isNumeric, isAlpha, isAlphanumeric)
+		return arrayOf(isEmpty, charAt, contains, startsWith, endsWith, indexOf, toUpperCase, toLowerCase, substring, replace, trim, trimLeft, trimRight, toChars, isNumeric, isAlpha, isAlphanumeric, toValue)
 	}
 
 }

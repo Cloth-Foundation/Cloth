@@ -82,7 +82,10 @@ data class IntegerLiteral(val value: BigInteger, val token: Token) : NumberLiter
 }
 
 /** Preserve decimal text until emission selects the language's floating format. */
-data class FloatingPointLiteral(val value: String, override val span: TokenSpan) : NumberLiteral
+data class FloatingPointLiteral(val value: String, val token: Token) : NumberLiteral {
+
+	override val span get() = token.span
+}
 
 data class BooleanLiteral(val value: Boolean, override val span: TokenSpan) : Expression
 

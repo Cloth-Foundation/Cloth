@@ -1,13 +1,52 @@
 ---
 name: cloth-numerics
-description: Design, explain, or extend Cloth fixed-width integers, floats, booleans, arithmetic and comparisons, explicit casts, exponentiation, or checked integer division and remainder.
+description: Design, explain, or extend Cloth numeric literal prefixes and suffixes, fixed-width integers, floats, booleans, arithmetic and comparisons, explicit casts, exponentiation, or checked integer division and remainder.
 ---
 
 # Cloth numeric and boolean operations
 
+Arbitrary signed/unsigned fixed widths from 1 through 65,536 are now the intended
+design, with the same cap on x86_64 and AArch64. Floats and 32-bit defaults are
+unchanged. Read the [accepted width contract](references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)
+and [implementation plan](../../../todo/arbitrary-integer-widths-plan.md) before
+extending widths. This is planned, not implemented: current compiler support
+remains 8/16/32/64. The plan identifies shared target-count limits, odd-width
+storage, full-width output, backend legalization/calls and one-bit edge cases;
+do not implement this as a width-set replacement alone.
+
 Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
 [bindings](../cloth-bindings/SKILL.md) for assignment/update syntax.
+
+For numeric literal prefixes/suffixes and contextual widths, read the
+[implementation plan](../../../todo/numeric-literals-plan.md) and
+[confirmed integer prefixes](references/semantics.md#integer-literal-prefixes-design-confirmed-2026-11-03).
+The plan covers decimal suffixes, hexadecimal/binary/octal integers, contextual
+fixed/target-sized types, source-preserving numeric decoding and first-error
+verification. The user confirmed float literal context in bindings, assignments
+and returns (including unsuffixed forms), and all confirmed integer literal forms
+in type widths/extents. Read the [context/type-syntax contract](references/semantics.md#literal-context-and-type-syntax-design-confirmed-2026-11-03).
+Declared widths, range checks and exact typing of already-typed values remain
+authoritative. These extensions are implemented; the
+[implementation record](references/numeric-literals.md) owns source invariants,
+supported forms, diagnostics and target-specific verification.
+
+Arithmetic carries floating literal format separately from integer peer context.
+Preserve both through nested arithmetic, unary expressions and conditional result
+branches; an integer peer must not force a float64-context literal through float32.
+Nullable destinations supply their payload's numeric context before literal range
+checking. See the [context review fixes](references/numeric-literals.md#arithmetic-context-review-fixes)
+and their precision, nullable reception and rejection regressions.
+
+The [decimal literal suffix contract](references/semantics.md#decimal-literal-suffixes-design-confirmed-2026-11-03)
+confirms decimal-only `i` / `I` and `f` / `F`, category selection without a fixed
+width, and the float forms `123.f`, `123f` and `123.0f`. The dot belongs to the
+floating literal; `123.i` / `123.I` are invalid integer forms. `Lexer.number`
+preserves original spellings and spans; `NumericLiterals` shares radix decoding
+and exact decimal normalization across expressions, widths and fixed extents.
+Floating range checks run after type context is available. C1013 reports malformed
+literal syntax; separators retain C1002. Scientific notation, uppercase base
+prefixes and unsuffixed trailing-dot floats remain outside the implemented slice.
 
 Integer and float ranges execute through Stage 3; Stage 4 adds array foreach and
 conservative body/stepper cleanup. C3067 is retired.
@@ -40,7 +79,7 @@ using ordinary comparisons and the existing update/stalled-counter rules.
 
 ## Development rules and current policies
 
-- Preserve signed/unsigned 8/16/32/64-bit integers and 16/32/64-bit floats with
+- Current implementation supports signed/unsigned 8/16/32/64-bit integers and 16/32/64-bit floats with
   default 32-bit `int`/`float`. Typed binding/call/return values keep exact types;
   arithmetic promotion is not an implicit binding conversion. Bool is separate
   from numeric values and occupies a byte in storage despite its LLVM i1 value.
@@ -85,7 +124,8 @@ Examples: [Math.co](../../../examples/Math.co), [Casts.co](../../../examples/Cas
 `ForIntegrationTest` covers native Windows x86 counter overflow (including dynamic
 uint64 multiplication), float failures, and IR/object emission across ABI profiles.
 
-Relevant suites: `BindingsTest`, `UnsignedIntegersTest`, `NumericWidthsTest`,
+Relevant suites: `NumericLiteralsTest`, `NumericLiteralsIntegrationTest`,
+`BindingsTest`, `UnsignedIntegersTest`, `NumericWidthsTest`,
 `CastsTest`, `AssignmentOperatorsTest`, `IntegerDivisionTest`, and
 `SharedIntegersTest`. Existing checks include IEEE boundary rounding, exact uint64
 powers, runtime failures and short-circuit guards. Recorded verification lives in

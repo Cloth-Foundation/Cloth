@@ -7,6 +7,8 @@ import cloth.parser.expression.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.TokenType
+import cloth.token.floatingLiteralText
+import cloth.token.integerLiteralValue
 
 class ExpressionParser(val parser: Parser) {
 
@@ -145,7 +147,7 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.IntegerLiteral                                                                        -> {
 				parser.advance()
 
-				val value = token.lexeme.toBigIntegerOrNull()?.takeIf { it.bitLength() <= ValueType.MAX_INTEGER_BITS } ?: throw SyntaxErrors.number(token, floating = false)
+				val value = token.integerLiteralValue().takeIf { it.bitLength() <= ValueType.MAX_INTEGER_BITS } ?: throw SyntaxErrors.number(token, floating = false)
 
 				IntegerLiteral(value, token)
 			}
@@ -153,12 +155,7 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.FloatingPointLiteral                                                                  -> {
 				parser.advance()
 
-				val decimal = token.lexeme.toBigDecimalOrNull()
-				if (decimal == null || (!parser.allowsContextualFloatingLiterals && !ValueType.FLOAT.acceptsLiteral(decimal))) {
-					throw SyntaxErrors.number(token, floating = true)
-				}
-
-				FloatingPointLiteral(token.lexeme, token.span)
+				FloatingPointLiteral(token.floatingLiteralText(), token)
 			}
 
 			TokenType.Operator if token.lexeme == Operators.PAREN_OPEN.toString()                           -> {

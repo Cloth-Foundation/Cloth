@@ -5,6 +5,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.type.TypeReference
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.integerLiteralValue
 
 internal class TypeResolver(val target: TargetLayout) {
 
@@ -18,7 +19,8 @@ internal class TypeResolver(val target: TargetLayout) {
 			else                        -> null
 		}
 		val base = if (widths != null) {
-			val width = annotation.width?.lexeme?.toIntOrNull() ?: if (annotation.width == null) ValueType.DEFAULT_BITS else null
+			val widthValue = annotation.width?.integerLiteralValue()
+			val width = if (widthValue == null) ValueType.DEFAULT_BITS else widths.firstOrNull { widthValue == it.toBigInteger() }
 			if (width == null || width !in widths) throw SemanticErrors.width(annotation, widths)
 			if (name == Keywords.INTEGER.toString()) CInt(width, annotation.unsigned) else CFloat(width)
 		} else {
@@ -39,7 +41,7 @@ internal class TypeResolver(val target: TargetLayout) {
 		// Dimensions retain C order; nullable wrappers compose in C# suffix order.
 		return annotation.arraySuffixes.indices.reversed().fold(scalar) { element, index ->
 			val token = annotation.arraySizes.getOrNull(index)
-			val size = token?.lexeme?.toBigIntegerOrNull()
+			val size = token?.integerLiteralValue()
 			if (token != null && (size == null || size.signum() < 0 || size > CUSize(target.sizeBits).maximum)) {
 				throw SemanticErrors.array("Array count exceeds ${Keywords.USIZE} (${target.sizeBits}-bit target)", token.span)
 			}

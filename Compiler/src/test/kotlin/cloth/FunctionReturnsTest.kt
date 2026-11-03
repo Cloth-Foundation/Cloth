@@ -122,11 +122,11 @@ class FunctionReturnsTest {
 	}
 
 	@Test
-	fun `typed numeric returns require casts and floating return literals retain binding rules`() {
+	fun `typed numeric returns require casts while floating literals receive return width`() {
 		failure("fn<int<64>> test(int value) { return value }", DiagnosticCode.RETURN_TYPE)
 		failure("fn<unsigned int> test(int value) = value", DiagnosticCode.RETURN_TYPE)
 		failure("fn<float<64>> test(float value) = value", DiagnosticCode.RETURN_TYPE)
-		failure("fn<float<64>> test() = 1.5", DiagnosticCode.RETURN_TYPE)
+		analyze("fn<float<64>> test() = 1.5")
 		analyze("fn<int<64>> test(int value) = value -> int<64>")
 		analyze("fn<float<64>> test() = 1.5 -> float<64>")
 	}

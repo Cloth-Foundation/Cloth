@@ -9,6 +9,7 @@ object LexerErrors {
 	fun unexpected(character: Char, span: TokenSpan) = issue(DiagnosticCode.UNEXPECTED_CHARACTER, "Unexpected character '$character'", span, "Remove this character or use a supported token.")
 	fun comment(span: TokenSpan) = issue(DiagnosticCode.UNTERMINATED_COMMENT, "Unterminated block comment", span, "Close the comment with '${Operators.MULTIPLY}${Operators.DIVIDE}'.")
 	fun separator(span: TokenSpan) = issue(DiagnosticCode.INVALID_SEPARATOR, "Underscores must appear between digits", span)
+	fun number(text: String, span: TokenSpan, reason: String) = issue(DiagnosticCode.INVALID_NUMERIC_LITERAL, "Invalid numeric literal '$text': $reason", span)
 	fun string(span: TokenSpan, raw: Boolean = false) = issue(if (raw) DiagnosticCode.UNTERMINATED_RAW_STRING else DiagnosticCode.UNTERMINATED_STRING, if (raw) "Unterminated raw string" else "Unterminated string", span, if (raw) "Close the raw string with three double quotes." else "Close the string with a double quote.")
 	fun unicode(span: TokenSpan, kind: String) = issue(DiagnosticCode.INVALID_UNICODE, "Invalid Unicode scalar in $kind", span)
 	fun multiline(span: TokenSpan) = issue(DiagnosticCode.MULTILINE_STRING, "Strings cannot span multiple lines", span, "Use a triple-quoted raw string for multiline text.")

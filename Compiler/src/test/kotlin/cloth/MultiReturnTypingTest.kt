@@ -51,7 +51,7 @@ class MultiReturnTypingTest {
 	}
 
 	@Test
-	fun `explicit returns and expression bodies apply integer context to each result`() {
+	fun `explicit returns and expression bodies apply numeric context to each result`() {
 		for (body in listOf("= 127, 18446744073709551615, true", "{ return 127, 18446744073709551615, true }")) {
 			val model = analyze("fn<int<8>, unsigned int<64>, bool> values() $body")
 			assertEquals(listOf(CInt(8), CInt(64, true), CBool), model.typeOf(function(model)).results.values)
@@ -64,7 +64,9 @@ class MultiReturnTypingTest {
 		assertEquals(2, typed.sourceLabels.size)
 		analyze("fn<int, int<64>> values(int age) = 1, age -> int<64>")
 		analyze("fn<int<64>, unsigned int<8>> values() = 1 + 2, 255")
-		failure("fn<float<64>, bool> values() = 1.5, true", DiagnosticCode.RETURN_TYPE)
+		analyze("fn<float<64>, bool> values() = 1.5, true")
+		analyze("fn<float<64>, bool> values() { return 1.5, true }")
+		failure("fn<float<64>, bool> values(float value) = value, true", DiagnosticCode.RETURN_TYPE)
 		analyze("fn<float<64>, bool> values() = 1.5 -> float<64>, true")
 	}
 

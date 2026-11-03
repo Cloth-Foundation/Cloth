@@ -158,34 +158,64 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 
 	private fun number() {
 		var isFloat = false
+		val radix = if (source[start] == '0') when (peek()) {
+			'x'  -> 16
+			'b'  -> 2
+			'o'  -> 8
+			else -> 10
+		} else 10
+		fun digit(character: Char): Boolean = if (radix == 10) character.isDigit() else when (character) {
+			in '0'..'9' -> character - '0' < radix
+			in 'a'..'f', in 'A'..'F' -> radix == 16
+			else -> false
+		}
+		fun identifierPart(character: Char?) = character != null && (character.isLetterOrDigit() || character == Operators.UNDERSCORE.toChar())
+		fun completeSuffix(offset: Int, lower: Char, upper: Char): Boolean =
+			source.getOrNull(current + offset) in listOf(lower, upper) && !identifierPart(source.getOrNull(current + offset + 1))
+		fun invalid(reason: String): Nothing {
+			while (identifierPart(source.getOrNull(current))) advance()
+			throw LexerErrors.number(source.substring(start, current), span(), reason)
+		}
 
 		fun consumeDigits() {
-			while (peek().isDigit() || peek() == Operators.UNDERSCORE.toChar()) {
+			while (digit(peek()) || peek() == Operators.UNDERSCORE.toChar()) {
 				if (peek() == Operators.UNDERSCORE.toChar()) {
-					if (!source[current - 1].isDigit() || source.getOrNull(current + 1)?.isDigit() != true) throw LexerErrors.separator(cursorSpan())
+					if (!digit(source[current - 1]) || source.getOrNull(current + 1)?.let(::digit) != true) throw LexerErrors.separator(cursorSpan())
 				}
 
 				advance()
 			}
 		}
 
+		if (radix != 10) {
+			advance() // Base prefix after the initial zero.
+			if (peek() == Operators.UNDERSCORE.toChar()) throw LexerErrors.separator(cursorSpan())
+			if (!digit(peek())) invalid("Expected a base-$radix digit after the prefix")
+		}
 		consumeDigits()
 
-		if (peek() == Operators.DOT.toChar() && source.getOrNull(current + 1)?.isDigit() == true) {
-			isFloat = true
-			advance() // Decimal point.
-			advance() // First fractional digit.
-			consumeDigits()
+		if (peek() == Operators.DOT.toChar()) {
+			val fractional = source.getOrNull(current + 1)?.isDigit() == true
+			val trailingFloat = completeSuffix(1, 'f', 'F')
+			val trailingInteger = completeSuffix(1, 'i', 'I')
+			if (fractional || trailingFloat || trailingInteger || source.getOrNull(current + 1) == Operators.UNDERSCORE.toChar()) {
+				advance() // Decimal point, never a range's first dot.
+				if (radix != 10) invalid("Base-prefixed literals cannot have a decimal point or suffix")
+				if (trailingInteger) invalid("An integer suffix cannot follow a decimal point")
+				if (peek() == Operators.UNDERSCORE.toChar()) throw LexerErrors.separator(cursorSpan())
+				isFloat = true
+				consumeDigits()
+			}
 		}
 
-		val type = if (isFloat) {
-			TokenType.FloatingPointLiteral
-		} else {
-			TokenType.IntegerLiteral
+		if (radix == 10 && peek() in listOf('f', 'F', 'i', 'I')) {
+			val suffix = advance()
+			if (isFloat && suffix in listOf('i', 'I')) invalid("An integer suffix cannot follow a decimal point")
+			isFloat = isFloat || suffix in listOf('f', 'F')
 		}
+		if (identifierPart(source.getOrNull(current))) invalid(if (radix == 10) "Invalid numeric suffix" else "Invalid base-$radix digit or forbidden suffix")
 
-		val text = source.substring(start, current).replace(Operators.UNDERSCORE.toString(), "")
-		addToken(type, text)
+		addToken(if (isFloat) TokenType.FloatingPointLiteral else TokenType.IntegerLiteral)
 	}
 
 	private fun identifier() {

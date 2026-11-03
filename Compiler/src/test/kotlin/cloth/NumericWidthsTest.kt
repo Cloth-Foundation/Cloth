@@ -6,7 +6,6 @@ import cloth.data.ValueType
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.exception.SyntaxException
 import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
 import cloth.token.Keywords
@@ -59,7 +58,7 @@ class NumericWidthsTest {
 		for (type in listOf("int<0>", "int<24>", "int<128>", "float<8>", "float<128>", "int<18446744073709551615>", "bool<8>")) {
 			assertFailsWith<SemanticException>(type) { SemanticAnalyzer().analyze(parse("1 -> $type")) }
 		}
-		for (source in listOf("def<int<8>> x = 1\nx = 1 -> int<16>", "def<int<8>> x = 1\ndef<int<16>> y = 1\nx + y", "def<float<16>> x = 1.0", "def<float<16>> x = 1 -> float<16>\nx = 1.0")) {
+		for (source in listOf("def<int<8>> x = 1\nx = 1 -> int<16>", "def<int<8>> x = 1\ndef<int<16>> y = 1\nx + y", "def value = 1.0\ndef<float<16>> x = value", "def<float<16>> x = 1.0\ndef value = 1.0\nx = value")) {
 			assertFailsWith<SemanticException>(source) { SemanticAnalyzer().analyze(parse(source)) }
 		}
 	}
@@ -160,7 +159,7 @@ class NumericWidthsTest {
 		val largest = java.math.BigDecimal(Float.MAX_VALUE.toDouble()).setScale(1).toPlainString()
 		val cutoff = ValueType.FLOAT.overflowThreshold
 		for (value in listOf(cutoff, cutoff + java.math.BigInteger.ONE)) {
-			val failure = assertFailsWith<SyntaxException> { parse("$value.0") }
+			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse("$value.0")) }
 			assertContains(failure.message.orEmpty(), Keywords.FLOAT.toString())
 		}
 		assertPrograms(directory, listOf("$midpoint == 1.0 && $below == 1.0 && $above == 1.00000011920928955078125" to "true", "${cutoff - java.math.BigInteger.ONE}.0 == $largest" to "true", "def value = $above\ndef copy := value\ncopy > 1.0 && value == 1.00000011920928955078125" to "true"))

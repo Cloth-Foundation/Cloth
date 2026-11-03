@@ -5,9 +5,79 @@ User-confirmed rules govern intended behavior; historical implementation
 notes and unresolved choices retain their original qualifications. Read
 the parent skill for current implementation boundaries and source/test routing.
 
+## Decimal literal suffixes (design confirmed 2026-11-03)
+
+- Decimal numeric literals accept `i` / `I` to indicate an integer and `f` / `F`
+  to indicate a float. These suffixes select the numeric category, not a width;
+  ordinary contextual width selection and default widths still apply.
+- Suffixes apply only to decimal literals, not hexadecimal, octal or binary
+  literals. Hexadecimal `f` / `F` digits remain digits, not float suffixes.
+- All three spellings `123.f`, `123f` and `123.0f` are valid float literals.
+  The integral decimal form with a suffix is valid too, for example `123_456i`.
+- The dot in `123.f` is the literal's decimal point, with no fractional digits;
+  it does not introduce a call or member access. A decimal point denotes a
+  floating form, so integer suffixes cannot follow it: `123.i` / `123.I` are
+  errors even in `def<int> x = 123.i`. Use `123i` / `123I` for integer literals.
+  An integer suffix does not convert a floating form into an integer.
+- These forms are implemented under the [literal implementation record](numeric-literals.md).
+  Additional forms such as an unsuffixed trailing dot or scientific notation
+  remain unconfirmed and unsupported.
+
+## Integer literal prefixes (design confirmed 2026-11-03)
+
+- Hexadecimal uses `0x`, binary `0b`, and octal `0o`, for example `0x7B`,
+  `0b1111011` and `0o173`; all three represent decimal 123. "Ordinal" in the
+  discussion refers to octal, not a separate literal category.
+- Base-prefixed literals follow ordinary integer contextual typing, including
+  fixed-width signed/unsigned integers, `usize` and `isize`. Without integer
+  context they default to `int`. Decimal integer suffixes also admit these
+  contextual integer types; `i` does not force fixed-width signed `int`.
+- All literal magnitudes must fit the contextual type. Base notation does not
+  imply unsignedness, wrapping or signed bit-pattern reinterpretation.
+  `def<int> hex = 0xDEADBEEF` is an error, while an `unsigned int` binding fits.
+- Target-sized bounds remain target-dependent: `0xFFFFFFFF` fits 32/64-bit
+  `usize`, but fits `isize` only on a 64-bit target. Typed integer identities
+  remain distinct; these forms do not add implicit value conversions.
+- These prefixes are implemented. The
+  [implementation plan](../../../../todo/numeric-literals-plan.md) records source
+  ownership, stages, verification and remaining scope boundaries.
+
+## Literal context and type syntax (design confirmed 2026-11-03)
+
+- The user confirmed contextual floating literal widths in typed bindings,
+  assignments and returns, as well as calls/ranges. This includes both suffixed
+  and unsuffixed decimal floating forms: `def<float<64>> x = 123f` and
+  `def<float<64>> y = 123.0` receive float64 context. Without context, retain
+  default float32. Normal target-format rounding and range checks still apply.
+- Declared widths and ranges are authoritative. For example,
+  `def<int<8>> x = 0xDEADBEEF` and `def<int<8>> x = 0x80` are errors, while
+  `def<int<8>> x = 0x7F` is valid. `def<float<16>> x = 70000f` is an error.
+  Never silently truncate a literal or widen the destination to make it fit.
+  Reassignment retains the binding's existing type and the same range checks.
+- Contextual literals do not relax exact-type rules for already-typed values;
+  changing a typed value's width or integer identity still requires a cast.
+- Arithmetic preserves integer and floating literal contexts independently:
+  an integer peer's width cannot replace the receiving floating width. A nullable
+  destination supplies its payload's numeric context, including for arithmetic
+  expressions. Validate each literal against that context before emission.
+  These contexts do not make nullable operands usable without presence proofs
+  and do not change the ordinary minimum-float32 mixed arithmetic rule.
+- Integer forms are also accepted in numeric type widths and fixed array
+  extents. `int<0x08>` means `int<8>`, `int[0b11]` has three elements, and
+  `int[3i]` has three elements. Resolve values consistently in type validation
+  and structural signature keys, independent of source notation.
+- Existing supported-width and target-sized extent checks remain in force:
+  `int<0x07>` remains an invalid width. Floating literals cannot supply integer
+  widths/extents. These extensions are implemented; see the
+  [literal implementation record](numeric-literals.md) for source and evidence.
+
 ## Integer signedness and widths
 
-- `int` supports 8, 16, 32 (default), and 64 bits, signed or unsigned. Explicit
+- Intended arbitrary widths are confirmed in the
+  [new width contract](#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)
+  below; compiler support currently remains the historical widths listed here.
+- The existing compiler supports 8, 16, 32 (default), and 64 bits, signed or
+  unsigned. Explicit
   widths use the required angle-bracket syntax: `int<8>`, `int<16>`, `int<32>`,
   and `int<64>`. Width is a parameter of the numeric type, not a separate type
   spelling hardcoded for each size. Compiler spellings follow `Keywords.INTEGER`
@@ -54,6 +124,30 @@ the parent skill for current implementation boundaries and source/test routing.
   operands, converting their nonnegative value to float before arithmetic or
   comparison. The existing float32 rounding policy still applies. This does not
   permit implicit numeric conversions in binding assignments.
+
+## Arbitrary fixed integer widths (design confirmed 2026-11-03)
+
+- The user confirmed arbitrary signed and unsigned fixed integer widths with a
+  common maximum of 65,536 bits on x86_64 and AArch64. The intended range is
+  1..65536 inclusive: `int<12>` and `unsigned int<12>` are ordinary members of
+  the existing integer family. This supersedes the earlier proposed 65,535 cap
+  and the earlier intended restriction to 8/16/32/64.
+- Plain `int` and `unsigned int` retain 32-bit defaults. Floats remain restricted
+  to 16/32/64 with default 32; arbitrary widths affect only integers.
+- Existing integer range formulas, contextual literal checks, wrapping,
+  exact typed compatibility, signedness, explicit casts and division/remainder
+  guards extend across the new widths. No implicit mixed-width integer promotion
+  or dynamically growing integer type is introduced. Bool stays separate.
+- Existing integer literal forms also denote these widths: `int<12>`,
+  `int<0x0C>` and `int<12i>` have the same intended identity. No new width
+  expression syntax is implied. `usize`/`isize` remain target-sized identities;
+  pointer widths and native C ABI widths do not grow with the fixed-int cap.
+- Compiler implementation is deferred. The
+  [implementation plan](../../../../todo/arbitrary-integer-widths-plan.md)
+  records source findings, staged lowering/layout/output work and required
+  verification. Odd-width storage, private wide-value carriers and Windows x86
+  policy are implementation proposals in that plan, not established new ABI or
+  packing guarantees. Current support remains 8/16/32/64 pending integration.
 
 ## Explicit numeric casts
 
