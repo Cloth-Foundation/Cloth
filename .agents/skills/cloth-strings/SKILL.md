@@ -5,6 +5,12 @@ description: Design, explain, or extend Cloth character and string literals, Uni
 
 # Cloth strings and characters
 
+[Arbitrary integer Stage 5](../cloth-numerics/references/arbitrary-width-output.md)
+extends exact decimal interpolation and `::str` to every signed/unsigned width
+1..65536. It shares the output provider path, including nullable/nested arrays,
+and preserves effects, UTF-8 byte lengths and caller-owned returned text.
+Floating formats/formatting and string concatenation rules are unchanged.
+
 Read [confirmed string and character semantics](references/semantics.md).
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) for string parameters,
 returned text, interpolation buffers, or nested string arrays; use

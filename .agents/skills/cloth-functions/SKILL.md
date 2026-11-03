@@ -5,6 +5,13 @@ description: Design, explain, or extend Cloth function declarations, strict para
 
 # Cloth functions and function blocks
 
+[Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+extends ordinary/deferred functions, recursion, optional arguments and ordered
+results through 65536 bits. Private wide arguments point to stable snapshots;
+parameters copy into inline bytes and escaping results copy to caller-owned
+storage before callee cleanup. `ValueType.indirect` classifies this transport
+without treating integers as string/array buffers. No public integer ABI is added.
+
 Read [confirmed function semantics](references/semantics.md). For ordered result
 lists and positional reception, also use [multiple results](../cloth-multiple-results/SKILL.md).
 For buffered parameters/results use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md).

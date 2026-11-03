@@ -5,14 +5,24 @@ description: Design, explain, or extend Cloth numeric literal prefixes and suffi
 
 # Cloth numeric and boolean operations
 
-Arbitrary signed/unsigned fixed widths from 1 through 65,536 are now the intended
-design, with the same cap on x86_64 and AArch64. Floats and 32-bit defaults are
-unchanged. Read the [accepted width contract](references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)
-and [implementation plan](../../../todo/arbitrary-integer-widths-plan.md) before
-extending widths. This is planned, not implemented: current compiler support
-remains 8/16/32/64. The plan identifies shared target-count limits, odd-width
-storage, full-width output, backend legalization/calls and one-bit edge cases;
-do not implement this as a width-set replacement alone.
+Signed/unsigned fixed widths 1..65536 are implemented, including exact decimal
+output and composition with current supported language features. Defaults and
+float formats remain unchanged. Start with the
+[integrated integer record](references/arbitrary-width-integers.md) for thresholds,
+source ownership, lifetimes, storage, target evidence and limits, then the
+[accepted width contract](references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03).
+The [completed plan](../../../todo/arbitrary-integer-widths-plan.md) and linked
+stage records preserve design/verification history. C4031 is retired.
+
+Use [IntegerWidths.co](../../../examples/IntegerWidths.co) as the maintained
+example. `ArbitraryIntegerWidthsTest` owns semantic/diagnostic coverage; arithmetic,
+float, integration, storage, output and publication suites own their executable
+slices. `:Compiler:probeIntegerProduction` measures integrated cap programs in
+isolated children; the older `:Compiler:probeIntegerWidths` remains a raw backend
+experiment. Read statuses before claiming support. Final evidence includes
+Windows x64/x86 and Linux x64 GNU execution plus all nine profiles' objects and
+assembly. Native AArch64/macOS/musl remain untested. Keep target counts/native C
+widths independent of the source cap and retain the selected scalar/limb split.
 
 Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
@@ -79,7 +89,9 @@ using ordinary comparisons and the existing update/stalled-counter rules.
 
 ## Development rules and current policies
 
-- Current implementation supports signed/unsigned 8/16/32/64-bit integers and 16/32/64-bit floats with
+- Current semantic and native source value support admits signed/unsigned integer
+  widths 1..65536, including full-width decimal text.
+  Floats remain 16/32/64 with
   default 32-bit `int`/`float`. Typed binding/call/return values keep exact types;
   arithmetic promotion is not an implicit binding conversion. Bool is separate
   from numeric values and occupies a byte in storage despite its LLVM i1 value.

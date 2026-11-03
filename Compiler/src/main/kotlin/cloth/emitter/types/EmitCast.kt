@@ -19,21 +19,24 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 
 	private val half = EmitHalf(context, builder, abi.layout)
 	private val types = LLVMTypes(context, abi.layout)
+	private fun location(expression: CastExpression): String = expression.operator.span.let { span -> span.source?.let { "${it.name}:$span" } ?: span.toString() }
 
 	fun toFloating(value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef = when {
-		source == target          -> value
-		source == ValueType.HALF  -> toFloating(half.toFloat(value), ValueType.SINGLE, target)
-		target == ValueType.HALF  -> {
+		source == target                       -> value
+		source == ValueType.HALF               -> toFloating(half.toFloat(value), ValueType.SINGLE, target)
+		target == ValueType.HALF               -> {
 			val intermediateType = source as? CFloat ?: ValueType.SINGLE
 			val intermediate = if (source.floating) value else toFloating(value, source, intermediateType)
 			half.fromFloat(intermediate, intermediateType)
 		}
 
-		!source.floating          -> if (source.unsigned) LLVMBuildUIToFP(builder, value, types.value(target), "cast_float")
+		source is CInteger && source.bits > 64 -> EmitWideInteger(context, builder, abi).toFloating(value, source, target as CFloat)
+
+		!source.floating                       -> if (source.unsigned) LLVMBuildUIToFP(builder, value, types.value(target), "cast_float")
 		else LLVMBuildSIToFP(builder, value, types.value(target), "cast_float")
 
-		source.bits < target.bits -> LLVMBuildFPExt(builder, value, types.value(target), "cast_widen_float")
-		else                      -> LLVMBuildFPTrunc(builder, value, types.value(target), "cast_narrow_float")
+		source.bits < target.bits              -> LLVMBuildFPExt(builder, value, types.value(target), "cast_widen_float")
+		else                                   -> LLVMBuildFPTrunc(builder, value, types.value(target), "cast_narrow_float")
 	}
 
 	fun emit(expression: CastExpression, value: LLVMValueRef): LLVMValueRef {
@@ -50,6 +53,8 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 	private fun convert(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef {
 		if (source == target) return value
 		if (target.floating) return toFloating(value, source, target)
+		if (source is CInteger && target is CInteger && (source.bits > 64 || target.bits > 64)) return EmitWideInteger(context, builder, abi).integerCast(value, source, target)
+		if (source is CFloat && target is CInteger && target.bits > 64) return EmitWideInteger(context, builder, abi).fromFloating(value, source, target, location(expression))
 		val integerType = types.value(target)
 		if (source.floating) {
 			guardFloatToInteger(expression, value, source, target as CInteger)
@@ -77,14 +82,16 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 		val doubleType = types.value(ValueType.DOUBLE)
 		val lowerCheck = LLVMBuildFCmp(builder, if (exclusiveLower) LLVMRealOGT else LLVMRealOGE, checked, LLVMConstReal(doubleType, lower), "cast_lower_bound")
 		val upperCheck = LLVMBuildFCmp(builder, LLVMRealOLT, checked, LLVMConstReal(doubleType, upper), "cast_upper_bound")
-		val valid = LLVMBuildAnd(builder, lowerCheck, upperCheck, "cast_in_range")
+		val magnitude = LLVMBuildAnd(builder, LLVMBuildBitCast(builder, checked, LLVMInt64TypeInContext(context), "cast_bits"), LLVMConstInt(LLVMInt64TypeInContext(context), Long.MAX_VALUE, 0), "cast_magnitude")
+		val finite = LLVMBuildICmp(builder, LLVMIntULT, magnitude, LLVMConstInt(LLVMInt64TypeInContext(context), 0x7ff0000000000000L, 0), "cast_finite")
+		val valid = LLVMBuildAnd(builder, finite, LLVMBuildAnd(builder, lowerCheck, upperCheck, "cast_bounds"), "cast_in_range")
 		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
 		val success = LLVMAppendBasicBlockInContext(context, function, "cast_valid")
 		val failure = LLVMAppendBasicBlockInContext(context, function, "cast_invalid")
 		LLVMBuildCondBr(builder, valid, success, failure)
 
 		LLVMPositionBuilderAtEnd(builder, failure)
-		EmitRuntimeError(context, builder, abi).emit("Invalid numeric cast: '${source.spelling}' to '${target.spelling}' at ${expression.operator.span}")
+		EmitRuntimeError(context, builder, abi).emit("Invalid numeric cast: '${source.spelling}' to '${target.spelling}' at ${location(expression)}")
 		LLVMPositionBuilderAtEnd(builder, success)
 	}
 }

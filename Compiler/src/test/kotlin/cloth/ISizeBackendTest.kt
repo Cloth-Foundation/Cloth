@@ -88,7 +88,7 @@ class ISizeBackendTest {
 	fun `native signed arithmetic casts and formatting use the selected isize width`(@TempDir directory: Path) {
 		for (abi in nativeTargets()) {
 			val type = CISize(abi.layout.sizeBits)
-			val casts = ValueType.INTEGER_WIDTHS.flatMap { width ->
+			val casts = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { width ->
 				listOf(false, true).map { unsigned ->
 					val fixed = CInt(width, unsigned)
 					val value = if (unsigned) fixed.maximum else fixed.minimum

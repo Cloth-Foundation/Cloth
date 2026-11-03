@@ -1,0 +1,35 @@
+fn<unsigned int<129>> square(unsigned int<129> value) = value * value
+
+fn main() {
+    // The width is a whole integer literal from 1 through 65536.
+    // Plain int and unsigned int still default to 32 bits.
+    def<int<31>> x = 12
+    println(x)
+    println(int::type::width)
+
+    // Signed bounds and ordinary arithmetic follow the exact value width.
+    println(int<12>::min)
+    println(int<12>::max)
+    def<int<12>> signed = int<12>::max
+    signed++
+    println(signed)
+
+    def<unsigned int<7>> sample = unsigned int<7>::max
+    sample++
+    println(sample)
+
+    // Widening follows source signedness; narrowing keeps the low bits.
+    println(signed -> int<31>)
+    println(4095 -> unsigned int<7>)
+
+    // Values above 64 bits have the same source-level value semantics.
+    def<unsigned int<129>> large = 18446744073709551616
+    println(large)
+    println(square(large))
+    println(large::type::width)
+
+    // Float formats are still 16, 32 and 64 bits, with default 32.
+    def<float<64>> fraction = 1.5f
+    println(fraction)
+    println(float::type::width)
+}

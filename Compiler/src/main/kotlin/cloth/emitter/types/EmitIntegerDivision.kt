@@ -12,6 +12,7 @@ import org.bytedeco.llvm.global.LLVM.*
 internal class EmitIntegerDivision(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI) {
 
 	fun emit(left: LLVMValueRef, right: LLVMValueRef, type: CInteger, remainder: Boolean, location: String): LLVMValueRef {
+		if (type.bits > 64) return EmitWideInteger(context, builder, abi).divide(left, right, type, remainder, location)
 		val valueType = LLVMTypes(context, abi.layout).value(type)
 		val operation = if (remainder) "remainder" else "division"
 		fun guard(invalid: LLVMValueRef, suffix: String, message: String) {

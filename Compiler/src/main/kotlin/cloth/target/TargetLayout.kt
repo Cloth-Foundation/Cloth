@@ -20,9 +20,9 @@ data class TargetLayout(
 
 	init {
 		require(targetTriple.isNotBlank())
-		require(pointerBits in ValueType.INTEGER_WIDTHS && sizeBits in ValueType.INTEGER_WIDTHS)
+		require(pointerBits in ValueType.MACHINE_INTEGER_WIDTHS && sizeBits in ValueType.MACHINE_INTEGER_WIDTHS)
 		require(pointerAlignmentBits >= 8 && pointerAlignmentBits and (pointerAlignmentBits - 1) == 0)
-		require(listOf(cIntBits, cLongBits, cLongLongBits).all { it in ValueType.INTEGER_WIDTHS })
+		require(listOf(cIntBits, cLongBits, cLongLongBits).all { it in ValueType.MACHINE_INTEGER_WIDTHS })
 	}
 
 	companion object {

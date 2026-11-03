@@ -164,14 +164,15 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 			'o'  -> 8
 			else -> 10
 		} else 10
+
 		fun digit(character: Char): Boolean = if (radix == 10) character.isDigit() else when (character) {
-			in '0'..'9' -> character - '0' < radix
+			in '0'..'9'              -> character - '0' < radix
 			in 'a'..'f', in 'A'..'F' -> radix == 16
-			else -> false
+			else                     -> false
 		}
+
 		fun identifierPart(character: Char?) = character != null && (character.isLetterOrDigit() || character == Operators.UNDERSCORE.toChar())
-		fun completeSuffix(offset: Int, lower: Char, upper: Char): Boolean =
-			source.getOrNull(current + offset) in listOf(lower, upper) && !identifierPart(source.getOrNull(current + offset + 1))
+		fun completeSuffix(offset: Int, lower: Char, upper: Char): Boolean = source.getOrNull(current + offset) in listOf(lower, upper) && !identifierPart(source.getOrNull(current + offset + 1))
 		fun invalid(reason: String): Nothing {
 			while (identifierPart(source.getOrNull(current))) advance()
 			throw LexerErrors.number(source.substring(start, current), span(), reason)

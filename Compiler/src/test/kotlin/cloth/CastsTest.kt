@@ -82,7 +82,7 @@ class CastsTest {
 
 	@Test
 	fun `casts preserve strict assignment rules and reject boolean numeric conversions`() {
-		val cases = listOf("true -> int" to "Cannot cast 'bool' to 'int'", "false -> float<64>" to "Cannot cast 'bool' to 'float<64>'", "1 -> bool" to "Cannot cast 'int' to 'bool'", "0.0 -> bool" to "Cannot cast 'float' to 'bool'", "1 -> unsigned float" to "'unsigned' applies only to 'int'", "1 -> Widget" to "not supported yet", "1 -> int<128>" to "supported widths are 8, 16, 32, 64", "1 -> float<128>" to "supported widths are 16, 32, 64", "missing -> int" to "Unknown binding 'missing'", "def<int> a = 1 -> float" to "Cannot assign 'float' to 'int'", "def a = 1 -> float\na = 1" to "Cannot assign 'int' to 'float'", "def a = 1 -> unsigned int\ndef s = 1\na + s" to "use an explicit conversion", "def a := 1 -> float\na = 2 -> float" to "Cannot reassign immutable binding", "def value = 1.0\ndef<float<64>> a = value" to "Cannot assign 'float' to 'float<64>'", "def a = 1 -> float<64>\ndef value = 1.0\na = value" to "Cannot assign 'float' to 'float<64>'", "4294967295 -> unsigned int" to "out of range for 'int'", "false && (true -> int == 1)" to "Cannot cast 'bool' to 'int'")
+		val cases = listOf("true -> int" to "Cannot cast 'bool' to 'int'", "false -> float<64>" to "Cannot cast 'bool' to 'float<64>'", "1 -> bool" to "Cannot cast 'int' to 'bool'", "0.0 -> bool" to "Cannot cast 'float' to 'bool'", "1 -> unsigned float" to "'unsigned' applies only to 'int'", "1 -> Widget" to "not supported yet", "1 -> int<65537>" to "supported integer widths are 1 through 65536", "1 -> float<128>" to "supported widths are 16, 32, 64", "missing -> int" to "Unknown binding 'missing'", "def<int> a = 1 -> float" to "Cannot assign 'float' to 'int'", "def a = 1 -> float\na = 1" to "Cannot assign 'int' to 'float'", "def a = 1 -> unsigned int\ndef s = 1\na + s" to "use an explicit conversion", "def a := 1 -> float\na = 2 -> float" to "Cannot reassign immutable binding", "def value = 1.0\ndef<float<64>> a = value" to "Cannot assign 'float' to 'float<64>'", "def a = 1 -> float<64>\ndef value = 1.0\na = value" to "Cannot assign 'float' to 'float<64>'", "4294967295 -> unsigned int" to "out of range for 'int'", "false && (true -> int == 1)" to "Cannot cast 'bool' to 'int'")
 		for ((source, diagnostic) in cases) {
 			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 			assertContains(failure.message.orEmpty(), diagnostic)
@@ -102,7 +102,7 @@ class CastsTest {
 
 	@Test
 	fun `all numeric source and target type pairs convert natively`(@TempDir directory: Path) {
-		val types = ValueType.INTEGER_WIDTHS.flatMap { listOf("int<$it>", "unsigned int<$it>") } + ValueType.FLOAT_WIDTHS.map { "float<$it>" }
+		val types = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { listOf("int<$it>", "unsigned int<$it>") } + ValueType.FLOAT_WIDTHS.map { "float<$it>" }
 		val cases = types.flatMap { source -> types.map { target -> "def<$source> value = 7 -> $source\nvalue -> $target" to "7" } }
 		assertPrograms(directory, cases)
 	}

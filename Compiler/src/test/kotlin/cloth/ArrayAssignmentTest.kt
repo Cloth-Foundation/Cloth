@@ -72,7 +72,7 @@ class ArrayAssignmentTest {
 
 	@Test
 	fun `indexed stores work for every primitive representation`(@TempDir directory: Path) {
-		val cases = listOf("bool" to ("false" to "true"), "char" to ("'a'" to "'😀'"), "string" to ("\"old\"" to "\"new\"")) + ValueType.INTEGER_WIDTHS.flatMap { bits -> listOf("int<$bits>" to ("1" to "2"), "unsigned int<$bits>" to ("1" to "2")) } + ValueType.FLOAT_WIDTHS.map { bits -> "float<$bits>" to ("1.0 -> float<$bits>" to "2.5 -> float<$bits>") }
+		val cases = listOf("bool" to ("false" to "true"), "char" to ("'a'" to "'😀'"), "string" to ("\"old\"" to "\"new\"")) + ValueType.MACHINE_INTEGER_WIDTHS.flatMap { bits -> listOf("int<$bits>" to ("1" to "2"), "unsigned int<$bits>" to ("1" to "2")) } + ValueType.FLOAT_WIDTHS.map { bits -> "float<$bits>" to ("1.0 -> float<$bits>" to "2.5 -> float<$bits>") }
 		for ((index, case) in cases.withIndex()) {
 			val (type, values) = case
 			val (before, after) = values

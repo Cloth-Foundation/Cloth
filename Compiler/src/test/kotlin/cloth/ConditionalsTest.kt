@@ -199,7 +199,7 @@ class ConditionalsTest {
 
 	@Test
 	fun `invalid is targets and operands fail before emission`() {
-		for (source in listOf("1 is unsigned float", "1 is int<7>", "1 is string<32>", "1 is Player", "1 is void", "missing is int", "1 is int < true")) {
+		for (source in listOf("1 is unsigned float", "1 is int<0>", "1 is string<32>", "1 is Player", "1 is void", "missing is int", "1 is int < true")) {
 			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
 		}
 		for (source in listOf("1 is", "1 is unsigned", "1 is 1", "is int")) {

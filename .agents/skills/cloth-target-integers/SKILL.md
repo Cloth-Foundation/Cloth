@@ -21,6 +21,15 @@ bounds, reused ASTs, Windows x64/x86 execution and all-profile object emission.
 
 ## Preserve the integrated contract
 
+Arbitrary fixed widths have a completed
+[implementation record](../cloth-numerics/references/arbitrary-width-integers.md)
+covering values/text through 65536, full-bit index validation and measured target
+layouts. Source fixed-integer support does not expand target/native counts.
+`MACHINE_INTEGER_WIDTHS` and `MAX_TARGET_INTEGER_BITS` preserve target/C ABI
+validation and the largest target count independently of the fixed 65536-bit cap.
+Never substitute `MAX_INTEGER_BITS` for usize bounds or admit arbitrary pointer
+widths by using `FIXED_INTEGER_WIDTHS`. The new suite checks reused 32/64-bit ASTs.
+
 - usize is unsigned and isize signed, each matching the compilation target's
   pointer width. Both remain distinct from fixed integers of the same machine
   width and from each other. Explicit casts cross those identities.

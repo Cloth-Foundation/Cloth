@@ -24,7 +24,7 @@ class NumericWidthsTest {
 
 	@Test
 	fun `numeric families carry validated widths and derive their spelling from keywords`() {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			val spelling = (if (unsigned) "${Keywords.UNSIGNED} " else "") + Keywords.INTEGER + (if (bits == ValueType.DEFAULT_BITS) "" else "<$bits>")
 			assertEquals(spelling, type.spelling)
@@ -37,7 +37,7 @@ class NumericWidthsTest {
 			assertEquals("${Keywords.FLOAT}" + (if (bits == ValueType.DEFAULT_BITS) "" else "<$bits>"), type.spelling)
 		}
 		assertEquals(Keywords.BOOLEAN.toString(), ValueType.BOOL.spelling)
-		assertFailsWith<IllegalArgumentException> { CInt(7) }
+		assertFailsWith<IllegalArgumentException> { CInt(0) }
 		assertFailsWith<IllegalArgumentException> { CFloat(8) }
 	}
 
@@ -55,7 +55,7 @@ class NumericWidthsTest {
 				assertContains(failure.message.orEmpty(), "out of range")
 			}
 		}
-		for (type in listOf("int<0>", "int<24>", "int<128>", "float<8>", "float<128>", "int<18446744073709551615>", "bool<8>")) {
+		for (type in listOf("int<0>", "int<65537>", "int<131072>", "float<8>", "float<128>", "int<18446744073709551615>", "bool<8>")) {
 			assertFailsWith<SemanticException>(type) { SemanticAnalyzer().analyze(parse("1 -> $type")) }
 		}
 		for (source in listOf("def<int<8>> x = 1\nx = 1 -> int<16>", "def<int<8>> x = 1\ndef<int<16>> y = 1\nx + y", "def value = 1.0\ndef<float<16>> x = value", "def<float<16>> x = 1.0\ndef value = 1.0\nx = value")) {

@@ -35,7 +35,7 @@ class ProviderResultsTest {
 
 	@Test
 	fun `integer bounds retain exact widths signedness and values`() {
-		for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(width, unsigned)
 			val minimum = assertIs<ProviderResult.IntegerConstant>(type.provider("min"))
 			val maximum = assertIs<ProviderResult.IntegerConstant>(type.provider("max"))
@@ -83,7 +83,7 @@ class ProviderResultsTest {
 	fun `constant recipes emit exact integer boundaries and floating formats`() {
 		withModule("fn<int> sample() = 1") {
 			val receiver = receiver()
-			for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+			for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 				val type = CInt(width, unsigned)
 				for (bound in listOf(type.minimum, type.maximum)) {
 					val value = assertNotNull(expressions.emitProvider(ProviderAccess(receiver, ProviderResult.IntegerConstant(type, bound, CInt()))))

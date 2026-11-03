@@ -1,6 +1,5 @@
 package cloth.emitter.types
 
-import cloth.data.CNullable
 import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
@@ -69,9 +68,9 @@ internal class EmitArrayText(
 		val separator = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, index, memory.count(0), "array_text_first"), strings.literal(""), strings.literal("${Operators.COMMA} "), "array_text_separator")
 		val separated = append(separator, position, destination)
 		val elementType = recipe.receiverType.element
-		var element = LLVMBuildLoad2(builder, types.storage(elementType), arrays.address(data, elementType, index), "array_text_value")
-		if (elementType == ValueType.BOOL) element = LLVMBuildTrunc(builder, element, types.value(elementType), "array_text_bool")
-		if (elementType is CNullable) element = EmitNullable(context, builder, target).load(element, elementType)
+		// A wide element read itself allocates a snapshot, so save before decoding.
+		val checkpoint = stackSave()
+		val element = EmitStoredValue(context, builder, target).load(arrays.address(data, elementType, index), elementType)
 		val elementText = recipe.elementText
 		val nextPosition = if (elementText is ProviderResult.ArrayText) walk(element, elementText, separated, destination)
 		else if (elementText is ProviderResult.NullableText && elementText.payloadText is ProviderResult.ArrayText) {
@@ -82,10 +81,10 @@ internal class EmitArrayText(
 		} else {
 			// Formatting may allocate numeric or UTF-8 scratch. Consume it before
 			// restoring the stack; only the integer offset survives the checkpoint.
-			val checkpoint = stackSave()
 			val text = recipe.elementText.emit(providers, ProviderReceiver.Value(elementType, element))
-			append(text, separated, destination).also { stackRestore(checkpoint) }
+			append(text, separated, destination)
 		}
+		stackRestore(checkpoint)
 		val nextIndex = LLVMBuildAdd(builder, index, memory.count(1), "array_text_next")
 		val end = LLVMGetInsertBlock(builder)
 		LLVMBuildBr(builder, check)

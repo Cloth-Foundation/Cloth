@@ -50,6 +50,7 @@ internal class EmitRangeLoop(
 	}
 
 	private fun compare(left: LLVMValueRef, right: LLVMValueRef, type: ValueType, relation: Operators): LLVMValueRef {
+		if (type is CInteger && type.bits > 64) return EmitWideInteger(context, builder, abi).compare(left, right, type, relation)
 		if (type is CFloat) {
 			val working = EmitHalf.arithmeticType(type)
 			val predicate = when (relation) {
@@ -92,7 +93,8 @@ internal class EmitRangeLoop(
 			val exit = block("range_end")
 			LLVMBuildBr(builder, test)
 			LLVMPositionBuilderAtEnd(builder, test)
-			LLVMBuildCondBr(builder, member(bindings.read(key)), body, exit)
+			val condition = if (type.bits > 64) expressions.scalarTemporary { member(bindings.read(key)) } else member(bindings.read(key))
+			LLVMBuildCondBr(builder, condition, body, exit)
 			LLVMPositionBuilderAtEnd(builder, body)
 			val reachesUpdate = expressions.emitLoopBody(statement.loopTarget, exit, update) {
 				expressions.emitIteration(statement) { bindings.withScope { expressions.emitStatements(statement.body.statements) } }
@@ -107,7 +109,9 @@ internal class EmitRangeLoop(
 					val span = stepper?.span ?: statement.headerSpan
 					val operator = stepper?.operator?.let { Operators.fromCharacterRequired(it.lexeme) } ?: Operators.PLUS_PLUS
 					val right = if (stepper?.value != null) expressions.emit(stepper.value) else {
-						if (type is CFloat) LLVMConstReal(types.value(type), 1.0) else LLVMConstInt(types.value(type), 1, 0)
+						if (type is CFloat) LLVMConstReal(types.value(type), 1.0)
+						else if (type.bits > 64) EmitWideInteger(context, builder, abi).constant(java.math.BigInteger.ONE, type.bits)
+						else LLVMConstInt(types.value(type), 1, 0)
 					}
 					if (!expressions.terminated()) {
 						val rightType = stepper?.value?.let(semantics::typeOf) ?: type
@@ -148,12 +152,20 @@ internal class EmitRangeLoop(
 		}
 		type as CInteger
 		if (operation in setOf(Operators.DIVIDE, Operators.MODULO)) return EmitIntegerDivision(context, builder, abi).emit(left, right, type, operation == Operators.MODULO, location(span))
+		if (type.bits > 64) {
+			val checked = EmitWideInteger(context, builder, abi).checked(left, right, type.bits, !type.unsigned, operation)
+			val valid = block("range_no_overflow")
+			LLVMBuildCondBr(builder, checked.overflow, exit, valid)
+			LLVMPositionBuilderAtEnd(builder, valid)
+			return checked.value
+		}
 		// Double width holds every exact add/subtract/product of two admitted counters.
 		// Only the header operator is checked; arithmetic evaluating the RHS still wraps.
 		val wide = LLVMIntTypeInContext(context, type.bits * 2)
 		fun extend(value: LLVMValueRef) = if (type.unsigned) LLVMBuildZExt(builder, value, wide, "range_wide") else LLVMBuildSExt(builder, value, wide, "range_wide")
 		val a = extend(left)
-		val b = extend(right)
+		// i1's bit pattern 1 means -1 when signed, but ++/-- mean mathematical one.
+		val b = if (operator in setOf(Operators.PLUS_PLUS, Operators.MINUS_MINUS)) LLVMConstInt(wide, 1, 0) else extend(right)
 		val exact = when (operation) {
 			Operators.PLUS     -> LLVMBuildAdd(builder, a, b, "range_exact_add")
 			Operators.MINUS    -> LLVMBuildSub(builder, a, b, "range_exact_subtract")

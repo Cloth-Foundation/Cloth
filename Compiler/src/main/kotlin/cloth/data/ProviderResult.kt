@@ -9,7 +9,9 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigDecimal
 import java.math.BigInteger
 
-internal enum class ProviderReceiverForm { TYPE,
+internal enum class ProviderReceiverForm {
+	// Dummy comment for formatting
+	TYPE,
 	VALUE
 }
 
@@ -100,7 +102,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 			require(type.acceptsLiteral(value)) { "Provider constant is out of range for '${type.spelling}'" }
 		}
 
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstIntOfString(type.llvmValue(context.context, context.target), value.toString(), 10.toByte())
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.integerConstant(value, type)
 	}
 
 	data class FloatingConstant(
@@ -170,7 +172,11 @@ internal sealed class ProviderResult<out T : ValueType> {
 	}
 
 	/** Complete scalar storage, including nullable presence and ABI padding. */
-	data class StorageSize(override val receiverType: CNullable, override val type: CUSize) : ProviderResult<CUSize>() {
+	data class StorageSize(override val receiverType: ValueType, override val type: CUSize) : ProviderResult<CUSize>() {
+
+		init {
+			require(receiverType is CNullable || receiverType is CInteger)
+		}
 
 		override val receiverForms get() = setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE)
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {

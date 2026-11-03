@@ -4,11 +4,7 @@ import cloth.data.ValueType
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.expression.*
-import cloth.token.Keywords
-import cloth.token.Operators
-import cloth.token.TokenType
-import cloth.token.floatingLiteralText
-import cloth.token.integerLiteralValue
+import cloth.token.*
 
 class ExpressionParser(val parser: Parser) {
 

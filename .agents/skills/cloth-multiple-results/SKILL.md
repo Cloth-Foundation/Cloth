@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth ordered multiple function results,
 
 # Cloth multiple results
 
+[Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+integrates wide and nullable-wide slots, ordered snapshots, forwarding and
+conditional result carriers through 65536 bits. Small private carriers contain
+snapshot pointers, with each outgoing wide value copied into caller-owned storage.
+
 Read [confirmed result semantics](references/semantics.md), then the
 [implementation plan and completed stages](../cloth-language/references/multi-return-implementation.md).
 The plan separates confirmed direction, implementation choices, and remaining

@@ -66,8 +66,9 @@ the parent skill for current implementation boundaries and source/test routing.
   extents. `int<0x08>` means `int<8>`, `int[0b11]` has three elements, and
   `int[3i]` has three elements. Resolve values consistently in type validation
   and structural signature keys, independent of source notation.
-- Existing supported-width and target-sized extent checks remain in force:
-  `int<0x07>` remains an invalid width. Floating literals cannot supply integer
+- Fixed width and target-sized extent checks remain in force. Stage 2 now
+  accepts `int<0x07>` semantically; `int<0x10001>` is an invalid width.
+  Floating literals cannot supply integer
   widths/extents. These extensions are implemented; see the
   [literal implementation record](numeric-literals.md) for source and evidence.
 
@@ -75,11 +76,10 @@ the parent skill for current implementation boundaries and source/test routing.
 
 - Intended arbitrary widths are confirmed in the
   [new width contract](#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)
-  below; compiler support currently remains the historical widths listed here.
-- The existing compiler supports 8, 16, 32 (default), and 64 bits, signed or
-  unsigned. Explicit
-  widths use the required angle-bracket syntax: `int<8>`, `int<16>`, `int<32>`,
-  and `int<64>`. Width is a parameter of the numeric type, not a separate type
+  below; semantic and native source value/text support cover 1..65536.
+- Native source emission currently supports each width 1..65536, signed or unsigned,
+  with default 32. Explicit widths use the required angle-bracket syntax:
+  `int<1>`, `int<12>`, `int<31>` and `int<64>`. Width is a parameter of the numeric type, not a separate type
   spelling hardcoded for each size. Compiler spellings follow `Keywords.INTEGER`
   and `Keywords.FLOAT`.
 - C type widths used by the compiler come from explicit ABI profiles selected
@@ -142,12 +142,24 @@ the parent skill for current implementation boundaries and source/test routing.
   `int<0x0C>` and `int<12i>` have the same intended identity. No new width
   expression syntax is implied. `usize`/`isize` remain target-sized identities;
   pointer widths and native C ABI widths do not grow with the fixed-int cap.
-- Compiler implementation is deferred. The
+- Stage 2 integrates semantic types, literal magnitudes/contexts and width
+  diagnostics across 1..65536; see the [type integration record](arbitrary-width-types.md).
+  [Stage 3 arithmetic/conversion integration](arbitrary-width-arithmetic.md)
+  enables source scalar widths 1..64 and production wide kernels through the cap.
+  [Stage 4 storage/call integration](arbitrary-width-storage.md) enables source
+  values, nullable/array composition, private calls/results, providers and signed
+  main through the cap. [Stage 5 decimal output](arbitrary-width-output.md)
+  integrates print/interpolation/str/nullable/recursive arrays through 65536 bits
+  and retires C4031. The
+  [final implementation record](arbitrary-width-integers.md) publishes completed
+  stage coverage, maintained examples, production measurements and target limits.
+  The
   [implementation plan](../../../../todo/arbitrary-integer-widths-plan.md)
   records source findings, staged lowering/layout/output work and required
-  verification. Odd-width storage, private wide-value carriers and Windows x86
-  policy are implementation proposals in that plan, not established new ABI or
-  packing guarantees. Current support remains 8/16/32/64 pending integration.
+  verification. The [Stage 1 backend record](arbitrary-width-backend.md) owns
+  the selected small-value/limb storage and private-call strategy, Windows x86
+  compatibility policy and measured scope. Those are implementation choices,
+  not public ABI or packed-storage guarantees.
 
 ## Explicit numeric casts
 

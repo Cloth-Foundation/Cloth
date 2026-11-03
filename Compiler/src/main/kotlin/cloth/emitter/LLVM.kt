@@ -3,6 +3,7 @@ package cloth.emitter
 import cloth.ast.ASTStructure
 import cloth.ast.SourceUnit
 import cloth.data.CFloat
+import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.ClothDiagnostic
@@ -177,6 +178,10 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 	}
 
 	internal fun emitPrint(context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, result: LLVMValueRef, type: ValueType, casts: EmitCast, strings: EmitString) {
+		if (type is CInteger && type.bits > 64) {
+			strings.print(module, EmitIntegerText(context, builder, abi).emit(result, type, "snippet result"))
+			return
+		}
 		if (type == ValueType.CHAR) {
 			EmitCharacter(context, builder, abi).print(module, result)
 			return

@@ -1,0 +1,3 @@
+"target"	"bits"	"runner"	"status"	"run_ms"	"output_bytes"	"sha256"
+"x86_64-unknown-linux-gnu"	"65535"	"Ubuntu WSL x64"	"0"	"99"	"98674"	"f6c99ea63707ae67a277b6855db3490b6cb539c3eb0432496cf7070ae56f281f"
+"x86_64-unknown-linux-gnu"	"65536"	"Ubuntu WSL x64"	"0"	"95"	"98674"	"dfba7df895737370996edd6487fbf00343a182883a226947f46ff80ebd1ba912"

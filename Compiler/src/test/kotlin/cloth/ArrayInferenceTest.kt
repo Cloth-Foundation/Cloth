@@ -48,7 +48,7 @@ class ArrayInferenceTest {
 
 	@Test
 	fun `typed integers supply identical context in every element position`() {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned).spelling
 			val facts = types("def<$type> n = 2\ndef first = [n, 1, 3]\ndef middle = [1, n, 3]\ndef last = [1, 3, n]")
 			for (name in listOf("first", "middle", "last")) assertEquals("$type[3]", facts[name])

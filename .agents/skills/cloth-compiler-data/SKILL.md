@@ -45,6 +45,23 @@ constant recipe is a concrete IntegerConstant/FloatingConstant.
 
 ## Source, tests, and boundaries
 
+[Arbitrary-width Stage 2](../cloth-numerics/references/arbitrary-width-types.md)
+registers odd/wide integer bounds and metadata without eagerly applying byte-size
+division. `ProviderResult.StorageSize` accepts integer or nullable scalar receivers;
+new widths use the lazy recipe, while existing machine-width constants retain
+their representation. [Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md)
+enables scalar width 1..64 emission, including target-layout storage sizes
+(int<24> occupies four bytes in the tested Windows profiles, int<1> one byte).
+[Stage 4](../cloth-numerics/references/arbitrary-width-storage.md) connects all
+wide bounds, metadata and storage recipes to physical native-limb layouts.
+Its record owns observed size/nullable-size facts and target coverage. Value
+receivers retain effects; width is logical N as usize and size is allocated bytes.
+[Stage 5](../cloth-numerics/references/arbitrary-width-output.md) integrates
+full-width scalar/array `::str` with the shared exact decimal formatter and retires
+C4031. Ordinary provider receiver/presence restrictions are unchanged.
+The [final implementation record](../cloth-numerics/references/arbitrary-width-integers.md)
+owns completed integration, maintained examples and target/resource evidence.
+
 Start with [PrimitiveTypes](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.kt),
 [ProviderResult](../../../Compiler/src/main/kotlin/cloth/data/ProviderResult.kt),
 [MetadataQuery](../../../Compiler/src/main/kotlin/cloth/data/MetadataQuery.kt),

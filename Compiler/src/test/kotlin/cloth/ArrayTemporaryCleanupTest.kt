@@ -668,6 +668,90 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
+	@Test
+	fun `wide results nullable payloads and arrays survive poisoned callee storage`(@TempDir directory: Path) {
+		probe(directory, "wide_outgoing", """
+			fn<int<65536>> number() { def<int<65536>> n = int<65536>::min; return n }
+			fn<int<129>?, int<129>?[]> pair() = 18446744073709551617, [18446744073709551617, null]
+			fn<int> sample() {
+			    def n = number()
+			    def<int<129>?, int<129>?[]> a, data = pair()
+			    if (n != int<65536>::min || a != 18446744073709551617 || data[0] != a || data[1] != null) return 1
+			    def baseline = liveBytes()
+			    number()
+			    pair()
+			    if (liveBytes() != baseline || n != int<65536>::min || data[0] != a) return 2
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `wide inline stores permit bounded safe loop cleanup without arithmetic heap allocations`(@TempDir directory: Path) {
+		probe(directory, "wide_iteration", """
+			fn<int<129>> next(int<129> n) = n + 1
+			fn<int> sample() {
+			    def<int<129>> total = 0
+			    for (def i <- 0..20000) {
+			        def<int<129>> n = next(total)
+			        total = n
+			        if (liveBytes() != 32) return 1
+			    }
+			    if (liveBytes() != 0 || total != 20000) return 2
+			    return 0
+			}
+		""", allocations = 20000, peak = 32)
+	}
+
+	@Test
+	fun `full cap range and while counters reclaim repeated stack snapshots`(@TempDir directory: Path) {
+		probe(directory, "wide_stack", """
+			fn<int<65>> make() = 7
+			fn<int> sample() {
+			    make()
+			    def count = 0
+			    for (def<int<65536>> n <- 0..1000) { count++ }
+			    def<int<65536>> n = 0
+			    while (n < 1000) { n++; count++ }
+			    if (count != 2000 || liveBytes() != 0) return 1
+			    return 0
+			}
+		""", allocations = 1, peak = 24)
+	}
+
+	@Test
+	fun `full cap formatted text outlives poisoned source arrays and later formatter calls`(@TempDir directory: Path) {
+		probe(directory, "integer_text_outgoing", """
+			fn<string> render() {
+			    def<int<65536>[]> values = [int<65536>::min, int<65536>::max]
+			    return values::str
+			}
+			fn<int> sample() {
+			    def saved = render()
+			    render() -> void
+			    def other = render()
+			    if (saved::size != 39463 || saved != other) return 1
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `integer formatting uses bounded stack scratch with only one outgoing string allocation`(@TempDir directory: Path) {
+		probe(directory, "integer_text_iterations", """
+			fn<string> render(unsigned int<129> n) = #"{n}"
+			fn<int> sample() {
+			    def n = unsigned int<129>::max
+			    for (def i <- 0..20000) {
+			        def text = render(n)
+			        if (text == "" || liveBytes() != 47) return 1
+			    }
+			    if (liveBytes() != 0) return 2
+			    return 0
+			}
+		""", allocations = 20000, peak = 47)
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

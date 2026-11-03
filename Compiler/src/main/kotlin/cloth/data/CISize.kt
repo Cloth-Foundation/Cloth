@@ -6,7 +6,7 @@ import cloth.token.Keywords
 data class CISize(override val width: Int) : CInteger(Keywords.ISIZE) {
 
 	init {
-		require(width in INTEGER_WIDTHS) { "Unsupported ${Keywords.ISIZE} width: $width" }
+		require(width in MACHINE_INTEGER_WIDTHS) { "Unsupported ${Keywords.ISIZE} width: $width" }
 	}
 
 	override val unsigned: Boolean get() = false

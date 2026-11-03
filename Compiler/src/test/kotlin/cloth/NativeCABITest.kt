@@ -78,7 +78,7 @@ class NativeCABITest {
 		assertContains(ir, "declare i${abi.intType.bits} @printf(")
 		assertContains(ir, "declare i${abi.intType.bits} @puts(")
 		assertContains(ir, "declare void @exit(i${abi.intType.bits})")
-		for (bits in ValueType.INTEGER_WIDTHS) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) {
 			val signed = CInt(bits)
 			val unsigned = CInt(bits, true)
 			assertEquals(if (bits <= abi.intType.bits) "d" else "lld", abi.printSpecifier(signed))

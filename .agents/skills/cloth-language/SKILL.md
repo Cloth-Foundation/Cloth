@@ -76,6 +76,7 @@ captures implementation scope and regression evidence.
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
+| Arbitrary fixed integer widths, private value transport, full decimal output and target evidence | [integrated integer implementation](../cloth-numerics/references/arbitrary-width-integers.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
 | Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
@@ -98,11 +99,27 @@ captures implementation scope and regression evidence.
 
 - Arbitrary fixed integer widths: [implementation plan](../../../todo/arbitrary-integer-widths-plan.md)
   and [accepted numeric contract](../cloth-numerics/references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03).
-  Signed/unsigned `int<N>` is intended to admit 1..65536 with the same cap on
+  Signed/unsigned `int<N>` admits 1..65536 with the same cap on
   x86_64 and AArch64; default integers remain 32 bits, and floats remain 16/32/64.
-  Compiler support is still 8/16/32/64. The plan separates fixed/target/native
+  [Stage 2](../cloth-numerics/references/arbitrary-width-types.md) integrates all
+  widths in semantic typing, contextual literals and diagnostics.
+  [Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md) enables
+  source scalar widths 1..64 and production wide operation/conversion kernels.
+  [Stage 4](../cloth-numerics/references/arbitrary-width-storage.md) integrates
+  source storage, calls, nullable values, arrays, loops and metadata through the
+  cap. [Stage 5](../cloth-numerics/references/arbitrary-width-output.md) adds exact
+  decimal text through the cap for every output route and retires C4031.
+  The [final integration record](../cloth-numerics/references/arbitrary-width-integers.md)
+  publishes [IntegerWidths.co](../../../examples/IntegerWidths.co), source
+  invariants, completed-stage coverage and full-cap resource measurements.
+  Windows x64/x86 and Linux x64 GNU programs execute against independent full-value
+  oracles; all nine profiles' objects/assembly pass. Native AArch64/macOS/musl
+  execution remains untested.
+  The [Stage 1 backend record](../cloth-numerics/references/arbitrary-width-backend.md)
+  captures isolated LLVM experiments, the selected small-scalar/wide-limb
+  representation and backend evidence. The plan separates fixed/target/native
   widths and stages backend feasibility, typing, arithmetic/casts, storage/calls,
-  full-width output and publication. No new backend support is claimed yet.
+  full-width output and publication. Probe success is not source feature support.
 - Numeric literal prefixes and suffixes: [implementation plan](../../../todo/numeric-literals-plan.md).
   Decimal-only `i` / `I` and `f` / `F` select numeric category without fixing
   width; `123.f`, `123f` and `123.0f` are valid float forms, while `123.i` is

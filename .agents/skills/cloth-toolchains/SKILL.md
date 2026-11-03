@@ -61,6 +61,32 @@ compile-only. See the [verification record](../cloth-language/references/develop
 
 ## Source and verification
 
+Arbitrary integer widths have a [Stage 1 backend record](../cloth-numerics/references/arbitrary-width-backend.md)
+and opt-in `:Compiler:probeIntegerWidths` task. Raw LLVM cases run in timed child
+JVMs; a successful supervisor task can contain recorded crashes, link failures
+and timeouts. Read the TSV statuses before making support claims. Preserve the
+selected <=64-bit scalar / wider limb policy across targets, and distinguish
+foreign objects from native oracle execution. Stage 2 now
+[integrates new widths semantically](../cloth-numerics/references/arbitrary-width-types.md);
+[Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md) enables
+source scalars 1..64 and implements production loop kernels through 65536 bits
+(131072 internally), processing i32 chunks with i64 intermediates. They do not
+rely on huge LLVM scalars or new compiler-rt wide-integer functions. Native
+Windows x64/x86 oracle execution and all nine profiles' kernel objects pass;
+foreign native execution remains untested.
+[Stage 4](../cloth-numerics/references/arbitrary-width-storage.md) integrates
+source wide storage/private calls, nullable/array carriers, providers and signed
+main. [Stage 5](../cloth-numerics/references/arbitrary-width-output.md) adds full
+decimal formatting with one private bounded i32/i64 helper, retaining native
+small-integer/float fast paths; C4031 is retired. Full-cap recursive formatting
+objects verify across all profiles and execute on Windows x64/x86. Counts and
+native C widths remain unchanged.
+The [final integer record](../cloth-numerics/references/arbitrary-width-integers.md)
+adds 18 integrated cap measurements with all-profile object/assembly success and
+supplementary GNU Linux x64 execution under Ubuntu WSL. Native AArch64/macOS/musl
+remain untested. Use `:Compiler:probeIntegerProduction` for this source-to-object
+matrix; raw Stage 1 probes deliberately remain separate historical experiments.
+
 Inspect [TargetLayout](../../../Compiler/src/main/kotlin/cloth/target/TargetLayout.kt),
 [NativeCABI](../../../Compiler/src/main/kotlin/cloth/emitter/NativeCABI.kt),
 [CompilerSettings](../../../Compiler/src/main/kotlin/cloth/settings/CompilerSettings.kt),

@@ -1,0 +1,7 @@
+"target"	"bits"	"group"	"status"	"phase"	"object_bytes"	"codegen_ms"	"store_bytes"	"alloc_bytes"	"alignment"	"nullable_bytes"	"jvm_peak_heap_bytes"	"helpers"	"detail"
+"i686-pc-windows-msvc"	"65536"	"limbs"	"NATIVE_PASS"	"run"	"66708"	"123"	"8192"	"8192"	"4"	"8196"	"113894256"	""	""
+"i686-pc-windows-msvc"	"131072"	"limbs"	"NATIVE_PASS"	"run"	"132244"	"55"	"16384"	"16384"	"4"	"16388"	"229447808"	""	""
+"x86_64-pc-windows-msvc"	"65536"	"limbs"	"NATIVE_PASS"	"run"	"67004"	"19"	"8192"	"8192"	"8"	"8200"	"60500832"	""	""
+"aarch64-unknown-linux-gnu"	"65536"	"limbs"	"OBJECT_PASS"	"assembly"	"68216"	"40"	"8192"	"8192"	"8"	"8200"	"59406152"	""	""
+"x86_64-pc-windows-msvc"	"131072"	"limbs"	"NATIVE_PASS"	"run"	"132540"	"9"	"16384"	"16384"	"8"	"16392"	"221926504"	""	""
+"aarch64-unknown-linux-gnu"	"131072"	"limbs"	"OBJECT_PASS"	"assembly"	"133752"	"10"	"16384"	"16384"	"8"	"16392"	"212509584"	""	""

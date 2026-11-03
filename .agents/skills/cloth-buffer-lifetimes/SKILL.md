@@ -5,6 +5,28 @@ description: Preserve Cloth compiler buffer lifetimes, recursive value copies, a
 
 # Cloth buffer lifetimes
 
+[Arbitrary integer Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md)
+introduces production wide-operation buffers as stable independent values.
+Kernels reclaim bounded scratch on return; caller buffers currently use stack
+storage. [Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+integrates inline binding/element bytes, independent read/argument snapshots,
+caller-owned result copies and proven loop cleanup. `ValueType.indirect` classifies
+wide transport separately from string/array `buffered` storage. Safe inline wide
+stores cannot publish temporary pointers; unknown captures/indexed publication
+retain conservative frame lifetime. Poisoned-memory and full-cap loop probes
+cover these source paths; arbitrary unproven loops need not have bounded storage.
+
+[Stage 5 integer text](../cloth-numerics/references/arbitrary-width-output.md)
+uses stack-only conversion scratch and ordinary outgoing string copies. Array
+measure/fill checkpoints must precede wide element decoding, then restore only
+after append/traversal. Source and output buffers predate those checkpoints.
+The existing closed source-loop proof is unchanged; unknown provider/capture
+effects remain conservative. Poisoned-text and 512-element full-cap probes cover
+escaping text and per-element scratch reuse.
+The [final integer integration record](../cloth-numerics/references/arbitrary-width-integers.md)
+publishes measured production cap programs, helper dependencies and native
+execution scope without widening the closed source-loop cleanup proof.
+
 Use this skill for the compiler's internal string/array storage. Read the
 [array contract](../cloth-arrays/references/semantics.md) for confirmed copy and
 optimization decisions. Ordinary class construction/destruction remains governed

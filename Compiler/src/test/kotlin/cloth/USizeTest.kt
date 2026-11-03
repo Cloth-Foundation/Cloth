@@ -91,7 +91,7 @@ class USizeTest {
 			}
 			failure("fn<usize> bad() = 4294967296", DiagnosticCode.INTEGER_RANGE, small)
 			FunctionAnalyzer(wide).analyze(unit("fn<usize> good() = 4294967296"))
-			failure("fn<usize> bad() = 18446744073709551616", DiagnosticCode.INVALID_INTEGER)
+			failure("fn<usize> bad() = 18446744073709551616", DiagnosticCode.INTEGER_RANGE)
 		} finally {
 			LLVMContextDispose(context)
 		}
@@ -154,7 +154,7 @@ class USizeTest {
 	@Test
 	fun `native arithmetic casts and formatting follow existing unsigned rules`(@TempDir directory: Path) {
 		val type = CUSize(NativeCABI.native().layout.sizeBits)
-		val castChecks = ValueType.INTEGER_WIDTHS.flatMap { width ->
+		val castChecks = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { width ->
 			listOf(false, true).map { unsigned ->
 				val fixed = CInt(width, unsigned)
 				val name = "${if (unsigned) "unsigned" else "signed"}$width"

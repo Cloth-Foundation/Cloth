@@ -40,7 +40,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		for ((index, function) in semantics.declarations.functions.withIndex()) {
 			val type = semantics.typeOf(function)
 			// String and array results copy into an invocation arena supplied by the caller.
-			val buffered = type.results.values.any { it.buffered }
+			val buffered = type.results.values.any { it.indirect }
 			val flagStart = type.parameters.size + if (buffered) 1 else 0
 			val parameterCount = flagStart + omissionCount(function)
 			val signature = PointerPointer<LLVMTypeRef>(parameterCount.toLong()).use { parameters ->
@@ -64,12 +64,12 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val signature = semantics.typeOf(function)
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
-			val frame = EmitFunctionFrame(context, builder, entry, signature.results, results.abiType(signature.results), stringStorage, if (signature.results.values.any { it.buffered }) LLVMGetParam(value, signature.parameters.size) else null)
+			val frame = EmitFunctionFrame(context, builder, entry, signature.results, results.abiType(signature.results), stringStorage, if (signature.results.values.any { it.indirect }) LLVMGetParam(value, signature.parameters.size) else null)
 			val bindings = EmitBindings(context, builder, entry, abi.layout)
 			val casts = EmitCast(context, builder, semantics.types, abi)
 			val strings = EmitString(context, builder, abi)
 			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.results, frame)
-			var flagIndex = signature.parameters.size + if (signature.results.values.any { it.buffered }) 1 else 0
+			var flagIndex = signature.parameters.size + if (signature.results.values.any { it.indirect }) 1 else 0
 			function.parameters.forEachIndexed { index, parameter ->
 				val type = signature.parameters[index]
 				val fallback = parameter.declaration.defaultValue
@@ -126,7 +126,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val plan = semantics.selectedCall(call) as ResolvedCall.Source
 		val selected = plan.function
 		val type = plan.type
-		val buffered = type.results.values.any { it.buffered }
+		val buffered = type.results.values.any { it.indirect }
 		val flagStart = type.parameters.size + if (buffered) 1 else 0
 		val argumentCount = flagStart + omissionCount(selected)
 		val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { arguments ->

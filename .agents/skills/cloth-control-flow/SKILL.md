@@ -5,6 +5,14 @@ description: Design, explain, or extend Cloth conditionals, boolean short circui
 
 # Cloth control flow
 
+[Arbitrary integer Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md)
+extends source scalar counters to widths 1..64. Signed one-bit header ++/-- use
+mathematical one in the widened calculation; ordinary body updates still wrap.
+Wide checked-operation kernels support 2N intermediates through 131072 bits;
+[Stage 4](../cloth-numerics/references/arbitrary-width-storage.md) integrates
+wide source counters, stable bounds and inline updates through the cap, with
+stack checkpoints for repeated membership tests, safe bodies and steppers.
+
 Read [confirmed checks and conditional semantics](references/semantics.md).
 Keep confirmed language decisions distinct from the current implementation's
 final-else, branch compatibility and final-expression policies.

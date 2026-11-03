@@ -466,10 +466,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				// literal context. Carry the floating format through nested arithmetic
 				// even when the ordinary expected type carries an integer peer's identity.
 				val floatContext = if (numeric && contextualFloat) {
-					(operandContext(expression.left, true) as? CFloat)
-						?: (operandContext(expression.right, true) as? CFloat)
-						?: floatingLiteralType
-						?: (payloadContext as? CFloat)?.takeIf { expression.operator.lexeme in arithmeticOperators }
+					(operandContext(expression.left, true) as? CFloat) ?: (operandContext(expression.right, true) as? CFloat) ?: floatingLiteralType ?: (payloadContext as? CFloat)?.takeIf { expression.operator.lexeme in arithmeticOperators }
 				} else null
 				val left = typeOf(expression.left, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
