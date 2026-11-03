@@ -208,7 +208,7 @@ class ISizeIntegrationTest {
 			when (name) {
 				"ISize"    -> assertEquals("isize${System.lineSeparator()}${abi.layout.sizeBits}${System.lineSeparator()}-1${System.lineSeparator()}" + processCompletion(), actual)
 				"Builtins" -> assertTrue(actual.startsWith("Hello, Cloth!"), actual)
-				"Fib"      -> assertContains(actual, "Fibonacci Series (25 terms):")
+				"Fib"      -> assertEquals(listOf(0, 1, 1, 2, 3, 5, 8, 13, 21, 34).joinToString(System.lineSeparator(), postfix = System.lineSeparator()) + processCompletion(), actual)
 			}
 			assertTrue(actual.endsWith(processCompletion(status)), actual)
 		}

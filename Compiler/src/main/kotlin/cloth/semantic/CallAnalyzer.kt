@@ -44,6 +44,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			FunctionType(parameters, ResultShape.of(results))
 		}
 		val model = FunctionSemanticModel(declarations, signatures)
+		model.types.loopJumps.putAll(declarations.loopJumps)
 		for (function in declarations.functions) function.parameters.forEachIndexed { index, parameter -> model.bindings[parameter] = signatures.getValue(function).parameters[index] }
 		val presence = NullFlowAnalysis(model)
 		for (function in declarations.functions) presence.analyze(function.declaration)
@@ -58,7 +59,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			when (val body = function.declaration.body) {
 				is BlockBody      -> {
 					checker.check(body.statements)
-					if (validateReturns && signatures.getValue(function).results != ResultShape.Empty && model.controlFlow.of(body).canContinue) {
+					if (validateReturns && signatures.getValue(function).results != ResultShape.Empty && model.controlFlow.of(body).canFallThrough) {
 						throw SemanticErrors.missingReturn(function.declaration, body)
 					}
 				}
@@ -83,8 +84,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 		override val supportsNullable = true
 
-		override fun completion(expression: Expression) = if (validateReturns) facts.controlFlow.of(expression) else ControlFlow.CONTINUE
-		override fun completion(statements: List<Statement>) = if (validateReturns) facts.controlFlow.of(statements) else ControlFlow.CONTINUE
+		override fun completion(expression: Expression) = if (validateReturns) facts.controlFlow.of(expression) else ControlFlow.FALLTHROUGH
+		override fun completion(statements: List<Statement>) = if (validateReturns) facts.controlFlow.of(statements) else ControlFlow.FALLTHROUGH
 		private fun compatible(actual: ValueType, expected: ValueType) = expected.accepts(actual)
 		private fun checkReturnedResults(actual: ResultShape, expression: Expression) {
 			if (actual == ResultShape.Never) return
@@ -130,6 +131,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		fun check(statements: List<Statement>) = statements.forEach { statement(it) }
 		override fun statement(statement: Statement) {
 			when (statement) {
+				is WhileStatement             -> if (probe) BodyTyping(facts, function, returnResults, validateReturns).statement(statement) else checkWhile(statement)
+				is LoopJumpStatement          -> model.recordResult(statement, ResultShape.Never)
 				is ForStatement               -> {
 					// Loop contracts cannot be repaired by a surrounding argument candidate.
 					if (probe) {
@@ -155,7 +158,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 						val body = block.declaration.body as BlockBody
 						val checker = BodyTyping(facts, block.declaration, ResultShape.of(contract), validateReturns)
 						checker.check(body.statements)
-						if (validateReturns && contract != ValueType.VOID && facts.controlFlow.of(body).canContinue) {
+						if (validateReturns && contract != ValueType.VOID && facts.controlFlow.of(body).canFallThrough) {
 							throw SemanticErrors.missingReturn(block.declaration, body)
 						}
 						facts.bindings[symbol] = contract

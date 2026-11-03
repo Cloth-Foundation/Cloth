@@ -84,7 +84,7 @@ captures implementation scope and regression evidence.
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
-| Conditionals, is checks, short circuits, branch merges, ranges/foreach and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Conditionals, is checks, short circuits, branch merges, range/foreach/while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
@@ -118,6 +118,12 @@ captures implementation scope and regression evidence.
   implementation or settle lifetime/native-interface contracts.
 
 ## Maintain project knowledge
+
+Current for/while loops support `break`/`continue` through reusable loop targets,
+completion outcomes and crossed-region cleanup. Read the
+[loop-control extension](../cloth-control-flow/references/loop-control.md) before
+changing loop exits. [While loops](../cloth-control-flow/references/while-loops.md)
+implement repeated bool testing and conservative flow/cleanup; do/while remains deferred.
 
 Use [feature integration](../cloth-feature-integration/SKILL.md) for every integrated
 feature or stage. Keep confirmed decisions in the owning feature's references,

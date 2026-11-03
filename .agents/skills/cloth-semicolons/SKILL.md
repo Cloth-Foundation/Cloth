@@ -37,6 +37,12 @@ fn<int> main() { stop(); def x = value(); return x; }
   insufficient to decide whether a semicolon is legal.
 - `return;` is a bare return. Non-void return checking still rejects it when a
   value is required. Value and result-list returns may end with `;`.
+- Bare `break` and `continue` accept the same optional statement terminators,
+  including as unbraced loop bodies. They take no argument or label; see
+  [loop control](../cloth-control-flow/references/loop-control.md).
+- `while (condition)` requires a braced or single-statement body, using the same
+  terminator rules as for bodies. A bare `;` is not a while body; see
+  [while loops](../cloth-control-flow/references/while-loops.md).
 - This is boundary syntax, not arbitrary expression whitespace. `1 + ;`,
   `call(1; 2)`, `[1; 2]`, `(1;)`, and `fn work(); {}` remain errors. Semicolons do
   not replace list commas, operands, header syntax or required delimiters.

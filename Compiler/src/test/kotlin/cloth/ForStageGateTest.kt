@@ -28,7 +28,7 @@ class ForStageGateTest {
 		assertContains(LLVMEmitter().emit(parsed), "foreach_test")
 		val fragment = snippet("for (def value <- [1, 2]) value")
 		SemanticAnalyzer().analyze(fragment)
-		assertTrue(ControlFlowModel().of(fragment.statements.single()).canContinue)
+		assertTrue(ControlFlowModel().of(fragment.statements.single()).canFallThrough)
 		assertContains(LLVMEmitter().emitSnippet(fragment), "foreach_test")
 	}
 

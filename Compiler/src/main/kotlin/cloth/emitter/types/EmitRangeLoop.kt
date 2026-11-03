@@ -88,13 +88,18 @@ internal class EmitRangeLoop(
 
 			val test = block("range_test")
 			val body = block("range_body")
+			val update = block("range_update")
 			val exit = block("range_end")
 			LLVMBuildBr(builder, test)
 			LLVMPositionBuilderAtEnd(builder, test)
 			LLVMBuildCondBr(builder, member(bindings.read(key)), body, exit)
 			LLVMPositionBuilderAtEnd(builder, body)
-			expressions.emitIteration(statement) { bindings.withScope { expressions.emitStatements(statement.body.statements) } }
-			if (!expressions.terminated()) {
+			val reachesUpdate = expressions.emitLoopBody(statement.loopTarget, exit, update) {
+				expressions.emitIteration(statement) { bindings.withScope { expressions.emitStatements(statement.body.statements) } }
+			}
+			if (!expressions.terminated()) LLVMBuildBr(builder, update)
+			LLVMPositionBuilderAtEnd(builder, update)
+			if (reachesUpdate) {
 				expressions.emitStepper(statement) {
 					// Compound updates read the current counter before evaluating their RHS.
 					val before = bindings.read(key)
@@ -115,7 +120,7 @@ internal class EmitRangeLoop(
 					}
 				}
 				if (!expressions.terminated()) LLVMBuildBr(builder, test)
-			}
+			} else LLVMBuildUnreachable(builder)
 			LLVMPositionBuilderAtEnd(builder, exit)
 		}
 	}

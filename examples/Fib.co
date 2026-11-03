@@ -1,11 +1,11 @@
-fn<int> fibonacci(int n) {
+fn<usize> iter(usize n) {
     if (n <= 1) { return n }
 
-    def previous = 0
-    def current = 1
+    def<usize> previous = 0
+    def<usize> current = 1
 
-    for (def i <- 2..=n) {
-        def next := previous + current
+    for (def<usize> i <- 2..=n) {
+        def<usize> next := previous + current
         previous = current
         current = next
     }
@@ -13,8 +13,17 @@ fn<int> fibonacci(int n) {
     return current
 }
 
+fn<usize> recur(usize n) {
+    if (n <= 1) { return n }
+    return recur(n - 1) + recur(n - 2)
+}
+
 fn main() {
-    for (def n <- 0..10) {
-        println(fibonacci(n))
+    for (def<usize> n <- 0..10) {
+        println(iter(n))
     }
+
+    /*def<usize> n = 50
+    println(#"Printing recursive fibonacci for: {n}")
+    println(recur(n))*/
 }

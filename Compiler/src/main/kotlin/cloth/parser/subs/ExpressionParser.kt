@@ -96,7 +96,7 @@ class ExpressionParser(val parser: Parser) {
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
 			}
 
-			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.parseIf()
+			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.ifParser.parseIf()
 			TokenType.Keyword if token.lexeme == Keywords.NULL.toString()                                   -> {
 				parser.advance()
 				NullLiteral(token.span)

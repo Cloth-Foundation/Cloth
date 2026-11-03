@@ -36,6 +36,7 @@ internal class EmitForEach(
 		val entry = LLVMGetInsertBlock(builder)
 		val test = LLVMAppendBasicBlockInContext(context, function, "foreach_test")
 		val body = LLVMAppendBasicBlockInContext(context, function, "foreach_body")
+		val update = LLVMAppendBasicBlockInContext(context, function, "foreach_update")
 		val exit = LLVMAppendBasicBlockInContext(context, function, "foreach_end")
 		LLVMBuildBr(builder, test)
 		LLVMPositionBuilderAtEnd(builder, test)
@@ -51,20 +52,24 @@ internal class EmitForEach(
 		incoming(arrays.count(0), entry)
 		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, length, "foreach_has_element"), body, exit)
 		LLVMPositionBuilderAtEnd(builder, body)
-		expressions.emitIteration(statement) {
-			bindings.withScope {
-				val element = arrays.index(snapshot, arrayType.element, index, size)
-				val received = expressions.snapshotValue(expressions.adaptValue(element, arrayType.element, plan.bindingType), plan.bindingType)
-				bindings.declare(key, statement.binding.name.lexeme, plan.bindingType, received)
-				bindings.withScope { expressions.emitStatements(statement.body.statements) }
+		val reachesUpdate = expressions.emitLoopBody(statement.loopTarget, exit, update) {
+			expressions.emitIteration(statement) {
+				bindings.withScope {
+					val element = arrays.index(snapshot, arrayType.element, index, size)
+					val received = expressions.snapshotValue(expressions.adaptValue(element, arrayType.element, plan.bindingType), plan.bindingType)
+					bindings.declare(key, statement.binding.name.lexeme, plan.bindingType, received)
+					bindings.withScope { expressions.emitStatements(statement.body.statements) }
+				}
 			}
 		}
-		if (!expressions.terminated()) {
+		if (!expressions.terminated()) LLVMBuildBr(builder, update)
+		LLVMPositionBuilderAtEnd(builder, update)
+		if (reachesUpdate) {
 			// index < length: the last increment can reach usize::max, never overflow it.
 			val next = LLVMBuildAdd(builder, index, arrays.count(1), "foreach_next")
 			incoming(next, LLVMGetInsertBlock(builder))
 			LLVMBuildBr(builder, test)
-		}
+		} else LLVMBuildUnreachable(builder)
 		LLVMPositionBuilderAtEnd(builder, exit)
 	}
 }

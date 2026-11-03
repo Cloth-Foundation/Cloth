@@ -19,6 +19,7 @@ internal class MetadataAnalysis(
 	private class Slot(var represented: ValueType?, val mutable: Boolean, val block: FunctionBlockExpression? = null)
 
 	private val scopes = mutableListOf(mutableMapOf<String, Slot>())
+	private val jumpFacts = java.util.IdentityHashMap<LoopJumpStatement, Map<Slot, ValueType?>>()
 
 	init {
 		parameters.forEach { (name, mutable) -> scopes.first()[name] = Slot(null, mutable) }
@@ -48,6 +49,18 @@ internal class MetadataAnalysis(
 	fun statements(body: List<Statement>): ValueType? {
 		var result: ValueType? = null
 		for (item in body) result = when (item) {
+			is WhileStatement             -> {
+				forgetMutable()
+				expression(item.condition)
+				scoped(item.body.statements)
+				forgetMutable()
+				null
+			}
+
+			is LoopJumpStatement          -> {
+				jumpFacts[item] = snapshot(); null
+			}
+
 			is ForStatement               -> {
 				when (val source = item.source) {
 					is ForSource.Range    -> {
@@ -62,6 +75,10 @@ internal class MetadataAnalysis(
 				scopes.add(mutableMapOf(item.binding.name.lexeme to Slot(null, true)))
 				try {
 					scoped(item.body.statements)
+					val completion = flow.of(item.body.statements)
+					val updates = completion.continues.map { jumpFacts.getValue(it) }.toMutableList()
+					if (completion.canFallThrough) updates.add(snapshot())
+					if (updates.isEmpty()) forgetMutable() else merge(updates)
 					model.loopOf(item).stepperExpression?.let { expression(it) }
 				} finally {
 					scopes.removeAt(scopes.lastIndex)
@@ -181,9 +198,9 @@ internal class MetadataAnalysis(
 				val right = expression(value.fallback)
 				if (value.left is NullLiteral) right else {
 					val continuing = mutableListOf(before)
-					if (flow.of(value.fallback).canContinue) continuing.add(snapshot())
+					if (flow.of(value.fallback).canFallThrough) continuing.add(snapshot())
 					merge(continuing)
-					left.takeIf { !flow.of(value.fallback).canContinue || left == right }
+					left.takeIf { !flow.of(value.fallback).canFallThrough || left == right }
 				}
 			}
 
@@ -196,7 +213,7 @@ internal class MetadataAnalysis(
 					val runsWhen = value.operator.lexeme == Operators.AND.toString()
 					val paths = mutableListOf<Map<Slot, ValueType?>>()
 					if (truth != runsWhen) paths.add(before)
-					if ((truth == null || truth == runsWhen) && flow.of(value.right).canContinue) paths.add(snapshot())
+					if ((truth == null || truth == runsWhen) && flow.of(value.right).canFallThrough) paths.add(snapshot())
 					merge(paths)
 				}
 				null
@@ -217,9 +234,9 @@ internal class MetadataAnalysis(
 					val nextCondition = snapshot()
 					val represented = scoped(branch.statements)
 					val truth = flow.booleanValue(branch.condition)
-					val tested = reachesCondition && flow.of(branch.condition).canContinue
+					val tested = reachesCondition && flow.of(branch.condition).canFallThrough
 					// All source is checked, but only continuing, executable paths contribute facts.
-					if (tested && truth != false && flow.of(branch.statements).canContinue) {
+					if (tested && truth != false && flow.of(branch.statements).canFallThrough) {
 						results.add(represented)
 						positionalResults.add(resultFacts(branch.statements, represented))
 						paths.add(snapshot())
@@ -229,7 +246,7 @@ internal class MetadataAnalysis(
 				}
 				val otherwise = value.otherwise
 				val represented = otherwise?.let { scoped(it) }
-				if (reachesCondition && (otherwise == null || flow.of(otherwise).canContinue)) {
+				if (reachesCondition && (otherwise == null || flow.of(otherwise).canFallThrough)) {
 					results.add(represented)
 					positionalResults.add(otherwise?.let { resultFacts(it, represented) } ?: emptyList())
 					paths.add(snapshot())

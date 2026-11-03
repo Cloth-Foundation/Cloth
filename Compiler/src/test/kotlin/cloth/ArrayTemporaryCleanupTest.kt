@@ -468,6 +468,161 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
+	@Test
+	fun `continue reclaims arena and dynamic stack storage every iteration`(@TempDir directory: Path) {
+		probe(directory, "jump_continue", """
+			fn<int> sample() {
+			    def count = 0
+			    for (def i <- 0..20000) {
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (liveBytes() != 264) { return 1 }
+			        count += local[0]
+			        continue
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return count - 20000
+			}
+		""", allocations = 20000, peak = 264)
+	}
+
+	@Test
+	fun `foreach continue keeps snapshot alive and break releases both row and source`(@TempDir directory: Path) {
+		probe(directory, "jump_rows", """
+			fn<int[][]> matrix() = [[1, 2], [3, 4], [5, 6]]
+			fn<int> sample() {
+			    def baseline = 0 -> int<64>
+			    def sum = 0
+			    for (def row <- matrix()) {
+			        if (row[0] == 1) { baseline = liveBytes(); sum += row[0]; continue }
+			        if (liveBytes() != baseline || row[1] != 4) { return 1 }
+			        sum += row[0]
+			        break
+			    }
+			    if (liveBytes() != 0) { return 2 }
+			    return sum - 4
+			}
+		""")
+	}
+
+	@Test
+	fun `nested header jump releases crossed regions without releasing outer snapshots`(@TempDir directory: Path) {
+		probe(directory, "jump_regions", """
+			fn<int[][]> matrix() = [[1, 2], [3, 4], [5, 6]]
+			fn<int> sample() {
+			    def baseline = 0 -> int<64>
+			    def visits = 0
+			    for (def row <- matrix()) {
+			        if (visits == 0) { baseline = liveBytes() }
+			        if (liveBytes() != baseline) { return 1 }
+			        visits++
+			        for (def i <- 0..2; i += if (true) { continue } else { 1 }) {
+			            def local = [7, 8]
+			            if (local[0] != 7) { return 2 }
+			        }
+			    }
+			    if (liveBytes() != 0) { return 3 }
+			    return visits - 3
+			}
+		""")
+	}
+
+	@Test
+	fun `buffered publication through jump paths retains frame lifetime`(@TempDir directory: Path) {
+		probe(directory, "jump_publish", """
+			fn<string[][]> matrix() = [["first"], ["second"], ["third"]]
+			fn<int> sample() {
+			    def saved = [""]
+			    def text = ""
+			    for (def row <- matrix()) {
+			        saved = row
+			        text = row[0]
+			        if (text == "first") { continue }
+			        break
+			    }
+			    def baseline = liveBytes()
+			    matrix()
+			    if (saved[0] != "second" || text != "second" || liveBytes() != baseline) { return 1 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `continue releases a proven expression region inside a publishing body`(@TempDir directory: Path) {
+		probe(directory, "jump_expression", """
+			$make
+			$read
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    def baseline = liveBytes()
+			    for (def i <- 0..100) {
+			        saved = make(i)
+			        baseline = liveBytes()
+			        if (read(make(1)) == 1) { continue }
+			    }
+			    if (liveBytes() != baseline || saved[0] != 99) { return 1 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `while conditions and continued bodies reclaim arena and literal stack storage`(@TempDir directory: Path) {
+		probe(directory, "while_regions", """
+			fn<bool> again(int[] values, int limit) = values[0] < limit
+			fn<int> sample() {
+			    def i = 0
+			    while (again([i, ${(1..63).joinToString(", ")}], 20000)) {
+			        if (liveBytes() != 0) { return 1 }
+			        i++
+			        if (i % 2 == 0) { continue }
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (local[0] != 1 || liveBytes() != 264) { return 2 }
+			    }
+			    if (liveBytes() != 0) { return 3 }
+			    return i - 20000
+			}
+		""", allocations = 30001, peak = 264)
+	}
+
+	@Test
+	fun `while condition publication survives body cleanup and the final false test`(@TempDir directory: Path) {
+		probe(directory, "while_condition_publish", """
+			$make
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    def checks = 0
+			    def<bool> again = { saved = make(checks); checks++; return checks < 3 }
+			    while (again) { if (saved[0] != checks - 1) { return 1 } }
+			    def baseline = liveBytes()
+			    make(9)
+			    if (checks != 3 || saved[0] != 2 || liveBytes() != baseline) { return 2 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `while break preserves published values and buffered returns copy before cleanup`(@TempDir directory: Path) {
+		probe(directory, "while_outgoing", """
+			fn<string[]> result() { while (true) { return [#"value {2}", "é中😀"] } }
+			fn<int> sample() {
+			    def saved = ["", ""]
+			    def text = ""
+			    while (true) {
+			        def local = result()
+			        saved = local
+			        text = local[1]
+			        break
+			    }
+			    def baseline = liveBytes()
+			    result()
+			    if (saved[0] != "value 2" || text != "é中😀" || liveBytes() != baseline) { return 1 }
+			    return 0
+			}
+		""")
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

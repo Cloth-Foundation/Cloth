@@ -122,6 +122,12 @@ Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#condi
 
 ## For loops and ranges
 
+Read [while loops](../../cloth-control-flow/references/while-loops.md) for repeated
+strict-bool conditions, body scope, jumps and completion.
+
+Read [loop jumps and shared control](../../cloth-control-flow/references/loop-control.md)
+for break/continue, lexical body targets and reusable completion/cleanup rules.
+
 Read [confirmed loop design](../../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred):
 integer/float range and array foreach loops use `<-`; ranges default to a step of one, and an
 explicit stepper requires a separating semicolon. Stage 1 parses loop syntax and

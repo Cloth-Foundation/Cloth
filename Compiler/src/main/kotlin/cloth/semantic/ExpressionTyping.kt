@@ -24,8 +24,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open val supportsNullable: Boolean = false
 	protected open fun callType(expression: CallExpression): ValueType = throw SemanticErrors.unknownName(expression.name)
 	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
-	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.CONTINUE
-	protected open fun completion(statements: List<Statement>): ControlFlow = ControlFlow.CONTINUE
+	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.FALLTHROUGH
+	protected open fun completion(statements: List<Statement>): ControlFlow = ControlFlow.FALLTHROUGH
 	protected fun reject(diagnostic: () -> SemanticException): Nothing {
 		if (probe) throw CandidateMismatch()
 		throw diagnostic()
@@ -96,7 +96,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			val bodies = expression.branches.map { it.statements } + listOfNotNull(expression.otherwise)
 			for (body in bodies) withScope {
 				for ((index, item) in body.withIndex()) {
-					if (index == body.lastIndex && item is ExpressionStatement && completion(body).canContinue) {
+					if (index == body.lastIndex && item is ExpressionStatement && completion(body).canFallThrough) {
 						val next = arrayElementHint(item.expression, contextualFloat)
 						if (next != null && next != ValueType.NEVER) {
 							hint = hint?.commonArrayShape(next) ?: if (hint == null) next
@@ -167,7 +167,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		model.loops[statement] = ForLoopPlan(model.target, bindingType, array, stepperExpression)
 		withScope {
 			introduce(bindingType)
-			withScope { statement.body.statements.forEach { statement(it) } }
+			loopBody(statement, statement.body.statements)
 			stepperExpression?.let { expression ->
 				val actual = typeOf(expression, bindingType)
 				if (!bindingType.accepts(actual)) throw SemanticErrors.typeMismatch(bindingType, actual, statement.binding.name, expression, statement.binding.name)
@@ -176,6 +176,15 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 			}
 		}
+		model.recordResult(statement, ResultShape.Empty)
+	}
+
+	protected open fun loopBody(loop: LoopStatement, body: List<Statement>) = withScope { body.forEach { statement(it) } }
+
+	protected fun checkWhile(statement: WhileStatement) {
+		val condition = typeOf(statement.condition)
+		if (condition != ValueType.BOOL && condition != ValueType.NEVER) throw SemanticErrors.condition(statement.condition, Keywords.WHILE)
+		loopBody(statement, statement.body.statements)
 		model.recordResult(statement, ResultShape.Empty)
 	}
 
@@ -205,14 +214,14 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 			else                                                                                  -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), requireValue, contextualFloat, allowVoidResult))
 		}
-		val completed = if (completion(expression).canContinue) result else ResultShape.Never
+		val completed = if (completion(expression).canFallThrough) result else ResultShape.Never
 		if (requireValue && !allowVoidResult && completed == ResultShape.Empty) reject { SemanticErrors.voidValue(expression.span) }
 		model.recordResult(expression, completed)
 		return completed
 	}
 
 	private fun conditionalResults(expression: IfExpression, expected: ResultShape?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean, receptionContext: ReceptionContext?): ResultShape {
-		if (requireValue && completion(expression).canContinue && expression.otherwise == null) reject { SemanticErrors.missingElse(expression.span) }
+		if (requireValue && completion(expression).canFallThrough && expression.otherwise == null) reject { SemanticErrors.missingElse(expression.span) }
 		for (branch in expression.branches) {
 			val condition = typeOf(branch.condition)
 			if (condition != ValueType.BOOL && condition != ValueType.NEVER) reject { SemanticErrors.condition(branch.condition) }
@@ -221,7 +230,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		var firstSpan: TokenSpan? = null
 		val bodies = expression.branches.map { it.statements to it.span } + listOfNotNull(expression.otherwise?.let { it to checkNotNull(expression.otherwiseSpan) })
 		for ((statements, bodySpan) in bodies) {
-			val needsValue = requireValue && completion(statements).canContinue
+			val needsValue = requireValue && completion(statements).canFallThrough
 			if (needsValue && statements.lastOrNull() !is ExpressionStatement) reject { SemanticErrors.branchValue(bodySpan) }
 			withScope {
 				for ((index, item) in statements.withIndex()) {
@@ -365,7 +374,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 						else reject { SemanticErrors.array("Rectangular arrays require matching element types and dimensions", item.span) }
 					}
 				}
-				if (element == null && !completion(expression).canContinue) ValueType.NEVER
+				if (element == null && !completion(expression).canFallThrough) ValueType.NEVER
 				else CArray(element ?: elementContext ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
 			}
 
@@ -476,7 +485,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
-		val completedType = if (completion(expression).canContinue) type else ValueType.NEVER
+		val completedType = if (completion(expression).canFallThrough) type else ValueType.NEVER
 		if (requireValue && !allowVoidResult && completedType == ValueType.VOID) reject { SemanticErrors.voidValue(expression.span) }
 		model.expressions[expression] = completedType
 		return completedType
@@ -524,7 +533,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val payload = wrapper.payload
 		if (!wrapper.accepts(left) || !wrapper.accepts(right) || payload is CArray) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
-		return if (completion(expression).canContinue) ValueType.BOOL else ValueType.NEVER
+		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
 
 	companion object {

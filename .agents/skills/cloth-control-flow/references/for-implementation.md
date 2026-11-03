@@ -1,5 +1,9 @@
 # For-loop implementation stages
 
+The subsequent [loop-control extension](loop-control.md) integrates break/continue
+and shared completion/cleanup infrastructure. Counts and deferred boundaries in
+the original stages below describe those historical milestones.
+
 ## Stage 5: regression, portability and feature publication (2026-11-02)
 
 Stages 0-5 are complete for the agreed numeric range/array foreach slice. The

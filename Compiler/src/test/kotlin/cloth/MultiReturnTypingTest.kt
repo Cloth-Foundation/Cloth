@@ -125,7 +125,7 @@ class MultiReturnTypingTest {
 	fun `terminating branches contribute no values while their explicit returns are validated`() {
 		val model = analyze("fn<int, bool> values(bool flag) = if (flag) { return 1, true } else { 2, false }")
 		val conditional = assertIs<IfExpression>(expression(model))
-		assertFalse(model.controlFlow.of(conditional.branches.single().statements).canContinue)
+		assertFalse(model.controlFlow.of(conditional.branches.single().statements).canFallThrough)
 		assertEquals(listOf(CInt(), CBool), model.resultOf(conditional).values)
 		val allReturn = analyze("fn<int, bool> values(bool flag) = if (flag) { return 1, true } else { return 2, false }")
 		assertEquals(ResultShape.Never, allReturn.resultOf(expression(allReturn)))
@@ -175,7 +175,7 @@ class MultiReturnTypingTest {
 		val statements = assertIs<BlockBody>(function(model).declaration.body).statements
 		assertEquals(listOf(CInt(), CBool), model.resultOf(statements[0]).values)
 		assertEquals(ResultShape.Empty, model.resultOf(expression(model, "other")))
-		assertFalse(model.controlFlow.of(function(model).declaration).canContinue)
+		assertFalse(model.controlFlow.of(function(model).declaration).canFallThrough)
 	}
 
 	@Test

@@ -20,8 +20,12 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 	fun analyze(ast: ASTStructure): SemanticModel {
 		val scopes = mutableListOf(mutableMapOf<String, Binding>())
 		val model = SemanticModel(target)
+		val loops = mutableListOf<LoopTarget>()
+		val flow = ControlFlowModel()
 		fun lookup(name: Token): Binding = scopes.asReversed().firstNotNullOfOrNull { it[name.lexeme] } ?: throw SemanticErrors.unknown(name)
 		val typing = object : ExpressionTyping(model) {
+			override fun completion(expression: Expression) = flow.of(expression)
+			override fun completion(statements: List<Statement>) = flow.of(statements)
 			override fun nameType(expression: NameExpression) = lookup(expression.name).type
 			override fun withScope(action: () -> Unit) {
 				scopes.add(mutableMapOf())
@@ -34,6 +38,12 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 
 			override fun statement(statement: Statement) {
 				when (statement) {
+					is WhileStatement             -> checkWhile(statement)
+					is LoopJumpStatement          -> {
+						model.loopJumps[statement] = loops.lastOrNull() ?: throw SemanticErrors.loopJump(statement.keyword)
+						model.recordResult(statement, ResultShape.Never)
+					}
+
 					is ForStatement               -> checkFor(statement, forStepperExpression(statement.stepper)) { type ->
 						scopes.last()[statement.binding.name.lexeme] = Binding(type, true, statement.binding.name)
 					}
@@ -88,6 +98,15 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 
 					is ExpressionStatement        -> model.statements[statement] = typeOf(statement.expression, requireValue = statement.expression !is IfExpression)
 					else                          -> throw InternalErrors.invariant("Unsupported statement: $statement")
+				}
+			}
+
+			override fun loopBody(loop: LoopStatement, body: List<Statement>) {
+				loops.add(loop.loopTarget)
+				try {
+					super.loopBody(loop, body)
+				} finally {
+					loops.removeAt(loops.lastIndex)
 				}
 			}
 

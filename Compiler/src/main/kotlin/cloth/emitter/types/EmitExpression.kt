@@ -35,6 +35,34 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private val blockReturns = mutableListOf<BlockExit>()
+	private val cleanupRegions = mutableListOf<() -> Unit>()
+
+	private class LoopExit(val target: LoopTarget, val exit: LLVMBasicBlockRef, val next: LLVMBasicBlockRef, val cleanupDepth: Int) {
+
+		var continued = false
+	}
+
+	private val loopExits = mutableListOf<LoopExit>()
+
+	/** Destinations vary by loop form; jump resolution and crossed cleanup do not. */
+	fun emitLoopBody(target: LoopTarget, exit: LLVMBasicBlockRef, next: LLVMBasicBlockRef, action: () -> Unit): Boolean {
+		val loop = LoopExit(target, exit, next, cleanupRegions.size)
+		loopExits.add(loop)
+		try {
+			action()
+			return !terminated() || loop.continued
+		} finally {
+			loopExits.removeAt(loopExits.lastIndex)
+		}
+	}
+
+	fun emitLoopJump(statement: LoopJumpStatement) {
+		val target = semantics.targetOf(statement)
+		val loop = loopExits.last { it.target === target }
+		for (index in cleanupRegions.lastIndex downTo loop.cleanupDepth) cleanupRegions[index]()
+		if (statement.isContinue) loop.continued = true
+		LLVMBuildBr(builder, if (statement.isContinue) loop.next else loop.exit)
+	}
 
 	// One-use ownership of recursively independent buffers in this physical frame.
 	// Storing a value consumes its freshness; reading the binding never restores it.
@@ -264,6 +292,20 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitIteration(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimIteration(statement.body.statements), action)
+	fun emitIteration(body: List<Statement>, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimIteration(body), action)
+
+	fun emitLoopCondition(condition: Expression): LLVMValueRef? {
+		var value: LLVMValueRef? = null
+		temporaryRegion(temporaryAnalysis.canReclaimCondition(condition)) { value = emit(condition) }
+		return value
+	}
+
+	fun emitWhile(statement: WhileStatement) {
+		temporaryRegion(temporaryAnalysis.canReclaimLoop(statement)) {
+			EmitWhileLoop(context, builder, bindings, this, functionSemantics?.controlFlow ?: ControlFlowModel()).emit(statement)
+		}
+	}
+
 	fun emitStepper(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimStepper(statement), action)
 
 	/** Closed non-escape proof, independent of an enclosing expression's checkpoint.
@@ -278,13 +320,15 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val stackCheckpoint = stack.save()
 		val previousFresh = freshArrays.toSet()
 		val previousCarriers = freshCarriers.toSet()
+		val release = { frame.releaseTemporaries(checkpoint); stack.restore(stackCheckpoint) }
+		cleanupRegions.add(release)
 		try {
 			action()
 			if (!terminated()) {
-				frame.releaseTemporaries(checkpoint)
-				stack.restore(stackCheckpoint)
+				release()
 			}
 		} finally {
+			cleanupRegions.removeAt(cleanupRegions.lastIndex)
 			freshArrays.retainAll(previousFresh)
 			freshCarriers.retainAll(previousCarriers)
 		}
@@ -323,15 +367,18 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val previousFresh = freshArrays.toSet()
 		val previousCarriers = freshCarriers.toSet()
 		temporaryDepth++
+		val release = { frame.releaseTemporaries(checkpoint) }
+		cleanupRegions.add(release)
 		return try {
 			// Receiving constraints consume descriptors before their buffers are released.
 			val result = produce()
-			// Early exits still use the ordinary frame cleanup, after copying returns.
-			if (!terminated()) frame.releaseTemporaries(checkpoint)
+			// Loop jumps release crossed regions; returns use ordinary frame cleanup.
+			if (!terminated()) release()
 			freshArrays.retainAll(previousFresh)
 			freshCarriers.retainAll(previousCarriers)
 			result
 		} finally {
+			cleanupRegions.removeAt(cleanupRegions.lastIndex)
 			temporaryDepth--
 		}
 	}

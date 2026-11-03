@@ -22,6 +22,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private val presentResults = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
 	private val effects = IdentityHashMap<FunctionBlockExpression, Set<BindingSymbol>>()
+	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<BindingSymbol>>()
 	private val flow get() = model.controlFlow
 	private fun block(symbol: BindingSymbol?) = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 	private fun binding(value: Expression) = (value as? NameExpression)?.let { model.declarations.symbolOf(it) as? BindingSymbol }
@@ -41,6 +42,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun statements(body: List<Statement>, initial: Set<BindingSymbol>): Set<BindingSymbol> {
 		var facts = initial
 		for (item in body) facts = when (item) {
+			is WhileStatement             -> whileLoop(item, facts)
+			is LoopJumpStatement          -> facts.also { jumpFacts[item] = it }
 			is ForStatement               -> loop(item, facts)
 			is BindingDeclaration         -> {
 				val deferred = item.initializer as? FunctionBlockExpression
@@ -97,9 +100,26 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		// Invalidate before publishing occurrence facts: a fact true on entry may
 		// already be false on the second trip around this same source occurrence.
 		val afterBody = statements(item.body.statements, entry - changed)
-		item.stepper?.value?.let { expression(it, afterBody) }
+		val completion = flow.of(item.body.statements)
+		val updates = completion.continues.map { jumpFacts.getValue(it) }.toMutableList()
+		if (completion.canFallThrough) updates.add(afterBody)
+		item.stepper?.value?.let { expression(it, common(updates, entry - changed)) }
 		// Include the zero-trip path and conservatively forget repeated writes.
 		return entry - changed
+	}
+
+	private fun whileLoop(item: WhileStatement, initial: Set<BindingSymbol>): Set<BindingSymbol> {
+		// The same condition occurrence runs after body/continue writes too.
+		val changed = writes(listOf(ExpressionStatement(item.condition)) + item.body.statements)
+		val entry = initial - changed
+		val condition = expression(item.condition, entry)
+		statements(item.body.statements, condition.yes)
+		val exits = mutableListOf<Set<BindingSymbol>>()
+		if (flow.booleanValue(item.condition) != true && flow.of(item.condition).canFallThrough) exits.add(condition.no)
+		if (flow.booleanValue(item.condition) != false && flow.of(item.condition).canFallThrough) {
+			flow.of(item.body.statements).breaks.forEach { exits.add(jumpFacts.getValue(it)) }
+		}
+		return common(exits, entry)
 	}
 
 	private fun expression(value: Expression, initial: Set<BindingSymbol>, sourceType: Boolean = false): Outcome {
@@ -129,10 +149,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					val skip = if (and) left.no else left.yes
 					val known = flow.booleanValue(value.left)
 					val after = when {
-						known == !and                     -> left.after
-						known == and                      -> right.after
-						!flow.of(value.right).canContinue -> skip
-						else                              -> skip intersect right.after
+						known == !and                        -> left.after
+						known == and                         -> right.after
+						!flow.of(value.right).canFallThrough -> skip
+						else                                 -> skip intersect right.after
 					}
 					val yes = if (and) right.yes else when (known) {
 						true -> left.yes; false -> right.yes; null -> left.yes intersect right.yes
@@ -155,10 +175,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val absent = if (symbol == null) left.after else left.after - symbol
 				val right = expression(value.fallback, absent)
 				val after = when {
-					value.left is NullLiteral            -> right.after
-					knownPresent(value.left)             -> present
-					!flow.of(value.fallback).canContinue -> present
-					else                                 -> present intersect right.after
+					value.left is NullLiteral               -> right.after
+					knownPresent(value.left)                -> present
+					!flow.of(value.fallback).canFallThrough -> present
+					else                                    -> present intersect right.after
 				}
 				if (knownPresent(value.left) || knownPresent(value.fallback)) presentResults.add(value)
 				Outcome(after)
@@ -172,12 +192,12 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					val condition = expression(branch.condition, remaining)
 					val after = statements(branch.statements, condition.yes)
 					val known = flow.booleanValue(branch.condition)
-					if (reachable && flow.of(branch.condition).canContinue && known != false && flow.of(branch.statements).canContinue) continuing.add(after)
-					reachable = reachable && flow.of(branch.condition).canContinue && known != true
+					if (reachable && flow.of(branch.condition).canFallThrough && known != false && flow.of(branch.statements).canFallThrough) continuing.add(after)
+					reachable = reachable && flow.of(branch.condition).canFallThrough && known != true
 					remaining = condition.no
 				}
 				val afterElse = value.otherwise?.let { statements(it, remaining) } ?: remaining
-				if (reachable && (value.otherwise?.let { flow.of(it).canContinue } != false)) continuing.add(afterElse)
+				if (reachable && (value.otherwise?.let { flow.of(it).canFallThrough } != false)) continuing.add(afterElse)
 				Outcome(common(continuing, initial))
 			}
 
@@ -259,6 +279,11 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun writtenStatements(body: List<Statement>, visit: (Expression) -> Unit): Set<BindingSymbol> = buildSet {
 		for (item in body) when (item) {
+			is WhileStatement             -> {
+				visit(item.condition)
+				addAll(writtenStatements(item.body.statements, visit))
+			}
+
 			is ForStatement               -> {
 				when (val source = item.source) {
 					is ForSource.Range    -> {
