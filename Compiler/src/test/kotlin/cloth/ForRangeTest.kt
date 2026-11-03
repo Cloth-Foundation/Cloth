@@ -178,7 +178,7 @@ class ForRangeTest {
 
 	@Test
 	fun `integer extrema exit without wrapping for all widths and target identities`(@TempDir dir: Path) {
-		val types = ValueType.INTEGER_WIDTHS.flatMap { listOf(CInt(it).spelling, CInt(it, true).spelling) } + listOf("usize", "isize")
+		val types = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { listOf(CInt(it).spelling, CInt(it, true).spelling) } + listOf("usize", "isize")
 		val checks = types.joinToString("\n") { type ->
 			"""
 			for (def<$type> i <- $type::max..=$type::max) { visits++ }

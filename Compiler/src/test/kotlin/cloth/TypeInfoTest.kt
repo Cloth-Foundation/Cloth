@@ -87,7 +87,7 @@ class TypeInfoTest {
 	@Test
 	fun `all numeric formats expose exact width signedness and explicit width text`(@TempDir directory: Path) {
 		val types = buildList<ValueType> {
-			for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(width, unsigned))
+			for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(width, unsigned))
 			for (width in ValueType.FLOAT_WIDTHS) add(CFloat(width))
 		}
 		val checks = types.joinToString("\n") { type ->

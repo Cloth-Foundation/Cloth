@@ -5,6 +5,14 @@ description: Design, explain, or extend Cloth nullable types, null literals, pre
 
 # Cloth nullability
 
+[Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+integrates nullable payloads through 65536 bits. Stored values use byte presence
+and inline native-limb bytes; expression values carry presence and an independent
+snapshot pointer. Guard payload copies, compare present contents rather than
+addresses and retain target-padded nullable size.
+[Stage 5](../cloth-numerics/references/arbitrary-width-output.md) integrates
+wide nullable decimal text, retaining `null` and guarding absent payload access.
+
 Read [confirmed nullable semantics](references/semantics.md) before deciding
 language behavior. For source ownership, verification and scalar follow-up rules,
 read [the implementation record](references/implementation.md). Consult the

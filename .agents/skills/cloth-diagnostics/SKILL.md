@@ -35,6 +35,16 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C4031 is retired** after [Stage 5 integer text](../cloth-numerics/references/arbitrary-width-output.md).
+Its temporary integer/type/text preflight is removed; do not reassign this code.
+Source values and exact decimal output support widths 1..65536. C3011 rejects widths outside the
+interval, with a compact range message; floating widths retain their finite set.
+`ArbitraryIntegerWidthsTest` covers original labels, first-error CLI status and
+all emission entry points and successful wide text/CLI object emission. The
+[Stage 2 record](../cloth-numerics/references/arbitrary-width-types.md) retains the historical gate.
+Stage 3 scalar and wide operation guards retain controlled runtime exit and
+source filename/span for invalid division/remainder, powers and numeric casts.
+
 **C1013 / INVALID_NUMERIC_LITERAL** locates malformed literal prefixes, digits
 and suffixes, including `123.i` and forbidden suffixes on base-prefixed integers.
 Separators retain C1002; contextual integer/float range errors retain C3004/C3028.

@@ -30,7 +30,7 @@ class IntegerDivisionTest {
 
 	@Test
 	fun `constant zero divisors including zero over zero fail for every integer type`() {
-		for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) for (operator in listOf("/", "%")) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) for (operator in listOf("/", "%")) {
 			val type = CInt(width, unsigned).spelling
 			for (dividend in listOf("0", "1")) {
 				failure("fn<$type> test() = $dividend $operator -0", DiagnosticCode.INTEGER_ZERO_DIVISOR)
@@ -45,7 +45,7 @@ class IntegerDivisionTest {
 
 	@Test
 	fun `constant signed minimum with minus one fails for division and remainder`() {
-		for (width in ValueType.INTEGER_WIDTHS) for (operator in listOf("/", "%")) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (operator in listOf("/", "%")) {
 			val type = CInt(width)
 			for (minimum in listOf(type.minimum.toString(), "int<$width>::min")) {
 				failure("fn<${type.spelling}> test() = $minimum $operator -1", DiagnosticCode.INTEGER_DIVISION_OVERFLOW)
@@ -76,7 +76,7 @@ class IntegerDivisionTest {
 
 	@Test
 	fun `runtime zero divisors terminate before division or remainder for every integer type`(@TempDir directory: Path) {
-		for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) for (operator in listOf("/", "%")) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) for (operator in listOf("/", "%")) {
 			val type = CInt(width, unsigned).spelling
 			val operation = if (operator == "/") "division" else "remainder"
 			val output = run(directory.resolve("zero_${width}_${unsigned}_$operation"), """
@@ -90,7 +90,7 @@ class IntegerDivisionTest {
 
 	@Test
 	fun `runtime signed overflow terminates before division and remainder at every width`(@TempDir directory: Path) {
-		for (width in ValueType.INTEGER_WIDTHS) for (operator in listOf("/", "%")) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (operator in listOf("/", "%")) {
 			val type = CInt(width).spelling
 			val operation = if (operator == "/") "division" else "remainder"
 			val output = run(directory.resolve("overflow_${width}_$operation"), """
@@ -114,7 +114,7 @@ class IntegerDivisionTest {
 
 	@Test
 	fun `valid signed and unsigned boundaries retain quotient and remainder rules`(@TempDir directory: Path) {
-		for (width in ValueType.INTEGER_WIDTHS) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) {
 			val output = run(directory.resolve("valid_$width"), """
 				fn<bool> signed(int<$width> minimum, int<$width> maximum, int<$width> minusOne) {
 				    return minimum / 1 == minimum && minimum % 1 == 0 && minimum / 2 < 0 && minimum % 2 == 0 && maximum / minusOne == -maximum && 0 / minusOne == 0 && 0 % minusOne == 0 && -7 / 3 == -2 && -7 % 3 == -1

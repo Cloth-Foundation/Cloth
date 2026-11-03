@@ -5,6 +5,15 @@ description: Design, explain, or extend Cloth arrays, including element inferenc
 
 # Cloth arrays
 
+[Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+integrates inline native-limb elements through 65536 bits, including nullable
+elements/rows, recursive independent copies and foreach snapshots. Wide reads
+copy before later effects, and indices compare every original bit against the
+target-sized bound before narrowing.
+[Stage 5](../cloth-numerics/references/arbitrary-width-output.md) integrates exact
+wide decimal array text and reclaims leaf snapshots/scratch in both passes.
+Ordinary array shape/count/allocation limits are unchanged.
+
 Read [confirmed array semantics](references/semantics.md) for the language contract.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,
 argument snapshots, returned storage, or cleanup.

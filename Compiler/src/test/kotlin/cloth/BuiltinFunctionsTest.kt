@@ -108,7 +108,7 @@ class BuiltinFunctionsTest {
 	fun `all integer widths signedness and floating formats use shared text conversion`(@TempDir directory: Path) {
 		val statements = mutableListOf<String>()
 		val expected = mutableListOf<String>()
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			for (value in listOf(type.minimum, type.maximum)) {
 				val name = "n${statements.size}"

@@ -141,7 +141,7 @@ class ForEachTest {
 
 	@Test
 	fun `all numeric element formats and distinct target integer identities execute`(@TempDir dir: Path) {
-		val types = ValueType.INTEGER_WIDTHS.flatMap { listOf("int<$it>", "unsigned int<$it>") } + listOf("usize", "isize")
+		val types = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { listOf("int<$it>", "unsigned int<$it>") } + listOf("usize", "isize")
 		val integers = types.joinToString("\n") { "for (def<$it> value <- [1, 2]) count += value -> int" }
 		val floats = ValueType.FLOAT_WIDTHS.joinToString("\n") { "for (def<float<$it>> value <- [0.5, 1.5]) count += (value * (2.0 -> float<$it>)) -> int" }
 		success(dir.resolve("numeric"), "fn<int> main() { def count = 0\n$integers\n$floats\nreturn count - 42 }")

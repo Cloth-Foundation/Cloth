@@ -176,7 +176,7 @@ class NullabilityEmissionTest {
 	@Test
 	fun `all nullable numeric identities transport extrema without width or signedness conversion`(@TempDir directory: Path) {
 		val spellings = buildList {
-			for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(bits, unsigned).spelling)
+			for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(bits, unsigned).spelling)
 			for (bits in ValueType.FLOAT_WIDTHS) add(CFloat(bits).spelling)
 			add("usize"); add("isize")
 		}

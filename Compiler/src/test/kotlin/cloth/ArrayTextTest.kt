@@ -66,7 +66,7 @@ class ArrayTextTest {
 	@Test
 	fun `leaf formatting preserves numeric identities metadata Unicode NULs and raw text`(@TempDir directory: Path) {
 		val numericChecks = buildString {
-			for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+			for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 				val type = CInt(width, unsigned)
 				appendLine("if ([${type.spelling}::min, ${type.spelling}::max]::str != \"[${type.minimum}, ${type.maximum}]\") { return 1 }")
 			}

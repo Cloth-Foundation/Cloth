@@ -7,6 +7,151 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Arbitrary integer widths: final integration and publication (2026-11-03)
+
+Stage 6 publishes [IntegerWidths.co](../../../../examples/IntegerWidths.co), README
+syntax/entry updates and the [integrated implementation record](../../cloth-numerics/references/arbitrary-width-integers.md).
+Three new publication regressions cover exact native example output, objects/CLI
+publication across nine target profiles and isolated dynamic full-cap programs.
+The focused arbitrary-width/lifetime run passes 88 tests across nine suites.
+
+The production probe completes 18 cases at widths 65535/65536 across all nine
+profiles, including dense nonzero arithmetic, calls, internal 2N checks and exact
+decimal output. Four Windows x64/x86 runs pass; all objects and assembly pass.
+Supplementary GNU Linux x64 execution under Ubuntu WSL passes both widths, each
+matching 98674 normalized output bytes and the independent oracle hash. No
+AArch64 cross compiler/emulator is installed; AArch64/macOS/musl execution remains
+untested. These limits are retained explicitly rather than inferred from object
+success.
+
+Observed object emission is 53..69 ms at 108161..114240 bytes. The JVM per-pool
+heap-peak sum is 62874424..73480264 bytes; it excludes native LLVM/process memory.
+The final record compares this integrated pipeline with Stage 1's raw scalar
+resource evidence without treating differing workloads as a speedup benchmark.
+Durable production/Linux tables retain all statuses, timings and checksums.
+
+Observed final full regression: `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1081 tests across 86 suites, zero failures/errors/skips, in 4m32s.
+All planned integer-width stages are complete. Skill metadata/local links and
+`git diff --check` pass; temporary measurement scratch is removed after preserving
+durable tables. The bundled skill validator cannot import its unavailable PyYAML
+dependency, so metadata/link checks used local manual validation.
+
+NumberTypes.co's existing native fixture now independently checks its
+`unsigned int<0x200>` initialized from `unsigned int<512>::max`, preserving the
+user's source example. The five numeric integration tests plus three publication
+tests pass in a follow-up targeted run.
+
+### Arbitrary integer widths: Stage 5 decimal output (2026-11-03)
+
+Exact decimal text now works through 65536 bits for print/println, interpolation,
+scalar `::str`, nullable values and recursive array text. One bounded base-1e9
+helper converts private unsigned magnitudes with i32/i64 arithmetic, preserving
+signed minimum and high unsigned bits. Exact width-derived capacity reserves a
+sign/NUL; the helper checks every write. Small native formatting and floats are
+unchanged. The temporary integer/text preflight is removed and C4031 retired.
+
+The [Stage 5 record](../../cloth-numerics/references/arbitrary-width-output.md)
+owns capacities, lowering, scratch and current verification. Native Windows
+x64/x86 oracle tests compare exact decimal strings through the cap and all output
+routes; foreign IR/objects verify across all nine supported target profiles.
+Array measure/fill checkpoints now precede wide element decoding and reclaim
+snapshots with formatter scratch. A 512-element cap-width array and native x64
+poisoned-memory probes cover scratch reuse and outgoing strings. A safe 20000-trip
+loop uses exactly 20000 result allocations with a 47-byte peak, ending at zero.
+
+The focused output/lifetime run passes 96 tests across six suites. Observed full
+regression: `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1078 tests across 85 suites, zero failures/errors/skips, in 4m34s.
+Skill metadata/local links and `git diff --check` pass; scratch is clean. The
+bundled skill validator still lacks PyYAML, so metadata/link checks used the local
+manual checks. Stage 6 publication/examples/portability review remains pending;
+native AArch64/Linux/macOS execution is not claimed.
+
+### Arbitrary integer widths: Stage 4 storage and composition (2026-11-03)
+
+Source signed/unsigned values now execute through 65536 bits using exact scalars
+through 64 and inline native-limb storage above it. Independent read snapshots,
+private pointer parameters, caller-owned outgoing copies, nullable/array/row
+composition, multiple/conditional results, defaults, metadata, full-bit indices
+and wide signed main are integrated. `ValueType.indirect` keeps private integer
+transport separate from string/array buffering. Decimal text above 64 bits
+remains located C4031 pending Stage 5, before LLVM/output/linker work.
+
+The [Stage 4 record](../../cloth-numerics/references/arbitrary-width-storage.md)
+owns source invariants, observed layouts and verification boundaries. Eight new
+storage integration tests execute on Windows x64/x86; full-cap composition IR
+verifies and objects emit across all nine supported profiles. Three new native
+x64 poisoned-memory/cleanup probes cover outgoing lifetimes, 20000 safe iterations
+with a 32-byte peak and bounded full-cap counter snapshots. A focused run passed
+61 tests. Native AArch64/Linux/macOS execution is not claimed.
+
+Observed serial regression: `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1069 tests across 84 suites, zero failures/errors/skips, in 4m39s.
+Skill metadata/local links and `git diff --check` pass; workspace scratch is clean.
+Metadata/link checks used the local manual validator because the bundled Python
+skill validator cannot import its unavailable PyYAML dependency.
+
+### Arbitrary integer widths: Stage 3 arithmetic and conversions (2026-11-03)
+
+Production bounded integer kernels now implement wrapping arithmetic, signed/
+unsigned comparison, guarded division/remainder and power, cross-width casts,
+IEEE conversion and checked 2N header updates through 65536 source bits and
+131072 internal bits. Scalar source widths 1..64 now emit and execute, including
+one-bit power without shift poison and mathematical one-bit range-header steps.
+Float formats/defaults remain unchanged. The
+[Stage 3 record](../../cloth-numerics/references/arbitrary-width-arithmetic.md)
+owns implementation invariants, API/test routing and remaining scope.
+
+Wide kernels execute against BigInteger/BigDecimal and IEEE-bit oracles on native
+Windows x64/x86. Full-cap kernel IR verifies and objects emit across all nine
+supported target profiles. Integration tests cover every scalar width, ordinary
+composition and controlled located failures; direct production API tests cover
+wide operation routing, full-cap casts and runtime guards. Foreign native
+execution remains untested. Wide source emission is still C4031-gated pending
+Stage 4 storage/calls/snapshots and Stage 5 decimal output; helper success does
+not establish those source features.
+
+Observed full regression: `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1058 tests across 83 suites, zero failures/errors/skips, in 4m24s.
+The three new Stage 3 suites contribute 11 tests. Skill metadata/local links
+and `git diff --check` pass; workspace scratch is clean.
+
+### Arbitrary integer widths: Stage 2 types and literals (2026-11-03)
+
+Semantic types now admit every signed/unsigned fixed width 1..65536, with exact
+BigInteger width decoding and contextual literals through the cap. Machine/ABI
+widths and target counts remain independent; floats/defaults and exact typed
+compatibility are unchanged. The [Stage 2 record](../../cloth-numerics/references/arbitrary-width-types.md)
+owns source invariants, contextual/rejection coverage and the remaining work.
+
+Native emission still admits 8/16/32/64. Located C4031 preflight rejects valid
+new widths before LLVM module/output/linker work, avoiding the raw backend gaps
+found in Stage 1. Type/provider registration no longer eagerly applies byte-size
+arithmetic to odd/wide integers. Production arithmetic, carriers/calls and output
+remain pending Stages 3-5.
+
+All 13 new width tests pass. The full compiler regression passes 1047 tests
+across 80 suites, with zero failures/errors/skips. Existing native/foreign object
+regressions pass; no new-width source execution support is claimed.
+
+### Arbitrary integer widths: backend foundation (2026-11-03)
+
+The accepted source design admits signed/unsigned widths 1..65536, preserving
+32-bit defaults and existing float formats. Completed Stage 1 adds isolated raw LLVM
+experiments and a bounded limb-loop prototype; it does not enable these source
+types. The [backend record](../../cloth-numerics/references/arbitrary-width-backend.md)
+owns measurements, native/foreign target scope, the selected representation and
+the explicit production helper/integration work remaining for Stages 2-5.
+
+Across nine ABI profiles, 1251 isolated matrix cases expose raw backend gaps and
+verify the selected approach. All 153 bounded limb cases and 27 strengthened
+core/control-flow cases pass, with full-cap/internal-width native checks on
+Windows x64/x86 and foreign object checks. The four focused regression suites
+pass 22 tests with zero failures/errors/skips. The backend record links durable
+TSV measurements and distinguishes expected experiment failures from compiler
+support. Source-width acceptance and production wide operations remain pending.
+
 ### Numeric literal context review fixes (2026-11-03)
 
 Review found silent float32 rounding when an integer peer replaced a float64

@@ -79,14 +79,14 @@ class ProgramEntryTest {
 	@Test
 	fun `main permits void isize and each signed integer width but rejects unsigned returns`() {
 		for (header in listOf("fn main()", "fn<void> main()")) ProgramAnalyzer().analyze(parse("$header {}"))
-		for (width in ValueType.INTEGER_WIDTHS) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) {
 			val program = ProgramAnalyzer().analyze(parse("pub fn<int<$width>> main() = 0"))
 			assertEquals(CInt(width), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
 		}
 		for (abi in listOf(NativeCABI.native(), NativeCABI.forTarget("i686-pc-windows-msvc"))) for (parameters in listOf("", "string[] args")) {
 			val program = ProgramAnalyzer(abi.layout).analyze(parse("fn<isize> main($parameters) = 0"))
 			assertEquals(CISize(abi.layout.sizeBits), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
-			for (unsigned in listOf("usize", "unsigned int") + ValueType.INTEGER_WIDTHS.map { "unsigned int<$it>" }) {
+			for (unsigned in listOf("usize", "unsigned int") + ValueType.MACHINE_INTEGER_WIDTHS.map { "unsigned int<$it>" }) {
 				val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(abi.layout).analyze(parse("fn<$unsigned> main($parameters) = 0")) }
 				assertEquals(DiagnosticCode.INVALID_MAIN_RETURN, diagnostic.diagnosticCode)
 				assertContains(diagnostic.message.orEmpty(), "isize")
@@ -95,7 +95,7 @@ class ProgramEntryTest {
 				assertLocated(diagnostic)
 			}
 		}
-		for ((type, expression) in listOf("bool" to "true", "char" to "'x'", "float" to "1.0", "string" to "\"x\"", "unsigned int" to "0", "int[]" to "main()") + ValueType.INTEGER_WIDTHS.map { "unsigned int<$it>" to "0" }) {
+		for ((type, expression) in listOf("bool" to "true", "char" to "'x'", "float" to "1.0", "string" to "\"x\"", "unsigned int" to "0", "int[]" to "main()") + ValueType.MACHINE_INTEGER_WIDTHS.map { "unsigned int<$it>" to "0" }) {
 			failure("fn<$type> main() = $expression", DiagnosticCode.INVALID_MAIN_RETURN)
 		}
 	}
@@ -190,7 +190,7 @@ class ProgramEntryTest {
 		for ((index, source) in listOf("fn<int> main() { return 7 }", "fn<int> main() = 7", "pub fn<int> main() = 7").withIndex()) {
 			assertProgram(LLVMEmitter().compile(parse(source), directory.resolve("status_$index")), 7)
 		}
-		for (width in ValueType.INTEGER_WIDTHS) assertProgram(LLVMEmitter().compile(parse("fn<int<$width>> main() = 17"), directory.resolve("width_$width")), 17)
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) assertProgram(LLVMEmitter().compile(parse("fn<int<$width>> main() = 17"), directory.resolve("width_$width")), 17)
 	}
 
 	@Test
@@ -202,7 +202,7 @@ class ProgramEntryTest {
 	@Test
 	fun `signed negative statuses preserve native signed bits on Windows`(@TempDir directory: Path) {
 		if (ExecutableFormat.current != ExecutableFormat.PE) return
-		for (width in ValueType.INTEGER_WIDTHS) assertProgram(LLVMEmitter().compile(parse("fn<int<$width>> main() = -7"), directory.resolve("negative_$width")), -7)
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) assertProgram(LLVMEmitter().compile(parse("fn<int<$width>> main() = -7"), directory.resolve("negative_$width")), -7)
 	}
 
 	@Test

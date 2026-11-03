@@ -1,6 +1,6 @@
 package cloth.builtin.attachments
 
-class IntegerAttachments: PrimitiveAttachment {
+class IntegerAttachments : PrimitiveAttachment {
 
 	val abs: Attachment = Attachment("abs") { }
 

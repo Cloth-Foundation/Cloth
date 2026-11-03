@@ -15,6 +15,7 @@ data class CNullable(val payload: ValueType) : ValueType(payload.keyword) {
 	}
 
 	override val buffered get() = payload.buffered
+	override val indirect get() = payload.indirect
 	override val containsNullability get() = true
 	override val arrayDimensions get() = payload.arrayDimensions
 	override val spelling get() = payload.spelling + Operators.QUESTION.toString()

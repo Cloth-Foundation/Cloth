@@ -65,4 +65,23 @@ tasks.register<JavaExec>("runExample") {
 tasks.test {
 	useJUnitPlatform()
 	workingDir(rootProject.projectDir)
+	systemProperty("cloth.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+}
+
+tasks.register<JavaExec>("probeIntegerWidths") {
+	group = "verification"
+	description = "Probe arbitrary integer LLVM lowering in isolated, timed child JVMs."
+	classpath = sourceSets.test.get().runtimeClasspath
+	mainClass.set("cloth.backend.IntegerBackendProbeKt")
+	jvmArgs(application.applicationDefaultJvmArgs)
+	workingDir(rootProject.projectDir)
+}
+
+tasks.register<JavaExec>("probeIntegerProduction") {
+	group = "verification"
+	description = "Measure integrated full-width integer source programs in isolated child JVMs."
+	classpath = sourceSets.test.get().runtimeClasspath
+	mainClass.set("cloth.backend.IntegerProductionProbeKt")
+	jvmArgs(application.applicationDefaultJvmArgs)
+	workingDir(rootProject.projectDir)
 }

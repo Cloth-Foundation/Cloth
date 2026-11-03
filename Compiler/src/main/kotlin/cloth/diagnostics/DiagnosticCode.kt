@@ -57,6 +57,7 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_MAIN_PARAMETERS("C3036"),
 	INVALID_MAIN_RETURN("C3037"),
 	UNSUPPORTED_FUNCTION_ABI("C4030"),
+	// C4031 retired after arbitrary integer lowering and decimal text integration.
 
 	UNKNOWN_OPTION("C0001"),
 	MISSING_OPTION_VALUE("C0002"),

@@ -14,6 +14,8 @@ fn main () {
     def<usize> count = 0b1111011
     def<isize> offset = -123i
 
+    def<unsigned int<0x200>> big = unsigned int<512>::max
+
     println(hex)
     println(binary)
     println(octal)
@@ -25,5 +27,7 @@ fn main () {
     println(FLOAT_ENDED)
     println(count)
     println(offset)
+
+    println(big)
 
 }

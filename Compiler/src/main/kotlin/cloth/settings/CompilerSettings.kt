@@ -92,7 +92,7 @@ class CompilerSettings(val args: Array<String>) {
 		targetTriple = selectedTarget
 	}
 
-	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/Fib.co")
+	fun getSourceFile(): File = positional.getOrNull(0)?.let(::File) ?: File("examples/NumberTypes.co")
 
 	fun getOutputFile(): File? = positional.getOrNull(1)?.let(::File)
 

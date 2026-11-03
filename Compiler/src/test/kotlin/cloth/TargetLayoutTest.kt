@@ -87,7 +87,7 @@ class TargetLayoutTest {
 			for (target in listOf(synthetic32(), NativeCABI.native().layout)) {
 				val types = LLVMTypes(context, target)
 				assertSame(target, types.target)
-				for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+				for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 					val prefix = if (unsigned) "unsigned " else ""
 					val ast = Parser(Lexer("def<$prefix int<$width>> n = 1\nn::max").scanTokens()).parseSnippet()
 					val semantics = SemanticAnalyzer(target).analyze(ast)

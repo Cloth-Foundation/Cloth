@@ -8,10 +8,14 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.math.BigInteger
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class NumericLiteralsIntegrationTest {
 
@@ -20,6 +24,7 @@ class NumericLiteralsIntegrationTest {
 		val host = NativeCABI.native()
 		return if (host.windows) listOf(host, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(host)
 	}
+
 	private fun run(executable: Path, expected: String) {
 		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
 		try {
@@ -144,7 +149,7 @@ class NumericLiteralsIntegrationTest {
 			"def<float<16>?> x = 70000f + 0f" to "C3028",
 			"def i = 0; def<float<16>> x = 70000f + i" to "C3028",
 			"def<int<8>?> x = 0x80 + 0i" to "C3004",
-			"def<int<0x07>> x = 0" to "C3011",
+			"def<int<0x10001>> x = 0" to "C3011",
 		).withIndex()) {
 			val source = directory.resolve("invalid_$index.co")
 			val output = directory.resolve("invalid_$index.obj")
@@ -166,6 +171,7 @@ class NumericLiteralsIntegrationTest {
 	@Test
 	fun `published numeric example executes on native and Windows x86`(@TempDir directory: Path) {
 		val ast = unit(Files.readString(Path.of("examples", "NumberTypes.co")))
-		for ((index, abi) in executableTargets().withIndex()) run(LLVMEmitter(abi).compile(ast, directory.resolve("example_$index")), "3735928559\n45\n493\n123456\n123456\n123\n123\n123\n123.456001\n123\n-123\n")
+		val expected = "3735928559\n45\n493\n123456\n123456\n123\n123\n123\n123.456001\n123\n-123\n" + (BigInteger.ONE.shiftLeft(512) - BigInteger.ONE).toString() + "\n"
+		for ((index, abi) in executableTargets().withIndex()) run(LLVMEmitter(abi).compile(ast, directory.resolve("example_$index")), expected)
 	}
 }

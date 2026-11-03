@@ -5,6 +5,16 @@ description: Design, explain, or extend Cloth executable main validation, Unicod
 
 # Cloth program entry
 
+[Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
+integrates signed fixed main results through 65536 bits. Startup supplies a result
+arena when required, reads the low native C-int bits before releasing it, and
+preserves supplied optional arguments, PEC timing and cleanup. Unsigned fixed
+integers/usize remain invalid main results; defaults and floating formats do not change.
+Use the [final integer record](../cloth-numerics/references/arbitrary-width-integers.md)
+for completed-stage routing and target evidence; native wide-main normalization
+coverage is Windows x64/x86, with additional integrated program execution on
+Linux x64 GNU and object/assembly evidence across all supported profiles.
+
 Read [confirmed entry semantics](references/semantics.md) and the shared
 [portability contract](../cloth-language/references/semantics.md#portability).
 Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and

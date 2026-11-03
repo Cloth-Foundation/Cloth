@@ -54,7 +54,7 @@ class SharedIntegersTest {
 	fun `shared bounds providers and representation preserve distinct integer identities`() {
 		val context = LLVMContextCreate()
 		try {
-			for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+			for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 				val fixed = CInt(width, unsigned)
 				val distinct = TestInteger(width, unsigned)
 				assertNotEquals<ValueType>(fixed, distinct)
@@ -87,7 +87,7 @@ class SharedIntegersTest {
 
 	@Test
 	fun `contextual literals and constant division checks accept the shared contract`() {
-		for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = TestInteger(width, unsigned)
 			for (source in listOf("n + 1", "1 + n", "n / 1", "n % 1", "n ** 2", "n::max")) {
 				val (expression, model) = check(source, type)
@@ -122,7 +122,7 @@ class SharedIntegersTest {
 		val emitter = LLVMEmitter(abi)
 		val source = Parser(Lexer("fn existing() {}").scanTokens()).parseDeclarations()
 		emitter.withFunctions(source) { context, module, _, _ ->
-			for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+			for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 				val type = TestInteger(width, unsigned)
 				val nativeType = type.llvmValue(context, abi.layout)
 				assertEquals(abi.printArgument(CInt(width, unsigned)), abi.printArgument(type))

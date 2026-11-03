@@ -38,7 +38,7 @@ class PrimitiveTypesTest {
 		try {
 			val types = LLVMTypes(context)
 			val cases = buildList {
-				for (width in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(width, unsigned) to "i$width")
+				for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(width, unsigned) to "i$width")
 				add(CFloat(16) to "half")
 				add(CFloat(32) to "float")
 				add(CFloat(64) to "double")

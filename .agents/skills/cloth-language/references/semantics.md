@@ -172,7 +172,16 @@ The [arbitrary-width decision](../../cloth-numerics/references/semantics.md#arbi
 confirms signed/unsigned widths 1..65536 with a common x86_64/AArch64 cap,
 unchanged 32-bit defaults and unchanged 16/32/64-bit floats. The
 [implementation plan](../../../../todo/arbitrary-integer-widths-plan.md) records
-the remaining work; current compiler widths remain 8/16/32/64.
+the completed stages. [Stage 2](../../cloth-numerics/references/arbitrary-width-types.md)
+integrates semantic types/contexts across the full interval.
+[Stage 3](../../cloth-numerics/references/arbitrary-width-arithmetic.md) enables
+source scalar widths 1..64 and production wide kernels.
+[Stage 4](../../cloth-numerics/references/arbitrary-width-storage.md) integrates
+source values/storage/calls through the cap.
+[Stage 5](../../cloth-numerics/references/arbitrary-width-output.md) integrates
+full-width decimal text and retires C4031. The
+[final integration record](../../cloth-numerics/references/arbitrary-width-integers.md)
+owns Stage 6 examples, measured target/resource evidence and native-runner limits.
 
 Read [Cloth numeric and boolean operations](../../cloth-numerics/references/semantics.md#integer-signedness-and-widths) and its
 [feature skill](../../cloth-numerics/SKILL.md).

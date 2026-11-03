@@ -15,7 +15,9 @@ import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticAnalyzer
 import cloth.target.TargetLayout
-import cloth.token.*
+import cloth.token.TokenType
+import cloth.token.floatingLiteralText
+import cloth.token.integerLiteralValue
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
 import kotlin.test.*
@@ -34,8 +36,10 @@ class NumericLiteralsTest {
 		assertLocated(error)
 		return error
 	}
-	private fun spelling(value: BigInteger, radix: Int): String = (if (value.signum() < 0) "-" else "") +
-		when (radix) { 16 -> "0x"; 2 -> "0b"; 8 -> "0o"; else -> "" } + value.abs().toString(radix)
+
+	private fun spelling(value: BigInteger, radix: Int): String = (if (value.signum() < 0) "-" else "") + when (radix) {
+		16 -> "0x"; 2 -> "0b"; 8 -> "0o"; else -> ""
+	} + value.abs().toString(radix)
 
 	@Test
 	fun `numeric tokens preserve spelling and decode equal values independently of notation`() {
@@ -115,7 +119,7 @@ class NumericLiteralsTest {
 
 	@Test
 	fun `every integer base and decimal suffix respects declared signed and unsigned widths`() {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			for (radix in listOf(10, 16, 2, 8)) {
 				for (value in listOf(type.minimum, type.maximum)) {
@@ -165,7 +169,7 @@ class NumericLiteralsTest {
 			val ast = snippet("def<int<$width>[0b11]> values = [0x7F, 0o17, 3i]")
 			assertEquals(CArray(CInt(8), 3), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
 		}
-		for (width in listOf("0x07", "0b111", "7i", "18446744073709551616i")) failure("def<int<$width>> x = 0", DiagnosticCode.UNSUPPORTED_WIDTH)
+		for (width in listOf("0x0", "0b0", "65537i", "18446744073709551616i")) failure("def<int<$width>> x = 0", DiagnosticCode.UNSUPPORTED_WIDTH)
 		failure("def<int<8f>> x = 0", DiagnosticCode.EXPECTED_TOKEN)
 		failure("def<int[3f]> x = [1, 2, 3]", DiagnosticCode.EXPECTED_TOKEN)
 		failure("fn pick(int<0x20>[0b11] x) {}\nfn pick(int<32>[3i] x) {}", DiagnosticCode.DUPLICATE_FUNCTION, declarations = true)

@@ -118,7 +118,7 @@ class FunctionEmissionTest {
 
 	@Test
 	fun `every integer width and signedness survives argument storage and return`(@TempDir directory: Path) {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			for ((index, value) in listOf(type.minimum, type.maximum).withIndex()) {
 				native(directory, "integer_${bits}_${unsigned}_$index", "fn<${type.spelling}> identity(${type.spelling} value) = value\nfn<${type.spelling}> test() = identity($value)", value.toString())

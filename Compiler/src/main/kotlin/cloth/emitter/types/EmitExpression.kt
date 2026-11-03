@@ -90,10 +90,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
-		type is CNullable && type.buffered -> checkNotNull(frame).copyValue(value, type)
-		type is CArray                     -> transferArrayValue(value, type)
-		type == ValueType.STRING           -> checkNotNull(frame).copyValue(value, type)
-		else                               -> value
+		type is CInteger || type is CNullable && type.payload is CInteger -> value
+		type is CNullable && type.buffered                                -> checkNotNull(frame).copyValue(value, type)
+		type is CArray                                                    -> transferArrayValue(value, type)
+		type == ValueType.STRING                                          -> checkNotNull(frame).copyValue(value, type)
+		else                                                              -> value
 	}
 
 	private fun snapshotResults(value: LLVMValueRef, shape: ResultShape): LLVMValueRef {
@@ -306,6 +307,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val result = if (increment) LLVMBuildFAdd(builder, value, one, "increment") else LLVMBuildFSub(builder, value, one, "decrement")
 			return casts.toFloating(result, workingType, type)
 		}
+		if (type is CInteger && type.bits > 64) {
+			val wide = EmitWideInteger(context, builder, abi)
+			return wide.binary(operand, wide.constant(java.math.BigInteger.ONE, type.bits), type.bits, if (increment) Operators.PLUS else Operators.MINUS)
+		}
 		val one = LLVMConstInt(types.value(type), 1, 0)
 		return if (increment) LLVMBuildAdd(builder, operand, one, "increment") else LLVMBuildSub(builder, operand, one, "decrement")
 	}
@@ -336,6 +341,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitStepper(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimStepper(statement), action)
+
+	/** Only scalar results may cross this checkpoint; wide value bytes stay inside. */
+	fun scalarTemporary(action: () -> LLVMValueRef): LLVMValueRef {
+		var result: LLVMValueRef? = null
+		temporaryRegion(true) { result = action() }
+		return checkNotNull(result)
+	}
 
 	/** Closed non-escape proof, independent of an enclosing expression's checkpoint.
 	 * Return paths bypass these releases and retain the ordinary owning-frame path.
@@ -390,7 +402,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			null
 		}
 
-		val reclaim = temporaryDepth == 0 && (discard || semantics.resultOf(expression).values.none { it.buffered }) && temporaryAnalysis.canReclaim(expression)
+		val reclaim = temporaryDepth == 0 && (discard || semantics.resultOf(expression).values.none { it.indirect }) && temporaryAnalysis.canReclaim(expression)
 		if (!reclaim) return produce()
 		val checkpoint = checkNotNull(frame).temporaryCheckpoint()
 		val previousFresh = freshArrays.toSet()
@@ -459,7 +471,12 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			}
 
 			is CallExpression           -> emitCall(expression)?.let { freshResults(it, semantics.resultOf(expression)) }
-			is IntegerLiteral           -> LLVMConstIntOfString(types.value(semantics.typeOf(expression)), expression.value.toString(), 10.toByte())
+			is IntegerLiteral           -> {
+				val type = semantics.typeOf(expression)
+				if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).constant(expression.value, type.bits)
+				else LLVMConstIntOfString(types.value(type), expression.value.toString(), 10.toByte())
+			}
+
 			is FloatingPointLiteral     -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
 			is BooleanLiteral           -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
 			is CharacterLiteral         -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
@@ -496,7 +513,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 						val workingType = EmitHalf.arithmeticType(type)
 						casts.toFloating(LLVMBuildFNeg(builder, casts.toFloating(operand, type, workingType), LLVM_NEGOTIATION_TEMPORARY), workingType, type)
 					} else {
-						LLVMBuildNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
+						val type = semantics.typeOf(expression)
+						if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).negate(operand, type.bits)
+						else LLVMBuildNeg(builder, operand, LLVM_NEGOTIATION_TEMPORARY)
 					}
 
 					else                       -> throw InternalErrors.invariant("Unsupported unary operator: ${expression.operator}")
@@ -534,7 +553,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					right = casts.toFloating(right, rightType, workingType)
 				}
 				if (expression.operator.lexeme == Operators.MUL_MUL.toString()) {
-					val result = power.emit(left, right, workingType ?: leftType, expression.operator.span.toString())
+					val span = expression.operator.span
+					val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
+					val result = power.emit(left, right, workingType ?: leftType, location)
 					return if (floatingPoint) casts.toFloating(result, workingType!!, commonType) else result
 				}
 				val comparison = when (expression.operator.lexeme) {
@@ -548,6 +569,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 					else                               -> null
 				}
 				if (comparison != null) {
+					if (!floatingPoint && leftType is CInteger && leftType.bits > 64) return EmitWideInteger(context, builder, abi).compare(left, right, leftType, Operators.fromCharacterRequired(expression.operator.lexeme))
 					return if (floatingPoint) {
 						LLVMBuildFCmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
 					} else {
@@ -565,6 +587,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 						else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
 					}
 					casts.toFloating(result, workingType!!, commonType)
+				} else if (leftType is CInteger && leftType.bits > 64 && expression.operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString(), Operators.MULTIPLY.toString())) {
+					EmitWideInteger(context, builder, abi).binary(left, right, leftType.bits, Operators.fromCharacterRequired(expression.operator.lexeme))
 				} else when (expression.operator.lexeme) {
 					Operators.PLUS.toString()                                -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
 					Operators.MINUS.toString()                               -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
@@ -633,7 +657,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 				ValueType.TYPEINFO -> strings.metadata.equal(a, b)
 				ValueType.STRING   -> strings.equal(a, b)
-				else               -> LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
+				else               -> if (payloadType is CInteger && payloadType.bits > 64) EmitWideInteger(context, builder, abi).compare(a, b, payloadType, Operators.EQUAL)
+				else LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
 			}
 		}, { LLVMBuildICmp(builder, LLVMIntEQ, hasLeft, hasRight, "nullable_absence_equal") }))
 		return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "nullable_not_equal") else equal

@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CArray
+import cloth.data.CInteger
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
@@ -27,6 +28,13 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
 		if (valueType is CNullable) return EmitNullable(context, builder, target).map(value, types.value(valueType)) { copyValue(builder, destination, it, valueType.payload) }
+		if (valueType is CInteger && valueType.bits > 64) {
+			val storage = types.storage(valueType)
+			val layout = LLVMGetModuleDataLayout(module)
+			val bytes = LLVMConstInt(size, LLVMABISizeOfType(layout, storage), 0)
+			val raw = EmitArray(context, builder, abi, target).descriptor(value, bytes)
+			return LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, "returned_integer")
+		}
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
 		if (valueType !is CArray) return value
 		val (type, function) = arrayCopies[valueType] ?: run {
@@ -57,7 +65,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					result = arrays.withShapePointer(result, valueType, pointer)
 					arrays.remember(result, valueType, pointer)
 				}
-				if (valueType.element.buffered) {
+				// Wide integer bytes (also nullable payloads) were already copied inline.
+				val payload = (valueType.element as? CNullable)?.payload ?: valueType.element
+				if (valueType.element.buffered && payload !is CInteger) {
 					val allocate = LLVMGetInsertBlock(body)
 					val check = LLVMAppendBasicBlockInContext(context, function, "check")
 					val item = LLVMAppendBasicBlockInContext(context, function, "element")

@@ -90,7 +90,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `integer boundary arguments retain exact signed and unsigned widths`() {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			for (value in listOf(type.minimum, type.maximum)) {
 				val model = analyze("fn choose(${type.spelling} value) {}\nfn test() { choose($value) }")
@@ -282,7 +282,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `declaration signatures reject invalid widths types and void parameters`() {
-		failure("fn test(int<7> value) {}", DiagnosticCode.UNSUPPORTED_WIDTH)
+		failure("fn test(int<0> value) {}", DiagnosticCode.UNSUPPORTED_WIDTH)
 		failure("fn test(unsigned float value) {}", DiagnosticCode.INVALID_UNSIGNED)
 		failure("fn test(Unknown value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
 		failure("fn test(void value) {}", DiagnosticCode.VOID_TYPE)

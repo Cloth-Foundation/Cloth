@@ -5,6 +5,17 @@ description: Design, explain, or extend Cloth print and println, recursive array
 
 # Cloth output and built-in functions
 
+[Arbitrary integer Stage 5](../cloth-numerics/references/arbitrary-width-output.md)
+integrates exact decimal text for signed/unsigned widths 1..65536 across print,
+interpolation, `::str`, nullable values and recursive arrays. Wide values use a
+shared bounded base-1e9 helper with checked width-derived capacity; <=64-bit
+native fast paths and float formatting remain unchanged. C4031 is retired.
+The record owns capacity, input preservation, scratch lifetimes and target evidence.
+The [final integer record](../cloth-numerics/references/arbitrary-width-integers.md)
+adds the maintained example and production measurements, including exact cap
+output on Windows x64/x86 and Linux x64 GNU. Other targets retain object/assembly
+evidence with explicit native-runner limits.
+
 Read [confirmed built-in semantics](references/semantics.md). For interpolation
 use [strings](../cloth-strings/SKILL.md); for normal executable completion use
 [program entry](../cloth-program-entry/SKILL.md).
@@ -71,7 +82,8 @@ The emitter measures checked target-sized bytes, then fills one result buffer.
 Nested arrays write directly into it; do not concatenate growing prefixes or
 allocate an intermediate string for every row. Both passes traverse an already
 evaluated value and reuse side-effect-free leaf conversions. Per-leaf stack
-checkpoints reclaim numeric/character scratch only after consumption; the output
+checkpoints precede stored-value decoding and reclaim snapshots plus numeric/
+character scratch only after consumption; the output
 buffer and all source storage predate those checkpoints. Ordinary buffered
 returns copy the result before its frame exits. No raw-address access is added.
 

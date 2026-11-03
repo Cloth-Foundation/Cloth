@@ -1,6 +1,9 @@
 package cloth.emitter.types
 
 import cloth.data.CArray
+import cloth.data.CInteger
+import cloth.data.CNullable
+import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -28,6 +31,8 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	private val active = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
 	private val unknown = Effects(arrays = true, safe = false)
 	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.arrays && it.safe }
+	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
+	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
 
 	/** A loop has no continuing result. Declarations stay inside the iteration;
 	 * scalar stores cannot publish buffers. Buffered stores, indexed writes and
@@ -39,9 +44,9 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is LoopJumpStatement        -> true
 			is BindingDeclaration       -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
 			is BindingGroupDeclaration  -> effects(statement.initializer).safe
-			is AssignmentStatement      -> !types.typeOf(statement).buffered && effects(statement.value).safe
-			is MultiAssignmentStatement -> types.receptionOf(statement).slots.none { it.type.buffered } && effects(statement.value).safe
-			is UpdateStatement          -> !types.typeOf(statement).buffered
+			is AssignmentStatement      -> !publishes(types.typeOf(statement)) && effects(statement.value).safe
+			is MultiAssignmentStatement -> types.receptionOf(statement).slots.none { publishes(it.type) } && effects(statement.value).safe
+			is UpdateStatement          -> !publishes(types.typeOf(statement))
 			is ExpressionStatement      -> when (val expression = statement.expression) {
 				is IfExpression -> expression.branches.all { effects(it.condition).safe && canReclaimIteration(it.statements) } && (expression.otherwise?.let(::canReclaimIteration) ?: true)
 				else            -> effects(expression).safe
@@ -58,7 +63,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 		is ForSource.Range    -> effects(source.start).safe && effects(source.end).safe && (statement.stepper?.value?.let { effects(it).safe } ?: true)
 	}
 
-	fun canReclaimStepper(statement: ForStatement): Boolean = statement.stepper?.value?.let { effects(it).safe } ?: false
+	fun canReclaimStepper(statement: ForStatement): Boolean = statement.stepper?.value?.let { effects(it).safe } ?: true
 	fun canReclaimCondition(expression: Expression): Boolean = effects(expression).safe
 	fun canReclaimLoop(statement: WhileStatement): Boolean = effects(statement.condition).safe && canReclaimIteration(statement.body.statements)
 
@@ -111,7 +116,8 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			else                                                                                                 -> unknown
 		}
 		active.remove(expression)
-		memo[expression] = result
-		return result
+		val allocating = result + Effects(types.resultOf(expression).values.any { it.indirect && inlineInteger(it) })
+		memo[expression] = allocating
+		return allocating
 	}
 }

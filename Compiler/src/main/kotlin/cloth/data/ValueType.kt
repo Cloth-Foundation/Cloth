@@ -20,6 +20,10 @@ sealed class ValueType(val keyword: Keywords) {
 	open val floating: Boolean get() = false
 	val numeric: Boolean get() = integer || floating
 	open val buffered: Boolean get() = false
+
+	/** Internal transport: some fixed scalars use stable byte snapshots, without
+	 * becoming source arrays/strings or requiring heap storage for arithmetic. */
+	open val indirect: Boolean get() = buffered
 	open val containsNullability: Boolean get() = false
 	open val arrayDimensions: List<BigInteger?> get() = emptyList()
 
@@ -89,9 +93,14 @@ sealed class ValueType(val keyword: Keywords) {
 	companion object {
 
 		const val DEFAULT_BITS = 32
-		val INTEGER_WIDTHS: Set<Int> = setOf(8, 16, 32, 64)
+		const val MIN_INTEGER_BITS = 1
+		const val MAX_INTEGER_BITS = 65536
+		val FIXED_INTEGER_WIDTHS: IntRange = MIN_INTEGER_BITS..MAX_INTEGER_BITS
+
+		/** Machine/ABI facts are independent of the source fixed-integer interval. */
+		val MACHINE_INTEGER_WIDTHS: Set<Int> = setOf(8, 16, 32, 64)
+		const val MAX_TARGET_INTEGER_BITS = 64
 		val FLOAT_WIDTHS: Set<Int> = FloatingFormat.entries.mapTo(linkedSetOf()) { it.bits }
-		val MAX_INTEGER_BITS: Int get() = INTEGER_WIDTHS.max()
 
 		val INT = CInt()
 		val UINT = CInt(unsigned = true)

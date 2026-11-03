@@ -13,16 +13,17 @@ internal class TypeResolver(val target: TargetLayout) {
 		val name = annotation.name.lexeme
 		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'${Keywords.VOID}' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
-		val widths = when (name) {
-			Keywords.INTEGER.toString() -> ValueType.INTEGER_WIDTHS
-			Keywords.FLOAT.toString()   -> ValueType.FLOAT_WIDTHS
-			else                        -> null
-		}
-		val base = if (widths != null) {
+		val base = if (name == Keywords.INTEGER.toString() || name == Keywords.FLOAT.toString()) {
 			val widthValue = annotation.width?.integerLiteralValue()
-			val width = if (widthValue == null) ValueType.DEFAULT_BITS else widths.firstOrNull { widthValue == it.toBigInteger() }
-			if (width == null || width !in widths) throw SemanticErrors.width(annotation, widths)
-			if (name == Keywords.INTEGER.toString()) CInt(width, annotation.unsigned) else CFloat(width)
+			if (name == Keywords.INTEGER.toString()) {
+				if (widthValue != null && (widthValue < ValueType.MIN_INTEGER_BITS.toBigInteger() || widthValue > ValueType.MAX_INTEGER_BITS.toBigInteger())) throw SemanticErrors.integerWidth(annotation)
+				// Narrow only after checking the exact decoded magnitude, never by truncation.
+				CInt(widthValue?.toInt() ?: ValueType.DEFAULT_BITS, annotation.unsigned)
+			} else {
+				val width = if (widthValue == null) ValueType.DEFAULT_BITS else ValueType.FLOAT_WIDTHS.firstOrNull { widthValue == it.toBigInteger() }
+				if (width == null) throw SemanticErrors.width(annotation, ValueType.FLOAT_WIDTHS)
+				CFloat(width)
+			}
 		} else {
 			if (annotation.width != null) throw SemanticErrors.type(annotation)
 			when (name) {

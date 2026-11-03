@@ -4,7 +4,7 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
-import org.bytedeco.llvm.global.LLVM.LLVMIntTypeInContext
+import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
 
 /** Shared integer behavior. Concrete descriptors retain their own equality and
@@ -16,10 +16,13 @@ abstract class CInteger(keyword: Keywords) : CObject(keyword) {
 	abstract override val unsigned: Boolean
 	final override val bits: Int get() = width
 	final override val integer: Boolean get() = true
+
+	/** Wide values travel indirectly; physical binding/element storage remains inline. */
+	final override val indirect: Boolean get() = width > 64
 	val minimum: BigInteger get() = if (unsigned) BigInteger.ZERO else -BigInteger.ONE.shiftLeft(width - 1)
 	val maximum: BigInteger get() = BigInteger.ONE.shiftLeft(width - if (unsigned) 0 else 1) - BigInteger.ONE
 
-	fun acceptsLiteral(value: BigInteger): Boolean = value in minimum..maximum
+	fun acceptsLiteral(value: BigInteger): Boolean = if (unsigned) value.signum() >= 0 && value.bitLength() <= width else value.bitLength() < width
 
 	/** Low bits interpreted with this type's signedness, for existing constant checks. */
 	internal fun wrap(value: BigInteger): BigInteger {
@@ -32,9 +35,15 @@ abstract class CInteger(keyword: Keywords) : CObject(keyword) {
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = super.providers(target) + mapOf(
 		CompilerDataProviders.MIN to ProviderResult.IntegerConstant(this, minimum),
 		CompilerDataProviders.MAX to ProviderResult.IntegerConstant(this, maximum),
-		CompilerDataProviders.SIZE to storageSize(this, target),
+		// Odd/wide layout must be resolved by the selected backend, not bits / 8.
+		CompilerDataProviders.SIZE to if (width in MACHINE_INTEGER_WIDTHS) storageSize(this, target) else ProviderResult.StorageSize(this, CUSize(target.sizeBits)),
 		CompilerDataProviders.STR to ProviderResult.ScalarText(this),
 	)
 
-	final override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMIntTypeInContext(context, width)
+	final override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef {
+		return if (width <= 64) LLVMIntTypeInContext(context, width) else LLVMPointerTypeInContext(context, 0)
+	}
+
+	final override fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = if (width <= 64) llvmValue(context, target)
+	else LLVMArrayType2(LLVMIntTypeInContext(context, target.pointerBits), ((width + target.pointerBits - 1) / target.pointerBits).toLong())
 }

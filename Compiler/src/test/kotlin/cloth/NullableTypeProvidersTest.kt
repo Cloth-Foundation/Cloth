@@ -36,7 +36,7 @@ class NullableTypeProvidersTest {
 	@Test
 	fun `nullable type providers delegate bounds with exact nonnullable types and constants`() {
 		for (abi in targets()) {
-			val types = ValueType.INTEGER_WIDTHS.flatMap { width -> listOf(CInt(width), CInt(width, true)) } + listOf(CUSize(abi.layout.sizeBits), CISize(abi.layout.sizeBits)) + ValueType.FLOAT_WIDTHS.map { CFloat(it) }
+			val types = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { width -> listOf(CInt(width), CInt(width, true)) } + listOf(CUSize(abi.layout.sizeBits), CISize(abi.layout.sizeBits)) + ValueType.FLOAT_WIDTHS.map { CFloat(it) }
 			for (payload in types) {
 				val nullable = CNullable(payload)
 				for (bound in listOf("min", "max")) {
@@ -60,7 +60,7 @@ class NullableTypeProvidersTest {
 
 	private val program: String
 		get() {
-			val types = ValueType.INTEGER_WIDTHS.flatMap { width -> listOf("int<$width>", "unsigned int<$width>") } + listOf("usize", "isize") + ValueType.FLOAT_WIDTHS.map { "float<$it>" }
+			val types = ValueType.MACHINE_INTEGER_WIDTHS.flatMap { width -> listOf("int<$width>", "unsigned int<$width>") } + listOf("usize", "isize") + ValueType.FLOAT_WIDTHS.map { "float<$it>" }
 			val checks = types.mapIndexed { index, type ->
 				"""
 			if ($type?::min != $type::min || $type?::max != $type::max) { return ${index + 1} }

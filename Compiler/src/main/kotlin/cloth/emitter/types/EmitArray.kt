@@ -1,9 +1,6 @@
 package cloth.emitter.types
 
-import cloth.data.BufferLayout
-import cloth.data.CArray
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.target.TargetLayout
@@ -206,11 +203,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun storeAt(address: LLVMValueRef, element: ValueType, value: LLVMValueRef) {
-		LLVMBuildStore(builder, when (element) {
-			is CNullable   -> EmitNullable(context, builder, target).store(value, element)
-			ValueType.BOOL -> LLVMBuildZExt(builder, value, types.storage(element), "array_bool_byte")
-			else           -> value
-		}, address)
+		EmitStoredValue(context, builder, target).store(address, value, element)
 	}
 
 	fun literal(element: ValueType, elements: List<() -> LLVMValueRef>): LLVMValueRef {
@@ -234,6 +227,16 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun checkedAddress(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
+		if (indexType is CInteger && indexType.bits > 64) {
+			val wide = EmitWideInteger(context, builder, abi)
+			val length = LLVMBuildExtractValue(builder, array, 1, "array_length")
+			val bound = wide.integerCast(length, CUSize(target.sizeBits), cloth.data.CInt(indexType.bits, true))
+			val below = LLVMBuildICmp(builder, LLVMIntSLT, wide.comparison(index, bound, indexType.bits, false), LLVMConstInt(LLVMInt32TypeInContext(context), 0, 0), "array_wide_in_bounds")
+			// Negative two's-complement inputs are above every target-sized bound.
+			memory.guard(below, "Array index out of bounds")
+			val narrowed = wide.loadScalar(index, CUSize(target.sizeBits))
+			return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, narrowed)
+		}
 		// Compare in the original operand's range before any narrowing for addressing.
 		val width = maxOf(indexType.bits, target.sizeBits)
 		val compareType = LLVMIntTypeInContext(context, width)
@@ -254,9 +257,9 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun index(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
-		val value = LLVMBuildLoad2(builder, types.storage(element), checkedAddress(array, element, index, indexType), "array_value")
+		val value = EmitStoredValue(context, builder, target).load(checkedAddress(array, element, index, indexType), element)
 		if (element is CArray) return readChild(value, array, CArray(element))
-		if (element is CNullable) return readChild(EmitNullable(context, builder, target).load(value, element), array, CArray(element))
-		return if (element == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(element), "array_bool") else value
+		if (element is CNullable) return readChild(value, array, CArray(element))
+		return value
 	}
 }

@@ -105,7 +105,7 @@ class FunctionReturnsTest {
 
 	@Test
 	fun `contextual integer returns cover every width signedness and boundary`() {
-		for (bits in ValueType.INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
+		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(bits, unsigned)
 			for (value in listOf(type.minimum, type.maximum)) for (expressionBody in listOf(false, true)) {
 				val ending = if (expressionBody) "= $value" else "{ return $value }"

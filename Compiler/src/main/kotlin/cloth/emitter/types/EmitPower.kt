@@ -14,6 +14,7 @@ internal class EmitPower(private val context: LLVMContextRef, private val builde
 
 	fun emit(base: LLVMValueRef, exponent: LLVMValueRef, type: ValueType, location: String): LLVMValueRef {
 		if (type.floating) return floating(base, exponent, type)
+		if (type.bits > 64) return EmitWideInteger(context, builder, abi).power(base, exponent, type as cloth.data.CInteger, location)
 		val valueType = types.value(type)
 		val zero = LLVMConstInt(valueType, 0, 0)
 		val one = LLVMConstInt(valueType, 1, 0)
@@ -43,7 +44,8 @@ internal class EmitPower(private val context: LLVMContextRef, private val builde
 		val odd = LLVMBuildICmp(builder, LLVMIntNE, LLVMBuildAnd(builder, remaining, one, "power_low_bit"), zero, "power_odd")
 		val nextResult = LLVMBuildSelect(builder, odd, LLVMBuildMul(builder, result, factor, "power_product"), result, "power_next_result")
 		val nextFactor = LLVMBuildMul(builder, factor, factor, "power_square")
-		val nextExponent = LLVMBuildLShr(builder, remaining, one, "power_next_exponent")
+		// Shifting i1 by one is poison; its single iteration consumes the exponent.
+		val nextExponent = if (type.bits == 1) zero else LLVMBuildLShr(builder, remaining, one, "power_next_exponent")
 		LLVMBuildBr(builder, loop)
 		PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
 			blocks.put(0, entry)

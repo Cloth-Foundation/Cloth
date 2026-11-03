@@ -19,6 +19,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	private val bindings = mutableMapOf<Any, Storage>()
 	private val types = LLVMTypes(context, target)
 	private val nullable = EmitNullable(context, builder, target)
+	private val stored = EmitStoredValue(context, builder, target)
 
 	/** Restore lexical names after a branch; stores to enclosing bindings persist. */
 	fun <T> withScope(action: () -> T): T {
@@ -63,18 +64,11 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 
 	fun read(key: Any): LLVMValueRef {
 		val storage = bindings.getValue(key)
-		val value = LLVMBuildLoad2(builder, types.storage(storage.type), storage.address, "${storage.name}_value")
-		if (storage.type is CNullable) return nullable.load(value, storage.type)
-		return if (storage.type == ValueType.BOOL) LLVMBuildTrunc(builder, value, types.value(storage.type), "${storage.name}_bool") else value
+		return stored.load(storage.address, storage.type, "${storage.name}_value", "${storage.name}_bool")
 	}
 
 	fun assign(key: Any, value: LLVMValueRef) {
 		val storage = bindings.getValue(key)
-		val storedValue = when {
-			storage.type is CNullable      -> nullable.store(value, storage.type)
-			storage.type == ValueType.BOOL -> LLVMBuildZExt(builder, value, types.storage(storage.type), "${storage.name}_byte")
-			else                           -> value
-		}
-		LLVMBuildStore(builder, storedValue, storage.address)
+		stored.store(storage.address, value, storage.type)
 	}
 }

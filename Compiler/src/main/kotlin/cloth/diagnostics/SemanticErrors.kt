@@ -125,5 +125,6 @@ object SemanticErrors {
 	fun immutable(name: Token, declaration: Token) = SemanticException(DiagnosticCode.IMMUTABLE_BINDING, "Cannot reassign immutable binding '${name.lexeme}'", listOf(SourceLabel(declaration.span, "immutable binding declared here"), SourceLabel(name.span, "reassigned here")), "Use '${Operators.ASSIGN}' in the declaration if this binding needs reassignment.")
 	fun unsigned(annotation: TypeReference) = issue(DiagnosticCode.INVALID_UNSIGNED, "'${Keywords.UNSIGNED}' applies only to '${Keywords.INTEGER}', got '${annotation.spelling}'", annotation.span)
 	fun width(annotation: TypeReference, widths: Set<Int>) = issue(DiagnosticCode.UNSUPPORTED_WIDTH, "Type '${annotation.spelling}' has an unsupported width; supported widths are ${widths.joinToString()}", annotation.width?.span ?: annotation.span)
+	fun integerWidth(annotation: TypeReference) = issue(DiagnosticCode.UNSUPPORTED_WIDTH, "Type '${annotation.spelling}' has an unsupported width; supported integer widths are ${ValueType.MIN_INTEGER_BITS} through ${ValueType.MAX_INTEGER_BITS}", annotation.width?.span ?: annotation.span)
 	fun type(annotation: TypeReference) = issue(DiagnosticCode.UNSUPPORTED_TYPE, "Binding type '${annotation.spelling}' is not supported yet", annotation.span)
 }

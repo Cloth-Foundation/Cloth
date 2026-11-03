@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.CFloat
+import cloth.data.CInteger
 import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
@@ -18,7 +19,7 @@ import org.bytedeco.llvm.global.LLVM.*
  * local buffers stay valid throughout the creating invocation. Function returns copy
  * their bytes into caller-owned storage before that invocation exits.
  */
-internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI, val target: TargetLayout = abi.layout) {
+internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, val abi: NativeCABI, val target: TargetLayout = abi.layout) {
 
 	val metadata by lazy { EmitTypeInfo(context, builder, abi, this) }
 
@@ -36,6 +37,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 
 	/** Shared by interpolation and str; ordinary '+' keeps its strict operand types. */
 	fun interpolate(value: LLVMValueRef, type: ValueType, casts: EmitCast, location: String): LLVMValueRef {
+		if (type is CInteger && type.bits > 64) return EmitIntegerText(context, builder, abi).emit(value, type, location)
 		if (type == ValueType.STRING) return value
 		if (type == ValueType.TYPEINFO) return metadata.text(value)
 		if (type == ValueType.BOOL) {

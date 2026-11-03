@@ -12,7 +12,7 @@ import kotlin.math.ceil
 import kotlin.math.log10
 
 /** Contextual spellings only; these names are not globally reserved lexer keywords. */
-enum class CompilerDataProviders(private val spelling: String) {
+enum class CompilerDataProviders(private val spelling: String?) {
 
 	SIZE("size"),
 	MAX("max"),
@@ -29,7 +29,7 @@ enum class CompilerDataProviders(private val spelling: String) {
 	ISUNSIGNED("isunsigned"),
 	ISNUMERIC("isnumeric");
 
-	override fun toString(): String = spelling.lowercase()
+	override fun toString(): String = spelling?.lowercase() ?: name.lowercase()
 
 	companion object {
 
@@ -40,9 +40,11 @@ enum class CompilerDataProviders(private val spelling: String) {
 /** Shared compiler descriptor base; this does not declare Cloth object inheritance. */
 sealed class CObject(keyword: Keywords) : ValueType(keyword)
 
-data class CInt(override val width: Int = DEFAULT_BITS, override val unsigned: Boolean = false) : CInteger(Keywords.INTEGER) { init {
-	require(width in INTEGER_WIDTHS) { "Unsupported integer width: $width" }
-}
+data class CInt(override val width: Int = DEFAULT_BITS, override val unsigned: Boolean = false) : CInteger(Keywords.INTEGER) {
+	// dummy comment for formatting
+	init {
+		require(width in FIXED_INTEGER_WIDTHS) { "Unsupported integer width: $width" }
+	}
 }
 
 data class CFloat(val width: Int = DEFAULT_BITS) : CObject(Keywords.FLOAT) { constructor(format: FloatingFormat) : this(format.bits)
@@ -126,7 +128,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	constructor(element: ValueType, size: Int) : this(element, size.toBigInteger())
 
 	init {
-		require(size == null || (size.signum() >= 0 && size <= CUSize(MAX_INTEGER_BITS).maximum)) { "Array extent exceeds the largest supported ${Keywords.USIZE}" }
+		require(size == null || (size.signum() >= 0 && size <= CUSize(MAX_TARGET_INTEGER_BITS).maximum)) { "Array extent exceeds the largest supported ${Keywords.USIZE}" }
 	}
 
 	override val buffered: Boolean get() = true
@@ -155,10 +157,10 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		}.joinToString("")
 	}
 
-	override fun commonArrayShape(other: ValueType): ValueType? = when {
-		this == other                                                                 -> this
-		other is CArray && (size == null || other.size == null || size == other.size) -> element.commonArrayShape(other.element)?.let { CArray(it, size ?: other.size) }
-		else                                                                          -> null
+	override fun commonArrayShape(other: ValueType): ValueType? = when (other) {
+		this                                                                    -> this
+		is CArray if (size == null || other.size == null || size == other.size) -> element.commonArrayShape(other.element)?.let { CArray(it, size ?: other.size) }
+		else                                                                    -> null
 	}
 
 	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || (actual is CArray && (size == null || actual.size == null || size == actual.size) && (element is CNullable) == (actual.element is CNullable) && element.accepts(actual.element))

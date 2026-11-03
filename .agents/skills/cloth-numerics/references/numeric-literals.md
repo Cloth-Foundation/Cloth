@@ -5,6 +5,14 @@ The [implementation plan](../../../../todo/numeric-literals-plan.md) records the
 stages and scope. This record describes the integrated compiler behavior and
 verification; unresolved forms are not additional accepted language syntax.
 
+The later [arbitrary-width Stage 2](arbitrary-width-types.md) supersedes this
+milestone's fixed-width restriction and uint64 expression-magnitude ceiling:
+semantic integer widths and literal magnitudes now extend through 65536 bits,
+while [Stage 3](arbitrary-width-arithmetic.md) advances source scalar emission to
+1..64. [Stage 4](arbitrary-width-storage.md) integrates source values through the
+cap. [Stage 5](arbitrary-width-output.md) integrates full decimal output and
+retires C4031.
+
 ## Implemented forms and constraints
 
 - Lowercase `0x`, `0b` and `0o` select hexadecimal, binary and octal integer
@@ -44,8 +52,8 @@ verification; unresolved forms are not additional accepted language syntax.
 Scientific notation, uppercase base prefixes, hexadecimal floats, leading-dot
 floats and width/signedness suffixes are unsupported. Unsuffixed `123.` retains
 its previous integer-plus-dot tokenization; this work does not confirm it as a
-float literal. No arbitrary-width types or implicit typed-value conversions are
-introduced.
+float literal. This literal milestone did not introduce arbitrary-width types
+or implicit typed-value conversions; the later Stage 2 adds the width model.
 
 ## Source ownership and diagnostics
 
@@ -56,7 +64,8 @@ introduced.
 - [ExpressionParser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/ExpressionParser.kt)
   builds numeric AST values. Floating range checks occur during typing, after
   context is known; wider declarations/candidates can admit values beyond float32.
-  Expression integer magnitudes retain the existing uint64 parser ceiling.
+  The literal milestone retained the uint64 parser ceiling; Stage 2 lifts that
+  bound to 65536-bit magnitudes without changing no-context int32 inference.
 - [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/TypeResolver.kt)
   and [SignatureType](../../../../Compiler/src/main/kotlin/cloth/semantic/symbols/Symbols.kt)
   share integer decoding for widths/extents. Arbitrarily large width tokens are
