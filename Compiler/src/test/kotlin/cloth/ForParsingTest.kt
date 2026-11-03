@@ -158,7 +158,7 @@ class ForParsingTest {
 		val inner = assertIs<IfExpression>(assertIs<ExpressionStatement>(forLoop.body.statements.single()).expression)
 		assertNotNull(outer.otherwise)
 		assertNotNull(inner.otherwise)
-		assertFailsWith<SyntaxException> { loop("for (def i <- 0..2) if (true) println(i)") }
+		assertIs<IfExpression>(assertIs<ExpressionStatement>(loop("for (def i <- 0..2) if (true) println(i)").body.statements.single()).expression)
 		assertFailsWith<SyntaxException> { loop("for (def i <- 0..2) if (true) {}; else {}") }
 	}
 

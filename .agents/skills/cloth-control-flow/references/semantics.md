@@ -28,6 +28,31 @@ the parent skill for current implementation boundaries and source/test routing.
 
 For repeated strict-bool testing, see [implemented while loops](while-loops.md).
 
+- On 2026-11-03 the user confirmed that each `if`, `else if` and `else` body
+  may omit braces around one expression or statement:
+
+  ```cloth
+  fn<bool> matches(int x) {
+      if (x == 1) return true
+      else if (x == 2) return true
+      else return false
+  }
+  def label = if (matches(1)) "match" else "other"
+  ```
+
+  Braced and unbraced bodies can mix in one chain. Newlines and comments may
+  separate a header from its body or precede `else`. A branch still has its
+  own lexical scope; it contains exactly one source statement when unbraced.
+  A broadcast definition can expand into several AST binding nodes without
+  changing that source-statement boundary. Empty bodies require braces.
+  Returns keep the enclosing function's strict return contract; omitting
+  braces does not permit mixed return types.
+- Nested unbraced syntax attaches `else` to the nearest unfinished `if`, also
+  through single-statement loop bodies. Use braces to select an outer owner.
+  The existing semicolon placement rule remains: a semicolon ends the chain
+  and cannot intervene before `else`. A bare `return` immediately before
+  `else` ends that branch without a value. Expression bodies keep the existing
+  branch-value and exhaustive-chain checks described below.
 - The user selected `if` / `else if` / `else` conditionals as the next feature
   after string equality and concatenation.
 - An `if` chain can produce a value used as a binding initializer. The branch

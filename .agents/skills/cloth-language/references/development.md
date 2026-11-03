@@ -7,6 +7,39 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Unbraced conditional bodies (2026-11-03)
+
+`IfParser` now accepts one source expression/statement instead of a braced
+block for every `if`, `else if` and `else` alternative. It reuses the existing
+branch statement lists, scopes, completion analysis and emission. Immediate
+`else` is also a bare-return boundary in `Parser`. Nested chains preserve
+nearest-`if` ownership, including through loop bodies, and semicolons still
+cannot intervene before `else`. The [control-flow skill](../../cloth-control-flow/SKILL.md)
+and [confirmed syntax](../../cloth-control-flow/references/semantics.md#conditional-expressions-and-statements)
+own the contract. [Conditionals.co](../../../../examples/Conditionals.co) now
+demonstrates expressions, assignments and returns without braces.
+
+Verification on Windows:
+
+- `:Compiler:test --tests cloth.UnbracedConditionalsTest --tests
+  cloth.ConditionalsTest --tests cloth.ForParsingTest --tests cloth.WhileTest
+  --tests cloth.SemicolonsTest --tests cloth.FunctionReturnsTest --offline
+  --console=plain --no-daemon` passed all 101 tests with no failures/errors/skips.
+- Nine new tests cover the user's exact syntax while preserving return-type
+  rejection, mixed bodies, comment/newline attachment, dangling `else`,
+  definitions and broadcast expansion, assignments/updates/indexed writes,
+  bare and multiple returns, scopes, skipped-code checks, missing bodies,
+  first-error locations, CRLF spans and following-statement boundaries.
+  A native program combines value/return chains, side effects and loop jumps
+  and exits with the expected status 42. Parser behavior is target-independent;
+  this change adds no claim of native Linux/macOS execution.
+- The complete `:Compiler:test --offline --console=plain --no-daemon` regression
+  run passed all 990 tests with no failures/errors/skips in 3m 46s, including
+  CLI compilation and native execution of the updated conditional example.
+- The skill-creator validator was attempted with the default and bundled
+  Python runtimes; both lack PyYAML. Frontmatter, example syntax and relative
+  source/reference links were checked manually. `git diff --check` passed.
+
 ### One-click example execution (2026-11-02)
 
 Added `:Compiler:runExample` under Gradle's `application` group for IntelliJ and

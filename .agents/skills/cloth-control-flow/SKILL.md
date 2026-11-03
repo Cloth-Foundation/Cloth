@@ -72,6 +72,17 @@ syntax without treating it as a class-execution acceptance test.
 
 ## Development rules and current boundaries
 
+- `IfParser` accepts either braces or one ordinary expression/statement per
+  `if`/`else if`/`else` body, including definitions, returns, assignments, nested
+  conditionals, loops and loop jumps. Preserve nearest-`if` ownership of `else`,
+  branch-local scopes, source spans excluding terminators and the existing
+  prohibition on semicolons before `else`. `Parser.returnStatement` recognizes
+  an immediate `else` as a bare-return boundary. Unbraced bodies reuse the
+  existing branch statement lists and need no semantic or emitter special case.
+  See [the syntax contract](references/semantics.md#conditional-expressions-and-statements),
+  [Conditionals.co](../../../examples/Conditionals.co), `UnbracedConditionalsTest`
+  and [integration evidence](../cloth-language/references/development.md#unbraced-conditional-bodies-2026-11-03).
+
 - `while (condition) body` executes with strict bool conditions, repeated tests,
   nearest-body jumps and proven condition/body cleanup. Read [while loops](references/while-loops.md)
   for scope, nullable/metadata invalidation, false/break exit facts and true-loop

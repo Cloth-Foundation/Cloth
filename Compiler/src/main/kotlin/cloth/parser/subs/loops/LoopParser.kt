@@ -9,9 +9,7 @@ import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenType
 
-open class LoopParser(private val parser: Parser, delimited: DelimitedParser) {
-
-	val delimited = delimited
+open class LoopParser(private val parser: Parser, val delimited: DelimitedParser) {
 
 	fun parseLoopBody(keyword: Token): LoopBody {
 		parser.skipNewlines()
