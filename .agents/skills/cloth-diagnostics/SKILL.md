@@ -35,6 +35,13 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C1013 / INVALID_NUMERIC_LITERAL** locates malformed literal prefixes, digits
+and suffixes, including `123.i` and forbidden suffixes on base-prefixed integers.
+Separators retain C1002; contextual integer/float range errors retain C3004/C3028.
+`NumericLiteralsTest` and `NumericLiteralsIntegrationTest` cover original spellings,
+spans, first-error CLI exit 1 and failure before object/linker work. See the
+[literal implementation record](../cloth-numerics/references/numeric-literals.md).
+
 **C3069 / INVALID_LOOP_JUMP** locates a break/continue without an enclosing loop
 body, including attempts to cross a deferred-block boundary. `LoopControlTest`
 checks placement, first-error priority and CLI failure before object/linker work;

@@ -11,6 +11,7 @@ import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
+import cloth.token.integerLiteralValue
 import java.math.BigInteger
 
 /** A structural declaration key, not a resolved or validated language type. */
@@ -23,7 +24,7 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
-		fun of(type: TypeReference) = SignatureType(type.name.lexeme, type.unsigned, type.width?.lexeme?.toBigInteger() ?: if (type.name.lexeme in numericNames) defaultWidth else null, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.lexeme?.toBigInteger() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
+		fun of(type: TypeReference) = SignatureType(type.name.lexeme, type.unsigned, type.width?.integerLiteralValue() ?: if (type.name.lexeme in numericNames) defaultWidth else null, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
 	}
 }
 

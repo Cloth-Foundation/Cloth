@@ -82,7 +82,8 @@ class MultiAssignmentTest {
 		for ((first, second) in listOf("int<8>" to "int<64>", "int<64>" to "int<8>", "int" to "unsigned int", "unsigned int" to "int")) {
 			failure("fn test() {\n def<$first> x = 1\n def<$second> y = 1\n x, y = 20\n}", DiagnosticCode.TYPE_MISMATCH)
 		}
-		failure("fn test() {\n def<float<64>> x, y = 1.0 -> float<64>\n x, y = 1.5\n}", DiagnosticCode.TYPE_MISMATCH)
+		analyze("fn test() {\n def<float<64>> x, y = 1.0\n x, y = 1.5\n}")
+		failure("fn test() {\n def<float<64>> x, y = 1.0\n def value = 1.5\n x, y = value\n}", DiagnosticCode.TYPE_MISMATCH)
 		for (type in listOf("int<8>", "unsigned int<8>", "int<16>", "int<32>", "int<64>")) {
 			analyze("fn test() {\n def<$type> x, y, z = 1\n x, y, z = 20\n}")
 		}

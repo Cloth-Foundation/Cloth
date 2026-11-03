@@ -11,6 +11,14 @@ Read [confirmed usize/isize semantics](references/semantics.md). The completed
 retain detailed stage evidence and boundaries. Use
 [toolchains](../cloth-toolchains/SKILL.md) for target selection and ABI validation.
 
+Integer literal prefixes and decimal suffixes also receive `usize` /
+`isize` context. Read the [numeric literal plan](../../../todo/numeric-literals-plan.md)
+and [confirmed literal rules](../cloth-numerics/references/semantics.md#integer-literal-prefixes-design-confirmed-2026-11-03)
+when changing this syntax. Existing target-dependent range checks and distinct
+type identities remain intact. The [numeric literal implementation record](../cloth-numerics/references/numeric-literals.md)
+and `NumericLiteralsTest` / `NumericLiteralsIntegrationTest` cover fixed/target
+bounds, reused ASTs, Windows x64/x86 execution and all-profile object emission.
+
 ## Preserve the integrated contract
 
 - usize is unsigned and isize signed, each matching the compilation target's

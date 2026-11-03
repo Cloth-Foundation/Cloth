@@ -111,7 +111,8 @@ class ForSemanticsTest {
 		}
 		invalid("fn main() { for (def i <- 0..10; i /= 0) println(i) }", DiagnosticCode.INTEGER_ZERO_DIVISOR)
 		invalid("fn main() { for (def i <- 0..10; i = true) println(i) }", DiagnosticCode.TYPE_MISMATCH)
-		invalid("fn main() { for (def<float<16>> i <- 0.0..1.0; i += 0.1) println(i) }", DiagnosticCode.TYPE_MISMATCH)
+		assertEquals(CFloat(16), bindingType("fn main() { for (def<float<16>> i <- 0.0..1.0; i += 0.1) println(i) }"))
+		invalid("fn main() { def step = 0.1; for (def<float<16>> i <- 0.0..1.0; i += step) println(i) }", DiagnosticCode.TYPE_MISMATCH)
 		assertEquals(CFloat(16), bindingType("fn main() { for (def<float<16>> i <- 0.0..1.0; i += 0.1 -> float<16>) println(i) }"))
 	}
 

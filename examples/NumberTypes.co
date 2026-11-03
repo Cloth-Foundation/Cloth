@@ -1,0 +1,29 @@
+fn main () {
+
+    def<unsigned int> hex = 0xDEADBEEF
+    def<int> binary = 0b101101
+    def<int> octal = 0o755
+
+    def<int> intEnded = 123_456i
+    def<int> INT_ENDED = 123_456I
+    def<float> floatEnded = 123.f
+    def<float> floatWithoutDot = 123f
+    def<float> floatWithFraction = 123.0f
+    def<float> FLOAT_ENDED = 123.456F
+
+    def<usize> count = 0b1111011
+    def<isize> offset = -123i
+
+    println(hex)
+    println(binary)
+    println(octal)
+    println(intEnded)
+    println(INT_ENDED)
+    println(floatEnded)
+    println(floatWithoutDot)
+    println(floatWithFraction)
+    println(FLOAT_ENDED)
+    println(count)
+    println(offset)
+
+}

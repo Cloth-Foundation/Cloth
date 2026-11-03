@@ -10,6 +10,13 @@ arrays and scalar/string elements. Nullable rows now execute under the
 
 ## Supported behavior and boundaries
 
+- Nullable numeric destinations supply their payload's literal context through
+  arithmetic, including returns, argument reception and array element writes.
+  Integer peer widths and floating literal formats remain independent; declared
+  widths and literal range checks still apply before lifting the present result.
+  This does not permit arithmetic on nullable operands without a presence proof.
+  See the [numeric context review fixes](../../cloth-numerics/references/numeric-literals.md#arithmetic-context-review-fixes)
+  and `NumericLiteralsTest` / `NumericLiteralsIntegrationTest` for regressions.
 - Nullable-target casts preserve absence, convert only present payloads, and
   preserve ordinary numeric wrapping, rounding and checked failures. A plain
   source converts and then lifts. `null -> int?` has an explicit nullable target.

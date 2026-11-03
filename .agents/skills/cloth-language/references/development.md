@@ -7,6 +7,72 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Numeric literal context review fixes (2026-11-03)
+
+Review found silent float32 rounding when an integer peer replaced a float64
+literal context, and loss of numeric payload context in nullable arithmetic
+destinations. `ExpressionTyping` now carries floating literal format separately
+from integer context through nested arithmetic, unary expressions and conditional
+results, and unwraps nullable receiving payloads before selecting numeric context.
+Typed values still retain exact types; nullable sources still require presence
+proofs, and mixed integer/float operations retain their minimum float32 result.
+
+The [numeric implementation record](../../cloth-numerics/references/numeric-literals.md#arithmetic-context-review-fixes)
+owns the source invariants and regression scope. Three new tests failed before
+the fix and passed afterward. They check actual `16777217` precision on Windows
+x64/x86, contextual float16/32/64 and integer range errors, nullable assignments,
+returns/calls/arrays, and CLI failure before object creation. The new arithmetic
+AST also verifies IR and emits objects across all nine supported ABI profiles;
+native Linux/macOS execution is not claimed.
+
+The focused numeric/call/return/reception/range run passed all 131 tests across six
+suites, with zero failures/errors/skips. The final
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+all 1,030 tests across 78 suites, with zero failures, errors or skips. Skill
+metadata, 126 local link targets across six changed Markdown files and
+`git diff --check` passed publication checks. The optional skill-creator validator
+remains unavailable because its Python runtimes lack PyYAML; lightweight metadata
+validation was performed directly.
+
+### Numeric literals (2026-11-03)
+
+Hexadecimal `0x`, binary `0b`, octal `0o`, decimal `i` / `I` and `f` / `F`
+are integrated. `123.f`, `123f` and `123.0f` are floating literals; `123.i` is
+rejected. Suffixes select category without fixing width. Fixed/target-sized
+integer context and floating context in bindings, assignments and returns keep
+declared widths/ranges authoritative. Already-typed values retain exact-type
+rules; integer literal forms also work in numeric widths and fixed extents.
+
+Original token spelling/spans are retained. Shared `NumericLiterals` helpers
+decode radix-aware BigInteger magnitudes and exact floating text for parser,
+type resolver and structural signature keys. Float range checks occur after
+context is available; bool/string/etc. destinations supply no floating width.
+C1013 reports malformed numeric literals, C1002 retains separator failures, and
+existing contextual range codes remain unchanged. The first failure still
+terminates compilation before object/linker work.
+
+The [numeric contract](../../cloth-numerics/references/semantics.md),
+[implementation record](../../cloth-numerics/references/numeric-literals.md) and
+[plan](../../../../todo/numeric-literals-plan.md) own detailed behavior, stages,
+source routing and limits. `NumericLiteralsTest` and
+`NumericLiteralsIntegrationTest` cover malformed forms/spans, all integer
+domains, target-dependent bounds, shared ASTs, type syntax/signatures, float
+contexts, strict values, overloads and CLI failures. The mixed numeric fixture
+and updated NumberTypes.co execute on Windows x64 and Windows x86 PE32; LLVM IR
+and objects verify across all nine supported ABI profiles. Native Linux/macOS
+execution is not claimed.
+
+The focused numeric/width/cast/return/binding/call/usize/isize/semicolon/diagnostic
+run passed 175 tests across 11 suites, with zero failures/errors/skips. The final
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+all 1,027 tests across 78 suites, with zero failures, errors or skips. Legacy
+float32-only expectations in binding/return/reception/loop tests now accept
+contextual literals while still rejecting implicit conversions of typed values.
+Skill metadata, 246 local link targets across nine Markdown files and
+`git diff --check` passed publication checks. The optional skill-creator validator
+remains unavailable because the Python runtimes lack PyYAML; lightweight metadata
+validation was performed directly.
+
 ### Nullable type providers (2026-11-03)
 
 The user requested missing nullable type providers such as `int?::max`.

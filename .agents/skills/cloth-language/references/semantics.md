@@ -168,8 +168,19 @@ Read [Cloth target-sized integers](../../cloth-target-integers/references/semant
 
 ## Integer signedness and widths
 
+The [arbitrary-width decision](../../cloth-numerics/references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)
+confirms signed/unsigned widths 1..65536 with a common x86_64/AArch64 cap,
+unchanged 32-bit defaults and unchanged 16/32/64-bit floats. The
+[implementation plan](../../../../todo/arbitrary-integer-widths-plan.md) records
+the remaining work; current compiler widths remain 8/16/32/64.
+
 Read [Cloth numeric and boolean operations](../../cloth-numerics/references/semantics.md#integer-signedness-and-widths) and its
 [feature skill](../../cloth-numerics/SKILL.md).
+Numeric literal prefixes/suffixes and contextual floating widths are covered by
+the same [numeric contract](../../cloth-numerics/references/semantics.md#decimal-literal-suffixes-design-confirmed-2026-11-03),
+including integer literal forms in type widths and fixed extents. The
+[literal implementation record](../../cloth-numerics/references/numeric-literals.md)
+tracks supported syntax and verification with declared widths/ranges preserved.
 
 ## Explicit numeric casts
 

@@ -75,7 +75,7 @@ captures implementation scope and regression evidence.
 | --- | --- |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
-| Integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
+| Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
 | Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
@@ -96,6 +96,22 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
+- Arbitrary fixed integer widths: [implementation plan](../../../todo/arbitrary-integer-widths-plan.md)
+  and [accepted numeric contract](../cloth-numerics/references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03).
+  Signed/unsigned `int<N>` is intended to admit 1..65536 with the same cap on
+  x86_64 and AArch64; default integers remain 32 bits, and floats remain 16/32/64.
+  Compiler support is still 8/16/32/64. The plan separates fixed/target/native
+  widths and stages backend feasibility, typing, arithmetic/casts, storage/calls,
+  full-width output and publication. No new backend support is claimed yet.
+- Numeric literal prefixes and suffixes: [implementation plan](../../../todo/numeric-literals-plan.md).
+  Decimal-only `i` / `I` and `f` / `F` select numeric category without fixing
+  width; `123.f`, `123f` and `123.0f` are valid float forms, while `123.i` is
+  invalid. Hexadecimal/binary/octal integers receive ordinary contextual integer
+  types, including usize/isize. Contextual float widths in bindings/assignments/
+  returns and integer literal forms in type widths/extents are also confirmed;
+  declared widths and range checks remain authoritative. The
+  [implementation record](../cloth-numerics/references/numeric-literals.md) covers
+  the integrated syntax, shared numeric decoding, strict contexts and verification.
 - Integer/float range and array foreach loops use `<-`; the default range step is one and an
   explicit stepper requires a semicolon. The [implementation plan](../../../todo/for-loops-plan.md)
   records the confirmed contract, stages, source ownership and verification.

@@ -18,7 +18,6 @@ class Parser(private val tokens: List<Token>) {
 
 	var currentIndex: Int = 0
 	var inFunctionBody = false
-	internal val allowsContextualFloatingLiterals get() = inFunctionBody
 
 	val expressionParser: ExpressionParser = ExpressionParser(this)
 	val typeParser = TypeParser(this)

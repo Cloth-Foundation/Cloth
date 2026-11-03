@@ -127,7 +127,9 @@ class DestructuringTest {
 		failure("fn values() { def<int<8>, int<16>> a, b = 128, 1 }", DiagnosticCode.INTEGER_RANGE)
 		failure("fn values(int n) { def<int<64>, int> a, b = n, 1 }", DiagnosticCode.TYPE_MISMATCH)
 		analyze("fn values(int n) { def<int<64>, int> a, b = n -> int<64>, 1 }")
-		failure("fn values() { def<float<64>, bool> a, b = 1.5, true }", DiagnosticCode.TYPE_MISMATCH)
+		val floating = analyze("fn values() { def<float<64>, bool> a, b = 1.5, true }")
+		assertEquals(listOf(CFloat(64), CBool), floating.types.receptionOf(group(floating)).slots.map { it.type })
+		failure("fn values() { def value = 1.5\n def<float<64>, bool> a, b = value, true }", DiagnosticCode.TYPE_MISMATCH)
 	}
 
 	@Test
