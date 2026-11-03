@@ -1,10 +1,12 @@
 package cloth.emitter.types
 
+import cloth.data.CNullable
 import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.token.Keywords
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -69,7 +71,15 @@ internal class EmitArrayText(
 		val elementType = recipe.receiverType.element
 		var element = LLVMBuildLoad2(builder, types.storage(elementType), arrays.address(data, elementType, index), "array_text_value")
 		if (elementType == ValueType.BOOL) element = LLVMBuildTrunc(builder, element, types.value(elementType), "array_text_bool")
-		val nextPosition = if (recipe.elementText is ProviderResult.ArrayText) walk(element, recipe.elementText, separated, destination) else {
+		if (elementType is CNullable) element = EmitNullable(context, builder, target).load(element, elementType)
+		val elementText = recipe.elementText
+		val nextPosition = if (elementText is ProviderResult.ArrayText) walk(element, elementText, separated, destination)
+		else if (elementText is ProviderResult.NullableText && elementText.payloadText is ProviderResult.ArrayText) {
+			val nullable = EmitNullable(context, builder, target)
+			checkNotNull(nullable.choose(nullable.present(element), memory.size, {
+				walk(nullable.payload(element), elementText.payloadText, separated, destination)
+			}, { append(strings.literal(Keywords.NULL.toString()), separated, destination) }))
+		} else {
 			// Formatting may allocate numeric or UTF-8 scratch. Consume it before
 			// restoring the stack; only the integer offset survives the checkpoint.
 			val checkpoint = stackSave()

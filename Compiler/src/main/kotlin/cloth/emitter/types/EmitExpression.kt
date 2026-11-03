@@ -90,9 +90,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
-		type is CArray           -> transferArrayValue(value, type)
-		type == ValueType.STRING -> checkNotNull(frame).copyValue(value, type)
-		else                     -> value
+		type is CNullable && type.buffered -> checkNotNull(frame).copyValue(value, type)
+		type is CArray                     -> transferArrayValue(value, type)
+		type == ValueType.STRING           -> checkNotNull(frame).copyValue(value, type)
+		else                               -> value
 	}
 
 	private fun snapshotResults(value: LLVMValueRef, shape: ResultShape): LLVMValueRef {
@@ -193,19 +194,40 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun transferArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = transferArrayValue(value, type, null)
 
 	private fun transferArrayValue(value: LLVMValueRef, type: ValueType, shape: LLVMValueRef?, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
+		if (type is CNullable && type.buffered) return nullable.map(value, types.value(type)) { transferArrayValue(it, type.payload, shape, message) }
 		if (type !is CArray) return value
 		val fresh = freshArrays.remove(value.address())
-		val checked = if (shape == null) value else arrays.matchShape(value, shape, type, message = message)
-		return if (fresh) arrays.constrain(checked, type) else checkNotNull(frame).copyArray(checked, type)
+		val checked = if (shape == null) value else arrays.matchShape(value, shape, type, merge = true, message = message)
+		if (!fresh) return checkNotNull(frame).copyArray(checked, type)
+		val constrained = arrays.constrain(checked, type)
+		return if (type.hasNullableRows) arrays.share(constrained, type, arrays.shapePointer(constrained, type)) else constrained
 	}
 
 	fun transferBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
-		val shape = if (type is CArray && type.arrayDimensions.any { it == null }) bindings.initialArrayShape(key) else null
-		return transferArrayValue(value, type, shape, "Array shape mismatch: assignment must preserve the binding's initial shape")
+		if (type is CNullable && type.payload is CArray) return checkNotNull(nullable.choose(nullable.present(value), types.value(type), {
+			val previous = bindings.nullableArrayShape(key, type)
+			val payload = nullable.payload(value)
+			val checked = checkNotNull(nullable.choose(nullable.present(previous), types.value(type.payload), {
+				arrays.matchShape(payload, nullable.payload(previous), type.payload, merge = true, message = "Array shape mismatch: assignment must preserve the binding's initial shape")
+			}, { arrays.constrain(payload, type.payload) }))
+			val snapshot = transferArrayValue(checked, type.payload)
+			val retained = if (!type.payload.hasNullableRows) snapshot else checkNotNull(nullable.choose(nullable.present(previous), types.value(type.payload), {
+				arrays.share(snapshot, type.payload, arrays.shapePointer(nullable.payload(previous), type.payload))
+			}, { snapshot }))
+			val result = nullable.wrap(retained, type)
+			bindings.saveNullableArrayShape(key, result, type)
+			result
+		}, { nullable.absent(type) }))
+		val shape = if (type is CArray && (type.hasNullableRows || type.arrayDimensions.any { it == null })) bindings.initialArrayShape(key) else null
+		val snapshot = transferArrayValue(value, type, shape, "Array shape mismatch: assignment must preserve the binding's initial shape")
+		return if (type is CArray && type.hasNullableRows) arrays.share(snapshot, type, arrays.shapePointer(checkNotNull(shape), type)) else snapshot
 	}
 
 	/** Ignored positions still enforce explicit extents, without allocating storage. */
 	fun validateDiscardedResult(value: LLVMValueRef, type: ValueType) {
+		if (type is CNullable) {
+			nullable.map(value, types.value(type)) { validateDiscardedResult(it, type.payload); it }; return
+		}
 		if (type is CArray) arrays.constrain(value, type)
 	}
 
@@ -214,15 +236,22 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val array = emitValue(statement.target.array)
 		val index = emitValue(statement.target.index)
 		val type = semantics.typeOf(statement.target)
+		val parentType = semantics.typeOf(statement.target.array) as CArray
 		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
-		val value = emitValue(statement.value)
-		val shape = if (type is CArray) {
-			val previous = LLVMBuildLoad2(builder, types.storage(type), address, "replaced_array")
-			arrays.childShape(previous, array, type)
-		} else null
-		val snapshot = transferArrayValue(value, type, shape)
-		arrays.storeAt(address, type, snapshot)
-		snapshot
+		val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
+		if (parentType.hasNullableRows) {
+			val snapshot = arrays.shareChild(transferArrayValue(value, type), array, parentType)
+			arrays.storeAt(address, type, snapshot)
+			snapshot
+		} else {
+			val shape = if (type is CArray) {
+				val previous = LLVMBuildLoad2(builder, types.storage(type), address, "replaced_array")
+				arrays.childShape(previous, array, type)
+			} else null
+			val snapshot = transferArrayValue(value, type, shape)
+			arrays.storeAt(address, type, snapshot)
+			snapshot
+		}
 	} catch (_: Terminated) {
 		null
 	}
@@ -344,11 +373,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitDiscarded(plan: ReceptionPlan): LLVMValueRef? {
-		val constrained = plan.slots.filter { it.type is CArray && it.type.arrayDimensions.any { extent -> extent != null } }
+		val constrained = plan.slots.filter { slot -> ((slot.type as? CNullable)?.payload ?: slot.type).arrayDimensions.any { it != null } }
 		if (constrained.isEmpty()) return emitDiscarded(plan.producer)
 		emit(plan.producer, discard = true) { value ->
 			val slots = takeResults(value, plan.results)
-			for (slot in constrained) validateDiscardedResult(slots[slot.sourceIndex], slot.type)
+			for (slot in constrained) validateDiscardedResult(adaptValue(slots[slot.sourceIndex], plan.results.values[slot.sourceIndex], slot.type), slot.type)
 		}
 		return null
 	}
@@ -401,7 +430,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val type = semantics.typeOf(expression) as? CArray
 				if (type == null) {
 					expression.elements.forEach { emitValue(it) }; null
-				} else arrays.literal(type.element, expression.elements.map { item -> { transferArrayValue(emitValue(item), type.element) } })
+				} else arrays.literal(type.element, expression.elements.map { item -> { transferArrayValue(adaptValue(emitValue(item), semantics.typeOf(item), type.element), type.element) } })
 			}
 
 			is IndexExpression          -> {
@@ -590,6 +619,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 		val hasLeft = presence(left, leftType)
 		val hasRight = presence(right, rightType)
+		if (expression.left is NullLiteral || expression.right is NullLiteral) {
+			return LLVMBuildICmp(builder, if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMIntNE else LLVMIntEQ, hasLeft, hasRight, "nullable_null_test")
+		}
 		val equal = checkNotNull(nullable.choose(LLVMBuildAnd(builder, hasLeft, hasRight, "nullable_both_present"), boolType, {
 			val a = payload(left, leftType)
 			val b = payload(right, rightType)
@@ -600,6 +632,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				}
 
 				ValueType.TYPEINFO -> strings.metadata.equal(a, b)
+				ValueType.STRING   -> strings.equal(a, b)
 				else               -> LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
 			}
 		}, { LLVMBuildICmp(builder, LLVMIntEQ, hasLeft, hasRight, "nullable_absence_equal") }))

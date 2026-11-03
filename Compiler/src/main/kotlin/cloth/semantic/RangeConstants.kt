@@ -2,7 +2,6 @@ package cloth.semantic
 
 import cloth.data.CFloat
 import cloth.data.CInteger
-import cloth.data.ProviderResult
 import cloth.parser.expression.*
 import cloth.token.Operators
 import java.math.BigDecimal
@@ -30,7 +29,7 @@ internal class RangeConstants(private val model: SemanticModel) {
 		val type = model.typeOf(expression) as? CInteger ?: return null
 		val value = when (expression) {
 			is IntegerLiteral           -> expression.value
-			is ProviderAccessExpression -> (model.providers[expression]?.result as? ProviderResult.IntegerConstant)?.value ?: return null
+			is ProviderAccessExpression -> model.providers[expression]?.result?.integerConstant ?: return null
 			is UnaryExpression          -> {
 				val operand = integer(expression.operand) ?: return null
 				when (Operators.fromCharacter(expression.operator.lexeme)) {
@@ -65,7 +64,7 @@ internal class RangeConstants(private val model: SemanticModel) {
 		val type = model.typeOf(expression) as? CFloat ?: return null
 		val value = when (expression) {
 			is FloatingPointLiteral     -> literal(expression.value.toBigDecimal(), type)
-			is ProviderAccessExpression -> literal((model.providers[expression]?.result as? ProviderResult.FloatingConstant)?.value ?: return null, type)
+			is ProviderAccessExpression -> literal(model.providers[expression]?.result?.floatingConstant ?: return null, type)
 			is UnaryExpression          -> {
 				val operand = floating(expression.operand) ?: return null
 				when (Operators.fromCharacter(expression.operator.lexeme)) {

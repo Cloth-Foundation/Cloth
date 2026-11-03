@@ -95,6 +95,31 @@ Array syntax and construction were confirmed on 2026-10-30:
   policies that have not been separately confirmed as language design, including
   empty arrays and bounds failures.
 
+## Nullable rectangular rows
+
+The user chose Cloth's rectangular row rules after reviewing C#'s independent,
+potentially different-length rows. C# nullability marker placement is retained;
+jagged row shapes are not adopted.
+
+- Nullable rows may be absent. A null row supplies no shape witness and is
+  distinct from a present empty row, whose length is zero.
+- Explicit dimensions constrain present rows even before any row is present.
+  Otherwise, the first present row establishes unknown inner dimensions.
+  All present rows must match those dimensions recursively.
+- An array containing only null rows retains unknown unspecified inner
+  dimensions until a present row supplies them. Its outer length is still known.
+- Replacing a row with null does not reset established shape constraints, even
+  when all rows become null. A later present replacement must still match.
+- Known mismatches fail at compile time; unknown mismatches fail through the
+  existing first-error runtime shape checks. Independent copies, parameter
+  snapshots and returned values retain the established shape constraints.
+
+For example, `def<int[]?[]> rows = [null, [1, 2]]` fixes the row length
+at two. `rows[0] = [3, 4]` and `rows[1] = null` are valid; a later
+`rows[1] = [5]` is a shape error. These rules now execute under the
+[nullable-row implementation contract](nullable-rows.md), including nested
+nullable levels, copies, parameters, results, output and typed foreach.
+
 ## Foreach source capture
 
 On 2026-11-02 the user confirmed source evaluation once per loop entry and

@@ -154,7 +154,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		fun validate(semantics: FunctionSemanticModel) {
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray    -> type.element != ValueType.VOID && supported(type.element)
-				is CNullable -> !type.buffered && supported(type.payload)
+				is CNullable -> supported(type.payload)
 				else         -> type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
 			}
 			for (function in semantics.declarations.functions) {

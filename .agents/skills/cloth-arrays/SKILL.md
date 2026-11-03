@@ -52,7 +52,12 @@ snapshot automatically, independently of local element rebinding or row writes.
 Stage 2 resolves foreach scopes, element/row inference and received shape, with
 ordinary mutable assignment checks. Stage 4 executes snapshots, independent
 element/row reception and conservative arena/stack cleanup. C3067 is retired;
-nullable array elements retain their existing gate. Read the
+nullable scalar/string elements execute with explicit receiving types. Nullable
+whole arrays and nullable rows retain shape through null assignments. Read the
+[confirmed rectangular row contract](references/semantics.md#nullable-rectangular-rows)
+and [row implementation record](references/nullable-rows.md) before changing
+nullable-row descriptors, shared shape witnesses, copies or nested writes.
+Read the [nullable buffer contract](../cloth-nullability/references/buffers.md) and the
 [stage scope](../cloth-control-flow/references/for-implementation.md) before
 extending traversal or lifetimes. `ForEachTest` and `ArrayTemporaryCleanupTest`
 cover executable independence, shape checks, saved values and bounded safe regions.
@@ -69,7 +74,8 @@ Runnable examples are [Arrays.co](../../../examples/Arrays.co) and
 loop IR/object emission across all supported ABI profiles.
 
 Relevant suites are `ArraysTest`, `ArrayInferenceTest`, `RectangularArraysTest`,
-`ArrayBindingShapeTest`, and `ArrayAssignmentTest`. Their existing coverage checks
+`ArrayBindingShapeTest`, and `ArrayAssignmentTest`. `NullableRowsTest` covers
+nullable-row execution and nine-profile IR/objects. The array suites check
 static/runtime shapes, inference order, side effects, bounds, and independent
 storage. Read the [array milestones](../cloth-language/references/development.md#fixed-initial-array-shapes-2026-10-31)
 for recorded verification; historical descriptor widths are superseded by usize.

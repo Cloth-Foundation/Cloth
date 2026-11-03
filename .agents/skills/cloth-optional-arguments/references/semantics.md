@@ -27,7 +27,9 @@ choice; `opt<T>` is a parameter declaration form, not a distinct runtime type.
 - Optionality permits omission only. Nullability independently permits null.
   `opt<int?> n ?: 7` yields 7 when omitted, null when supplied null, and the supplied
   integer otherwise. `int? n` still requires an argument; `opt<int> n ?: 7` rejects
-  null. No nullable buffer support follows from optional argument support.
+  null. Nullable strings, whole arrays and scalar/string elements now execute under
+  the [nullable buffer contract](../../cloth-nullability/references/buffers.md);
+  nullable rows follow the [rectangular row contract](../../cloth-arrays/references/nullable-rows.md).
 - Defaults produce one value under the parameter's declared type context, using
   ordinary strict typing, contextual literals, nullability and array shape rules.
   A default's leading `?:` is a declaration delimiter; later `?:` operators in its

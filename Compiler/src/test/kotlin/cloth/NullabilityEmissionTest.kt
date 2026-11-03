@@ -203,7 +203,6 @@ class NullabilityEmissionTest {
 			"fn main() { println(5 == null)\n1 + true }" to DiagnosticCode.INVALID_NULL_COMPARISON,
 			"fn main() { println(5 ?: 0)\n1 + true }" to DiagnosticCode.INVALID_ELVIS,
 			"fn<void?> value() = null\nfn main() {}" to DiagnosticCode.INVALID_NULLABLE_TYPE,
-			"fn<string?> value() = null\nfn main() {}" to DiagnosticCode.UNSUPPORTED_NULLABILITY,
 			"fn main() { def value = 5 -> int?\n1 + true }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE,
 			"fn main() { true -> int?\n1 + true }" to DiagnosticCode.INVALID_CAST,
 			"fn main() { def value = null ?: null\n1 + true }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE,

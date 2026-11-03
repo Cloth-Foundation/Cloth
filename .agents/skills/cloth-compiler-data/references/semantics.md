@@ -7,6 +7,12 @@ the parent skill for current implementation boundaries and source/test routing.
 
 ## Compiler data access (phase 3 implemented for supported types)
 
+Nullable type receivers now expose the payload's instance-independent providers
+under the [nullable provider contract](nullable-providers.md). Numeric bounds
+return the exact plain payload type; fixed-outer-extent nullable arrays expose
+their count as usize. Nullable type identity and scalar storage-size semantics
+take precedence over delegation. Nullable value payload access still needs proof.
+
 The later `usize` decision below supersedes the earlier fixed unsigned-64 result
 types for size/count/width providers. Those source contracts now specify
 `usize`; step 5 of the [usize migration](../../cloth-language/references/usize-implementation.md) implements

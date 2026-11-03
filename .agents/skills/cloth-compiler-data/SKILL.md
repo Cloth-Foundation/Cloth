@@ -35,6 +35,14 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   avoid parallel wrapper types and scattered provider-name switches. LLVM handles
   belong to the emission context, not reusable provider definitions.
 
+Nullable type receivers delegate instance-independent payload providers under the
+[nullable provider contract](references/nullable-providers.md): `int?::max` returns
+plain int and fixed-size nullable array types expose their outer count. Nullable
+`type` identity and scalar storage size remain nullable-owned. Unproven nullable
+value receivers still need presence for payload access. Use typed numeric facts
+on recipes when consuming constants through adapters; do not assume every numeric
+constant recipe is a concrete IntegerConstant/FloatingConstant.
+
 ## Source, tests, and boundaries
 
 Start with [PrimitiveTypes](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.kt),
@@ -45,8 +53,11 @@ and [EmitTypeInfo](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitTyp
 
 Relevant suites: `PrimitiveTypesTest`, `ProviderResultsTest`, `ProviderSyntaxTest`,
 `ScalarProvidersTest`, `BufferProvidersTest`, `TypeInfoTest`,
-`ProviderIntegrationTest`, and `BufferCountsTest`. They exercise exact values,
-source forms, skipped-code checks, effects, capabilities, ABI-sized storage, and
+`ProviderIntegrationTest`, and `BufferCountsTest`.
+`NullableTypeProvidersTest` additionally checks nullable type bounds/counts,
+receiver rejection, defaults/overloads, native x64/x86 and nine-profile IR/objects.
+The suites exercise exact values, source forms, skipped-code checks, effects,
+capabilities, ABI-sized storage, and
 type-only overflow. For target width changes use
 [target integers](../cloth-target-integers/SKILL.md).
 

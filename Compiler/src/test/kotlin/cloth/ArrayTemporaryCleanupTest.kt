@@ -623,6 +623,51 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
+	@Test
+	fun `nullable buffer returns and absent copies preserve lifetimes without allocations for absence`(@TempDir directory: Path) {
+		probe(directory, "nullable_buffers", """
+			fn<string?[]?> words(bool present) {
+			    def<string?[]> data = ["é" + "😀", null]
+			    return if (present) { data } else { null }
+			}
+			fn<string?[]?> none(opt<string?[]?> value ?: null) = value
+			fn<int> sample() {
+			    if (none() != null || none(null) != null || liveBytes() != 0) { return 1 }
+			    def<string?[]?> returned = words(true)
+			    if (returned == null || returned[0] != "é😀" || returned[1] != null) { return 2 }
+			    def<string?[]?> copy = returned
+			    returned[0] = "changed"
+			    returned = null
+			    if (copy == null || copy[0] != "é😀") { return 3 }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `nullable row constraints and nested string bytes outlive poisoned callee buffers`(@TempDir directory: Path) {
+		probe(directory, "nullable_row_shapes", """
+			fn<string?[]?[]> makeRows() {
+			    def<string?[]?[]> rows = [null, null]
+			    rows[0] = ["é" + "😀", null]
+			    rows[0] = null
+			    return rows
+			}
+			fn<string?[]?[]> textRows() = [null, ["é" + "😀", null]]
+			fn<int> sample() {
+			    def<string?[]?[]> empty = makeRows()
+			    empty[1] = ["new", null]
+			    def<string?[]?[]> returned = textRows()
+			    def<string?[]?[]> copy = returned
+			    returned[1] = null
+			    def<string?[]?> row = copy[1]
+			    if (row == null || row[0] != "é😀" || row[1] != null) { return 1 }
+			    copy[0] = ["another", null]
+			    return 0
+			}
+		""")
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

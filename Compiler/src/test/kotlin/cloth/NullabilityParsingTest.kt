@@ -179,12 +179,9 @@ class NullabilityParsingTest {
 	}
 
 	@Test
-	fun `later buffered nullable forms retain a deliberate capability gate`() {
-		for (source in listOf("fn<string?> value() = null", "fn main(string? value) {}", "fn main() { def<int[]?> value = null }", "fn main() { def<int?[]> value = [1] }")) {
-			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
-			assertEquals(DiagnosticCode.UNSUPPORTED_NULLABILITY, failure.diagnosticCode, source)
-			assertLocated(failure)
-		}
+	fun `nullable buffers and rows resolve while snippet checking remains deliberately limited`() {
+		for (source in listOf("fn<string?> value() = null", "fn main(string? value) {}", "fn main() { def<int[]?> value = null }", "fn main() { def<int?[]> value = [1] }")) FunctionAnalyzer().analyze(unit(source))
+		FunctionAnalyzer().analyze(unit("fn f(int[]?[2] rows) {}"))
 		val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet("def<int?> n = null")) }
 		assertEquals(DiagnosticCode.UNSUPPORTED_NULLABILITY, failure.diagnosticCode)
 		assertLocated(failure)

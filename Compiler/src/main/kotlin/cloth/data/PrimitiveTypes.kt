@@ -132,18 +132,28 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	override val buffered: Boolean get() = true
 	override val containsNullability: Boolean get() = element.containsNullability
 	override val arrayDimensions: List<BigInteger?> get() = listOf(size) + element.arrayDimensions
+
+	/** Only nullable-row trees need mutable, recursively shared shape witnesses. */
+	val hasNullableRows: Boolean get() = element is CNullable && element.payload is CArray || (element as? CArray)?.hasNullableRows == true
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
 		val providers = super.providers(target) + (CompilerDataProviders.SIZE to ProviderResult.ArraySize(this, CUSize(target.sizeBits)))
-		val text = element.provider("str", target)
+		val text = if (element is CNullable) element.payload.provider(CompilerDataProviders.STR.toString(), target)?.let { ProviderResult.NullableText(element, it) } else element.provider(CompilerDataProviders.STR.toString(), target)
 		return if (text?.type == CString && ProviderReceiverForm.VALUE in text.receiverForms) providers + (CompilerDataProviders.STR to ProviderResult.ArrayText(this, text)) else providers
 	}
 
-	override val spelling: String
-		get() {
-			var base: ValueType = this
-			while (base is CArray) base = base.element
-			return base.spelling + arrayDimensions.joinToString("") { "${Operators.BRACKET_OPEN}${it ?: ""}${Operators.BRACKET_CLOSE}" }
+	override val spelling: String get() = arraySpelling(false)
+	internal fun arraySpelling(metadata: Boolean): String {
+		var base: ValueType = this
+		val nullable = mutableListOf<Boolean>()
+		while (base is CArray || base is CNullable && base.payload is CArray) {
+			nullable.add(base is CNullable)
+			val array = ((base as? CNullable)?.payload ?: base) as CArray
+			base = array.element
 		}
+		return (if (metadata) base.metadataSpelling else base.spelling) + arrayDimensions.mapIndexed { index, count ->
+			"${Operators.BRACKET_OPEN}${count ?: ""}${Operators.BRACKET_CLOSE}" + if (nullable[nullable.lastIndex - index]) Operators.QUESTION.toString() else ""
+		}.joinToString("")
+	}
 
 	override fun commonArrayShape(other: ValueType): ValueType? = when {
 		this == other                                                                 -> this
@@ -151,11 +161,11 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		else                                                                          -> null
 	}
 
-	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || (actual is CArray && (size == null || actual.size == null || size == actual.size) && element.accepts(actual.element))
+	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || (actual is CArray && (size == null || actual.size == null || size == actual.size) && (element is CNullable) == (actual.element is CNullable) && element.accepts(actual.element))
 
 	override fun inferArraySizes(actual: ValueType): ValueType = if (actual is CArray) CArray(element.inferArraySizes(actual.element), size ?: actual.size) else this
 
-	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = BufferLayout.descriptor(context, target, arrayDimensions.size)
+	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = BufferLayout.descriptor(context, target, arrayDimensions.size, hasNullableRows)
 }
 
 /** Scalar storage bytes are language facts, independent of native registers and C ABI widths. */

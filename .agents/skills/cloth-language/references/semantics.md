@@ -135,7 +135,10 @@ retains its AST. Stage 2 resolves loop scopes, strict types and repeated flow.
 Stage 3 executes numeric ranges with saved bounds, default/explicit updates,
 finite/progress guards, integer overflow exits and early returns. Stage 4 executes
 array foreach with independent snapshots/element values and conservative arena/
-stack cleanup. C3067 is retired; nullable arrays retain their existing support gate.
+stack cleanup. C3067 is retired; nullable scalar/string elements now execute with
+explicit receiving types under the [buffer contract](../../cloth-nullability/references/buffers.md).
+Nullable rows execute with shared rectangular constraints under the
+[row contract](../../cloth-arrays/references/nullable-rows.md).
 See [implementation scope](../../cloth-control-flow/references/for-implementation.md).
 The [semicolon skill](../../cloth-semicolons/SKILL.md) distinguishes
 this required header separator from optional statement terminators.

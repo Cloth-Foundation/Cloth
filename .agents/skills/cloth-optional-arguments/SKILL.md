@@ -17,7 +17,11 @@ named and mixed calls, runtime defaults with earlier parameter reads,
 declaration-order defaults, source-order supplied snapshots, strict types and
 omission-aware overload ranking.
 All existing executable scalar, string and array types work, including nullable
-scalars. Nullable buffers retain the separate nullability gate. Methods, state
+strings, whole arrays and scalar/string elements. See the
+[nullable buffer contract](../cloth-nullability/references/buffers.md) for snapshots,
+shape retention, startup and `opt<string[]?> args ?: null`. Nullable rectangular
+rows also work under their [row contract](../cloth-arrays/references/nullable-rows.md).
+Methods, state
 dispatch, constructors and foreign default ABIs remain deferred. Built-ins reject
 named labels until their public labels are defined.
 

@@ -4,7 +4,6 @@ import cloth.ast.SourceUnit
 import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
-import cloth.data.CArray
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
@@ -169,7 +168,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 					if (expected == ValueType.VOID) reject { SemanticErrors.voidType(statement.type.span) }
 					val actual = typeOf(statement.initializer, expected)
 					if (expected == null && actual.containsNullability) throw SemanticErrors.nullableContext(statement.initializer.span)
-					val type = if (expected is CArray && actual is CArray && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
+					val type = if (expected != null && expected.accepts(actual)) expected.inferArraySizes(actual) else expected ?: actual
 					if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.initializer, statement.name) }
 					facts.bindings[symbol] = type
 					model.statements[statement] = type

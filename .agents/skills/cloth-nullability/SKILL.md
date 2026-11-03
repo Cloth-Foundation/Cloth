@@ -16,10 +16,21 @@ nullable buffers. Proposals in the plan do not establish new language rules.
 Nullable fixed-width and target-sized integers, floats, bool, char and typeinfo
 execute through bindings, parameters, returns, ordered multiple results, equality,
 presence proofs, lazy Elvis, nullable-target casts, formatting and metadata.
-Nullable strings, arrays and elements remain gated pending buffer integration.
-Class lifetime and unsafe handles have separate runtime/design work. Ordinary
+Nullable strings, whole arrays and scalar/string elements execute with recursive
+copying, retained shapes and presence-aware formatting. Read the
+[buffer integration record](references/buffers.md) before changing their handling.
+Nullable rectangular rows also execute under the
+[row integration contract](../cloth-arrays/references/nullable-rows.md).
+Class lifetime and unsafe handles have separate work. Ordinary
 optional arguments are implemented under [their own skill](../cloth-optional-arguments/SKILL.md),
-including explicit nullable scalar defaults; nullable buffers remain gated.
+including nullable string/array defaults such as `opt<string[]?> args ?: null`.
+
+Nullable type receivers expose instance-independent payload providers such as
+`int?::max` (plain int) and `int[2]?::size` (usize), preserving nullable-owned
+metadata and scalar storage size. Read the
+[nullable provider contract](../cloth-compiler-data/references/nullable-providers.md)
+before changing delegation or receiver-form diagnostics. Nullable value receivers
+still require presence for payload providers.
 
 Minimal supported example:
 
@@ -50,7 +61,7 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   exits. Guards inside an iteration can reestablish presence; body assignments
   can establish stepper presence. Endpoint proofs apply before body invalidation.
   Metadata uses a separate conservative mutable-fact policy. Stages 3-4 execute
-  numeric ranges and supported array foreach; nullable array elements remain gated. See
+  numeric ranges and array foreach; nullable elements require an explicit receiving type. See
   [loop scope and tests](../cloth-control-flow/references/for-implementation.md).
 - Cloth never infers or assumes nullability. Every new nullable binding needs an
   explicit type, even for a known nullable copy, function result, named result
@@ -114,19 +125,22 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   Absent payloads are deterministic and never treated as present. Branches and
   phis use actual continuing predecessors, including nested returns and guards.
   Scalar size queries use the emitted module's data layout, not a sum of bits.
-- Before admitting buffers, audit snapshots, returns, copy/transfer, freshness,
+- When extending buffers, preserve snapshots, returns, copy/transfer, freshness,
   discarded-result validation and cleanup recursively through wrappers. A
   `buffered` flag alone is insufficient. Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md)
   and [arrays](../cloth-arrays/SKILL.md) for those changes. Nullable array shape
   constraints persist independently of presence: first presence fixes unspecified
-  dimensions, and null never resets them. Nullable-row rectangularity is still
-  unresolved. Clearing a future class binding never implicitly deletes its object;
+  dimensions, and null never resets them. Nullable-row rectangularity is
+  [implemented](../cloth-arrays/references/nullable-rows.md) with independent
+  shape vectors shared within each array value. Clearing a future class binding never implicitly deletes its object;
   object presence and liveness remain separate.
 
 ## Verification
 
 Relevant suites are `NullabilityParsingTest`, `NullabilityTypingTest`,
-`NullabilityEmissionTest` and `NullabilityRulesTest`. Run from the repository root:
+`NullabilityEmissionTest`, `NullabilityRulesTest`, `NullableBuffersTest` and `NullableRowsTest`.
+The [buffer record](references/buffers.md) owns current buffer evidence and routing.
+Run from the repository root:
 
 ```powershell
 .\gradlew.bat :Compiler:test --tests 'cloth.Nullability*' --offline --console=plain

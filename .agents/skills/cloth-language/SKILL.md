@@ -78,6 +78,8 @@ captures implementation scope and regression evidence.
 | Integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
 | Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
+| Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
+| Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, inference, rectangular and fixed shapes, indexing | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
@@ -86,6 +88,7 @@ captures implementation scope and regression evidence.
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
+| Nullable type providers, payload bounds and fixed array type counts | [nullable provider integration](../cloth-compiler-data/references/nullable-providers.md) |
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |

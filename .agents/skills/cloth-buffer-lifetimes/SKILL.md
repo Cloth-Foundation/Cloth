@@ -48,6 +48,19 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
 
 ## Source and evidence
 
+Nullable strings, whole arrays and scalar/string elements execute under the
+[buffer integration contract](../cloth-nullability/references/buffers.md).
+Copy/snapshot/return operations must descend through present wrappers and skip
+absent payloads. Nullable element storage uses byte presence flags; decode before
+copying/formatting and encode before storing. Retained shape storage survives null.
+Nullable wrappers conservatively copy rather than inheriting fresh-array ownership.
+Use `NullableBuffersTest` and the nullable poisoned-memory probe in
+`ArrayTemporaryCleanupTest`. Nullable rows have a
+[focused lifetime/shape record](../cloth-arrays/references/nullable-rows.md):
+copy live shape vectors independently into the destination arena and attach owned
+descendants to the receiving vector. Never attach borrowed source storage or let
+outgoing shape metadata point into a released frame.
+
 Loop `break`/`continue` use shared crossed-region cleanup, releasing proven arena
 suffixes before restoring stack checkpoints. Continue retains the traversal
 snapshot; break finishes the whole-loop region. Buffered publication still

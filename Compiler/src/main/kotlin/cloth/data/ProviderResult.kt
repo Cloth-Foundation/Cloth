@@ -36,6 +36,8 @@ internal sealed class ProviderResult<out T : ValueType> {
 	abstract val receiverType: ValueType
 	abstract val type: T
 	open val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.VALUE)
+	open val integerConstant: BigInteger? get() = null
+	open val floatingConstant: BigDecimal? get() = null
 
 	fun emit(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
 		val resultType = type
@@ -53,6 +55,22 @@ internal sealed class ProviderResult<out T : ValueType> {
 	}
 
 	protected abstract fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef
+
+	/** A nullable type can ask for instance-independent payload data without
+	 * constructing a value or exposing an unchecked nullable payload read.
+	 */
+	data class NullableType(override val receiverType: CNullable, val delegate: ProviderResult<*>) : ProviderResult<ValueType>() {
+
+		init {
+			require(delegate.receiverType == receiverType.payload && ProviderReceiverForm.TYPE in delegate.receiverForms)
+		}
+
+		override val type: ValueType get() = delegate.type
+		override val receiverForms get() = setOf(ProviderReceiverForm.TYPE)
+		override val integerConstant get() = delegate.integerConstant
+		override val floatingConstant get() = delegate.floatingConstant
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = delegate.emit(context, ProviderReceiver.Type(receiverType.payload))
+	}
 
 	data class TypeMetadata(override val receiverType: ValueType) : ProviderResult<CTypeInfo>() {
 
@@ -74,6 +92,8 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override val receiverType: ValueType = type,
 	) : ProviderResult<CInteger>() {
 
+		override val integerConstant get() = value
+
 		override val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE)
 
 		init {
@@ -88,6 +108,8 @@ internal sealed class ProviderResult<out T : ValueType> {
 		val value: BigDecimal,
 		override val receiverType: ValueType = type,
 	) : ProviderResult<CFloat>() {
+
+		override val floatingConstant get() = value
 
 		override val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.TYPE, ProviderReceiverForm.VALUE)
 
@@ -167,6 +189,13 @@ internal sealed class ProviderResult<out T : ValueType> {
 
 		override val type: CString get() = CString
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatArray((receiver as ProviderReceiver.Value).value, this)
+	}
+
+	/** Source str and interpolation deliberately share one formatter. */
+	data class NullableText(override val receiverType: CNullable, val payloadText: ProviderResult<*>) : ProviderResult<CString>() {
+
+		override val type: CString get() = CString
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatNullable((receiver as ProviderReceiver.Value).value, this)
 	}
 
 	/** Source str and interpolation deliberately share one formatter. */

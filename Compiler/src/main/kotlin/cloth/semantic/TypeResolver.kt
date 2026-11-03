@@ -35,20 +35,16 @@ internal class TypeResolver(val target: TargetLayout) {
 			}
 		}
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)
-		// Qualifier positions are retained structurally, but array wrapper/row layout
-		// and descriptor transfers belong to the later array slice.
-		if (annotation.hasNullability && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.nullablePending(annotation.span)
-		if (annotation.nullable != null) {
-			if (base.buffered) throw SemanticErrors.nullablePending(annotation.span)
-			return CNullable(base)
-		}
-		return annotation.arraySuffixes.indices.reversed().fold(base) { element, index ->
+		val scalar = if (annotation.nullable != null) CNullable(base) else base
+		// Dimensions retain C order; nullable wrappers compose in C# suffix order.
+		return annotation.arraySuffixes.indices.reversed().fold(scalar) { element, index ->
 			val token = annotation.arraySizes.getOrNull(index)
 			val size = token?.lexeme?.toBigIntegerOrNull()
 			if (token != null && (size == null || size.signum() < 0 || size > CUSize(target.sizeBits).maximum)) {
 				throw SemanticErrors.array("Array count exceeds ${Keywords.USIZE} (${target.sizeBits}-bit target)", token.span)
 			}
-			CArray(element, size)
+			val array = CArray(element, size)
+			if (annotation.arrayNullability.getOrNull(annotation.arraySuffixes.lastIndex - index) != null) CNullable(array) else array
 		}
 	}
 }

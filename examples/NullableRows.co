@@ -1,0 +1,24 @@
+fn<int[]?[]> missingRows() = [null, null]
+
+fn<int[]?[]> filled(opt<int[]?[]> rows ?: missingRows()) {
+    rows[0] = [1, 2]
+    rows[1] = [3, 4]
+    return rows
+}
+
+fn main() {
+    def<int[]?[]> rows = missingRows()
+    def<int[]?[]> independent = rows
+    rows[0] = [1, 2] // First presence fixes the row width at two.
+    rows[0] = null
+    rows[1] = [3, 4] // Null did not erase the established width.
+    independent[0] = [9] // A copy has independent shape constraints.
+    println(rows)
+    println(independent)
+
+    def<int[]?[]> complete = filled()
+    for (def<int[]?> row <- complete) println(row ?: [])
+
+    def<string?[]?[]> labels = [null, ["é😀", null]]
+    println(labels)
+}
