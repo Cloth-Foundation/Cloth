@@ -110,13 +110,7 @@ class Parser(private val tokens: List<Token>) {
 		if (atKeyword(Keywords.FOR)) return forLoopParser.parseFor()
 		if (atKeyword(Keywords.WHILE)) return whileLoopParser.parseWhile()
 		if (atKeyword(Keywords.BREAK) || atKeyword(Keywords.CONTINUE)) return LoopJumpStatement(advance())
-		if (atKeyword(Keywords.RETURN)) {
-			if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
-			val keyword = advance()
-			val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString()
-			val value = if (bare) null else parseResults()
-			return ReturnStatement(keyword, value, keyword.span.through(previous().span))
-		}
+		if (atKeyword(Keywords.RETURN)) return returnStatement()
 		if (startsAssignmentList()) {
 			val targets = mutableListOf(ReceivingTarget.of(advance()))
 			while (peek().lexeme == Operators.COMMA.toString()) {
@@ -155,6 +149,14 @@ class Parser(private val tokens: List<Token>) {
 			return ElementAssignmentStatement(expression, parseResults())
 		}
 		return ExpressionStatement(parseResults(expression, expressionStart))
+	}
+
+	private fun returnStatement(): ReturnStatement {
+		if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
+		val keyword = advance()
+		val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString()
+		val value = if (bare) null else parseResults()
+		return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 	}
 
 	/** An identifier result list is an assignment only when followed by '=' or ':='. */
