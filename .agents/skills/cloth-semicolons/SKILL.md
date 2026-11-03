@@ -28,6 +28,9 @@ fn<int> main() { stop(); def x = value(); return x; }
   conditional ending in `}`; distinguish the grammar from the final token.
 - Semicolons cannot intervene before `else` or `else if`. Newlines before `else`
   still belong to the conditional chain. `if (flag) {}; else {}` is rejected.
+  This also applies to unbraced branches: `if (flag) return 1 else return 2`
+  is valid inside an int-returning function, while a semicolon before `else`
+  ends the chain. See [conditional bodies](../cloth-control-flow/references/semantics.md#conditional-expressions-and-statements).
 - Empty statements inside function bodies and internal snippet bodies are
   tolerated, as in C/Java statement contexts. They create no AST nodes and do
   not change a branch's final value. A semicolon after a complete standalone

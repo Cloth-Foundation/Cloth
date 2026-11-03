@@ -49,7 +49,7 @@ class ConditionalsTest {
 
 	@Test
 	fun `malformed conditionals have syntax diagnostics`() {
-		for (source in listOf("if true { 1 }", "if () {}", "if (true {}", "if (true) 1", "if (true) {", "if (true) { 1", "if (true) { 1 2 }", "if (true) {} else", "if (true) {} else 1", "if (true) {} else if (false)", "else {}", "if (true) {} else {} else {}", "if (true) {} if (false) {}", "if (true) { def x = }", "def x = if (true) { 1 } else { 2")) {
+		for (source in listOf("if true { 1 }", "if () {}", "if (true {}", "if (true)", "if (true) {", "if (true) { 1", "if (true) { 1 2 }", "if (true) {} else", "if (true) {} else if (false)", "else {}", "if (true) {} else {} else {}", "if (true) {} if (false) {}", "if (true) { def x = }", "def x = if (true) { 1 } else { 2")) {
 			assertLocated(assertFailsWith<SyntaxException>(source) { parse(source) })
 		}
 	}

@@ -154,7 +154,7 @@ class Parser(private val tokens: List<Token>) {
 	private fun returnStatement(): ReturnStatement {
 		if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
 		val keyword = advance()
-		val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString()
+		val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString() || atKeyword(Keywords.ELSE)
 		val value = if (bare) null else parseResults()
 		return ReturnStatement(keyword, value, keyword.span.through(previous().span))
 	}
