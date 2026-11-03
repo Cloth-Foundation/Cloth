@@ -35,6 +35,15 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C3069 / INVALID_LOOP_JUMP** locates a break/continue without an enclosing loop
+body, including attempts to cross a deferred-block boundary. `LoopControlTest`
+checks placement, first-error priority and CLI failure before object/linker work;
+see [loop control](../cloth-control-flow/references/loop-control.md).
+
+**C3014 / NON_BOOLEAN_CONDITION** also locates non-bool while conditions and
+names the while keyword. `WhileTest` covers strict conditions and skipped-body
+errors; runtime condition failures preserve location and suppress later effects.
+
 Start with [ClothDiagnostic](../../../Compiler/src/main/kotlin/cloth/diagnostics/ClothDiagnostic.kt),
 [DiagnosticCode](../../../Compiler/src/main/kotlin/cloth/diagnostics/DiagnosticCode.kt),
 [DiagnosticReporter](../../../Compiler/src/main/kotlin/cloth/diagnostics/DiagnosticReporter.kt),

@@ -88,12 +88,13 @@ object SemanticErrors {
 		return SemanticException(DiagnosticCode.MISSING_RETURN, "Non-void function '${function.name.lexeme}' can reach its end without returning a value", listOf(SourceLabel(closing, "execution can reach this closing brace"), SourceLabel(returnContract(function), "requires a return value")), "Use explicit '${Keywords.RETURN}' on every continuing path; a final expression in braces does not return implicitly.")
 	}
 
+	fun loopJump(keyword: Token) = issue(DiagnosticCode.INVALID_LOOP_JUMP, "'${keyword.lexeme}' requires an enclosing loop body", keyword.span, "Loop jumps cannot cross a function or deferred-block boundary.")
 	fun negativeExponent(span: TokenSpan) = issue(DiagnosticCode.NEGATIVE_EXPONENT, "Integer exponentiation requires a nonnegative exponent", span)
 	fun zeroDivisor(operator: Token, divisor: Expression) = SemanticException(DiagnosticCode.INTEGER_ZERO_DIVISOR, "Integer ${if (operator.lexeme == Operators.MODULO.toString()) "remainder" else "division"} by zero", listOf(SourceLabel(operator.span, "invalid operation"), SourceLabel(divisor.span, "divisor is zero")))
 	fun divisionOverflow(operator: Token, type: CInteger) = issue(DiagnosticCode.INTEGER_DIVISION_OVERFLOW, "Signed integer ${if (operator.lexeme == Operators.MODULO.toString()) "remainder" else "division"} overflow: minimum value of '${type.spelling}' with -1", operator.span)
 	fun integer(value: BigInteger, type: CInteger, span: TokenSpan) = issue(DiagnosticCode.INTEGER_RANGE, "Integer literal '$value' is out of range for '${type.spelling}'", span, "'${type.spelling}' accepts values from ${type.minimum} through ${type.maximum}.")
 	fun missingElse(span: TokenSpan) = issue(DiagnosticCode.MISSING_ELSE, "A value-producing '${Keywords.IF}' requires a final '${Keywords.ELSE}'", span, "Add an '${Keywords.ELSE}' branch that produces a value.")
-	fun condition(expression: Expression) = issue(DiagnosticCode.NON_BOOLEAN_CONDITION, "An '${Keywords.IF}' condition requires a boolean value", expression.span)
+	fun condition(expression: Expression, keyword: Keywords = Keywords.IF) = issue(DiagnosticCode.NON_BOOLEAN_CONDITION, "A '${keyword}' condition requires a boolean value", expression.span)
 	fun branchValue(span: TokenSpan) = issue(DiagnosticCode.MISSING_BRANCH_VALUE, "Each value-producing '${Keywords.IF}' branch must end with an expression", span)
 	fun branchTypes(expected: ValueType, actual: ValueType, first: TokenSpan, other: TokenSpan) = SemanticException(DiagnosticCode.BRANCH_TYPE_MISMATCH, "'${Keywords.IF}' branches must yield the same type, got '${expected.spelling}' and '${actual.spelling}'", listOf(SourceLabel(first, "yields '${expected.spelling}'"), SourceLabel(other, "yields '${actual.spelling}'")))
 	fun cast(source: ValueType, target: ValueType, span: TokenSpan) = issue(DiagnosticCode.INVALID_CAST, "Cannot cast '${source.spelling}' to '${target.spelling}'", span)

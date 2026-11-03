@@ -1,0 +1,23 @@
+// Range continue runs the header update. Break skips it and exits this loop.
+fn<int> main() {
+    def sum = 0
+    for (def i <- 0..10) {
+        if (i == 2) { continue }
+        if (i == 5) { break }
+        sum += i
+    }
+
+    // Foreach continue advances the saved snapshot; nested jumps stay local.
+    def total = 0
+    for (def row <- [[1, 2], [3, 4]]) {
+        for (def value <- row) {
+            if (value == 2) { continue }
+            if (value == 4) { break }
+            total += value
+        }
+    }
+    println(sum)
+    println(total)
+    if (sum != 8 || total != 4) { return 1 }
+    return 0
+}

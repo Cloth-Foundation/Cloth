@@ -15,6 +15,14 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 	fun emit(statement: Statement, discardResult: Boolean = false): LLVMValueRef? {
 		if (expressionEmitter.terminated()) return null
 		return when (statement) {
+			is WhileStatement             -> {
+				expressionEmitter.emitWhile(statement); null
+			}
+
+			is LoopJumpStatement          -> {
+				expressionEmitter.emitLoopJump(statement); null
+			}
+
 			is ForStatement               -> {
 				expressionEmitter.emitFor(statement); null
 			}

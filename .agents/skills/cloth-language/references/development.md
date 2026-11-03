@@ -7,6 +7,127 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### One-click example execution (2026-11-02)
+
+Added `:Compiler:runExample` under Gradle's `application` group for IntelliJ and
+command-line development testing. No source or target argument is required:
+`CompilerSettings.getSourceFile()` selects the default example and `runCompiler`
+retains native ABI selection. Optional `--args` supports ordinary compiler
+arguments. The development-only Kotlin launcher is compiled in a separate source
+set associated with main, uses normal source/output naming and ABI executable
+extensions, and starts the native program only after successful compilation.
+It forwards console streams and the native exit code; nonzero program completion
+fails JavaExec. Object output is rejected without execution. The production
+compiler entry point and its compile-only behavior are unchanged. Current usage,
+ownership and invariants live in [cloth-toolchains](../../cloth-toolchains/SKILL.md#one-click-example-execution).
+
+Verification on Windows x64:
+
+- `:Compiler:compileDevelopmentKotlin` and `:Compiler:help --task runExample`
+  succeeded using the existing offline Gradle cache.
+- Temporary isolated fixtures verified no-argument default-source compilation and
+  native execution (`PEC: 0`), compilation failure with an already-built binary
+  left unexecuted (one C3020), source/output paths containing spaces, native exit
+  7 reaching JavaExec (`PEC: 7`), regular `:Compiler:run` remaining compile-only,
+  and object-output rejection. The default-source fixture mirrored the current
+  settings path in an isolated working directory; no example source was changed
+  and no default filename was pinned in committed tests.
+- `:Compiler:test --tests cloth.CompilerSettingsTest --tests cloth.DiagnosticsTest
+  --tests cloth.ProgramEntryTest` passed all 40 tests with zero failures/errors/
+  skips. `:Compiler:jar` succeeded and its entries exclude the development launcher.
+- The smoke executable's PE machine is `0x8664` (x64). Linux/macOS native execution
+  and cross-target execution were not tested. The launcher uses portable JVM
+  process APIs and existing ABI executable naming.
+- The updated toolchain skill passed `quick_validate.py` with cached PyYAML.
+  Temporary verification scripts, fixtures, binaries and validation dependencies
+  were removed afterward.
+
+### While loops (2026-11-02)
+
+Implemented strict-bool while conditions with pre-body/repeated testing,
+braced/single-statement bodies, independent body scopes and shared break/continue
+targets. Continue returns to the test; break skips it. The LoopBody parser/AST
+representation is shared with for loops (ForBody remains a compatibility alias).
+The condition keeps its enclosing scope/jump context. Non-bool conditions use
+located C3014 without adding recovery or diagnostic accumulation.
+
+Completion distinguishes possible zero trips from simple syntax-proven true
+loops; a true loop without reachable breaks cannot fall through. Nullable
+analysis invalidates writes in both condition and body before checking repeated
+occurrences, supplies true facts to bodies and merges false/break exits.
+Metadata forgets mutable represented types before repeated tests and after loops.
+EmitWhileLoop uses the shared jump/cleanup API, with independent proven condition,
+body and whole-loop regions. Condition cleanup also runs on the final false test;
+captured publication and outgoing buffered returns retain their existing lifetime
+rules. The authoritative [while record](../../cloth-control-flow/references/while-loops.md)
+captures behavior, source ownership and remaining do/while scope.
+
+WhileTest adds 20 tests; ArrayTemporaryCleanupTest adds three poisoned-free and
+live/peak-byte tests, including 20,001 condition tests and 20,000 iterations with
+continued bodies and dynamic literal storage. While.co executes on native
+Windows x64 and PE32/x86; one canonical AST emits verified IR and nonempty objects
+for all nine supported ABI profiles. No new native Linux/macOS/Windows ARM64
+execution is claimed.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.ForParsingTest --offline --console=plain --no-daemon
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+The focused while/jump/parser run passed all 52 tests with no failures/errors/skips.
+The final full compiler run passed **981 tests**, zero failures/errors/skips,
+including all 20 while tests and 35 cleanup tests. Skill validation passed for
+cloth-control-flow, cloth-language, cloth-buffer-lifetimes, cloth-diagnostics,
+cloth-semicolons and cloth-nullability using cached PyYAML under tmp, removed
+afterward. All 235 relative file links across 11 feature records resolve, including
+the while milestone anchor; whitespace checks pass. README has matching local
+guidance under its existing skip-worktree setting.
+
+### Reusable loop jumps (2026-11-02)
+
+Integrated bare break/continue statements for numeric ranges and array foreach,
+including unbraced bodies, conditional expressions and snippets. Shared LoopTarget
+identities, jump resolutions and completion outcomes separate fallthrough, return,
+break and continue. Function/deferred-block boundaries reject escaping jumps with
+located C3069. Range continues execute existing updates/guards; foreach continues
+advance the snapshot index. Break skips the remaining body and update.
+
+Explicit update blocks receive normal completion and continues. Shared emission
+tracks cleanup depth and releases crossed proven arena/stack regions before each
+jump, preserving foreach snapshots and conservative buffered-publication lifetime.
+Nullable and metadata analyses merge all reachable continue-path facts into the
+stepper. Future while/do-while can reuse this infrastructure while supplying their
+own schedule and destinations; their syntax/execution and labeled jumps remain
+deferred. Header expressions retain the enclosing body context, as documented in
+the authoritative [loop-control record](../../cloth-control-flow/references/loop-control.md).
+
+LoopControlTest adds 17 tests; ArrayTemporaryCleanupTest adds five native poisoned-
+free/live-byte/peak regressions, including 20,000 continues and nested header
+cleanup. LoopControl.co executes on Windows x64 and PE32/x86. One AST emits
+verified IR and nonempty objects across all nine supported ABI profiles. No new
+native Linux/macOS/Windows ARM64 execution is claimed. The earlier focused run
+passed all 45 then-current jump/cleanup tests. The final full compiler run passed
+**958 tests**, zero failures/errors/skips, including all 17 jump tests and all 32
+cleanup tests. This includes the final expression-region cleanup regression.
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.LoopControlTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+The first full run passed 956 of 957 tests; its sole failure was an existing
+ISizeIntegrationTest assertion expecting an obsolete Fibonacci banner. The
+maintained Fib.co already prints the first ten values using for loops. Updated
+the assertion to check those exact values through the CLI on both target widths,
+without changing the example. The final full-suite command above then passed.
+
+Skill validation passed for cloth-control-flow, cloth-language,
+cloth-buffer-lifetimes, cloth-diagnostics and cloth-semicolons using cached PyYAML
+extracted under tmp and removed afterward. All 233 relative file links in the ten
+feature records resolve, including the new milestone anchor; whitespace checks
+pass. README remains under its
+existing skip-worktree setting and has matching local guidance.
+
 ### Canonical operator and keyword spellings (2026-11-02)
 
 Applied the shared spelling rule across lexer delimiters and character checks,

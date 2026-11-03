@@ -27,7 +27,7 @@ class ForFlowTest {
 		invalid("fn<int> test(int[] values) { for (def value <- values) return value }", DiagnosticCode.MISSING_RETURN)
 		val facts = valid("fn<int> test() { for (def i <- 0..3) return i; return 0 }")
 		val loop = facts.types.loops.keys.single()
-		assertTrue(facts.controlFlow.of(loop).canContinue)
+		assertTrue(facts.controlFlow.of(loop).canFallThrough)
 		assertTrue(facts.controlFlow.of(loop).canReturn)
 	}
 
@@ -35,7 +35,7 @@ class ForFlowTest {
 	fun `return inside an endpoint exits the real enclosing function`() {
 		val facts = valid("fn<int> test() { for (def<int> i <- if (true) { return 7 } else { 0 }..10) println(i) }")
 		val loop = facts.types.loops.keys.single()
-		assertFalse(facts.controlFlow.of(loop).canContinue)
+		assertFalse(facts.controlFlow.of(loop).canFallThrough)
 		assertTrue(facts.controlFlow.of(loop).canReturn)
 		assertEquals(ValueType.NEVER, facts.typeOf(assertIs<ForSource.Range>(loop.source).start))
 	}
@@ -44,7 +44,7 @@ class ForFlowTest {
 	fun `stepper returns are real returns but a zero trip still reaches following code`() {
 		val facts = valid("fn<int> test() { for (def i <- 0..3; i += if (true) { return 7 } else { 1 }) println(i); return 0 }")
 		val loop = facts.types.loops.keys.single()
-		assertTrue(facts.controlFlow.of(loop).canContinue)
+		assertTrue(facts.controlFlow.of(loop).canFallThrough)
 		assertTrue(facts.controlFlow.of(loop).canReturn)
 		assertEquals(ValueType.NEVER, facts.typeOf(assertNotNull(facts.types.loopOf(loop).stepperExpression)))
 	}

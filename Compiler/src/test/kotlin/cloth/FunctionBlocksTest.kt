@@ -128,7 +128,7 @@ class FunctionBlocksTest {
 		val model = analyze("fn<int> test() {\n def<int> x = { return 1 }\n def saved := x\n return saved\n}")
 		val body = model.declarations.functions.single().declaration.body as BlockBody
 		val block = body.statements[0] as BindingDeclaration
-		assertEquals(ControlFlow.CONTINUE, model.controlFlow.of(block))
+		assertEquals(ControlFlow.FALLTHROUGH, model.controlFlow.of(block))
 		assertEquals(ControlFlow.RETURN, model.controlFlow.of((block.initializer as FunctionBlockExpression).declaration))
 		assertEquals(ValueType.INT, model.typeOf(body.statements[1]))
 		assertEquals(ControlFlow.RETURN, model.controlFlow.of(body))

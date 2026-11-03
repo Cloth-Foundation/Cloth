@@ -39,6 +39,12 @@ and [NullableRules.co](../../../examples/NullableRules.co).
 
 ## Preserve the language contracts
 
+- While loops scan both condition and body writes before checking repeated
+  nullable occurrences. True-condition proofs enter the body; false-condition
+  and reachable-break facts intersect at exit. Captured and continue-path writes
+  cannot preserve an optimistic first-test proof. See
+  [while loops](../cloth-control-flow/references/while-loops.md) and `WhileTest`.
+
 - Stage 2 loop semantics invalidate repeated body/stepper and transitive captured
   writes before publishing nullable occurrence proofs, preserving zero-trip
   exits. Guards inside an iteration can reestablish presence; body assignments

@@ -243,7 +243,7 @@ class DestructuringTest {
 		assertEquals(ReceptionKind.NONCONTINUING, plan.kind)
 		assertEquals(ResultShape.Never, plan.results)
 		assertEquals(listOf(CInt(), CBool), plan.slots.map { it.type })
-		assertFalse(model.controlFlow.of(group(model)).canContinue)
+		assertFalse(model.controlFlow.of(group(model)).canFallThrough)
 	}
 
 	@Test

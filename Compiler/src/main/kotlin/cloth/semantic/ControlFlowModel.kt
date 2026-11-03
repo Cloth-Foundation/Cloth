@@ -10,17 +10,31 @@ import cloth.parser.statement.*
 import cloth.token.Operators
 import java.util.*
 
-/** Possible completion modes; returning and continuing paths can coexist. */
-data class ControlFlow(val canContinue: Boolean, val canReturn: Boolean) {
+/** Fallthrough, return and loop-jump paths can coexist. */
+data class ControlFlow(
+	val canFallThrough: Boolean,
+	val canReturn: Boolean,
+	val breaks: Set<LoopJumpStatement> = emptySet(),
+	val continues: Set<LoopJumpStatement> = emptySet(),
+) {
 
-	internal fun then(next: ControlFlow) = ControlFlow(canContinue && next.canContinue, canReturn || (canContinue && next.canReturn))
-	internal fun or(other: ControlFlow) = ControlFlow(canContinue || other.canContinue, canReturn || other.canReturn)
+	internal fun then(next: ControlFlow) = ControlFlow(
+		canFallThrough && next.canFallThrough,
+		canReturn || (canFallThrough && next.canReturn),
+		breaks + if (canFallThrough) next.breaks else emptySet(),
+		continues + if (canFallThrough) next.continues else emptySet(),
+	)
+
+	internal fun or(other: ControlFlow) = ControlFlow(
+		canFallThrough || other.canFallThrough, canReturn || other.canReturn,
+		breaks + other.breaks, continues + other.continues,
+	)
 
 	companion object {
 
-		val CONTINUE = ControlFlow(canContinue = true, canReturn = false)
-		val RETURN = ControlFlow(canContinue = false, canReturn = true)
-		internal val NONE = ControlFlow(canContinue = false, canReturn = false)
+		val FALLTHROUGH = ControlFlow(canFallThrough = true, canReturn = false)
+		val RETURN = ControlFlow(canFallThrough = false, canReturn = true)
+		internal val NONE = ControlFlow(canFallThrough = false, canReturn = false)
 	}
 }
 
@@ -37,66 +51,81 @@ class ControlFlowModel {
 		is ExpressionBody -> of(body.expression).then(ControlFlow.RETURN)
 	}
 
-	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
+	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.FALLTHROUGH) { flow, item -> flow.then(of(item)) }
 	fun of(statement: Statement): ControlFlow = statements.getOrPut(statement) {
 		when (statement) {
+			is WhileStatement             -> {
+				val tested = of(statement.condition)
+				val body = of(statement.body.statements)
+				val truth = truth(statement.condition)
+				// The condition's jumps target surrounding bodies; this loop consumes
+				// its body's break/continue paths. A proven true loop needs a break to exit.
+				tested.then(ControlFlow(truth != true || (truth != false && body.breaks.isNotEmpty()), truth != false && body.canReturn))
+			}
+
 			is ForStatement               -> {
 				val entry = when (val source = statement.source) {
 					is ForSource.Range    -> of(source.start).then(of(source.end))
 					is ForSource.Elements -> of(source.expression)
 				}
-				val iteration = of(statement.body.statements).then(statement.stepper?.value?.let { of(it) } ?: ControlFlow.CONTINUE)
+				val body = of(statement.body.statements)
+				// Body jumps belong to this loop. Header expressions remain in the
+				// surrounding body, and may jump to its enclosing loop instead.
+				val reachesUpdate = body.canFallThrough || body.continues.isNotEmpty()
+				val iteration = ControlFlow(reachesUpdate, body.canReturn).then(statement.stepper?.value?.let { of(it) } ?: ControlFlow.FALLTHROUGH)
 				// Even an always-returning body cannot establish that a loop executes.
-				entry.then(ControlFlow.CONTINUE.or(iteration))
+				entry.then(ControlFlow.FALLTHROUGH.or(iteration))
 			}
 
-			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.CONTINUE).then(ControlFlow.RETURN)
+			is LoopJumpStatement          -> if (statement.isContinue) ControlFlow(false, false, continues = setOf(statement)) else ControlFlow(false, false, breaks = setOf(statement))
+
+			is ReturnStatement            -> (statement.value?.let { of(it) } ?: ControlFlow.FALLTHROUGH).then(ControlFlow.RETURN)
 			is BindingDeclaration         -> of(statement.initializer)
 			is BindingGroupDeclaration    -> of(statement.initializer)
 			is AssignmentStatement        -> of(statement.value)
 			is MultiAssignmentStatement   -> of(statement.value)
 			is ElementAssignmentStatement -> of(statement.target).then(of(statement.value))
 			is ExpressionStatement        -> of(statement.expression)
-			is UpdateStatement            -> ControlFlow.CONTINUE
+			is UpdateStatement            -> ControlFlow.FALLTHROUGH
 			else                          -> throw InternalErrors.invariant("Unsupported statement during flow analysis: $statement")
 		}
 	}
 
 	fun of(expression: Expression): ControlFlow = expressions.getOrPut(expression) {
 		when (expression) {
-			is ResultListExpression                                                                                                                 -> expression.values.fold(ControlFlow.CONTINUE) { flow, value -> flow.then(of(value)) }
-			is TypeReceiverExpression                                                                                                               -> ControlFlow.CONTINUE
+			is ResultListExpression                                                                                                                 -> expression.values.fold(ControlFlow.FALLTHROUGH) { flow, value -> flow.then(of(value)) }
+			is TypeReceiverExpression                                                                                                               -> ControlFlow.FALLTHROUGH
 			is ProviderAccessExpression                                                                                                             -> of(expression.receiver)
 			is StateCallExpression                                                                                                                  -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }
 			// Declaring a deferred block executes none of its statements. Its returns
 			// belong to a separate contract and never complete the enclosing function.
-			is FunctionBlockExpression                                                                                                              -> ControlFlow.CONTINUE
-			is ArrayLiteral                                                                                                                         -> expression.elements.fold(ControlFlow.CONTINUE) { flow, item -> flow.then(of(item)) }
+			is FunctionBlockExpression                                                                                                              -> ControlFlow.FALLTHROUGH
+			is ArrayLiteral                                                                                                                         -> expression.elements.fold(ControlFlow.FALLTHROUGH) { flow, item -> flow.then(of(item)) }
 			is IndexExpression                                                                                                                      -> of(expression.array).then(of(expression.index))
 			is UnaryExpression                                                                                                                      -> of(expression.operand)
 			is CastExpression                                                                                                                       -> of(expression.operand)
-			is ElvisExpression                                                                                                                      -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.CONTINUE.or(of(expression.fallback)))
+			is ElvisExpression                                                                                                                      -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
 			is TypeCheckExpression                                                                                                                  -> of(expression.operand)
-			is CallExpression                                                                                                                       -> expression.arguments.fold(ControlFlow.CONTINUE) { flow, argument -> flow.then(of(argument)) }
-			is InterpolatedString                                                                                                                   -> expression.parts.fold(ControlFlow.CONTINUE) { flow, part -> flow.then(of(part)) }
+			is CallExpression                                                                                                                       -> expression.arguments.fold(ControlFlow.FALLTHROUGH) { flow, argument -> flow.then(of(argument)) }
+			is InterpolatedString                                                                                                                   -> expression.parts.fold(ControlFlow.FALLTHROUGH) { flow, part -> flow.then(of(part)) }
 			is BinaryExpression                                                                                                                     -> {
 				val left = of(expression.left)
 				val right = of(expression.right)
 				when (expression.operator.lexeme) {
-					"&&" -> when (truth(expression.left)) {
-						true -> left.then(right); false -> left; null -> left.then(ControlFlow.CONTINUE.or(right))
+					Operators.AND.toString() -> when (truth(expression.left)) {
+						true -> left.then(right); false -> left; null -> left.then(ControlFlow.FALLTHROUGH.or(right))
 					}
 
-					"||" -> when (truth(expression.left)) {
-						false -> left.then(right); true -> left; null -> left.then(ControlFlow.CONTINUE.or(right))
+					Operators.OR.toString()  -> when (truth(expression.left)) {
+						false -> left.then(right); true -> left; null -> left.then(ControlFlow.FALLTHROUGH.or(right))
 					}
 
-					else -> left.then(right)
+					else                     -> left.then(right)
 				}
 			}
 
 			is IfExpression                                                                                                                         -> {
-				var remaining = ControlFlow.CONTINUE
+				var remaining = ControlFlow.FALLTHROUGH
 				var result = ControlFlow.NONE
 				for (branch in expression.branches) {
 					val tested = remaining.then(of(branch.condition))
@@ -111,10 +140,10 @@ class ControlFlowModel {
 						}
 					}
 				}
-				result.or(remaining.then(expression.otherwise?.let { of(it) } ?: ControlFlow.CONTINUE))
+				result.or(remaining.then(expression.otherwise?.let { of(it) } ?: ControlFlow.FALLTHROUGH))
 			}
 
-			is NullLiteral, is NameExpression, is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> ControlFlow.CONTINUE
+			is NullLiteral, is NameExpression, is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> ControlFlow.FALLTHROUGH
 			else                                                                                                                                    -> throw InternalErrors.invariant("Unsupported expression during flow analysis: $expression")
 		}
 	}
@@ -129,9 +158,9 @@ class ControlFlowModel {
 				val left = truth(expression.left)
 				val right = truth(expression.right)
 				when (expression.operator.lexeme) {
-					"&&" -> if (left == false || right == false) false else if (left == true && right == true) true else null
-					"||" -> if (left == true || right == true) true else if (left == false && right == false) false else null
-					else -> null
+					Operators.AND.toString() -> if (left == false || right == false) false else if (left == true && right == true) true else null
+					Operators.OR.toString()  -> if (left == true || right == true) true else if (left == false && right == false) false else null
+					else                     -> null
 				}
 			}
 

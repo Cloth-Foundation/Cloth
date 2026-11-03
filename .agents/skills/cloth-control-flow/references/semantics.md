@@ -26,6 +26,8 @@ the parent skill for current implementation boundaries and source/test routing.
 
 ## Conditional expressions and statements
 
+For repeated strict-bool testing, see [implemented while loops](while-loops.md).
+
 - The user selected `if` / `else if` / `else` conditionals as the next feature
   after string equality and concatenation.
 - An `if` chain can produce a value used as a binding initializer. The branch
@@ -46,6 +48,10 @@ the parent skill for current implementation boundaries and source/test routing.
   rules and the remaining design questions.
 
 ## For loops and ranges (design confirmed; implementation deferred)
+
+The integrated range/foreach contract below is extended by
+[break/continue and reusable loop control](loop-control.md), approved on
+2026-11-02. That record owns jump behavior, header placement and future reuse.
 
 On 2026-11-02 the user confirmed `<-` between the loop binding and its
 range or collection for both stepped loops and foreach loops:

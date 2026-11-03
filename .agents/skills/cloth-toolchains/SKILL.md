@@ -36,6 +36,29 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
   compiler contract (user clarification, 2026-11-02). Do not pin its filename in
   tests; verify explicit source/output arguments and supported CLI options.
 
+## One-click example execution
+
+Run `:Compiler:runExample` from IntelliJ's Gradle `application` group, or use
+`.\gradlew.bat :Compiler:runExample` from the repository root. No source path or
+target argument is required: the development launcher calls `runCompiler` with
+the supplied arguments, and `CompilerSettings.getSourceFile()` owns the current
+default example. Native target selection remains the compiler's existing default.
+Optional `--args` accepts normal compiler arguments, including source/output
+overrides; output must be executable and runnable on the host.
+
+[Compiler/build.gradle.kts](../../../Compiler/build.gradle.kts) owns the task and
+its separate `development` source set;
+[RunExample.kt](../../../Compiler/src/development/kotlin/cloth/development/RunExample.kt)
+owns execution. The development Kotlin compilation is associated with main for
+internal ABI access, inherits its dependencies/JVM native-access option, and stays
+outside the production compiler JAR/distribution. Keep source/output selection in
+sync with `Entry.kt` and `CompilerSettings`, including default source-adjacent
+output and ABI-specific executable extensions. Launch only after compiler status
+zero; a stale binary must never run following compilation failure. Forward console
+input/output and the native exit status through JavaExec (nonzero status fails the
+Gradle task). Object output is rejected without executing it. Normal `run` remains
+compile-only. See the [verification record](../cloth-language/references/development.md#one-click-example-execution-2026-11-02).
+
 ## Source and verification
 
 Inspect [TargetLayout](../../../Compiler/src/main/kotlin/cloth/target/TargetLayout.kt),

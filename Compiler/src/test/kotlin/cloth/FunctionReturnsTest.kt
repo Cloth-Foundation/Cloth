@@ -35,11 +35,11 @@ class FunctionReturnsTest {
 	fun `omitted and explicit void functions allow fallthrough and bare early returns`() {
 		for (header in listOf("fn test()", "fn<void> test()")) {
 			val empty = analyze("$header {}")
-			assertEquals(ControlFlow.CONTINUE, empty.controlFlow.of(function(empty)))
+			assertEquals(ControlFlow.FALLTHROUGH, empty.controlFlow.of(function(empty)))
 			val returning = analyze("$header { return }")
 			assertEquals(ControlFlow.RETURN, returning.controlFlow.of(function(returning)))
 			val mixed = analyze("$header {\n if (true) { return }\n def value = 1\n}")
-			assertFalse(mixed.controlFlow.of(function(mixed)).canContinue)
+			assertFalse(mixed.controlFlow.of(function(mixed)).canFallThrough)
 		}
 	}
 
@@ -184,7 +184,7 @@ class FunctionReturnsTest {
 		val model = analyze("fn<int> test(bool flag) { def value = if (flag) { return 10 } else { return 20 } }")
 		val declaration = assertIs<BindingDeclaration>(body(model).single())
 		assertEquals(ValueType.Never, model.typeOf(declaration.initializer))
-		assertFalse(model.controlFlow.of(declaration).canContinue)
+		assertFalse(model.controlFlow.of(declaration).canFallThrough)
 		assertEquals(ControlFlow.RETURN, model.controlFlow.of(function(model)))
 		analyze("fn<int> test(bool flag) { def<int> value = if (flag) { return 10 } else { return 20 } }")
 	}

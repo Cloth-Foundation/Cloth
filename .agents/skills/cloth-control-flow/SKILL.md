@@ -1,6 +1,6 @@
 ---
 name: cloth-control-flow
-description: Design, explain, or extend Cloth if/else expressions and statements, primitive is checks, boolean short-circuit control flow, return completion, branch merging, numeric range loops, array foreach and conservative loop cleanup.
+description: Design, explain, or extend Cloth conditionals, boolean short circuits, completion and branch merging, range/foreach/while loops, break/continue and reusable loop cleanup.
 ---
 
 # Cloth control flow
@@ -71,6 +71,18 @@ Runnable examples: [ForRanges.co](../../../examples/ForRanges.co),
 syntax without treating it as a class-execution acceptance test.
 
 ## Development rules and current boundaries
+
+- `while (condition) body` executes with strict bool conditions, repeated tests,
+  nearest-body jumps and proven condition/body cleanup. Read [while loops](references/while-loops.md)
+  for scope, nullable/metadata invalidation, false/break exit facts and true-loop
+  completion. Use `WhileTest` and `ArrayTemporaryCleanupTest`; do/while is deferred.
+
+- For `break`/`continue`, read [loop control](references/loop-control.md): nearest
+  body target resolution, function/block boundaries, separate fallthrough/return/
+  jump outcomes, continue-path fact joins, shared destinations and crossed-region
+  cleanup. Range, foreach and while bodies execute jumps; do/while syntax is
+  deferred. Use `LoopControlTest` and `ArrayTemporaryCleanupTest` when extending
+  them. Header jumps target an enclosing body, never the loop being initialized.
 
 - Standalone conditionals have no implicit result/output or enclosing return.
   Value-producing chains currently require a final else and compatible branch

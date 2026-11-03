@@ -65,6 +65,8 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 	private class BodyResolver(private val model: DeclarationModel, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
 
+		private val loops = mutableListOf<LoopTarget>()
+
 		private fun lookup(name: Token, scope: LexicalScope): Symbol {
 			if (name.lexeme in unavailable && scope.lookup(name.lexeme) !is LocalSymbol && scope.lookup(name.lexeme) !is GroupLocalSymbol && scope.lookup(name.lexeme) !is LoopBindingSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
 			return scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) } ?: throw SemanticErrors.unknownName(name)
@@ -84,6 +86,22 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
+				is WhileStatement             -> {
+					expression(statement.condition, scope)
+					val bodyScope = LexicalScope(scope)
+					model.loopBodyScopes[statement] = bodyScope
+					loops.add(statement.loopTarget)
+					try {
+						statements(statement.body.statements, bodyScope)
+					} finally {
+						loops.removeAt(loops.lastIndex)
+					}
+				}
+
+				is LoopJumpStatement          -> {
+					model.loopJumps[statement] = loops.lastOrNull() ?: throw SemanticErrors.loopJump(statement.keyword)
+				}
+
 				is ForStatement               -> {
 					when (val source = statement.source) {
 						is ForSource.Range    -> {
@@ -102,7 +120,12 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					stepper?.let { expression(it, loopScope) }
 					val bodyScope = LexicalScope(loopScope)
 					model.loopBodyScopes[statement] = bodyScope
-					statements(statement.body.statements, bodyScope)
+					loops.add(statement.loopTarget)
+					try {
+						statements(statement.body.statements, bodyScope)
+					} finally {
+						loops.removeAt(loops.lastIndex)
+					}
 				}
 
 				is BindingGroupDeclaration    -> {

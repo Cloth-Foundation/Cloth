@@ -28,7 +28,7 @@ sealed interface ForSource {
 data class ForStepper(val target: Token, val operator: Token, val value: Expression?, val span: TokenSpan)
 
 /** An unbraced source declaration may normalize to several statements, sharing one body scope. */
-data class ForBody(val statements: List<Statement>, val braced: Boolean, val span: TokenSpan)
+typealias ForBody = LoopBody
 
 data class ForStatement(
 	val keyword: Token,
@@ -40,7 +40,9 @@ data class ForStatement(
 	val stepper: ForStepper?,
 	val closing: Token,
 	val body: ForBody,
-) : Statement {
+) : LoopStatement {
+
+	override val loopTarget = LoopTarget()
 
 	val headerSpan get() = keyword.span.through(closing.span)
 	override val span get() = keyword.span.through(body.span)

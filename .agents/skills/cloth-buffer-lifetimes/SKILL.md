@@ -48,6 +48,18 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
 
 ## Source and evidence
 
+Loop `break`/`continue` use shared crossed-region cleanup, releasing proven arena
+suffixes before restoring stack checkpoints. Continue retains the traversal
+snapshot; break finishes the whole-loop region. Buffered publication still
+retains frame lifetime. Read [loop control](../cloth-control-flow/references/loop-control.md)
+and use `LoopControlTest` plus the jump probes in `ArrayTemporaryCleanupTest`.
+
+While loops apply independent closed proofs to repeated conditions and bodies.
+Reclaim condition arena/stack temporaries after producing the bool, including the
+final false test; preserve buffers published by condition captures. See
+[while loops](../cloth-control-flow/references/while-loops.md), `WhileTest` and the
+while probes in `ArrayTemporaryCleanupTest`.
+
 Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt),
 [EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt),
 [EmitExpression](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt),
