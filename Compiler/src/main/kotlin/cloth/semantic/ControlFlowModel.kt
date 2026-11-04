@@ -45,6 +45,13 @@ class ControlFlowModel {
 	private val statements = IdentityHashMap<Statement, ControlFlow>()
 	private val truths = IdentityHashMap<Expression, Boolean?>()
 	internal fun booleanValue(expression: Expression): Boolean? = truth(expression)
+
+	/** A false/unreachable/non-continuing trailing test cannot create a backedge. */
+	internal fun canRepeat(statement: DoWhileStatement): Boolean {
+		val body = of(statement.body.statements)
+		return (body.canFallThrough || body.continues.isNotEmpty()) && of(statement.condition).canFallThrough && truth(statement.condition) != false
+	}
+
 	fun of(function: FunctionDeclaration): ControlFlow = of(function.body)
 	fun of(body: FunctionBody): ControlFlow = when (body) {
 		is BlockBody      -> of(body.statements)
@@ -54,6 +61,20 @@ class ControlFlowModel {
 	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.FALLTHROUGH) { flow, item -> flow.then(of(item)) }
 	fun of(statement: Statement): ControlFlow = statements.getOrPut(statement) {
 		when (statement) {
+			is DoWhileStatement           -> {
+				val body = of(statement.body.statements)
+				val tested = of(statement.condition)
+				val reachesTest = body.canFallThrough || body.continues.isNotEmpty()
+				// First entry is unconditional. Only fallthrough/continue reaches the
+				// test; its outward jumps are not consumed as this body's own jumps.
+				ControlFlow(
+					body.breaks.isNotEmpty() || (reachesTest && tested.canFallThrough && truth(statement.condition) != true),
+					body.canReturn || (reachesTest && tested.canReturn),
+					if (reachesTest) tested.breaks else emptySet(),
+					if (reachesTest) tested.continues else emptySet(),
+				)
+			}
+
 			is WhileStatement             -> {
 				val tested = of(statement.condition)
 				val body = of(statement.body.statements)

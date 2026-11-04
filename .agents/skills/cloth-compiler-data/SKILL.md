@@ -5,6 +5,15 @@ description: Design, explain, or extend Cloth compiler data access through doubl
 
 # Cloth compiler data access
 
+Do-while Stage 3 visits metadata in body-before-condition order, forgetting mutable
+represented-type facts before a body that may repeat. Its test joins actual
+fallthrough/continue snapshots; normal exits join reachable false-test/break
+snapshots without zero trips or unreachable suffix writes. Nonrepeating bodies
+keep incoming facts, immutable/local scopes remain distinct, and disagreements
+stay unknown. Read [do-while flow](../cloth-control-flow/references/do-while-loops.md#stage-3-completion-nullable-and-metadata-flow-2026-11-03)
+and use `DoWhileFlowTest`. Stage 4 emits providers using these facts and checked
+runtime recipes; `DoWhileTest` verifies mutable metadata behavior during execution.
+
 Read the [confirmed provider semantics](references/semantics.md) and the
 [current contract table](../../../todo/compiler-data-access.md#current-contracts-2026-11-01).
 The later usize/isize contracts supersede early fixed-64-bit provider records.

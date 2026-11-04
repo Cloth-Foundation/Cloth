@@ -10,7 +10,7 @@ import java.math.BigDecimal
 import java.math.BigInteger
 
 internal enum class ProviderReceiverForm { // Dummy comment for formatting
-TYPE,
+	TYPE,
 	VALUE
 }
 

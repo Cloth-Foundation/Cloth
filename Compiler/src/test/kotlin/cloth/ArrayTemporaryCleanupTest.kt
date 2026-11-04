@@ -645,6 +645,131 @@ class ArrayTemporaryCleanupTest {
 	}
 
 	@Test
+	fun `do while conditions and continued bodies reclaim separate temporary regions`(@TempDir directory: Path) {
+		probe(directory, "do_while_regions", """
+			fn<bool> again(int[] values, int limit) = values[0] < limit
+			fn<int> sample() {
+			    def i = 0
+			    do {
+			        if (liveBytes() != 0) return 1
+			        i++
+			        if (i % 2 == 0) continue
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (local[0] != 1 || liveBytes() != 264) return 2
+			    } while (again([i, ${(1..63).joinToString(", ")}], 20000))
+			    if (liveBytes() != 0) return 3
+			    return i - 20000
+			}
+		""", allocations = 30000, peak = 264)
+	}
+
+	@Test
+	fun `do while condition publication survives safe bodies and the final false test`(@TempDir directory: Path) {
+		probe(directory, "do_while_condition_publish", """
+			$make
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    def checks = 0
+			    def<bool> again = { saved = make(checks); checks++; return checks < 3 }
+			    do {
+			        if (checks > 0 && saved[0] != checks - 1) return 1
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (local[0] != 1) return 2
+			        continue
+			    } while (again)
+			    def baseline = liveBytes()
+			    make(9)
+			    if (checks != 3 || saved[0] != 2 || liveBytes() != baseline) return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `do while body publication outlives independently reclaimed conditions`(@TempDir directory: Path) {
+		probe(directory, "do_while_body_publish", """
+			$make
+			fn<bool> again(int[] values) = values[0] < 3
+			fn<int> sample() {
+			    def saved = [0, 0]
+			    def i = 0
+			    def<int<64>> baseline = 0
+			    do {
+			        saved = make(i)
+			        i++
+			        baseline = liveBytes()
+			    } while (again([i, ${(1..63).joinToString(", ")}]))
+			    if (saved[0] != 2 || liveBytes() != baseline) return 1
+			    make(9)
+			    if (saved[0] != 2 || liveBytes() != baseline) return 2
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `do while outgoing buffered values survive poisoned callee frames and break`(@TempDir directory: Path) {
+		probe(directory, "do_while_outgoing", """
+			fn<string[]> result() { do return [#"value {2}", "é中😀"] while (false) }
+			fn<int> sample() {
+			    def saved = ["", ""]
+			    def text = ""
+			    do {
+			        def local = result()
+			        saved = local
+			        text = local[1]
+			        break
+			    } while (true)
+			    def baseline = liveBytes()
+			    result()
+			    if (saved[0] != "value 2" || text != "é中😀" || liveBytes() != baseline) return 1
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `do while condition jumps clean nested loop body and condition regions`(@TempDir directory: Path) {
+		probe(directory, "do_while_outward", """
+			fn<bool> again(int[] values, int limit) = values[0] < limit
+			fn<int> breakOuter() {
+			    for (def i <- 0..2000) do {
+			        def local = [${(1..64).joinToString(", ")}]
+			        if (local[0] != 1) return 1
+			    } while (if (again([i, ${(1..63).joinToString(", ")}], 2000)) { break } else { false })
+			    if (liveBytes() != 0) return 2
+			    return 0
+			}
+			fn<int> sample() {
+			    for (def i <- 0..2000) {
+			        if (liveBytes() != 0) return 3
+			        do {
+			            def local = [${(1..64).joinToString(", ")}]
+			            if (local[0] != 1) return 4
+			        } while (if (again([i, ${(1..63).joinToString(", ")}], 2000)) { continue } else { false })
+			        return 5
+			    }
+			    if (liveBytes() != 0) return 6
+			    return breakOuter()
+			}
+		""", allocations = 4002, peak = 264)
+	}
+
+	@Test
+	fun `full cap do while bodies and conditions reclaim repeated wide stack values`(@TempDir directory: Path) {
+		probe(directory, "do_while_wide_stack", """
+			fn<int> sample() {
+			    def anchor = [1, 2, 3, 4]
+			    def<int<65536>> n = 0
+			    def iterations = 0
+			    do { n++; iterations++; continue } while (n < 2000)
+			    if (n != 2000 || iterations != 2000 || liveBytes() != 24 || anchor[0] != 1) return 1
+			    return 0
+			}
+		""", allocations = 1, peak = 24)
+	}
+
+	@Test
 	fun `nullable row constraints and nested string bytes outlive poisoned callee buffers`(@TempDir directory: Path) {
 		probe(directory, "nullable_row_shapes", """
 			fn<string?[]?[]> makeRows() {

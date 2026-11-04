@@ -9,7 +9,7 @@ class WhileLoopParser(private val parser: Parser, delimited: DelimitedParser) : 
 
 	private val expressionParser = parser.expressionParser
 
-	fun parseWhile(): WhileStatement {
+	fun parseWhile(allowWhileTrailer: Boolean = false): WhileStatement {
 		val keyword = parser.advance()
 		parser.skipNewlines()
 		val opening = parser.expect(Operators.PAREN_OPEN)
@@ -17,7 +17,7 @@ class WhileLoopParser(private val parser: Parser, delimited: DelimitedParser) : 
 		val condition = expressionParser.parseExpression()
 		parser.skipNewlines()
 		val closing = parser.expect(Operators.PAREN_CLOSE)
-		return WhileStatement(keyword, opening, condition, closing, parseLoopBody(keyword))
+		return WhileStatement(keyword, opening, condition, closing, parseLoopBody(keyword, allowWhileTrailer))
 	}
 
 }

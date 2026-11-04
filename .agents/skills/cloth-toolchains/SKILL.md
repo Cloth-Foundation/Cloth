@@ -107,3 +107,10 @@ verified loop IR plus objects for all nine supported ABI profiles. Its CLI objec
 test preserves linker-free publication. See the
 [completed loop record](../cloth-control-flow/references/for-implementation.md#stage-5-regression-portability-and-feature-publication-2026-11-02)
 for commands and limits; foreign objects do not establish native execution.
+
+`DoWhileTest` reads maintained [DoWhile.co](../../../examples/DoWhile.co), checks
+exact output and zero status on Windows x64/MSVC and x86/MSVC, and verifies it
+plus a shared nested do/foreach AST as IR and nonempty objects across all nine
+profiles. Native Windows ARM64/Linux/macOS do-while execution remains untested.
+See the [completed do-while record](../cloth-control-flow/references/do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)
+for the example, full-suite evidence and publication boundaries.

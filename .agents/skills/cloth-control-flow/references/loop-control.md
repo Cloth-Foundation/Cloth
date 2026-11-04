@@ -81,9 +81,17 @@ Maintained runnable example: [LoopControl.co](../../../../examples/LoopControl.c
 
 [While loops](while-loops.md) now provide their condition-test block as the
 continue destination, reusing targets, jump emission and crossed-region cleanup.
-Future `do/while` should provide its trailing condition-test block and its own
-guaranteed-first-body schedule/completion rules. Do/while syntax/execution, labels
-and nonlocal jumps remain deferred.
+[Do-while](do-while-loops.md) Stages 0-5 integrate syntax, scopes, strict
+conditions, jumps, semantic flow, execution and proven cleanup. Do-while body
+jumps resolve to its nearest active target; its condition resolves outside that
+target. Completion and nullable/metadata joins exclude unreachable tests and
+retain real continue/break snapshots. The emitter provides its trailing
+condition-test block as the continue destination and adds
+guaranteed-first-body scheduling/completion. The condition retains the surrounding
+jump context, outside this loop's body target. See the
+[completed plan](../../../../todo/do-while-loops-plan.md) and maintained
+[DoWhile.co](../../../../examples/DoWhile.co).
+Labels and nonlocal jumps remain deferred.
 
 ## Verification
 

@@ -87,7 +87,7 @@ captures implementation scope and regression evidence.
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
-| Conditionals, is checks, short circuits, branch merges, range/foreach/while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | Nullable type providers, payload bounds and fixed array type counts | [nullable provider integration](../cloth-compiler-data/references/nullable-providers.md) |
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
@@ -96,6 +96,18 @@ captures implementation scope and regression evidence.
 | Targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
+
+- Do-while: the [accepted contract](../cloth-control-flow/references/do-while-loops.md)
+  owns `do body while (condition)`, semicolon boundaries, scopes, jumps and
+  guaranteed first entry. Stages 0-5 integrate syntax, scopes, strict conditions,
+  jump resolution, completion/nullable/metadata flow, execution and proven cleanup
+  with `DoWhileParsingTest`, `DoWhileSemanticsTest`, `DoWhileFlowTest`,
+  `DoWhileTest` and poisoned-memory probes in `ArrayTemporaryCleanupTest`.
+  Maintained [DoWhile.co](../../../examples/DoWhile.co) runs on Windows x64/x86;
+  it and the nested-loop fixture verify IR/objects for all nine profiles.
+  The [completed implementation plan](../../../todo/do-while-loops-plan.md) and
+  [Stage 5 record](../cloth-control-flow/references/do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)
+  retain full-suite evidence and foreign native-execution limits.
 
 - Numeric range membership: `value == start..end`, `start..=end != value`,
   both operand orders, integers/floats and contextual literal widths are
@@ -161,11 +173,15 @@ captures implementation scope and regression evidence.
 
 ## Maintain project knowledge
 
-Current for/while loops support `break`/`continue` through reusable loop targets,
+Current for/while/do-while loops support `break`/`continue` through reusable loop targets,
 completion outcomes and crossed-region cleanup. Read the
 [loop-control extension](../cloth-control-flow/references/loop-control.md) before
 changing loop exits. [While loops](../cloth-control-flow/references/while-loops.md)
-implement repeated bool testing and conservative flow/cleanup; do/while remains deferred.
+implement repeated bool testing and conservative flow/cleanup. Read the
+[accepted do-while contract](../cloth-control-flow/references/do-while-loops.md)
+and [plan](../../../todo/do-while-loops-plan.md) for the published contract and
+execution, independent body/test cleanup, retained publication and completed
+Stage 5 example/portability evidence.
 
 Use [feature integration](../cloth-feature-integration/SKILL.md) for every integrated
 feature or stage. Keep confirmed decisions in the owning feature's references,

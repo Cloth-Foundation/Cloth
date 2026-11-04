@@ -38,6 +38,7 @@ class SemanticAnalyzer(private val target: TargetLayout = TargetLayout.native())
 
 			override fun statement(statement: Statement) {
 				when (statement) {
+					is DoWhileStatement           -> checkDoWhile(statement)
 					is WhileStatement             -> checkWhile(statement)
 					is LoopJumpStatement          -> {
 						model.loopJumps[statement] = loops.lastOrNull() ?: throw SemanticErrors.loopJump(statement.keyword)

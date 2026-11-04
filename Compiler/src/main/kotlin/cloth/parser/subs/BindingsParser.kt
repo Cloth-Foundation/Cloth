@@ -13,7 +13,7 @@ import cloth.token.TokenType
 
 class BindingsParser(private val parser: Parser) {
 
-	fun parseBindings(): List<Statement> {
+	fun parseBindings(allowWhileTrailer: Boolean = false): List<Statement> {
 		val keyword = parser.advance() // def
 		val types = parser.parseTypeList()
 		val targets = mutableListOf(parser.parseReceivingTarget())
@@ -44,8 +44,8 @@ class BindingsParser(private val parser: Parser) {
 				BindingDeclaration(type, target.token, initializer, assignment.lexeme == Operators.ASSIGN.toString(), keyword.span.through(parser.previous().span))
 			}
 		}
-		val initializer = if (block) FunctionBlockExpression(FunctionDeclaration(keyword, targets.first().token, types, emptyList(), parser.parseBlock())) else parser.parseResults()
-		val span = keyword.span.through(parser.previous().span)
+		val initializer = if (block) FunctionBlockExpression(FunctionDeclaration(keyword, targets.first().token, types, emptyList(), parser.parseBlock())) else parser.parseResults(allowWhileTrailer = allowWhileTrailer)
+		val span = keyword.span.through(parser.previousStatementEnd())
 		val mutable = assignment.lexeme == Operators.ASSIGN.toString()
 		return listOf(if (targets.size == 1 && targets.single() is ReceivingTarget.Named && types.size <= 1) {
 			BindingDeclaration(type, targets.single().token, initializer, mutable, span)

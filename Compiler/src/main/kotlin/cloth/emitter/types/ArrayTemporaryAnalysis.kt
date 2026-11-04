@@ -40,6 +40,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	 */
 	fun canReclaimIteration(body: List<Statement>): Boolean = body.all { statement ->
 		when (statement) {
+			is DoWhileStatement         -> canReclaimLoop(statement)
 			is WhileStatement           -> canReclaimLoop(statement)
 			is LoopJumpStatement        -> true
 			is BindingDeclaration       -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
@@ -66,6 +67,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	fun canReclaimStepper(statement: ForStatement): Boolean = statement.stepper?.value?.let { effects(it).safe } ?: true
 	fun canReclaimCondition(expression: Expression): Boolean = effects(expression).safe
 	fun canReclaimLoop(statement: WhileStatement): Boolean = effects(statement.condition).safe && canReclaimIteration(statement.body.statements)
+	fun canReclaimLoop(statement: DoWhileStatement): Boolean = effects(statement.condition).safe && canReclaimIteration(statement.body.statements)
 
 	private fun statements(body: List<Statement>): Effects = body.fold(Effects()) { result, statement ->
 		result + when (statement) {

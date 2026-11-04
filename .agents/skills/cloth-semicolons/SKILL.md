@@ -56,6 +56,24 @@ The user used C/C++/Java as placement guidance, with the explicit rejection of
 brace-bodied function terminators as the Cloth rule. This is not a promise to
 adopt every empty-declaration or empty-statement rule of those languages.
 
+## Do-while boundaries: parsing implemented
+
+Stages 0-1 publish and parse the accepted [do-while contract](../cloth-control-flow/references/do-while-loops.md#confirmed-semicolon-boundaries).
+Read it before extending terminator parsing: an unbraced simple body keeps its
+optional terminator, and the complete loop may end with `;` after its final `)`.
+A semicolon cannot intervene between a braced body and its trailing while.
+The existing restriction before else still applies inside the body. Keep newline
+skipping separate from separator consumption, including through nested unbraced
+bodies. `Parser.parseUnbracedBody` consumes only a simple leaf's terminator before
+the required trailer, while `previousStatementEnd` excludes it from enclosing
+spans. `DoWhileParsingTest` covers these boundaries and scoped bare returns.
+Stage 2 adds scopes, strict conditions and jump resolution; Stage 3 adds
+completion/nullable/metadata flow. Stage 4 executes these forms with proven
+cleanup in `DoWhileTest` and `ArrayTemporaryCleanupTest`. The
+[completed plan](../../../todo/do-while-loops-plan.md) records final integration;
+[DoWhile.co](../../../examples/DoWhile.co) executes the body/trailer semicolon
+forms on Windows x64/x86 and verifies IR/objects across all nine profiles.
+
 ## Required loop-header separator
 
 On 2026-11-02 the user confirmed that an explicit range-loop stepper requires
@@ -81,7 +99,8 @@ reject it; their traversal advances automatically through snapshot elements.
 
 [Parser](../../../Compiler/src/main/kotlin/cloth/parser/Parser.kt) distinguishes
 expression and brace function bodies at declaration boundaries, owns body-level
-separators and bare returns, and looks across newlines only to find `else`.
+separators and contextual bare returns. Conditional and do-trailer lookahead
+skip newlines only at their corresponding grammar boundaries.
 [ExpressionParser](../../../Compiler/src/main/kotlin/cloth/parser/subs/ExpressionParser.kt)
 stops at `;` without consuming it; the enclosing grammar decides its validity.
 Keep `skipNewlines` distinct from statement separators so argument lists, types,

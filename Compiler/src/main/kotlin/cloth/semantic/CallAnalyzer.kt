@@ -130,6 +130,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		fun check(statements: List<Statement>) = statements.forEach { statement(it) }
 		override fun statement(statement: Statement) {
 			when (statement) {
+				is DoWhileStatement           -> if (probe) BodyTyping(facts, function, returnResults, validateReturns).statement(statement) else checkDoWhile(statement)
 				is WhileStatement             -> if (probe) BodyTyping(facts, function, returnResults, validateReturns).statement(statement) else checkWhile(statement)
 				is LoopJumpStatement          -> model.recordResult(statement, ResultShape.Never)
 				is ForStatement               -> {

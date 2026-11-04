@@ -21,6 +21,14 @@ For buffered parameters/results use [buffer lifetimes](../cloth-buffer-lifetimes
 - An omitted return annotation means void. Brace bodies require explicit returns;
   `= expression` bodies return implicitly. Preserve void expression returns,
   bare void returns, and explicit `-> void` discards. Check every completing path.
+- Do-while Stage 3 can complete a non-void body through its guaranteed first
+  entry or intentional nontermination. Only fallthrough/continue reaches the
+  test; skipped tests supply no runtime returns or jumps. Deferred returns keep
+  their own contract and non-continuing loop branches supply no value. Read
+  [do-while flow](../cloth-control-flow/references/do-while-loops.md#stage-3-completion-nullable-and-metadata-flow-2026-11-03)
+  and use `DoWhileFlowTest`. Stage 4 executes body/test/deferred returns and
+  non-fallthrough branches in `DoWhileTest`; poisoned-memory probes in
+  `ArrayTemporaryCleanupTest` verify outgoing buffered copies before cleanup.
 - Keep names/signatures, typed call selection, return checking, and executable
   entry validation as distinct stages. Resolve forward/direct/mutually recursive
   calls by stable symbols. Return context does not choose an overload.

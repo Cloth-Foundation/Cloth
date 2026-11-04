@@ -201,6 +201,13 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	protected open fun loopBody(loop: LoopStatement, body: List<Statement>) = withScope { body.forEach { statement(it) } }
 
+	protected fun checkDoWhile(statement: DoWhileStatement) {
+		loopBody(statement, statement.body.statements)
+		val condition = typeOf(statement.condition)
+		if (condition != ValueType.BOOL && condition != ValueType.NEVER) throw SemanticErrors.condition(statement.condition, Keywords.WHILE)
+		model.recordResult(statement, ResultShape.Empty)
+	}
+
 	protected fun checkWhile(statement: WhileStatement) {
 		val condition = typeOf(statement.condition)
 		if (condition != ValueType.BOOL && condition != ValueType.NEVER) throw SemanticErrors.condition(statement.condition, Keywords.WHILE)
@@ -540,11 +547,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			// An exiting expression has no value contract to contribute, even if
 			// its unreachable alternative happens to end with a typed value.
 			if (completion(it).canFallThrough) arrayElementHint(it, contextualFloat = true)?.takeUnless { type -> type == ValueType.NEVER } else null
-		}
-			?: operands.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
-			// When every operand exits, no numeric value reaches a comparison. A
-			// literal context still lets us check all syntax without rejecting never.
-			?: ValueType.INT
+		} ?: operands.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
+		// When every operand exits, no numeric value reaches a comparison. A
+		// literal context still lets us check all syntax without rejecting never.
+		?: ValueType.INT
 		if (!required.numeric) invalid("Range membership requires a non-nullable numeric type, got '${required.spelling}'", value)
 		for (operand in operands) {
 			val actual = typeOf(operand, required, contextualFloat = true)

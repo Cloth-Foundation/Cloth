@@ -14,7 +14,7 @@ import cloth.token.TokenType
 class IfParser(private val parser: Parser) {
 
 	/** Newlines before an else belong to the chain; semicolons end the statement. */
-	fun parseIf(): IfExpression {
+	fun parseIf(allowWhileTrailer: Boolean = false): IfExpression {
 		val keyword = parser.advance() // if
 		val branches = mutableListOf<ConditionalBranch>()
 		var otherwise: List<Statement>? = null
@@ -27,7 +27,7 @@ class IfParser(private val parser: Parser) {
 				expression
 			}
 			parser.skipNewlines()
-			val body = parseBranchBody()
+			val body = parseBranchBody(allowWhileTrailer)
 			branches.add(ConditionalBranch(condition, body.statements, condition.span.through(body.span)))
 			var offset = 0
 			while (parser.peek(offset).type == TokenType.NewLine) offset++
@@ -38,23 +38,22 @@ class IfParser(private val parser: Parser) {
 				parser.advance()
 				parser.skipNewlines()
 			} else {
-				val body = parseBranchBody()
+				val body = parseBranchBody(allowWhileTrailer)
 				otherwise = body.statements
 				otherwiseSpan = body.span
 				break
 			}
 		}
-		return IfExpression(keyword, branches, otherwise, keyword.span.through(parser.previous().span), otherwiseSpan)
+		return IfExpression(keyword, branches, otherwise, keyword.span.through(parser.previousStatementEnd()), otherwiseSpan)
 	}
 
-	private fun parseBranchBody(): BlockBody {
+	private fun parseBranchBody(allowWhileTrailer: Boolean): BlockBody {
 		val start = parser.peek()
 		if (start.lexeme == Operators.BRACE_OPEN.toString()) return parser.parseBlock()
 		if (start.type == TokenType.EOF || parser.atKeyword(Keywords.ELSE) || start.lexeme in setOf(Operators.BRACE_CLOSE.toString(), Operators.SEMICOLON.toString())) {
 			throw SyntaxErrors.expected("a conditional body ('${Operators.BRACE_OPEN}' or a statement)", start)
 		}
-		val statements = if (parser.atKeyword(Keywords.DEFINITION)) parser.bindingsParser.parseBindings() else listOf(parser.parseStatement())
-		return BlockBody(statements, start.span.through(parser.previous().span))
+		return parser.parseUnbracedBody(allowWhileTrailer)
 	}
 
 }

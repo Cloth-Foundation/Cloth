@@ -86,6 +86,19 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
+				is DoWhileStatement           -> {
+					val bodyScope = LexicalScope(scope)
+					model.loopBodyScopes[statement] = bodyScope
+					loops.add(statement.loopTarget)
+					try {
+						statements(statement.body.statements, bodyScope)
+					} finally {
+						loops.removeAt(loops.lastIndex)
+					}
+					// The trailing test sees outer bindings and enclosing body targets only.
+					expression(statement.condition, scope)
+				}
+
 				is WhileStatement             -> {
 					expression(statement.condition, scope)
 					val bodyScope = LexicalScope(scope)
