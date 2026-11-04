@@ -49,6 +49,20 @@ internal class MetadataAnalysis(
 	fun statements(body: List<Statement>): ValueType? {
 		var result: ValueType? = null
 		for (item in body) result = when (item) {
+			is DoWhileStatement           -> {
+				if (flow.canRepeat(item)) forgetMutable()
+				scoped(item.body.statements)
+				val completion = flow.of(item.body.statements)
+				val inputs = completion.continues.map { jumpFacts.getValue(it) }.toMutableList()
+				if (completion.canFallThrough) inputs.add(snapshot())
+				if (inputs.isEmpty()) forgetMutable() else merge(inputs)
+				expression(item.condition)
+				val exits = completion.breaks.map { jumpFacts.getValue(it) }.toMutableList()
+				if (inputs.isNotEmpty() && flow.of(item.condition).canFallThrough && flow.booleanValue(item.condition) != true) exits.add(snapshot())
+				if (exits.isEmpty()) forgetMutable() else merge(exits)
+				null
+			}
+
 			is WhileStatement             -> {
 				forgetMutable()
 				expression(item.condition)

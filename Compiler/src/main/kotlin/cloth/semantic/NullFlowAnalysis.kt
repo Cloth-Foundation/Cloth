@@ -42,6 +42,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun statements(body: List<Statement>, initial: Set<BindingSymbol>): Set<BindingSymbol> {
 		var facts = initial
 		for (item in body) facts = when (item) {
+			is DoWhileStatement           -> doWhileLoop(item, facts)
 			is WhileStatement             -> whileLoop(item, facts)
 			is LoopJumpStatement          -> facts.also { jumpFacts[item] = it }
 			is ForStatement               -> loop(item, facts)
@@ -106,6 +107,22 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		item.stepper?.value?.let { expression(it, common(updates, entry - changed)) }
 		// Include the zero-trip path and conservatively forget repeated writes.
 		return entry - changed
+	}
+
+	private fun doWhileLoop(item: DoWhileStatement, initial: Set<BindingSymbol>): Set<BindingSymbol> {
+		val repeated = item.body.statements + ExpressionStatement(item.condition)
+		val entry = if (flow.canRepeat(item)) initial - writes(repeated) else initial
+		// No test precedes first entry. Invalidate writes only if this body can repeat.
+		val afterBody = statements(item.body.statements, entry)
+		val completion = flow.of(item.body.statements)
+		val inputs = completion.continues.map { jumpFacts.getValue(it) }.toMutableList()
+		if (completion.canFallThrough) inputs.add(afterBody)
+		// Still visit an unreachable test for ordinary source checking, but its
+		// facts cannot enter the loop's runtime exits or an enclosing loop join.
+		val condition = expression(item.condition, common(inputs, entry))
+		val exits = completion.breaks.map { jumpFacts.getValue(it) }.toMutableList()
+		if (inputs.isNotEmpty() && flow.of(item.condition).canFallThrough && flow.booleanValue(item.condition) != true) exits.add(condition.no)
+		return common(exits, entry)
 	}
 
 	private fun whileLoop(item: WhileStatement, initial: Set<BindingSymbol>): Set<BindingSymbol> {
@@ -279,6 +296,11 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun writtenStatements(body: List<Statement>, visit: (Expression) -> Unit): Set<BindingSymbol> = buildSet {
 		for (item in body) when (item) {
+			is DoWhileStatement           -> {
+				addAll(writtenStatements(item.body.statements, visit))
+				visit(item.condition)
+			}
+
 			is WhileStatement             -> {
 				visit(item.condition)
 				addAll(writtenStatements(item.body.statements, visit))

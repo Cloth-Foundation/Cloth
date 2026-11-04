@@ -8,8 +8,8 @@ import cloth.token.*
 
 class ExpressionParser(val parser: Parser) {
 
-	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false, stopAtRange: Boolean = false): Expression {
-		var left = parseUnary(stopAtRange)
+	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false, stopAtRange: Boolean = false, allowWhileTrailer: Boolean = false): Expression {
+		var left = parseUnary(stopAtRange, allowWhileTrailer)
 
 		while (true) {
 			val operator = parser.peek()
@@ -45,7 +45,7 @@ class ExpressionParser(val parser: Parser) {
 				Associativity.LEFT  -> operatorPrecedence.precedence + 1
 				Associativity.RIGHT -> operatorPrecedence.precedence
 			}
-			val right = parseExpression(rightPrecedence, stopAtRange = stopAtRange)
+			val right = parseExpression(rightPrecedence, stopAtRange = stopAtRange, allowWhileTrailer = allowWhileTrailer)
 
 			left = if (kind == Operators.ELVIS) ElvisExpression(left, operator, right) else BinaryExpression(left, operator, right)
 		}
@@ -53,15 +53,15 @@ class ExpressionParser(val parser: Parser) {
 		return left
 	}
 
-	fun parseUnary(stopAtRange: Boolean = false): Expression {
+	fun parseUnary(stopAtRange: Boolean = false, allowWhileTrailer: Boolean = false): Expression {
 		val token = parser.peek()
 
 		if (token.type == TokenType.Operator && token.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString(), Operators.NOT.toString())) {
 			parser.advance()
-			return UnaryExpression(token, if (token.lexeme == Operators.NOT.toString()) parseUnary(stopAtRange) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange))
+			return UnaryExpression(token, if (token.lexeme == Operators.NOT.toString()) parseUnary(stopAtRange, allowWhileTrailer) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange, allowWhileTrailer = allowWhileTrailer))
 		}
 
-		var value = parsePrimary()
+		var value = parsePrimary(allowWhileTrailer)
 		while (true) {
 			value = when (parser.peek().lexeme) {
 				Operators.BRACKET_OPEN.toString() -> {
@@ -85,7 +85,7 @@ class ExpressionParser(val parser: Parser) {
 		}
 	}
 
-	fun parsePrimary(): Expression {
+	fun parsePrimary(allowWhileTrailer: Boolean = false): Expression {
 		val token = parser.peek()
 
 		return when (token.type) {
@@ -95,7 +95,7 @@ class ExpressionParser(val parser: Parser) {
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
 			}
 
-			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.ifParser.parseIf()
+			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.ifParser.parseIf(allowWhileTrailer)
 			TokenType.Keyword if token.lexeme == Keywords.NULL.toString()                                   -> {
 				parser.advance()
 				NullLiteral(token.span)

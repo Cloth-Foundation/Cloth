@@ -129,6 +129,14 @@ Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#condi
 Read [while loops](../../cloth-control-flow/references/while-loops.md) for repeated
 strict-bool conditions, body scope, jumps and completion.
 
+Read [do-while loops](../../cloth-control-flow/references/do-while-loops.md) for
+the accepted body-first syntax, terminator boundaries, scopes and jump behavior.
+Stages 0-5 integrate syntax, scopes, strict conditions, jump resolution,
+first-entry completion/nullable/metadata joins, execution and proven cleanup.
+The [completed plan](../../../../todo/do-while-loops-plan.md) and
+[Stage 5 record](../../cloth-control-flow/references/do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)
+link the maintained example, full-suite evidence and native/IR target limits.
+
 Read [loop jumps and shared control](../../cloth-control-flow/references/loop-control.md)
 for break/continue, lexical body targets and reusable completion/cleanup rules.
 

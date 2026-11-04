@@ -7,6 +7,240 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Do-while Stage 5: integration, portability and publication (2026-11-03)
+
+[Stage 5](../../cloth-control-flow/references/do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)
+publishes maintained [DoWhile.co](../../../../examples/DoWhile.co). It demonstrates
+the false first test, repeated condition effects, an unbraced body with optional
+body/trailer semicolons, continue-to-test and break-without-test. Main checks the
+results and returns zero. DoWhileTest reads the actual example, verifies exact
+output and zero status on Windows x64/MSVC and x86/MSVC, and verifies its LLVM IR
+and nonempty objects across all nine profiles alongside the nested do/foreach
+fixture. The suite now has 13 tests; no compiler behavior changes were required
+for final integration.
+
+The focused affected command:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.DoWhileTest --tests cloth.DoWhileFlowTest --tests cloth.DoWhileSemanticsTest --tests cloth.DoWhileParsingTest --tests cloth.ArrayTemporaryCleanupTest --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.ForEachTest --tests cloth.ForRangeTest --tests cloth.FunctionBlocksTest --tests cloth.FunctionReturnsTest --tests 'cloth.Nullable*' --offline --console=plain --no-daemon
+```
+
+Passes 285 tests across 14 suites in 55 seconds, zero failures/errors/skips.
+The full compiler command follows the focused success:
+
+```powershell
+.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
+```
+
+Passes 1,184 tests across 91 suites in 5m 15s, zero failures/errors/skips,
+including all 79 do-while tests and all 48 lifetime tests. Both commands require
+Gradle cache access outside the sandbox. Target profiles are
+i686-pc-windows-msvc, x86_64-pc-windows-msvc,
+aarch64-pc-windows-msvc, x86_64-unknown-linux-gnu,
+aarch64-unknown-linux-gnu, x86_64-unknown-linux-musl,
+aarch64-unknown-linux-musl, x86_64-apple-darwin and aarch64-apple-darwin.
+The native evidence covers Windows x64/x86; Windows ARM64, Linux and macOS
+do-while native execution remains untested. Object emission does not imply
+native execution, linking or a public library ABI.
+
+Plan, feature/language/semantics, jump, semicolon and toolchain routing now link
+the maintained example and final verification record. The closed cleanup proof
+remains unchanged: captured publication/unknown effects retain frame lifetime,
+and arbitrary loops have no bounded-storage guarantee. Skill-creator quick
+validation was attempted but could not start because Python lacks PyYAML;
+direct checks validate nine skill metadata blocks, relative links/fragments,
+fences and whitespace, and git diff --check passes. Stages 0-5 are complete;
+the agreed slice has no outstanding implementation work. Stages 0-4 retain
+their historical evidence below.
+
+### Do-while Stage 4: execution and proven cleanup (2026-11-03)
+
+[Stage 4](../../cloth-control-flow/references/do-while-loops.md#stage-4-execution-and-proven-cleanup-2026-11-03)
+adds EmitDoWhileLoop and statement dispatch through EmitExpression. The CFG
+enters body before test without duplicating it; continue reaches test and break
+reaches exit. Tests emit only after body fallthrough/continue. Unreached test
+blocks and non-fallthrough exits receive unreachable terminators, including
+when a reached test returns or jumps outward. The body target is removed before
+test emission, preserving surrounding loop destinations. Existing return,
+deferred-block, nullable/metadata and located runtime-failure handling is reused.
+
+ArrayTemporaryAnalysis recognizes do-while in iteration and whole-loop proofs.
+Body, test and whole-loop regions use independent closed proofs. Cleanup
+reclaims arena suffixes before restoring stack checkpoints, including continue,
+final false tests, break and crossed regions on outward test jumps. Outgoing
+buffers copy before frame cleanup. Captured publication and unknown effects
+retain frame lifetime; no general bounded-storage promise is introduced.
+
+DoWhileTest adds 12 execution/IR tests. Six new ArrayTemporaryCleanupTest probes
+cover repeated body/test regions, publication from each region, buffered
+string-array returns, outward condition jumps and full-cap wide-integer stack
+restoration. Poisoned frees and allocator counters verify surviving values and
+zero allocations/live bytes after function completion. A 20,000-iteration
+body/test fixture performs 30,000 allocations with a 264-byte live peak; nested
+outward continue/break fixtures perform 4,002 allocations with a 264-byte peak.
+The 2,000-iteration int<65536> fixture retains only its pre-loop array (one
+allocation, 24-byte peak). Arena counters do not measure exact stack peaks.
+The wide probe includes that array because the allocator instrumentation
+requires a module allocation hook; its original stack-only fixture could not
+be instrumented. The corrected fixture passes.
+
+The final affected command:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.DoWhileTest --tests cloth.DoWhileFlowTest --tests cloth.DoWhileSemanticsTest --tests cloth.DoWhileParsingTest --tests cloth.ArrayTemporaryCleanupTest --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.ForEachTest --tests cloth.ForRangeTest --tests cloth.FunctionBlocksTest --tests cloth.FunctionReturnsTest --tests 'cloth.Nullable*' --offline --console=plain --no-daemon
+```
+
+Passes 284 tests across 14 suites in 50 seconds, zero failures/errors/skips.
+Gradle required cache access outside the sandbox. The shared execution fixture
+runs on Windows x64 and x86. A nested do/foreach fixture verifies LLVM IR and
+emits nonempty objects for all nine supported profiles: i686-pc-windows-msvc,
+x86_64-pc-windows-msvc, aarch64-pc-windows-msvc, x86_64-unknown-linux-gnu,
+aarch64-unknown-linux-gnu, x86_64-unknown-linux-musl,
+aarch64-unknown-linux-musl, x86_64-apple-darwin and aarch64-apple-darwin.
+Windows ARM64, Linux and macOS native execution was not tested.
+
+Feature, language, semicolon, jump, lifetime, function, nullable, compiler-data
+and diagnostic skills route to the implemented behavior and observed evidence.
+Skill metadata, relative links/fragments, fences and whitespace pass direct
+publication checks, as does git diff --check. The skill-creator quick validator
+was attempted but could not start because Python lacks PyYAML. Stages 0-4 are
+complete; Stage 5 retains the maintained runnable example, full compiler suite
+and final integration/publication. No full compiler-suite pass is claimed here.
+
+### Do-while Stage 3: completion, nullable and metadata flow (2026-11-03)
+
+[Stage 3](../../cloth-control-flow/references/do-while-loops.md#stage-3-completion-nullable-and-metadata-flow-2026-11-03)
+replaces the Stage 2 bridge with unconditional first body entry, precise test
+reachability, real return/outer-jump propagation and ordinary false/break exits.
+An always-returning body or intentional true-loop nontermination can complete a
+non-void function. Only fallthrough/continue reaches the test; skipped tests
+contribute no runtime returns or jumps, while all source remains checked.
+
+NullFlowAnalysis intersects body-fallthrough/continue facts for the test and
+false-test/break facts at exit without zero trips. MetadataAnalysis uses the same
+path schedule and actual jump snapshots, retaining only agreed represented types.
+Backedge-capable bodies invalidate repeated nullable writes and mutable metadata
+before publishing first-entry occurrences. Proven nonrepeating bodies preserve
+incoming facts; no trailing true-test proof is assumed before first entry.
+Nested/captured writes remain included. Analysis stays conservative without a
+precision-maximizing fixed point, preserving immutable/body-local scope rules.
+
+DoWhileFlowTest adds 27 semantic regressions for first entry and nontermination,
+condition reachability, outward jumps, deferred/function returns, non-continuing
+value branches, nullable/captured-write joins, nonrepeating bodies, metadata
+capabilities and continue/break snapshots. The final command:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.DoWhileFlowTest --tests cloth.DoWhileSemanticsTest --tests cloth.DoWhileParsingTest --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.DeclarationScopesTest --tests cloth.CallResolutionTest --tests cloth.FunctionReturnsTest --tests cloth.FunctionBlocksTest --tests cloth.OptionalArgumentsTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests cloth.ConditionalsTest --tests cloth.UnbracedConditionalsTest --tests 'cloth.*ResultsTest' --tests 'cloth.Null*' --tests 'cloth.*Provider*' --offline --console=plain --no-daemon
+```
+
+Passes 387 tests across 26 suites with zero failures/errors/skips. Gradle required
+cache access outside the sandbox. Skill metadata, relative links/fragments and
+`git diff --check` pass manual publication checks; the skill-creator quick
+validator could not start because Python lacks PyYAML. No full compiler suite or
+do-while native execution, cleanup probes, IR verification or objects were run.
+Existing emission regressions do not establish do-while runtime support. The plan
+and skills mark Stages 0-3 complete and Stages 4-5 pending.
+
+### Do-while Stage 2: scopes, types and jump resolution (2026-11-03)
+
+[Stage 2](../../cloth-control-flow/references/do-while-loops.md#stage-2-scopes-types-and-jump-resolution-2026-11-03)
+resolves do bodies in a child scope with their target active, then resolves
+trailing tests in the surrounding scope/jump context. Shared typing checks body
+before condition, requires scalar bool or bottom, and records an empty statement
+result. Functions, deferred blocks, default arguments, overload trials and legacy
+snippets share the implementation. Intrinsic loop errors survive probes; body
+locals remain isolated, deferred jumps remain bounded, and condition jumps target
+only an enclosing body. C3014/C3069 and existing void/result/return diagnostics
+retain their codes and original spans.
+
+Minimal conservative flow traversal lets the semantic pipeline process the new
+node safely before Stage 3: ControlFlowModel always permits ordinary fallthrough,
+NullFlowAnalysis removes repeated body/test writes and uses stable entry facts,
+and MetadataAnalysis visits body then test while forgetting mutable represented
+types. Recursive write scans cover nested do-while and captured deferred effects.
+These are temporary implementation boundaries, not new language rules. Exact
+first-entry completion, continue/false/break joins and body-established condition
+proofs remain Stage 3 work; execution remains Stage 4 work.
+
+DoWhileSemanticsTest adds 19 regressions for entry points, scopes/shadowing,
+strict/nullable/bottom conditions, source traversal/error order, unreachable
+checking, function/deferred returns, nearest/header jump targets, defaults,
+overload diagnostics/commits, snippets, immutable metadata capability checks and
+stale nullable facts. The final command:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.DoWhileSemanticsTest --tests cloth.DoWhileParsingTest --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.DeclarationScopesTest --tests cloth.CallResolutionTest --tests cloth.FunctionReturnsTest --tests cloth.FunctionBlocksTest --tests cloth.OptionalArgumentsTest --tests cloth.ForSemanticsTest --tests cloth.ForFlowTest --tests 'cloth.Null*' --tests 'cloth.*Provider*' --offline --console=plain --no-daemon
+```
+
+Passes 336 tests across 23 suites in 35 seconds, zero failures/errors/skips.
+Gradle required cache access outside the sandbox. Skill metadata, relative
+links/fragments and `git diff --check` pass manual publication checks; the
+skill-creator quick validator could not start because Python lacks PyYAML.
+No full compiler suite, do-while native execution, IR verification or objects
+were run for this stage. Existing emission regressions do not establish do-while
+runtime support. The plan and skills mark Stages 0-2 complete and Stages 3-5 pending.
+
+### Do-while Stage 1: located syntax and parser boundaries (2026-11-03)
+
+[Stage 1](../../cloth-control-flow/references/do-while-loops.md#stage-1-located-syntax-and-parser-boundaries-2026-11-03)
+adds DoWhileStatement with a shared LoopBody, independent LoopTarget and exact
+do/while/parenthesis/condition spans, plus parser dispatch and a dedicated loop
+parser. Shared unbraced bodies track simple-statement terminator ownership
+through for/while/if nesting. An explicit trailer parameter admits same-line
+bare returns in body/expression tails while blocks, headers and delimiters keep
+their ordinary context. Braced-body separators, semicolons before else and
+unrelated return/while adjacency remain errors. Parenthesized conditionals keep
+their expression-statement terminators despite sharing the standalone if AST.
+Spans exclude consumed ordinary
+terminators, and the body is retained without lowering or duplication.
+
+DoWhileParsingTest adds 20 parser tests covering the accepted grammar, nested
+ownership, broadcast definitions, contextual boundaries, spans/CRLF, snippets,
+deferred blocks, malformed source and first-error locations. The focused runs:
+
+```powershell
+.\gradlew.bat :Compiler:test --tests cloth.DoWhileParsingTest --tests cloth.ForParsingTest --tests cloth.UnbracedConditionalsTest --tests cloth.SemicolonsTest --tests cloth.FunctionParsingTest --tests cloth.WhileTest --tests cloth.LoopControlTest --tests cloth.FunctionReturnsTest --tests cloth.FunctionBlocksTest --tests cloth.ConditionalsTest --offline --console=plain --no-daemon
+```
+
+The final run passes 172 tests across ten suites in 21 seconds, with zero
+failures/errors/skips. Gradle required cache access outside the sandbox.
+These are focused results; the full compiler suite was not run.
+
+Skill metadata, relative links/fragments and `git diff --check` pass manual
+publication checks. The skill-creator quick validator was attempted but could
+not start because Python lacks PyYAML; no successful validator run is claimed.
+The plan and routing now mark Stages 0-1 complete and Stages 2-5 pending.
+Declaration/jump resolution, bool validation, completion and nullable/metadata
+flow, emission and a runnable example remain unimplemented for do-while. Parsing
+is target-independent; no do-while native execution, IR verification or objects
+have been tested. Existing loop/function regressions do not establish do-while
+execution support.
+
+### Do-while Stage 0: accepted contract publication (2026-11-03)
+
+Stage 0 publishes the [accepted do-while contract](../../cloth-control-flow/references/do-while-loops.md)
+and marks Stage 0 complete in the [implementation plan](../../../../todo/do-while-loops-plan.md).
+The focused reference owns syntax, body/trailer and semicolon boundaries,
+strict bool conditions, scopes, jumps, and required first-entry flow/lifetimes.
+The plan now links to that authority instead of keeping a competing contract.
+Control-flow/language skills and semantics indexes, semicolon guidance, while
+and shared loop-control references all route to the accepted design and retain
+the explicit pending status for compiler support.
+
+Verification is documentation-only: manual metadata checks for the three changed
+skills, local Markdown link/fragment checks, contract/status review and
+`git diff --check` pass. The available skill-creator `scripts/quick_validate.py`
+was attempted with `python` but could not start because PyYAML is not installed
+(`ModuleNotFoundError: No module named 'yaml'`). Manual metadata checks are
+recorded separately and do not claim that validator passed.
+
+`Keywords.DO` remains reserved and `Parser.parseStatement` still has no do
+dispatch. No compiler source, tests or executable examples changed. Compiler
+tests, native execution and cross-target emission were not run for this stage;
+there is no do-while runtime or portability evidence yet. Stages 1-5 remain
+pending, beginning with located syntax and parser boundaries.
+
 ### Numeric range membership: review fixes (2026-11-03)
 
 The [follow-up review](../../cloth-numerics/references/range-membership.md#review-fixes-2026-11-03)

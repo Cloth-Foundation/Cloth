@@ -340,6 +340,12 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
+	fun emitDoWhile(statement: DoWhileStatement) {
+		temporaryRegion(temporaryAnalysis.canReclaimLoop(statement)) {
+			EmitDoWhileLoop(context, builder, bindings, this, functionSemantics?.controlFlow ?: ControlFlowModel()).emit(statement)
+		}
+	}
+
 	fun emitStepper(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimStepper(statement), action)
 
 	/** Only scalar results may cross this checkpoint; wide value bytes stay inside. */

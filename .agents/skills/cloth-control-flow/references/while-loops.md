@@ -95,6 +95,9 @@ publication and buffered returns. Native Linux/macOS/Windows ARM64 execution is
 untested. Final commands/results are in the
 [development milestone](../../cloth-language/references/development.md#while-loops-2026-11-02).
 
-`do/while`, labels and nonlocal jumps remain deferred. A future do/while loop can
-reuse the trailing condition helper and jump machinery, while supplying its
-guaranteed-first-body execution and completion rules.
+[Do-while](do-while-loops.md) Stages 0-5 integrate syntax, scopes, strict
+conditions, jumps, first-entry flow, execution and proven cleanup. Its emitter
+reuses condition and jump helpers, with native Windows x64/x86 and all-profile
+LLVM/object evidence, a maintained example and full-suite publication. Read the
+[plan](../../../../todo/do-while-loops-plan.md) before
+extending these helpers. Labels and nonlocal jumps remain deferred.

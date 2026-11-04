@@ -64,11 +64,16 @@ spans, first-error CLI exit 1 and failure before object/linker work. See the
 **C3069 / INVALID_LOOP_JUMP** locates a break/continue without an enclosing loop
 body, including attempts to cross a deferred-block boundary. `LoopControlTest`
 checks placement, first-error priority and CLI failure before object/linker work;
-see [loop control](../cloth-control-flow/references/loop-control.md).
+`DoWhileSemanticsTest` adds do-body/deferred boundaries and trailing conditions
+whose jumps resolve only to an enclosing body. See [loop control](../cloth-control-flow/references/loop-control.md).
 
-**C3014 / NON_BOOLEAN_CONDITION** also locates non-bool while conditions and
-names the while keyword. `WhileTest` covers strict conditions and skipped-body
-errors; runtime condition failures preserve location and suppress later effects.
+**C3014 / NON_BOOLEAN_CONDITION** also locates non-bool while and trailing
+do-while conditions, naming the while keyword through its enum spelling.
+`DoWhileSemanticsTest` covers body-before-condition checking, unreachable tests
+and intrinsic diagnostics preserved in call probes. `DoWhileTest` verifies
+located body/test runtime failures suppress later effects and process-completion
+output. `WhileTest` covers strict conditions and skipped-body errors; implemented
+while runtime failures preserve location and suppress later effects.
 
 Start with [ClothDiagnostic](../../../Compiler/src/main/kotlin/cloth/diagnostics/ClothDiagnostic.kt),
 [DiagnosticCode](../../../Compiler/src/main/kotlin/cloth/diagnostics/DiagnosticCode.kt),

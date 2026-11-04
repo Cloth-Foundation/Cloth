@@ -15,7 +15,7 @@ class ForLoopParser(private val parser: Parser, delimited: DelimitedParser) : Lo
 	private val expressionParser = parser.expressionParser
 	private val typeParser = parser.typeParser
 
-	fun parseFor(): ForStatement {
+	fun parseFor(allowWhileTrailer: Boolean = false): ForStatement {
 		val keyword = parser.advance()
 		parser.skipNewlines()
 		val opening = parser.expect(Operators.PAREN_OPEN)
@@ -58,7 +58,7 @@ class ForLoopParser(private val parser: Parser, delimited: DelimitedParser) : Lo
 			throw SyntaxErrors.expected("'${Operators.SEMICOLON}' before a range stepper or '${Operators.PAREN_CLOSE}' after the range", parser.peek())
 		}
 		val closing = parser.expect(Operators.PAREN_CLOSE)
-		val body = parseLoopBody(keyword)
+		val body = parseLoopBody(keyword, allowWhileTrailer)
 		return ForStatement(keyword, opening, binding, arrow, source, separator, stepper, closing, body)
 	}
 

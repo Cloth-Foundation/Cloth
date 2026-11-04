@@ -9,6 +9,7 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.subs.*
+import cloth.parser.subs.loops.DoWhileLoopParser
 import cloth.parser.subs.loops.ForLoopParser
 import cloth.parser.subs.loops.WhileLoopParser
 import cloth.parser.type.TypeReference
@@ -24,6 +25,7 @@ class Parser(private val tokens: List<Token>) {
 	val delimited = DelimitedParser(this)
 	val forLoopParser = ForLoopParser(this, delimited)
 	val whileLoopParser = WhileLoopParser(this, delimited)
+	val doWhileLoopParser = DoWhileLoopParser(this, delimited)
 
 	val functionParser = FunctionParser(this)
 	val ifParser = IfParser(this)
@@ -100,11 +102,13 @@ class Parser(private val tokens: List<Token>) {
 
 	private fun isStatementSeparator(token: Token) = token.type == TokenType.NewLine || isSemicolon(token)
 
-	fun parseStatement(): Statement {
-		if (atKeyword(Keywords.FOR)) return forLoopParser.parseFor()
-		if (atKeyword(Keywords.WHILE)) return whileLoopParser.parseWhile()
+	/** The trailer context follows unbraced source bodies, never headers or delimiters. */
+	fun parseStatement(allowWhileTrailer: Boolean = false): Statement {
+		if (atKeyword(Keywords.FOR)) return forLoopParser.parseFor(allowWhileTrailer)
+		if (atKeyword(Keywords.WHILE)) return whileLoopParser.parseWhile(allowWhileTrailer)
+		if (atKeyword(Keywords.DO)) return doWhileLoopParser.parseDoWhile()
 		if (atKeyword(Keywords.BREAK) || atKeyword(Keywords.CONTINUE)) return LoopJumpStatement(advance())
-		if (atKeyword(Keywords.RETURN)) return returnStatement()
+		if (atKeyword(Keywords.RETURN)) return returnStatement(allowWhileTrailer)
 		if (startsAssignmentList()) {
 			val targets = mutableListOf(ReceivingTarget.of(advance()))
 			while (peek().lexeme == Operators.COMMA.toString()) {
@@ -113,7 +117,7 @@ class Parser(private val tokens: List<Token>) {
 			}
 			if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) throw SyntaxErrors.reassignment(peek())
 			expect(Operators.ASSIGN)
-			return MultiAssignmentStatement(targets, parseResults())
+			return MultiAssignmentStatement(targets, parseResults(allowWhileTrailer = allowWhileTrailer))
 		}
 		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
@@ -123,7 +127,7 @@ class Parser(private val tokens: List<Token>) {
 			val operator = advance()
 			val update = operator.lexeme in setOf(Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())
 			if (update) return UpdateStatement(name, operator)
-			val right = if (operator.lexeme == Operators.ASSIGN.toString()) parseResults() else expressionParser.parseExpression()
+			val right = if (operator.lexeme == Operators.ASSIGN.toString()) parseResults(allowWhileTrailer = allowWhileTrailer) else expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer)
 			// Local binding targets have no evaluation side effects. Reuse ordinary
 			// arithmetic and assignment checks, including exact result-type matching.
 			val value = if (operator.lexeme == Operators.ASSIGN.toString()) right else {
@@ -132,7 +136,7 @@ class Parser(private val tokens: List<Token>) {
 			return AssignmentStatement(name, value)
 		}
 		val expressionStart = peek().span
-		val expression = expressionParser.parseExpression(stopAtAssignment = true)
+		val expression = expressionParser.parseExpression(stopAtAssignment = true, allowWhileTrailer = allowWhileTrailer)
 		if (expression is ProviderAccessExpression && (peek().lexeme in assignmentOperators || peek().lexeme == Operators.FINAL_ASSIGN.toString())) {
 			throw SyntaxErrors.readOnlyProvider(expression.name)
 		}
@@ -140,17 +144,48 @@ class Parser(private val tokens: List<Token>) {
 		if (peek().lexeme == Operators.ASSIGN.toString()) {
 			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
 			advance()
-			return ElementAssignmentStatement(expression, parseResults())
+			return ElementAssignmentStatement(expression, parseResults(allowWhileTrailer = allowWhileTrailer))
 		}
-		return ExpressionStatement(parseResults(expression, expressionStart))
+		return ExpressionStatement(parseResults(expression, expressionStart, allowWhileTrailer))
 	}
 
-	private fun returnStatement(): ReturnStatement {
+	/** Shared one-source-statement body, with a terminator owned by its simple leaf. */
+	fun parseUnbracedBody(allowWhileTrailer: Boolean = false): BlockBody {
+		val start = peek()
+		val statements = if (atKeyword(Keywords.DEFINITION)) bindingsParser.parseBindings(allowWhileTrailer) else listOf(parseStatement(allowWhileTrailer))
+		val body = BlockBody(statements, start.span.through(previousStatementEnd()))
+		val ownsTerminator = when (val statement = statements.singleOrNull()) {
+			is ForStatement, is WhileStatement -> false // Their nested body owns its terminator.
+			is ExpressionStatement             -> statement.expression !is IfExpression || start.lexeme != Keywords.IF.toString()
+			else                               -> true // Includes a completed nested do-while.
+		}
+		if (allowWhileTrailer && ownsTerminator) {
+			var offset = 0
+			while (peek(offset).type == TokenType.NewLine) offset++
+			if (isSemicolon(peek(offset))) {
+				val separatorOffset = offset++
+				while (peek(offset).type == TokenType.NewLine) offset++
+				if (peek(offset).type == TokenType.Keyword && peek(offset).lexeme == Keywords.WHILE.toString()) {
+					repeat(separatorOffset + 1) { advance() }
+				}
+			}
+		}
+		return body
+	}
+
+	/** Nested unbraced bodies may already have consumed a leaf's trailer terminator. */
+	fun previousStatementEnd(): TokenSpan {
+		var index = currentIndex - 1
+		while (isStatementSeparator(tokens[index])) index--
+		return tokens[index].span
+	}
+
+	private fun returnStatement(allowWhileTrailer: Boolean): ReturnStatement {
 		if (!inFunctionBody) throw SyntaxErrors.expected("a return inside a function body", peek())
 		val keyword = advance()
-		val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString() || atKeyword(Keywords.ELSE)
-		val value = if (bare) null else parseResults()
-		return ReturnStatement(keyword, value, keyword.span.through(previous().span))
+		val bare = isStatementSeparator(peek()) || peek().type == TokenType.EOF || peek().lexeme == Operators.BRACE_CLOSE.toString() || atKeyword(Keywords.ELSE) || (allowWhileTrailer && atKeyword(Keywords.WHILE))
+		val value = if (bare) null else parseResults(allowWhileTrailer = allowWhileTrailer)
+		return ReturnStatement(keyword, value, keyword.span.through(previousStatementEnd()))
 	}
 
 	/** An identifier result list is an assignment only when followed by '=' or ':='. */
@@ -172,16 +207,16 @@ class Parser(private val tokens: List<Token>) {
 	}
 
 	/** Only callers at result-producing boundaries opt into comma-separated results. */
-	fun parseResults(first: Expression? = null, start: TokenSpan = first?.span ?: peek().span): Expression {
-		val initial = first ?: expressionParser.parseExpression()
+	fun parseResults(first: Expression? = null, start: TokenSpan = first?.span ?: peek().span, allowWhileTrailer: Boolean = false): Expression {
+		val initial = first ?: expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer)
 		if (peek().lexeme != Operators.COMMA.toString()) return initial
 		val values = mutableListOf(initial)
 		while (peek().lexeme == Operators.COMMA.toString()) {
 			advance()
 			skipNewlines()
-			values.add(expressionParser.parseExpression())
+			values.add(expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer))
 		}
-		return ResultListExpression(values, start.through(previous().span))
+		return ResultListExpression(values, start.through(previousStatementEnd()))
 	}
 
 	fun parseTypeList(): List<TypeReference> {

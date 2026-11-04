@@ -1,0 +1,37 @@
+fn<int> main() {
+    // A false trailing test still follows the first body entry.
+    def first = 0
+    do first++ while (false)
+    println(#"first={first}")
+
+    // The condition runs again after each normally completed body.
+    def repeated = 0
+    def checks = 0
+    def<bool> again = { checks++; return repeated < 3 }
+    do {
+        repeated++
+    } while (again)
+    println(#"repeated={repeated}, tests={checks}")
+
+    // A single-statement body and the complete loop may each end with ';'.
+    def single = 0
+    do single++; while (single < 2);
+    println(#"single={single}")
+
+    // Continue reaches the test; break skips it.
+    def visited = 0
+    def sum = 0
+    def jumpChecks = 0
+    def<bool> keepGoing = { jumpChecks++; return visited < 10 }
+    do {
+        visited++
+        if (visited == 2) continue
+        if (visited == 5) break
+        sum += visited
+    } while (keepGoing)
+    println(#"visited={visited}, sum={sum}, tests={jumpChecks}")
+
+    if (first != 1 || repeated != 3 || checks != 3 || single != 2) return 1
+    if (visited != 5 || sum != 8 || jumpChecks != 4) return 2
+    return 0
+}

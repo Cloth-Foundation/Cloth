@@ -1,6 +1,6 @@
 ---
 name: cloth-control-flow
-description: Design, explain, or extend Cloth conditionals, boolean short circuits, completion and branch merging, range/foreach/while loops, break/continue and reusable loop cleanup.
+description: Design, explain, or extend Cloth conditionals, boolean short circuits, completion and branch merging, range/foreach/while/do-while loops, break/continue and reusable loop cleanup.
 ---
 
 # Cloth control flow
@@ -101,14 +101,42 @@ syntax without treating it as a class-execution acceptance test.
 - `while (condition) body` executes with strict bool conditions, repeated tests,
   nearest-body jumps and proven condition/body cleanup. Read [while loops](references/while-loops.md)
   for scope, nullable/metadata invalidation, false/break exit facts and true-loop
-  completion. Use `WhileTest` and `ArrayTemporaryCleanupTest`; do/while is deferred.
+  completion. Use `WhileTest` and `ArrayTemporaryCleanupTest`.
+
+- Do-while Stages 0-5 integrate syntax, scopes, strict bool/bottom conditions,
+  jump resolution, completion/nullable/metadata flow, execution and proven cleanup.
+  The agreed slice is complete. Read [do-while loops](references/do-while-loops.md)
+  for body/trailer ownership, semicolons, strict bool, scopes, jumps and required
+  first-entry flow/cleanup. The [implementation plan](../../../todo/do-while-loops-plan.md)
+  records source routing and stage verification. Use `DoWhileParsingTest` and
+  `DoWhileSemanticsTest`/`DoWhileFlowTest`, `DoWhileTest` and do-while probes in
+  `ArrayTemporaryCleanupTest`, plus affected loop, call/default, nullable,
+  conditional and provider suites.
+  `DoWhileStatement` retains its LoopTarget, body and trailing-test tokens;
+  the explicit trailer context follows unbraced bodies/expression tails and stops
+  at blocks, headers and delimiters. Declaration/type checking visits the body
+  before its trailing test; the test resolves outside the body's scope/target.
+  Intrinsic loop errors survive call probes. First body entry is unconditional;
+  only fallthrough/continue reaches the test, and false tests/breaks determine
+  normal exit facts. Backedges invalidate repeated nullable writes and mutable
+  metadata before checking; proven nonrepeating bodies keep incoming facts.
+  Condition inputs and normal exits join actual path snapshots without zero
+  trips or unreachable suffix writes. `EmitDoWhileLoop` enters body before test,
+  uses test/exit jump destinations and terminates non-fallthrough blocks. Body,
+  test and whole-loop cleanup use independent closed proofs; captured publication
+  retains frame lifetime. Maintained [DoWhile.co](../../../examples/DoWhile.co)
+  executes with exact-output checks on Windows x64/x86; it and the nested-loop
+  fixture verify IR/objects for all nine profiles. Foreign native execution
+  remains untested. Stage 5 records all 1,184 compiler tests passing across 91
+  suites, plus publication evidence.
 
 - For `break`/`continue`, read [loop control](references/loop-control.md): nearest
   body target resolution, function/block boundaries, separate fallthrough/return/
   jump outcomes, continue-path fact joins, shared destinations and crossed-region
-  cleanup. Range, foreach and while bodies execute jumps; do/while syntax is
-  deferred. Use `LoopControlTest` and `ArrayTemporaryCleanupTest` when extending
-  them. Header jumps target an enclosing body, never the loop being initialized.
+  cleanup. Range, foreach, while and do-while bodies execute jumps. Do-while tests
+  execute in the surrounding jump context. Use
+  `LoopControlTest` and `ArrayTemporaryCleanupTest` when extending them. Header jumps target an
+  enclosing body, never the loop being initialized.
 
 - Standalone conditionals have no implicit result/output or enclosing return.
   Value-producing chains currently require a final else and compatible branch

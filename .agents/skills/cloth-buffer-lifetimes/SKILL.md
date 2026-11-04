@@ -95,6 +95,17 @@ final false test; preserve buffers published by condition captures. See
 [while loops](../cloth-control-flow/references/while-loops.md), `WhileTest` and the
 while probes in `ArrayTemporaryCleanupTest`.
 
+Do-while Stage 4 enters the body first and proves body, trailing test and whole
+loop independently. Continue releases safe body storage before testing; the
+final false test releases safe condition storage too. Outward condition jumps
+use shared crossed-region cleanup, and buffered returns copy before frame
+release. Captured publication in either region retains frame lifetime without
+preventing independent cleanup of the other. Read the
+[execution/cleanup record](../cloth-control-flow/references/do-while-loops.md#stage-4-execution-and-proven-cleanup-2026-11-03)
+and use `DoWhileTest` plus six probes in `ArrayTemporaryCleanupTest`: repeated
+body/test and outward-jump arena peaks, poisoned publication/returns, and
+2,000 full-cap wide-integer iterations preserving pre-loop storage.
+
 Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt),
 [EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt),
 [EmitExpression](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt),

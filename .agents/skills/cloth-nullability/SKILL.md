@@ -58,6 +58,17 @@ and [NullableRules.co](../../../examples/NullableRules.co).
 
 ## Preserve the language contracts
 
+- Do-while Stage 3 invalidates both regions' repeated writes before first body
+  checking when a backedge is possible, including nested/captured writes. A
+  proven nonrepeating body keeps incoming facts. The trailing test's true facts
+  never justify first-entry reads. Condition inputs intersect body-fallthrough
+  and reachable continue facts; exits intersect false-test and break facts with
+  no zero-trip path. Unreachable suffix writes/tests contribute no path facts.
+  Read [do-while flow](../cloth-control-flow/references/do-while-loops.md#stage-3-completion-nullable-and-metadata-flow-2026-11-03)
+  and use `DoWhileSemanticsTest`/`DoWhileFlowTest`. Stage 4 executes payload reads
+  and nullable exit facts in `DoWhileTest`, preserving the same first-entry and
+  continue/break joins.
+
 - While loops scan both condition and body writes before checking repeated
   nullable occurrences. True-condition proofs enter the body; false-condition
   and reachable-break facts intersect at exit. Captured and continue-path writes

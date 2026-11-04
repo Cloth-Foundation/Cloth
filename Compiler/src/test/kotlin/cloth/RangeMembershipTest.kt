@@ -30,6 +30,7 @@ class RangeMembershipTest {
 			if (process.isAlive) process.destroyForcibly()
 		}
 	}
+
 	private fun success(dir: Path, source: String) = assertEquals(processCompletion().replace("\r\n", "\n"), run(LLVMEmitter().compile(unit(source), dir)))
 
 	@Test
@@ -57,7 +58,8 @@ class RangeMembershipTest {
 	@Test
 	fun `all integer representations preserve signedness bounds and contextual literals`(@TempDir dir: Path) {
 		val types = listOf("int<1>", "unsigned int<1>", "int<8>", "unsigned int<8>", "int<12>", "unsigned int<12>", "int<64>", "unsigned int<64>", "int<65>", "unsigned int<65>", "int<257>", "unsigned int<257>", "int<65536>", "unsigned int<65536>", "usize", "isize")
-		val checks = types.joinToString("\n") { type -> """
+		val checks = types.joinToString("\n") { type ->
+			"""
 			if (true) {
 			    def<$type> x = 0
 			    if (x != 0..=0 || 0..=0 != x || x == 0..0) return 1
@@ -67,13 +69,15 @@ class RangeMembershipTest {
 			    x = $type::min
 			    if (x != $type::min..=$type::max) return 4
 			}
-		""".trimIndent() }
+		""".trimIndent()
+		}
 		success(dir, "fn<int> main() {\n$checks\nreturn 0 }")
 	}
 
 	@Test
 	fun `floating formats fractional membership signed zero NaN and double precision`(@TempDir dir: Path) {
-		val checks = listOf(16, 32, 64).joinToString("\n") { width -> """
+		val checks = listOf(16, 32, 64).joinToString("\n") { width ->
+			"""
 			if (true) {
 			    def<float<$width>> x = 1.25
 			    if (x != 1.0..2.0 || 1.0..2.0 != x) return 1
@@ -86,7 +90,8 @@ class RangeMembershipTest {
 			    x = 1.0 / 0.0
 			    if (x == 0.0..1.0 || !(0.0..1.0 != x)) return 6
 			}
-		""".trimIndent() }
+		""".trimIndent()
+		}
 		success(dir, """
 			fn<int> main() {
 			    $checks
@@ -291,7 +296,8 @@ class RangeMembershipTest {
 
 	@Test
 	fun `wide operands and indexed values remain independent across endpoint writes`(@TempDir dir: Path) {
-		val checks = listOf("int<65>", "unsigned int<257>", "int<65536>").joinToString("\n") { type -> """
+		val checks = listOf("int<65>", "unsigned int<257>", "int<65536>").joinToString("\n") { type ->
+			"""
 			if (true) {
 			    def<$type> x = 2
 			    if (!(x == (if (true) { x = 99; 1 } else { 0 })..3)) return 1
@@ -301,7 +307,8 @@ class RangeMembershipTest {
 			    def<$type[]> data = [1, 2, 3]
 			    if (!(data[1] == (if (true) { data[1] = 99; 1 } else { 0 })..3)) return 3
 			}
-		""".trimIndent() }
+		""".trimIndent()
+		}
 		success(dir, "fn<int> main() {\n$checks\nreturn 0 }")
 	}
 

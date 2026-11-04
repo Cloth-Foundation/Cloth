@@ -77,6 +77,18 @@ For repeated strict-bool testing, see [implemented while loops](while-loops.md).
   for the initial implementation's final-`else`, matching-type, final-expression
   rules and the remaining design questions.
 
+## Do-while loops (execution and proven cleanup implemented)
+
+On 2026-11-03 the user approved `do body while (condition)`, with braced or
+single-statement bodies and guaranteed first body entry. The
+[do-while reference](do-while-loops.md) owns the accepted syntax, semicolon
+boundaries, strict bool conditions, scopes, jumps and required flow/lifetimes.
+Stages 0-5 integrate syntax, scopes, strict conditions, jump resolution,
+first-entry completion/nullable/metadata joins, execution and proven cleanup.
+The [completed plan](../../../../todo/do-while-loops-plan.md) and
+[Stage 5 record](do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)
+link the maintained example, full-suite evidence and native/IR target limits.
+
 ## For loops and ranges (design confirmed; implementation deferred)
 
 The integrated range/foreach contract below is extended by
