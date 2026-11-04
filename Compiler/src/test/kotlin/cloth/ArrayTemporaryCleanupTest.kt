@@ -877,6 +877,77 @@ class ArrayTemporaryCleanupTest {
 		""", allocations = 20000, peak = 47)
 	}
 
+	@Test
+	fun `string scalar method results outlive poisoned receiver frames and independent array copies`(@TempDir directory: Path) {
+		probe(directory, "string_scalar_results", """
+			fn<string> text() = "A" + "😀B"
+			fn<string> cut() = text().substring(1, 3)
+			fn<char[]> chars() = text().toChars()
+			fn<string, char[]> pair() = cut(), chars()
+			fn<int> sample() {
+			    def saved, letters = pair()
+			    def independent = letters
+			    independent[1] = 'x'
+			    pair() -> void
+			    if (saved != "😀B" || letters[1] != '😀' || independent[1] != 'x') return 1
+			    def<string[]> rows = [cut()]
+			    def<usize> mutate = { rows[0] = "new"; return 0 }
+			    def scalar = rows[0].charAt(mutate)
+			    if (scalar != '😀' || rows[0] != "new") return 2
+			    def<string> deferred = { return cut() }
+			    if (deferred != "😀B" || deferred.substring(1, 2) != "B") return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `edited strings outlive poisoned receiver argument frames and captured publication`(@TempDir directory: Path) {
+		probe(directory, "string_edit_results", """
+			fn<string> text() = "A" + "😀A"
+			fn<string> replacement() = "é" + "中"
+			fn<string> edit() = text().replace("A", replacement())
+			fn<string, string> pair() = edit().removePrefix("é"), edit().removeSuffix("中")
+			fn<int> sample() {
+			    def saved = edit()
+			    def first, last = pair()
+			    edit()
+			    pair() -> void
+			    if (saved != "é中😀é中" || first != "中😀é中" || last != "é中😀é") return 1
+			    def<string[]> data = ["old"]
+			    def<string> publish = { data[0] = text().replaceFirst("A", replacement()); return data[0] }
+			    if (publish != "é中😀A") return 2
+			    text().removePrefix("absent") -> void
+			    if (data[0] != "é中😀A") return 3
+			    if (text().replace("", "-") != "-A-😀-A-") return 4
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `trimmed strings outlive poisoned source frames ordered returns and captured publication`(@TempDir directory: Path) {
+		probe(directory, "string_whitespace_results", """
+			fn<string> text() = " \t" + "😀X　"
+			fn<string> clean() = text().trim()
+			fn<string, string, string> pair() = text().trim(), text().trimStart(), text().trimEnd()
+			fn<int> sample() {
+			    def saved = clean()
+			    def first, start, end = pair()
+			    pair() -> void
+			    clean() -> void
+			    if (saved != "😀X" || first != "😀X" || start != "😀X　" || end != " \t😀X") return 1
+			    def<string[]> data = ["old"]
+			    def<string> publish = { data[0] = text().trim(); return data[0] }
+			    if (publish != "😀X") return 2
+			    text().isBlank() -> void
+			    if (data[0] != "😀X") return 3
+			    if (!" \t　".trim().isEmpty()) return 4
+			    return 0
+			}
+		""")
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

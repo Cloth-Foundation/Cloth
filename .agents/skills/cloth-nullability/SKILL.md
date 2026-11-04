@@ -21,6 +21,12 @@ nullable buffers. Proposals in the plan do not establish new language rules.
 
 ## Current scope
 
+[String scalar searches](../cloth-strings/references/scalar-methods.md)
+`indexOf`/`lastIndexOf` produce target `usize?`. They do not prove their own result
+present or permit inferred nullable bindings; preserve ordinary explicit
+annotations, null tests, lazy Elvis and payload access. Member lookup/registrations
+must use the selected target, not host-width result types.
+
 Nullable fixed-width and target-sized integers, floats, bool, char and typeinfo
 execute through bindings, parameters, returns, ordered multiple results, equality,
 presence proofs, lazy Elvis, nullable-target casts, formatting and metadata.

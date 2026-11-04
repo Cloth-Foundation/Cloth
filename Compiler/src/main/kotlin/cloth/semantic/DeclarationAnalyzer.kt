@@ -198,6 +198,11 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 				is ResultListExpression                                                                                              -> expression.values.forEach { expression(it, scope) }
 				is TypeReceiverExpression                                                                                            -> Unit
 				is ProviderAccessExpression                                                                                          -> expression(expression.receiver, scope)
+				is MemberCallExpression                                                                                              -> {
+					expression(expression.receiver, scope)
+					expression.arguments.forEach { expression(it, scope) }
+				}
+
 				is StateCallExpression                                                                                               -> {
 					expression(expression.receiver, scope)
 					expression.arguments.forEach { expression(it, scope) }

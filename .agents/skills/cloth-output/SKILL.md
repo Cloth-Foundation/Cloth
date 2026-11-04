@@ -28,9 +28,12 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
   a source function group shadows the whole built-in group. Mismatched source
   overloads do not fall back to the built-in. Names are ordinary case-sensitive
   identifiers; source-level printf is not a provided built-in.
-- Add built-ins through named typed registrations in `BuiltinFunctions` with
+- Add global built-ins through named typed registrations in `BuiltinFunctions` with
   argument contracts and emission owned by the definition. Keep lookup centralized
   and reusable definitions free of per-emission LLVM handles.
+- Primitive value methods use the [attachment registry](../cloth-strings/references/member-calls.md)
+  with a hidden typed receiver and the same bound built-in contracts. They do not
+  become lexical global built-ins or receive printable argument adaptation.
 - Printable adaptation uses supported value-receiver `str` providers without
   changing ordinary expression typing or introducing general implicit conversion.
   Preserve canonical metadata text. Arrays recursively expose `str` when their

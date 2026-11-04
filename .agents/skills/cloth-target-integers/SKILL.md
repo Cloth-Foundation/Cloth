@@ -21,6 +21,12 @@ bounds, reused ASTs, Windows x64/x86 execution and all-profile object emission.
 
 ## Preserve the integrated contract
 
+[Scalar string methods](../cloth-strings/references/scalar-methods.md) use exact
+target `usize` positions and nullable search results. The attachment registry
+specializes count signatures by width and every lookup selects the compilation
+target. Reused x86/x64 ASTs must retain contextual literal bounds and distinct
+`usize` identity without caching host-width facts.
+
 Arbitrary fixed widths have a completed
 [implementation record](../cloth-numerics/references/arbitrary-width-integers.md)
 covering values/text through 65536, full-bit index validation and measured target

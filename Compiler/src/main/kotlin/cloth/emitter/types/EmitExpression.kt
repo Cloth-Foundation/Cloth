@@ -170,6 +170,23 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return freshResults(results.pack(builder, values, destination), destination)
 	}
 
+	private fun emitMemberCall(call: MemberCallExpression): LLVMValueRef? {
+		val selected = semantics.memberCalls.getValue(call)
+		temporaryDepth++
+		try {
+			val values = (listOf(call.receiver) + call.arguments).mapIndexed { index, expression ->
+				snapshotValue(emitValue(expression), selected.arguments[index].parameterType)
+			}
+			if (terminated()) return null
+			val location = call.span.source?.let { "${it.name}:${call.span}" } ?: call.span.toString()
+			val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
+			val providers = ProviderEmissionContext(context, builder, strings, casts, location)
+			return selected.emit(BuiltinEmissionContext(context, module, builder, abi, providers, strings, location), values)
+		} finally {
+			temporaryDepth--
+		}
+	}
+
 	private fun emitCall(call: CallExpression): LLVMValueRef? = when (val selected = checkNotNull(functionSemantics).selectedCall(call)) {
 		is ResolvedCall.Source  -> checkNotNull(functions).emitCall(call, this, builder)
 		is ResolvedCall.Builtin -> {
@@ -182,7 +199,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val location = call.span.source?.let { "${it.name}:${call.span}" } ?: call.span.toString()
 				val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 				val providers = ProviderEmissionContext(context, builder, strings, casts, location)
-				selected.call.emit(BuiltinEmissionContext(context, module, builder, abi, providers, strings), values)
+				selected.call.emit(BuiltinEmissionContext(context, module, builder, abi, providers, strings, location), values)
 			} finally {
 				temporaryDepth--
 			}
@@ -476,6 +493,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				}
 			}
 
+			is MemberCallExpression     -> emitMemberCall(expression)?.let { freshResults(it, semantics.resultOf(expression)) }
 			is CallExpression           -> emitCall(expression)?.let { freshResults(it, semantics.resultOf(expression)) }
 			is IntegerLiteral           -> {
 				val type = semantics.typeOf(expression)

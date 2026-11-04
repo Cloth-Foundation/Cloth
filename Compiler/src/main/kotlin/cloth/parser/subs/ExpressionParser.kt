@@ -69,6 +69,13 @@ class ExpressionParser(val parser: Parser) {
 					IndexExpression(value, index, value.span.through(parser.previous().span))
 				}
 
+				Operators.DOT.toString()          -> {
+					parser.advance()
+					val name = parser.expect(TokenType.Identifier, "a member-method name")
+					val arguments = parser.delimited.parentheses { parseArguments() }
+					MemberCallExpression(value, name, arguments, value.span.through(parser.previous().span))
+				}
+
 				Operators.COLON_COLON.toString()  -> {
 					parser.advance()
 					val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")

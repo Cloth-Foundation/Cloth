@@ -20,6 +20,31 @@ the parent skill for current implementation boundaries and source/test routing.
 
 ## Strings
 
+- On 2026-11-04 the user approved `trim`, `trimStart`, `trimEnd` and `isBlank`,
+  and explicitly selected a pinned Unicode White_Space property. The
+  [whitespace contract](whitespace-methods.md) pins Unicode 17.0.0, defines empty
+  strings as blank, and owns boundary-only trimming, independent results,
+  preserved internal contents and exclusions such as NUL/zero-width space/BOM.
+
+- On 2026-11-04 the user approved literal `replace`, `replaceFirst`, `removePrefix`
+  and `removeSuffix`, and explicitly selected scalar-boundary empty-search
+  matches. [The editing contract](editing-methods.md) owns non-overlapping
+  replacement, literal replacement contents, once-only boundary removal,
+  independent values, exact argument/matching rules and checked output growth.
+
+- The user subsequently accepted zero-based Unicode scalar positions and the
+  next five-method batch. [The scalar-method contract](scalar-methods.md) owns
+  `charAt`, exclusive-end `substring`, nullable-position `indexOf`/`lastIndexOf`
+  and independent `toChars`, including implementation policies for exact `usize`
+  parameters, empty-search boundaries and controlled runtime bounds failures.
+
+- The four string attachments and value member calls approved on 2026-11-03 are
+  owned by [the member-call contract](member-calls.md): `isEmpty()`,
+  `contains(string)`, `startsWith(string)` and `endsWith(string)` return bool,
+  preserve exact case-sensitive contents/NULs and evaluate the receiver before
+  positional arguments. Empty search strings match. The record distinguishes
+  the implemented registry/call path from deferred methods and class design.
+
 - The user requested interpolated strings using `#"Hello, {name}!"`, primarily
   to make `examples/EX.co` valid. Braced expressions contribute text to a string.
   This does not change the strict string operand requirement for ordinary `+`.
@@ -56,7 +81,7 @@ the parent skill for current implementation boundaries and source/test routing.
 - Current equality compares exact Unicode scalar sequences (including embedded
   NULs), implemented as length-aware UTF-8 byte comparison. It performs no case
   folding or Unicode normalization.
-- Indexing, content mutation, strings escaping into future objects/containers,
+- Direct bracket indexing, content mutation, strings escaping into future objects/containers,
   and explicit dynamic string lifetime APIs remain unresolved. See
   [development status](../../cloth-language/references/development.md) for internal storage and implemented
   string function boundaries; that representation does not define future

@@ -1,5 +1,8 @@
 package cloth.semantic
 
+import cloth.builtin.BoundBuiltinCall
+import cloth.builtin.BuiltinArgument
+import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
@@ -79,6 +82,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		is NameExpression           -> nameType(expression).takeIf { if (floating) it.floating else it.integer }
 		is CastExpression           -> resolveType(expression.target).takeIf { if (floating) it.floating else it.integer }
 		is CallExpression           -> callType(expression).takeIf { if (floating) it.floating else it.integer }
+		is MemberCallExpression     -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
 		is IndexExpression          -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
 		is ProviderAccessExpression -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
 		is UnaryExpression          -> if (expression.operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString())) operandContext(expression.operand, floating) else null
@@ -348,6 +352,22 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		}
 	}
 
+	private fun memberCallType(expression: MemberCallExpression): ValueType = intrinsic {
+		val receiver = typeOf(expression.receiver)
+		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) PrimitiveAttachments.all(model.target).singleOrNull { it.definition.name == expression.name.lexeme } else null
+		val selected = attachment ?: throw SemanticErrors.unknownMember(receiver, expression.name)
+		if (selected.overload.returns.containsNullability && !supportsNullable) throw SemanticErrors.nullablePending(expression.span)
+		if (expression.suppliedArguments.any { it.label != null }) throw SemanticErrors.argumentBinding("Built-in member methods do not publish named argument labels yet", expression.span)
+		if (expression.arguments.size != selected.parameters.size) throw SemanticErrors.memberArity(expression.name, expression.arguments.size, selected.parameters.size)
+		val arguments = listOf(BuiltinArgument(receiver, selected.receiver)) + expression.arguments.mapIndexed { index, argument ->
+			val parameter = selected.parameters[index]
+			val actual = typeOf(argument, parameter.expectedType, contextualFloat = parameter.expectedType != null)
+			parameter.bind(actual, model.target) ?: throw SemanticErrors.memberArgument(expression.name, argument, actual, parameter)
+		}
+		model.memberCalls[expression] = BoundBuiltinCall(selected.definition, selected.overload, arguments)
+		selected.overload.returns
+	}
+
 	private fun scalarTypeOf(expression: Expression, expected: ValueType?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean, floatingLiteralType: CFloat?): ValueType {
 		model.metadata.remove(expression)
 		val type = when (expression) {
@@ -355,6 +375,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is ElvisExpression          -> elvisType(expression, expected, contextualFloat, floatingLiteralType)
 			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
 			is StateCallExpression      -> throw SemanticErrors.stateCall(expression.name)
+			is MemberCallExpression     -> memberCallType(expression)
 			is ProviderAccessExpression -> {
 				val receiver = expression.receiver
 				val receiverType = if (receiver is TypeReceiverExpression) {
@@ -588,6 +609,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun equalityHint(value: Expression): ValueType? = when (value) {
 		is NameExpression                                                   -> nameType(value)
 		is CallExpression                                                   -> callType(value)
+		is MemberCallExpression                                             -> typeOf(value)
 		is CastExpression                                                   -> resolveType(value.target)
 		is IndexExpression, is ProviderAccessExpression, is ElvisExpression -> typeOf(value)
 		else                                                                -> null

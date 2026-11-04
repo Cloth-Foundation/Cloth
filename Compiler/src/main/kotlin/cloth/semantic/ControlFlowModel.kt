@@ -117,6 +117,7 @@ class ControlFlowModel {
 			is ResultListExpression                                                                                                                 -> expression.values.fold(ControlFlow.FALLTHROUGH) { flow, value -> flow.then(of(value)) }
 			is TypeReceiverExpression                                                                                                               -> ControlFlow.FALLTHROUGH
 			is ProviderAccessExpression                                                                                                             -> of(expression.receiver)
+			is MemberCallExpression                                                                                                                 -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }
 			is StateCallExpression                                                                                                                  -> expression.arguments.fold(of(expression.receiver)) { flow, argument -> flow.then(of(argument)) }
 			// Declaring a deferred block executes none of its statements. Its returns
 			// belong to a separate contract and never complete the enclosing function.

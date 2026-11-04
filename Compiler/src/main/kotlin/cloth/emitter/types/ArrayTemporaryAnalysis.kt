@@ -91,6 +91,9 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			}
 
 			is FunctionBlockExpression                                                                           -> Effects(types.typeOf(expression) is CArray) + statements((expression.declaration.body as BlockBody).statements)
+			// Member bodies are not part of the closed cleanup proof yet. Captured
+			// writes in receiver/arguments must retain conservative frame lifetimes.
+			is MemberCallExpression                                                                              -> unknown
 			is CallExpression                                                                                    -> {
 				if (functions == null) unknown else {
 					val selected = functions.selectedCall(expression)

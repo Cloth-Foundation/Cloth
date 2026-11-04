@@ -1,0 +1,9 @@
+fn main() {
+    def text := "Cloth 😀 Cloth"
+    println(text.replace("Cloth", "Thread"))
+    println(text.replaceFirst("Cloth", "Thread"))
+    println(text.removePrefix("Cloth "))
+    println(text.removeSuffix(" Cloth"))
+    println("A😀B".replace("", "-"))
+    println("A😀B".replaceFirst("", "-"))
+}

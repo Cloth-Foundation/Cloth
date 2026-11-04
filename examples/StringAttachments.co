@@ -1,0 +1,19 @@
+fn<int> main() {
+    def text = "Hello, Cloth 😀\0!"
+    println("".isEmpty())
+    println(text.contains("Cloth"))
+    println(text.startsWith("Hello"))
+    println(text.endsWith("😀\0!"))
+
+
+    text = "A😀B😀\0"
+    println(text.charAt(1))
+    println(text.substring(1, 3))
+    println(text.indexOf("😀"))
+    println(text.lastIndexOf("😀"))
+    println(text.indexOf("missing"))
+    println(text.toChars()::size)
+    println(text.toChars())
+
+    return (text::size -> int) % (text::size -> int)
+}

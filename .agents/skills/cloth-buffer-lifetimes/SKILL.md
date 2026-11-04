@@ -34,6 +34,29 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
 
 ## Preserve the storage contract
 
+- [String member calls](../cloth-strings/references/member-calls.md) snapshot the
+  receiver before arguments and each argument before later operands, including
+  strings extracted from mutable arrays. They protect those snapshots until the
+  operation consumes them and conservatively retain frame storage in cleanup
+  proofs. [Scalar string methods](../cloth-strings/references/scalar-methods.md)
+  add independently allocated substrings and fresh character arrays. Array
+  adoption consumes freshness once; recursive buffered returns copy into caller
+  storage before frame cleanup. Nullable search positions use ordinary scalar
+  carriers. The poisoned string-method probe in `ArrayTemporaryCleanupTest`
+  verifies outgoing values and independent copies after receiver frames release.
+- [String editing methods](../cloth-strings/references/editing-methods.md) preserve
+  those operand snapshots across measure/fill and allocate one independent result,
+  including unchanged/empty contents. Checked measurement precedes replacement
+  payload reads; ordinary recursive outgoing copies precede frame release. The
+  poisoned edit-result probe covers receiver/argument frames and captured
+  publication. Member effects still retain conservative frame lifetime.
+- [Unicode whitespace methods](../cloth-strings/references/whitespace-methods.md)
+  copy trimmed byte intervals into independent storage, even for unchanged/empty
+  results. Preserve caller-owned recursive return copies and captured publication;
+  the poisoned whitespace-result probe covers source frame release and ordered
+  outputs. `isBlank` adds no result buffer, while receiver snapshots retain the
+  ordinary conservative member lifetime policy.
+
 - Buffered arguments snapshot or transfer their values before later arguments
   execute. Later captured writes must not change a previously received value.
 - Return paths copy outgoing strings/arrays recursively into caller storage before

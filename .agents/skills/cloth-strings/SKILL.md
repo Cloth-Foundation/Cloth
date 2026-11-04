@@ -1,6 +1,6 @@
 ---
 name: cloth-strings
-description: Design, explain, or extend Cloth character and string literals, Unicode validation, interpolation, string equality and concatenation, and string function boundaries.
+description: Design, explain, or extend Cloth character and string literals, Unicode validation, interpolation, equality and concatenation, string attachments, scalar-indexed methods, literal editing, Unicode trimming and blank checks, typed member calls, and string function boundaries.
 ---
 
 # Cloth strings and characters
@@ -12,6 +12,18 @@ and preserves effects, UTF-8 byte lengths and caller-owned returned text.
 Floating formats/formatting and string concatenation rules are unchanged.
 
 Read [confirmed string and character semantics](references/semantics.md).
+Read [string attachments and member calls](references/member-calls.md) for
+`isEmpty`, `contains`, `startsWith`, `endsWith`, typed registry ownership,
+receiver-call traversal, diagnostics, lifetime rules and target evidence.
+Read [scalar-indexed string methods](references/scalar-methods.md) for `charAt`,
+`substring`, `indexOf`, `lastIndexOf` and `toChars`, target count specialization,
+UTF-8 traversal, nullable searches and independent buffered results.
+Read [literal string editing](references/editing-methods.md) for `replace`,
+`replaceFirst`, `removePrefix` and `removeSuffix`, scalar-boundary empty matches,
+non-overlapping literal matching, checked measure/fill and independent results.
+Read [Unicode whitespace methods](references/whitespace-methods.md) for `trim`,
+`trimStart`, `trimEnd` and `isBlank`, pinned White_Space classification and
+independent UTF-8 boundary copies.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) for string parameters,
 returned text, interpolation buffers, or nested string arrays; use
 [output](../cloth-output/SKILL.md) for built-in printing.
@@ -24,6 +36,30 @@ returned text, interpolation buffers, or nested string arrays; use
 - Strings retain well-formed UTF-8 with explicit byte lengths, including embedded
   NULs. Equality compares exact contents without Unicode normalization or case
   folding. `+` requires two strings and never converts another value implicitly.
+- The four initial string queries return bool and use exact, case-sensitive
+  matching; empty search strings match. Resolve dot calls by receiver type,
+  preserve once-only receiver-before-argument snapshots and ordinary nullable
+  proofs, and reuse bound built-in emission without global LLVM handles.
+  Other unregistered string/integer methods, static/class methods and member overloads remain
+  deferred. Member calls conservatively retain frame storage in loop proofs.
+- Scalar position methods use zero-based Unicode scalar indices and exact target
+  `usize` parameters. Substrings have exclusive ends and independent contents;
+  `toChars` yields independent `char[]`. Searches return `usize?`, preserving
+  explicit nullable-binding rules and absence. Empty-needle first/last positions
+  are zero/scalar-count. Bounds fail through located runtime guards after operand
+  effects. Reuse existing result freshness/recursive return copies for buffers.
+- Literal editing returns independent strings. Replacement consumes original
+  matches left to right without overlap or rescanning replacement text. Empty
+  needles match scalar boundaries, including start/end; first replacement only
+  inserts at the start. Affix removal strips one matching boundary or preserves
+  contents. Measure output with checked target-byte additions, allocate once,
+  then fill from the same operand snapshots. Retain conservative frame lifetimes.
+- Whitespace methods use Unicode 17.0.0 White_Space, independent of host locale
+  or JVM/C predicates. `isBlank` is true for empty text. Trim variants remove only
+  the requested boundaries and return independent strings; internal whitespace,
+  NULs and non-property scalars remain content. Decode complete live UTF-8 scalars
+  before classification and keep byte counts target-sized. Version upgrades
+  require explicit semantic review; no custom trim-character arguments are added.
 - Interpolation uses `#"value: {expression}"`. Check holes even in skipped code;
   evaluate them once, left to right, preserving early returns. Formatting resolves
   value-receiver `str` providers, including recursive array contents; see the
@@ -34,8 +70,8 @@ returned text, interpolation buffers, or nested string arrays; use
   These are implementation choices unless separately confirmed.
 - Unsupported value interpolation must fail with a located capability
   diagnostic before emission/toolchain/output work. Future `toString()` and class
-  formatting remain design work. String indexing and content mutation are not
-  implemented; do not infer support from arrays or other languages.
+  formatting remain design work. Direct string `[]` access and content mutation
+  remain unimplemented; scalar-indexed methods do not introduce those forms.
 
 ## Source and verification
 
@@ -47,7 +83,7 @@ Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
 
-Relevant suites are `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
+Relevant suites are `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
 recursion and balanced cleanup. Read the

@@ -7,6 +7,147 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Unicode whitespace string methods (2026-11-04)
+
+The user approved `trim`, `trimStart`, `trimEnd` and `isBlank`, and selected the
+pinned Unicode White_Space property. [The whitespace record](../../cloth-strings/references/whitespace-methods.md)
+owns Unicode 17.0.0 classification, empty-string blankness, boundary-only removal
+and independent string results. `UnicodeWhiteSpace` holds ten immutable ranges
+covering 25 scalars, independent of JVM/C predicates or locale. The new
+`EmitStringWhitespace` reuses full UTF-8 decoding, checks live scalar bounds,
+stops leading scanning at content and tracks the last content end using forward
+traversal. Trims copy one bounded interval into independent checked storage;
+ordinary snapshots, recursive return copies and conservative cleanup remain.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.StringWhitespaceTest --tests cloth.StringAttachmentsTest --tests cloth.StringScalarMethodsTest --tests cloth.StringEditingTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon`
+passes 102 tests across five suites in 27 seconds, zero failures/errors/skips.
+This includes 12 new whitespace tests and the 51-test lifetime suite. Evidence
+covers every White_Space scalar and adjacent/excluded points using an independent
+oracle, complete UTF-8 contents/NULs, nullable proofs/results, zero-argument
+contracts, first-error CLI rejection, once-only receivers, skipped operations,
+early returns/jumps, recursion, ordered results and 10,000-scalar whitespace runs.
+A poisoned-free probe verifies saved and captured/ordered results after source
+frames release, with zero outstanding allocations after the receiving frame exits.
+
+[StringWhitespace.co](../../../../examples/StringWhitespace.co) executes with exact
+output and zero status on Windows x64/MSVC and x86/MSVC. The shared all-four-method
+fixture verifies IR and nonempty objects across all nine target profiles; native
+Linux/macOS/Windows ARM64 execution remains untested. The full regression command
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,238 tests across 95 suites in 5m 8s, zero failures/errors/skips. Gradle
+commands used the existing cache outside the sandbox. Changed skill metadata and
+relative file links pass direct checks; the optional Python validator cannot
+start because its environment lacks PyYAML.
+
+### Literal string editing (2026-11-04)
+
+The user approved `replace`, `replaceFirst`, `removePrefix` and `removeSuffix`,
+then explicitly chose Unicode scalar-boundary matches for empty searches.
+[The editing record](../../cloth-strings/references/editing-methods.md) owns exact
+case-sensitive literal matching, non-overlapping replacement without rescanning
+new text, once-only affix removal and independent string results. Typed registry
+entries reuse receiver/argument snapshots and strict positional signatures.
+`EmitStringEdit` measures with checked target-byte additions, allocates one result,
+then fills from the same immutable snapshots; empty-match progress uses the
+shared scalar-boundary helper. No cleanup proof, borrowing API or GC is added.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.StringEditingTest --tests cloth.StringAttachmentsTest --tests cloth.StringScalarMethodsTest --tests cloth.ArrayTemporaryCleanupTest --tests cloth.BufferCountsTest --offline --console=plain --no-daemon`
+passes 97 tests across five suites in 26 seconds, zero failures/errors/skips.
+This includes 12 editing tests with 240 independent replacement cases and 90 affix
+cases, Unicode/NUL/literal contents, side effects, strict diagnostics, nullable
+proofs, early exits, recursive/ordered results and 16,384-scalar expansion/deletion.
+The poisoned-free edit-result probe checks saved values, released operand frames,
+captured publication and final allocation balance. Three new native count probes
+on Windows x64/x86 reject all/first/empty replacement output overflow before any
+inaccessible replacement payload is read. The user's expanded attachment example
+is preserved, with its output expectation updated for the scalar/array demo.
+
+[StringEditing.co](../../../../examples/StringEditing.co) executes with exact
+output and zero status on Windows x64/MSVC and x86/MSVC. The all-four-method
+parameterized fixture verifies IR and nonempty objects across all nine target
+profiles; native Linux/macOS/Windows ARM64 execution remains untested.
+The full regression command
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,225 tests across 94 suites in 5m 17s, zero failures/errors/skips.
+Gradle commands used the existing cache outside the sandbox.
+Skill metadata and relative file links pass direct checks; the optional Python
+validator cannot start because its environment lacks PyYAML.
+
+### Scalar-indexed string methods (2026-11-04)
+
+The user accepted zero-based Unicode scalar positions and proceeding with the
+five-method batch. [The scalar-method record](../../cloth-strings/references/scalar-methods.md)
+owns `charAt`, exclusive-end `substring`, nullable-position `indexOf`/`lastIndexOf`
+and independent `toChars`. Exact `usize` parameters and results specialize by
+compilation target; shared x86/x64 ASTs retain target literal bounds. Searches
+preserve overlaps and deterministic absence, with empty needles at zero/the
+scalar count. Extraction guards source bounds before byte access, decodes full
+UTF-8 scalars including NULs, and allocates independent string/char-array values.
+Member array results enter ordinary freshness/shape/return-copy machinery;
+nullable search results retain explicit-binding and presence-proof rules.
+Cleanup stays conservative and direct bracket indexing remains deferred.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.StringScalarMethodsTest --tests cloth.StringAttachmentsTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon`
+passes 76 tests across three suites in 22 seconds, zero failures/errors/skips:
+13 new scalar-method tests, 14 original attachment tests and 49 lifetime tests.
+Evidence includes independent code-point/subslice expectations, UTF-8 width
+boundaries/scalar maximum, 144 first/last search cases, nullable result/fallback
+behavior, exact type and literal errors, ordered effects/early exits, original
+runtime locations and first-error CLI failure before output/linker work.
+The new poisoned-free lifetime probe verifies returned substrings/char arrays,
+independent copies, captured receiver updates and deferred blocks, with no
+outstanding allocations after frame release.
+
+[StringScalars.co](../../../../examples/StringScalars.co) executes on Windows
+x64/MSVC and x86/MSVC with exact output and zero exit status. The shared
+all-five-method fixture verifies IR and nonempty objects across all nine target
+profiles; native Linux/macOS/Windows ARM64 execution remains untested.
+The full regression command
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,212 tests across 93 suites in 4m 59s with zero failures/errors/skips.
+Gradle commands used the existing cache outside the sandbox.
+Changed skill metadata and relative links pass direct checks. The optional
+Python validator cannot start because its environment lacks PyYAML.
+
+### String attachments and member-call groundwork (2026-11-03)
+
+The user approved the first four string methods and typed primitive registry.
+[The member-call record](../../cloth-strings/references/member-calls.md) owns
+`isEmpty()`, `contains(string)`, `startsWith(string)` and `endsWith(string)`:
+boolean results, exact case-sensitive UTF-8 contents including NULs, empty-search
+matches, strict positional arguments, nullable proofs and receiver-before-argument
+snapshots. Named registrations publish themselves and reuse bound built-in
+contracts/emission without retaining LLVM handles. Dot-call AST, declarations,
+completion, nullable flow, metadata effects, committed trial facts, snippets and
+native emission are integrated. Member cleanup remains conservative; class/static
+calls, overloads and other primitive methods remain deferred. The earlier mockup's
+unimplemented names are retained in the record's deferred API inventory.
+
+`StringAttachmentsTest` initially passed 12 tests. The full compiler command
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` then passed
+1,197 tests across 92 suites in 5m 9s with zero failures/errors/skips, including
+the expanded 13-test attachment suite. After a canonical operator-spelling cleanup
+and an additional metadata-effect test, the final command
+`.\gradlew.bat :Compiler:test --tests cloth.StringAttachmentsTest --tests cloth.StringsTest --offline --console=plain --no-daemon`
+passed 30 tests (14 attachment and 16 string) in 18 seconds with zero failures,
+errors or skips. Gradle runs used the existing cache outside the sandbox.
+
+The native matrix checks 430 predicates, covering empty, overlapping, long,
+case-sensitive, supplementary/decomposed Unicode and embedded-NUL inputs.
+Additional cases verify registry identity/read-only lists, parser spans/chaining,
+strict rejection, intrinsic diagnostics inside outer overload probes, captured
+array element writes, nullable presence invalidation/results, early returns,
+metadata writes and first-error CLI exit 1 before output/linker work.
+[StringAttachments.co](../../../../examples/StringAttachments.co) executes with
+exact output and zero status on Windows x64/MSVC and x86/MSVC. The shared
+parameterized fixture verifies IR and nonempty objects across all nine profiles;
+Linux, macOS and Windows ARM64 native execution remains untested for this feature.
+Changed skill metadata and relative file links pass direct checks; the optional
+skill validator could not start because its Python lacks PyYAML.
+
 ### Do-while Stage 5: integration, portability and publication (2026-11-03)
 
 [Stage 5](../../cloth-control-flow/references/do-while-loops.md#stage-5-integration-portability-and-publication-2026-11-03)

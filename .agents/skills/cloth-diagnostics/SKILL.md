@@ -35,6 +35,19 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+[String editing](../cloth-strings/references/editing-methods.md) checks output
+growth using target byte limits before allocation/replacement-payload reads,
+retaining call source locations in controlled fatal runtime errors. `BufferCountsTest`
+executes synthetic all/first/empty replacement overflow guards on Windows x64/x86.
+`StringEditingTest` preserves first-error argument C3049 before output/linker work.
+
+**C3071 / UNKNOWN_MEMBER** locates an unavailable ordinary value member at its
+method name. String attachments reuse C3023 for explicit argument arity, C3049
+for argument types and C3065 for unsupported named arguments. Preserve intrinsic
+operand/member diagnostics during enclosing overload probes. `StringAttachmentsTest`
+checks source labels and first-error CLI failure before output/linker work; see
+[the member-call record](../cloth-strings/references/member-calls.md).
+
 **C3070 / INVALID_RANGE_MEMBERSHIP** rejects nonnumeric or incompatible typed
 operands, standalone/stored range values, range-to-range comparisons and known
 nonfinite float endpoints. Contextual literal overflow retains C3004/C3028.

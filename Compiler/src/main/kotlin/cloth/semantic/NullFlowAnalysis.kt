@@ -1,6 +1,9 @@
 package cloth.semantic
 
+import cloth.builtin.attachments.PrimitiveAttachments
+import cloth.data.CNullable
 import cloth.data.CompilerDataProviders
+import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
@@ -228,6 +231,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is CastExpression                          -> expression(value.operand, initial)
 			is TypeCheckExpression                     -> expression(value.operand, initial)
 			is CallExpression                          -> Outcome(value.arguments.fold(initial) { facts, arg -> expression(arg, facts).after })
+			is MemberCallExpression                    -> Outcome(value.arguments.fold(expression(value.receiver, initial).after) { facts, arg -> expression(arg, facts).after })
 			is StateCallExpression                     -> Outcome(value.arguments.fold(expression(value.receiver, initial).after) { facts, arg -> expression(arg, facts).after })
 			is ResultListExpression                    -> Outcome(value.values.fold(initial) { facts, item -> expression(item, facts).after })
 			is ArrayLiteral                            -> Outcome(value.elements.fold(initial) { facts, item -> expression(item, facts).after })
@@ -241,6 +245,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is CallExpression                                                                                                                                                                                                                                              -> {
 				val candidates = (model.declarations.candidatesOf(value) as? FunctionGroupSymbol)?.overloads
 				if (!candidates.isNullOrEmpty() && candidates.all { it.declaration.returnTypes.singleOrNull()?.let { type -> !type.hasNullability && type.name.lexeme != Keywords.VOID.toString() } == true }) presentResults.add(value)
+			}
+
+			is MemberCallExpression                                                                                                                                                                                                                                        -> {
+				// This pass precedes typed member selection. Prove presence only when
+				// every registration with this name has a non-nullable value result.
+				val candidates = PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
+				if (candidates.isNotEmpty() && candidates.all { it.overload.returns !is CNullable && it.overload.returns != ValueType.VOID }) presentResults.add(value)
 			}
 
 			else                                                                                                                                                                                                                                                           -> Unit
@@ -271,6 +282,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				is TypeCheckExpression      -> visit(value.operand)
 				is ProviderAccessExpression -> visit(value.receiver)
 				is CallExpression           -> value.arguments.forEach(::visit)
+				is MemberCallExpression     -> {
+					visit(value.receiver); value.arguments.forEach(::visit)
+				}
+
 				is StateCallExpression      -> {
 					visit(value.receiver); value.arguments.forEach(::visit)
 				}
