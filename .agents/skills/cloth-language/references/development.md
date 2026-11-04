@@ -7,6 +7,46 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Numeric range membership: review fixes (2026-11-03)
+
+The [follow-up review](../../cloth-numerics/references/range-membership.md#review-fixes-2026-11-03)
+fixes contextual float widths lost in nullable Elvis operand hints, rejection
+or misleading context from operands that always exit, and original membership
+errors hidden by source-call overload probes. Intrinsic checking is scoped to
+membership; ordinary contextual argument matching resumes afterward. All
+operand syntax remains checked, even when execution exits before reaching it.
+
+Five new regressions cover float16/64 fallbacks and arithmetic, early returns,
+break/continue, unreachable alternative types, wide/indexed snapshots through
+65536 bits, precise argument diagnostics and unchanged overload selection.
+Focused runs pass 104 nullable/array/loop/literal/membership tests and 75
+membership/call/default/diagnostic tests. The final full compiler run passes
+1099 tests across 87 suites, zero failures/errors/skips, in 4m35s. Windows
+x64/x86 execution and all nine ABI profiles' IR/object checks remain passing;
+the new fallback/control-flow/snapshot cases execute on native Windows x64.
+Metadata, relative links and `git diff --check` pass manual publication checks.
+
+### Numeric range membership (2026-11-03)
+
+`==` / `!=` now test integer/float range membership in either operand order,
+with contextual literal widths and exact typed contracts. The
+[membership record](../../cloth-numerics/references/range-membership.md) owns
+the confirmed syntax, interval/type/evaluation policies, source invariants and
+verification. [RangeMembership.co](../../../../examples/RangeMembership.co)
+is the maintained runnable example. Standalone range values remain unsupported;
+C3070 locates invalid membership contracts without changing first-error behavior.
+
+`RangeMembershipTest` adds 13 regressions including full-cap integer membership,
+all float formats, precision, endpoint guards, source-order snapshots, early
+returns, nullable proofs, snippets, CLI rejection and example output. A portable
+fixture executes on Windows x64/x86; all nine ABI profiles verify IR and emit
+objects. Native Linux/AArch64/macOS/musl execution is untested for this feature.
+
+Final `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1094 tests across 87 suites, zero failures/errors/skips, in 4m37s.
+Skill metadata and local links pass manual checks; the quick validator could
+not start because the installed Python runtimes lack PyYAML.
+
 ### Arbitrary integer widths: final integration and publication (2026-11-03)
 
 Stage 6 publishes [IntegerWidths.co](../../../../examples/IntegerWidths.co), README

@@ -3,6 +3,7 @@ package cloth.parser.expression
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.Statement
 import cloth.parser.type.TypeReference
+import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
 import java.math.BigInteger
@@ -49,6 +50,11 @@ data class UnaryExpression(val operator: Token, val operand: Expression) : Expre
 data class BinaryExpression(val left: Expression, val operator: Token, val right: Expression) : Expression {
 
 	override val span get() = left.span.through(right.span)
+}
+
+/** Ranges are syntax operands of membership, not independently stored values. */
+internal fun Expression.rangeOrNull(): BinaryExpression? = (this as? BinaryExpression)?.takeIf {
+	it.operator.lexeme in setOf(Operators.RANGE.toString(), Operators.RANGE_INCLUSIVE.toString())
 }
 
 /** Lazy null fallback; this is distinct from omission-only parameter defaults. */

@@ -18,6 +18,8 @@ internal class CandidateMismatch : RuntimeException(null, null, false, false)
 /** Shared expression rules for snippet checking and declaration call checking. */
 internal abstract class ExpressionTyping(val model: SemanticModel, private val probe: Boolean = false, private val declarations: Boolean = false) {
 
+	private var intrinsicTyping = false
+
 	protected abstract fun nameType(expression: NameExpression): ValueType
 	protected abstract fun statement(statement: Statement)
 	protected abstract fun withScope(action: () -> Unit)
@@ -27,8 +29,19 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.FALLTHROUGH
 	protected open fun completion(statements: List<Statement>): ControlFlow = ControlFlow.FALLTHROUGH
 	protected fun reject(diagnostic: () -> SemanticException): Nothing {
-		if (probe) throw CandidateMismatch()
+		if (probe && !intrinsicTyping) throw CandidateMismatch()
 		throw diagnostic()
+	}
+
+	/** No enclosing overload candidate can repair an expression with its own context. */
+	private inline fun <T> intrinsic(action: () -> T): T {
+		val previous = intrinsicTyping
+		intrinsicTyping = true
+		return try {
+			action()
+		} finally {
+			intrinsicTyping = previous
+		}
 	}
 
 	protected fun resolveType(type: TypeReference) = model.typeResolver.resolve(type, declarations).also {
@@ -117,7 +130,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			hint
 		}
 
-		else                    -> typeOf(expression)
+		else                    -> typeOf(expression, contextualFloat = contextualFloat)
 	}
 
 	private fun arrayElementContext(elements: List<Expression>, contextualFloat: Boolean): ValueType? {
@@ -455,7 +468,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			}
 
 			is BinaryExpression         -> {
+				if (expression.rangeOrNull() != null) throw SemanticErrors.rangeMembership("A range requires a numeric operand and '${Operators.EQUAL}' or '${Operators.NOT_EQUAL}'", expression.span)
 				if (expression.operator.lexeme in setOf(Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString())) {
+					if (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null) {
+						return intrinsic { rangeMembership(expression) }.also { model.expressions[expression] = it }
+					}
 					val nullable = nullableEquality(expression, contextualFloat)
 					if (nullable != null) return nullable.also { model.expressions[expression] = it }
 				}
@@ -509,6 +526,34 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		if (requireValue && !allowVoidResult && completedType == ValueType.VOID) reject { SemanticErrors.voidValue(expression.span) }
 		model.expressions[expression] = completedType
 		return completedType
+	}
+
+	private fun rangeMembership(expression: BinaryExpression): ValueType {
+		val range = expression.left.rangeOrNull() ?: checkNotNull(expression.right.rangeOrNull())
+		val value = if (range === expression.left) expression.right else expression.left
+		fun invalid(message: String, source: Expression): Nothing = reject { SemanticErrors.rangeMembership(message, source.span) }
+		if (value.rangeOrNull() != null) invalid("Range membership requires one numeric value and one range", expression)
+		val operands = listOf(value, range.left, range.right)
+		// Discover fixed contracts before assigning literal widths, including when the
+		// range is written first. This is type discovery, never runtime evaluation.
+		val required = operands.firstNotNullOfOrNull {
+			// An exiting expression has no value contract to contribute, even if
+			// its unreachable alternative happens to end with a typed value.
+			if (completion(it).canFallThrough) arrayElementHint(it, contextualFloat = true)?.takeUnless { type -> type == ValueType.NEVER } else null
+		}
+			?: operands.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
+			// When every operand exits, no numeric value reaches a comparison. A
+			// literal context still lets us check all syntax without rejecting never.
+			?: ValueType.INT
+		if (!required.numeric) invalid("Range membership requires a non-nullable numeric type, got '${required.spelling}'", value)
+		for (operand in operands) {
+			val actual = typeOf(operand, required, contextualFloat = true)
+			if (actual != ValueType.NEVER && actual != required) invalid("Range membership requires '${required.spelling}', got '${actual.spelling}'; use an explicit cast", operand)
+			if (operand !== value && required is CFloat && RangeConstants(model).floating(operand)?.isFinite() == false) invalid("Float range endpoints must be finite", operand)
+		}
+		// Traversal passes visit the range syntax, but it supplies no stored value.
+		model.recordResult(range, ResultShape.Empty)
+		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
 
 	private fun elvisType(expression: ElvisExpression, expected: ValueType?, contextualFloat: Boolean, floatingLiteralType: CFloat?): ValueType {

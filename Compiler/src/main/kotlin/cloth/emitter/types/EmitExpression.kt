@@ -523,6 +523,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			}
 
 			is BinaryExpression         -> {
+				if (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null) return emitRangeMembership(expression)
 				semantics.nullableComparisons[expression]?.let { return emitNullableEquality(expression, it) }
 				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					return emitLogical(expression)
@@ -605,6 +606,26 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
+	}
+
+	private fun emitRangeMembership(expression: BinaryExpression): LLVMValueRef {
+		val range = expression.left.rangeOrNull() ?: checkNotNull(expression.right.rangeOrNull())
+		val valueExpression = if (range === expression.left) expression.right else expression.left
+		val rangeValues = EmitRangeValues(context, builder, casts, abi)
+		var value: LLVMValueRef? = null
+		// Preserve written order, capturing each value before a later operand can
+		// mutate its binding. Endpoint guards also precede subsequent evaluation.
+		if (range !== expression.left) value = emitValue(valueExpression)
+		val start = emitValue(range.left)
+		val type = semantics.typeOf(range.left)
+		rangeValues.finite(start, type, range.left.span)
+		val end = emitValue(range.right)
+		rangeValues.finite(end, type, range.right.span)
+		if (range === expression.left) value = emitValue(valueExpression)
+		val lower = rangeValues.compare(start, checkNotNull(value), type, Operators.LESS_EQUAL)
+		val upper = rangeValues.compare(value, end, type, if (range.operator.lexeme == Operators.RANGE_INCLUSIVE.toString()) Operators.LESS_EQUAL else Operators.LESS)
+		val member = LLVMBuildAnd(builder, lower, upper, "range_member")
+		return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, member, "range_not_member") else member
 	}
 
 	private fun emitElvis(expression: ElvisExpression): LLVMValueRef? {

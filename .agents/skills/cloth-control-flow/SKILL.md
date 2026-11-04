@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth conditionals, boolean short circui
 
 # Cloth control flow
 
+Numeric range membership in conditions uses `==` / `!=` in either operand order.
+Read the [numeric membership contract](../cloth-numerics/references/range-membership.md)
+for contextual widths, interval semantics, evaluation order and the shared
+`EmitRangeValues` predicates/finite guards used by range loops.
+
 [Arbitrary integer Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md)
 extends source scalar counters to widths 1..64. Signed one-bit header ++/-- use
 mathematical one in the widened calculation; ordinary body updates still wrap.

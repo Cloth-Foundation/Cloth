@@ -28,6 +28,7 @@ internal class EmitRangeLoop(
 ) {
 
 	private val types = LLVMTypes(context, abi.layout)
+	private val rangeValues = EmitRangeValues(context, builder, casts, abi)
 	private fun location(span: TokenSpan) = span.source?.let { "${it.name}:$span" } ?: span.toString()
 	private fun block(name: String) = LLVMAppendBasicBlockInContext(context, LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)), name)
 
@@ -41,30 +42,11 @@ internal class EmitRangeLoop(
 	}
 
 	private fun finite(value: LLVMValueRef, type: ValueType, span: TokenSpan) {
-		if (type !is CFloat) return
-		// Inspect the exponent in the stored format, including half, without an ABI call.
-		val bits = LLVMIntTypeInContext(context, type.bits)
-		val mask = ((1L shl type.exponentBits) - 1) shl type.fractionBits
-		val exponent = LLVMBuildAnd(builder, LLVMBuildBitCast(builder, value, bits, "range_bits"), LLVMConstInt(bits, mask, 0), "range_exponent")
-		guard(LLVMBuildICmp(builder, LLVMIntEQ, exponent, LLVMConstInt(bits, mask, 0), "range_nonfinite"), "Float range values must be finite", span)
+		rangeValues.finite(value, type, span)
 	}
 
 	private fun compare(left: LLVMValueRef, right: LLVMValueRef, type: ValueType, relation: Operators): LLVMValueRef {
-		if (type is CInteger && type.bits > 64) return EmitWideInteger(context, builder, abi).compare(left, right, type, relation)
-		if (type is CFloat) {
-			val working = EmitHalf.arithmeticType(type)
-			val predicate = when (relation) {
-				Operators.LESS -> LLVMRealOLT; Operators.LESS_EQUAL -> LLVMRealOLE; Operators.EQUAL -> LLVMRealOEQ; else -> error(relation)
-			}
-			return LLVMBuildFCmp(builder, predicate, casts.toFloating(left, type, working), casts.toFloating(right, type, working), "range_compare")
-		}
-		val predicate = when (relation) {
-			Operators.LESS       -> if (type.unsigned) LLVMIntULT else LLVMIntSLT
-			Operators.LESS_EQUAL -> if (type.unsigned) LLVMIntULE else LLVMIntSLE
-			Operators.EQUAL      -> LLVMIntEQ
-			else                 -> error(relation)
-		}
-		return LLVMBuildICmp(builder, predicate, left, right, "range_compare")
+		return rangeValues.compare(left, right, type, relation)
 	}
 
 	fun emit(statement: ForStatement, key: Any) {

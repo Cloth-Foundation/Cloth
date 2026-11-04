@@ -1,0 +1,18 @@
+fn<bool> validScore(int score) = score == 1..100
+
+fn<int> main() {
+    println(validScore(10))       // true
+    println(validScore(100))      // false
+    println(100 == 1..=100)       // true
+    println(1..100 != 100)        // true
+
+    def<int<8>> small = 99
+    println(small == 1..100)      // literal endpoints receive int<8>
+
+    def<float<64>> precise = 16777217.0
+    println(16777216.5..16777217.5 == precise)
+
+    def<float<16>> fraction = 1.25
+    println(fraction == 1.0..2.0) // interval membership, independent of steps
+    return 0
+}

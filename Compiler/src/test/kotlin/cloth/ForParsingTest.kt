@@ -230,16 +230,16 @@ class ForParsingTest {
 	}
 
 	@Test
-	fun `ranges remain unavailable as ordinary nested or stored expression values`() {
+	fun `range syntax parses in nested positions but standalone values fail semantic checking`() {
 		for (source in listOf(
 			"fn main() { def value = 0..10 }",
-			"fn main() { for (def i <- call(0..2)..10) {} }",
+			"fn main() { for (def i <- println(0..2)..10) {} }",
 			"fn main() { for (def i <- [0..2][0]..10) {} }",
 			"fn main() { for (def i <- (0..2)..10) {} }",
 		)) {
-			val failure = assertFailsWith<SyntaxException> { parse(source) }
-			assertEquals(DiagnosticCode.UNSUPPORTED_OPERATOR, failure.diagnosticCode)
-			assertEquals("..", textAt(failure.sourceLabels.single().span))
+			val failure = assertFailsWith<cloth.diagnostics.ClothDiagnostic> { cloth.emitter.LLVMEmitter().emit(parse(source)) }
+			assertEquals(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, failure.diagnosticCode)
+			assertLocated(failure)
 		}
 	}
 

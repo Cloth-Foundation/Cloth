@@ -22,8 +22,8 @@ class ExpressionParser(val parser: Parser) {
 			}
 			if (operator.type != TokenType.Operator) break
 			val kind = Operators.fromCharacter(operator.lexeme)
-			// Only a loop-source caller admits a range boundary. Nested call/array/
-			// parenthesized expressions retain ordinary expression grammar.
+			// Loop sources consume their own outer range delimiter; nested expressions
+			// still admit membership comparisons under ordinary expression grammar.
 			if (stopAtRange && kind in setOf(Operators.RANGE, Operators.RANGE_INCLUSIVE)) break
 			if (kind in setOf(Operators.PAREN_CLOSE, Operators.BRACE_CLOSE, Operators.BRACKET_CLOSE, Operators.COMMA, Operators.SEMICOLON)) break
 			if (kind == Operators.POINTER_RIGHT) {
@@ -32,7 +32,8 @@ class ExpressionParser(val parser: Parser) {
 				left = CastExpression(left, operator, TypeParser(parser).parse(inCast = true))
 				continue
 			}
-			val operatorPrecedence = binaryOperators[kind] ?: throw SyntaxErrors.operator(operator)
+			val operatorPrecedence = if (kind in setOf(Operators.RANGE, Operators.RANGE_INCLUSIVE)) OperatorPrecedence(8)
+			else binaryOperators[kind] ?: throw SyntaxErrors.operator(operator)
 
 			if (operatorPrecedence.precedence < minimumPrecedence) {
 				break

@@ -7,6 +7,10 @@ not the compiler's current feature coverage.
 
 Implemented feature decisions now live in feature-owned references linked below.
 Read the relevant feature skill for current implementation rules and tests.
+
+Numeric range membership with `==` / `!=`, either operand order and contextual
+literal widths is owned by the [membership contract](../../cloth-numerics/references/range-membership.md)
+and [numeric skill](../../cloth-numerics/SKILL.md).
 Shared portability and class/state design remain here; nullable decisions live in
 their feature-owned reference.
 
