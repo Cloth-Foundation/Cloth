@@ -8,6 +8,9 @@ The [literal editing extension](editing-methods.md) adds `replace`, `replaceFirs
 `removePrefix` and `removeSuffix` with checked independent string results.
 The [Unicode whitespace extension](whitespace-methods.md) adds `trim`, `trimStart`,
 `trimEnd` and `isBlank`, with pinned classification across every target.
+The [storage cleanup](../../cloth-buffer-lifetimes/references/string-member-storage.md)
+preserves the contracts below while eliding immutable operand byte copies and
+admitting opted-in calls to closed arena/stack cleanup proofs.
 
 ## Confirmed supported contract (2026-11-03)
 
@@ -93,12 +96,13 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   write invalidation, presence proofs and non-fallthrough completion. Pre-typing
   presence analysis proves a member result present only when every registered
   method with that name returns a non-nullable value.
-- `EmitExpression.emitMemberCall` snapshots each received value before the next
-  operand and protects temporary storage until the operation consumes it.
+- `EmitExpression.emitMemberCall` captures each received value before the next
+  operand and protects temporary storage until the operation consumes it. Opted-in
+  read-only methods use immutable string descriptors without redundant byte copies.
   `BuiltinEmissionContext` borrows string services for this emitted call.
-  `ArrayTemporaryAnalysis` conservatively treats member calls as unknown effects;
-  this feature adds no new closed loop/early-cleanup proof. Unknown effects retain
-  frame lifetime. Future result kinds must extend freshness and lifetime handling
+  `ArrayTemporaryAnalysis` admits those methods only when operand effects satisfy
+  the closed non-publication proof; unknown contracts/effects retain frame lifetime.
+  Future result kinds must extend freshness and lifetime handling
   deliberately; string, char-array and nullable-count results are integrated by
   [the scalar extension](scalar-methods.md).
 - [EmitString](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitString.kt)

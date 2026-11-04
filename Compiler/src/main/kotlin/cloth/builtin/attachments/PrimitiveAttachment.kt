@@ -14,10 +14,10 @@ internal abstract class PrimitiveAttachment(val receiver: ValueType) {
 	operator fun get(name: String): Attachment? = definitions[name]
 
 	/** Declaring an entry registers it. The hidden receiver uses the ordinary built-in ABI. */
-	protected fun register(name: String, parameters: List<BuiltinParameter>, returns: ValueType, body: BuiltinBody): Attachment {
+	protected fun register(name: String, parameters: List<BuiltinParameter>, returns: ValueType, storage: BuiltinStorageContract = BuiltinStorageContract.UNKNOWN, body: BuiltinBody): Attachment {
 		require(name !in definitions) { "Duplicate attachment '${receiver.spelling}${Operators.DOT}$name'" }
 		val function = object : BuiltinFunction(BuiltinProperties(name)) {
-			override val overloads = listOf(BuiltinOverload(listOf(BuiltinParameter.Exact(receiver)) + parameters, returns, body))
+			override val overloads = listOf(BuiltinOverload(listOf(BuiltinParameter.Exact(receiver)) + parameters, returns, body, storage))
 		}
 		return Attachment(receiver, BuiltinDefinition(name, function)).also { definitions[name] = it }
 	}

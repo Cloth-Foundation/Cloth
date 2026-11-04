@@ -65,7 +65,7 @@ boundaries and independent results use [scalar methods](scalar-methods.md).
   before decoding, advances over whitespace and stops at content or byte end.
   Empty strings execute no byte loads in the scan. `isBlank` compares the stopping
   offset with byte length and creates no result/scratch buffer; normal receiver
-  snapshots still use existing frame storage.
+  values remain protected through the storage contract and existing producer frames.
 - `trimStart` uses that leading offset and the original byte end. `trimEnd` scans
   forward from zero, remembering the end of the last content scalar. `trim` starts
   that forward scan at the leading offset. All-whitespace/empty inputs keep the
@@ -79,9 +79,11 @@ boundaries and independent results use [scalar methods](scalar-methods.md).
   empty results allocate a valid byte while retaining zero length. Existing
   snapshots protect receiver storage until consumption. Outgoing function,
   deferred and ordered results copy recursively into caller-owned storage before
-  frame release. Member effects remain conservative in `ArrayTemporaryAnalysis`:
-  no new cleanup proof, borrowed view, GC or arbitrary-loop bounded-storage
-  guarantee is added.
+  frame release. The later
+  [storage cleanup](../../cloth-buffer-lifetimes/references/string-member-storage.md)
+  elides immutable operand byte copies and admits proven member regions to arena
+  and stack reclamation. Unknown effects remain conservative; no borrowed view,
+  GC or arbitrary-loop bounded-storage guarantee is added.
 
 ## Verification
 

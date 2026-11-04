@@ -31,14 +31,19 @@ Use this skill for the compiler's internal string/array storage. Read the
 [array contract](../cloth-arrays/references/semantics.md) for confirmed copy and
 optimization decisions. Ordinary class construction/destruction remains governed
 by the [shared language semantics](../cloth-language/references/semantics.md).
+Read [string member storage cleanup](references/string-member-storage.md) for
+opt-in read-only/independent-result contracts, immutable descriptor snapshots,
+member copy elision and proven arena/stack reclamation.
 
 ## Preserve the storage contract
 
-- [String member calls](../cloth-strings/references/member-calls.md) snapshot the
+- [String member calls](../cloth-strings/references/member-calls.md) capture the
   receiver before arguments and each argument before later operands, including
-  strings extracted from mutable arrays. They protect those snapshots until the
-  operation consumes them and conservatively retain frame storage in cleanup
-  proofs. [Scalar string methods](../cloth-strings/references/scalar-methods.md)
+  strings extracted from mutable arrays. Opted-in read-only methods use loaded
+  immutable string descriptors without redundant byte copies; unknown contracts
+  retain snapshots. Protect storage until consumption, and reclaim arena/stack
+  temporaries only through the [closed storage proof](references/string-member-storage.md).
+  [Scalar string methods](../cloth-strings/references/scalar-methods.md)
   add independently allocated substrings and fresh character arrays. Array
   adoption consumes freshness once; recursive buffered returns copy into caller
   storage before frame cleanup. Nullable search positions use ordinary scalar
@@ -49,13 +54,13 @@ by the [shared language semantics](../cloth-language/references/semantics.md).
   including unchanged/empty contents. Checked measurement precedes replacement
   payload reads; ordinary recursive outgoing copies precede frame release. The
   poisoned edit-result probe covers receiver/argument frames and captured
-  publication. Member effects still retain conservative frame lifetime.
+  publication. Unproven operand effects still retain conservative frame lifetime.
 - [Unicode whitespace methods](../cloth-strings/references/whitespace-methods.md)
   copy trimmed byte intervals into independent storage, even for unchanged/empty
   results. Preserve caller-owned recursive return copies and captured publication;
   the poisoned whitespace-result probe covers source frame release and ordered
   outputs. `isBlank` adds no result buffer, while receiver snapshots retain the
-  ordinary conservative member lifetime policy.
+  ordinary protected operand lifetime policy and closed cleanup proof.
 
 - Buffered arguments snapshot or transfer their values before later arguments
   execute. Later captured writes must not change a previously received value.
