@@ -1,12 +1,10 @@
 package cloth.semantic
 
+import cloth.builtin.BoundBuiltinCall
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.expression.BinaryExpression
-import cloth.parser.expression.Expression
-import cloth.parser.expression.ProviderAccessExpression
-import cloth.parser.expression.TypeCheckExpression
+import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.target.TargetLayout
 import java.util.*
@@ -24,6 +22,7 @@ class SemanticModel(val target: TargetLayout = TargetLayout.native()) {
 	internal val receptions = IdentityHashMap<Statement, ReceptionPlan>()
 	internal val typeChecks = IdentityHashMap<TypeCheckExpression, ValueType>()
 	internal val providers = IdentityHashMap<ProviderAccessExpression, ProviderAccess>()
+	internal val memberCalls = IdentityHashMap<MemberCallExpression, BoundBuiltinCall>()
 	internal val payloadReads = IdentityHashMap<Expression, CNullable>()
 	internal val nullableComparisons = IdentityHashMap<BinaryExpression, ValueType>()
 	internal val updatePayloads = IdentityHashMap<UpdateStatement, CNullable>()

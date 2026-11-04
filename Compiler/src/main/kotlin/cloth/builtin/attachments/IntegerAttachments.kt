@@ -1,20 +1,6 @@
 package cloth.builtin.attachments
 
-class IntegerAttachments : PrimitiveAttachment {
+import cloth.data.ValueType
 
-	val abs: Attachment = Attachment("abs") { }
-
-	val clamp: Attachment = Attachment("clamp") { }
-
-	val signum: Attachment = Attachment("signum") { }
-
-	val toStringRadix: Attachment = Attachment("toStringRadix") { }
-
-	val leadingZeros: Attachment = Attachment("leadingZeros") { }
-
-	val trailingZeros: Attachment = Attachment("trailingZeros") { }
-
-	override fun registerAttachment(): Array<Attachment> {
-		return arrayOf(abs, clamp, signum, toStringRadix, leadingZeros, trailingZeros)
-	}
-}
+/** Reserved for future integer methods; no mock operations are published as callable. */
+internal class IntegerAttachments : PrimitiveAttachment(ValueType.INT)

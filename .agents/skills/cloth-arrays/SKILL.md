@@ -47,6 +47,11 @@ Snapshot foreach is implemented through Stage 4. Indexed compound updates and
 array equality are not implemented.
 These implementation policies do not settle the remaining language decisions.
 
+[String `toChars()`](../cloth-strings/references/scalar-methods.md) produces an
+independent dynamic `char[]` using checked scalar-count storage and ordinary
+member-result freshness. Preserve fixed receiving shapes, stored-copy independence,
+parameter/return snapshots and foreach behavior for these generated arrays.
+
 Foreach evaluates the source once per loop entry and traverses an independent
 contents/shape snapshot.
 Original-source changes cannot affect later visited values; physical copies may

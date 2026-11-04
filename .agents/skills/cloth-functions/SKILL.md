@@ -53,8 +53,10 @@ Both `=` and `:=` block declarations work without memoization. Block binding
 assignment/updates are currently rejected (C3042); future replacement and escaping
 capture contracts remain unresolved. `opt<T>` / `final opt<T>`, named arguments and runtime defaults
 are implemented for ordinary functions; read [optional arguments](../cloth-optional-arguments/SKILL.md)
-for binding, declaration scope, evaluation, ranking and ABI invariants. Methods/classes
-are separate future callable forms.
+for binding, declaration scope, evaluation, ranking and ABI invariants.
+[Primitive string member calls](../cloth-strings/references/member-calls.md)
+implement ordinary value receivers with separate typed lookup and shared built-in
+call contracts. Class methods, member overloads and static calls remain future work.
 
 Start with [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt),
 [CallAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt),

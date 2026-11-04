@@ -225,6 +225,22 @@ Read [Cloth output and built-in functions](../../cloth-output/references/semanti
 
 ## Strings
 
+The approved string attachments and ordinary value member-call groundwork are
+owned by [the member-call contract](../../cloth-strings/references/member-calls.md).
+`isEmpty()`, `contains(string)`, `startsWith(string)` and `endsWith(string)` are
+implemented. [The scalar-method extension](../../cloth-strings/references/scalar-methods.md)
+adds zero-based scalar `charAt`, exclusive-end `substring`, nullable-position
+`indexOf`/`lastIndexOf` and independent `toChars`. Unregistered primitive methods
+and class/static member dispatch remain deferred.
+
+[Literal string editing](../../cloth-strings/references/editing-methods.md) adds
+`replace`, `replaceFirst`, `removePrefix` and `removeSuffix`, with independent
+results and user-selected scalar-boundary empty-search matches.
+
+[Unicode whitespace methods](../../cloth-strings/references/whitespace-methods.md)
+add `trim`, `trimStart`, `trimEnd` and `isBlank`, pinning Unicode 17.0.0 White_Space
+with independent trimmed values and empty strings considered blank.
+
 Read [Cloth strings and characters](../../cloth-strings/references/semantics.md#strings) and its
 [feature skill](../../cloth-strings/SKILL.md).
 

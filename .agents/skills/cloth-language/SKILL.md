@@ -84,6 +84,10 @@ captures implementation scope and regression evidence.
 | Arrays, inference, rectangular and fixed shapes, indexing | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
+| String attachments, typed primitive registry and ordinary value member calls | [string member calls](../cloth-strings/references/member-calls.md) |
+| Scalar string positions, extraction, searches and character-array conversion | [scalar string methods](../cloth-strings/references/scalar-methods.md) |
+| Literal replacement and prefix/suffix removal | [string editing](../cloth-strings/references/editing-methods.md) |
+| Unicode White_Space trimming and blank-string checks | [whitespace methods](../cloth-strings/references/whitespace-methods.md) |
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |

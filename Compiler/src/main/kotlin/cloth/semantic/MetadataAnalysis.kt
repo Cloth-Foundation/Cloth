@@ -186,6 +186,10 @@ internal class MetadataAnalysis(
 				expression(value.operand); null
 			}
 
+			is MemberCallExpression     -> {
+				expression(value.receiver); value.arguments.forEach { expression(it) }; null
+			}
+
 			is CallExpression           -> {
 				value.arguments.forEach { expression(it) }; null
 			}

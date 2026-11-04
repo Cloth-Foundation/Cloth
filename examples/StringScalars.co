@@ -1,0 +1,9 @@
+fn main() {
+    def text := "A😀B😀\0"
+    println(text.charAt(1))
+    println(text.substring(1, 3))
+    println(text.indexOf("😀"))
+    println(text.lastIndexOf("😀"))
+    println(text.indexOf("missing"))
+    println(text.toChars()::size)
+}

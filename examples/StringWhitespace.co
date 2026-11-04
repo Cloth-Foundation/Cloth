@@ -1,0 +1,9 @@
+fn main() {
+    def text := "　Cloth 😀 "
+    println(#"[{text.trim()}]")
+    println(#"[{text.trimStart()}]")
+    println(#"[{text.trimEnd()}]")
+    println(" \t\n".isBlank())
+    println("".isBlank())
+    println("\0".isBlank())
+}

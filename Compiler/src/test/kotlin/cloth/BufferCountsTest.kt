@@ -227,7 +227,7 @@ class BufferCountsTest {
 				val atoiType = signature(integer, pointer)
 				val atoi = LLVMAddFunction(module, "atoi", atoiType)
 				val selected = PointerPointer<LLVMValueRef>(1L).use { values -> values.put(0, LLVMBuildLoad2(builder, pointer, address, "case_text")); LLVMBuildCall2(builder, atoiType, atoi, values, 1, "case") }
-				val cases = (0..7).map { LLVMAppendBasicBlockInContext(context, main, "case_$it") }
+				val cases = (0..10).map { LLVMAppendBasicBlockInContext(context, main, "case_$it") }
 				val switch = LLVMBuildSwitch(builder, selected, cases.first(), cases.size)
 				cases.forEachIndexed { index, block -> LLVMAddCase(switch, int(index), block) }
 				for ((index, block) in cases.withIndex()) {
@@ -237,21 +237,21 @@ class BufferCountsTest {
 					val strings = EmitString(context, builder, abi)
 					val nullPointer = LLVMConstNull(pointer)
 					when (index) {
-						0    -> memory.stack(LLVMInt64TypeInContext(context), memory.constant(memory.maximum), "oversized", "stride overflow rejected")
-						1    -> {
+						0        -> memory.stack(LLVMInt64TypeInContext(context), memory.constant(memory.maximum), "oversized", "stride overflow rejected")
+						1        -> {
 							val arena = EmitStringArena(context, module, abi)
 							val destination = arena.create(cases[index])
 							arena.copy(builder, destination, arrays.descriptor(nullPointer, memory.constant(memory.maximumBytes)))
 						}
 
-						2    -> strings.concatenate(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
-						3    -> arrays.checkedAddress(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CInt(), LLVMConstInt(LLVMInt64TypeInContext(context), -2, 1), CInt(64))
-						4    -> {
+						2        -> strings.concatenate(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
+						3        -> arrays.checkedAddress(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CInt(), LLVMConstInt(LLVMInt64TypeInContext(context), -2, 1), CInt(64))
+						4        -> {
 							val arena = EmitStringArena(context, module, abi)
 							arena.copyValue(builder, arena.create(cases[index]), arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CArray(CInt(64)))
 						}
 
-						5    -> {
+						5        -> {
 							val maximumCount = memory.maximumBytes / BigInteger.valueOf(8)
 							val bytes = memory.elementBytes(memory.constant(maximumCount), LLVMInt64TypeInContext(context), "valid stride rejected")
 							val sum = memory.add(memory.constant(memory.maximumBytes - BigInteger.ONE), memory.count(1), "valid sum rejected")
@@ -259,7 +259,7 @@ class BufferCountsTest {
 							LLVMBuildRet(builder, LLVMBuildSelect(builder, correct, int(0), int(1), "status"))
 						}
 
-						6, 7 -> {
+						6, 7     -> {
 							// A synthetic string descriptor exercises only the measure pass;
 							// overflow must terminate before any access to its fake payload.
 							val bytes = if (index == 6) memory.maximumBytes else memory.maximumBytes - BigInteger.ONE
@@ -268,6 +268,14 @@ class BufferCountsTest {
 							val casts = EmitCast(context, builder, SemanticModel(abi.layout), abi)
 							val providers = ProviderEmissionContext(context, builder, strings, casts, "guard test")
 							recipe.emit(providers, ProviderReceiver.Value(recipe.receiverType, input))
+						}
+
+						8, 9, 10 -> {
+							// Replacement bytes are deliberately inaccessible. Measuring must
+							// reject output growth before allocation or the first payload copy.
+							val replacementSize = if (index == 9) memory.maximumBytes else memory.maximumBytes / BigInteger.TWO + BigInteger.ONE
+							val replacement = arrays.descriptor(nullPointer, memory.constant(replacementSize))
+							EmitStringEdit(context, builder, abi, strings, "guard test").replace(strings.literal("xx"), strings.literal(if (index == 10) "" else "x"), replacement, firstOnly = index == 9)
 						}
 					}
 					if (index != 5) LLVMBuildRet(builder, int(0))
@@ -279,7 +287,7 @@ class BufferCountsTest {
 			}
 		}
 		NativeLinker.link(objectFile, executable, ToolchainResolver.native(abi, LinkOptions()))
-		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate returned array storage", "", "Array text is too large", "Array text is too large")
+		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate returned array storage", "", "Array text is too large", "Array text is too large", "String replace result is too large", "String replaceFirst result is too large", "String replace result is too large")
 		for ((index, message) in messages.withIndex()) {
 			val process = ProcessBuilder(executable.toString(), index.toString()).redirectErrorStream(true).start()
 			try {

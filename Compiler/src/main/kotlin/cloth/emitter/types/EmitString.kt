@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.builtin.attachments.StringPredicate
 import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ProviderResult
@@ -193,6 +194,86 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		return LLVMBuildInsertValue(builder, descriptor, length, 1, "concat_value")
 	}
 
+	fun isEmpty(value: LLVMValueRef): LLVMValueRef = LLVMBuildICmp(builder, LLVMIntEQ, LLVMBuildExtractValue(builder, value, 1, "text_length"), memory.count(0), "text_empty")
+
+	/** Exact UTF-8 matching is also scalar-sequence matching for well-formed strings.
+	 * Empty needles succeed before any read. Bounds precede subtraction and GEP.
+	 */
+	fun predicate(value: LLVMValueRef, needle: LLVMValueRef, operation: StringPredicate): LLVMValueRef {
+		val length = LLVMBuildExtractValue(builder, value, 1, "search_length")
+		val needleLength = LLVMBuildExtractValue(builder, needle, 1, "needle_length")
+		val entry = LLVMGetInsertBlock(builder)
+		val function = LLVMGetBasicBlockParent(entry)
+		val sizeCheck = LLVMAppendBasicBlockInContext(context, function, "search_size_check")
+		val prepare = LLVMAppendBasicBlockInContext(context, function, "search_prepare")
+		val compare = LLVMAppendBasicBlockInContext(context, function, "search_compare")
+		val end = LLVMAppendBasicBlockInContext(context, function, "search_end")
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, needleLength, memory.count(0), "needle_empty"), end, sizeCheck)
+		LLVMPositionBuilderAtEnd(builder, sizeCheck)
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULE, needleLength, length, "needle_fits"), prepare, end)
+		LLVMPositionBuilderAtEnd(builder, prepare)
+		val limit = LLVMBuildSub(builder, length, needleLength, "last_search_offset")
+		val data = LLVMBuildExtractValue(builder, value, 0, "search_bytes")
+		val needleData = LLVMBuildExtractValue(builder, needle, 0, "needle_bytes")
+		LLVMBuildBr(builder, compare)
+		LLVMPositionBuilderAtEnd(builder, compare)
+		val index = if (operation == StringPredicate.CONTAINS) LLVMBuildPhi(builder, lengthType, "search_offset") else if (operation == StringPredicate.ENDS_WITH) limit else memory.count(0)
+		fun incoming(phi: LLVMValueRef, values: List<LLVMValueRef>, blocks: List<LLVMBasicBlockRef>) {
+			PointerPointer<LLVMValueRef>(values.size.toLong()).use { incomingValues ->
+				PointerPointer<LLVMBasicBlockRef>(blocks.size.toLong()).use { incomingBlocks ->
+					values.forEachIndexed { i, v -> incomingValues.put(i.toLong(), v) }
+					blocks.forEachIndexed { i, b -> incomingBlocks.put(i.toLong(), b) }
+					LLVMAddIncoming(phi, incomingValues, incomingBlocks, values.size)
+				}
+			}
+		}
+
+		val address = PointerPointer<LLVMValueRef>(1L).use { indices ->
+			indices.put(0, index)
+			LLVMBuildInBoundsGEP2(builder, LLVMInt8TypeInContext(context), data, indices, 1, "search_address")
+		}
+		val same = bytesEqual(address, needleData, needleLength)
+		val exits = mutableListOf(entry, sizeCheck)
+		val results = mutableListOf(LLVMConstInt(boolType, 1, 0), LLVMConstInt(boolType, 0, 0))
+		if (operation == StringPredicate.CONTAINS) {
+			val exhausted = LLVMAppendBasicBlockInContext(context, function, "search_exhausted")
+			val advance = LLVMAppendBasicBlockInContext(context, function, "search_advance")
+			LLVMBuildCondBr(builder, same, end, exhausted)
+			LLVMPositionBuilderAtEnd(builder, exhausted)
+			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, index, limit, "search_last"), end, advance)
+			LLVMPositionBuilderAtEnd(builder, advance)
+			val next = LLVMBuildAdd(builder, index, memory.count(1), "next_search_offset")
+			LLVMBuildBr(builder, compare)
+			incoming(index, listOf(memory.count(0), next), listOf(prepare, advance))
+			exits.addAll(listOf(compare, exhausted))
+			results.addAll(listOf(LLVMConstInt(boolType, 1, 0), LLVMConstInt(boolType, 0, 0)))
+		} else {
+			LLVMBuildBr(builder, end)
+			exits.add(compare)
+			results.add(same)
+		}
+		LLVMPositionBuilderAtEnd(builder, end)
+		return LLVMBuildPhi(builder, boolType, "string_predicate").also { incoming(it, results, exits) }
+	}
+
+	fun bytesEqual(left: LLVMValueRef, right: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
+		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
+		val intType = types.value(abi.intType)
+		val signature = PointerPointer<LLVMTypeRef>(3L).use { parameters ->
+			parameters.put(0, LLVMPointerTypeInContext(context, 0))
+			parameters.put(1, LLVMPointerTypeInContext(context, 0))
+			parameters.put(2, lengthType)
+			LLVMFunctionType(intType, parameters, 3, 0)
+		}
+		val existing = LLVMGetNamedFunction(module, "memcmp")
+		val function = if (existing == null || existing.isNull) LLVMAddFunction(module, "memcmp", signature) else existing
+		val compared = PointerPointer<LLVMValueRef>(3L).use { arguments ->
+			arguments.put(0, left); arguments.put(1, right); arguments.put(2, length)
+			LLVMBuildCall2(builder, signature, function, arguments, 3, "string_compare")
+		}
+		return LLVMBuildICmp(builder, LLVMIntEQ, compared, LLVMConstInt(intType, 0, 0), "string_same_bytes")
+	}
+
 	/** Compare bytes only when lengths match, never reading past the shorter operand. */
 	fun equal(left: LLVMValueRef, right: LLVMValueRef): LLVMValueRef {
 		val leftLength = LLVMBuildExtractValue(builder, left, 1, "string_left_length")
@@ -203,23 +284,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		val end = LLVMAppendBasicBlockInContext(context, function, "string_compare_end")
 		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, leftLength, rightLength, "string_same_length"), compare, end)
 		LLVMPositionBuilderAtEnd(builder, compare)
-		val module = LLVMGetGlobalParent(function)
-		val intType = types.value(abi.intType)
-		val memcmpType = PointerPointer<LLVMTypeRef>(3L).use { parameters ->
-			parameters.put(0, LLVMPointerTypeInContext(context, 0))
-			parameters.put(1, LLVMPointerTypeInContext(context, 0))
-			parameters.put(2, lengthType)
-			LLVMFunctionType(intType, parameters, 3, 0)
-		}
-		val existing = LLVMGetNamedFunction(module, "memcmp")
-		val memcmp = if (existing == null || existing.isNull) LLVMAddFunction(module, "memcmp", memcmpType) else existing
-		val compared = PointerPointer<LLVMValueRef>(3L).use { arguments ->
-			arguments.put(0, LLVMBuildExtractValue(builder, left, 0, "string_left_bytes"))
-			arguments.put(1, LLVMBuildExtractValue(builder, right, 0, "string_right_bytes"))
-			arguments.put(2, leftLength)
-			LLVMBuildCall2(builder, memcmpType, memcmp, arguments, 3, "string_compare")
-		}
-		val same = LLVMBuildICmp(builder, LLVMIntEQ, compared, LLVMConstInt(intType, 0, 0), "string_same_bytes")
+		val same = bytesEqual(LLVMBuildExtractValue(builder, left, 0, "string_left_bytes"), LLVMBuildExtractValue(builder, right, 0, "string_right_bytes"), leftLength)
 		LLVMBuildBr(builder, end)
 		LLVMPositionBuilderAtEnd(builder, end)
 		val result = LLVMBuildPhi(builder, boolType, "string_equal")
