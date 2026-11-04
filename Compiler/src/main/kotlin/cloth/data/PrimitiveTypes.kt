@@ -40,11 +40,10 @@ enum class CompilerDataProviders(private val spelling: String?) {
 /** Shared compiler descriptor base; this does not declare Cloth object inheritance. */
 sealed class CObject(keyword: Keywords) : ValueType(keyword)
 
-data class CInt(override val width: Int = DEFAULT_BITS, override val unsigned: Boolean = false) : CInteger(Keywords.INTEGER) {
-	// dummy comment for formatting
-	init {
-		require(width in FIXED_INTEGER_WIDTHS) { "Unsupported integer width: $width" }
-	}
+data class CInt(override val width: Int = DEFAULT_BITS, override val unsigned: Boolean = false) : CInteger(Keywords.INTEGER) { // dummy comment for formatting
+init {
+	require(width in FIXED_INTEGER_WIDTHS) { "Unsupported integer width: $width" }
+}
 }
 
 data class CFloat(val width: Int = DEFAULT_BITS) : CObject(Keywords.FLOAT) { constructor(format: FloatingFormat) : this(format.bits)

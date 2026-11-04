@@ -10,12 +10,17 @@ the parent skill for current implementation boundaries and source/test routing.
 - `is` supports both active-state checks, such as `player is Alive`, and runtime
   type checks, such as `entity is Player`. The target declaration determines
   which check is requested.
-- `==` is reserved for equality between values. Do not use it as a type-check or
-  active-state-check operator.
+- `==` handles value equality and numeric range membership. Do not use it as a
+  type-check or active-state-check operator.
 - Numeric `==` and `!=` support `int` and `float` operands and return `bool`.
   As with boolean equality, both operands are evaluated once, left to right.
   Boolean/numeric comparisons are type errors; numbers are not converted to
   booleans for equality. Assignment type checks remain unchanged.
+- Numeric `==` / `!=` also support range membership, confirmed on 2026-11-03:
+  `10 == 1..100` is true, `100 == 1..100` is false, and `1..=100 == 100`
+  is true. Either operand order is valid and inequality is the inverse.
+  Read the [membership contract](../../cloth-numerics/references/range-membership.md)
+  for contextual widths, float intervals and implementation boundaries.
 - Numeric `<`, `>`, `<=`, and `>=` support `int` and `float` operands and return
   `bool`. Both operands are evaluated once, left to right. Boolean operands are
   type errors; Cloth does not order `false` and `true` as numbers.

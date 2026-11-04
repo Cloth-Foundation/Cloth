@@ -89,6 +89,17 @@ using ordinary comparisons and the existing update/stalled-counter rules.
 
 ## Development rules and current policies
 
+- Numeric `==` / `!=` support range membership in either operand order, with
+  contextual literal widths, exact typed operands, ordinary float interval
+  comparisons and once-only source evaluation. Read the
+  [membership contract, source ownership and verification](references/range-membership.md)
+  before changing this feature. Use `RangeMembershipTest` and
+  [RangeMembership.co](../../../examples/RangeMembership.co). Standalone range
+  values remain unsupported; C3070 locates invalid membership contracts.
+  Preserve floating context while discovering fallback operand types; exiting
+  operands supply no numeric contract. Membership errors are intrinsic during
+  overload probes because enclosing parameter types cannot change its context.
+
 - Current semantic and native source value support admits signed/unsigned integer
   widths 1..65536, including full-width decimal text.
   Floats remain 16/32/64 with

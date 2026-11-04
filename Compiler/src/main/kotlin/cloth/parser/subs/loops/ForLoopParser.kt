@@ -44,7 +44,7 @@ class ForLoopParser(private val parser: Parser, delimited: DelimitedParser) : Lo
 		val source = if (parser.peek().lexeme in setOf(Operators.RANGE.toString(), Operators.RANGE_INCLUSIVE.toString())) {
 			val delimiter = parser.advance()
 			parser.skipNewlines()
-			val end = expressionParser.parseExpression()
+			val end = expressionParser.parseExpression(stopAtRange = true)
 			ForSource.Range(first, delimiter, end, sourceStart.through(parser.previous().span))
 		} else ForSource.Elements(first, firstSpan)
 		parser.skipNewlines()

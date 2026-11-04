@@ -97,6 +97,12 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
+- Numeric range membership: `value == start..end`, `start..=end != value`,
+  both operand orders, integers/floats and contextual literal widths are
+  implemented. The [numeric membership record](../cloth-numerics/references/range-membership.md)
+  owns the contract, source invariants and verification; use `RangeMembershipTest`
+  and [RangeMembership.co](../../../examples/RangeMembership.co).
+
 - Arbitrary fixed integer widths: [implementation plan](../../../todo/arbitrary-integer-widths-plan.md)
   and [accepted numeric contract](../cloth-numerics/references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03).
   Signed/unsigned `int<N>` admits 1..65536 with the same cap on

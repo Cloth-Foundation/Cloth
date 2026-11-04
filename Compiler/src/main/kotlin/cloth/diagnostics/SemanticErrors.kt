@@ -21,6 +21,8 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
+	fun rangeMembership(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, message, span)
+
 	fun forLoop(message: String, span: TokenSpan, binding: TokenSpan) = SemanticException(DiagnosticCode.INVALID_FOR_LOOP, message, listOf(SourceLabel(span, "invalid loop value here"), SourceLabel(binding, "loop binding declared here")))
 
 	fun argumentBinding(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_ARGUMENT_BINDING, message, listOfNotNull(SourceLabel(span, "argument binding here"), declaration?.let { SourceLabel(it, "parameter declared here") }))

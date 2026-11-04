@@ -9,9 +9,8 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigDecimal
 import java.math.BigInteger
 
-internal enum class ProviderReceiverForm {
-	// Dummy comment for formatting
-	TYPE,
+internal enum class ProviderReceiverForm { // Dummy comment for formatting
+TYPE,
 	VALUE
 }
 

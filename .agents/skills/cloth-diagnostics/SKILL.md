@@ -35,6 +35,15 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C3070 / INVALID_RANGE_MEMBERSHIP** rejects nonnumeric or incompatible typed
+operands, standalone/stored range values, range-to-range comparisons and known
+nonfinite float endpoints. Contextual literal overflow retains C3004/C3028.
+`RangeMembershipTest` covers located diagnostics, first-error CLI exit 1 before
+object/linker work, and dynamic endpoint failures preserving source order.
+Membership owns its numeric context; preserve its original C3070/C3004/C3028
+errors inside source-call argument probes instead of replacing them with C3024.
+See the [membership record](../cloth-numerics/references/range-membership.md).
+
 **C4031 is retired** after [Stage 5 integer text](../cloth-numerics/references/arbitrary-width-output.md).
 Its temporary integer/type/text preflight is removed; do not reassign this code.
 Source values and exact decimal output support widths 1..65536. C3011 rejects widths outside the
