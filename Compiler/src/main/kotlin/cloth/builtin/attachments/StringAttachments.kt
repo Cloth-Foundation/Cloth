@@ -1,6 +1,8 @@
 package cloth.builtin.attachments
 
+import cloth.builtin.BuiltinBody
 import cloth.builtin.BuiltinParameter
+import cloth.builtin.BuiltinStorageContract
 import cloth.data.CArray
 import cloth.data.CNullable
 import cloth.data.CUSize
@@ -14,15 +16,15 @@ internal enum class StringPredicate { CONTAINS,
 internal class StringAttachments(sizeBits: Int) : PrimitiveAttachment(ValueType.STRING) {
 
 	private val index = BuiltinParameter.Exact(CUSize(sizeBits))
-	val IS_EMPTY = register("isEmpty", emptyList(), ValueType.BOOL) { context, values -> context.stringIsEmpty(values[0]) }
+	val IS_EMPTY = valueMethod("isEmpty", emptyList(), ValueType.BOOL) { context, values -> context.stringIsEmpty(values[0]) }
 	val CONTAINS = predicate("contains", StringPredicate.CONTAINS)
 	val STARTS_WITH = predicate("startsWith", StringPredicate.STARTS_WITH)
 	val ENDS_WITH = predicate("endsWith", StringPredicate.ENDS_WITH)
-	val CHAR_AT = register("charAt", listOf(index), ValueType.CHAR) { context, values -> context.stringCharAt(values[0], values[1]) }
-	val SUBSTRING = register("substring", listOf(index, index), ValueType.STRING) { context, values -> context.stringSubstring(values[0], values[1], values[2]) }
-	val INDEX_OF = register("indexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = false) }
-	val LAST_INDEX_OF = register("lastIndexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = true) }
-	val TO_CHARS = register("toChars", emptyList(), CArray(ValueType.CHAR)) { context, values -> context.stringChars(values[0]) }
+	val CHAR_AT = valueMethod("charAt", listOf(index), ValueType.CHAR) { context, values -> context.stringCharAt(values[0], values[1]) }
+	val SUBSTRING = valueMethod("substring", listOf(index, index), ValueType.STRING) { context, values -> context.stringSubstring(values[0], values[1], values[2]) }
+	val INDEX_OF = valueMethod("indexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = false) }
+	val LAST_INDEX_OF = valueMethod("lastIndexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = true) }
+	val TO_CHARS = valueMethod("toChars", emptyList(), CArray(ValueType.CHAR)) { context, values -> context.stringChars(values[0]) }
 	val REPLACE = replacement("replace", firstOnly = false)
 	val REPLACE_FIRST = replacement("replaceFirst", firstOnly = true)
 	val REMOVE_PREFIX = removal("removePrefix", suffix = false)
@@ -30,21 +32,24 @@ internal class StringAttachments(sizeBits: Int) : PrimitiveAttachment(ValueType.
 	val TRIM = trimming("trim", start = true, end = true)
 	val TRIM_START = trimming("trimStart", start = true, end = false)
 	val TRIM_END = trimming("trimEnd", start = false, end = true)
-	val IS_BLANK = register("isBlank", emptyList(), ValueType.BOOL) { context, values -> context.stringIsBlank(values[0]) }
+	val IS_BLANK = valueMethod("isBlank", emptyList(), ValueType.BOOL) { context, values -> context.stringIsBlank(values[0]) }
 
-	private fun trimming(name: String, start: Boolean, end: Boolean) = register(name, emptyList(), ValueType.STRING) { context, values ->
+	/** These methods read immutable string bytes and never publish or borrow results. */
+	private fun valueMethod(name: String, parameters: List<BuiltinParameter>, returns: ValueType, body: BuiltinBody) = register(name, parameters, returns, BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, body)
+
+	private fun trimming(name: String, start: Boolean, end: Boolean) = valueMethod(name, emptyList(), ValueType.STRING) { context, values ->
 		context.stringTrim(values[0], start, end)
 	}
 
-	private fun replacement(name: String, firstOnly: Boolean) = register(name, List(2) { BuiltinParameter.Exact(ValueType.STRING) }, ValueType.STRING) { context, values ->
+	private fun replacement(name: String, firstOnly: Boolean) = valueMethod(name, List(2) { BuiltinParameter.Exact(ValueType.STRING) }, ValueType.STRING) { context, values ->
 		context.stringReplace(values[0], values[1], values[2], firstOnly)
 	}
 
-	private fun removal(name: String, suffix: Boolean) = register(name, listOf(BuiltinParameter.Exact(ValueType.STRING)), ValueType.STRING) { context, values ->
+	private fun removal(name: String, suffix: Boolean) = valueMethod(name, listOf(BuiltinParameter.Exact(ValueType.STRING)), ValueType.STRING) { context, values ->
 		context.stringRemoveAffix(values[0], values[1], suffix)
 	}
 
-	private fun predicate(name: String, operation: StringPredicate) = register(name, listOf(BuiltinParameter.Exact(ValueType.STRING)), ValueType.BOOL) { context, values ->
+	private fun predicate(name: String, operation: StringPredicate) = valueMethod(name, listOf(BuiltinParameter.Exact(ValueType.STRING)), ValueType.BOOL) { context, values ->
 		context.stringPredicate(values[0], values[1], operation)
 	}
 }

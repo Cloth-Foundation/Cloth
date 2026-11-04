@@ -948,6 +948,96 @@ class ArrayTemporaryCleanupTest {
 		""")
 	}
 
+	@Test
+	fun `read only string methods add no operand copies for literals or stored strings`(@TempDir directory: Path) {
+		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		probe(directory, "member_no_copies", """
+			fn<string> seed() = "abc"
+			fn<int> sample() {
+			    def text = seed()
+			    def baseline = liveBytes()
+			    if (text.isEmpty() || text.isBlank() || !text.contains("b") || !text.startsWith("a") || !text.endsWith("c")) return 1
+			    if (text.charAt(1) != 'b' || text.indexOf("b") != 1 || text.lastIndexOf("b") != 1) return 2
+			    if (text.substring(0, 3) != "abc" || text.trim() != "abc" || text.trimStart() != "abc" || text.trimEnd() != "abc") return 3
+			    if (text.replace("b", "x") != "axc" || text.replaceFirst("b", "x") != "axc") return 4
+			    if (text.removePrefix("a") != "bc" || text.removeSuffix("c") != "ab" || text.toChars()[1] != 'b') return 5
+			    if (!"".isEmpty() || !"　".isBlank() || liveBytes() != baseline) return 6
+			    def chars = text.toChars()
+			    chars[0] = 'x'
+			    if (text != "abc" || chars[0] != 'x' || liveBytes() != baseline) return 7
+			    return 0
+			}
+		""", allocations = 1, peak = bytes)
+	}
+
+	@Test
+	fun `scalar member consumers release producers and preserve preexisting string storage`(@TempDir directory: Path) {
+		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		probe(directory, "member_consumers", """
+			fn<string> text() = "abc"
+			fn<int> sample() {
+			    def saved = text()
+			    def baseline = liveBytes()
+			    for (def i <- 0..1000) {
+			        if (!text().trim().contains("b")) return 1
+			        if (liveBytes() != baseline || saved != "abc") return 2
+			    }
+			    return 0
+			}
+		""", allocations = 1001, peak = bytes * 2)
+	}
+
+	@Test
+	fun `member condition cleanup bounds while and do while producer storage`(@TempDir directory: Path) {
+		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		probe(directory, "member_conditions", """
+			fn<string> text(int n) = if (n < 10) { "v0" } else { "v00" }
+			fn<int> sample() {
+			    def n = 0
+			    while (text(n).contains("v") && n < 50) { n++ }
+			    do { n-- } while (text(n).contains("v") && n > 0)
+			    if (n != 0 || liveBytes() != 0) return 1
+			    return 0
+			}
+		""", allocations = 101, peak = bytes)
+	}
+
+	@Test
+	fun `captured string updates keep old descriptors and published buffers alive`(@TempDir directory: Path) {
+		val bytes = (NativeCABI.native().pointerBits / 8 * 3 + 14).toLong()
+		probe(directory, "member_publication", """
+			fn<string> original() = "original"
+			fn<string> fresh() = "new"
+			fn<int> sample() {
+			    def text = original()
+			    def<string> change = { text = fresh(); return "original" }
+			    if (!text.contains(change) || text != "new") return 1
+			    def baseline = liveBytes()
+			    if (!fresh().trim().contains("new")) return 2
+			    if (liveBytes() != baseline || text != "new") return 3
+			    return 0
+			}
+		""", allocations = 3, peak = bytes)
+	}
+
+	@Test
+	fun `discarded member results restore stack inside loops with buffered publication`(@TempDir directory: Path) {
+		val payload = "x".repeat(4096)
+		val bytes = (NativeCABI.native().pointerBits / 8 + 4).toLong()
+		probe(directory, "member_stack", """
+			fn<string> produce() = "kept"
+			fn<int> sample() {
+			    def published = produce()
+			    for (def i <- 0..5000) {
+			        published = produce()
+			        "$payload".removePrefix("missing")
+			    }
+			    if (published != "kept" || liveBytes() != ${bytes * 5001}) return 1
+			    return 0
+			}
+		""", allocations = 5001, peak = bytes * 5001)
+	}
+
 	/** Observe actual live/peak requested bytes during Cloth execution, not just
 	 * final balance. Test-only observation functions replace ordinary zero-return
 	 * bodies, and freed buffers are poisoned before returning them to the C runtime.

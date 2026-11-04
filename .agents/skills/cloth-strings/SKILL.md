@@ -24,6 +24,8 @@ non-overlapping literal matching, checked measure/fill and independent results.
 Read [Unicode whitespace methods](references/whitespace-methods.md) for `trim`,
 `trimStart`, `trimEnd` and `isBlank`, pinned White_Space classification and
 independent UTF-8 boundary copies.
+Read [string member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md)
+before changing operand copies, callable storage contracts or member temporary regions.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) for string parameters,
 returned text, interpolation buffers, or nested string arrays; use
 [output](../cloth-output/SKILL.md) for built-in printing.
@@ -38,10 +40,12 @@ returned text, interpolation buffers, or nested string arrays; use
   folding. `+` requires two strings and never converts another value implicitly.
 - The four initial string queries return bool and use exact, case-sensitive
   matching; empty search strings match. Resolve dot calls by receiver type,
-  preserve once-only receiver-before-argument snapshots and ordinary nullable
+  preserve once-only receiver-before-argument value capture and ordinary nullable
   proofs, and reuse bound built-in emission without global LLVM handles.
   Other unregistered string/integer methods, static/class methods and member overloads remain
-  deferred. Member calls conservatively retain frame storage in loop proofs.
+  deferred. Read-only member bodies opt into independent-result storage contracts;
+  immutable string operands avoid redundant byte copies. Cleanup proofs include
+  safe member regions while unknown/captured publication retains frame storage.
 - Scalar position methods use zero-based Unicode scalar indices and exact target
   `usize` parameters. Substrings have exclusive ends and independent contents;
   `toChars` yields independent `char[]`. Searches return `usize?`, preserving
@@ -53,7 +57,7 @@ returned text, interpolation buffers, or nested string arrays; use
   needles match scalar boundaries, including start/end; first replacement only
   inserts at the start. Affix removal strips one matching boundary or preserves
   contents. Measure output with checked target-byte additions, allocate once,
-  then fill from the same operand snapshots. Retain conservative frame lifetimes.
+  then fill from the same stable operand values. Retain unproven frame lifetimes.
 - Whitespace methods use Unicode 17.0.0 White_Space, independent of host locale
   or JVM/C predicates. `isBlank` is true for empty text. Trim variants remove only
   the requested boundaries and return independent strings; internal whitespace,
@@ -83,7 +87,7 @@ Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
 
-Relevant suites are `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
+Relevant suites are `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
 recursion and balanced cleanup. Read the

@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.builtin.BuiltinStorageContract
 import cloth.data.CArray
 import cloth.data.CInteger
 import cloth.data.CNullable
@@ -22,15 +23,15 @@ import java.util.*
  */
 internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private val functions: FunctionSemanticModel?) {
 
-	private data class Effects(val arrays: Boolean = false, val safe: Boolean = true) {
+	private data class Effects(val buffers: Boolean = false, val safe: Boolean = true) {
 
-		operator fun plus(other: Effects) = Effects(arrays || other.arrays, safe && other.safe)
+		operator fun plus(other: Effects) = Effects(buffers || other.buffers, safe && other.safe)
 	}
 
 	private val memo = IdentityHashMap<Expression, Effects>()
 	private val active = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
-	private val unknown = Effects(arrays = true, safe = false)
-	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.arrays && it.safe }
+	private val unknown = Effects(buffers = true, safe = false)
+	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.buffers && it.safe }
 	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
 	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
 
@@ -91,9 +92,12 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			}
 
 			is FunctionBlockExpression                                                                           -> Effects(types.typeOf(expression) is CArray) + statements((expression.declaration.body as BlockBody).statements)
-			// Member bodies are not part of the closed cleanup proof yet. Captured
-			// writes in receiver/arguments must retain conservative frame lifetimes.
-			is MemberCallExpression                                                                              -> unknown
+			is MemberCallExpression                                                                              -> {
+				val contract = types.memberCalls[expression]?.overload?.storage
+				if (contract != BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT) unknown
+				else (listOf(expression.receiver) + expression.arguments).fold(Effects(buffers = true)) { result, operand -> result + effects(operand) }
+			}
+
 			is CallExpression                                                                                    -> {
 				if (functions == null) unknown else {
 					val selected = functions.selectedCall(expression)

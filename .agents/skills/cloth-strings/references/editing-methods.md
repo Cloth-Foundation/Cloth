@@ -94,9 +94,11 @@ Maintained example: [StringEditing.co](../../../../examples/StringEditing.co).
   addresses, copied lengths and allocations use the selected target `usize`.
   Results use ordinary string descriptors and recursive caller-owned return
   copies through functions, deferred blocks, arrays and ordered results.
-  Existing `EmitExpression` operand protection and conservative member effect
-  classification remain in force. No new early-cleanup proof, GC, borrowing API,
-  string mutation or arbitrary-loop bounded-memory guarantee is introduced.
+  Existing `EmitExpression` operand protection remains in force. The later
+  [storage cleanup](../../cloth-buffer-lifetimes/references/string-member-storage.md)
+  elides immutable byte copies and reclaims proven member regions; unknown effects
+  remain conservative. No GC, borrowing API, string mutation or arbitrary-loop
+  bounded-memory guarantee is introduced.
 - Search is a straightforward bounded scan; no linear-time complexity promise is
   made. The result is measured independently of whether it grows or shrinks, so
   valid shrinking transformations do not fail on a larger intermediate size.

@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.*
@@ -175,7 +176,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		temporaryDepth++
 		try {
 			val values = (listOf(call.receiver) + call.arguments).mapIndexed { index, expression ->
-				snapshotValue(emitValue(expression), selected.arguments[index].parameterType)
+				val value = emitValue(expression)
+				val type = selected.arguments[index].parameterType
+				// Loading an immutable string descriptor already snapshots its value.
+				// Rebinding/array replacement cannot mutate those bytes. The protected
+				// operand region keeps storage live until this read-only call consumes it.
+				if (type == ValueType.STRING && selected.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT) value
+				else snapshotValue(value, type)
 			}
 			if (terminated()) return null
 			val location = call.span.source?.let { "${it.name}:${call.span}" } ?: call.span.toString()
@@ -430,8 +437,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val checkpoint = checkNotNull(frame).temporaryCheckpoint()
 		val previousFresh = freshArrays.toSet()
 		val previousCarriers = freshCarriers.toSet()
+		val stack = EmitStackScope(context, builder)
+		val stackCheckpoint = stack.save()
 		temporaryDepth++
-		val release = { frame.releaseTemporaries(checkpoint) }
+		val release = { frame.releaseTemporaries(checkpoint); stack.restore(stackCheckpoint) }
 		cleanupRegions.add(release)
 		return try {
 			// Receiving constraints consume descriptors before their buffers are released.

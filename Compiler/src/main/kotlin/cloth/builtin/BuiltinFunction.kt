@@ -23,7 +23,17 @@ internal abstract class BuiltinFunction(val properties: BuiltinProperties) {
 	abstract val overloads: List<BuiltinOverload>
 }
 
-internal data class BuiltinOverload(val parameters: List<BuiltinParameter>, val returns: ValueType, val body: BuiltinBody)
+/** UNKNOWN is deliberately the default. The opt-in contract covers both body and
+ * adapters: operands are read-only, nothing is published/retained, and buffered
+ * results own independent storage. It is a storage promise, not an IO purity flag.
+ */
+internal enum class BuiltinStorageContract {
+
+	UNKNOWN,
+	READ_ONLY_INDEPENDENT_RESULT
+}
+
+internal data class BuiltinOverload(val parameters: List<BuiltinParameter>, val returns: ValueType, val body: BuiltinBody, val storage: BuiltinStorageContract = BuiltinStorageContract.UNKNOWN)
 
 internal fun interface BuiltinBody {
 

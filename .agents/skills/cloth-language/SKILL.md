@@ -83,6 +83,7 @@ captures implementation scope and regression evidence.
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, inference, rectangular and fixed shapes, indexing | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
+| String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
 | String attachments, typed primitive registry and ordinary value member calls | [string member calls](../cloth-strings/references/member-calls.md) |
 | Scalar string positions, extraction, searches and character-array conversion | [scalar string methods](../cloth-strings/references/scalar-methods.md) |

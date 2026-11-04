@@ -90,13 +90,15 @@ The full maintained example is [StringScalars.co](../../../../examples/StringSca
   match; `lastIndexOf` retains the latest match while advancing one scalar, so
   overlaps remain visible. Absence uses the ordinary deterministic nullable
   carrier. Search has no scratch allocation and no promised linear-time bound.
-- `EmitExpression.emitMemberCall` still snapshots receiver/arguments before later
-  operands. Fresh independent member array results enter ordinary result freshness
+- `EmitExpression.emitMemberCall` captures receiver/arguments before later
+  operands, eliding immutable string byte copies under the
+  [storage contract](../../cloth-buffer-lifetimes/references/string-member-storage.md).
+  Fresh independent member array results enter ordinary result freshness
   tracking; adoption consumes that fact once. Stored copies, parameters, deferred
   returns, ordered results and escaping buffers use existing recursive copy/shape
   rules and caller-owned return storage before frame release. `ArrayTemporaryAnalysis`
-  still conservatively treats member effects as unknown; this adds no early-cleanup
-  proof or guarantee of bounded storage for arbitrary repeated member calls.
+  now admits opted-in bodies with proven operands; unknown effects remain conservative.
+  Arbitrary repeated member calls still have no blanket bounded-storage guarantee.
 
 ## Verification evidence
 

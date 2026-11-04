@@ -7,6 +7,39 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### String member storage cleanup (2026-11-04)
+
+The user authorized cleanup of redundant string member copies and temporary
+retention. [The storage record](../../cloth-buffer-lifetimes/references/string-member-storage.md)
+owns the proof and verification. `BuiltinStorageContract` defaults to unknown;
+the 17 read-only string bodies explicitly promise independent results and no
+operand mutation/publication/retention. `EmitExpression` captures immutable string
+descriptors once without copying their bytes, protecting operand storage through
+consumption. Unknown contracts/types retain existing copies. `ArrayTemporaryAnalysis`
+admits known bodies only with proven receiver/argument effects; discarded/direct
+results release arena suffixes and restore dynamic stacks. Existing loop proofs
+recognize those effects while buffered publication remains conservative.
+The public string API and all independent result/return-copy rules are unchanged.
+
+The existing string/lifetime regression command passed after the core change.
+The new focused command
+`.\gradlew.bat :Compiler:test --tests cloth.ArrayTemporaryCleanupTest --tests cloth.StringMemberStorageTest --offline --console=plain --no-daemon`
+passes 60 tests in 23 seconds, zero failures/errors/skips: 56 lifetime and four
+storage/portability tests. Native allocation/poison counters verify zero extra
+operand copies across all 17 methods, prompt producer reclamation, preexisting
+storage preservation, bounded while/do-while conditions and captured publication.
+A 5,000-iteration discarded 4 KB result probe restores stacks even inside an outer
+loop blocked by buffered publication. The stress program executes on Windows
+x64/MSVC and x86/MSVC; shared cleanup/escaping-result IR and nonempty objects pass
+all nine target profiles. Unknown/default contracts and captured publication
+remain rejected by the reclamation proof. Foreign native execution is untested.
+The full regression command
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,247 tests across 96 suites in 5m 10s, zero failures/errors/skips. Gradle
+used the existing cache outside the sandbox. Skill metadata and relative file
+links pass direct checks; the optional Python validator cannot start because its
+environment lacks PyYAML.
+
 ### Unicode whitespace string methods (2026-11-04)
 
 The user approved `trim`, `trimStart`, `trimEnd` and `isBlank`, and selected the

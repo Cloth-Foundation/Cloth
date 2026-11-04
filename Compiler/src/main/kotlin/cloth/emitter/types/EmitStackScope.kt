@@ -7,7 +7,7 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
-/** Reclaim dynamic array-literal storage only after its consumers finish. */
+/** Reclaim dynamic temporary storage only after its consumers finish. */
 internal class EmitStackScope(private val context: LLVMContextRef, private val builder: LLVMBuilderRef) {
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
