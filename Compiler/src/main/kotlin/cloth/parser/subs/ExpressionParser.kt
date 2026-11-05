@@ -88,18 +88,25 @@ class ExpressionParser(val parser: Parser) {
 
 				Operators.COLON_COLON.toString()  -> {
 					parser.advance()
-					val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
-					if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
-						val arguments = parser.delimited.parentheses {
-							parseArguments()
-						}
-						StateCallExpression(value, name, arguments, value.span.through(parser.previous().span))
-					} else ProviderAccessExpression(value, name)
+					parseDoubleColon(value)
 				}
 
 				else                              -> return value
 			}
 		}
+	}
+
+	private fun parseDoubleColon(receiver: Expression): Expression {
+		if (parser.atKeyword(Keywords.NEW)) {
+			val keyword = parser.advance()
+			val arguments = if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) parseArgumentList() else emptyList()
+			return ClassCreationExpression(receiver, keyword, arguments, receiver.span.through(parser.previous().span))
+		}
+		if (parser.atKeyword(Keywords.DELETE)) return ClassDeletionExpression(receiver, parser.advance())
+		val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
+		if (parser.peek().lexeme != Operators.PAREN_OPEN.toString()) return ProviderAccessExpression(receiver, name)
+		val arguments = parseArgumentList()
+		return StateCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
 	}
 
 	fun parsePrimary(allowWhileTrailer: Boolean = false): Expression {
@@ -186,6 +193,8 @@ class ExpressionParser(val parser: Parser) {
 			else                                                                                            -> throw SyntaxErrors.expression(token)
 		}
 	}
+
+	internal fun parseArgumentList(): List<CallArgument> = parser.delimited.parentheses { parseArguments() }
 
 	private fun parseArguments(): List<CallArgument> = parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
 		val named = parser.peek().type == TokenType.Identifier && parser.peek(1).lexeme == Operators.ASSIGN.toString()

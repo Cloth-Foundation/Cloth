@@ -1,0 +1,52 @@
+typedef<struct> Reading {
+    int value,
+    string label
+}
+
+pub final typedef<class> Counter (def<int> value ?: 0, def<string> label ?: "idle") {
+    Counter(string label, float initial) : (value=initial -> int, label=label) {}
+
+    pub mt<int> add(opt<int> amount ?: 2) {
+        value += amount
+        return value
+    }
+
+    pub mt rename(string label) {
+        self.label = label
+    }
+
+    pub mt<Reading> snapshot() = { value, label }
+
+    ~Counter {
+        println(#"Deleted {label} at {value}")
+    }
+}
+
+typedef<struct> Entry { Counter counter }
+
+fn<int> main() {
+    def idle = Counter::new
+    def current = Counter::new(label="main", initial=10f)
+    def saved = current.snapshot()
+
+    // Foreach copies the entries, which carry the same counter identities.
+    def<Entry[2]> entries = [{ idle }, { current }]
+    def total = 0
+    for (def entry <- entries) total += entry.counter.add()
+    if (total != 14) return 1
+
+    def alias := entries[1].counter
+    current.rename("updated")
+    if (alias.add(amount=5) != 17) return 2
+    def updated = current.snapshot()
+    if (updated.value != 17 || updated.label != "updated") return 3
+    println(#"Current {updated.label}: {updated.value}")
+
+    alias::delete
+    idle::delete
+
+    // The saved struct owns its value, including the label string.
+    if (saved.value != 10 || saved.label != "main") return 4
+    println(#"Saved {saved.label}: {saved.value}")
+    return 0
+}

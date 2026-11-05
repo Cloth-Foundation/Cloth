@@ -37,6 +37,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private val effects = IdentityHashMap<FunctionBlockExpression, Set<Place>>()
 	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<Place>>()
 	private val methodsByName = model.declarations.methods.groupBy { it.name.lexeme }
+	private val hasClasses = model.declarations.classes.isNotEmpty()
 	private val flow get() = model.controlFlow
 	private fun block(symbol: BindingSymbol?) = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 	private fun binding(value: Expression) = (value as? NameExpression)?.let { model.declarations.names[it] as? BindingSymbol }
@@ -53,6 +54,28 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun stable(value: Expression) = place(value)?.takeIf { value !is IndexExpression && it.path.none { segment -> segment is Segment.Index && segment.constant == null } }
 	private fun forget(facts: Set<Place>, writes: Collection<Place>) = facts.filterNot { proof -> writes.any { it.invalidates(proof) } }.toSet()
+	private fun canAlias(place: Place): Boolean {
+		if (!hasClasses || place.path.isEmpty()) return false
+		// A struct method can receive a projected class field through its receiver ABI.
+		if (place.root is ReceiverSymbol) return true
+		var type = model.bindings[place.root]
+		for (segment in place.path) {
+			val payload = (type as? CNullable)?.payload ?: type
+			if (payload == null || payload is CClass) return true
+			type = when (segment) {
+				is Segment.Field -> (payload as? CStruct)?.field(segment.name)?.type
+				is Segment.Index -> (payload as? CArray)?.element
+			}
+		}
+		return false
+	}
+
+	private fun forgetAliases(facts: Set<Place>) = if (hasClasses) facts.filterNot(::canAlias).toSet() else facts
+	private fun forgetWrite(facts: Set<Place>, target: Place?): Set<Place> {
+		val remaining = forget(facts, listOfNotNull(target))
+		return if (target == null || canAlias(target)) forgetAliases(remaining) else remaining
+	}
+
 	private fun common(paths: List<Set<Place>>, fallback: Set<Place>) = paths.reduceOrNull { left, right -> left intersect right } ?: fallback
 	private fun knownPresent(value: Expression) = value in presentResults
 	private fun nullable(symbol: BindingSymbol) = symbol.declaredType?.hasNullability == true
@@ -69,7 +92,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				}
 			}
 
-			is FieldAccessExpression -> (receiverHint(expression.receiver) as? CStruct)?.field(expression.name.lexeme)?.type
+			is FieldAccessExpression -> (receiverHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
 			is IndexExpression       -> (receiverHint(expression.array) as? CArray)?.element
 			else                     -> null
 		}
@@ -77,16 +100,16 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<MethodSymbol> = when (hint) {
-		is CStruct -> model.declarations.methodGroup(hint, call.name.lexeme)?.overloads.orEmpty()
-		null       -> methodsByName[call.name.lexeme].orEmpty()
-		else       -> emptyList()
+		is CMemberType -> model.declarations.methodGroup(hint, call.name.lexeme)?.overloads.orEmpty()
+		null           -> methodsByName[call.name.lexeme].orEmpty()
+		else           -> emptyList()
 	}
 
 	private fun methodWrites(receiver: Place?, candidates: List<MethodSymbol>): List<Place> {
 		if (receiver == null) return emptyList()
 		// A fixed receiver can change its fields, not its own presence.
 		return candidates.map { it.owner }.distinct().flatMap { owner ->
-			owner.fields.map { field -> receiver.copy(path = receiver.path + Segment.Field(field.declaration.name.lexeme)) }
+			owner.fields.map { field -> receiver.copy(path = receiver.path + Segment.Field(field.name.lexeme)) }
 		}
 	}
 
@@ -106,6 +129,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is BlockBody      -> statements(body.statements, emptySet())
 			is ExpressionBody -> expression(body.expression, emptySet())
 		}
+	}
+
+	fun analyzeExpressions(expressions: List<Expression>) {
+		expressions.fold(emptySet<Place>()) { facts, value -> expression(value, facts).after }
 	}
 
 	private fun statements(body: List<Statement>, initial: Set<Place>): Set<Place> {
@@ -145,7 +172,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val after = expression(item.value, facts).after
 				val binding = model.declarations.targetOf(item)
 				val target = bindingPlace(binding)
-				val remaining = forget(after, listOf(target))
+				val remaining = forgetWrite(after, target)
 				if (binding !is ReceiverFieldSymbol && knownPresent(item.value)) remaining + target else remaining
 			}
 
@@ -155,25 +182,25 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				model.declarations.targetsOf(item).forEachIndexed { index, symbol ->
 					if (symbol != null) {
 						val target = bindingPlace(symbol)
-						after = forget(after, listOf(target))
+						after = forgetWrite(after, target)
 						if (symbol !is ReceiverFieldSymbol && knownPresent(results?.getOrNull(index) ?: item.value)) after += target
 					}
 				}
 				after
 			}
 
-			is ElementAssignmentStatement -> forget(expression(item.value, expression(item.target, facts).after).after, listOfNotNull(place(item.target)))
+			is ElementAssignmentStatement -> forgetWrite(expression(item.value, expression(item.target, facts).after).after, place(item.target))
 			is FieldWriteStatement        -> {
 				val afterTarget = expression(item.target, facts).after
 				val after = item.value?.let { expression(it, afterTarget).after } ?: afterTarget
-				forget(after, listOfNotNull(place(item.target)))
+				forgetWrite(after, place(item.target))
 			}
 
 			is UpdateStatement            -> {
 				val binding = model.declarations.targetOf(item)
 				val target = bindingPlace(binding)
 				if (target in facts) model.presentUpdates.add(item)
-				if (binding is ReceiverFieldSymbol) forget(facts, listOf(target)) else facts
+				if (binding is ReceiverFieldSymbol) forgetWrite(facts, target) else facts
 			}
 
 			is ExpressionStatement        -> expression(item.expression, facts).after
@@ -190,7 +217,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		val repeated = item.body.statements + listOfNotNull(item.stepper?.value?.let { ExpressionStatement(it) })
 		val changed = writes(repeated) + Place(model.declarations.symbolOf(item))
-		val stableEntry = forget(entry, changed)
+		val stableEntry = forgetAliases(forget(entry, changed))
 		// Invalidate before publishing occurrence facts: a fact true on entry may
 		// already be false on the second trip around this same source occurrence.
 		val afterBody = statements(item.body.statements, stableEntry)
@@ -204,7 +231,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun doWhileLoop(item: DoWhileStatement, initial: Set<Place>): Set<Place> {
 		val repeated = item.body.statements + ExpressionStatement(item.condition)
-		val entry = if (flow.canRepeat(item)) forget(initial, writes(repeated)) else initial
+		val entry = if (flow.canRepeat(item)) forgetAliases(forget(initial, writes(repeated))) else initial
 		// No test precedes first entry. Invalidate writes only if this body can repeat.
 		val afterBody = statements(item.body.statements, entry)
 		val completion = flow.of(item.body.statements)
@@ -221,7 +248,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun whileLoop(item: WhileStatement, initial: Set<Place>): Set<Place> {
 		// The same condition occurrence runs after body/continue writes too.
 		val changed = writes(listOf(ExpressionStatement(item.condition)) + item.body.statements)
-		val entry = forget(initial, changed)
+		val entry = forgetAliases(forget(initial, changed))
 		val condition = expression(item.condition, entry)
 		statements(item.body.statements, condition.yes)
 		val exits = mutableListOf<Set<Place>>()
@@ -239,7 +266,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val deferred = block(symbol)
 				if (deferred != null) {
 					if (deferred.declaration.returnType?.let { !it.hasNullability && it.name.lexeme != Keywords.VOID.toString() } == true) presentResults.add(value)
-					Outcome(forget(initial, writes(deferred)))
+					Outcome(forgetAliases(forget(initial, writes(deferred))))
 				} else {
 					if (symbol != null) {
 						val proven = bindingPlace(symbol) in initial
@@ -337,7 +364,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is TypeCheckExpression                     -> expression(value.operand, initial)
 			is CallExpression                          -> {
 				val after = value.arguments.fold(initial) { facts, arg -> expression(arg, facts).after }
-				Outcome(forget(after, implicitMethodWrites(value)))
+				val remaining = forget(after, implicitMethodWrites(value))
+				Outcome(if (model.declarations.candidatesOf(value) is BuiltinGroupSymbol) remaining else forgetAliases(remaining))
 			}
 
 			is MemberCallExpression                    -> {
@@ -355,9 +383,12 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					val lost = path.filter { part -> stable(part)?.let { it in before && it !in after } == true }
 					if (lost.isNotEmpty()) model.lostReceiverProofs[value] = lost
 				}
-				Outcome(forget(after, methodWrites(place(value.receiver), candidates)))
+				val remaining = forget(after, methodWrites(place(value.receiver), candidates))
+				Outcome(if (candidates.isEmpty()) remaining else forgetAliases(remaining))
 			}
 
+			is ClassCreationExpression                 -> Outcome(forgetAliases(value.arguments.fold(initial) { facts, arg -> expression(arg, facts).after }))
+			is ClassDeletionExpression                 -> Outcome(forgetAliases(expression(value.receiver, initial).after))
 			is StateCallExpression                     -> Outcome(value.arguments.fold(expression(value.receiver, initial).after) { facts, arg -> expression(arg, facts).after })
 			is ResultListExpression                    -> Outcome(value.values.fold(initial) { facts, item -> expression(item, facts).after })
 			is ArrayLiteral                            -> Outcome(value.elements.fold(initial) { facts, item -> expression(item, facts).after })
@@ -367,6 +398,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			else                                       -> Outcome(initial)
 		}
 		when (value) {
+			is ClassCreationExpression                                                                                                                                                                                                                                   -> presentResults.add(value)
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is ArrayLiteral, is StructLiteral, is InterpolatedString, is BinaryExpression, is UnaryExpression, is ProviderAccessExpression, is TypeCheckExpression -> presentResults.add(value)
 			is CastExpression                                                                                                                                                                                                                                            -> if (!value.target.hasNullability && value.target.name.lexeme != Keywords.VOID.toString()) presentResults.add(value)
 			is CallExpression                                                                                                                                                                                                                                            -> {
@@ -381,7 +413,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is MemberCallExpression                                                                                                                                                                                                                                      -> {
 				val hint = receiverHint(value.receiver)
 				val sources = methods(value, hint)
-				val primitives = if (hint is CStruct) emptyList() else PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
+				val primitives = if (hint is CMemberType) emptyList() else PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
 				if ((sources.isNotEmpty() || primitives.isNotEmpty()) && presentReturns(sources) && primitives.all { it.overload.returns !is CNullable && it.overload.returns != ValueType.VOID }) presentResults.add(value)
 			}
 
@@ -422,6 +454,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					result.addAll(methodWrites(place(value.receiver), methods(value)))
 				}
 
+				is ClassCreationExpression  -> value.arguments.forEach(::visit)
+				is ClassDeletionExpression  -> visit(value.receiver)
 				is StateCallExpression      -> {
 					visit(value.receiver); value.arguments.forEach(::visit)
 				}

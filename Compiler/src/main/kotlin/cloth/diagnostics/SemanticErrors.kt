@@ -23,6 +23,13 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
+	fun classSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_CLASSES, "Class lifecycle expressions require a declaration source unit", span)
+	fun duplicateClassType(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_CLASS_TYPE, "Type '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
+	fun classMember(message: String, span: TokenSpan, previous: Token? = null) = SemanticException(DiagnosticCode.INVALID_CLASS_MEMBER, message, listOfNotNull(SourceLabel(span, "class member here"), previous?.let { SourceLabel(it.span, "first declared here") }))
+	fun privateClassMember(name: Token, declaration: Token) = SemanticException(DiagnosticCode.PRIVATE_CLASS_MEMBER, "Class member '${name.lexeme}' is private", listOf(SourceLabel(name.span, "access outside the declaring class"), SourceLabel(declaration.span, "private member declared here")))
+	fun classLifecycle(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_CLASS_LIFECYCLE, message, span)
+	fun partialClassInstance(message: String, span: TokenSpan) = issue(DiagnosticCode.PARTIAL_CLASS_INSTANCE, message, span)
+	fun deletedClassAccess(span: TokenSpan) = issue(DiagnosticCode.DELETED_CLASS_ACCESS, "This class object is no longer live for this access", span)
 	fun structSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "Struct semantics require a declaration source unit", span)
 	fun duplicateStruct(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_STRUCT, "Struct '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun structCycle(name: Token, fields: List<StructFieldDeclaration>) = SemanticException(DiagnosticCode.RECURSIVE_STRUCT, "Field types form a cycle through struct '${name.lexeme}'", fields.map { SourceLabel(it.type.span, "field '${it.name.lexeme}' is part of this cycle") })

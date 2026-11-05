@@ -21,7 +21,7 @@ internal class EmitStoredValue(private val context: LLVMContextRef, private val 
 		LLVMBuildMemCpy(builder, destination, 1, source, 1, bytes(type))
 	}
 
-	fun fieldAddress(address: LLVMValueRef, type: CStruct, field: StructField): LLVMValueRef = LLVMBuildStructGEP2(builder, type.llvmStorage(context, target), address, field.index, "field.${field.declaration.name.lexeme}")
+	fun fieldAddress(address: LLVMValueRef, type: CStruct, field: InstanceField): LLVMValueRef = LLVMBuildStructGEP2(builder, type.llvmStorage(context, target), address, field.index, "field.${field.name.lexeme}")
 
 	fun payloadAddress(address: LLVMValueRef, type: CNullable): LLVMValueRef = LLVMBuildStructGEP2(builder, type.llvmStorage(context, target), address, 1, "stored_payload")
 

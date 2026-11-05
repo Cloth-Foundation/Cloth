@@ -24,7 +24,8 @@ data class MethodDeclaration(
 	override val returnTypes: List<TypeReference>,
 	override val parameters: List<ParameterDeclaration>,
 	override val body: FunctionBody,
-) : CallableDeclaration {
+	val visibility: Token? = null,
+) : CallableDeclaration, ClassMember {
 
-	override val span get() = keyword.span.through(body.span)
+	override val span get() = (visibility ?: keyword).span.through(body.span)
 }

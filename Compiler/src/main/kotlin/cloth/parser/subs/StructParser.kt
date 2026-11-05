@@ -5,17 +5,12 @@ import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.Token
 import cloth.token.TokenType
 
 internal class StructParser(private val parser: Parser) {
 
-	fun parse(): StructDeclaration {
-		val visibility = if (parser.atKeyword(Keywords.PUBLIC)) parser.advance() else null
-		val keyword = parser.advance()
-		parser.delimited.angles {
-			if (!parser.atKeyword(Keywords.STRUCT)) throw SyntaxErrors.expected("'${Keywords.STRUCT}' as the type declaration kind", parser.peek())
-			parser.advance()
-		}
+	fun parse(keyword: Token, visibility: Token?): StructDeclaration {
 		val name = parser.expect(TokenType.Identifier, "a struct name")
 		parser.skipNewlines()
 		val (fields, methods) = parser.delimited.braces {
@@ -54,12 +49,9 @@ internal class StructParser(private val parser: Parser) {
 		while (!atEnd()) {
 			rejectFunction()
 			if (!parser.atKeyword(Keywords.METHOD)) throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration with inherited visibility", parser.peek())
-			val keyword = parser.advance()
-			val returnTypes = parser.parseTypeList()
-			val name = parser.expect(TokenType.Identifier, "a method name")
-			val parameters = parser.functionParser.parseParameters()
-			val body = parser.functionParser.parseBody("method")
-			add(MethodDeclaration(keyword, name, returnTypes, parameters, body))
+			val method = parser.functionParser.parseMethod()
+			val body = method.body
+			add(method)
 			rejectFunction()
 			if (body is ExpressionBody && parser.isSemicolon(parser.peek())) parser.advance()
 			else if (!atEnd() && parser.peek().type != TokenType.NewLine) {

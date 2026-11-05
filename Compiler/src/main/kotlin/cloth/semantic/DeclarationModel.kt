@@ -1,5 +1,7 @@
 package cloth.semantic
 
+import cloth.data.CClass
+import cloth.data.CMemberType
 import cloth.data.CStruct
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
@@ -9,13 +11,25 @@ import cloth.target.TargetLayout
 import java.util.*
 
 /** Declaration identities and name resolutions, before expression/call type checking. */
-class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>, val target: TargetLayout, val structs: Map<String, CStruct>, val methods: List<MethodSymbol>) {
+class DeclarationModel internal constructor(
+	val fileScope: LexicalScope,
+	val functions: List<FunctionSymbol>,
+	val target: TargetLayout,
+	val structs: Map<String, CStruct>,
+	val methods: List<MethodSymbol>,
+	internal val classes: Map<String, ClassDefinition>,
+) {
 
-	internal val callables: List<CallableSymbol> = functions + methods
+	internal val callables: List<CallableSymbol> = functions + methods + classes.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
+	internal fun namedType(name: String): CMemberType? = classes[name]?.owner ?: structs[name]
+	internal val classOwners = IdentityHashMap<CallableDeclaration, CClass>().apply {
+		for (callable in callables) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
+	}
 	private val methodGroups = methods.groupBy { it.owner }.mapValues { (_, members) ->
 		members.groupBy { it.name.lexeme }.mapValues { (_, overloads) -> MethodGroupSymbol(overloads) }
 	}
-	internal val namedTypeReceivers = IdentityHashMap<NameExpression, CStruct>()
+	internal val namedTypeReceivers = IdentityHashMap<NameExpression, CMemberType>()
+	internal val classCreations = IdentityHashMap<ClassCreationExpression, ClassDefinition>()
 	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()
 	internal val methodSymbols = IdentityHashMap<MethodDeclaration, MethodSymbol>()
@@ -33,6 +47,7 @@ class DeclarationModel internal constructor(val fileScope: LexicalScope, val fun
 	internal val receiverCalls = IdentityHashMap<MemberCallExpression, MethodGroupSymbol>()
 	internal val implicitReceivers = IdentityHashMap<CallExpression, ReceiverSymbol>()
 	internal val readOnlyDefaultReceivers = Collections.newSetFromMap(IdentityHashMap<MemberCallExpression, Boolean>())
+	internal val fieldInitializerCalls = Collections.newSetFromMap(IdentityHashMap<MemberCallExpression, Boolean>())
 	internal val assignments = IdentityHashMap<AssignmentStatement, BindingSymbol>()
 	internal val multiAssignments = IdentityHashMap<MultiAssignmentStatement, List<BindingSymbol?>>()
 	internal val updates = IdentityHashMap<UpdateStatement, BindingSymbol>()
@@ -51,7 +66,7 @@ class DeclarationModel internal constructor(val fileScope: LexicalScope, val fun
 	fun bodyScopeOf(statement: LoopStatement): LexicalScope = loopBodyScopes.getValue(statement)
 	fun symbolOf(expression: NameExpression): Symbol = names.getValue(expression)
 	fun candidatesOf(call: CallExpression): CallableGroupSymbol = calls.getValue(call)
-	internal fun methodGroup(owner: CStruct, name: String): MethodGroupSymbol? = methodGroups[owner]?.get(name)
+	internal fun methodGroup(owner: CMemberType, name: String): MethodGroupSymbol? = methodGroups[owner]?.get(name)
 	fun targetOf(statement: AssignmentStatement): BindingSymbol = assignments.getValue(statement)
 	fun targetsOf(statement: MultiAssignmentStatement): List<BindingSymbol?> = multiAssignments.getValue(statement)
 	fun targetOf(statement: UpdateStatement): BindingSymbol = updates.getValue(statement)

@@ -1,13 +1,11 @@
 package cloth.semantic.symbols
 
 import cloth.builtin.BuiltinDefinition
-import cloth.data.CStruct
-import cloth.data.StructField
+import cloth.data.CClass
+import cloth.data.CMemberType
+import cloth.data.InstanceField
 import cloth.data.ValueType
-import cloth.parser.declaration.CallableDeclaration
-import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.declaration.MethodDeclaration
-import cloth.parser.declaration.ParameterDeclaration
+import cloth.parser.declaration.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
@@ -51,6 +49,7 @@ sealed interface CallableSymbol : Symbol {
 	val declaration: CallableDeclaration
 	val signature: FunctionSignature
 	val parameters: List<ParameterSymbol>
+	val receiver: ReceiverSymbol? get() = null
 }
 
 class FunctionSymbol(override val declaration: FunctionDeclaration) : CallableSymbol {
@@ -60,12 +59,28 @@ class FunctionSymbol(override val declaration: FunctionDeclaration) : CallableSy
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
 }
 
-class MethodSymbol(override val declaration: MethodDeclaration, val owner: CStruct) : CallableSymbol {
+class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType) : CallableSymbol {
 
 	override val name get() = declaration.name
 	override val signature = FunctionSignature.of(declaration)
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map(::ParameterSymbol)
-	val receiver = ReceiverSymbol(owner, declaration.keyword)
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
+}
+
+internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass) : CallableSymbol {
+
+	override val name get() = declaration.name
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters = declaration.parameters.map(::ParameterSymbol)
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
+}
+
+internal class DestructorSymbol(override val declaration: DestructorDeclaration, owner: CClass) : CallableSymbol {
+
+	override val name get() = declaration.name
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters = emptyList<ParameterSymbol>()
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
 sealed interface CallableGroupSymbol : Symbol
@@ -89,7 +104,7 @@ sealed interface BindingSymbol : Symbol {
 	val declaredType: TypeReference?
 }
 
-class ReceiverSymbol(val owner: CStruct, val keyword: Token) : BindingSymbol {
+class ReceiverSymbol(val owner: CMemberType, val keyword: Token) : BindingSymbol {
 
 	override val name = Token(TokenType.Keyword, keyword.span, Keywords.SELF.toString())
 	override val mutable get() = false
@@ -101,11 +116,11 @@ class ReceiverSymbol(val owner: CStruct, val keyword: Token) : BindingSymbol {
 }
 
 /** A field selected through the current receiver, including implicit name lookup. */
-class ReceiverFieldSymbol(val receiver: ReceiverSymbol, val field: StructField) : BindingSymbol {
+class ReceiverFieldSymbol(val receiver: ReceiverSymbol, val field: InstanceField) : BindingSymbol {
 
-	override val name get() = field.declaration.name
+	override val name get() = field.name
 	override val mutable get() = true
-	override val declaredType get() = field.declaration.type
+	override val declaredType get() = field.annotation
 }
 
 class ParameterSymbol(val declaration: ParameterDeclaration) : BindingSymbol {

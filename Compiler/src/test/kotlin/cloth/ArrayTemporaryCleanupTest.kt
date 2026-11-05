@@ -26,6 +26,46 @@ class ArrayTemporaryCleanupTest {
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
 
 	@Test
+	fun `class fields reclaim superseded buffers and publish snapshots across poisoned frees`(@TempDir directory: Path) {
+		probe(directory, "class_field_lifetimes", """
+			typedef<struct> Entry {
+			    string[2] words,
+			    string tag;
+			    mt<string> replace(string word) {
+			        def saved = words[0]
+			        tag, words = word + "!", [word, words[1]]
+			        return saved
+			    }
+			}
+			pub typedef<class> Parcel (pub def<Entry[1]> rows, pub def<string[]> labels) {
+			    pub mt<int> touch() {
+			        def baseline = liveBytes()
+			        for (def i <- 0..250) {
+			            labels[0] = labels[1] + "x"
+			            if (liveBytes() > baseline + 512) return 1
+			        }
+			        if (liveBytes() != baseline) return 2
+			        return 0
+			    }
+			}
+			fn<Parcel> makeParcel() = Parcel::new([{ ["a" + "aa", "b" + "b"], "tag" }], ["c" + "cc", "d" + "d"])
+			fn<int> sample() {
+			    def parcel = makeParcel()
+			    def baseline = liveBytes()
+			    if (parcel.touch() != 0 || liveBytes() != baseline) return 1
+			    def previous = parcel.rows[0].replace("new")
+			    def saved = parcel.labels
+			    def row = parcel.rows[0].words
+			    def tag = parcel.rows[0].tag
+			    parcel::delete
+			    if (previous != "aaa" || saved[0] != "ddx" || saved[1] != "dd") return 2
+			    if (row[0] != "new" || row[1] != "bb" || tag != "new!") return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `nested methods publish field buffers to receiver storage across poisoned returns`(@TempDir directory: Path) {
 		probe(directory, "method_receiver_lifetimes", """
 			typedef<struct> Leaf {

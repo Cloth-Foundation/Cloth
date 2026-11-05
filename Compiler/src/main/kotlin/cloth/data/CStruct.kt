@@ -11,13 +11,13 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 /** One descriptor per declaration per source unit. Equality is nominal. */
-class CStruct internal constructor(val declaration: StructDeclaration, val fields: List<StructField>) : ValueType(Keywords.STRUCT) {
+class CStruct internal constructor(val declaration: StructDeclaration, override val fields: List<StructField>) : CMemberType(Keywords.STRUCT) {
 
-	override val spelling get() = declaration.name.lexeme
+	override val name get() = declaration.name
 	override val indirect get() = true
 	override val buffered = fields.any { it.type.buffered }
 	private val fieldsByName = fields.associateBy { it.declaration.name.lexeme }
-	internal fun field(name: String): StructField? = fieldsByName[name]
+	internal override fun field(name: String): StructField? = fieldsByName[name]
 
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMPointerTypeInContext(context, 0)
 
@@ -42,7 +42,11 @@ class CStruct internal constructor(val declaration: StructDeclaration, val field
 	}
 }
 
-data class StructField(val declaration: StructFieldDeclaration, val index: Int, val type: ValueType)
+data class StructField(val declaration: StructFieldDeclaration, override val index: Int, override val type: ValueType) : InstanceField {
+
+	override val name get() = declaration.name
+	override val annotation get() = declaration.type
+}
 
 internal val ValueType.isStructValue: Boolean get() = this is CStruct || this is CNullable && payload is CStruct
 

@@ -73,6 +73,7 @@ captures implementation scope and regression evidence.
 
 | Work area | Skill |
 | --- | --- |
+| Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
@@ -121,6 +122,13 @@ captures implementation scope and regression evidence.
   covers verification and the class handoff. The
   [method contract](../cloth-functions/references/semantics.md#user-defined-methods)
   owns the confirmed rules for `mt` and `self`.
+
+- Basic classes execute with methods, constructors, explicit deletion and
+  checked identities. Class fields own their buffers, and aggregate value
+  copies preserve class identity.
+  [Runnable example](../../../examples/Classes.co) · [Publication and verification](references/class-publication.md) ·
+  [Class syntax](references/class-syntax.md) · [Class typing](references/class-typing.md) ·
+  [Class execution and lifetime](references/class-lifetime.md) · [Class values](references/class-values.md) · [Class plan](../../../todo/basic-classes-plan.md)
 
 - Do-while: the [accepted contract](../cloth-control-flow/references/do-while-loops.md)
   owns `do body while (condition)`, semicolon boundaries, scopes, jumps and

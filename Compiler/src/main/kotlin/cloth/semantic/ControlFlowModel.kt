@@ -131,7 +131,8 @@ class ControlFlowModel {
 			is CastExpression                                                                                                                       -> of(expression.operand)
 			is ElvisExpression                                                                                                                      -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
 			is TypeCheckExpression                                                                                                                  -> of(expression.operand)
-			is CallExpression                                                                                                                       -> expression.arguments.fold(ControlFlow.FALLTHROUGH) { flow, argument -> flow.then(of(argument)) }
+			is ClassDeletionExpression                                                                                                              -> of(expression.receiver)
+			is CallSite                                                                                                                             -> expression.arguments.fold(ControlFlow.FALLTHROUGH) { flow, argument -> flow.then(of(argument)) }
 			is InterpolatedString                                                                                                                   -> expression.parts.fold(ControlFlow.FALLTHROUGH) { flow, part -> flow.then(of(part)) }
 			is BinaryExpression                                                                                                                     -> {
 				val left = of(expression.left)

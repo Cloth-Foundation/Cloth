@@ -27,8 +27,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected abstract fun statement(statement: Statement)
 	protected abstract fun withScope(action: () -> Unit)
 	protected open val supportsNullable: Boolean = false
-	protected open fun namedTypeReceiver(expression: Expression): CStruct? = null
+	protected open fun namedTypeReceiver(expression: Expression): CMemberType? = null
 	protected open fun fieldPresent(expression: FieldAccessExpression): Boolean = false
+	protected open fun validateFieldAccess(field: InstanceField, name: Token) = Unit
+	protected open fun creationType(expression: ClassCreationExpression): ValueType = throw SemanticErrors.classSnippet(expression.span)
+	protected open fun deletionType(expression: ClassDeletionExpression): ValueType = throw SemanticErrors.classSnippet(expression.span)
 	protected open fun callType(expression: CallExpression): ValueType = throw SemanticErrors.unknownName(expression.name)
 	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.FALLTHROUGH
@@ -422,6 +425,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is NullLiteral              -> expected as? CNullable ?: ValueType.Null
 			is ElvisExpression          -> elvisType(expression, expected, contextualFloat, floatingLiteralType)
 			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
+			is ClassCreationExpression  -> intrinsic { creationType(expression) }
+			is ClassDeletionExpression  -> intrinsic { deletionType(expression) }
 			is StateCallExpression      -> throw SemanticErrors.stateCall(expression.name)
 			is ProviderAccessExpression -> {
 				val receiver = expression.receiver
@@ -589,7 +594,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 				when (expression.operator.lexeme) {
 					Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()                                                                                                                                               -> {
-						if (left is CArray || right is CArray || left is CStruct || right is CStruct || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+						if (left is CArray || right is CArray || left is CMemberType || right is CMemberType || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 						ValueType.BOOL
 					}
 
@@ -636,7 +641,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val receiver = typeOf(expression.receiver)
 		if (receiver == ValueType.NEVER) return receiver
 		if (receiver is CNullable || receiver == ValueType.Null) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
-		val field = (receiver as? CStruct)?.field(expression.name.lexeme) ?: throw SemanticErrors.structField("Type '${receiver.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+		val field = (receiver as? CMemberType)?.field(expression.name.lexeme) ?: throw if (receiver is CClass) {
+			SemanticErrors.classMember("Class '${receiver.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+		} else SemanticErrors.structField("Type '${receiver.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+		validateFieldAccess(field, expression.name)
 		model.fields[expression] = field
 		val type = field.type
 		return if (type is CNullable && fieldPresent(expression)) {
@@ -719,7 +727,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val wrapper = left as? CNullable ?: right as? CNullable
 		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
-		if (!wrapper.accepts(left) || !wrapper.accepts(right) || (payload is CArray || payload is CStruct) && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		if (!wrapper.accepts(left) || !wrapper.accepts(right) || (payload is CArray || payload is CMemberType) && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}

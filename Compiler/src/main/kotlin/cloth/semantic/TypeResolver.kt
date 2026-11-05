@@ -7,7 +7,7 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout, private val namedType: (String) -> CStruct? = { null }) {
+internal class TypeResolver(val target: TargetLayout, private val namedType: (String) -> CMemberType? = { null }) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme

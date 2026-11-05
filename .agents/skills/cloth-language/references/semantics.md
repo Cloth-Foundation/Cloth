@@ -58,6 +58,15 @@ their feature-owned reference.
 - An empty class body may be omitted entirely; the declaration can end after its
   header without an empty brace pair.
 
+## Nested type declarations
+
+Any `typedef` body may contain another `typedef` declaration. The nested type
+belongs to the enclosing type's scope. Inside `Outer`, use `Inner` in type
+positions. From outside `Outer`, use `Outer.Inner` where that type is visible.
+
+Declaring a nested type adds no instance storage. An explicit field can store
+a value of that type. Nested `typedef` declarations are pending compiler support.
+
 ## Callable declarations in type bodies
 
 A callable member of a `typedef` uses `mt` and has an implicit receiver
@@ -287,12 +296,52 @@ argument omission remains distinct from nullable value absence. Read
 and [optional-argument implementation](../../cloth-optional-arguments/SKILL.md)
 for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overload ranking.
 
+## Class declarations and constructors
+
+- A class may declare primary constructor parameters in parentheses after its
+  name. A parameterless class header may omit the parentheses.
+- A plain header parameter such as `int seed` is a constructor input. It can
+  be used by field initializers and does not declare an instance field.
+- A header parameter declared as `def<T> name` also declares an instance field
+  initialized by that parameter. Adding `?: expression` makes the parameter
+  optional. The fallback runs on omission. For a nullable type, an explicitly
+  supplied `null` initializes the field to `null`.
+- Header and body fields are private unless declared `pub`. The primary
+  constructor and named secondary constructors inherit the class's visibility.
+- `Type::new` and `Type::new()` are equivalent calls with zero supplied
+  arguments. Calls that supply arguments use `Type::new(...)`.
+- Defaults and delegation arguments resolve before instance initialization.
+  Defaults can read earlier resolved parameters, and the delegation arguments
+  can read the secondary constructor's parameters. `self` becomes available
+  during instance initialization.
+- Initialize header fields first, then body fields in source order. A body
+  field initializer can read constructor inputs and already initialized fields.
+  While a field initializer runs, `self` may only select an initialized field
+  to read. Passing the instance or calling its methods requires complete
+  initialization.
+- Array fields establish their shape on initialization. A nullable array
+  field establishes its shape on the first present assignment and retains
+  known dimensions across absent values. A nested field write selects the
+  object and indices before its right-hand side, then applies the write to
+  that path in the current field. [Class values](class-values.md)
+- An additional constructor uses the class name in the body. Its `: (...)`
+  clause supplies arguments to the primary constructor. For example,
+  `Counter(float value) : (value -> int) {}` delegates to a primary constructor
+  with an integer parameter. The primary constructor finishes before the
+  secondary body runs. The body can access the initialized instance as `self`.
+- `pub final typedef<class> MyClass` declares a public class that cannot be
+  subclassed. Inheritance enforcement belongs to the inheritance feature.
+
+See the [basic classes plan](../../../../todo/basic-classes-plan.md) for the
+implementation sequence and the [class publication record](class-publication.md)
+for the maintained example and verification.
+
 ## Object lifetime and nullability
 
 Struct syntax, inherited field visibility and the user-confirmed independent
 value-copy design are owned by [the struct contract](../../cloth-structs/references/semantics.md).
 The [publication record](../../cloth-structs/references/publication.md) covers
-the completed compiler slice. Class-object fields in future structs preserve
+the completed compiler slice. Class-object fields in structs preserve
 object identity and remain subject to the deletion rules below.
 
 - Object lifetime is explicitly managed by the programmer. Cloth does not and
@@ -304,6 +353,15 @@ object identity and remain subject to the deletion rules below.
 - `Type::new(...)` creates an object. `object::delete` explicitly destroys it and
   runs its destructor. Do not assume cleanup on scope exit or automatic cleanup
   of objects the programmer has not deleted.
+- Deleting an absent nullable class value is a no-op. Deleting a present
+  nullable class value follows the ordinary deletion rules.
+- Deletion invalidates ordinary aliases before the destructor runs. The
+  destructor can read and write fields through `self` and call methods on
+  `self`. Those calls retain the same receiver access. Copies of the identity
+  carry ordinary alias access. A second or recursive deletion is an error.
+- Field access, method calls and deletion require a live instance, subject to
+  the destructor receiver rule. Copying or passing an identity and comparing
+  it with `null` remain valid after deletion.
 - Deleting an object invalidates every binding to that object. The bindings do
   not become `null`. This decision supersedes the earlier proposal to null all
   aliases, including bindings whose types lack `?`.
