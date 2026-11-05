@@ -75,7 +75,7 @@ library dependency; emitted executables do not read UCD files at runtime.
 
 ### Reproducible Unicode resources
 
-[GenerateUnicodeCharacterTables](../../../../Compiler/src/development/kotlin/cloth/development/GenerateUnicodeCharacterTables.kt)
+[The D generator](../../../../UnicodeGenerator/UnicodeGenerator.d)
 validates all five local input hashes before writing anything. It coalesces sorted
 Letter/Nd/general-case ranges into the production text table, preserves the
 [Unicode License V3](../../../../Compiler/src/main/resources/cloth/unicode/17.0.0/LICENSE.txt),
@@ -92,13 +92,15 @@ Inputs:
 - [UnicodeData.txt](https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt)
 - [LICENSE.txt](https://www.unicode.org/license.txt), exact snapshot hash pinned in the generator
 
+Run from the repository root with DMD on `PATH`.
+
 ```powershell
-.\gradlew.bat :Compiler:generateUnicodeCharacterTables --args=<input-directory> --offline --console=plain --no-daemon
+dmd -run UnicodeGenerator/UnicodeGenerator.d "path/to/unicode-inputs"
 ```
 
 The generator performs no downloads. Normal compilation/tests require no network.
-The original five classification artifacts reproduced byte for byte; the casing
-extension records verification of the expanded seven-artifact set. Updating
+The D port reproduced all seven checked-in artifacts byte for byte with DMD
+2.113.0 on Windows x64. Updating
 Unicode semantics requires explicit review and new inputs/hashes/evidence, not
 following the latest host runtime or upstream release automatically.
 

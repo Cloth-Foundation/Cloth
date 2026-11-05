@@ -38,6 +38,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	val targetFeatures: String get() = if (architecture == Architecture.X86) "+sse2" else ""
 
 	fun printArgument(type: ValueType): ValueType = when (type) {
+		is CStruct      -> throw InternalErrors.invariant("Structs have no native print argument")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
@@ -57,6 +58,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 
 	/** The C conversion specifier matching the argument representation selected above. */
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
+		is CStruct      -> throw InternalErrors.invariant("Structs have no native print format")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")

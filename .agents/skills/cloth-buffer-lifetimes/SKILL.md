@@ -37,6 +37,14 @@ member copy elision and proven arena/stack reclamation.
 
 ## Preserve the storage contract
 
+- [Struct Stage 3](../cloth-structs/references/local-storage.md) keeps aggregate
+  storage inline and snapshots it before publishing an independent value. Patch
+  live string, array and shape descriptors recursively in the copied storage.
+  A field/index write resolves its stored place before evaluating the RHS. The
+  loop proof permits inline writes without buffer publication when index and RHS
+  effects are closed. Buffered and unknown writes keep frame lifetime. Native
+  probes cover poisoned field buffers and full-width field updates.
+
 - [Character attachments](../cloth-strings/references/character-attachments.md)
   consume scalars without retaining/publishing storage. Existing closed proofs
   reclaim temporary char-array producers after predicates/code-point conversion

@@ -62,14 +62,6 @@ tasks.register<JavaExec>("runExample") {
 	standardInput = System.`in`
 }
 
-tasks.register<JavaExec>("generateUnicodeCharacterTables") {
-	group = "verification"
-	description = "Regenerate Unicode 17 character tables and compressed oracle inputs from pinned local files."
-	classpath = development.runtimeClasspath
-	mainClass.set("cloth.development.GenerateUnicodeCharacterTablesKt")
-	workingDir(rootProject.projectDir)
-}
-
 tasks.test {
 	useJUnitPlatform()
 	workingDir(rootProject.projectDir)

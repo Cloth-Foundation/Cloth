@@ -11,6 +11,7 @@ import cloth.semantic.*
 import cloth.semantic.symbols.LocalSymbol
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.Token
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
@@ -23,6 +24,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private val types = LLVMTypes(context, abi.layout)
 	private val results = EmitResults(context, abi.layout)
 	private val arrays = EmitArray(context, builder, abi)
+	private val stored = EmitStoredValue(context, builder, abi.layout)
 	private val nullable = EmitNullable(context, builder, abi.layout)
 	private val boolType = types.value(ValueType.BOOL)
 	private val statements by lazy { EmitStatement(this, bindings, semantics, functionSemantics) }
@@ -92,6 +94,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun snapshotValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = when {
 		type is CInteger || type is CNullable && type.payload is CInteger -> value
+		type.isStructValue                                                -> checkNotNull(frame).copyValue(value, type)
 		type is CNullable && type.buffered                                -> checkNotNull(frame).copyValue(value, type)
 		type is CArray                                                    -> transferArrayValue(value, type)
 		type == ValueType.STRING                                          -> checkNotNull(frame).copyValue(value, type)
@@ -219,6 +222,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun transferArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = transferArrayValue(value, type, null)
 
 	private fun transferArrayValue(value: LLVMValueRef, type: ValueType, shape: LLVMValueRef?, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
+		if (type.isStructValue) return checkNotNull(frame).copyValue(value, type)
 		if (type is CNullable && type.buffered) return nullable.map(value, types.value(type)) { transferArrayValue(it, type.payload, shape, message) }
 		if (type !is CArray) return value
 		val fresh = freshArrays.remove(value.address())
@@ -281,6 +285,82 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		null
 	}
 
+	private fun emitStructLiteral(expression: StructLiteral): LLVMValueRef {
+		val type = semantics.structLiterals.getValue(expression)
+		val memory = EmitMemory(context, builder, abi)
+		val storage = types.storage(type)
+		val address = memory.stack(storage, memory.count(1), "struct_literal", "Unable to allocate struct literal storage")
+		if (type.fields.isEmpty()) LLVMBuildStore(builder, LLVMConstNull(storage), address)
+		for ((index, source) in expression.fields.withIndex()) {
+			val field = type.fields[index]
+			val value = adaptValue(emitValue(source), semantics.typeOf(source), field.type)
+			// Finish the field's snapshot before the next expression can mutate its source.
+			stored.store(stored.fieldAddress(address, type, field), snapshotValue(value, field.type), field.type)
+		}
+		return address
+	}
+
+	private fun emitFieldRead(expression: FieldAccessExpression): LLVMValueRef {
+		val receiver = emitValue(expression.receiver)
+		val field = semantics.fields.getValue(expression)
+		val address = stored.fieldAddress(receiver, semantics.typeOf(expression.receiver) as CStruct, field)
+		val value = stored.load(address, field.type)
+		return if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
+	}
+
+	fun emitFieldWrite(statement: FieldWriteStatement): LLVMValueRef? = try {
+		val plan = semantics.fieldWrites[statement]
+		if (plan == null) {
+			// A non-continuing index still executes before the unreachable store.
+			emitValue(statement.target)
+			throw InternalErrors.invariant("Continuing field write has no stored place")
+		}
+		var address = bindings.address(plan.root)
+		var storageType = checkNotNull(functionSemantics).typeOf(plan.root)
+		var parent: Pair<LLVMValueRef, CArray>? = null
+		fun load(): LLVMValueRef {
+			val raw = stored.load(address, storageType)
+			return parent?.let { arrays.readChild(raw, it.first, it.second) } ?: raw
+		}
+		for (step in plan.steps) when (step) {
+			is PlaceStep.Field -> {
+				val wrapper = storageType as? CNullable
+				if (wrapper != null) address = stored.payloadAddress(address, wrapper)
+				address = stored.fieldAddress(address, (wrapper?.payload ?: storageType) as CStruct, step.field)
+				storageType = step.field.type
+				parent = null
+			}
+
+			is PlaceStep.Index -> {
+				val raw = load()
+				val array = if (storageType is CNullable) nullable.payload(raw) else raw
+				val index = emitValue(step.index)
+				address = arrays.checkedAddress(array, step.array.element, index, semantics.typeOf(step.index))
+				storageType = step.array.element
+				parent = array to step.array
+			}
+		}
+		val op = Operators.fromCharacterRequired(statement.operator.lexeme)
+		val source = statement.value
+		val valueType = if (op == Operators.ASSIGN) semantics.typeOf(checkNotNull(source)) else semantics.typeOf(statement.target)
+		val value = if (op == Operators.ASSIGN) emitValue(checkNotNull(source)) else {
+			val raw = load()
+			val old = if (storageType is CNullable) nullable.payload(raw) else raw
+			if (source == null) emitNumericUpdate(old, valueType, op == Operators.PLUS_PLUS)
+			else {
+				val right = emitValue(source)
+				val base = Token(statement.operator.type, statement.operator.span, op.compoundAssignmentBase().toString())
+				emitBinaryOperands(base, old, right, valueType, semantics.typeOf(source))
+			}
+		}
+		val prepared = snapshotValue(adaptValue(value, valueType, plan.type), plan.type)
+		val snapshot = parent?.let { arrays.shareChild(prepared, it.first, it.second) } ?: prepared
+		stored.store(address, snapshot, plan.type)
+		snapshot
+	} catch (_: Terminated) {
+		null
+	}
+
 	/** Each read expands a fresh evaluation in the physical function frame. Captures
 	 * use resolved binding identities; temporary strings/arrays retain that frame's
 	 * lifetime and use the ordinary copy path if returned from the actual function.
@@ -323,7 +403,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitUpdate(statement: UpdateStatement, type: ValueType): LLVMValueRef {
 		val stored = bindings.read(functionSemantics?.declarations?.targetOf(statement) ?: statement.name.lexeme)
 		val operand = if (semantics.updatePayloads.containsKey(statement)) nullable.payload(stored) else stored
-		val increment = statement.operator.lexeme == Operators.PLUS_PLUS.toString()
+		return emitNumericUpdate(operand, type, statement.operator.lexeme == Operators.PLUS_PLUS.toString())
+	}
+
+	private fun emitNumericUpdate(operand: LLVMValueRef, type: ValueType, increment: Boolean): LLVMValueRef {
 		if (type is CFloat) {
 			val workingType = EmitHalf.arithmeticType(type)
 			val value = casts.toFloating(operand, type, workingType)
@@ -458,6 +541,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitInternal(expression: Expression): LLVMValueRef? {
 		return when (expression) {
+			is StructLiteral            -> emitStructLiteral(expression)
+			is FieldAccessExpression    -> emitFieldRead(expression)
 			is NullLiteral              -> (semantics.typeOf(expression) as? CNullable)?.let(nullable::absent) ?: LLVMConstNull(types.value(ValueType.Null))
 			is ElvisExpression          -> emitElvis(expression)
 			is ResultListExpression     -> {
@@ -561,83 +646,87 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					return emitLogical(expression)
 				}
-				var left = emitValue(expression.left)
-				var right = emitValue(expression.right)
-				val leftType = semantics.typeOf(expression.left)
-				val rightType = semantics.typeOf(expression.right)
-				if (leftType == ValueType.TYPEINFO && rightType == ValueType.TYPEINFO) {
-					val equal = strings.metadata.equal(left, right)
-					return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "typeinfo_not_equal") else equal
-				}
-				if (leftType == ValueType.STRING && rightType == ValueType.STRING) {
-					return when (expression.operator.lexeme) {
-						Operators.PLUS.toString()      -> strings.concatenate(left, right, expression.operator.span.toString())
-						Operators.EQUAL.toString()     -> strings.equal(left, right)
-						Operators.NOT_EQUAL.toString() -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
-						else                           -> throw InternalErrors.invariant("Unsupported string operator: ${expression.operator}")
-					}
-				}
-				val unsigned = leftType.unsigned
-				val floatingPoint = leftType.floating || rightType.floating
-				val commonType = if (floatingPoint) ValueType.commonFloating(leftType, rightType) else null
-				// Compute half operations in float32 and explicitly round back to half.
-				val workingType = commonType?.let(EmitHalf::arithmeticType)
-				if (floatingPoint) {
-					left = casts.toFloating(left, leftType, workingType!!)
-					right = casts.toFloating(right, rightType, workingType)
-				}
-				if (expression.operator.lexeme == Operators.MUL_MUL.toString()) {
-					val span = expression.operator.span
-					val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
-					val result = power.emit(left, right, workingType ?: leftType, location)
-					return if (floatingPoint) casts.toFloating(result, workingType!!, commonType) else result
-				}
-				val comparison = when (expression.operator.lexeme) {
-					Operators.EQUAL.toString()         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
-					// Unordered != keeps NaN unequal to every value, including itself.
-					Operators.NOT_EQUAL.toString()     -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
-					Operators.LESS.toString()          -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
-					Operators.GREATER.toString()       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
-					Operators.LESS_EQUAL.toString()    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
-					Operators.GREATER_EQUAL.toString() -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
-					else                               -> null
-				}
-				if (comparison != null) {
-					if (!floatingPoint && leftType is CInteger && leftType.bits > 64) return EmitWideInteger(context, builder, abi).compare(left, right, leftType, Operators.fromCharacterRequired(expression.operator.lexeme))
-					return if (floatingPoint) {
-						LLVMBuildFCmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
-					} else {
-						LLVMBuildICmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
-					}
-				}
-
-				if (floatingPoint) {
-					val result = when (expression.operator.lexeme) {
-						Operators.PLUS.toString()     -> LLVMBuildFAdd(builder, left, right, LLVM_ADD_TEMPORARY)
-						Operators.MINUS.toString()    -> LLVMBuildFSub(builder, left, right, LLVM_SUB_TEMPORARY)
-						Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, LLVM_MUL_TEMPORARY)
-						Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, LLVM_DIV_TEMPORARY)
-						Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, LLVM_MOD_TEMPORARY)
-						else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
-					}
-					casts.toFloating(result, workingType!!, commonType)
-				} else if (leftType is CInteger && leftType.bits > 64 && expression.operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString(), Operators.MULTIPLY.toString())) {
-					EmitWideInteger(context, builder, abi).binary(left, right, leftType.bits, Operators.fromCharacterRequired(expression.operator.lexeme))
-				} else when (expression.operator.lexeme) {
-					Operators.PLUS.toString()                                -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
-					Operators.MINUS.toString()                               -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
-					Operators.MULTIPLY.toString()                            -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
-					Operators.DIVIDE.toString(), Operators.MODULO.toString() -> {
-						val span = expression.operator.span
-						val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
-						EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInteger, expression.operator.lexeme == Operators.MODULO.toString(), location)
-					}
-
-					else                                                     -> throw InternalErrors.invariant("Unsupported binary operator: ${expression.operator}")
-				}
+				val left = emitValue(expression.left)
+				val right = emitValue(expression.right)
+				emitBinaryOperands(expression.operator, left, right, semantics.typeOf(expression.left), semantics.typeOf(expression.right))
 			}
 
 			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
+		}
+	}
+
+	private fun emitBinaryOperands(operator: Token, leftOperand: LLVMValueRef, rightOperand: LLVMValueRef, leftType: ValueType, rightType: ValueType): LLVMValueRef {
+		var left = leftOperand
+		var right = rightOperand
+		if (leftType == ValueType.TYPEINFO && rightType == ValueType.TYPEINFO) {
+			val equal = strings.metadata.equal(left, right)
+			return if (operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "typeinfo_not_equal") else equal
+		}
+		if (leftType == ValueType.STRING && rightType == ValueType.STRING) {
+			return when (operator.lexeme) {
+				Operators.PLUS.toString()      -> strings.concatenate(left, right, operator.span.toString())
+				Operators.EQUAL.toString()     -> strings.equal(left, right)
+				Operators.NOT_EQUAL.toString() -> LLVMBuildNot(builder, strings.equal(left, right), "string_not_equal")
+				else                           -> throw InternalErrors.invariant("Unsupported string operator: ${operator}")
+			}
+		}
+		val unsigned = leftType.unsigned
+		val floatingPoint = leftType.floating || rightType.floating
+		val commonType = if (floatingPoint) ValueType.commonFloating(leftType, rightType) else null
+		// Compute half operations in float32 and explicitly round back to half.
+		val workingType = commonType?.let(EmitHalf::arithmeticType)
+		if (floatingPoint) {
+			left = casts.toFloating(left, leftType, workingType!!)
+			right = casts.toFloating(right, rightType, workingType)
+		}
+		if (operator.lexeme == Operators.MUL_MUL.toString()) {
+			val span = operator.span
+			val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
+			val result = power.emit(left, right, workingType ?: leftType, location)
+			return if (floatingPoint) casts.toFloating(result, workingType!!, commonType) else result
+		}
+		val comparison = when (operator.lexeme) {
+			Operators.EQUAL.toString()         -> if (floatingPoint) LLVMRealOEQ else LLVMIntEQ
+			// Unordered != keeps NaN unequal to every value, including itself.
+			Operators.NOT_EQUAL.toString()     -> if (floatingPoint) LLVMRealUNE else LLVMIntNE
+			Operators.LESS.toString()          -> if (floatingPoint) LLVMRealOLT else if (unsigned) LLVMIntULT else LLVMIntSLT
+			Operators.GREATER.toString()       -> if (floatingPoint) LLVMRealOGT else if (unsigned) LLVMIntUGT else LLVMIntSGT
+			Operators.LESS_EQUAL.toString()    -> if (floatingPoint) LLVMRealOLE else if (unsigned) LLVMIntULE else LLVMIntSLE
+			Operators.GREATER_EQUAL.toString() -> if (floatingPoint) LLVMRealOGE else if (unsigned) LLVMIntUGE else LLVMIntSGE
+			else                               -> null
+		}
+		if (comparison != null) {
+			if (!floatingPoint && leftType is CInteger && leftType.bits > 64) return EmitWideInteger(context, builder, abi).compare(left, right, leftType, Operators.fromCharacterRequired(operator.lexeme))
+			return if (floatingPoint) {
+				LLVMBuildFCmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
+			} else {
+				LLVMBuildICmp(builder, comparison, left, right, LLVM_COMPARE_TEMPORARY)
+			}
+		}
+
+		return if (floatingPoint) {
+			val result = when (operator.lexeme) {
+				Operators.PLUS.toString()     -> LLVMBuildFAdd(builder, left, right, LLVM_ADD_TEMPORARY)
+				Operators.MINUS.toString()    -> LLVMBuildFSub(builder, left, right, LLVM_SUB_TEMPORARY)
+				Operators.MULTIPLY.toString() -> LLVMBuildFMul(builder, left, right, LLVM_MUL_TEMPORARY)
+				Operators.DIVIDE.toString()   -> LLVMBuildFDiv(builder, left, right, LLVM_DIV_TEMPORARY)
+				Operators.MODULO.toString()   -> LLVMBuildFRem(builder, left, right, LLVM_MOD_TEMPORARY)
+				else                          -> throw InternalErrors.invariant("Unsupported binary operator: ${operator}")
+			}
+			casts.toFloating(result, workingType!!, commonType)
+		} else if (leftType is CInteger && leftType.bits > 64 && operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString(), Operators.MULTIPLY.toString())) {
+			EmitWideInteger(context, builder, abi).binary(left, right, leftType.bits, Operators.fromCharacterRequired(operator.lexeme))
+		} else when (operator.lexeme) {
+			Operators.PLUS.toString()                                -> LLVMBuildAdd(builder, left, right, LLVM_ADD_TEMPORARY)
+			Operators.MINUS.toString()                               -> LLVMBuildSub(builder, left, right, LLVM_SUB_TEMPORARY)
+			Operators.MULTIPLY.toString()                            -> LLVMBuildMul(builder, left, right, LLVM_MUL_TEMPORARY)
+			Operators.DIVIDE.toString(), Operators.MODULO.toString() -> {
+				val span = operator.span
+				val location = span.source?.let { "${it.name}:$span" } ?: span.toString()
+				EmitIntegerDivision(context, builder, abi).emit(left, right, leftType as CInteger, operator.lexeme == Operators.MODULO.toString(), location)
+			}
+
+			else                                                     -> throw InternalErrors.invariant("Unsupported binary operator: ${operator}")
 		}
 	}
 

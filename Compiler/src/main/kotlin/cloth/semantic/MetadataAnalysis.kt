@@ -142,6 +142,10 @@ internal class MetadataAnalysis(
 				expression(item.target); expression(item.value); null
 			}
 
+			is FieldWriteStatement        -> {
+				expression(item.target); item.value?.let { expression(it) }; null
+			}
+
 			is UpdateStatement            -> null
 			is ExpressionStatement        -> expression(item.expression)
 			is ReturnStatement            -> {
@@ -169,7 +173,7 @@ internal class MetadataAnalysis(
 			}
 
 			is ProviderAccessExpression -> {
-				val receiver = if (value.receiver is TypeReceiverExpression) null else expression(value.receiver)
+				val receiver = if (model.providers[value]?.receiverForm == ProviderReceiverForm.TYPE) null else expression(value.receiver)
 				when (val result = model.providers[value]?.result) {
 					is ProviderResult.TypeMetadata     -> result.receiverType
 					is ProviderResult.MetadataProperty -> {
@@ -196,6 +200,14 @@ internal class MetadataAnalysis(
 
 			is ArrayLiteral             -> {
 				value.elements.forEach { expression(it) }; null
+			}
+
+			is StructLiteral            -> {
+				value.fields.forEach { expression(it) }; null
+			}
+
+			is FieldAccessExpression    -> {
+				expression(value.receiver); null
 			}
 
 			is IndexExpression          -> {

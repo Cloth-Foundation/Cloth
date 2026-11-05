@@ -9,6 +9,7 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ReceivingTarget
 import cloth.parser.statement.Statement
 import cloth.token.Operators
+import cloth.token.Token
 import cloth.token.TokenType
 
 class BindingsParser(private val parser: Parser) {
@@ -27,26 +28,32 @@ class BindingsParser(private val parser: Parser) {
 		}
 		parser.advance()
 		val initializerStart = parser.currentIndex
-		val block = parser.peek().lexeme == Operators.BRACE_OPEN.toString()
 		val type = types.singleOrNull()
+		val mutable = assignment.lexeme == Operators.ASSIGN.toString()
+		val firstType = types.firstOrNull()
+		val namedValue = firstType != null && firstType.name.type == TokenType.Identifier && firstType.arraySuffixes.isEmpty()
+		fun braces(name: Token) = parser.parseBindingBrace(allowLiteral = namedValue || types.isEmpty(), allowSingleField = namedValue) { body ->
+			FunctionBlockExpression(FunctionDeclaration(keyword, name, types, emptyList(), body))
+		}
+
+		val braced = if (parser.peek().lexeme == Operators.BRACE_OPEN.toString()) braces(targets.first().token) else null
 		// Existing multiple-name function blocks are independent deferred computations.
-		// Reparse each body so their symbols and analysis facts keep separate identities.
-		if (block && types.size <= 1 && targets.all { it is ReceivingTarget.Named }) {
-			return targets.map { target ->
-				parser.currentIndex = initializerStart
-				val previousContext = parser.inFunctionBody
-				parser.inFunctionBody = true
-				val initializer = try {
-					FunctionBlockExpression(FunctionDeclaration(keyword, target.token, types, emptyList(), parser.parseBlock()))
-				} finally {
-					parser.inFunctionBody = previousContext
+		// Reparse additional bodies so symbols and analysis facts retain separate identities.
+		if (braced is FunctionBlockExpression && types.size <= 1 && targets.all { it is ReceivingTarget.Named }) {
+			return targets.mapIndexed { index, target ->
+				val initializer = if (index == 0) braced else {
+					parser.currentIndex = initializerStart
+					braces(target.token)
 				}
-				BindingDeclaration(type, target.token, initializer, assignment.lexeme == Operators.ASSIGN.toString(), keyword.span.through(parser.previous().span))
+				BindingDeclaration(type, target.token, initializer, mutable, keyword.span.through(initializer.span))
 			}
 		}
-		val initializer = if (block) FunctionBlockExpression(FunctionDeclaration(keyword, targets.first().token, types, emptyList(), parser.parseBlock())) else parser.parseResults(allowWhileTrailer = allowWhileTrailer)
+		val initializer = when (braced) {
+			is FunctionBlockExpression -> braced
+			null                       -> parser.parseResults(allowWhileTrailer = allowWhileTrailer)
+			else                       -> parser.parseResults(parser.expressionParser.continueFromPrimary(braced, allowWhileTrailer), braced.span, allowWhileTrailer)
+		}
 		val span = keyword.span.through(parser.previousStatementEnd())
-		val mutable = assignment.lexeme == Operators.ASSIGN.toString()
 		return listOf(if (targets.size == 1 && targets.single() is ReceivingTarget.Named && types.size <= 1) {
 			BindingDeclaration(type, targets.single().token, initializer, mutable, span)
 		} else BindingGroupDeclaration(types, targets, initializer, mutable, span))

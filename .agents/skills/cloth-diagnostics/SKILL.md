@@ -35,6 +35,14 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C2007 / FUNCTION_IN_TYPE** rejects `fn` inside a parsed struct body at its
+keyword. **C3077 / UNSUPPORTED_STRUCTS** gates struct-bearing function signatures,
+deferred results and struct foreach before emission. C3078–C3082 diagnose duplicate
+types, invalid fields, recursive dependencies, invalid literals and invalid
+stored targets. C3052 rejects inline structs exceeding the target addressable
+size. The [struct storage record](../cloth-structs/references/local-storage.md)
+links the fail-fast, CLI and native verification.
+
 **C3075 / FLOAT_SIGNUM_NAN** and **C3076 / INVALID_FLOAT_CLAMP_BOUNDS** reject
 closed NaN signum and NaN/reversed float bounds. Dynamic cases validate after
 ordered operand evaluation with original call locations and fatal exit without

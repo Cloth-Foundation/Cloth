@@ -24,17 +24,18 @@ data class CNullable(val payload: ValueType) : ValueType(payload.keyword) {
 	override fun inferArraySizes(actual: ValueType): ValueType = if (actual == Null) this else CNullable(payload.inferArraySizes((actual as? CNullable)?.payload ?: actual))
 	override fun commonArrayShape(other: ValueType): ValueType? = if (other is CNullable) payload.commonArrayShape(other.payload)?.let(::CNullable) else null
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
-		val own = super.providers(target) + if (!payload.buffered) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
+		val own = super.providers(target) + if (!payload.buffered && payload !is CStruct) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
 		val inherited = payload.providers(target).filter { (name, provider) -> name !in own && ProviderReceiverForm.TYPE in provider.receiverForms }
 		return inherited.mapValues { (_, provider) -> ProviderResult.NullableType(this, provider) } + own
 	}
 
-	private fun carrier(context: LLVMContextRef, target: TargetLayout, storage: Boolean): LLVMTypeRef = PointerPointer<LLVMTypeRef>(2L).use { fields ->
-		fields.put(0, if (storage) LLVMInt8TypeInContext(context) else LLVMInt1TypeInContext(context))
-		fields.put(1, if (storage) payload.llvmStorage(context, target) else payload.llvmValue(context, target))
+	private fun carrier(context: LLVMContextRef, flag: LLVMTypeRef, payloadType: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(2L).use { fields ->
+		fields.put(0, flag)
+		fields.put(1, payloadType)
 		LLVMStructTypeInContext(context, fields, 2, 0)
 	}
 
-	override fun llvmValue(context: LLVMContextRef, target: TargetLayout) = carrier(context, target, storage = false)
-	override fun llvmStorage(context: LLVMContextRef, target: TargetLayout) = carrier(context, target, storage = true)
+	internal fun storageCarrier(context: LLVMContextRef, payloadStorage: LLVMTypeRef) = carrier(context, LLVMInt8TypeInContext(context), payloadStorage)
+	override fun llvmValue(context: LLVMContextRef, target: TargetLayout) = carrier(context, LLVMInt1TypeInContext(context), payload.llvmValue(context, target))
+	override fun llvmStorage(context: LLVMContextRef, target: TargetLayout) = storageCarrier(context, payload.llvmStorage(context, target))
 }

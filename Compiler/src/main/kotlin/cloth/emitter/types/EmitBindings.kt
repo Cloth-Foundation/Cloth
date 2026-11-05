@@ -61,6 +61,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	}
 
 	fun initialArrayShape(key: Any): LLVMValueRef = checkNotNull(bindings.getValue(key).initialShape)
+	fun address(key: Any): LLVMValueRef = bindings.getValue(key).address
 
 	fun read(key: Any): LLVMValueRef {
 		val storage = bindings.getValue(key)

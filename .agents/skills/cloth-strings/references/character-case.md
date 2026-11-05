@@ -63,7 +63,7 @@ original scalar on an empty interval. No LLVM handle is cached in shared data or
 the registry. Executables need no UCD files, JVM casing API, CRT casing functions
 or locale library at runtime.
 
-The [offline generator](../../../../Compiler/src/development/kotlin/cloth/development/GenerateUnicodeCharacterTables.kt)
+The [offline D generator](../../../../UnicodeGenerator/UnicodeGenerator.d)
 authenticates all five inputs before writing; the
 [classification record](character-attachments.md#reproducible-unicode-resources)
 owns the shared command, remaining inputs and license instructions. Casing uses

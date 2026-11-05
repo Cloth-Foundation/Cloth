@@ -1,5 +1,6 @@
 package cloth.semantic
 
+import cloth.data.CStruct
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.ParameterDeclaration
@@ -13,8 +14,10 @@ import cloth.target.TargetLayout
 import java.util.*
 
 /** Declaration identities and name resolutions, before expression/call type checking. */
-class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>, val target: TargetLayout) {
+class DeclarationModel internal constructor(val fileScope: LexicalScope, val functions: List<FunctionSymbol>, val target: TargetLayout, val structs: Map<String, CStruct>) {
 
+	internal val namedTypeReceivers = IdentityHashMap<NameExpression, CStruct>()
+	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()
 	internal val parameterSymbols = IdentityHashMap<ParameterDeclaration, ParameterSymbol>()
 	internal val localSymbols = IdentityHashMap<BindingDeclaration, LocalSymbol>()

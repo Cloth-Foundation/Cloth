@@ -61,6 +61,7 @@ class ControlFlowModel {
 	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.FALLTHROUGH) { flow, item -> flow.then(of(item)) }
 	fun of(statement: Statement): ControlFlow = statements.getOrPut(statement) {
 		when (statement) {
+			is FieldWriteStatement        -> of(statement.target).then(statement.value?.let(::of) ?: ControlFlow.FALLTHROUGH)
 			is DoWhileStatement           -> {
 				val body = of(statement.body.statements)
 				val tested = of(statement.condition)
@@ -114,6 +115,8 @@ class ControlFlowModel {
 
 	fun of(expression: Expression): ControlFlow = expressions.getOrPut(expression) {
 		when (expression) {
+			is StructLiteral                                                                                                                        -> expression.fields.fold(ControlFlow.FALLTHROUGH) { flow, field -> flow.then(of(field)) }
+			is FieldAccessExpression                                                                                                                -> of(expression.receiver)
 			is ResultListExpression                                                                                                                 -> expression.values.fold(ControlFlow.FALLTHROUGH) { flow, value -> flow.then(of(value)) }
 			is TypeReceiverExpression                                                                                                               -> ControlFlow.FALLTHROUGH
 			is ProviderAccessExpression                                                                                                             -> of(expression.receiver)

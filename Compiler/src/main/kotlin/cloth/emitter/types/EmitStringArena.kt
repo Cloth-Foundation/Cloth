@@ -1,9 +1,6 @@
 package cloth.emitter.types
 
-import cloth.data.CArray
-import cloth.data.CInteger
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.target.TargetLayout
@@ -28,12 +25,17 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
 		if (valueType is CNullable) return EmitNullable(context, builder, target).map(value, types.value(valueType)) { copyValue(builder, destination, it, valueType.payload) }
-		if (valueType is CInteger && valueType.bits > 64) {
+		if (valueType is CStruct || valueType is CInteger && valueType.bits > 64) {
 			val storage = types.storage(valueType)
 			val layout = LLVMGetModuleDataLayout(module)
-			val bytes = LLVMConstInt(size, LLVMABISizeOfType(layout, storage), 0)
+			val bytes = if (valueType is CStruct) {
+				val memory = EmitMemory(context, builder, abi, target)
+				memory.elementBytes(memory.count(1), storage, "Unable to allocate struct storage")
+			} else LLVMConstInt(size, LLVMABISizeOfType(layout, storage), 0)
 			val raw = EmitArray(context, builder, abi, target).descriptor(value, bytes)
-			return LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, "returned_integer")
+			val copied = LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, if (valueType is CStruct) "copied_struct" else "returned_integer")
+			if (valueType is CStruct) copyStructBuffers(builder, destination, copied, valueType)
+			return copied
 		}
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
 		if (valueType !is CArray) return value
@@ -78,10 +80,11 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 					LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntULT, index, length, "has_element"), item, done)
 					LLVMPositionBuilderAtEnd(body, item)
 					val address = arrays.address(LLVMBuildExtractValue(body, result, 0, "elements"), valueType.element, index)
-					var element = LLVMBuildLoad2(body, types.storage(valueType.element), address, "element_value")
-					if (valueType.element is CNullable) element = EmitNullable(context, body, target).load(element, valueType.element)
-					element = arrays.readChild(element, input, valueType)
-					arrays.storeAt(address, valueType.element, copyValue(body, arena, element, valueType.element))
+					if (valueType.element.isStructValue) copyStructBuffers(body, arena, address, valueType.element)
+					else {
+						val element = EmitStoredValue(context, body, target).load(address, valueType.element)
+						arrays.storeAt(address, valueType.element, copyValue(body, arena, arrays.readChild(element, input, valueType), valueType.element))
+					}
 					val next = LLVMBuildAdd(body, index, LLVMConstInt(size, 1, 0), "next")
 					val end = LLVMGetInsertBlock(body)
 					LLVMBuildBr(body, check)
@@ -101,6 +104,29 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 			type to function
 		}
 		return call(builder, type, function, "returned_array", destination, value)
+	}
+
+	/** The destination owns its inline bytes already. Replace borrowed buffer
+	 * descriptors before publishing the copy. An absent struct has no live fields.
+	 */
+	private fun copyStructBuffers(builder: LLVMBuilderRef, arena: LLVMValueRef, address: LLVMValueRef, type: ValueType) {
+		if (!type.buffered) return
+		val stored = EmitStoredValue(context, builder, target)
+		when {
+			type is CStruct                              -> for (field in type.fields) if (field.type.buffered) {
+				val child = stored.fieldAddress(address, type, field)
+				copyStructBuffers(builder, arena, child, field.type)
+			}
+
+			type is CNullable && type.payload is CStruct -> {
+				EmitNullable(context, builder, target).choose(stored.isPresent(address, type), null, {
+					copyStructBuffers(builder, arena, stored.payloadAddress(address, type), type.payload)
+					null
+				}, { null })
+			}
+
+			else                                         -> stored.store(address, copyValue(builder, arena, stored.load(address, type), type), type)
+		}
 	}
 
 	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->

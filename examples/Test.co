@@ -7,8 +7,7 @@ interop<C> {
     """
 }
 
-typedef<class>
-pub Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
+pub typedef<class> Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
 
     def<bool> alive = true
 
@@ -21,7 +20,7 @@ pub Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
         return this.alive
     }
 
-    pub[mod] mt<void> applyDamage (float amount) {
+    pub<mod> mt<void> applyDamage (float amount) {
         this.health -= amount
 
         if (this.health <= 0) {
@@ -36,8 +35,7 @@ pub Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
 
 }
 
-typedef<class>
-pub Player (def<string?> name ?: "Unknown") : Entity<Player>(100f) {
+pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f) {
 
     ~Player {
         println("Goodbye.")
@@ -74,8 +72,7 @@ pub Player (def<string?> name ?: "Unknown") : Entity<Player>(100f) {
 
 }
 
-typedef<state<DeathInfo>>
-pub Dead for Player {
+pub typedef<state<DeathInfo>> Dead for Player {
 
     init {
         this.die()
@@ -87,29 +84,31 @@ pub Dead for Player {
 // enums may hold constant values
 // decided in the ctor (head) or override in body
 // enums are stored as numbers ie. DamageType.FALL -> int == 1 would be true (starting at 0, in order of decl)
-typedef<enum>
-pub DamageType (pub def<int> number = 1) {
+pub typedef<enum> DamageType (pub def<int> number = 1) {
 
     ATTACK,
     FALL,
     ENVIRONMENT(10.0),
-    UNKNOWN(-1)
+    UNKNOWN(-1);
 
     ctor(float num) : this(num -> int) { }
 
 }
 
 // Struct fields do not need to have visibility modifiers, they inherently assume the visibility of the enclosing struct
-typedef<struct>
-pub DamageSource {
+// Methods always will contain a reference to self. Methods in a struct keep the same visibility of the enclosing struct
+// Semicolon is not optional if anything is declared after the params. Params must appear first.
+pub typedef<struct> DamageSource {
 
     DamageType type,
-    float damageAmount
+    float damageAmount;
+
+    // can use self, which is in reference to the calling member DamageSource.
+    mt<float> addDamage(float damage) = self.damageAmount += damage
 
 }
 
-typedef<struct>
-pub DeathInfo {
+pub typedef<struct> DeathInfo {
 
     DamageType cause,
     string message
@@ -119,8 +118,7 @@ pub DeathInfo {
 // Interface methods don't need visibility modifiers.
 // They're always callable through the interface.
 // The implementing class decides whether they're also callable directly on the class.
-typedef<interface>
-pub IHealth<T: Number> {
+pub typedef<interface> IHealth<T: Number> {
 
     mt<T> getHealth() = default (0 -> T)
 

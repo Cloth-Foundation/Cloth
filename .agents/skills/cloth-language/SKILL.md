@@ -73,6 +73,7 @@ captures implementation scope and regression evidence.
 
 | Work area | Skill |
 | --- | --- |
+| Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
@@ -106,6 +107,13 @@ captures implementation scope and regression evidence.
 | Targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
+
+- Basic structs before classes: [implementation plan](../../../todo/basic-structs-plan.md)
+  and [struct design record](../cloth-structs/references/semantics.md).
+  Stage 3 executes local values with recursive copies and stored field writes.
+  Use [the structs skill](../cloth-structs/SKILL.md) for the contract and
+  [Stage 3 record](../cloth-structs/references/local-storage.md) for storage,
+  verification and the remaining function and foreach boundaries.
 
 - Do-while: the [accepted contract](../cloth-control-flow/references/do-while-loops.md)
   owns `do body while (condition)`, semicolon boundaries, scopes, jumps and

@@ -1,14 +1,12 @@
 package cloth.emitter.types
 
 import cloth.builtin.BuiltinStorageContract
-import cloth.data.CArray
-import cloth.data.CInteger
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.PlaceStep
 import cloth.semantic.ResolvedCall
 import cloth.semantic.SemanticModel
 import cloth.semantic.symbols.LocalSymbol
@@ -49,6 +47,11 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is AssignmentStatement      -> !publishes(types.typeOf(statement)) && effects(statement.value).safe
 			is MultiAssignmentStatement -> types.receptionOf(statement).slots.none { publishes(it.type) } && effects(statement.value).safe
 			is UpdateStatement          -> !publishes(types.typeOf(statement))
+			is FieldWriteStatement      -> types.fieldWrites[statement]?.let { plan ->
+				// Only inline writes without buffer publication can release this region.
+				!publishes(plan.type) && plan.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.value?.let { effects(it).safe } ?: true)
+			} ?: false
+
 			is ExpressionStatement      -> when (val expression = statement.expression) {
 				is IfExpression -> expression.branches.all { effects(it.condition).safe && canReclaimIteration(it.statements) } && (expression.otherwise?.let(::canReclaimIteration) ?: true)
 				else            -> effects(expression).safe
@@ -83,7 +86,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 		memo[expression]?.let { return it }
 		if (!active.add(expression)) return unknown
 		val result = when (expression) {
-			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any { it is CArray })) { result, value -> result + effects(value) }
+			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any { it is CArray || it.isStructValue })) { result, value -> result + effects(value) }
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Effects()
 			is NameExpression                                                                                    -> {
 				val symbol = functions?.declarations?.symbolOf(expression)
@@ -109,8 +112,12 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			}
 
 			is ArrayLiteral                                                                                      -> expression.elements.fold(Effects()) { result, element ->
-				result + Effects(types.typeOf(element) is CArray) + effects(element)
+				val type = types.typeOf(element)
+				result + Effects(type is CArray || type.isStructValue) + effects(element)
 			}
+
+			is StructLiteral                                                                                     -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
+			is FieldAccessExpression                                                                             -> effects(expression.receiver)
 
 			is IndexExpression                                                                                   -> effects(expression.array) + effects(expression.index)
 			is UnaryExpression                                                                                   -> effects(expression.operand)
@@ -118,7 +125,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is CastExpression                                                                                    -> effects(expression.operand)
 			is TypeCheckExpression                                                                               -> effects(expression.operand)
 			is InterpolatedString                                                                                -> expression.parts.fold(Effects()) { result, part -> result + effects(part) }
-			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any { it is CArray })) { result, branch ->
+			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any { it is CArray || it.isStructValue })) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())
 
