@@ -112,6 +112,13 @@ passed all 1,027 tests across 78 suites, with zero failures, errors or skips.
 
 ## Arithmetic context review fixes
 
+The 2026-11-04 [float attachment integration](float-attachments.md) also repairs
+Elvis fallback inference when no enclosing float context exists: nullable float
+payloads supply literal width for member receivers/output arguments. This retains
+float64 precision and half identity while rejecting mismatched typed fallbacks.
+`FloatAttachmentsTest` owns the new native regressions; the focused integration
+command also reruns both numeric-literal suites and all scalar nullability suites.
+
 The 2026-11-03 review reproduced two missing context paths. Integer peer context
 could overwrite floating context and round `16777217f` to float32 before storing
 a float64 result; nullable arithmetic destinations could drop their payload width

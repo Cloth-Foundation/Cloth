@@ -42,11 +42,11 @@ class StringAttachmentsTest {
 	@Test
 	fun `typed registrations publish only implemented members and preserve identity`() {
 		val strings = PrimitiveAttachments.STRING
-		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all)
+		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all.filter { it.receiver == ValueType.STRING })
 		assertSame(strings.CONTAINS, PrimitiveAttachments[ValueType.STRING, "contains"])
 		assertEquals(listOf(BuiltinParameter.Exact(ValueType.STRING)), strings.CONTAINS.parameters)
 		assertEquals(ValueType.BOOL, strings.CONTAINS.overload.returns)
-		assertNull(PrimitiveAttachments[ValueType.INT, "abs"])
+		assertEquals(ValueType.INT, PrimitiveAttachments[ValueType.INT, "abs"]?.overload?.returns)
 		assertNull(PrimitiveAttachments[ValueType.STRING, "Contains"])
 		assertNull(PrimitiveAttachments[ValueType.STRING, "split"])
 		assertFailsWith<UnsupportedOperationException> { (PrimitiveAttachments.all as MutableList).clear() }

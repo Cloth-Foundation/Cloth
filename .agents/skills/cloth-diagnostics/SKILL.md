@@ -35,6 +35,20 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C3075 / FLOAT_SIGNUM_NAN** and **C3076 / INVALID_FLOAT_CLAMP_BOUNDS** reject
+closed NaN signum and NaN/reversed float bounds. Dynamic cases validate after
+ordered operand evaluation with original call locations and fatal exit without
+PEC. `FloatAttachmentsTest` covers all widths, skipped-code/overload intrinsic
+errors and CLI first-error rejection before object/linker work. See the
+[float attachment record](../cloth-numerics/references/float-attachments.md).
+
+**C3072 / INTEGER_ABS_OVERFLOW**, **C3073 / INVALID_CLAMP_BOUNDS** and
+**C3074 / INVALID_INTEGER_RADIX** reject closed invalid integer-member operations.
+Dynamic equivalents guard evaluated operands with original call locations and
+fatal exit without PEC. `IntegerAttachmentsTest` covers skipped-code/overload
+intrinsic errors and first-error CLI failure before object/linker work; see the
+[integer attachment record](../cloth-numerics/references/integer-attachments.md).
+
 [String editing](../cloth-strings/references/editing-methods.md) checks output
 growth using target byte limits before allocation/replacement-payload reads,
 retaining call source locations in controlled fatal runtime errors. `BufferCountsTest`

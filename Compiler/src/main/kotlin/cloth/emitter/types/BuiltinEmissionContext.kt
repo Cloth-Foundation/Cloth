@@ -1,6 +1,11 @@
 package cloth.emitter.types
 
+import cloth.builtin.attachments.CharPredicate
+import cloth.builtin.attachments.FloatMethod
+import cloth.builtin.attachments.IntegerMethod
 import cloth.builtin.attachments.StringPredicate
+import cloth.data.CFloat
+import cloth.data.CInteger
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
@@ -9,6 +14,7 @@ import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
+import org.bytedeco.llvm.global.LLVM.LLVMBuildZExt
 
 /** Borrowed services for one emitted call; registry definitions never retain these. */
 internal class BuiltinEmissionContext(
@@ -38,6 +44,12 @@ internal class BuiltinEmissionContext(
 	fun stringRemoveAffix(value: LLVMValueRef, affix: LLVMValueRef, suffix: Boolean) = stringEdit.removeAffix(value, affix, suffix)
 	fun stringTrim(value: LLVMValueRef, start: Boolean, end: Boolean) = stringWhitespace.trim(value, start, end)
 	fun stringIsBlank(value: LLVMValueRef) = stringWhitespace.isBlank(value)
+	fun boolToInt(value: LLVMValueRef) = LLVMBuildZExt(builder, value, ValueType.INT.llvmValue(context, abi.layout), "bool_to_int")
+	fun charToInt(value: LLVMValueRef) = value
+	fun charCase(value: LLVMValueRef, upper: Boolean) = EmitCharCase(context, builder).emit(value, upper)
+	fun charPredicate(value: LLVMValueRef, operation: CharPredicate) = EmitCharMember(context, builder).predicate(value, operation)
+	fun integerMember(operation: IntegerMethod, type: CInteger, values: List<LLVMValueRef>) = EmitIntegerMember(context, builder, abi, location).emit(operation, type, values)
+	fun floatMember(operation: FloatMethod, type: CFloat, values: List<LLVMValueRef>) = EmitFloatMember(context, builder, abi, location).emit(operation, type, values)
 	fun nullableText(value: LLVMValueRef, type: CNullable, format: (LLVMValueRef) -> LLVMValueRef): LLVMValueRef {
 		val nullable = EmitNullable(context, builder, abi.layout)
 		return checkNotNull(nullable.choose(nullable.present(value), ValueType.STRING.llvmValue(context, abi.layout), { format(nullable.payload(value)) }, ::nullText))

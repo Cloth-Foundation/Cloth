@@ -1,9 +1,36 @@
 ---
 name: cloth-numerics
-description: Design, explain, or extend Cloth numeric literal prefixes and suffixes, fixed-width integers, floats, booleans, arithmetic and comparisons, explicit casts, exponentiation, or checked integer division and remainder.
+description: Design, explain, or extend Cloth numeric literals, fixed-width integers, integer, float and boolean attachments, arithmetic, casts, exponentiation, or checked integer division and remainder.
 ---
 
 # Cloth numeric and boolean operations
+
+Read [boolean attachments](references/bool-attachments.md) for the separate
+`BoolAttachments` provider's sole `toInt()` method: false to 0, true to 1, always
+signed int32. Use the shared named `valueMethod` style and zero extension of i1;
+preserve bool/numeric separation outside this explicit method. `BoolAttachmentsTest`
+owns source, diagnostics, native Windows x64/x86 and all-profile object evidence.
+
+Read [float attachments](references/float-attachments.md) for the separate
+`FloatAttachments` provider's abs/clamp/signum at widths 16/32/64. Match the shared
+named registration style. Abs/clamp preserve exact float types; signum returns
+int32 and rejects NaN. Preserve signed-zero/infinity/NaN contracts, original
+operand bits in clamp results, software half comparisons, intrinsic first errors,
+shared-name lookup for non-continuing receivers and nullable fallback widths.
+Use `FloatAttachmentsTest` and the float producer probe in `ArrayTemporaryCleanupTest`.
+
+Read [integer attachments](references/integer-attachments.md) when working on integer
+`abs`, `clamp`, `signum`, `leadingZeros`, `trailingZeros` or `toStringRadix`.
+All signed/unsigned widths 1..65536 plus distinct `isize`/`usize` are supported.
+Preserve exact receiver results for abs/clamp, signed int32 signum and target
+usize counts. Validate closed invalid constants before emission; guard dynamic
+failures after ordered operands. Keep lazy exact-type family lookup, canonical
+padding, full-cap formatting, independent snapshots and existing cleanup proofs.
+Match string registration style: named values declare names, signatures and bodies
+through inherited `PrimitiveAttachment.valueMethod`; backend operation enums do
+not maintain a second spelling table. Validate known methods by registration identity.
+Use `IntegerAttachmentsTest`, `StringAttachmentsTest` and the integer poisoned
+probe in `ArrayTemporaryCleanupTest`; the record owns source routing and evidence.
 
 Signed/unsigned fixed widths 1..65536 are implemented, including exact decimal
 output and composition with current supported language features. Defaults and

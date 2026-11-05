@@ -7,6 +7,214 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Simple character casing (2026-11-04)
+
+The user confirmed zero-argument `toUpperCase()` and `toLowerCase()` in the existing
+`CharAttachments`: exact char results, pinned Unicode 17.0.0 simple mappings,
+locale/context independence and original-scalar fallback for missing mappings.
+The [casing integration record](../../cloth-strings/references/character-case.md)
+owns source routing, authenticated data generation and verification. Named
+`valueMethod` registrations match the other primitive providers; existing exact
+typing, nullable proofs, receiver evaluation and first-error diagnostics apply.
+Full string casing, expansions, folding and locale overrides remain outside scope.
+
+Immutable versioned data holds 1,505 uppercase and 1,488 lowercase mappings.
+Module-local binary-search helpers reuse private constant source/target tables,
+returning the input on a miss. No host Unicode/locale or runtime UCD dependency
+is introduced. The offline generator adds pinned UnicodeData fields 12/13 and
+retains the Unicode License V3 and source SHA256 metadata.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.CharCaseTest --tests cloth.CharAttachmentsTest --tests cloth.CharactersTest --tests cloth.BoolAttachmentsTest --tests cloth.StringAttachmentsTest --tests cloth.ArrayTemporaryCleanupTest --tests 'cloth.Nullability*' --offline --console=plain --no-daemon`
+passes 140 tests across 10 suites, zero failures/errors/skips. Independent raw-UCD
+oracles execute both mappings over every one of the 1,112,064 valid scalars on
+Windows x64/MSVC and x86/MSVC. Source tests preserve char identity, snapshots,
+effects, nullable/ordered/deferred/recursive results, early exits, strict located
+errors and CLI first-error behavior. A poisoned-free allocation probe preserves
+saved scalars and arrays while reclaiming producers in 1,000 iterations and
+while/do-while conditions.
+
+Maintained [CharCase.co](../../../../examples/CharCase.co) executes on both Windows
+targets; it and the parameterized two-result fixture verify IR and nonempty
+objects across all nine supported profiles. Foreign native execution remains
+untested.
+
+The full command `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,292 tests across 101 suites in 5m 37s, zero failures/errors/skips. All
+seven generated Unicode artifacts reproduce byte for byte; the original five
+classification artifacts retain their previous hashes. Downloaded scratch inputs
+were removed. Direct changed-skill metadata, relative links and whitespace checks
+pass. The optional Python skill validator remains unavailable without PyYAML;
+Gradle uses the existing external cache.
+
+### Character attachments (2026-11-04)
+
+The user confirmed seven methods in a separate `CharAttachments`, pinned Unicode
+17.0.0 and exact Letter/decimal-digit/binary-case properties. The
+[character integration record](../../cloth-strings/references/character-attachments.md)
+owns the contract and source routing. Six predicates return bool; `toInt` returns
+the Unicode code point as signed int32. Character arithmetic/casts remain deferred;
+case conversion was subsequently integrated in the casing milestone above.
+The provider matches existing named `valueMethod`
+registration, read-only storage and exact receiver/result rules.
+
+Immutable versioned range data and module-local binary-search helpers provide
+portable classification without host locale/JVM predicates or native library
+dependencies. Letter is category L, digits Nd, case uses Uppercase/Lowercase;
+case need not imply Letter. Whitespace shares the existing 25-scalar table.
+The offline generator authenticates pinned inputs by SHA256 and reproduces all
+five table/license/compressed-oracle artifacts byte for byte. Unicode License V3
+and source provenance are retained in resources.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.CharAttachmentsTest --tests cloth.BoolAttachmentsTest --tests cloth.CharactersTest --tests cloth.StringAttachmentsTest --tests cloth.StringWhitespaceTest --tests cloth.StringMemberStorageTest --tests cloth.ArrayTemporaryCleanupTest --tests 'cloth.Nullability*' --offline --console=plain --no-daemon`
+passes 147 tests across 11 suites in 36 seconds, zero failures/errors/skips.
+Independent raw-UCD oracles execute every one of the 1,112,064 Unicode scalars
+on Windows x64/MSVC and x86/MSVC. Source tests cover Unicode 17 additions, signed
+int32 through U+10FFFF, case/Letter distinctions, nullable proofs/fallbacks,
+snapshots, ordered/deferred/recursive results, early exits and first-error CLI
+rejection. The poisoned-free character probe bounds array producers over 1,000
+iterations and while/do-while conditions while preserving preexisting arrays.
+
+Maintained [CharAttachments.co](../../../../examples/CharAttachments.co) executes
+on both Windows targets; it and the parameterized all-method fixture verify IR
+and nonempty objects across all nine profiles. Native foreign execution remains
+untested.
+
+The full command `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,283 tests across 100 suites in 5m 30s, zero failures/errors/skips.
+Gradle uses the existing external cache. Direct changed-skill metadata and 504
+relative file links pass, together with whitespace checks. The optional Python
+skill validator remains unavailable without PyYAML. Downloaded scratch inputs
+were removed after verifying reproducibility; pinned resources remain in source.
+
+### Boolean attachment (2026-11-04)
+
+The user approved only `toInt()` in a separate `BoolAttachments`, matching the
+other providers' named `valueMethod` declarations. The
+[boolean integration record](../../cloth-numerics/references/bool-attachments.md)
+owns the exact contract: no explicit arguments, false to 0, true to 1, always
+signed int32. The target-independent boolean provider enters the ordinary exact
+receiver lookup and read-only catalog. `BuiltinEmissionContext.boolToInt` emits
+zero extension from i1 to i32; no new runtime checks, diagnostic codes or lifetime
+machinery are needed. Existing boolean/numeric implicit/cast rejection is preserved.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.BoolAttachmentsTest --tests cloth.FloatAttachmentsTest --tests cloth.IntegerAttachmentsTest --tests cloth.StringAttachmentsTest --tests cloth.StringMemberStorageTest --tests cloth.ArrayTemporaryCleanupTest --tests 'cloth.Nullability*' --offline --console=plain --no-daemon`
+passes 140 tests across 10 suites in 52 seconds, zero failures/errors/skips.
+The six new tests cover registration, value snapshots, once-only receiver effects,
+scores, nullable proofs/fallbacks, deferred reads, ordered results, arrays/foreach,
+short circuits, loop conditions, early returns, strict result identities and CLI
+first-error rejection before object/linker work. Maintained
+[BoolAttachments.co](../../../../examples/BoolAttachments.co) and source fixtures
+execute on Windows x64/MSVC and x86/MSVC. Parameterized conversion and example
+IR/objects pass all nine profiles; foreign native execution remains untested.
+The earlier 1,269-test full run predates this addition and was not repeated.
+Direct changed-skill metadata and 477 relative file links pass, along with
+`git diff --check`. The optional Python validator remains unavailable without
+PyYAML; no environment dependencies were installed.
+
+### Float attachments (2026-11-04)
+
+The user approved a separate float provider matching the string/integer
+registration style and settled every special-value rule. The
+[float integration record](../../cloth-numerics/references/float-attachments.md)
+owns abs/clamp/signum for all three float widths. Abs/clamp preserve exact float
+identity; signum returns signed int32 and rejects NaN. Abs clears the sign bit;
+clamp validates non-NaN ordered bounds, then selects original operands with strict
+comparisons, preserving in-range signed zeros and NaN receivers. Half comparisons
+use existing software widening without native half comparison/runtime helpers.
+
+Shared-name member lookup now handles non-continuing receivers using argument
+family hints and stable representatives, preserving ordinary static checks and
+early exits. Closed floating constants publish C3075/C3076; dynamic guards retain
+once-only ordered operands, source locations and first-error termination without
+PEC. Elvis now keeps nullable float fallback literal widths even without outer
+numeric context; typed fallbacks retain exact-type checks. Existing storage
+contracts and closed reclamation proofs apply without new ownership mechanisms.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.FloatAttachmentsTest --tests cloth.IntegerAttachmentsTest --tests cloth.StringAttachmentsTest --tests cloth.StringMemberStorageTest --tests cloth.ArrayTemporaryCleanupTest --tests 'cloth.Nullability*' --tests cloth.NumericLiteralsTest --tests cloth.NumericLiteralsIntegrationTest --offline --console=plain --no-daemon`
+passes 151 tests across 11 suites in 48 seconds, zero failures/errors/skips.
+Parameterized native implementations run against independent IEEE/JVM half
+oracles for raw boundary/random patterns, signed zeros, subnormals, NaNs,
+infinities and nine clamp-bound pairs. Source tests cover exact widths, precision,
+presence/fallbacks, captured snapshots, ordered results, early exits, skipped
+operations and first-error diagnostics. The poisoned-free float probe verifies
+bounded producer storage in 1,000 iterations and while/do-while conditions.
+
+Oracle programs, source fixtures and maintained
+[FloatAttachments.co](../../../../examples/FloatAttachments.co) execute on Windows
+x64/MSVC and x86/MSVC. Parameterized fixtures and the maintained example verify IR
+and nonempty objects across all nine profiles. Foreign native execution remains
+untested for this feature.
+
+The full command `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,269 tests across 98 suites in 5m 42s, zero failures/errors/skips. Gradle
+uses the existing external cache. Changed skill metadata and 462 relative file
+links pass direct checks, as does `git diff --check`. The optional Python skill
+validator remains unavailable because PyYAML is missing.
+
+### Shared attachment registration style (2026-11-04)
+
+The user requested string and integer registrations look as similar as possible.
+Both providers now declare named entries with inherited
+`PrimitiveAttachment.valueMethod(name, parameters, returns) { context, values -> ... }`.
+The base helper explicitly opts into read-only, independent-result storage;
+`register` retains its conservative unknown default. Integer names/signatures/bodies
+live together in declarations, matching strings. `IntegerMethod` remains only a
+backend operation enum without spellings. Static integer validation compares cached
+attachment identities instead of consulting a second name table. Receiver/target
+specialization remains lazy and all language contracts are preserved.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.IntegerAttachmentsTest --tests cloth.StringAttachmentsTest --tests cloth.StringMemberStorageTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon`
+passes 85 tests across four suites in 42 seconds, zero failures/errors/skips.
+This reruns full-cap oracles/stress, Windows x64/x86 execution, all-nine-profile
+objects, first-error diagnostics, snapshot behavior and poisoned-memory lifetimes.
+Changed skill metadata/relative links and `git diff --check` pass. The earlier
+1,258-test full run predates this behavior-preserving refactor; it was not rerun.
+
+### Integer attachments (2026-11-04)
+
+The user confirmed all six contracts and full integer-family coverage.
+[The integration record](../../cloth-numerics/references/integer-attachments.md)
+owns `abs`, `clamp`, `signum`, `leadingZeros`, `trailingZeros` and `toStringRadix`.
+Type-preserving abs errors on signed minimum; unsigned abs is identity. Inclusive
+clamp preserves exact types and rejects reversed bounds. Signum always returns
+signed int32; bit counts return target usize and inspect declared bits, with zero
+returning the width. Radix bases 2..36 produce independent lowercase signed-magnitude
+strings without prefixes/padding, including successful signed-minimum formatting.
+
+Integer receiver/target definitions specialize lazily through the typed attachment
+registry. A representative catalog supports pre-typing presence/non-continuing
+receivers without enumerating every width. Closed integer constant checks reuse
+RangeConstants and publish C3072/C3073/C3074; dynamic guards preserve operand order,
+original source locations and first-error exit without PEC. Scalar operations use
+ordinary LLVM comparisons/count intrinsics; wide operations reuse canonical limbs.
+New bounded chunked radix/trailing helpers use i32 words/i64 arithmetic. Existing
+operand snapshots, outgoing copies and closed arena/stack proofs remain in force.
+
+The focused command
+`.\gradlew.bat :Compiler:test --tests cloth.IntegerAttachmentsTest --tests cloth.StringAttachmentsTest --tests cloth.ArrayTemporaryCleanupTest --offline --console=plain --no-daemon`
+passes 81 tests across three suites in 35 seconds, zero failures/errors/skips.
+Independent full-value oracles cover all scalar widths and representative wide
+widths through 65536, every base 2..36 at selected widths and representative bases
+through the cap. Source tests exercise strict identities, nullable proofs,
+captured writes, once-only operands, early exits, skipped calls and intrinsic
+diagnostics inside overload probes. A poisoned-free probe checks escaping text,
+ordered wide/text results and captured publication. Maintained
+[IntegerAttachments.co](../../../../examples/IntegerAttachments.co), oracle programs
+and a 2,000-iteration full-cap storage stress execute on Windows x64/MSVC and
+x86/MSVC. IR and nonempty objects pass all nine profiles; foreign native execution
+is untested for this feature.
+
+The full command `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+passes 1,258 tests across 97 suites in 5m 33s, zero failures/errors/skips, including
+the expanded one-bit/default/full-cap runtime abs guards. Gradle uses the existing
+external cache. Changed skill metadata and 380 relative file links pass direct
+checks. The optional Python validator cannot start because PyYAML is unavailable.
+
 ### String member storage cleanup (2026-11-04)
 
 The user authorized cleanup of redundant string member copies and temporary

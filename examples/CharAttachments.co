@@ -1,0 +1,15 @@
+fn<int> main() {
+    println(' '.isWhitespace())
+    println('中'.isLetter())
+    println('٧'.isDigit())
+    println('ß'.isLetterOrDigit())
+    println('Ⓐ'.isUpperCase())
+    println('ª'.isLowerCase())
+    println('7'.toInt())
+    println('😀'.toInt())
+
+    // Case properties can include symbols outside the Letter category.
+    println('Ⓐ'.isLetter())
+    if ('\0'.toInt() != 0 || '²'.isDigit()) return 1
+    return 0
+}

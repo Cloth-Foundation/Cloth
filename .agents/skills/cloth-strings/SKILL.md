@@ -1,6 +1,6 @@
 ---
 name: cloth-strings
-description: Design, explain, or extend Cloth character and string literals, Unicode validation, interpolation, equality and concatenation, string attachments, scalar-indexed methods, literal editing, Unicode trimming and blank checks, typed member calls, and string function boundaries.
+description: Design, explain, or extend Cloth characters, strings, Unicode validation, character and string attachments, interpolation, scalar-indexed methods, literal editing, whitespace methods, typed member calls, and string function boundaries.
 ---
 
 # Cloth strings and characters
@@ -12,9 +12,24 @@ and preserves effects, UTF-8 byte lengths and caller-owned returned text.
 Floating formats/formatting and string concatenation rules are unchanged.
 
 Read [confirmed string and character semantics](references/semantics.md).
+Read [character attachments](references/character-attachments.md) for the separate
+`CharAttachments` provider's six bool predicates and int32 `toInt`. Preserve pinned
+Unicode 17.0.0 White_Space, Letter L, decimal Nd and binary Uppercase/Lowercase
+properties; case does not imply Letter. Use immutable range data and per-module
+binary-search helpers, not host predicates. Keep shared registration/evaluation,
+nullable and cleanup rules. `CharAttachmentsTest` owns exhaustive scalar native
+oracles and portability fixtures; the record owns data regeneration and licensing.
+Read [character casing](references/character-case.md) for implemented
+`toUpperCase()` and `toLowerCase()`: char results, pinned Unicode 17.0.0 simple
+mappings, zero arguments, locale-independent behavior and unchanged unmapped
+scalars. `CharCaseTest` checks both mappings exhaustively against the official
+raw data. Full string casing and contextual/locale overrides remain deferred.
 Read [string attachments and member calls](references/member-calls.md) for
 `isEmpty`, `contains`, `startsWith`, `endsWith`, typed registry ownership,
 receiver-call traversal, diagnostics, lifetime rules and target evidence.
+Keep declarations consistent with the other primitive attachments: named registrations use
+inherited `PrimitiveAttachment.valueMethod` for explicitly read-only, independent
+results; unproven bodies retain `register`'s unknown storage default.
 Read [scalar-indexed string methods](references/scalar-methods.md) for `charAt`,
 `substring`, `indexOf`, `lastIndexOf` and `toChars`, target count specialization,
 UTF-8 traversal, nullable searches and independent buffered results.

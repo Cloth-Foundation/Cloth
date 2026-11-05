@@ -95,6 +95,11 @@ object SemanticErrors {
 
 	fun loopJump(keyword: Token) = issue(DiagnosticCode.INVALID_LOOP_JUMP, "'${keyword.lexeme}' requires an enclosing loop body", keyword.span, "Loop jumps cannot cross a function or deferred-block boundary.")
 	fun negativeExponent(span: TokenSpan) = issue(DiagnosticCode.NEGATIVE_EXPONENT, "Integer exponentiation requires a nonnegative exponent", span)
+	fun integerAbs(type: CInteger, span: TokenSpan) = issue(DiagnosticCode.INTEGER_ABS_OVERFLOW, "Integer abs cannot represent the magnitude of the minimum value of '${type.spelling}'", span)
+	fun clampBounds(span: TokenSpan) = issue(DiagnosticCode.INVALID_CLAMP_BOUNDS, "Integer clamp requires min ${Operators.LESS_EQUAL} max", span)
+	fun integerRadix(span: TokenSpan) = issue(DiagnosticCode.INVALID_INTEGER_RADIX, "Integer formatting radix must be from 2 through 36", span)
+	fun floatSignum(span: TokenSpan) = issue(DiagnosticCode.FLOAT_SIGNUM_NAN, "Float signum is undefined for NaN", span)
+	fun floatClampBounds(span: TokenSpan) = issue(DiagnosticCode.INVALID_FLOAT_CLAMP_BOUNDS, "Float clamp requires non-NaN bounds with min ${Operators.LESS_EQUAL} max", span)
 	fun zeroDivisor(operator: Token, divisor: Expression) = SemanticException(DiagnosticCode.INTEGER_ZERO_DIVISOR, "Integer ${if (operator.lexeme == Operators.MODULO.toString()) "remainder" else "division"} by zero", listOf(SourceLabel(operator.span, "invalid operation"), SourceLabel(divisor.span, "divisor is zero")))
 	fun divisionOverflow(operator: Token, type: CInteger) = issue(DiagnosticCode.INTEGER_DIVISION_OVERFLOW, "Signed integer ${if (operator.lexeme == Operators.MODULO.toString()) "remainder" else "division"} overflow: minimum value of '${type.spelling}' with -1", operator.span)
 	fun integer(value: BigInteger, type: CInteger, span: TokenSpan) = issue(DiagnosticCode.INTEGER_RANGE, "Integer literal '$value' is out of range for '${type.spelling}'", span, "'${type.spelling}' accepts values from ${type.minimum} through ${type.maximum}.")

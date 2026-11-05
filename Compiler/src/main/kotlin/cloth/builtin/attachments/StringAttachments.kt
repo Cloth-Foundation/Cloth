@@ -1,14 +1,13 @@
 package cloth.builtin.attachments
 
-import cloth.builtin.BuiltinBody
 import cloth.builtin.BuiltinParameter
-import cloth.builtin.BuiltinStorageContract
 import cloth.data.CArray
 import cloth.data.CNullable
 import cloth.data.CUSize
 import cloth.data.ValueType
 
-internal enum class StringPredicate { CONTAINS,
+internal enum class StringPredicate { // dummy comment for formatting
+CONTAINS,
 	STARTS_WITH,
 	ENDS_WITH
 }
@@ -33,9 +32,6 @@ internal class StringAttachments(sizeBits: Int) : PrimitiveAttachment(ValueType.
 	val TRIM_START = trimming("trimStart", start = true, end = false)
 	val TRIM_END = trimming("trimEnd", start = false, end = true)
 	val IS_BLANK = valueMethod("isBlank", emptyList(), ValueType.BOOL) { context, values -> context.stringIsBlank(values[0]) }
-
-	/** These methods read immutable string bytes and never publish or borrow results. */
-	private fun valueMethod(name: String, parameters: List<BuiltinParameter>, returns: ValueType, body: BuiltinBody) = register(name, parameters, returns, BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, body)
 
 	private fun trimming(name: String, start: Boolean, end: Boolean) = valueMethod(name, emptyList(), ValueType.STRING) { context, values ->
 		context.stringTrim(values[0], start, end)

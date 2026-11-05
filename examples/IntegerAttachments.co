@@ -1,0 +1,19 @@
+fn main() {
+    def<int<12>> value = -255
+    println(value.abs())
+    println(value.signum())
+    println(value.clamp(-100, 100))
+    println(value.toStringRadix(16))
+
+    def<unsigned int<8>> bits = 8
+    println(bits.leadingZeros())
+    println(bits.trailingZeros())
+
+    // Signed minimum formats by magnitude, even though abs() would fail.
+    println(int<129>::min.toStringRadix(16))
+
+    def<usize> count = 8
+    println(count.abs()::type)
+    println(count.signum()::type)
+    println(count.trailingZeros()::type)
+}

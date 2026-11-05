@@ -1,0 +1,15 @@
+fn<int> main() {
+    println('a'.toUpperCase())
+    println('Z'.toLowerCase())
+    println('é'.toUpperCase())
+    println('Σ'.toLowerCase())
+
+    // Simple mappings always produce one char; unmapped values stay unchanged.
+    println('ß'.toUpperCase())
+    println('İ'.toLowerCase())
+    println('😀'.toUpperCase())
+    println('a'.toUpperCase()::type)
+
+    if ('7'.toUpperCase() != '7' || '\0'.toLowerCase().toInt() != 0) return 1
+    return 0
+}
