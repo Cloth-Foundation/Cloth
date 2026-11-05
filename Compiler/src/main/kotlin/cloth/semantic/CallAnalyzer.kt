@@ -4,6 +4,7 @@ import cloth.ast.SourceUnit
 import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
+import cloth.data.CArray
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
@@ -18,6 +19,9 @@ import cloth.semantic.symbols.BuiltinGroupSymbol
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.target.TargetLayout
+import cloth.token.Operators
+import cloth.token.Token
+import cloth.token.TokenType
 
 /** Stage 3 checks calls; FunctionAnalyzer enables stage 4 return validation. */
 class CallAnalyzer internal constructor(private val validateReturns: Boolean, private val target: TargetLayout? = null) {
@@ -28,7 +32,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
 		if (target != null && target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
-		val resolver = TypeResolver(declarations.target)
+		val resolver = TypeResolver(declarations.target, declarations.structs::get)
 		val signatures = declarations.functions.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
 				resolver.resolve(parameter.declaredType, declarations = true).also {
@@ -82,6 +86,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 	private class BodyTyping(private val facts: FunctionSemanticModel, private val function: FunctionDeclaration, private val returnResults: ResultShape, private val validateReturns: Boolean, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe, declarations = true) {
 
 		override val supportsNullable = true
+		override fun namedTypeReceiver(expression: Expression) = (expression as? NameExpression)?.let { facts.declarations.namedTypeReceivers[it] }
+		override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presentFields
 
 		override fun completion(expression: Expression) = if (validateReturns) facts.controlFlow.of(expression) else ControlFlow.FALLTHROUGH
 		override fun completion(statements: List<Statement>) = if (validateReturns) facts.controlFlow.of(statements) else ControlFlow.FALLTHROUGH
@@ -206,6 +212,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 					model.statements[statement] = type
 				}
 
+				is FieldWriteStatement        -> checkFieldWrite(statement)
+
 				is ExpressionStatement        -> model.recordResult(statement, resultOf(statement.expression, requireValue = false))
 				is ReturnStatement            -> {
 					if (statement.value == null) {
@@ -222,6 +230,45 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 				else                          -> throw InternalErrors.invariant("Unsupported statement during call checking: $statement")
 			}
+		}
+
+		private fun checkFieldWrite(statement: FieldWriteStatement) {
+			val target = statement.target
+			val readType = typeOf(target)
+			val declared = model.payloadReads[target] ?: readType
+			val operator = Operators.fromCharacterRequired(statement.operator.lexeme)
+			val value = statement.value
+			val actual = when {
+				value == null                -> {
+					if (readType is CNullable) throw SemanticErrors.nullablePayload(readType, target.span)
+					if (!readType.numeric && readType != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, target, readType, boolean = false) }
+					readType
+				}
+
+				operator == Operators.ASSIGN -> {
+					model.payloadReads.remove(target)
+					model.recordResult(target, ResultShape.of(declared))
+					typeOf(value, declared)
+				}
+
+				else                         -> {
+					val base = Token(TokenType.Operator, statement.operator.span, operator.compoundAssignmentBase().toString())
+					// Use ordinary arithmetic checks. The synthetic expression is never lowered.
+					typeOf(BinaryExpression(target, base, value), declared)
+				}
+			}
+			if (declared != ValueType.NEVER && !declared.accepts(actual)) reject {
+				SemanticErrors.structField("Field assignment requires '${declared.spelling}', got '${actual.spelling}'", value?.span ?: target.span)
+			}
+			model.recordResult(statement, ResultShape.of(declared))
+			if (declared == ValueType.NEVER) return
+			fun steps(place: Expression): List<PlaceStep> = when (place) {
+				is NameExpression        -> emptyList()
+				is FieldAccessExpression -> steps(place.receiver) + PlaceStep.Field(model.fields.getValue(place))
+				is IndexExpression       -> steps(place.array) + PlaceStep.Index(place.index, model.typeOf(place.array) as CArray)
+				else                     -> throw InternalErrors.invariant("Field write lost its resolved storage root")
+			}
+			model.fieldWrites[statement] = FieldWritePlan(facts.declarations.fieldRoots.getValue(statement), steps(target), declared)
 		}
 
 		override fun callType(expression: CallExpression): ValueType = callResults(expression).let { it.scalarOrNull() ?: throw SemanticErrors.scalarResults(it, expression.span) }

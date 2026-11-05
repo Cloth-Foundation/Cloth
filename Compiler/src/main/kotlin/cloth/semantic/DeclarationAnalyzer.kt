@@ -7,6 +7,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.StructDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
@@ -17,21 +18,20 @@ import cloth.token.Token
 class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
 
 	fun analyze(unit: SourceUnit): DeclarationModel {
+		val structs = StructTypes(unit.declarations.filterIsInstance<StructDeclaration>(), target).resolveAll()
 		val fileScope = LexicalScope()
 		val functions = mutableListOf<FunctionSymbol>()
 		val signatures = linkedMapOf<FunctionSignature, FunctionSymbol>()
 		val groups = linkedMapOf<String, MutableList<FunctionSymbol>>()
-		for (declaration in unit.declarations) {
-			val function = when (declaration) {
-				is FunctionDeclaration -> FunctionSymbol(declaration)
-			}
+		for (declaration in unit.declarations.filterIsInstance<FunctionDeclaration>()) {
+			val function = FunctionSymbol(declaration)
 			signatures[function.signature]?.let { throw SemanticErrors.duplicateFunction(function.signature.spelling, it.name, function.name) }
 			signatures[function.signature] = function
 			functions.add(function)
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val model = DeclarationModel(fileScope, functions.toList(), target)
+		val model = DeclarationModel(fileScope, functions.toList(), target, structs)
 		for (function in functions) {
 			model.functionSymbols[function.declaration] = function
 			val scope = LexicalScope(fileScope)
@@ -86,6 +86,15 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun statements(statements: List<Statement>, scope: LexicalScope) {
 			for (statement in statements) when (statement) {
+				is FieldWriteStatement        -> {
+					expression(statement.target, scope)
+					val root = statement.target.placeRoot()?.let { model.symbolOf(it) as? BindingSymbol } ?: throw SemanticErrors.fieldTarget(statement.target.span)
+					if (root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.fieldTarget(statement.target.span)
+					if (defaultContext && root is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
+					model.fieldRoots[statement] = root
+					statement.value?.let { expression(it, scope) }
+				}
+
 				is DoWhileStatement           -> {
 					val bodyScope = LexicalScope(scope)
 					model.loopBodyScopes[statement] = bodyScope
@@ -195,9 +204,17 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		fun expression(expression: Expression, scope: LexicalScope) {
 			when (expression) {
+				is StructLiteral                                                                                                     -> expression.fields.forEach { expression(it, scope) }
+				is FieldAccessExpression                                                                                             -> expression(expression.receiver, scope)
 				is ResultListExpression                                                                                              -> expression.values.forEach { expression(it, scope) }
 				is TypeReceiverExpression                                                                                            -> Unit
-				is ProviderAccessExpression                                                                                          -> expression(expression.receiver, scope)
+				is ProviderAccessExpression                                                                                          -> {
+					val receiver = expression.receiver
+					val type = if (receiver is NameExpression && scope.lookup(receiver.name.lexeme) !is BindingSymbol) model.structs[receiver.name.lexeme] else null
+					if (type != null && receiver is NameExpression) model.namedTypeReceivers[receiver] = type
+					else expression(receiver, scope)
+				}
+
 				is MemberCallExpression                                                                                              -> {
 					expression(expression.receiver, scope)
 					expression.arguments.forEach { expression(it, scope) }

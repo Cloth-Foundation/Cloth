@@ -8,8 +8,10 @@ import cloth.parser.expression.TypeReceiverExpression
 import cloth.token.TokenSpan
 
 /** Resolved access, with an explicit distinction between type and executable receivers. */
-internal data class ProviderAccess(val receiver: Expression, val result: ProviderResult<*>, val span: TokenSpan = receiver.span) {
+internal data class ProviderAccess(
+	val receiver: Expression, val result: ProviderResult<*>, val span: TokenSpan = receiver.span,
+	val receiverForm: ProviderReceiverForm = if (receiver is TypeReceiverExpression) ProviderReceiverForm.TYPE else ProviderReceiverForm.VALUE,
+) {
 
 	val type: ValueType get() = result.type
-	val receiverForm: ProviderReceiverForm get() = if (receiver is TypeReceiverExpression) ProviderReceiverForm.TYPE else ProviderReceiverForm.VALUE
 }

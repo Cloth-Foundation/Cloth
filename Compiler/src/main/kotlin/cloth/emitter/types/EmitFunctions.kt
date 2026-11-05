@@ -3,13 +3,16 @@ package cloth.emitter.types
 import cloth.data.CArray
 import cloth.data.CNullable
 import cloth.data.ValueType
+import cloth.data.containsStruct
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
+import cloth.diagnostics.SemanticErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.CallExpression
+import cloth.parser.expression.FunctionBlockExpression
 import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.ResolvedCall
 import cloth.semantic.ResultShape
@@ -37,6 +40,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = results.decode(builder, value, type)
 
 	fun emitAll() {
+		if (semantics.declarations.structs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
 		for ((index, function) in semantics.declarations.functions.withIndex()) {
 			val type = semantics.typeOf(function)
 			// String and array results copy into an invocation arena supplied by the caller.
@@ -160,12 +164,18 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			for (function in semantics.declarations.functions) {
 				val type = semantics.typeOf(function)
 				type.results.values.forEachIndexed { index, result ->
+					if (result.containsStruct) throw SemanticErrors.structsPending(function.declaration.returnTypes[index].span, "Function results")
 					if (!supported(result)) throw BackendErrors.functionType(result, function.declaration.returnTypes[index].span)
 				}
 				function.parameters.forEachIndexed { index, parameter ->
+					if (type.parameters[index].containsStruct) throw SemanticErrors.structsPending(parameter.declaration.type.span, "Function parameters")
 					if (!supported(type.parameters[index])) throw BackendErrors.functionType(type.parameters[index], parameter.declaration.type.span)
 				}
 			}
+			val deferred = semantics.types.expressions.entries.asSequence().filter { it.key is FunctionBlockExpression && it.value.containsStruct }.map { it.key.span }.minWithOrNull(compareBy({ it.startLine }, { it.startColumn }))
+			if (deferred != null) throw SemanticErrors.structsPending(deferred, "Deferred results")
+			val traversal = semantics.types.loops.entries.asSequence().filter { it.value.arraySourceType?.containsStruct == true }.map { it.key.span }.minWithOrNull(compareBy({ it.startLine }, { it.startColumn }))
+			if (traversal != null) throw SemanticErrors.structsPending(traversal, "Foreach traversal")
 		}
 	}
 }

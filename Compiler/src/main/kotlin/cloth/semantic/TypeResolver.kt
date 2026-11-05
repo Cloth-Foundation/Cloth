@@ -7,7 +7,7 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout) {
+internal class TypeResolver(val target: TargetLayout, private val namedType: (String) -> CStruct? = { null }) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme
@@ -34,7 +34,7 @@ internal class TypeResolver(val target: TargetLayout) {
 				Keywords.STRING.toString()    -> ValueType.STRING
 				Keywords.TYPEINFO.toString()  -> ValueType.TYPEINFO
 				Keywords.VOID.toString()      -> if (declarations) ValueType.VOID else throw SemanticErrors.type(annotation)
-				else                          -> throw SemanticErrors.type(annotation)
+				else                          -> namedType(name) ?: throw SemanticErrors.type(annotation)
 			}
 		}
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)

@@ -26,6 +26,34 @@ class ArrayTemporaryCleanupTest {
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
 
 	@Test
+	fun `struct field buffers survive poisoned callee frames and captured field writes`(@TempDir directory: Path) {
+		probe(directory, "struct_field_lifetimes", """
+			typedef<struct> Inner { string[2] text }
+			typedef<struct> Outer { Inner? value }
+			fn<string[]> escaped() {
+			    def<Outer> source = { { ["é" + "😀", "second"] } }
+			    def copy = source
+			    if (source.value != null) source.value.text[0] = "changed"
+			    if (copy.value == null) return ["bad", "bad"]
+			    return copy.value.text
+			}
+			fn<int> sample() {
+			    def<Outer> saved := { { ["old", "text"] } }
+			    def<int> publish = {
+			        if (saved.value != null) saved.value.text = escaped()
+			        return 0
+			    }
+			    if (publish != 0 || saved.value == null || saved.value.text[0] != "é😀") return 1
+			    def duplicate = saved
+			    if (duplicate.value == null || duplicate.value.text[1] != "second") return 2
+			    saved.value = null
+			    if (duplicate.value.text[0] != "é😀") return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `discarded results release all bytes before the next statement and bound peak memory`(@TempDir directory: Path) {
 		val source = "fn<int[]> make() = [${(0 until 64).joinToString(", ")}]\nfn<int> sample() {\n" + List(8) { "make()\nif (liveBytes() != 0) { return 1 }" }.joinToString("\n") + "\nreturn 0\n}"
 		probe(directory, "discarded", source, allocations = 8, peak = 264)

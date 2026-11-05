@@ -58,6 +58,14 @@ their feature-owned reference.
 - An empty class body may be omitted entirely; the declaration can end after its
   header without an empty brace pair.
 
+## Callable declarations in type bodies
+
+Type bodies use `mt` for callable members. A `fn` declaration inside any
+`typedef` body is invalid, including in classes, interfaces, structs and enums.
+This applies to both public and private declarations. The user confirmed this
+on 2026-11-04. See [struct parser support](../../cloth-structs/references/syntax.md)
+for the current diagnostic and parser scope.
+
 ## Function return contracts
 
 Read [Cloth functions and function blocks](../../cloth-functions/references/semantics.md#function-return-contracts) and its
@@ -277,6 +285,12 @@ and [optional-argument implementation](../../cloth-optional-arguments/SKILL.md)
 for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overload ranking.
 
 ## Object lifetime and nullability
+
+Struct syntax, inherited field visibility and the user-confirmed independent
+value-copy design are owned by [the struct contract](../../cloth-structs/references/semantics.md).
+The [plan](../../../../todo/basic-structs-plan.md) stages compiler support for
+that contract. Class-object fields in future structs preserve object identity
+and remain subject to the deletion rules below.
 
 - Object lifetime is explicitly managed by the programmer. Cloth does not and
   will not have a garbage collector, as reaffirmed by the user on 2026-10-31.

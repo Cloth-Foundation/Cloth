@@ -7,7 +7,7 @@ import cloth.data.CUSize
 import cloth.data.ValueType
 
 internal enum class StringPredicate { // dummy comment for formatting
-CONTAINS,
+	CONTAINS,
 	STARTS_WITH,
 	ENDS_WITH
 }

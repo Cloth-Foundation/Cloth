@@ -48,6 +48,12 @@ data class ElementAssignmentStatement(val target: IndexExpression, val value: Ex
 	override val span get() = target.span.through(value.span)
 }
 
+/** Retain the original place and operator so lowering can evaluate the path once. */
+data class FieldWriteStatement(val target: Expression, val operator: Token, val value: Expression?) : Statement {
+
+	override val span get() = target.span.through(value?.span ?: operator.span)
+}
+
 data class UpdateStatement(val name: Token, val operator: Token) : Statement {
 
 	override val span get() = name.span.through(operator.span)

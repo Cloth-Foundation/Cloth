@@ -7,6 +7,7 @@ import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.StructFieldDeclaration
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.Expression
 import cloth.parser.type.TypeReference
@@ -20,6 +21,14 @@ import cloth.token.TokenSpan
 import java.math.BigInteger
 
 object SemanticErrors {
+
+	fun structsPending(span: TokenSpan, operation: String) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "$operation with struct values is not available yet", span)
+	fun structSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "Struct semantics require a declaration source unit", span)
+	fun duplicateStruct(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_STRUCT, "Struct '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
+	fun structCycle(name: Token, fields: List<StructFieldDeclaration>) = SemanticException(DiagnosticCode.RECURSIVE_STRUCT, "Field types form a cycle through struct '${name.lexeme}'", fields.map { SourceLabel(it.type.span, "field '${it.name.lexeme}' is part of this cycle") })
+	fun structField(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_STRUCT_FIELD, message, listOfNotNull(SourceLabel(span, "field use here"), declaration?.let { SourceLabel(it, "field declared here") }))
+	fun structLiteral(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_STRUCT_LITERAL, message, listOfNotNull(SourceLabel(span, "struct literal here"), declaration?.let { SourceLabel(it, "struct declared here") }))
+	fun fieldTarget(span: TokenSpan) = issue(DiagnosticCode.INVALID_FIELD_TARGET, "A field write requires a stored binding", span, "Store the struct value in a binding before changing its fields.")
 
 	fun rangeMembership(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, message, span)
 

@@ -1,0 +1,79 @@
+Cloth Unicode table generator
+============================
+
+Regenerates Cloth's Unicode 17.0.0 character classification ranges, simple
+uppercase and lowercase mappings, and compressed test fixtures. The tables
+give the same results regardless of the system locale.
+
+Run it
+------
+
+From the Cloth repository root, with DMD on PATH, run this command with the
+path to a directory containing the five inputs listed below.
+
+    dmd -run UnicodeGenerator/UnicodeGenerator.d "path/to/unicode-inputs"
+
+In PowerShell, you can also use the full path to DMD.
+
+    & 'C:\D\dmd2\windows\bin64\dmd.exe' -run UnicodeGenerator/UnicodeGenerator.d "path/to/unicode-inputs"
+
+DMD 2.113.0 on Windows x64 reproduced the checked-in artifacts byte for byte.
+The code-d extension by WebFreak is optional for editing the source in VS Code.
+
+Prepare the inputs
+------------------
+
+Put these five files in the same directory with their original names and bytes.
+
+    DerivedGeneralCategory.txt
+    DerivedCoreProperties.txt
+    PropList.txt
+    UnicodeData.txt
+    LICENSE.txt
+
+The generator works offline and checks each file against its pinned SHA-256
+hash before writing any output. To recreate the exact inputs from the checkout,
+run this in PowerShell from the repository root.
+
+    $mainData = 'Compiler/src/main/resources/cloth/unicode/17.0.0'
+    $testData = 'Compiler/src/test/resources/cloth/unicode/17.0.0'
+    $inputs = (New-Item -ItemType Directory -Force 'tmp/unicode-17.0.0-inputs').FullName
+
+    Get-ChildItem -LiteralPath $testData -Filter '*.txt.gz' -File | ForEach-Object {
+        $gzip = [IO.Compression.GZipStream]::new($_.OpenRead(), [IO.Compression.CompressionMode]::Decompress)
+        try {
+            $output = [IO.File]::Create((Join-Path $inputs $_.BaseName))
+            try { $gzip.CopyTo($output) } finally { $output.Dispose() }
+        } finally {
+            $gzip.Dispose()
+        }
+    }
+    Copy-Item -LiteralPath "$mainData/LICENSE.txt" -Destination $inputs
+    dmd -run UnicodeGenerator/UnicodeGenerator.d "$inputs"
+
+Check the result
+----------------
+
+The generator prints the range and mapping counts and overwrites these files
+relative to the working directory.
+
+    Compiler/src/main/resources/cloth/unicode/17.0.0/
+        character-ranges.txt
+        character-case-mappings.txt
+        LICENSE.txt
+
+    Compiler/src/test/resources/cloth/unicode/17.0.0/
+        DerivedGeneralCategory.txt.gz
+        DerivedCoreProperties.txt.gz
+        PropList.txt.gz
+        UnicodeData.txt.gz
+
+When regenerating the pinned release, expect an empty diff and exit code 0.
+
+    git diff --exit-code HEAD -- Compiler/src/main/resources/cloth/unicode/17.0.0 Compiler/src/test/resources/cloth/unicode/17.0.0
+
+If an input is missing, check that the argument points to the directory with
+the five plain-text files. If you see "Unexpected Unicode input hash", restore
+the named file from the checked-in data using the steps above. A different
+Unicode release, a different license snapshot, or edited line endings can
+trigger this error.

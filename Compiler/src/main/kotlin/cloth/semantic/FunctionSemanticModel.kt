@@ -4,6 +4,7 @@ import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.Expression
+import cloth.parser.expression.FieldAccessExpression
 import cloth.parser.expression.NameExpression
 import cloth.parser.statement.Statement
 import cloth.parser.statement.UpdateStatement
@@ -20,10 +21,11 @@ data class FunctionType(val parameters: List<ValueType>, val results: ResultShap
 class FunctionSemanticModel internal constructor(val declarations: DeclarationModel, internal val signatures: Map<FunctionSymbol, FunctionType>, val controlFlow: ControlFlowModel = ControlFlowModel()) {
 
 	val target get() = declarations.target
-	val types = SemanticModel(target)
+	val types = SemanticModel(target, declarations.structs)
 	internal val bindings = IdentityHashMap<BindingSymbol, ValueType>()
 	internal val calls = IdentityHashMap<CallExpression, ResolvedCall>()
 	internal val presentNames = Collections.newSetFromMap(IdentityHashMap<NameExpression, Boolean>())
+	internal val presentFields = Collections.newSetFromMap(IdentityHashMap<FieldAccessExpression, Boolean>())
 	internal val presentUpdates = Collections.newSetFromMap(IdentityHashMap<UpdateStatement, Boolean>())
 	fun typeOf(expression: Expression) = types.typeOf(expression)
 	fun resultOf(expression: Expression) = types.resultOf(expression)
@@ -40,6 +42,10 @@ class FunctionSemanticModel internal constructor(val declarations: DeclarationMo
 		bindings.clear(); bindings.putAll(other.bindings)
 		calls.clear(); calls.putAll(other.calls)
 		presentNames.clear(); presentNames.addAll(other.presentNames)
+		presentFields.clear(); presentFields.addAll(other.presentFields)
+		types.structLiterals.clear(); types.structLiterals.putAll(other.types.structLiterals)
+		types.fields.clear(); types.fields.putAll(other.types.fields)
+		types.fieldWrites.clear(); types.fieldWrites.putAll(other.types.fieldWrites)
 		presentUpdates.clear(); presentUpdates.addAll(other.presentUpdates)
 		types.expressions.clear(); types.expressions.putAll(other.types.expressions)
 		types.expressionResults.clear(); types.expressionResults.putAll(other.types.expressionResults)

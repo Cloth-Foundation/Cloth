@@ -102,6 +102,7 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 			}
 
 			is ElementAssignmentStatement -> expressionEmitter.emitElementAssignment(statement)
+			is FieldWriteStatement        -> expressionEmitter.emitFieldWrite(statement)
 
 			is ExpressionStatement        -> if (discardResult) expressionEmitter.emitDiscarded(statement.expression) else if (statement.expression is IfExpression && semantics.resultOf(statement) == ResultShape.Empty) {
 				expressionEmitter.emitConditional(statement.expression, requireValue = false)

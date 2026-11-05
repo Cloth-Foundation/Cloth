@@ -8,12 +8,16 @@ import cloth.token.*
 
 class ExpressionParser(val parser: Parser) {
 
-	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false, stopAtRange: Boolean = false, allowWhileTrailer: Boolean = false): Expression {
-		var left = parseUnary(stopAtRange, allowWhileTrailer)
+	fun parseExpression(minimumPrecedence: Int = 0, stopAtAssignment: Boolean = false, stopAtRange: Boolean = false, allowWhileTrailer: Boolean = false): Expression = parseInfix(parseUnary(stopAtRange, allowWhileTrailer), minimumPrecedence, stopAtAssignment, stopAtRange, allowWhileTrailer)
+
+	internal fun continueFromPrimary(primary: Expression, allowWhileTrailer: Boolean): Expression = parseInfix(parsePostfix(primary), 0, stopAtAssignment = false, stopAtRange = false, allowWhileTrailer)
+
+	private fun parseInfix(initial: Expression, minimumPrecedence: Int, stopAtAssignment: Boolean, stopAtRange: Boolean, allowWhileTrailer: Boolean): Expression {
+		var left = initial
 
 		while (true) {
 			val operator = parser.peek()
-			if (stopAtAssignment && (operator.lexeme in setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString()) || (left is ProviderAccessExpression && operator.lexeme in setOf(Operators.PLUS_EQUAL.toString(), Operators.MINUS_EQUAL.toString(), Operators.MUL_EQUAL.toString(), Operators.DIV_EQUAL.toString(), Operators.MOD_EQUAL.toString(), Operators.PLUS_PLUS.toString(), Operators.MINUS_MINUS.toString())))) break
+			if (stopAtAssignment && operator.lexeme in Parser.assignmentOperators && (operator.lexeme == Operators.ASSIGN.toString() || operator.lexeme == Operators.FINAL_ASSIGN.toString() || left is ProviderAccessExpression || left.hasFieldTarget())) break
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
@@ -61,7 +65,11 @@ class ExpressionParser(val parser: Parser) {
 			return UnaryExpression(token, if (token.lexeme == Operators.NOT.toString()) parseUnary(stopAtRange, allowWhileTrailer) else parseExpression(POWER_PRECEDENCE, stopAtRange = stopAtRange, allowWhileTrailer = allowWhileTrailer))
 		}
 
-		var value = parsePrimary(allowWhileTrailer)
+		return parsePostfix(parsePrimary(allowWhileTrailer))
+	}
+
+	private fun parsePostfix(primary: Expression): Expression {
+		var value = primary
 		while (true) {
 			value = when (parser.peek().lexeme) {
 				Operators.BRACKET_OPEN.toString() -> {
@@ -71,9 +79,11 @@ class ExpressionParser(val parser: Parser) {
 
 				Operators.DOT.toString()          -> {
 					parser.advance()
-					val name = parser.expect(TokenType.Identifier, "a member-method name")
-					val arguments = parser.delimited.parentheses { parseArguments() }
-					MemberCallExpression(value, name, arguments, value.span.through(parser.previous().span))
+					val name = parser.expect(TokenType.Identifier, "a member name")
+					if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
+						val arguments = parser.delimited.parentheses { parseArguments() }
+						MemberCallExpression(value, name, arguments, value.span.through(parser.previous().span))
+					} else FieldAccessExpression(value, name)
 				}
 
 				Operators.COLON_COLON.toString()  -> {
@@ -100,6 +110,11 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.Operator if token.lexeme == Operators.BRACKET_OPEN.toString()                         -> {
 				val elements = parser.delimited.brackets { parser.delimited.commaSeparated(Operators.BRACKET_CLOSE) { parseExpression() } }
 				ArrayLiteral(elements, token.span.through(parser.previous().span))
+			}
+
+			TokenType.Operator if token.lexeme == Operators.BRACE_OPEN.toString()                           -> {
+				val fields = parser.delimited.braces { parser.delimited.commaSeparated(Operators.BRACE_CLOSE) { parseExpression() } }
+				StructLiteral(fields, token.span.through(parser.previous().span))
 			}
 
 			TokenType.Keyword if token.lexeme == Keywords.IF.toString()                                     -> parser.ifParser.parseIf(allowWhileTrailer)
