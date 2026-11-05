@@ -42,11 +42,11 @@ source bitwise operators, C interop or a public wide-integer ABI.
 
 ## Shared lowering and capacity
 
-[EmitString.interpolate](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitString.kt)
+[EmitString.interpolate](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt)
 is the common scalar formatting entry for typed providers and every source output
 route. Widths through 64 retain the validated native C formatting fast path;
 wider values call
-[EmitIntegerText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitIntegerText.kt).
+[EmitIntegerText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerText.kt).
 The legacy snippet printer uses the same formatter for wide values, then writes
 the resulting length-aware string. No wide scalar/pointer is sent to C varargs.
 
@@ -62,7 +62,7 @@ without host floating rounding. The maximum capacity is 19731 bytes: a uint65536
 maximum has 19729 digits; int65536 minimum has 19729 magnitude digits plus sign.
 Allocation uses the existing checked target count/byte layer.
 
-[IntegerTextKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/IntegerTextKernelIR.kt)
+[IntegerTextKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/kernel/IntegerTextKernelIR.kt)
 defines one private noinline `cloth.integer.decimal` helper per module, installed
 with the existing [integer kernels](arbitrary-width-arithmetic.md). It:
 
@@ -87,7 +87,7 @@ wide-integer runtime dependency, precision growth or source-visible storage type
 
 ## Recursive formatting and lifetime
 
-[EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArrayText.kt)
+[EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
 retains two passes over an already evaluated value: measure checked bytes, then
 fill one output buffer, with nested rows writing directly into it. The formatter
 does not reevaluate source expressions or concatenate growing prefixes.

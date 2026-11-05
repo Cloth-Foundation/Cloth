@@ -1,9 +1,10 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.builtin.attachments.StringPredicate
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitMemory
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

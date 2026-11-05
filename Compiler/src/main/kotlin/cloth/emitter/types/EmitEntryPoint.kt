@@ -5,6 +5,8 @@ import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitStringArena
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.semantic.ProgramModel
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMContextRef

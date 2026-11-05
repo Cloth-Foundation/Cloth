@@ -4,6 +4,8 @@ import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitHalf
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.token.Operators
 import cloth.token.TokenSpan
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

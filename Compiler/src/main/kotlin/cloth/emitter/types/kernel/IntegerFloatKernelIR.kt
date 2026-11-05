@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.kernel
 
 /** IEEE conversion helpers are separate from the integer primitives. */
 internal object IntegerFloatKernelIR {

@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.kernel
 
 /** Private bounded-loop arithmetic. Words are little-endian i32 chunks of native limb storage.
  * Inputs are canonical, destinations disjoint except for copy/add/negate, and 1 <= bits <= 131072.

@@ -14,9 +14,9 @@ import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitIntegerMember
+import cloth.emitter.types.primitives.EmitIntegerMember
 import cloth.emitter.types.EmitStackScope
-import cloth.emitter.types.EmitString
+import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.FunctionAnalyzer

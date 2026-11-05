@@ -11,7 +11,7 @@ import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitCharCase
+import cloth.emitter.types.primitives.EmitCharCase
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.FunctionAnalyzer

@@ -10,6 +10,9 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.types.*
+import cloth.emitter.types.primitives.EmitArray
+import cloth.emitter.types.primitives.EmitIntegerText
+import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.SemanticModel

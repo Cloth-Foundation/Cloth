@@ -4,7 +4,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
-import cloth.emitter.types.EmitWideInteger
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.LinkOptions

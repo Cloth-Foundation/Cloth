@@ -1,8 +1,12 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitMemory
+import cloth.emitter.types.EmitNullable
+import cloth.emitter.types.EmitRuntimeError
+import cloth.emitter.types.EmitStoredValue
 import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -16,7 +20,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 
 	private val types = LLVMTypes(context, target)
 	private val pointer = LLVMPointerTypeInContext(context, 0)
-	private val size = cloth.data.BufferLayout.count(context, target)
+	private val size = BufferLayout.count(context, target)
 	private val text = types.value(ValueType.STRING)
 	private val byte = LLVMInt8TypeInContext(context)
 	private val nullPointer get() = LLVMConstNull(pointer)
@@ -60,7 +64,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val copied = copyAligned(body, arena, raw, alignment)
 				var result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
 				if (valueType.hasNullableRows) {
-					val shapeType = cloth.data.BufferLayout.extent(context, target)
+					val shapeType = BufferLayout.extent(context, target)
 					val shapeBytes = memory.elementBytes(arrays.count(valueType.arrayDimensions.size.toLong()), shapeType, "Unable to allocate returned array shape storage")
 					val shape = copyAligned(body, arena, arrays.descriptor(arrays.shapePointer(input, valueType), shapeBytes), LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), shapeType))
 					val pointer = LLVMBuildExtractValue(body, shape, 0, "copied_shape")

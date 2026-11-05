@@ -93,7 +93,7 @@ for (def<int[]> row <- matrix) {
 }
 ```
 
-- [EmitForEach](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitForEach.kt)
+- [EmitForEach](../../../../Compiler/src/main/kotlin/cloth/emitter/types/loops/EmitForEach.kt)
   evaluates its source once before introducing the receiver, then captures an
   independent recursive contents/shape value through transferArrayValue. A fresh
   owned result transfers once; a stored source is copied even when immutable.
@@ -125,7 +125,7 @@ for (def<int[]> row <- matrix) {
 
 ### Conservative loop cleanup
 
-- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
   adds closed proofs for iteration bodies, numeric step expressions, and whole
   loops. Permit local definitions with safe initializers, safe scalar stores and
   updates, supported safe conditional branches, returns and nested loops. Deferred
@@ -198,7 +198,7 @@ the numeric semantics and tests below remain relevant.
 
 ### Execution ownership and invariants
 
-- [EmitRangeLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitRangeLoop.kt)
+- [EmitRangeLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/loops/EmitRangeLoop.kt)
   owns range execution, reached through EmitStatement and EmitExpression. Emit
   the starting endpoint, validate its finite value, then emit/validate the ending
   endpoint. Their SSA values dominate the loop and stay fixed on every backedge;

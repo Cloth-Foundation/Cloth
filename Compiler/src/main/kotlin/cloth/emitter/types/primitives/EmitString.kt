@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.builtin.attachments.StringPredicate
 import cloth.data.CFloat
@@ -8,6 +8,12 @@ import cloth.data.ValueType
 import cloth.diagnostics.BackendErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitCast
+import cloth.emitter.types.EmitMemory
+import cloth.emitter.types.EmitOutput
+import cloth.emitter.types.EmitRuntimeError
+import cloth.emitter.types.EmitTypeInfo
+import cloth.emitter.types.ProviderEmissionContext
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.TokenSpan
@@ -15,6 +21,7 @@ import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
+import java.math.BigInteger
 
 /** UTF-8 bytes plus a byte length, including embedded NULs. Literals have constant storage;
  * local buffers stay valid throughout the creating invocation. Function returns copy
@@ -160,7 +167,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 
 	fun literal(text: String, span: TokenSpan? = null): LLVMValueRef {
 		val bytes = text.toByteArray(Charsets.UTF_8)
-		if (java.math.BigInteger.valueOf(bytes.size.toLong() + 1) > memory.maximumBytes) throw BackendErrors.bufferSize(span)
+		if (BigInteger.valueOf(bytes.size.toLong() + 1) > memory.maximumBytes) throw BackendErrors.bufferSize(span)
 		val constant = BytePointer(*bytes).use { buffer ->
 			LLVMConstStringInContext2(context, buffer, bytes.size.toLong(), 0)
 		}

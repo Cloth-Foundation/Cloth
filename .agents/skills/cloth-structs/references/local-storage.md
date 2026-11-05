@@ -37,7 +37,7 @@ fn<int> main() {
   before publishing it in a destination. Wide integer reads preserve their
   existing inline-byte snapshots. Nullable struct loads, stores and copies guard
   the payload with the presence flag.
-- [EmitStringArena](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt)
+- [EmitStringArena](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt)
   copies aligned inline bytes and replaces buffered descriptors with independent
   copies. It descends through live nullable fields and copies strings, array data
   and retained shape witnesses. Arrays of structs repair buffered fields in each
@@ -49,7 +49,7 @@ fn<int> main() {
   binding, evaluates each index once and checks bounds before evaluating the RHS.
   Compound writes read the old operand before the RHS and use the ordinary
   arithmetic emitter. Indexed row writes retain existing shape constraints.
-- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
   recognizes struct allocation and field effects. It permits loop cleanup for a
   field write that copies inline bytes without publishing nested buffers, with
   closed index and RHS effects. Buffered or unproven publication retains the

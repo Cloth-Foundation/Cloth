@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.builtin.BuiltinStorageContract
 import cloth.data.*

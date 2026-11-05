@@ -1,6 +1,7 @@
 package cloth.emitter.types
 
 import cloth.data.ValueType
+import cloth.emitter.types.primitives.EmitStringArena
 import cloth.semantic.ResultShape
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*

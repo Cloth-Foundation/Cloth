@@ -165,8 +165,8 @@ Use `ForRangeTest` when changing numeric emission shared with loops.
 Inspect [CInteger](../../../Compiler/src/main/kotlin/cloth/data/CInteger.kt),
 [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
 [EmitCast](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCast.kt),
-[EmitHalf](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitHalf.kt),
-[EmitIntegerDivision](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitIntegerDivision.kt),
+[EmitHalf](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitHalf.kt),
+[EmitIntegerDivision](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerDivision.kt),
 and [EmitPower](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitPower.kt).
 Examples: [Math.co](../../../examples/Math.co), [Casts.co](../../../examples/Casts.co),
 [Unsigned.co](../../../examples/Unsigned.co), [Booleans.co](../../../examples/Booleans.co),

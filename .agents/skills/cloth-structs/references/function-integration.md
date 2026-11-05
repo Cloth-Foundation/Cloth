@@ -48,11 +48,11 @@ and each parameter and foreach binding receives an independent value.
   return and merges continuing paths in the containing physical frame.
   Struct arguments, deferred values and explicit results share the existing
   recursive snapshot path.
-- [EmitForEach](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitForEach.kt)
+- [EmitForEach](../../../../Compiler/src/main/kotlin/cloth/emitter/types/loops/EmitForEach.kt)
   takes an independent snapshot of the source contents and shape before
   traversal and copies each element into its binding. Continue keeps the source
   snapshot alive, break exits the traversal, and returns copy outgoing data
-  before frame release. [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+  before frame release. [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
   recognizes aggregate snapshots introduced by source calls, deferred reads,
   branches and result lists. The closed proof retains frame lifetime for
   unproven effects or buffered publication through captures and stored places.

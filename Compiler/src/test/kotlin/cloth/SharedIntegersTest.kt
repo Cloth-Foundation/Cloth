@@ -6,6 +6,8 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.types.*
+import cloth.emitter.types.primitives.EmitIntegerDivision
+import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.CastExpression

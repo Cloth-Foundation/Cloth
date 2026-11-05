@@ -2,6 +2,8 @@ package cloth.emitter.types
 
 import cloth.data.*
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitArray
+import cloth.emitter.types.primitives.EmitStringArena
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*

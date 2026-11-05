@@ -1,9 +1,15 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.diagnostics.BackendErrors
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitMemory
+import cloth.emitter.types.EmitRuntimeError
+import cloth.emitter.types.kernel.IntegerFloatKernelIR
+import cloth.emitter.types.kernel.IntegerKernelIR
+import cloth.emitter.types.kernel.IntegerMemberKernelIR
+import cloth.emitter.types.kernel.IntegerTextKernelIR
 import cloth.token.Operators
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer

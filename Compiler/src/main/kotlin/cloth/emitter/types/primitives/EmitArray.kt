@@ -1,8 +1,12 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitMemory
+import cloth.emitter.types.EmitNullable
+import cloth.emitter.types.EmitRuntimeError
+import cloth.emitter.types.EmitStoredValue
 import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
@@ -240,7 +244,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		if (indexType is CInteger && indexType.bits > 64) {
 			val wide = EmitWideInteger(context, builder, abi)
 			val length = LLVMBuildExtractValue(builder, array, 1, "array_length")
-			val bound = wide.integerCast(length, CUSize(target.sizeBits), cloth.data.CInt(indexType.bits, true))
+			val bound = wide.integerCast(length, CUSize(target.sizeBits), CInt(indexType.bits, true))
 			val below = LLVMBuildICmp(builder, LLVMIntSLT, wide.comparison(index, bound, indexType.bits, false), LLVMConstInt(LLVMInt32TypeInContext(context), 0, 0), "array_wide_in_bounds")
 			// Negative two's-complement inputs are above every target-sized bound.
 			memory.guard(below, "Array index out of bounds")

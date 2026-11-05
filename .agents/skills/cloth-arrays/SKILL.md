@@ -89,7 +89,7 @@ cover executable independence, shape checks, saved values and bounded safe regio
 
 Start with [CArray](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.kt),
 [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
-and [EmitArray](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt).
+and [EmitArray](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt).
 Runnable examples are [Arrays.co](../../../examples/Arrays.co) and
 [ArrayAssignment.co](../../../examples/ArrayAssignment.co), plus
 [ForEach.co](../../../examples/ForEach.co) for independent snapshot traversal.

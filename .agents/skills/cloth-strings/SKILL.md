@@ -96,8 +96,8 @@ returned text, interpolation buffers, or nested string arrays; use
 
 Inspect [Lexer](../../../Compiler/src/main/kotlin/cloth/lexer/Lexer.kt),
 [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
-[EmitString](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitString.kt),
-and [EmitCharacter](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCharacter.kt).
+[EmitString](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt),
+and [EmitCharacter](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitCharacter.kt).
 Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).

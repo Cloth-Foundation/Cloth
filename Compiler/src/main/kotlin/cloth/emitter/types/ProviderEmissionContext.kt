@@ -5,6 +5,8 @@ import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
+import cloth.emitter.types.primitives.EmitString
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef

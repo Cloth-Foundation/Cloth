@@ -2,6 +2,7 @@ package cloth.emitter.types
 
 import cloth.data.*
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitString
 import cloth.token.Keywords
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

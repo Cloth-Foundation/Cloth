@@ -41,14 +41,14 @@ correctly. Explicit RHS literals still must fit their ordinary context.
 
 ## Production ownership and invariants
 
-- [EmitWideInteger](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitWideInteger.kt)
+- [EmitWideInteger](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitWideInteger.kt)
   owns module-local helper installation, constants, storage and operation APIs.
   Buffers are independent stable values, never borrowed mutable bindings. Storage
   rounds to native-sized limbs, least significant first, with canonical zero
   padding. Kernels process i32 chunks with i64 intermediates; they require no
   i128 or enormous LLVM scalar operations. Private noinline loop helpers keep IR
   bounded rather than unrolling an operation per source width.
-- [IntegerKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/IntegerKernelIR.kt)
+- [IntegerKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/kernel/IntegerKernelIR.kt)
   implements wrapping add/subtract/negate/multiply, signed/unsigned compare,
   division/remainder, exponentiation, integer casts and checked header updates.
   Each result masks unused high value bits. Multiplication uses exact unsigned
@@ -59,7 +59,7 @@ correctly. Explicit RHS literals still must fit their ordinary context.
   Power status 3 is a negative signed exponent. Checked add/subtract/multiply
   compute in 2N bits, narrow and compare with extension to detect overflow; the
   internal limit is 131072 bits even though source types stop at 65536.
-- [IntegerFloatKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/IntegerFloatKernelIR.kt)
+- [IntegerFloatKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/kernel/IntegerFloatKernelIR.kt)
   converts wide integers with guard/round/sticky ties-to-even to float32/64,
   including signed infinity on overflow. Float16 retains the existing float32
   intermediate/half helper policy. Float-to-integer checks the IEEE exponent for
@@ -68,10 +68,10 @@ correctly. Explicit RHS literals still must fit their ordinary context.
   checks the truncated magnitude rather than rejecting its fractional precursor.
   Invalid conversion returns status 4 before any unsafe conversion instruction.
 - [EmitCast](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCast.kt),
-  [EmitIntegerDivision](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitIntegerDivision.kt),
+  [EmitIntegerDivision](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerDivision.kt),
   [EmitPower](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitPower.kt),
   [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
-  and [EmitRangeLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitRangeLoop.kt)
+  and [EmitRangeLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/loops/EmitRangeLoop.kt)
   route wide operations to this layer before scalar type construction. Integer
   widening follows source signedness; narrowing preserves low bits, including
   across scalar/buffer boundaries. Runtime failures retain source file and span.

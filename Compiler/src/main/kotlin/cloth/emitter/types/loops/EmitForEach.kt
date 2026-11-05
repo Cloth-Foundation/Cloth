@@ -1,7 +1,10 @@
-package cloth.emitter.types
+package cloth.emitter.types.loops
 
 import cloth.data.CUSize
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitBindings
+import cloth.emitter.types.EmitExpression
+import cloth.emitter.types.primitives.EmitArray
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
 import cloth.semantic.SemanticModel

@@ -40,7 +40,7 @@ fn<int> main() {
   field or element writes copy live buffers and shape data into the receiver's
   owner arena. A method calling another method through `self` forwards that
   owner. Outgoing results copy separately into the caller's result arena.
-- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
   treats source method calls conservatively. A scalar or discarded method
   result can still accompany a stored write, so its surrounding region
   retains the owning frame's lifetime.
