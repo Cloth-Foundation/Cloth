@@ -66,9 +66,10 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 			}
 
 			is AssignmentStatement        -> {
+				val target = functions?.declarations?.targetOf(statement) ?: statement.name.lexeme
+				bindings.checkDestination(target)
 				val value = expressionEmitter.emit(statement.value)
 				if (expressionEmitter.terminated()) return null
-				val target = functions?.declarations?.targetOf(statement) ?: statement.name.lexeme
 				bindings.assign(target, expressionEmitter.transferBindingAssignment(target, expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.value), semantics.typeOf(statement)), semantics.typeOf(statement)))
 				value
 			}

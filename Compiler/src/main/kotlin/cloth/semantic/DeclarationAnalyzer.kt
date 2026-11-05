@@ -2,12 +2,11 @@ package cloth.semantic
 
 import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
+import cloth.data.CClass
+import cloth.data.ClassField
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.ExpressionBody
-import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.declaration.StructDeclaration
+import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
@@ -20,7 +19,10 @@ import cloth.token.TokenSpan
 class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
 
 	fun analyze(unit: SourceUnit): DeclarationModel {
-		val structs = StructTypes(unit.declarations.filterIsInstance<StructDeclaration>(), target).resolveAll()
+		val types = NamedTypes(unit.declarations, target)
+		val structs = types.resolveStructs()
+		types.resolveClassFields()
+		val classes = types.classes.mapValues { (_, owner) -> classDefinition(owner) }
 		val fileScope = LexicalScope()
 		val functions = mutableListOf<FunctionSymbol>()
 		val signatures = linkedMapOf<FunctionSignature, FunctionSymbol>()
@@ -33,26 +35,22 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val methods = structs.values.flatMap { owner ->
+		val methods = (structs.values.map { it to it.declaration.methods } + types.classes.values.map { it to it.declaration.members.filterIsInstance<MethodDeclaration>() }).flatMap { (owner, members) ->
 			val methodSignatures = mutableMapOf<FunctionSignature, MethodSymbol>()
-			owner.declaration.methods.map { declaration ->
+			members.map { declaration ->
 				val method = MethodSymbol(declaration, owner)
 				methodSignatures.putIfAbsent(method.signature, method)?.let {
-					throw SemanticErrors.duplicateMethod(owner.declaration.name, method.signature.spelling, it.name, method.name)
+					throw SemanticErrors.duplicateMethod(owner.name, method.signature.spelling, it.name, method.name)
 				}
 				method
 			}
 		}
-		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods)
+		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods, classes)
 		for (callable in model.callables) {
 			val scope = LexicalScope(fileScope)
-			when (callable) {
-				is FunctionSymbol -> model.functionSymbols[callable.declaration] = callable
-				is MethodSymbol   -> {
-					model.methodSymbols[callable.declaration] = callable
-					scope.declare(callable.receiver)
-				}
-			}
+			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable
+			if (callable is MethodSymbol) model.methodSymbols[callable.declaration] = callable
+			callable.receiver?.let(scope::declare)
 			model.callableScopes[callable.declaration] = scope
 			for (parameter in callable.parameters) {
 				scope.declare(parameter)
@@ -60,16 +58,33 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			}
 		}
 		for (callable in model.callables) {
-			val receiver = (callable as? MethodSymbol)?.receiver
+			val receiver = callable.receiver
 			val resolver = BodyResolver(model, receiver)
 			val scope = model.scopeOf(callable.declaration)
 			val defaultScope = LexicalScope(fileScope)
-			receiver?.let(defaultScope::declare)
+			val constructor = callable is ConstructorSymbol
+			if (!constructor) receiver?.let(defaultScope::declare)
 			for ((index, parameter) in callable.parameters.withIndex()) {
 				parameter.declaration.defaultValue?.let { fallback ->
-					BodyResolver(model, receiver, defaultContext = true, unavailable = callable.parameters.drop(index).map { it.name.lexeme }.toSet()).expression(fallback, defaultScope)
+					BodyResolver(model, receiver.takeUnless { constructor }, defaultContext = true, unavailable = callable.parameters.drop(index).map { it.name.lexeme }.toSet(), preInitialization = constructor, classOwner = model.classOwners[callable.declaration]).expression(fallback, defaultScope)
 				}
 				defaultScope.declare(parameter)
+			}
+			when (val declaration = callable.declaration) {
+				is PrimaryConstructorDeclaration -> {
+					val definition = model.classes.getValue(declaration.name.lexeme)
+					for ((field, expression) in definition.fieldInitializers) {
+						BodyResolver(model, receiver, initializingField = field).expression(expression, scope)
+					}
+				}
+
+				is ConstructorDeclaration        -> {
+					val delegation = BodyResolver(model, null, preInitialization = true, classOwner = model.classOwners[declaration])
+					ArgumentBinder.validate(declaration.delegation.suppliedArguments)
+					declaration.delegation.arguments.forEach { delegation.expression(it, defaultScope) }
+				}
+
+				else                             -> Unit
 			}
 			when (val body = callable.declaration.body) {
 				is BlockBody      -> {
@@ -83,7 +98,34 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		return model
 	}
 
-	private class BodyResolver(private val model: DeclarationModel, private val receiver: ReceiverSymbol?, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
+	private fun classDefinition(owner: CClass): ClassDefinition {
+		val primary = ConstructorSymbol(PrimaryConstructorDeclaration(owner.declaration), owner)
+		val signatures = mutableMapOf(primary.signature to primary)
+		val secondary = owner.declaration.members.filterIsInstance<ConstructorDeclaration>().map { declaration ->
+			ConstructorSymbol(declaration, owner).also { constructor ->
+				signatures.putIfAbsent(constructor.signature, constructor)?.let {
+					throw SemanticErrors.classMember("Constructor '${constructor.signature.spelling}' is already declared", constructor.name.span, it.name)
+				}
+			}
+		}
+		val destructors = owner.declaration.members.filterIsInstance<DestructorDeclaration>()
+		if (destructors.size > 1) throw SemanticErrors.classMember("A class can declare only one destructor", destructors[1].name.span, destructors[0].name)
+		val initializers = owner.declaration.members.filterIsInstance<ClassFieldDeclaration>().map { member ->
+			ClassFieldInitializer(checkNotNull(owner.field(member.name.lexeme)), member.initializer)
+		}
+		return ClassDefinition(owner, primary, secondary, destructors.singleOrNull()?.let { DestructorSymbol(it, owner) }, initializers)
+	}
+
+	private class BodyResolver(
+		private val model: DeclarationModel,
+		private val receiver: ReceiverSymbol?,
+		private val defaultContext: Boolean = false,
+		private val unavailable: Set<String> = emptySet(),
+		private val allowNestedReturn: Boolean = false,
+		private val preInitialization: Boolean = false,
+		private val initializingField: ClassField? = null,
+		private val classOwner: CClass? = receiver?.owner as? CClass,
+	) {
 
 		private val loops = mutableListOf<LoopTarget>()
 
@@ -95,15 +137,27 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			return symbol ?: member() ?: throw if (name.lexeme == Keywords.SELF.toString()) SemanticErrors.receiverOutsideMethod(name) else SemanticErrors.unknownName(name)
 		}
 
-		private fun value(name: Token, scope: LexicalScope) = lookup(name, scope) { receiver?.field(name.lexeme) }
+		private fun receiverField(self: ReceiverSymbol?, name: Token): ReceiverFieldSymbol? {
+			val field = self?.field(name.lexeme) ?: return null
+			if (initializingField != null && field.field.index >= initializingField.index) {
+				throw SemanticErrors.partialClassInstance("Field '${name.lexeme}' has not been initialized", name.span)
+			}
+			return field
+		}
 
-		private fun rejectDefaultReceiverWrite(binding: Symbol?, span: TokenSpan) {
+		private fun value(name: Token, scope: LexicalScope) = lookup(name, scope) { receiverField(receiver, name) }
+
+		private fun checkReceiverWrite(binding: Symbol?, span: TokenSpan) {
+			if (initializingField != null && (binding is ReceiverSymbol || binding is ReceiverFieldSymbol)) {
+				throw SemanticErrors.partialClassInstance("Fields can only be read during field initialization", span)
+			}
 			if (defaultContext && (binding is ReceiverSymbol || binding is ReceiverFieldSymbol)) {
 				throw SemanticErrors.parameterDefault("'${Keywords.SELF}' is read-only in defaults", span)
 			}
 		}
 
-		private fun rejectDefaultMethodCall(name: Token) {
+		private fun checkSelfCall(name: Token) {
+			if (initializingField != null) throw SemanticErrors.partialClassInstance("Methods on '${Keywords.SELF}' require a fully initialized instance", name.span)
 			if (defaultContext) throw SemanticErrors.parameterDefault("A default cannot call a user-defined method on '${Keywords.SELF}'", name.span)
 		}
 
@@ -112,7 +166,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
 			val symbol = value(name, scope)
 			if (defaultContext && symbol is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameters are read-only in defaults", name.span)
-			rejectDefaultReceiverWrite(symbol, name.span)
+			checkReceiverWrite(symbol, name.span)
 			if (symbol !is BindingSymbol) throw SemanticErrors.bindingRequired(name, symbol.name.takeUnless { symbol is BuiltinGroupSymbol })
 			if (symbol is LocalSymbol && symbol.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.blockAssignment(name, symbol.name)
 			if (!symbol.mutable) {
@@ -127,11 +181,11 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			for (statement in statements) when (statement) {
 				is FieldWriteStatement        -> {
 					expression(statement.target, scope)
-					val root = statement.target.placeRoot()?.let { model.symbolOf(it) as? BindingSymbol } ?: throw SemanticErrors.fieldTarget(statement.target.span)
-					if (root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.fieldTarget(statement.target.span)
+					val root = statement.target.placeRoot()?.let { model.symbolOf(it) as? BindingSymbol }
+					if (model.classes.isEmpty() && (root == null || root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression)) throw SemanticErrors.fieldTarget(statement.target.span)
 					if (defaultContext && root is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
-					rejectDefaultReceiverWrite(root, statement.target.span)
-					model.fieldRoots[statement] = root
+					checkReceiverWrite(root, statement.target.span)
+					if (root != null) model.fieldRoots[statement] = root
 					statement.value?.let { expression(it, scope) }
 				}
 
@@ -229,14 +283,17 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					while (root is IndexExpression) root = root.array
 					val binding = (root as? NameExpression)?.let(model::symbolOf)
 					if (defaultContext && binding is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
-					rejectDefaultReceiverWrite(binding, statement.target.span)
+					checkReceiverWrite(binding, statement.target.span)
 					expression(statement.value, scope)
 				}
 
 				is UpdateStatement            -> model.updates[statement] = assignmentTarget(statement.name, scope)
 				is ExpressionStatement        -> expression(statement.expression, scope)
 				is ReturnStatement            -> {
-					if (defaultContext && !allowDefaultReturn) throw SemanticErrors.parameterDefault("A return cannot escape from a parameter default", statement.span)
+					if (defaultContext && !allowNestedReturn) throw SemanticErrors.parameterDefault("A return cannot escape from a parameter default", statement.span)
+					if (!allowNestedReturn && (preInitialization || initializingField != null)) {
+						throw SemanticErrors.partialClassInstance("A return cannot escape from class initialization", statement.span)
+					}
 					statement.value?.let { expression(it, scope) }
 				}
 
@@ -248,9 +305,13 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			when (expression) {
 				is StructLiteral                                                                                                     -> expression.fields.forEach { expression(it, scope) }
 				is FieldAccessExpression                                                                                             -> {
-					expression(expression.receiver, scope)
+					val target = expression.receiver
+					if (initializingField != null && target is NameExpression && target.name.lexeme == Keywords.SELF.toString()) model.names[target] = value(target.name, scope)
+					else expression(target, scope)
 					explicitReceiver(expression.receiver)?.let { self ->
-						model.receiverFields[expression] = self.field(expression.name.lexeme) ?: throw SemanticErrors.structField("Struct '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+						model.receiverFields[expression] = receiverField(self, expression.name) ?: throw if (self.owner is CClass) {
+							SemanticErrors.classMember("Class '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+						} else SemanticErrors.structField("Struct '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
 					}
 				}
 
@@ -260,8 +321,8 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					val receiver = expression.receiver
 					val type = if (receiver is NameExpression) {
 						val symbol = lexical(receiver.name, scope)
-						val member = if (symbol == null) this.receiver?.field(receiver.name.lexeme) else null
-						if (symbol !is BindingSymbol && member == null) model.structs[receiver.name.lexeme] else null
+						val member = if (symbol == null) receiverField(this.receiver, receiver.name) else null
+						if (symbol !is BindingSymbol && member == null) model.namedType(receiver.name.lexeme) else null
 					} else null
 					if (type != null && receiver is NameExpression) model.namedTypeReceivers[receiver] = type
 					else expression(receiver, scope)
@@ -269,17 +330,34 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 				is MemberCallExpression                                                                                              -> {
 					expression(expression.receiver, scope)
+					if (initializingField != null) model.fieldInitializerCalls.add(expression)
 					if (defaultContext) {
 						val root = model.storedRoot(expression.receiver)
 						if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyDefaultReceivers.add(expression)
 					}
 					explicitReceiver(expression.receiver)?.let { self ->
 						val group = model.methodGroup(self.owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(self.owner, expression.name)
-						rejectDefaultMethodCall(expression.name)
+						checkSelfCall(expression.name)
 						ArgumentBinder.validate(expression.suppliedArguments)
 						model.receiverCalls[expression] = group
 					}
 					expression.arguments.forEach { expression(it, scope) }
+				}
+
+				is ClassCreationExpression                                                                                           -> {
+					val receiver = expression.receiver as? NameExpression
+					val definition = receiver?.let { model.classes[it.name.lexeme] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
+					model.classCreations[expression] = definition
+					ArgumentBinder.validate(expression.suppliedArguments)
+					expression.arguments.forEach { expression(it, scope) }
+				}
+
+				is ClassDeletionExpression                                                                                           -> {
+					expression(expression.receiver, scope)
+					if (defaultContext) when (model.storedRoot(expression.receiver)) {
+						is ParameterSymbol, is ReceiverSymbol -> throw SemanticErrors.parameterDefault("A default cannot delete an object through a read-only receiver", expression.span)
+						else                                  -> Unit
+					}
 				}
 
 				is StateCallExpression                                                                                               -> {
@@ -292,7 +370,8 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					val body = expression.declaration.body as BlockBody
 					val child = LexicalScope(scope)
 					model.blockScopes[body] = child
-					BodyResolver(model, receiver, defaultContext, unavailable, allowDefaultReturn = true).statements(body.statements, child)
+					classOwner?.let { model.classOwners[expression.declaration] = it }
+					BodyResolver(model, receiver, defaultContext, unavailable, allowNestedReturn = true, preInitialization = preInitialization, initializingField = initializingField, classOwner = classOwner).statements(body.statements, child)
 				}
 
 				is ArrayLiteral                                                                                                      -> expression.elements.forEach { expression(it, scope) }
@@ -300,13 +379,20 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					expression(expression.array, scope); expression(expression.index, scope)
 				}
 
-				is NameExpression                                                                                                    -> model.names[expression] = value(expression.name, scope)
+				is NameExpression                                                                                                    -> {
+					if (expression.name.lexeme == Keywords.SELF.toString()) {
+						if (preInitialization) throw SemanticErrors.partialClassInstance("'${Keywords.SELF}' is unavailable before instance initialization", expression.span)
+						if (initializingField != null) throw SemanticErrors.partialClassInstance("'${Keywords.SELF}' can only select an initialized field here", expression.span)
+					}
+					model.names[expression] = value(expression.name, scope)
+				}
+
 				is CallExpression                                                                                                    -> {
 					ArgumentBinder.validate(expression.suppliedArguments)
 					val symbol = lookup(expression.name, scope) { receiver?.let { model.methodGroup(it.owner, expression.name.lexeme) } }
 					if (symbol !is CallableGroupSymbol) throw SemanticErrors.notCallable(expression.name, symbol.name)
 					if (symbol is MethodGroupSymbol) {
-						rejectDefaultMethodCall(expression.name)
+						checkSelfCall(expression.name)
 						model.implicitReceivers[expression] = checkNotNull(receiver)
 					}
 					model.calls[expression] = symbol

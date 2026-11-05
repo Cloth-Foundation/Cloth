@@ -1,7 +1,7 @@
 package cloth.semantic
 
 import cloth.data.CArray
-import cloth.data.StructField
+import cloth.data.InstanceField
 import cloth.data.ValueType
 import cloth.parser.expression.*
 import cloth.semantic.symbols.BindingSymbol
@@ -24,7 +24,7 @@ internal fun DeclarationModel.storedRoot(expression: Expression): BindingSymbol?
 	}
 }
 
-internal sealed interface PlaceStep { data class Field(val field: StructField) : PlaceStep
+internal sealed interface PlaceStep { data class Field(val field: InstanceField) : PlaceStep
 	data class Index(val index: Expression, val array: CArray) : PlaceStep
 }
 
@@ -35,4 +35,6 @@ internal data class FieldWritePlan(val place: StoredPlace, val type: ValueType)
 
 internal sealed interface MethodReceiver { data class Stored(val place: StoredPlace) : MethodReceiver
 	data class Temporary(val expression: Expression) : MethodReceiver
+	data class Instance(val receiver: ObjectReceiver) : MethodReceiver
+	data class StoredInInstance(val place: InstancePlace) : MethodReceiver
 }

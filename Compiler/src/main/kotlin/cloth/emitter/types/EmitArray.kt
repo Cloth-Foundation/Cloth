@@ -150,6 +150,16 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 
 	/** A separate known flag preserves every valid native count, including its maximum. */
 	fun matchShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean = false, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef = matchRaw(current(value, type), current(reference, type), type, merge, message)
+
+	/** A persistent witness retains dimensions without retaining any element or shape allocation. */
+	fun shapeWitness(value: LLVMValueRef, type: CArray): LLVMValueRef {
+		val pointer = LLVMPointerTypeInContext(context, 0)
+		var shape = LLVMBuildInsertValue(builder, current(value, type), LLVMConstNull(pointer), 0, "witness_data")
+		if (type.hasNullableRows) shape = withShapePointer(shape, type, LLVMConstNull(pointer))
+		return shape
+	}
+
+	fun matchWitness(value: LLVMValueRef, witness: LLVMValueRef, type: CArray, message: String): LLVMValueRef = matchRaw(current(value, type), witness, type, merge = true, message = message)
 	private fun matchRaw(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, merge: Boolean, message: String): LLVMValueRef {
 		var result = value
 		for (dimension in type.arrayDimensions.indices) {

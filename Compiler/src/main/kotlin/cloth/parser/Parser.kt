@@ -29,6 +29,7 @@ class Parser(private val tokens: List<Token>) {
 	val ifParser = IfParser(this)
 	val bindingsParser = BindingsParser(this)
 	private val structParser = StructParser(this)
+	private val classParser = ClassParser(this)
 	private var bindingBrace: BindingBraceSyntax? = null
 
 	private class BindingBraceSyntax {
@@ -59,7 +60,7 @@ class Parser(private val tokens: List<Token>) {
 		skipNewlines()
 		while (peek().type != TokenType.EOF) {
 			rejectMethodOutsideType()
-			val declaration = if (atKeyword(Keywords.TYPEDEF) || atKeyword(Keywords.PUBLIC) && atKeyword(Keywords.TYPEDEF, 1)) structParser.parse() else functionParser.parseFunction()
+			val declaration = if (startsTypeDeclaration()) parseTypeDeclaration() else functionParser.parseFunction()
 			declarations.add(declaration)
 			// Only expression bodies have an optional terminator. A brace-bodied
 			// function is already complete; file-level empty statements are invalid.
@@ -70,11 +71,34 @@ class Parser(private val tokens: List<Token>) {
 					throw SyntaxErrors.expected("a newline or end of file after a brace-bodied function", peek())
 				}
 				if (declaration is StructDeclaration) throw SyntaxErrors.expected("a newline or end of file after a struct declaration", peek())
+				if (declaration is ClassDeclaration) throw SyntaxErrors.expected("a newline or end of file after a class declaration", peek())
 				throw SyntaxErrors.newline(peek())
 			}
 			skipNewlines()
 		}
 		return SourceUnit(declarations, peek().span)
+	}
+
+	private fun startsTypeDeclaration(): Boolean {
+		var offset = if (atKeyword(Keywords.PUBLIC)) 1 else 0
+		if (atKeyword(Keywords.FINAL, offset)) offset++
+		return atKeyword(Keywords.TYPEDEF, offset)
+	}
+
+	private fun parseTypeDeclaration(): Declaration {
+		val visibility = if (atKeyword(Keywords.PUBLIC)) advance() else null
+		val finalKeyword = if (atKeyword(Keywords.FINAL)) advance() else null
+		val keyword = advance()
+		val kind = delimited.angles {
+			val token = peek()
+			when {
+				atKeyword(Keywords.CLASS)                          -> advance()
+				atKeyword(Keywords.STRUCT) && finalKeyword == null -> advance()
+				finalKeyword != null                               -> throw SyntaxErrors.expected("'${Keywords.CLASS}' as the type declaration kind after '${Keywords.FINAL}'", token)
+				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}' or '${Keywords.CLASS}' as the type declaration kind", token)
+			}
+		}
+		return if (kind.lexeme == Keywords.CLASS.toString()) classParser.parse(keyword, visibility, finalKeyword) else structParser.parse(keyword, visibility)
 	}
 
 	fun atKeyword(keyword: Keywords, offset: Int = 0) = peek(offset).let { it.type == TokenType.Keyword && it.lexeme == keyword.toString() }

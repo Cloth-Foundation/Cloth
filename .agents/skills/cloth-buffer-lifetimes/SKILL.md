@@ -37,6 +37,12 @@ member copy elision and proven arena/stack reclamation.
 
 ## Preserve the storage contract
 
+- Class fields own their buffers separately from call frames. Whole-field
+  replacement swaps the allocation chain. Nested buffered writes repack the
+  live field before releasing the old chain. Class-backed receiver paths
+  replay after source effects, and ordinary reads snapshot field values.
+  [Class values](../cloth-language/references/class-values.md)
+
 - [Struct Stage 3](../cloth-structs/references/local-storage.md) keeps aggregate
   storage inline and snapshots it before publishing an independent value. Patch
   live string, array and shape descriptors recursively in the copied storage.

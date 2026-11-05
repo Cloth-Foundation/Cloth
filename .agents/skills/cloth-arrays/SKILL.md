@@ -19,6 +19,10 @@ and can hold fixed-shape arrays. Stored field/index writes address the original
 element. Copies and foreach receivers preserve recursive independence, including
 nullable row shape witnesses. See [Structs.co](../../../examples/Structs.co).
 
+Arrays and foreach snapshots copy class identities along with their element
+slots. Class-owned arrays use the same rectangular shape checks and retain
+their initialized dimensions. [Class values](../cloth-language/references/class-values.md)
+
 Read [confirmed array semantics](references/semantics.md) for the language contract.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,
 argument snapshots, returned storage, or cleanup.

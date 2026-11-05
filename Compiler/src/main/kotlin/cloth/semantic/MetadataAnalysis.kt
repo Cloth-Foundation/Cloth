@@ -194,7 +194,11 @@ internal class MetadataAnalysis(
 				expression(value.receiver); value.arguments.forEach { expression(it) }; null
 			}
 
-			is CallExpression           -> {
+			is ClassDeletionExpression  -> {
+				expression(value.receiver); null
+			}
+
+			is CallSite                 -> {
 				value.arguments.forEach { expression(it) }; null
 			}
 

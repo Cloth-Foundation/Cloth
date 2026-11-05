@@ -91,7 +91,7 @@ class StructSemanticsTest {
 		val plans = statements.map { model.types.fieldWrites.getValue(it) }
 		assertTrue(plans.all { it.place.root === function.parameters.first() })
 		assertSame(model.declarations.structs.getValue("Point"), plans[0].type)
-		assertEquals(listOf("pos", "x"), plans[1].place.steps.filterIsInstance<PlaceStep.Field>().map { it.field.declaration.name.lexeme })
+		assertEquals(listOf("pos", "x"), plans[1].place.steps.filterIsInstance<PlaceStep.Field>().map { it.field.name.lexeme })
 		assertEquals(listOf("Row[2]", "int[2]"), plans[2].place.steps.filterIsInstance<PlaceStep.Index>().map { it.array.spelling })
 		assertEquals(ValueType.INT, plans[2].type)
 	}

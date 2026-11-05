@@ -41,6 +41,9 @@ def<DeathInfo> info = { 1, "Fell" }
 
 The annotation supplies the expected type for the brace literal.
 
+The shared [nested type declaration rules](../../cloth-language/references/semantics.md#nested-type-declarations)
+apply to structs and other `typedef` bodies.
+
 ## Nominal type identity (confirmed 2026-11-04)
 
 Each struct declaration defines a distinct type. Two structs with identical
@@ -106,9 +109,9 @@ for static type metadata and value receiver evaluation.
   descriptor alone is insufficient if it exposes shared mutable array storage
   or storage that expires with a temporary/callee frame.
 - Nested structs follow the same value-copy rule recursively.
-- A future class-object field copies the object's identity, rather than cloning
-  the object. Struct copying does not introduce object ownership, automatic
-  destruction or exceptions to the shared explicit deletion contract.
+- A class-valued field copies the object's identity. The object retains its
+  explicit lifetime through copies and cleanup of the struct.
+  [Class values](../../cloth-language/references/class-values.md)
 
 Implementation may avoid redundant physical copies only while preserving this
 observable independence and the required lifetimes.

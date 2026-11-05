@@ -48,7 +48,7 @@ data class ParameterDeclaration(
 ) {
 
 	val mutable get() = finalKeyword == null
-	val optional get() = optKeyword != null
+	val optional get() = defaultDelimiter != null
 
 	/** opt<T> is parameter syntax; type retains the underlying T and its own span. */
 	val optionalTypeSpan get() = optKeyword?.span?.through(optClosing?.span ?: type.span)

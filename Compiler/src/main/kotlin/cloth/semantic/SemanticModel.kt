@@ -1,10 +1,7 @@
 package cloth.semantic
 
 import cloth.builtin.BoundBuiltinCall
-import cloth.data.CNullable
-import cloth.data.CStruct
-import cloth.data.StructField
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -12,12 +9,14 @@ import cloth.target.TargetLayout
 import java.util.*
 
 /** Identity keys distinguish equal-looking syntax used in different type contexts. */
-class SemanticModel(val target: TargetLayout = TargetLayout.native(), structs: Map<String, CStruct> = emptyMap()) {
+class SemanticModel(val target: TargetLayout = TargetLayout.native(), namedTypes: Map<String, CMemberType> = emptyMap()) {
 
-	internal val typeResolver = TypeResolver(target, structs::get)
+	internal val typeResolver = TypeResolver(target, namedTypes::get)
 	internal val structLiterals = IdentityHashMap<StructLiteral, CStruct>()
-	internal val fields = IdentityHashMap<FieldAccessExpression, StructField>()
+	internal val fields = IdentityHashMap<FieldAccessExpression, InstanceField>()
 	internal val fieldWrites = IdentityHashMap<FieldWriteStatement, FieldWritePlan>()
+	internal val instanceWrites = IdentityHashMap<Statement, InstancePlace>()
+	internal val receiverElementWrites = IdentityHashMap<ElementAssignmentStatement, StoredPlace>()
 
 	internal val expressions = IdentityHashMap<Expression, ValueType>()
 	internal val expressionResults = IdentityHashMap<Expression, ResultShape>()

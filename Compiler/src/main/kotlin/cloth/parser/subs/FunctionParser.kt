@@ -2,12 +2,10 @@ package cloth.parser.subs
 
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
-import cloth.parser.declaration.ExpressionBody
-import cloth.parser.declaration.FunctionBody
-import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.declaration.ParameterDeclaration
+import cloth.parser.declaration.*
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.Token
 import cloth.token.TokenType
 
 class FunctionParser(private val parser: Parser) {
@@ -23,31 +21,48 @@ class FunctionParser(private val parser: Parser) {
 	}
 
 	internal fun parseParameters(): List<ParameterDeclaration> = parser.delimited.parentheses {
-		parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
-			val finalKeyword = if (parser.atKeyword(Keywords.FINAL)) parser.advance() else null
-			val optKeyword = if (parser.atKeyword(Keywords.OPT)) parser.advance() else null
-			val optOpening = optKeyword?.let { parser.expect(Operators.LESS).also { parser.skipNewlines() } }
-			val type = parser.typeParser.parse(allowArrays = true)
-			val optClosing = optKeyword?.let { parser.skipNewlines(); parser.expect(Operators.GREATER) }
-			val parameterName = parser.expect(TokenType.Identifier, "a parameter name")
-			val delimiter = if (optKeyword != null) parser.expect(Operators.ELVIS) else null
-			val previousContext = parser.inFunctionBody
-			parser.inFunctionBody = true
-			val fallback = try {
-				delimiter?.let { parser.expressionParser.parseExpression() }
-			} finally {
-				parser.inFunctionBody = previousContext
-			}
-			val parameterSpan = (finalKeyword?.span ?: optKeyword?.span ?: type.span).through(parser.previous().span)
-			ParameterDeclaration(type, parameterName, finalKeyword, optKeyword, delimiter, fallback, optOpening, optClosing, parameterSpan)
+		parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::parseParameter)
+	}
+
+	internal fun parseParameter(): ParameterDeclaration {
+		val finalKeyword = if (parser.atKeyword(Keywords.FINAL)) parser.advance() else null
+		val optKeyword = if (parser.atKeyword(Keywords.OPT)) parser.advance() else null
+		val optOpening = optKeyword?.let { parser.expect(Operators.LESS).also { parser.skipNewlines() } }
+		val type = parser.typeParser.parse(allowArrays = true)
+		val optClosing = optKeyword?.let { parser.skipNewlines(); parser.expect(Operators.GREATER) }
+		val name = parser.expect(TokenType.Identifier, "a parameter name")
+		val delimiter = if (optKeyword != null) parser.expect(Operators.ELVIS) else null
+		val fallback = delimiter?.let { inBody { parser.expressionParser.parseExpression() } }
+		val span = (finalKeyword?.span ?: optKeyword?.span ?: type.span).through(parser.previous().span)
+		return ParameterDeclaration(type, name, finalKeyword, optKeyword, delimiter, fallback, optOpening, optClosing, span)
+	}
+
+	internal fun parseMethod(visibility: Token? = null): MethodDeclaration {
+		val keyword = parser.advance()
+		val returnTypes = parser.parseTypeList()
+		val name = parser.expect(TokenType.Identifier, "a method name")
+		val parameters = parseParameters()
+		return MethodDeclaration(keyword, name, returnTypes, parameters, parseBody("method"), visibility)
+	}
+
+	internal fun <T> inBody(parseContents: () -> T): T {
+		val previousContext = parser.inFunctionBody
+		parser.inFunctionBody = true
+		return try {
+			parseContents()
+		} finally {
+			parser.inFunctionBody = previousContext
 		}
+	}
+
+	internal fun parseBlockBody(): BlockBody {
+		parser.skipNewlines()
+		return inBody(parser::parseBlock)
 	}
 
 	internal fun parseBody(kind: String): FunctionBody {
 		parser.skipNewlines()
-		val previousContext = parser.inFunctionBody
-		parser.inFunctionBody = true
-		return try {
+		return inBody {
 			when (parser.peek().lexeme) {
 				Operators.BRACE_OPEN.toString() -> parser.parseBlock()
 				Operators.ASSIGN.toString()     -> {
@@ -58,8 +73,6 @@ class FunctionParser(private val parser: Parser) {
 
 				else                            -> throw SyntaxErrors.expected("a $kind body ('${Operators.BRACE_OPEN}' or '${Operators.ASSIGN}')", parser.peek())
 			}
-		} finally {
-			parser.inFunctionBody = previousContext
 		}
 	}
 

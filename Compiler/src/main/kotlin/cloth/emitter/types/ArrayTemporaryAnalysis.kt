@@ -5,11 +5,10 @@ import cloth.data.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.FunctionSemanticModel
-import cloth.semantic.PlaceStep
-import cloth.semantic.ResolvedCall
-import cloth.semantic.SemanticModel
+import cloth.semantic.*
 import cloth.semantic.symbols.LocalSymbol
+import cloth.semantic.symbols.ReceiverFieldSymbol
+import cloth.semantic.symbols.ReceiverSymbol
 import java.util.*
 
 /** A closed, conservative proof that evaluating an expression cannot publish
@@ -33,6 +32,13 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
 	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
 	private fun transfersAggregate(type: ValueType) = type is CArray || type.containsStruct
+	private val hasClasses = functions?.declarations?.classes?.isNotEmpty() == true
+	private fun ownsField(key: Any?) = (key as? ReceiverFieldSymbol)?.field is ClassField
+	private fun independentInstanceWrite(statement: Statement, source: Expression?): Boolean {
+		val place = types.instanceWrites[statement] ?: return false
+		val receiver = (place.receiver as? ObjectReceiver.Explicit)?.expression
+		return receiver?.let { effects(it).safe } != false && place.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && source?.let { effects(it).safe } != false
+	}
 
 	/** A loop has no continuing result. Declarations stay inside the iteration;
 	 * scalar stores cannot publish buffers. Buffered stores, indexed writes and
@@ -40,27 +46,29 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	 */
 	fun canReclaimIteration(body: List<Statement>): Boolean = body.all { statement ->
 		when (statement) {
-			is DoWhileStatement         -> canReclaimLoop(statement)
-			is WhileStatement           -> canReclaimLoop(statement)
-			is LoopJumpStatement        -> true
-			is BindingDeclaration       -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
-			is BindingGroupDeclaration  -> effects(statement.initializer).safe
-			is AssignmentStatement      -> !publishes(types.typeOf(statement)) && effects(statement.value).safe
-			is MultiAssignmentStatement -> types.receptionOf(statement).slots.none { publishes(it.type) } && effects(statement.value).safe
-			is UpdateStatement          -> !publishes(types.typeOf(statement))
-			is FieldWriteStatement      -> types.fieldWrites[statement]?.let { plan ->
+			is DoWhileStatement           -> canReclaimLoop(statement)
+			is WhileStatement             -> canReclaimLoop(statement)
+			is LoopJumpStatement          -> true
+			is BindingDeclaration         -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
+			is BindingGroupDeclaration    -> effects(statement.initializer).safe
+			is AssignmentStatement        -> (!publishes(types.typeOf(statement)) || ownsField(functions?.declarations?.targetOf(statement))) && effects(statement.value).safe
+			is MultiAssignmentStatement   -> types.receptionOf(statement).slots.none { publishes(it.type) } && effects(statement.value).safe
+			is UpdateStatement            -> !publishes(types.typeOf(statement))
+			is FieldWriteStatement        -> types.fieldWrites[statement]?.let { plan ->
 				// Only inline writes without buffer publication can release this region.
 				!publishes(plan.type) && plan.place.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.value?.let { effects(it).safe } ?: true)
-			} ?: false
+			} ?: independentInstanceWrite(statement, statement.value)
 
-			is ExpressionStatement      -> when (val expression = statement.expression) {
+			is ElementAssignmentStatement -> independentInstanceWrite(statement, statement.value)
+
+			is ExpressionStatement        -> when (val expression = statement.expression) {
 				is IfExpression -> expression.branches.all { effects(it.condition).safe && canReclaimIteration(it.statements) } && (expression.otherwise?.let(::canReclaimIteration) ?: true)
 				else            -> effects(expression).safe
 			}
 
-			is ReturnStatement          -> statement.value?.let { effects(it).safe } ?: true
-			is ForStatement             -> canReclaimLoop(statement)
-			else                        -> false
+			is ReturnStatement            -> statement.value?.let { effects(it).safe } ?: true
+			is ForStatement               -> canReclaimLoop(statement)
+			else                          -> false
 		}
 	}
 
@@ -92,7 +100,8 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is NameExpression                                                                                    -> {
 				val symbol = functions?.declarations?.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				if (block == null) Effects() else effects(block)
+				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol)
+				if (block == null) Effects(buffers = backed && types.resultOf(expression).values.any { it.indirect }) else effects(block)
 			}
 
 			is FunctionBlockExpression                                                                           -> Effects(transfersAggregate(types.typeOf(expression))) + statements((expression.declaration.body as BlockBody).statements)
@@ -118,7 +127,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			}
 
 			is StructLiteral                                                                                     -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
-			is FieldAccessExpression                                                                             -> effects(expression.receiver)
+			is FieldAccessExpression                                                                             -> effects(expression.receiver) + Effects(buffers = types.fields[expression] is ClassField && types.resultOf(expression).values.any { it.indirect })
 
 			is IndexExpression                                                                                   -> effects(expression.array) + effects(expression.index)
 			is UnaryExpression                                                                                   -> effects(expression.operand)

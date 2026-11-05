@@ -34,8 +34,9 @@ for stage boundaries, source routing and verification targets.
   A function can also share a struct's name. Keep ordinary callable lookup and
   local shadowing in call contexts.
 - Struct copies are independent values, recursively including nested strings,
-  arrays and structs. Future class fields copy object identity; copying or
-  cleaning up a struct must not clone or implicitly delete its class objects.
+  arrays and structs. Class-valued fields copy object identity. Class objects
+  retain their explicit lifetime when a containing struct is copied or cleaned
+  up. [Class values](../cloth-language/references/class-values.md)
 - `:=` and `final` prevent replacing the bound struct, but permit field changes.
   Nested stored field/index writes update the containing value directly; a
   separate struct binding receives an independent copy. Field assignments through

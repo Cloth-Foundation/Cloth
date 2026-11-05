@@ -76,7 +76,7 @@ class StructMethodTypingTest {
 		val stored = assertIs<MethodReceiver.Stored>(receiver(0)).place
 		assertSame(caller.parameters.first(), stored.root)
 		assertEquals("Row[2]", assertIs<PlaceStep.Index>(stored.steps.first()).array.spelling)
-		assertEquals("point", assertIs<PlaceStep.Field>(stored.steps.last()).field.declaration.name.lexeme)
+		assertEquals("point", assertIs<PlaceStep.Field>(stored.steps.last()).field.name.lexeme)
 		assertIs<CallExpression>(assertIs<MethodReceiver.Temporary>(receiver(1)).expression)
 		assertIs<FunctionBlockExpression>(assertIs<BindingDeclaration>(body[2]).initializer)
 		assertIs<MethodReceiver.Temporary>(receiver(3))

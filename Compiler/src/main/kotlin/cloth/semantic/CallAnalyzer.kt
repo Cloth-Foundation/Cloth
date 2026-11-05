@@ -4,19 +4,15 @@ import cloth.ast.SourceUnit
 import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
-import cloth.data.CArray
-import cloth.data.CNullable
-import cloth.data.CStruct
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.CallableDeclaration
-import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
 import cloth.target.TargetLayout
+import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenType
@@ -30,7 +26,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
 		if (target != null && target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
-		val resolver = TypeResolver(declarations.target, declarations.structs::get)
+		val resolver = TypeResolver(declarations.target, declarations::namedType)
 		val signatures = declarations.callables.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
 				resolver.resolve(parameter.declaredType, declarations = true).also {
@@ -42,25 +38,44 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 					if (function.declaration.returnTypes.size > 1 && it == ValueType.VOID) throw SemanticErrors.voidResult(annotation.span)
 				}
 			}
-			FunctionType(parameters, ResultShape.of(results))
+			FunctionType(parameters, if (function is ConstructorSymbol) ResultShape.of(function.owner) else ResultShape.of(results))
 		}
 		val model = FunctionSemanticModel(declarations, signatures)
 		model.types.loopJumps.putAll(declarations.loopJumps)
 		for (function in declarations.callables) function.parameters.forEachIndexed { index, parameter -> model.bindings[parameter] = signatures.getValue(function).parameters[index] }
 		val presence = NullFlowAnalysis(model)
-		for (function in declarations.callables) presence.analyze(function.declaration)
 		for (function in declarations.callables) {
-			val checker = BodyTyping(model, function.declaration, signatures.getValue(function).results, validateReturns)
+			presence.analyze(function.declaration)
+			presence.analyzeExpressions(initializationExpressions(function.declaration, declarations))
+		}
+		for (function in declarations.callables) {
+			val checker = BodyTyping(model, function.declaration, bodyResults(function, signatures), validateReturns)
 			function.parameters.forEachIndexed { index, parameter ->
-				parameter.declaration.defaultValue?.let { checker.checkDefault(it, signatures.getValue(function).parameters[index], parameter.name) }
+				parameter.declaration.defaultValue?.let { checker.checkInitializer(it, signatures.getValue(function).parameters[index], parameter.name) }
 			}
 		}
 		for (function in declarations.callables) {
-			val checker = BodyTyping(model, function.declaration, signatures.getValue(function).results, validateReturns)
+			val returnResults = bodyResults(function, signatures)
+			val checker = BodyTyping(model, function.declaration, returnResults, validateReturns)
+			when (val declaration = function.declaration) {
+				is PrimaryConstructorDeclaration -> {
+					for ((field, expression) in declarations.classes.getValue(declaration.name.lexeme).fieldInitializers) {
+						checker.checkInitializer(expression, field.type, field.name)
+					}
+				}
+
+				is ConstructorDeclaration        -> {
+					val owner = declarations.classOwners.getValue(declaration)
+					val primary = declarations.classes.getValue(owner.spelling).primary
+					checker.bindConstructor(declaration.delegation, listOf(primary))
+				}
+
+				else                             -> Unit
+			}
 			when (val body = function.declaration.body) {
 				is BlockBody      -> {
 					checker.check(body.statements)
-					if (validateReturns && signatures.getValue(function).results != ResultShape.Empty && model.controlFlow.of(body).canFallThrough) {
+					if (validateReturns && returnResults != ResultShape.Empty && model.controlFlow.of(body).canFallThrough) {
 						throw SemanticErrors.missingReturn(function.declaration, body)
 					}
 				}
@@ -73,19 +88,34 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 				parameter.declaration.defaultValue?.let { MetadataAnalysis(model.types, function.parameters.take(index).map { it.name.lexeme to false }, model.controlFlow).expression(it) }
 			}
 			val metadata = MetadataAnalysis(model.types, function.parameters.map { it.name.lexeme to it.mutable }, model.controlFlow)
+			initializationExpressions(function.declaration, declarations).forEach(metadata::expression)
 			when (val body = function.declaration.body) {
 				is BlockBody      -> metadata.statements(body.statements)
 				is ExpressionBody -> metadata.expression(body.expression)
 			}
 		}
+		if (declarations.classes.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
 		return model
+	}
+
+	private fun bodyResults(function: CallableSymbol, signatures: Map<CallableSymbol, FunctionType>) = if (function is ConstructorSymbol) ResultShape.Empty else signatures.getValue(function).results
+
+	private fun initializationExpressions(declaration: CallableDeclaration, declarations: DeclarationModel): List<Expression> = when (declaration) {
+		is PrimaryConstructorDeclaration -> declarations.classes.getValue(declaration.name.lexeme).fieldInitializers.map { it.expression }
+		is ConstructorDeclaration        -> declaration.delegation.arguments
+		else                             -> emptyList()
 	}
 
 	private class BodyTyping(private val facts: FunctionSemanticModel, private val function: CallableDeclaration, private val returnResults: ResultShape, private val validateReturns: Boolean, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe, declarations = true) {
 
 		override val supportsNullable = true
 		override fun namedTypeReceiver(expression: Expression) = (expression as? NameExpression)?.let { facts.declarations.namedTypeReceivers[it] }
+		private val classOwner = facts.declarations.classOwners[function]
 		override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presentFields
+
+		override fun validateFieldAccess(field: InstanceField, name: Token) {
+			if (field is ClassField && field.visibility == null && field.owner != classOwner) throw SemanticErrors.privateClassMember(name, field.name)
+		}
 
 		override fun completion(expression: Expression) = if (validateReturns) facts.controlFlow.of(expression) else ControlFlow.FALLTHROUGH
 		override fun completion(statements: List<Statement>) = if (validateReturns) facts.controlFlow.of(statements) else ControlFlow.FALLTHROUGH
@@ -107,7 +137,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			}
 		}
 
-		fun checkDefault(expression: Expression, expected: ValueType, name: cloth.token.Token) {
+		fun checkInitializer(expression: Expression, expected: ValueType, name: Token) {
 			val actual = typeOf(expression, expected, contextualFloat = true)
 			if (!compatible(actual, expected)) throw SemanticErrors.typeMismatch(expected, actual, name, expression, name)
 		}
@@ -205,6 +235,11 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 				is ElementAssignmentStatement -> {
 					val type = typeOf(statement.target)
+					val instance = instancePlace(statement.target)
+					if (instance != null) model.instanceWrites[statement] = instance
+					else if (facts.declarations.storedRoot(statement.target) is ReceiverSymbol) {
+						storedPlace(statement.target)?.let { model.receiverElementWrites[statement] = it }
+					}
 					val actual = typeOf(statement.value, type)
 					if (type != ValueType.NEVER && !compatible(actual, type)) reject { SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value.span) }
 					model.statements[statement] = type
@@ -234,6 +269,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			val target = statement.target
 			val readType = typeOf(target)
 			val declared = model.payloadReads[target] ?: readType
+			val instance = instancePlace(target)
+			val stored = if (instance == null && declared != ValueType.NEVER) storedPlace(target) ?: throw SemanticErrors.fieldTarget(target.span) else null
 			val operator = Operators.fromCharacterRequired(statement.operator.lexeme)
 			val value = statement.value
 			val actual = when {
@@ -259,9 +296,30 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 				SemanticErrors.structField("Field assignment requires '${declared.spelling}', got '${actual.spelling}'", value?.span ?: target.span)
 			}
 			model.recordResult(statement, ResultShape.of(declared))
-			if (declared == ValueType.NEVER) return
-			val place = checkNotNull(storedPlace(target))
-			model.fieldWrites[statement] = FieldWritePlan(place, declared)
+			if (instance != null) model.instanceWrites[statement] = instance
+			if (stored != null) model.fieldWrites[statement] = FieldWritePlan(stored, declared)
+		}
+
+		private fun instancePlace(expression: Expression): InstancePlace? = when (expression) {
+			is NameExpression        -> {
+				val field = facts.declarations.names[expression] as? ReceiverFieldSymbol
+				if (field?.field is ClassField) InstancePlace(ObjectReceiver.Self(field.receiver), listOf(PlaceStep.Field(field.field))) else null
+			}
+
+			is FieldAccessExpression -> {
+				val field = model.fields[expression]
+				when {
+					field is ClassField -> InstancePlace(ObjectReceiver.Explicit(expression.receiver), listOf(PlaceStep.Field(field)))
+					field != null       -> instancePlace(expression.receiver)?.let { it.copy(steps = it.steps + PlaceStep.Field(field)) }
+					else                -> null
+				}
+			}
+
+			is IndexExpression       -> instancePlace(expression.array)?.let {
+				it.copy(steps = it.steps + PlaceStep.Index(expression.index, model.typeOf(expression.array) as CArray))
+			}
+
+			else                     -> null
 		}
 
 		private fun storedPlace(expression: Expression): StoredPlace? {
@@ -277,6 +335,21 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 		override fun callType(expression: CallExpression): ValueType = callResults(expression).let { it.scalarOrNull() ?: throw SemanticErrors.scalarResults(it, expression.span) }
 
+		fun bindConstructor(expression: CallSite, constructors: List<ConstructorSymbol>): ResolvedCall.Source = facts.constructorCalls[expression] ?: selectSourceCall(expression, constructors).also { facts.constructorCalls[expression] = it }
+
+		override fun creationType(expression: ClassCreationExpression): ValueType {
+			val definition = facts.declarations.classCreations.getValue(expression)
+			return bindConstructor(expression, definition.constructors).type.returns
+		}
+
+		override fun deletionType(expression: ClassDeletionExpression): ValueType {
+			val receiver = typeOf(expression.receiver)
+			if (receiver == ValueType.NEVER) return receiver
+			val owner = ((receiver as? CNullable)?.payload ?: receiver) as? CClass ?: throw SemanticErrors.classLifecycle("'${Keywords.DELETE}' requires a class object", expression.receiver.span)
+			facts.classDeletions[expression] = ClassDeletionPlan(facts.declarations.classes.getValue(owner.spelling), receiver is CNullable)
+			return ValueType.VOID
+		}
+
 		override fun callResults(expression: CallExpression): ResultShape {
 			facts.calls[expression]?.let { return it.type.results }
 			val target = facts.declarations.candidatesOf(expression)
@@ -285,7 +358,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 				is FunctionGroupSymbol -> selectSourceCall(expression, target.overloads)
 				is MethodGroupSymbol   -> {
 					val self = facts.declarations.implicitReceivers.getValue(expression)
-					selectSourceCall(expression, target.overloads, MethodReceiver.Stored(StoredPlace(self, emptyList())))
+					val receiver = if (self.owner is CClass) MethodReceiver.Instance(ObjectReceiver.Self(self)) else MethodReceiver.Stored(StoredPlace(self, emptyList()))
+					selectSourceCall(expression, target.overloads, receiver)
 				}
 
 				is BuiltinGroupSymbol  -> throw InternalErrors.invariant("Built-in call reached source overload selection")
@@ -296,23 +370,40 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 		override fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape {
 			facts.sourceMemberCalls[expression]?.let { return it.type.results }
-			if (receiver is CNullable && receiver.payload is CStruct) {
+			if (receiver is CNullable && receiver.payload is CMemberType) {
 				throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 			}
-			if (receiver !is CStruct) return super.memberCallResults(expression, receiver)
+			if (receiver !is CMemberType) return super.memberCallResults(expression, receiver)
 			val group = facts.declarations.methodGroup(receiver, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(receiver, expression.name)
 			if (expression in facts.declarations.readOnlyDefaultReceivers) {
 				throw SemanticErrors.parameterDefault("A default cannot call a user-defined method through a read-only receiver", expression.name.span)
 			}
-			val place = storedPlace(expression.receiver)
-			for (part in facts.lostReceiverProofs[expression].orEmpty()) {
-				val declared = model.payloadReads[part] ?: continue
-				throw SemanticErrors.receiverProofLost(declared, part.span)
+			val candidates = if (receiver is CClass && receiver != classOwner) group.overloads.filter { it.declaration.visibility != null } else group.overloads
+			if (candidates.isEmpty()) throw SemanticErrors.privateClassMember(expression.name, group.name)
+			val source = if (receiver is CClass) MethodReceiver.Instance(ObjectReceiver.Explicit(expression.receiver)) else {
+				for (part in facts.lostReceiverProofs[expression].orEmpty()) {
+					val declared = model.payloadReads[part] ?: continue
+					throw SemanticErrors.receiverProofLost(declared, part.span)
+				}
+				val instance = instancePlace(expression.receiver)
+				if (instance != null && expression in facts.declarations.fieldInitializerCalls && instance.receiver.isSelf()) {
+					throw SemanticErrors.partialClassInstance("A stored field receiver requires a fully initialized instance", expression.receiver.span)
+				}
+				val place = if (instance == null) storedPlace(expression.receiver) else null
+				when {
+					instance != null -> MethodReceiver.StoredInInstance(instance)
+					place != null    -> MethodReceiver.Stored(place)
+					else             -> MethodReceiver.Temporary(expression.receiver)
+				}
 			}
-			val source = if (place == null) MethodReceiver.Temporary(expression.receiver) else MethodReceiver.Stored(place)
-			val selected = selectSourceCall(expression, group.overloads, source)
+			val selected = selectSourceCall(expression, candidates, source)
 			facts.sourceMemberCalls[expression] = selected
 			return selected.type.results
+		}
+
+		private fun ObjectReceiver.isSelf(): Boolean = when (this) {
+			is ObjectReceiver.Self     -> true
+			is ObjectReceiver.Explicit -> (expression as? NameExpression)?.let { facts.declarations.names[it] } is ReceiverSymbol
 		}
 
 		private fun selectSourceCall(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source {

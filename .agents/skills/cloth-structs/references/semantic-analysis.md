@@ -18,7 +18,7 @@ fn<typeinfo> update(final Cell cell) {
 
 ## Nominal types and contextual literals
 
-- [StructTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/StructTypes.kt)
+- [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/NamedTypes.kt)
   collects names before resolving fields or function signatures. It builds one
   `CStruct` per declaration and reuses it in arrays, nullable values, fields and
   calls. Duplicate names, void fields, unknown field types, omitted dimensions
