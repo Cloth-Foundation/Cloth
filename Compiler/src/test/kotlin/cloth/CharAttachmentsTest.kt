@@ -13,7 +13,7 @@ import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitCharMember
+import cloth.emitter.types.primitives.EmitCharMember
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.FunctionAnalyzer

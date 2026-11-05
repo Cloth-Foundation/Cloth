@@ -8,7 +8,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.types.EmitCast
-import cloth.emitter.types.EmitString
+import cloth.emitter.types.primitives.EmitString
 import cloth.emitter.types.ProviderEmissionContext
 import cloth.lexer.Lexer
 import cloth.parser.Parser

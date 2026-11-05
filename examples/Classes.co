@@ -4,7 +4,7 @@ typedef<struct> Reading {
 }
 
 pub final typedef<class> Counter (def<int> value ?: 0, def<string> label ?: "idle") {
-    Counter(string label, float initial) : (value=initial -> int, label=label) {}
+    Counter(string label, float initial) : (value = initial -> int, label = label) {}
 
     pub mt<int> add(opt<int> amount ?: 2) {
         value += amount

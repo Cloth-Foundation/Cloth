@@ -70,7 +70,7 @@ The full maintained example is [StringScalars.co](../../../../examples/StringSca
   for search results; charAt/substring/toChars and ordinary source units use
   the shared member path. Existing intrinsic operand diagnostics remain fatal
   during outer overload trials.
-- [EmitStringAccess](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringAccess.kt)
+- [EmitStringAccess](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringAccess.kt)
   owns scalar-position traversal, UTF-8 decoding, extraction and scalar-indexed
   search. It borrows per-emission services/source location via
   `BuiltinEmissionContext`; the global registry holds no emitter state.

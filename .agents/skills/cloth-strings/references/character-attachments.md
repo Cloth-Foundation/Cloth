@@ -64,7 +64,7 @@ Version, source SHA256 values and license metadata are retained in the resource.
 Whitespace reuses `UnicodeWhiteSpace.ranges`, the existing 25-scalar contract.
 Never classify source values with JVM/C Unicode/locale predicates.
 
-[EmitCharMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCharMember.kt)
+[EmitCharMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitCharMember.kt)
 installs module-local immutable i32 endpoint arrays and internal binary-search
 helpers on demand. No LLVM handle enters a registry/data singleton. Each helper
 maintains a half-open index interval, loads only an in-range midpoint, and returns

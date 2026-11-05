@@ -7,7 +7,7 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.emitter.*
 import cloth.emitter.types.EmitCast
-import cloth.emitter.types.EmitString
+import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.LinkOptions

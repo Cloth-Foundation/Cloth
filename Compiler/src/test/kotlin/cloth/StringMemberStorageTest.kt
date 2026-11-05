@@ -8,7 +8,7 @@ import cloth.data.ValueType
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.ArrayTemporaryAnalysis
+import cloth.emitter.types.primitives.ArrayTemporaryAnalysis
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.FunctionAnalyzer

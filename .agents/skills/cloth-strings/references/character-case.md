@@ -55,7 +55,7 @@ and strictly increasing source keys. There are 1,505 uppercase and 1,488 lowerca
 entries. The original classification tables and semantics are unchanged.
 
 [BuiltinEmissionContext](../../../../Compiler/src/main/kotlin/cloth/emitter/types/BuiltinEmissionContext.kt)
-routes calls to [EmitCharCase](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCharCase.kt).
+routes calls to [EmitCharCase](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitCharCase.kt).
 It installs module-local private constant i32 source/target arrays and internal
 binary-search helpers on demand, reusing each helper within the module. Search
 maintains a half-open interval, loads only a bounded midpoint and returns the

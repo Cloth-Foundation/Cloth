@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.CFloat
 import cloth.data.ValueType

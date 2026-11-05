@@ -1,10 +1,18 @@
-package cloth.emitter.types
+package cloth.emitter.types.loops
 
 import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitBindings
+import cloth.emitter.types.EmitCast
+import cloth.emitter.types.EmitExpression
+import cloth.emitter.types.EmitRangeValues
+import cloth.emitter.types.EmitRuntimeError
+import cloth.emitter.types.primitives.EmitHalf
+import cloth.emitter.types.primitives.EmitIntegerDivision
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
 import cloth.semantic.SemanticModel
@@ -15,6 +23,7 @@ import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
+import java.math.BigInteger
 
 /** Fixed saved bounds and a declared-format counter; no hidden wider accumulator. */
 internal class EmitRangeLoop(
@@ -92,7 +101,7 @@ internal class EmitRangeLoop(
 					val operator = stepper?.operator?.let { Operators.fromCharacterRequired(it.lexeme) } ?: Operators.PLUS_PLUS
 					val right = if (stepper?.value != null) expressions.emit(stepper.value) else {
 						if (type is CFloat) LLVMConstReal(types.value(type), 1.0)
-						else if (type.bits > 64) EmitWideInteger(context, builder, abi).constant(java.math.BigInteger.ONE, type.bits)
+						else if (type.bits > 64) EmitWideInteger(context, builder, abi).constant(BigInteger.ONE, type.bits)
 						else LLVMConstInt(types.value(type), 1, 0)
 					}
 					if (!expressions.terminated()) {

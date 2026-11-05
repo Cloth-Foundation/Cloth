@@ -69,7 +69,7 @@ before claiming new validation.
 Read [the array text contract](references/semantics.md#recursive-array-text).
 `CArray.providers` in `PrimitiveTypes.kt` owns capability registration, and
 `ProviderResult.ArrayText` retains the element recipe. `ProviderEmissionContext`
-delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArrayText.kt)
+delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
 through `EmitString`. Keep the traversal out of print built-ins and reusable type
 descriptors. Interpolation resolves the same typed value-receiver providers.
 

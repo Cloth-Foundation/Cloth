@@ -3,6 +3,7 @@ package cloth.emitter.types
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitWideInteger
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*

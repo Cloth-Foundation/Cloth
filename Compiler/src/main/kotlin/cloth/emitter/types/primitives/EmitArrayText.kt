@@ -1,10 +1,14 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitMemory
+import cloth.emitter.types.EmitNullable
+import cloth.emitter.types.EmitStoredValue
+import cloth.emitter.types.ProviderEmissionContext
 import cloth.token.Keywords
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer

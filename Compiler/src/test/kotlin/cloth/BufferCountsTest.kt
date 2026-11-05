@@ -8,6 +8,10 @@ import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
 import cloth.emitter.types.*
+import cloth.emitter.types.primitives.EmitArray
+import cloth.emitter.types.primitives.EmitString
+import cloth.emitter.types.primitives.EmitStringArena
+import cloth.emitter.types.primitives.EmitStringEdit
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.FunctionAnalyzer

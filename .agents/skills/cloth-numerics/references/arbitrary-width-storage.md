@@ -72,7 +72,7 @@ Wide results use the existing caller-supplied destination arena, returning a
 pointer (or small nullable/multiple-result carrier). This refines the Stage 1
 private indirect-result design using the established caller-owned copy mechanism.
 [EmitFunctionFrame](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt)
-and [EmitStringArena.copyValue](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt)
+and [EmitStringArena.copyValue](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt)
 copy outgoing bytes before releasing the callee arena/frame. Multiple results
 copy each escaping slot independently. No public ABI or C interop is promised.
 
@@ -81,7 +81,7 @@ data; they do not allocate one heap block per integer element. Recursion into
 string/nested-array storage continues under existing rules. Row extraction,
 assignment, nullable rows and foreach snapshots retain independent values/shapes.
 
-[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
 recognizes wide temporary production while preserving the closed escape proof.
 Inline wide writes cannot publish temporary pointers. Safe loop iterations and
 conditions release arena suffixes and restore stack checkpoints; range membership
@@ -108,7 +108,7 @@ min/max through immutable limb constants; nullable type bounds return plain exac
 payload types. Metadata spelling/equality and receiver effects are preserved.
 Descriptors never retain context-bound LLVM handles or target-local sizes.
 
-[EmitArray.checkedAddress](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt)
+[EmitArray.checkedAddress](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt)
 compares the entire original wide index against a zero-extended target-sized
 bound before narrowing for addressing. Negative signed bit patterns exceed every
 such bound. Large indices with low zero bits cannot alias element zero, and

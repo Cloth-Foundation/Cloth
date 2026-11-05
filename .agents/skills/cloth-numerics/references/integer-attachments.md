@@ -47,12 +47,12 @@ owns the API for all signed/unsigned fixed widths 1..65536 and distinct target
   member arity/type/named-argument and nullable checks remain unchanged. Compilation
   stops on the first error before object/linker work. Dynamic guards run after all
   operands have evaluated, report the original call location and exit without PEC.
-- [EmitIntegerMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitIntegerMember.kt)
+- [EmitIntegerMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerMember.kt)
   handles scalar operations and delegates wide comparisons/negation to existing
   limb helpers. Scalar zero counts use zero-defined i32/i64 LLVM intrinsics,
   adjusting for declared width. Wide leading counts subtract bit length from N;
   wide trailing counts scan canonical i32 words. Never count storage padding.
-- [IntegerMemberKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/IntegerMemberKernelIR.kt)
+- [IntegerMemberKernelIR](../../../../Compiler/src/main/kotlin/cloth/emitter/types/kernel/IntegerMemberKernelIR.kt)
   adds bounded trailing-count and radix helpers to the existing kernel module.
   Radix conversion copies/negates into local magnitude scratch, divides by powers
   of the radix no larger than 1e9, emits reversed chunks with required internal

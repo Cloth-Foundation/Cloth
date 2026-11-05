@@ -6,6 +6,8 @@ import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitHalf
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.expression.CastExpression
 import cloth.semantic.SemanticModel
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

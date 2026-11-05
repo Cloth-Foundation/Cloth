@@ -1,4 +1,4 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.builtin.attachments.CharPredicate
 import cloth.data.UnicodeCharacterProperties
@@ -7,6 +7,7 @@ import cloth.data.UnicodeWhiteSpace
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
+import java.util.Locale
 
 /** Module-local constant ranges and bounded binary searches, without locale APIs. */
 internal class EmitCharMember(private val context: LLVMContextRef, private val builder: LLVMBuilderRef) {
@@ -20,7 +21,7 @@ internal class EmitCharMember(private val context: LLVMContextRef, private val b
 		CharPredicate.LOWERCASE       -> property(scalar, UnicodeCharacterProperty.LOWERCASE)
 	}
 
-	private fun property(scalar: LLVMValueRef, property: UnicodeCharacterProperty) = classify(scalar, property.name.lowercase(java.util.Locale.ROOT), UnicodeCharacterProperties.ranges(property))
+	private fun property(scalar: LLVMValueRef, property: UnicodeCharacterProperty) = classify(scalar, property.name.lowercase(Locale.ROOT), UnicodeCharacterProperties.ranges(property))
 
 	private fun classify(scalar: LLVMValueRef, name: String, ranges: List<IntRange>): LLVMValueRef {
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))

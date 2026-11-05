@@ -49,7 +49,7 @@ early-return integer and float calls without inventing source member overloads.
   fail with C3076/C3075, including in skipped code and outer overload probes.
 - [BuiltinEmissionContext](../../../../Compiler/src/main/kotlin/cloth/emitter/types/BuiltinEmissionContext.kt)
   delegates one emitted call to
-  [EmitFloatMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFloatMember.kt).
+  [EmitFloatMember](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitFloatMember.kt).
   Abs clears the sign bit through the exact-width integer representation;
   it does not widen/round a float value. Signum tests sign, magnitude and NaN bits,
   guards NaN, then returns signed int32. Neither needs a native math library call.

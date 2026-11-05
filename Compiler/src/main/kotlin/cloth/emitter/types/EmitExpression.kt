@@ -4,6 +4,16 @@ import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.*
+import cloth.emitter.types.loops.EmitDoWhileLoop
+import cloth.emitter.types.loops.EmitForEach
+import cloth.emitter.types.loops.EmitRangeLoop
+import cloth.emitter.types.loops.EmitWhileLoop
+import cloth.emitter.types.primitives.ArrayTemporaryAnalysis
+import cloth.emitter.types.primitives.EmitArray
+import cloth.emitter.types.primitives.EmitHalf
+import cloth.emitter.types.primitives.EmitIntegerDivision
+import cloth.emitter.types.primitives.EmitString
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*

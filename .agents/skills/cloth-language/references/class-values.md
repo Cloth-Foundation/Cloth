@@ -15,12 +15,12 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   Ordinary reads snapshot buffered and indirect values before later operands
   can replace the field or delete the instance. Deletion releases the field
   allocations after the destructor. [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassStorage.kt) ·
-  [Recursive copies](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt)
+  [Recursive copies](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt)
 - Array fields keep their initialized dimensions. A nullable field first
   establishes dimensions when a present value is assigned and retains known
   dimensions across absence. The retained witness stores extents separately
   from live element and shape allocations. Nullable rows can establish a
-  previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt)
+  previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt)
 - A nested write saves its receiver identity and evaluates each index once
   before the right-hand side. It checks the same path in the current field
   before storing. A compound write captures its old operand before the
@@ -36,7 +36,7 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   call frame until each store publishes. Scalar or identity writes need no repack. Proven
   class-owned writes can release frame temporaries at iteration exit.
   [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassStorage.kt) ·
-  [Temporary analysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+  [Temporary analysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
 - Null checks establish field proofs on a stable path. Potentially aliasing
   writes and source calls forget those proofs conservatively. A saved local
   value keeps the ordinary binding rules. Metadata queries on mutable fields

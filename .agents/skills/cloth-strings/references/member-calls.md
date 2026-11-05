@@ -118,7 +118,7 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   Future result kinds must extend freshness and lifetime handling
   deliberately; string, char-array and nullable-count results are integrated by
   [the scalar extension](scalar-methods.md).
-- [EmitString](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitString.kt)
+- [EmitString](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt)
   emits length-aware predicates and shares its target-correct C `memcmp` signature
   with string equality. Empty needles exit before reads; longer needles exit
   before offset subtraction/pointer arithmetic. Prefix/suffix comparisons use a

@@ -1,5 +1,7 @@
-package cloth.emitter.types
+package cloth.emitter.types.loops
 
+import cloth.emitter.types.EmitBindings
+import cloth.emitter.types.EmitExpression
 import cloth.parser.statement.DoWhileStatement
 import cloth.semantic.ControlFlowModel
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

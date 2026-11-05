@@ -1,8 +1,9 @@
-package cloth.emitter.types
+package cloth.emitter.types.primitives
 
 import cloth.data.CInteger
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.EmitRuntimeError
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef

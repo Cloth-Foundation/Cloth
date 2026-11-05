@@ -334,7 +334,7 @@ execution, cleanup probes, LLVM IR and objects; Stage 5 adds the maintained exam
 
 ### Execution and source ownership
 
-[EmitDoWhileLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitDoWhileLoop.kt)
+[EmitDoWhileLoop](../../../../Compiler/src/main/kotlin/cloth/emitter/types/loops/EmitDoWhileLoop.kt)
 emits entry -> body -> test -> body/exit without duplicating the source body.
 Continue targets the trailing test; break targets exit. The shared body helper
 removes this loop's target before emitting the condition, retaining surrounding
@@ -353,7 +353,7 @@ use the facts and checked recipes established by Stage 3.
 
 ### Proven cleanup and retained publication
 
-[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt)
+[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
 recognizes nested do-while statements in iteration proofs and adds a whole-loop
 proof over body plus condition. Body and test regions are independently proven:
 safe bodies release storage before testing, including on continue, and safe

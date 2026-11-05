@@ -185,10 +185,10 @@ body/test and outward-jump arena peaks, poisoned publication/returns, and
 2,000 full-cap wide-integer iterations preserving pre-loop storage.
 
 Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt),
-[EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStringArena.kt),
+[EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt),
 [EmitExpression](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt),
-[ArrayTemporaryAnalysis](../../../Compiler/src/main/kotlin/cloth/emitter/types/ArrayTemporaryAnalysis.kt),
-and the affected [array emitter](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArray.kt).
+[ArrayTemporaryAnalysis](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt),
+and the affected [array emitter](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt).
 
 Use `ForEachTest`, `ArrayCopyElisionTest`, `ArrayTemporaryCleanupTest`, `StringFunctionTest`, and
 the array assignment/shape suites. Allocation counters and poisoned freed memory

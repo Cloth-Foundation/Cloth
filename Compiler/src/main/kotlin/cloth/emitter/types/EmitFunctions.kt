@@ -5,6 +5,8 @@ import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.types.primitives.EmitString
+import cloth.emitter.types.primitives.EmitStringArena
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
