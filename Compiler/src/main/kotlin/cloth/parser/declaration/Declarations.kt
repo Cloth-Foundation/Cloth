@@ -11,14 +11,24 @@ sealed interface Declaration {
 	val span: TokenSpan
 }
 
+/** The source contract shared by functions and type members. */
+sealed interface CallableDeclaration : Declaration {
+
+	val keyword: Token
+	val name: Token
+	val returnTypes: List<TypeReference>
+	val parameters: List<ParameterDeclaration>
+	val body: FunctionBody
+}
+
 data class FunctionDeclaration(
-	val keyword: Token,
-	val name: Token,
-	val returnTypes: List<TypeReference>,
-	val parameters: List<ParameterDeclaration>,
-	val body: FunctionBody,
+	override val keyword: Token,
+	override val name: Token,
+	override val returnTypes: List<TypeReference>,
+	override val parameters: List<ParameterDeclaration>,
+	override val body: FunctionBody,
 	val visibility: Token? = null,
-) : Declaration {
+) : CallableDeclaration {
 
 	/** Compatibility for scalar consumers until ordered result typing is implemented. */
 	val returnType get() = returnTypes.singleOrNull()

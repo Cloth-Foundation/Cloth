@@ -15,6 +15,12 @@ without treating integers as string/array buffers. No public integer ABI is adde
 Read [confirmed function semantics](references/semantics.md). For ordered result
 lists and positional reception, also use [multiple results](../cloth-multiple-results/SKILL.md).
 For buffered parameters/results use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md).
+[Struct Stage 4](../cloth-structs/references/function-integration.md) integrates
+recursive, named and defaulted calls, ordered results and deferred struct reads.
+Struct parameters receive independent snapshots and outgoing structs copy to
+caller storage through the private Cloth ABI. The maintained
+[Structs.co](../../../examples/Structs.co) demonstrates a final parameter's
+mutable fields and positional reception of the returned struct and a scalar.
 
 ## Development rules
 
@@ -56,7 +62,21 @@ are implemented for ordinary functions; read [optional arguments](../cloth-optio
 for binding, declaration scope, evaluation, ranking and ABI invariants.
 [Primitive string member calls](../cloth-strings/references/member-calls.md)
 implement ordinary value receivers with separate typed lookup and shared built-in
-call contracts. Class methods, member overloads and static calls remain future work.
+call contracts. The [user-defined method contract](references/semantics.md#user-defined-methods)
+records the shared `mt` rules and implicit receiver. The
+[struct methods plan](../../../todo/struct-methods-plan.md) stages the shared
+source callable API and ordinary struct methods. Stage 1 routes source functions
+through `CallableDeclaration`, `CallableSymbol` and the shared `CallSite`
+overload selector. Argument binding uses explicit parameters, and LLVM emission
+consumes the resolved source call and written operands.
+[Struct method syntax and scope](references/method-syntax.md) describes Stage 2.
+[Stage 3 method typing](references/method-typing.md) covers shared call and
+result checking, stored receiver plans, defaults and nullable flow.
+[Stage 4 method execution](references/method-execution.md) covers receiver
+storage, buffer publication and the private ABI. Ordinary struct methods are
+complete. Run [StructMethods.co](../../../examples/StructMethods.co) and see
+the [publication record](references/method-publication.md) for exact output,
+target coverage, full regression results and the class handoff.
 
 Start with [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt),
 [CallAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt),

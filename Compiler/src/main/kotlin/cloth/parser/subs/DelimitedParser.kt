@@ -22,14 +22,14 @@ class DelimitedParser(private val parser: Parser) {
 	fun <T> braces(parseContents: () -> T): T = parse(Operators.BRACE_OPEN, Operators.BRACE_CLOSE, parseContents)
 
 	/** Parses contents only. Empty lists are allowed; trailing commas are not. */
-	fun <T> commaSeparated(close: Operators, parseItem: () -> T): List<T> {
+	fun <T> commaSeparated(close: Operators, endAfterItem: () -> Boolean = { false }, parseItem: () -> T): List<T> {
 		parser.skipNewlines()
 		if (parser.peek().lexeme == close.toString()) return emptyList()
 		return buildList {
 			while (true) {
 				add(parseItem())
 				parser.skipNewlines()
-				if (parser.peek().lexeme == close.toString()) break
+				if (parser.peek().lexeme == close.toString() || endAfterItem()) break
 				parser.expect(Operators.COMMA)
 				parser.skipNewlines()
 			}

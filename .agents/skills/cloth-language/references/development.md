@@ -7,6 +7,21 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Struct methods publication (2026-11-05)
+
+[StructMethods.co](../../../../examples/StructMethods.co) demonstrates the
+shared callable pipeline and ordinary struct methods. The
+[method publication record](../../cloth-functions/references/method-publication.md)
+owns the Windows x64/x86 and GNU Linux x64 execution evidence, LLVM IR and
+objects across all nine profiles, full regression results and class handoff.
+
+### Basic structs publication (2026-11-05)
+
+[Structs.co](../../../../examples/Structs.co) demonstrates the completed basic
+struct slice. The [publication record](../../cloth-structs/references/publication.md)
+owns native Windows x64/x86 and GNU Linux x64 results, all-profile LLVM IR and
+object checks, full regression counts and the class handoff.
+
 ### Simple character casing (2026-11-04)
 
 The user confirmed zero-argument `toUpperCase()` and `toLowerCase()` in the existing

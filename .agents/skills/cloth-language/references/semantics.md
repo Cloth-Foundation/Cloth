@@ -60,11 +60,14 @@ their feature-owned reference.
 
 ## Callable declarations in type bodies
 
-Type bodies use `mt` for callable members. A `fn` declaration inside any
-`typedef` body is invalid, including in classes, interfaces, structs and enums.
-This applies to both public and private declarations. The user confirmed this
-on 2026-11-04. See [struct parser support](../../cloth-structs/references/syntax.md)
-for the current diagnostic and parser scope.
+A callable member of a `typedef` uses `mt` and has an implicit receiver
+named `self`.
+A `fn` declaration inside any `typedef` body is a compile-time error,
+including in classes, interfaces, structs and enums. See the
+[method contract](../../cloth-functions/references/semantics.md#user-defined-methods)
+for the shared function rules and receiver contract. See
+[struct parser support](../../cloth-structs/references/syntax.md) for the
+current diagnostic and parser scope.
 
 ## Function return contracts
 
@@ -288,9 +291,9 @@ for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overl
 
 Struct syntax, inherited field visibility and the user-confirmed independent
 value-copy design are owned by [the struct contract](../../cloth-structs/references/semantics.md).
-The [plan](../../../../todo/basic-structs-plan.md) stages compiler support for
-that contract. Class-object fields in future structs preserve object identity
-and remain subject to the deletion rules below.
+The [publication record](../../cloth-structs/references/publication.md) covers
+the completed compiler slice. Class-object fields in future structs preserve
+object identity and remain subject to the deletion rules below.
 
 - Object lifetime is explicitly managed by the programmer. Cloth does not and
   will not have a garbage collector, as reaffirmed by the user on 2026-10-31.
@@ -346,7 +349,7 @@ and remain subject to the deletion rules below.
   between those two kinds of methods.
 - Overloading is supported when argument lists distinguish the overloads. Do not
   assume additional overload-resolution rules that have not been specified.
-- As demonstrated in `../../../../examples/Test.co`, `this -> Dead(payload)` activates the destination
+- As demonstrated in `../../../../examples/Test.co`, `self -> Dead(payload)` activates the destination
   state and runs its `init` before the calling method continues. A transition
   does not itself terminate the method that performed it.
 - Transitioning into the already-active state replaces its payload and reruns
@@ -375,7 +378,7 @@ and remain subject to the deletion rules below.
   class and its subclasses to host the state, subject to explicit state support.
 - Top-level states obey normal member visibility rules. Hosting a state grants
   it no special access to the host class's private members.
-- Within a top-level state, `this` has the declared host-contract type. Extra
+- Within a top-level state, `self` has the declared host-contract type. Extra
   members of a particular hosting class are not directly available merely
   because that class hosts the state.
 - Top-level state declarations use `typedef<state<Payload>>`, followed by
@@ -404,7 +407,7 @@ Accepted top-level declaration example, with `Player` as a class host contract:
 typedef<state<DeathInfo>>
 pub Dead for Player {
     init {
-        this.die()
+        self.die()
         println(state.message)
     }
 }

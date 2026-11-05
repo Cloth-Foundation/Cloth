@@ -5,6 +5,79 @@ User-confirmed rules govern intended behavior; historical implementation
 notes and unresolved choices retain their original qualifications. Read
 the parent skill for current implementation boundaries and source/test routing.
 
+## User-defined methods
+
+Declare a method with `mt` inside an enclosing `typedef`. Any kind of
+`typedef` can contain methods. A `fn` declaration inside a type body is a
+compile-time error. A method follows the ordinary function rules for
+parameters, overloads, bodies, returns and result lists. It also has an
+implicit receiver for the instance on which it was called.
+
+The implicit receiver is named `self` (confirmed 2026-11-05) and is a fixed
+binding. Assigning a new value to `self` is a compile-time error. Fields remain
+writable through `self` under the receiver type's field rules.
+Method defaults can read `self` with the same read-only access they have to
+[earlier parameters](../../cloth-optional-arguments/references/semantics.md#scope-evaluation-and-lifetimes).
+Defaults can read receiver fields. A user-defined method call through the
+read-only receiver is a compile-time error, including an implicit receiver call.
+
+Bare names use ordinary lexical lookup first. When that lookup finds no name,
+a bare value read or assignment target looks for a field on `self`, and a bare
+call looks for a method on `self`. Lookup selects the callable group before
+overload resolution. A lexical group with no matching overload reports the
+ordinary call error. Explicit `self.` selects receiver lookup directly. For
+example, in `mt setDamage(float damage)`, `self.damage = damage` writes the
+field using the lexical parameter `damage`.
+
+Fields and methods on a type may share a name. In `source.damage`, lookup
+selects the field. In `source.damage()`, lookup selects a method overload.
+Existing state dispatch has its own rules in the
+[shared semantics](../../cloth-language/references/semantics.md#states-and-method-dispatch).
+
+In a struct, the field list comes first. A semicolon separates it from
+following members. Fields and methods inherit the struct's visibility.
+The `DamageSource` example illustrates updating a receiver field and returning
+the updated amount. Under the ordinary function body rules, write the update
+as a statement and return the result explicitly.
+
+~~~cloth
+pub typedef<struct> DamageSource {
+    DamageType type,
+    float damageAmount;
+
+    mt<float> addDamage(float damage) {
+        damageAmount += damage
+        return damageAmount
+    }
+}
+~~~
+
+### Struct method receivers
+
+For a stored struct receiver, `self` refers to that storage. Field changes
+through `self` persist in the receiver, including when the receiver binding
+uses `:=` or is a `final` parameter. Resolve the receiver's storage once,
+before evaluating the explicit arguments. The method reads the contents of
+that storage when it starts. For example, if the deferred argument in
+`source.addDamage(reset)` replaces the contents of `source` with damage
+`100f` and yields `5f`, the method sets `source.damageAmount` to `105f`.
+
+If the stored receiver is nullable, its presence proof must hold after
+evaluating the explicit arguments. Reject the call at compile time if an
+argument invalidates that proof before `self` is bound. For example, a
+deferred argument that clears `source` to `null` invalidates the proof from
+an earlier `source != null` check.
+
+A call on a temporary struct, such as `makeSource().addDamage(5f)`, is also
+valid. `self` refers to the temporary's storage for the call. Field changes
+affect that temporary, and returned values follow ordinary function result
+rules. All methods use this receiver rule without a mutating-method modifier.
+
+[Stage 2](method-syntax.md) implements declarations and receiver name
+resolution. [Stage 3](method-typing.md) implements call and body typing,
+receiver plans and flow checks. [Stage 4](method-execution.md) executes
+ordinary struct methods with stored or temporary receivers.
+
 ## Function return contracts
 
 - Omitting the return-type annotation on `fn` declares a `void` function;
@@ -153,5 +226,4 @@ parameter contracts below.
 - Interface methods remain callable through the interface without `pub`. The
   implementing class determines whether they are also callable directly on it,
   as described in `../../../../examples/Test.co`.
-- Struct fields inherit the enclosing struct's visibility without needing `pub`.
-  This is an exception to the general default-private rule.
+- Struct fields and methods inherit the enclosing struct's visibility.

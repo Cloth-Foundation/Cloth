@@ -32,6 +32,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.buffers && it.safe }
 	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
 	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
+	private fun transfersAggregate(type: ValueType) = type is CArray || type.containsStruct
 
 	/** A loop has no continuing result. Declarations stay inside the iteration;
 	 * scalar stores cannot publish buffers. Buffered stores, indexed writes and
@@ -49,7 +50,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is UpdateStatement          -> !publishes(types.typeOf(statement))
 			is FieldWriteStatement      -> types.fieldWrites[statement]?.let { plan ->
 				// Only inline writes without buffer publication can release this region.
-				!publishes(plan.type) && plan.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.value?.let { effects(it).safe } ?: true)
+				!publishes(plan.type) && plan.place.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.value?.let { effects(it).safe } ?: true)
 			} ?: false
 
 			is ExpressionStatement      -> when (val expression = statement.expression) {
@@ -86,7 +87,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 		memo[expression]?.let { return it }
 		if (!active.add(expression)) return unknown
 		val result = when (expression) {
-			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any { it is CArray || it.isStructValue })) { result, value -> result + effects(value) }
+			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, value -> result + effects(value) }
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Effects()
 			is NameExpression                                                                                    -> {
 				val symbol = functions?.declarations?.symbolOf(expression)
@@ -94,7 +95,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 				if (block == null) Effects() else effects(block)
 			}
 
-			is FunctionBlockExpression                                                                           -> Effects(types.typeOf(expression) is CArray) + statements((expression.declaration.body as BlockBody).statements)
+			is FunctionBlockExpression                                                                           -> Effects(transfersAggregate(types.typeOf(expression))) + statements((expression.declaration.body as BlockBody).statements)
 			is MemberCallExpression                                                                              -> {
 				val contract = types.memberCalls[expression]?.overload?.storage
 				if (contract != BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT) unknown
@@ -104,16 +105,16 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is CallExpression                                                                                    -> {
 				if (functions == null) unknown else {
 					val selected = functions.selectedCall(expression)
-					if (selected is ResolvedCall.Builtin) unknown else {
+					if (selected !is ResolvedCall.Source || selected.receiver != null) unknown else {
 						val type = selected.type
-						expression.arguments.fold(Effects(type.results.values.any { it is CArray } || type.parameters.any { it is CArray })) { result, argument -> result + effects(argument) }
+						expression.arguments.fold(Effects(type.results.values.any(::transfersAggregate) || type.parameters.any(::transfersAggregate))) { result, argument -> result + effects(argument) }
 					}
 				}
 			}
 
 			is ArrayLiteral                                                                                      -> expression.elements.fold(Effects()) { result, element ->
 				val type = types.typeOf(element)
-				result + Effects(type is CArray || type.isStructValue) + effects(element)
+				result + Effects(transfersAggregate(type)) + effects(element)
 			}
 
 			is StructLiteral                                                                                     -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
@@ -125,7 +126,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is CastExpression                                                                                    -> effects(expression.operand)
 			is TypeCheckExpression                                                                               -> effects(expression.operand)
 			is InterpolatedString                                                                                -> expression.parts.fold(Effects()) { result, part -> result + effects(part) }
-			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any { it is CArray || it.isStructValue })) { result, branch ->
+			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())
 

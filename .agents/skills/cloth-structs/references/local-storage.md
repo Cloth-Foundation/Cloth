@@ -61,10 +61,9 @@ fn<int> main() {
 Local literals, copies, field reads and writes, nullable locals and arrays
 containing structs execute. C3052 rejects oversized inline layouts. Dynamic
 field shape and bounds checks fail before later source expressions run.
-C3077 still gates struct-bearing function signatures, struct results from
-deferred blocks and foreach over arrays containing structs. Stage 4 covers
-those boundaries. Snippet analysis continues to require declaration source
-units for structs.
+Stage 3 gated struct function signatures, deferred results and array traversal
+with C3077. [Stage 4](function-integration.md) implements those paths.
+Snippet analysis continues to require declaration source units for structs.
 
 ## Verification
 

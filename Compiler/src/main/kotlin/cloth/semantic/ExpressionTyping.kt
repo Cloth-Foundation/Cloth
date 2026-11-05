@@ -234,6 +234,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		model.metadata.remove(expression)
 		val result = when (expression) {
 			is CallExpression                                                                     -> callResults(expression)
+			is MemberCallExpression                                                               -> intrinsic { memberCallResults(expression, typeOf(expression.receiver)) }
 			is ResultListExpression                                                               -> {
 				val values = expression.values.mapIndexed { index, value ->
 					val context = receptionContext?.positional?.getOrNull(index) ?: expected?.values?.getOrNull(index)
@@ -369,8 +370,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		return hint?.let { PrimitiveAttachments[it, expression.name.lexeme, model.target] } ?: candidates.first()
 	}
 
-	private fun memberCallType(expression: MemberCallExpression): ValueType = intrinsic {
-		val receiver = typeOf(expression.receiver)
+	protected open fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape {
 		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) nonReturningMember(expression) else null
 		val selected = attachment ?: throw SemanticErrors.unknownMember(receiver, expression.name)
 		if (selected.overload.returns.containsNullability && !supportsNullable) throw SemanticErrors.nullablePending(expression.span)
@@ -411,7 +411,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			}
 		}
 		model.memberCalls[expression] = BoundBuiltinCall(selected.definition, selected.overload, arguments)
-		selected.overload.returns
+		return ResultShape.of(selected.overload.returns)
 	}
 
 	private fun scalarTypeOf(expression: Expression, expected: ValueType?, requireValue: Boolean, contextualFloat: Boolean, allowVoidResult: Boolean, floatingLiteralType: CFloat?): ValueType {
@@ -423,7 +423,6 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is ElvisExpression          -> elvisType(expression, expected, contextualFloat, floatingLiteralType)
 			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
 			is StateCallExpression      -> throw SemanticErrors.stateCall(expression.name)
-			is MemberCallExpression     -> memberCallType(expression)
 			is ProviderAccessExpression -> {
 				val receiver = expression.receiver
 				val named = namedTypeReceiver(receiver)
@@ -435,7 +434,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					}
 				} else {
 					val readType = typeOf(receiver)
-					val declaredField = (receiver as? FieldAccessExpression)?.let { model.payloadReads[it] }
+					val declaredField = model.payloadReads[receiver]
 					// Scalar storage size describes the stored nullable field even after a guard.
 					if (declaredField != null && expression.name.lexeme == CompilerDataProviders.SIZE.toString() && declaredField.provider(expression.name.lexeme, model.target) is ProviderResult.StorageSize) {
 						model.payloadReads.remove(receiver)

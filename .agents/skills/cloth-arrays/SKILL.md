@@ -14,6 +14,11 @@ target-sized bound before narrowing.
 wide decimal array text and reclaims leaf snapshots/scratch in both passes.
 Ordinary array shape/count/allocation limits are unchanged.
 
+[Basic structs](../cloth-structs/references/publication.md) can be array elements
+and can hold fixed-shape arrays. Stored field/index writes address the original
+element. Copies and foreach receivers preserve recursive independence, including
+nullable row shape witnesses. See [Structs.co](../../../examples/Structs.co).
+
 Read [confirmed array semantics](references/semantics.md) for the language contract.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,
 argument snapshots, returned storage, or cleanup.

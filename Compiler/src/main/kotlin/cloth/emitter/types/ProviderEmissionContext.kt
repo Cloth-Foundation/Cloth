@@ -9,6 +9,7 @@ import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
+import org.bytedeco.llvm.global.LLVM
 
 /** Per-emission services; provider descriptors never retain this context or its handles. */
 internal class ProviderEmissionContext(
@@ -21,7 +22,7 @@ internal class ProviderEmissionContext(
 
 	val target get() = strings.target
 	fun integerConstant(value: java.math.BigInteger, type: cloth.data.CInteger): LLVMValueRef = if (type.bits > 64) EmitWideInteger(context, builder, strings.abi).constant(value, type.bits)
-	else org.bytedeco.llvm.global.LLVM.LLVMConstIntOfString(type.llvmValue(context, target), value.toString(), 10.toByte())
+	else LLVM.LLVMConstIntOfString(type.llvmValue(context, target), value.toString(), 10.toByte())
 
 	fun formatScalar(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.interpolate(value, type, casts, location)
 	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef = strings.formatArray(value, recipe, this, location)

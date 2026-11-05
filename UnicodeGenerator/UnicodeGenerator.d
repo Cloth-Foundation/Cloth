@@ -1,3 +1,7 @@
+// I honestly could't tell you why this is written in D, but here we are.
+// If you decided you don't like D, please consider using this directory
+// for your future code implementation. Without sounding weird, D is actually quite nice.
+
 import std.algorithm : canFind, findSplit, max, sort;
 import std.array : appender, split;
 import std.conv : to;

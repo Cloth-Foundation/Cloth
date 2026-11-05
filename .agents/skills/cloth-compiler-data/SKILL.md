@@ -54,6 +54,11 @@ constant recipe is a concrete IntegerConstant/FloatingConstant.
 
 ## Source, tests, and boundaries
 
+[Struct metadata](../cloth-structs/references/semantics.md#struct-type-metadata)
+preserves nominal identity. For `Name::type`, a visible local binding takes
+precedence over a type name, and a nullable stored field keeps its declared
+metadata type after narrowing. Struct storage size and reflection remain deferred.
+
 [Arbitrary-width Stage 2](../cloth-numerics/references/arbitrary-width-types.md)
 registers odd/wide integer bounds and metadata without eagerly applying byte-size
 division. `ProviderResult.StorageSize` accepts integer or nullable scalar receivers;

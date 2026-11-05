@@ -21,16 +21,23 @@ data class FunctionBlockExpression(val declaration: FunctionDeclaration) : Expre
 	override val span get() = declaration.body.span
 }
 
-/** A named function call; overload resolution is a separate semantic stage. */
+/** Argument placement belongs to the resolved call. Evaluation uses written order. */
 data class CallArgument(val expression: Expression, val label: Token? = null, val equals: Token? = null) {
 
 	val span get() = (label?.span ?: expression.span).through(expression.span)
 }
 
-data class CallExpression(val name: Token, val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : Expression {
+sealed interface CallSite : Expression {
 
-	/** Evaluation walks retain written order; placement belongs to the semantic call plan. */
-	val arguments: List<Expression> = suppliedArguments.map { it.expression }
+	val name: Token
+	val suppliedArguments: List<CallArgument>
+	val arguments: List<Expression>
+}
+
+/** A lexical call; overload resolution is a separate semantic stage. */
+data class CallExpression(override val name: Token, override val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : CallSite {
+
+	override val arguments: List<Expression> = suppliedArguments.map { it.expression }
 }
 
 data class ArrayLiteral(val elements: List<Expression>, override val span: TokenSpan) : Expression

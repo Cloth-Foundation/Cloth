@@ -108,12 +108,19 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
-- Basic structs before classes: [implementation plan](../../../todo/basic-structs-plan.md)
-  and [struct design record](../cloth-structs/references/semantics.md).
-  Stage 3 executes local values with recursive copies and stored field writes.
-  Use [the structs skill](../cloth-structs/SKILL.md) for the contract and
-  [Stage 3 record](../cloth-structs/references/local-storage.md) for storage,
-  verification and the remaining function and foreach boundaries.
+- Basic structs are complete. [Structs.co](../../../examples/Structs.co)
+  demonstrates contextual construction, nested writes, independent copies,
+  function results and foreach. The [structs skill](../cloth-structs/SKILL.md)
+  routes to syntax, typing, layout and function transport. The
+  [publication record](../cloth-structs/references/publication.md) records
+  portability, regression evidence and the class handoff. The
+  [completed struct methods plan](../../../todo/struct-methods-plan.md)
+  covers the shared callable pipeline. [StructMethods.co](../../../examples/StructMethods.co)
+  exercises ordinary methods and the
+  [method publication record](../cloth-functions/references/method-publication.md)
+  covers verification and the class handoff. The
+  [method contract](../cloth-functions/references/semantics.md#user-defined-methods)
+  owns the confirmed rules for `mt` and `self`.
 
 - Do-while: the [accepted contract](../cloth-control-flow/references/do-while-loops.md)
   owns `do body while (condition)`, semicolon boundaries, scopes, jumps and

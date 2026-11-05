@@ -10,9 +10,21 @@ data class StructDeclaration(
 	val fields: List<StructFieldDeclaration>,
 	val visibility: Token?,
 	override val span: TokenSpan,
+	val methods: List<MethodDeclaration> = emptyList(),
 ) : Declaration
 
 data class StructFieldDeclaration(val type: TypeReference, val name: Token) {
 
 	val span get() = type.span.through(name.span)
+}
+
+data class MethodDeclaration(
+	override val keyword: Token,
+	override val name: Token,
+	override val returnTypes: List<TypeReference>,
+	override val parameters: List<ParameterDeclaration>,
+	override val body: FunctionBody,
+) : CallableDeclaration {
+
+	override val span get() = keyword.span.through(body.span)
 }

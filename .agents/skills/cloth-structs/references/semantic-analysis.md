@@ -76,7 +76,8 @@ queries retain the agreed deferred scope.
 
 At Stage 2, valid source units with structs reached C3077 during emission
 validation, before LLVM lowering, toolchain lookup or output creation. Stage 3
-supersedes that blanket gate with the [local execution boundary](local-storage.md#scope-and-diagnostics).
+introduced [local execution](local-storage.md), and
+[Stage 4](function-integration.md) completes source function and traversal support.
 Snippet APIs still report C3077 for struct syntax because they accept body fragments.
 
 ## Verification

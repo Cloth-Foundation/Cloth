@@ -26,6 +26,109 @@ class ArrayTemporaryCleanupTest {
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
 
 	@Test
+	fun `nested methods publish field buffers to receiver storage across poisoned returns`(@TempDir directory: Path) {
+		probe(directory, "method_receiver_lifetimes", """
+			typedef<struct> Leaf {
+			    string label,
+			    string[2] tags,
+			    string[2]?[2]? rows;
+
+			    mt update(string base) {
+			        label, tags = base + "!", [base + "a", base + "b"]
+			        tags[1] = base + "c"
+			        rows = [null, [base + "row", base + "tail"]]
+			        if (rows != null) rows[0] = [base + "first", base + "second"]
+			    }
+			}
+			typedef<struct> Holder {
+			    Leaf[1] entries;
+			    mt publish(string base) {
+			        entries[0].update(base)
+			        self.entries[0].label += "!"
+			    }
+			    mt<Holder, string> record(string base) {
+			        publish(base)
+			        return self, entries[0].label
+			    }
+			}
+			fn<Holder> build() {
+			    def<Holder> result = { [{ "old", ["x", "y"], null }] }
+			    result.publish("seed")
+			    return result
+			}
+			fn<int> sample() {
+			    def holder := build()
+			    if (holder.entries[0].label != "seed!!") return 1
+			    def saved, label = holder.record("é")
+			    holder.publish("new")
+			    if (label != "é!!" || saved.entries[0].tags[1] != "éc" || holder.entries[0].tags[0] != "newa") return 2
+			    def<string[2]?[2]?> grid = saved.entries[0].rows
+			    if (grid == null) return 3
+			    def<string[2]?> row = grid[0]
+			    if (row == null || row[0] != "éfirst" || row[1] != "ésecond") return 4
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `struct call results and nullable row shapes survive poisoned frames`(@TempDir directory: Path) {
+		probe(directory, "struct_call_lifetimes", """
+			typedef<struct> Leaf { string text }
+			typedef<struct> Box { Leaf[2]?[2] rows }
+			fn<Box?, Box[]> produce(bool keep) {
+			    def<Box> box = { [null, [{ "é" + "😀" }, { "second" }]] }
+			    if (keep) return box, [box]
+			    box.rows[1] = null
+			    return null, [box]
+			}
+			fn<Box?, Box[]> relay(bool keep) = produce(keep)
+			fn<int> sample() {
+			    def<Box?, Box[]> saved, others = relay(true)
+			    def<Box?, Box[]> absent, empty = relay(false)
+			    empty[0].rows[0] = [{ "fill" }, { "again" }]
+			    if (absent != null || saved == null || empty[0].rows[0] == null) return 1
+			    def<Leaf[2]?> row = saved.rows[1]
+			    if (row == null || row[0].text != "é😀") return 2
+			    others[0].rows[1] = null
+			    row[0].text = "local"
+			    def<Leaf[2]?> unchanged = saved.rows[1]
+			    if (unchanged == null || unchanged[0].text != "é😀" || unchanged[1].text != "second") return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `closed struct calls deferred reads and foreach release temporary copies across jumps`(@TempDir directory: Path) {
+		probe(directory, "struct_loop_cleanup", """
+			typedef<struct> Item { int value, string[1] text }
+			fn<Item> item(int value) = { value, ["a" + "b"] }
+			fn<Item[]> items() = [item(1), item(2), item(3)]
+			fn<int> read(final Item input) = input.value
+			fn<int> sample() {
+			    def saved = item(8)
+			    def baseline = liveBytes()
+			    def<Item> deferred = { return saved }
+			    def total = 0
+			    for (def i <- 0..1000) {
+			        item(i)
+			        def value = read(deferred)
+			        if (value != 8 || liveBytes() != baseline) return 1
+			        for (def each <- items()) {
+			            if (each.value == 1) continue
+			            total += each.value
+			            if (each.value == 2) break
+			        }
+			        if (liveBytes() != baseline) return 2
+			    }
+			    if (total != 2000 || saved.text[0] != "ab" || liveBytes() != baseline) return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `struct field buffers survive poisoned callee frames and captured field writes`(@TempDir directory: Path) {
 		probe(directory, "struct_field_lifetimes", """
 			typedef<struct> Inner { string[2] text }
