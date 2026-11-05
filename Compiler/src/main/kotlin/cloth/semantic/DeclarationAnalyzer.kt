@@ -12,9 +12,11 @@ import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
 import cloth.target.TargetLayout
+import cloth.token.Keywords
 import cloth.token.Token
+import cloth.token.TokenSpan
 
-/** Collects every function signature, then resolves lexical names in each body. */
+/** Collects source callable signatures, then resolves names in each body. */
 class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
 
 	fun analyze(unit: SourceUnit): DeclarationModel {
@@ -31,27 +33,45 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val model = DeclarationModel(fileScope, functions.toList(), target, structs)
-		for (function in functions) {
-			model.functionSymbols[function.declaration] = function
+		val methods = structs.values.flatMap { owner ->
+			val methodSignatures = mutableMapOf<FunctionSignature, MethodSymbol>()
+			owner.declaration.methods.map { declaration ->
+				val method = MethodSymbol(declaration, owner)
+				methodSignatures.putIfAbsent(method.signature, method)?.let {
+					throw SemanticErrors.duplicateMethod(owner.declaration.name, method.signature.spelling, it.name, method.name)
+				}
+				method
+			}
+		}
+		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods)
+		for (callable in model.callables) {
 			val scope = LexicalScope(fileScope)
-			model.functionScopes[function.declaration] = scope
-			for (parameter in function.parameters) {
+			when (callable) {
+				is FunctionSymbol -> model.functionSymbols[callable.declaration] = callable
+				is MethodSymbol   -> {
+					model.methodSymbols[callable.declaration] = callable
+					scope.declare(callable.receiver)
+				}
+			}
+			model.callableScopes[callable.declaration] = scope
+			for (parameter in callable.parameters) {
 				scope.declare(parameter)
 				model.parameterSymbols[parameter.declaration] = parameter
 			}
 		}
-		for (function in functions) {
-			val resolver = BodyResolver(model)
-			val scope = model.scopeOf(function.declaration)
+		for (callable in model.callables) {
+			val receiver = (callable as? MethodSymbol)?.receiver
+			val resolver = BodyResolver(model, receiver)
+			val scope = model.scopeOf(callable.declaration)
 			val defaultScope = LexicalScope(fileScope)
-			for ((index, parameter) in function.parameters.withIndex()) {
+			receiver?.let(defaultScope::declare)
+			for ((index, parameter) in callable.parameters.withIndex()) {
 				parameter.declaration.defaultValue?.let { fallback ->
-					BodyResolver(model, defaultContext = true, unavailable = function.parameters.drop(index).map { it.name.lexeme }.toSet()).expression(fallback, defaultScope)
+					BodyResolver(model, receiver, defaultContext = true, unavailable = callable.parameters.drop(index).map { it.name.lexeme }.toSet()).expression(fallback, defaultScope)
 				}
 				defaultScope.declare(parameter)
 			}
-			when (val body = function.declaration.body) {
+			when (val body = callable.declaration.body) {
 				is BlockBody      -> {
 					model.blockScopes[body] = scope
 					resolver.statements(body.statements, scope)
@@ -63,22 +83,41 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		return model
 	}
 
-	private class BodyResolver(private val model: DeclarationModel, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
+	private class BodyResolver(private val model: DeclarationModel, private val receiver: ReceiverSymbol?, private val defaultContext: Boolean = false, private val unavailable: Set<String> = emptySet(), private val allowDefaultReturn: Boolean = false) {
 
 		private val loops = mutableListOf<LoopTarget>()
 
-		private fun lookup(name: Token, scope: LexicalScope): Symbol {
-			if (name.lexeme in unavailable && scope.lookup(name.lexeme) !is LocalSymbol && scope.lookup(name.lexeme) !is GroupLocalSymbol && scope.lookup(name.lexeme) !is LoopBindingSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
-			return scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) } ?: throw SemanticErrors.unknownName(name)
+		private fun lexical(name: Token, scope: LexicalScope): Symbol? = scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) }
+
+		private fun lookup(name: Token, scope: LexicalScope, member: () -> Symbol?): Symbol {
+			val symbol = lexical(name, scope)
+			if (name.lexeme in unavailable && symbol !is LocalSymbol && symbol !is GroupLocalSymbol && symbol !is LoopBindingSymbol) throw SemanticErrors.parameterDefault("A default cannot read its own or a later parameter '${name.lexeme}'", name.span)
+			return symbol ?: member() ?: throw if (name.lexeme == Keywords.SELF.toString()) SemanticErrors.receiverOutsideMethod(name) else SemanticErrors.unknownName(name)
 		}
 
+		private fun value(name: Token, scope: LexicalScope) = lookup(name, scope) { receiver?.field(name.lexeme) }
+
+		private fun rejectDefaultReceiverWrite(binding: Symbol?, span: TokenSpan) {
+			if (defaultContext && (binding is ReceiverSymbol || binding is ReceiverFieldSymbol)) {
+				throw SemanticErrors.parameterDefault("'${Keywords.SELF}' is read-only in defaults", span)
+			}
+		}
+
+		private fun rejectDefaultMethodCall(name: Token) {
+			if (defaultContext) throw SemanticErrors.parameterDefault("A default cannot call a user-defined method on '${Keywords.SELF}'", name.span)
+		}
+
+		private fun explicitReceiver(expression: Expression) = (expression as? NameExpression)?.let { model.names[it] as? ReceiverSymbol }
+
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
-			val symbol = lookup(name, scope)
+			val symbol = value(name, scope)
 			if (defaultContext && symbol is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameters are read-only in defaults", name.span)
+			rejectDefaultReceiverWrite(symbol, name.span)
 			if (symbol !is BindingSymbol) throw SemanticErrors.bindingRequired(name, symbol.name.takeUnless { symbol is BuiltinGroupSymbol })
 			if (symbol is LocalSymbol && symbol.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.blockAssignment(name, symbol.name)
 			if (!symbol.mutable) {
 				if (symbol is ParameterSymbol) throw SemanticErrors.immutableParameter(name, symbol.name)
+				if (symbol is ReceiverSymbol) throw SemanticErrors.fixedReceiver(name, symbol.keyword)
 				throw SemanticErrors.immutable(name, symbol.name)
 			}
 			return symbol
@@ -91,6 +130,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					val root = statement.target.placeRoot()?.let { model.symbolOf(it) as? BindingSymbol } ?: throw SemanticErrors.fieldTarget(statement.target.span)
 					if (root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression) throw SemanticErrors.fieldTarget(statement.target.span)
 					if (defaultContext && root is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
+					rejectDefaultReceiverWrite(root, statement.target.span)
 					model.fieldRoots[statement] = root
 					statement.value?.let { expression(it, scope) }
 				}
@@ -187,7 +227,9 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					expression(statement.target, scope)
 					var root: Expression = statement.target.array
 					while (root is IndexExpression) root = root.array
-					if (defaultContext && root is NameExpression && model.symbolOf(root) is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
+					val binding = (root as? NameExpression)?.let(model::symbolOf)
+					if (defaultContext && binding is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
+					rejectDefaultReceiverWrite(binding, statement.target.span)
 					expression(statement.value, scope)
 				}
 
@@ -205,18 +247,38 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		fun expression(expression: Expression, scope: LexicalScope) {
 			when (expression) {
 				is StructLiteral                                                                                                     -> expression.fields.forEach { expression(it, scope) }
-				is FieldAccessExpression                                                                                             -> expression(expression.receiver, scope)
+				is FieldAccessExpression                                                                                             -> {
+					expression(expression.receiver, scope)
+					explicitReceiver(expression.receiver)?.let { self ->
+						model.receiverFields[expression] = self.field(expression.name.lexeme) ?: throw SemanticErrors.structField("Struct '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+					}
+				}
+
 				is ResultListExpression                                                                                              -> expression.values.forEach { expression(it, scope) }
 				is TypeReceiverExpression                                                                                            -> Unit
 				is ProviderAccessExpression                                                                                          -> {
 					val receiver = expression.receiver
-					val type = if (receiver is NameExpression && scope.lookup(receiver.name.lexeme) !is BindingSymbol) model.structs[receiver.name.lexeme] else null
+					val type = if (receiver is NameExpression) {
+						val symbol = lexical(receiver.name, scope)
+						val member = if (symbol == null) this.receiver?.field(receiver.name.lexeme) else null
+						if (symbol !is BindingSymbol && member == null) model.structs[receiver.name.lexeme] else null
+					} else null
 					if (type != null && receiver is NameExpression) model.namedTypeReceivers[receiver] = type
 					else expression(receiver, scope)
 				}
 
 				is MemberCallExpression                                                                                              -> {
 					expression(expression.receiver, scope)
+					if (defaultContext) {
+						val root = model.storedRoot(expression.receiver)
+						if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyDefaultReceivers.add(expression)
+					}
+					explicitReceiver(expression.receiver)?.let { self ->
+						val group = model.methodGroup(self.owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(self.owner, expression.name)
+						rejectDefaultMethodCall(expression.name)
+						ArgumentBinder.validate(expression.suppliedArguments)
+						model.receiverCalls[expression] = group
+					}
 					expression.arguments.forEach { expression(it, scope) }
 				}
 
@@ -230,7 +292,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					val body = expression.declaration.body as BlockBody
 					val child = LexicalScope(scope)
 					model.blockScopes[body] = child
-					BodyResolver(model, defaultContext, unavailable, allowDefaultReturn = true).statements(body.statements, child)
+					BodyResolver(model, receiver, defaultContext, unavailable, allowDefaultReturn = true).statements(body.statements, child)
 				}
 
 				is ArrayLiteral                                                                                                      -> expression.elements.forEach { expression(it, scope) }
@@ -238,11 +300,15 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					expression(expression.array, scope); expression(expression.index, scope)
 				}
 
-				is NameExpression                                                                                                    -> model.names[expression] = lookup(expression.name, scope)
+				is NameExpression                                                                                                    -> model.names[expression] = value(expression.name, scope)
 				is CallExpression                                                                                                    -> {
 					ArgumentBinder.validate(expression.suppliedArguments)
-					val symbol = lookup(expression.name, scope)
+					val symbol = lookup(expression.name, scope) { receiver?.let { model.methodGroup(it.owner, expression.name.lexeme) } }
 					if (symbol !is CallableGroupSymbol) throw SemanticErrors.notCallable(expression.name, symbol.name)
+					if (symbol is MethodGroupSymbol) {
+						rejectDefaultMethodCall(expression.name)
+						model.implicitReceivers[expression] = checkNotNull(receiver)
+					}
 					model.calls[expression] = symbol
 					expression.arguments.forEach { expression(it, scope) }
 				}

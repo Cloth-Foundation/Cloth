@@ -195,6 +195,5 @@ class StructParsingTest {
 			val failure = assertFailsWith<SyntaxException> { parse("pub typedef<$kind> S {}") }
 			assertEquals(kind, textAt(failure.sourceLabels.single().span))
 		}
-		assertFailsWith<SyntaxException> { parse("typedef<struct> S { mt later() {} }") }
 	}
 }

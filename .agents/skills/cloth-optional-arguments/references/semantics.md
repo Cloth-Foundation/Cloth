@@ -63,12 +63,18 @@ choice; `opt<T>` is a parameter declaration form, not a distinct runtime type.
 
 - Resolve and validate defaults at declaration scope, even if every call supplies
   them. Defaults may call forward or recursive functions and read earlier resolved
-  parameters. Self/later parameters, caller locals and body locals are unavailable.
-  Earlier parameter views are read-only, including indexed writes and deferred
-  captured writes. Local independent copies can be modified normally.
+  parameters. The parameter being defaulted, later parameters, caller locals
+  and body locals are unavailable. Earlier parameter views are read-only,
+  including indexed writes and deferred captured writes. Local independent
+  copies can be modified normally.
+- Method defaults can also read fields on `self` under the same read-only rule.
+  Implicit receiver lookup follows the same rule. A user-defined method call
+  through that receiver is a compile-time error in a default, including a
+  bare call that resolves to the receiver. See the
+  [method contract](../../cloth-functions/references/semantics.md#user-defined-methods).
+  State payload defaults await their separate runtime.
 - A return cannot escape a default into the caller or callee. Helper calls and
   explicitly declared local deferred blocks retain their own return boundaries.
-  Instance fields, `this` and state payload defaults await their separate runtime.
 - At each executed call, evaluate supplied arguments once in written order and
   snapshot them before later argument effects. Then evaluate omitted defaults once
   each in parameter order, using captured supplied values and earlier defaults.

@@ -6,14 +6,15 @@ import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.CallableDeclaration
 import cloth.parser.declaration.StructFieldDeclaration
 import cloth.parser.expression.CallExpression
+import cloth.parser.expression.CallSite
 import cloth.parser.expression.Expression
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
 import cloth.semantic.SemanticException
-import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.symbols.CallableSymbol
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -22,13 +23,16 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
-	fun structsPending(span: TokenSpan, operation: String) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "$operation with struct values is not available yet", span)
 	fun structSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "Struct semantics require a declaration source unit", span)
 	fun duplicateStruct(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_STRUCT, "Struct '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun structCycle(name: Token, fields: List<StructFieldDeclaration>) = SemanticException(DiagnosticCode.RECURSIVE_STRUCT, "Field types form a cycle through struct '${name.lexeme}'", fields.map { SourceLabel(it.type.span, "field '${it.name.lexeme}' is part of this cycle") })
 	fun structField(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_STRUCT_FIELD, message, listOfNotNull(SourceLabel(span, "field use here"), declaration?.let { SourceLabel(it, "field declared here") }))
 	fun structLiteral(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_STRUCT_LITERAL, message, listOfNotNull(SourceLabel(span, "struct literal here"), declaration?.let { SourceLabel(it, "struct declared here") }))
 	fun fieldTarget(span: TokenSpan) = issue(DiagnosticCode.INVALID_FIELD_TARGET, "A field write requires a stored binding", span, "Store the struct value in a binding before changing its fields.")
+	fun duplicateMethod(owner: Token, signature: String, first: Token, duplicate: Token) = SemanticException(DiagnosticCode.DUPLICATE_METHOD, "Method '${owner.lexeme}.$signature' is already declared", listOf(SourceLabel(first.span, "first declared here"), SourceLabel(duplicate.span, "same name and parameter types")), "Return types, parameter names and '${Keywords.FINAL}' do not distinguish overloads.")
+	fun receiverOutsideMethod(name: Token) = issue(DiagnosticCode.RECEIVER_OUTSIDE_METHOD, "'${Keywords.SELF}' requires an enclosing method", name.span)
+	fun fixedReceiver(name: Token, method: Token) = SemanticException(DiagnosticCode.IMMUTABLE_BINDING, "Cannot reassign the fixed receiver '${Keywords.SELF}'", listOf(SourceLabel(name.span, "receiver reassigned here"), SourceLabel(method.span, "receiver introduced here")))
+	fun receiverProofLost(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Arguments can invalidate the presence proof for receiver storage of type '${type.spelling}'", span)
 
 	fun rangeMembership(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, message, span)
 
@@ -49,13 +53,13 @@ object SemanticErrors {
 	fun receptionAnnotations(message: String, span: TokenSpan) = issue(DiagnosticCode.RECEPTION_ANNOTATIONS, message, span, "Use one shared type for a scalar broadcast, or a complete positional type list for multiple results.")
 	fun discardedType(expected: ValueType, actual: ValueType, position: Int, span: TokenSpan, annotation: TokenSpan) = SemanticException(DiagnosticCode.TYPE_MISMATCH, "Discarded result ${position + 1} requires '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "produces '${actual.spelling}'"), SourceLabel(annotation, "discarded position requires '${expected.spelling}'")))
 	fun scalarResults(actual: ResultShape, span: TokenSpan) = issue(DiagnosticCode.MULTIPLE_RESULTS_IN_SCALAR, "This context requires one value, got ${actual.values.size} results ${actual.spelling}", span, "Receive the results by position, forward the complete result list, or explicitly discard them with '${Operators.POINTER_RIGHT} ${Keywords.VOID}'.")
-	fun resultArity(function: FunctionDeclaration, expected: ResultShape, actual: ResultShape, span: TokenSpan) = SemanticException(DiagnosticCode.RESULT_ARITY, "Return count mismatch in '${function.name.lexeme}': expected ${expected.values.size}, got ${actual.values.size}", listOf(SourceLabel(span, "produces ${actual.spelling}"), SourceLabel(returnContract(function), "requires ${expected.spelling}")))
+	fun resultArity(function: CallableDeclaration, expected: ResultShape, actual: ResultShape, span: TokenSpan) = SemanticException(DiagnosticCode.RESULT_ARITY, "Return count mismatch in '${function.name.lexeme}': expected ${expected.values.size}, got ${actual.values.size}", listOf(SourceLabel(span, "produces ${actual.spelling}"), SourceLabel(returnContract(function), "requires ${expected.spelling}")))
 	fun branchResultArity(first: ResultShape, other: ResultShape, firstSpan: TokenSpan, otherSpan: TokenSpan) = SemanticException(DiagnosticCode.BRANCH_RESULT_ARITY, "'${Keywords.IF}' branches must yield the same number of results, got ${first.values.size} and ${other.values.size}", listOf(SourceLabel(firstSpan, "yields ${first.spelling}"), SourceLabel(otherSpan, "yields ${other.spelling}")))
-	fun resultPosition(function: FunctionDeclaration, expected: ValueType, actual: ValueType, index: Int, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_TYPE, "Return type mismatch in '${function.name.lexeme}' at result ${index + 1}: expected '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "result ${index + 1} has type '${actual.spelling}'"), SourceLabel(function.returnTypes.getOrNull(index)?.span
+	fun resultPosition(function: CallableDeclaration, expected: ValueType, actual: ValueType, index: Int, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_TYPE, "Return type mismatch in '${function.name.lexeme}' at result ${index + 1}: expected '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "result ${index + 1} has type '${actual.spelling}'"), SourceLabel(function.returnTypes.getOrNull(index)?.span
 			?: returnContract(function), "requires '${expected.spelling}'")), "Return the declared type; numeric type changes require explicit casts.")
 
-	fun returnValueRequired(function: FunctionDeclaration, expected: ResultShape, span: TokenSpan) = expected.scalarOrNull()?.let { returnValueRequired(function, it, span) } ?: SemanticException(DiagnosticCode.RETURN_VALUE_REQUIRED, "Function '${function.name.lexeme}' must return ${expected.spelling}", listOf(SourceLabel(span, "bare return has no results"), SourceLabel(returnContract(function), "declared results")))
-	fun valueInVoid(function: FunctionDeclaration, actual: ResultShape, span: TokenSpan) = actual.scalarOrNull()?.let { valueInVoid(function, it, span) }
+	fun returnValueRequired(function: CallableDeclaration, expected: ResultShape, span: TokenSpan) = expected.scalarOrNull()?.let { returnValueRequired(function, it, span) } ?: SemanticException(DiagnosticCode.RETURN_VALUE_REQUIRED, "Function '${function.name.lexeme}' must return ${expected.spelling}", listOf(SourceLabel(span, "bare return has no results"), SourceLabel(returnContract(function), "declared results")))
+	fun valueInVoid(function: CallableDeclaration, actual: ResultShape, span: TokenSpan) = actual.scalarOrNull()?.let { valueInVoid(function, it, span) }
 			?: SemanticException(DiagnosticCode.VALUE_IN_VOID, "Void function '${function.name.lexeme}' cannot return ${actual.spelling}", listOf(SourceLabel(span, "produces ${actual.spelling}"), SourceLabel(returnContract(function), "function returns ${Keywords.VOID}")), "Discard the results explicitly with '${Operators.POINTER_RIGHT} ${Keywords.VOID}', or declare matching return types.")
 
 	fun blockReturnType(name: Token) = issue(DiagnosticCode.BLOCK_RETURN_TYPE_REQUIRED, "Function block '${name.lexeme}' requires an explicit return type", name.span, "Declare the return contract with '${Keywords.DEFINITION}${Operators.LESS}Type${Operators.GREATER}'; function-block returns are never inferred.")
@@ -79,10 +83,10 @@ object SemanticErrors {
 	fun unknownMember(receiver: ValueType, name: Token) = issue(DiagnosticCode.UNKNOWN_MEMBER, "Type '${receiver.spelling}' has no member method '${name.lexeme}'", name.span, "Use a method registered for this value type.")
 	fun memberArity(name: Token, count: Int, expected: Int) = issue(DiagnosticCode.CALL_ARITY, "Member '${name.lexeme}' takes $expected arguments, got $count", name.span, "The receiver is supplied before ${Operators.DOT}; it is not an explicit argument.")
 	internal fun memberArgument(name: Token, argument: Expression, actual: ValueType, parameter: BuiltinParameter) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Member '${name.lexeme}' requires ${parameter.spelling}, got '${actual.spelling}'", argument.span, "Argument types must match exactly.")
-	private fun callIssue(code: DiagnosticCode, call: CallExpression, candidates: List<FunctionSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, it.signature.spelling) }, help)
-	fun callArity(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
-	fun noMatchingCall(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")
-	fun ambiguousCall(call: CallExpression, candidates: List<FunctionSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous", "Use explicit casts to select the intended parameter types.")
+	private fun callIssue(code: DiagnosticCode, call: CallSite, candidates: List<CallableSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, it.signature.spelling) }, help)
+	fun callArity(call: CallSite, candidates: List<CallableSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
+	fun noMatchingCall(call: CallSite, candidates: List<CallableSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")
+	fun ambiguousCall(call: CallSite, candidates: List<CallableSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous", "Use explicit casts to select the intended parameter types.")
 	internal fun builtinArity(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.CALL_ARITY, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinNoMatch(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.NO_MATCHING_CALL, "No overload of '${call.name.lexeme}' accepts these arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinAmbiguous(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Call to '${call.name.lexeme}' is ambiguous", call.span, "Use explicit casts. Built-in signatures: ${definition.signatures}")
@@ -92,11 +96,11 @@ object SemanticErrors {
 	fun voidResult(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot occupy a position in a multiple-result contract", span, "Use '${Operators.LESS}${Keywords.VOID}${Operators.GREATER}' for no results, or list only value types for multiple results.")
 	fun functionValue(name: Token) = issue(DiagnosticCode.FUNCTION_VALUE, "Function '${name.lexeme}' cannot be used as a binding value", name.span, "Call the function with parentheses.")
 	fun floating(value: String, type: CFloat, span: TokenSpan) = issue(DiagnosticCode.FLOAT_RANGE, "Floating literal '$value' is out of range for '${type.spelling}'", span)
-	private fun returnContract(function: FunctionDeclaration) = function.returnTypes.firstOrNull()?.span?.through(function.returnTypes.last().span) ?: function.name.span
-	fun returnValueRequired(function: FunctionDeclaration, expected: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_VALUE_REQUIRED, "Function '${function.name.lexeme}' must return a value of type '${expected.spelling}'", listOf(SourceLabel(span, "bare return has no value"), SourceLabel(returnContract(function), "declared return type")), "Return an expression matching the declared type.")
-	fun valueInVoid(function: FunctionDeclaration, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.VALUE_IN_VOID, "Void function '${function.name.lexeme}' cannot return '${actual.spelling}'", listOf(SourceLabel(span, "produces '${actual.spelling}'"), SourceLabel(returnContract(function), "function returns ${Keywords.VOID}")), "Discard the value explicitly with '${Operators.POINTER_RIGHT} ${Keywords.VOID}', or declare a matching return type.")
-	fun returnType(function: FunctionDeclaration, expected: ValueType, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_TYPE, "Return type mismatch in '${function.name.lexeme}': expected '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "returns '${actual.spelling}'"), SourceLabel(returnContract(function), "requires '${expected.spelling}'")), "Return the declared type; numeric type changes require explicit casts.")
-	fun missingReturn(function: FunctionDeclaration, body: BlockBody): SemanticException {
+	private fun returnContract(function: CallableDeclaration) = function.returnTypes.firstOrNull()?.span?.through(function.returnTypes.last().span) ?: function.name.span
+	fun returnValueRequired(function: CallableDeclaration, expected: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_VALUE_REQUIRED, "Function '${function.name.lexeme}' must return a value of type '${expected.spelling}'", listOf(SourceLabel(span, "bare return has no value"), SourceLabel(returnContract(function), "declared return type")), "Return an expression matching the declared type.")
+	fun valueInVoid(function: CallableDeclaration, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.VALUE_IN_VOID, "Void function '${function.name.lexeme}' cannot return '${actual.spelling}'", listOf(SourceLabel(span, "produces '${actual.spelling}'"), SourceLabel(returnContract(function), "function returns ${Keywords.VOID}")), "Discard the value explicitly with '${Operators.POINTER_RIGHT} ${Keywords.VOID}', or declare a matching return type.")
+	fun returnType(function: CallableDeclaration, expected: ValueType, actual: ValueType, span: TokenSpan) = SemanticException(DiagnosticCode.RETURN_TYPE, "Return type mismatch in '${function.name.lexeme}': expected '${expected.spelling}', got '${actual.spelling}'", listOf(SourceLabel(span, "returns '${actual.spelling}'"), SourceLabel(returnContract(function), "requires '${expected.spelling}'")), "Return the declared type; numeric type changes require explicit casts.")
+	fun missingReturn(function: CallableDeclaration, body: BlockBody): SemanticException {
 		val end = body.span
 		val closing = TokenSpan(end.endLine, end.endColumn - 1, end.endLine, end.endColumn, end.source)
 		return SemanticException(DiagnosticCode.MISSING_RETURN, "Non-void function '${function.name.lexeme}' can reach its end without returning a value", listOf(SourceLabel(closing, "execution can reach this closing brace"), SourceLabel(returnContract(function), "requires a return value")), "Use explicit '${Keywords.RETURN}' on every continuing path; a final expression in braces does not return implicitly.")

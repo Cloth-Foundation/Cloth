@@ -9,6 +9,7 @@ import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.*
 import cloth.semantic.symbols.LocalSymbol
+import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -175,6 +176,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitMemberCall(call: MemberCallExpression): LLVMValueRef? {
+		functionSemantics?.sourceMemberCalls?.get(call)?.let { return checkNotNull(functions).emitCall(it, call.arguments, this, builder) }
 		val selected = semantics.memberCalls.getValue(call)
 		temporaryDepth++
 		try {
@@ -198,7 +200,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitCall(call: CallExpression): LLVMValueRef? = when (val selected = checkNotNull(functionSemantics).selectedCall(call)) {
-		is ResolvedCall.Source  -> checkNotNull(functions).emitCall(call, this, builder)
+		is ResolvedCall.Source  -> checkNotNull(functions).emitCall(selected, call.arguments, this, builder)
 		is ResolvedCall.Builtin -> {
 			// Arguments and text providers may borrow buffers until the operation consumes them.
 			temporaryDepth++
@@ -221,18 +223,29 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	 */
 	fun transferArrayValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = transferArrayValue(value, type, null)
 
-	private fun transferArrayValue(value: LLVMValueRef, type: ValueType, shape: LLVMValueRef?, message: String = "Array shape mismatch: rectangular arrays require matching dimensions"): LLVMValueRef {
+	private fun transferArrayValue(value: LLVMValueRef, type: ValueType, shape: LLVMValueRef?, message: String = "Array shape mismatch: rectangular arrays require matching dimensions", ownerArena: LLVMValueRef? = null): LLVMValueRef {
+		if (ownerArena != null && type.buffered) {
+			val checked = if (shape != null && type is CArray) arrays.matchShape(value, shape, type, merge = true, message = message) else value
+			freshArrays.remove(value.address())
+			return checkNotNull(frame).copyValue(checked, type, ownerArena)
+		}
 		if (type.isStructValue) return checkNotNull(frame).copyValue(value, type)
 		if (type is CNullable && type.buffered) return nullable.map(value, types.value(type)) { transferArrayValue(it, type.payload, shape, message) }
 		if (type !is CArray) return value
 		val fresh = freshArrays.remove(value.address())
 		val checked = if (shape == null) value else arrays.matchShape(value, shape, type, merge = true, message = message)
-		if (!fresh) return checkNotNull(frame).copyArray(checked, type)
+		if (!fresh) return checkNotNull(frame).copyValue(checked, type)
 		val constrained = arrays.constrain(checked, type)
 		return if (type.hasNullableRows) arrays.share(constrained, type, arrays.shapePointer(constrained, type)) else constrained
 	}
 
+	private fun snapshotForStore(value: LLVMValueRef, type: ValueType, ownerArena: LLVMValueRef?): LLVMValueRef = if (ownerArena != null && type.buffered) transferArrayValue(value, type, null, ownerArena = ownerArena)
+	else snapshotValue(value, type)
+
 	fun transferBindingAssignment(key: Any, value: LLVMValueRef, type: ValueType): LLVMValueRef {
+		// Implicit receiver fields have declared extents, rather than a binding's
+		// separate initial-shape slot. They publish into the receiver's arena.
+		if (key is ReceiverFieldSymbol) return snapshotForStore(value, type, bindings.ownerArena(key))
 		if (type is CNullable && type.payload is CArray) return checkNotNull(nullable.choose(nullable.present(value), types.value(type), {
 			val previous = bindings.nullableArrayShape(key, type)
 			val payload = nullable.payload(value)
@@ -267,9 +280,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val type = semantics.typeOf(statement.target)
 		val parentType = semantics.typeOf(statement.target.array) as CArray
 		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
+		val ownerArena = functionSemantics?.declarations?.storedRoot(statement.target)?.let(bindings::ownerArena)
 		val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
 		if (parentType.hasNullableRows) {
-			val snapshot = arrays.shareChild(transferArrayValue(value, type), array, parentType)
+			val snapshot = arrays.shareChild(transferArrayValue(value, type, null, ownerArena = ownerArena), array, parentType)
 			arrays.storeAt(address, type, snapshot)
 			snapshot
 		} else {
@@ -277,7 +291,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val previous = LLVMBuildLoad2(builder, types.storage(type), address, "replaced_array")
 				arrays.childShape(previous, array, type)
 			} else null
-			val snapshot = transferArrayValue(value, type, shape)
+			val snapshot = transferArrayValue(value, type, shape, ownerArena = ownerArena)
 			arrays.storeAt(address, type, snapshot)
 			snapshot
 		}
@@ -308,6 +322,49 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
 	}
 
+	private data class PlaceAddress(val address: LLVMValueRef, val type: ValueType, val parent: Pair<LLVMValueRef, CArray>? = null)
+
+	private fun loadPlace(place: PlaceAddress): LLVMValueRef {
+		val raw = stored.load(place.address, place.type)
+		return place.parent?.let { arrays.readChild(raw, it.first, it.second) } ?: raw
+	}
+
+	private fun resolvePlace(place: StoredPlace): PlaceAddress {
+		var location = PlaceAddress(bindings.address(place.root), checkNotNull(functionSemantics).typeOf(place.root))
+		for (step in place.steps) location = when (step) {
+			is PlaceStep.Field -> {
+				val wrapper = location.type as? CNullable
+				val parent = if (wrapper == null) location.address else stored.payloadAddress(location.address, wrapper)
+				val address = stored.fieldAddress(parent, (wrapper?.payload ?: location.type) as CStruct, step.field)
+				PlaceAddress(address, step.field.type)
+			}
+
+			is PlaceStep.Index -> {
+				val raw = loadPlace(location)
+				val array = if (location.type is CNullable) nullable.payload(raw) else raw
+				val index = emitValue(step.index)
+				val address = arrays.checkedAddress(array, step.array.element, index, semantics.typeOf(step.index))
+				PlaceAddress(address, step.array.element, array to step.array)
+			}
+		}
+		return location
+	}
+
+	fun emitReceiver(receiver: MethodReceiver, type: CStruct): Pair<LLVMValueRef, LLVMValueRef> = when (receiver) {
+		is MethodReceiver.Stored    -> {
+			val location = resolvePlace(receiver.place)
+			val wrapper = location.type as? CNullable
+			val address = if (wrapper == null) location.address else stored.payloadAddress(location.address, wrapper)
+			address to (bindings.ownerArena(receiver.place.root) ?: stringReturnArena())
+		}
+
+		is MethodReceiver.Temporary -> {
+			val value = emitValue(receiver.expression)
+			val arena = stringReturnArena()
+			checkNotNull(frame).copyValue(value, type, arena) to arena
+		}
+	}
+
 	fun emitFieldWrite(statement: FieldWriteStatement): LLVMValueRef? = try {
 		val plan = semantics.fieldWrites[statement]
 		if (plan == null) {
@@ -315,37 +372,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			emitValue(statement.target)
 			throw InternalErrors.invariant("Continuing field write has no stored place")
 		}
-		var address = bindings.address(plan.root)
-		var storageType = checkNotNull(functionSemantics).typeOf(plan.root)
-		var parent: Pair<LLVMValueRef, CArray>? = null
-		fun load(): LLVMValueRef {
-			val raw = stored.load(address, storageType)
-			return parent?.let { arrays.readChild(raw, it.first, it.second) } ?: raw
-		}
-		for (step in plan.steps) when (step) {
-			is PlaceStep.Field -> {
-				val wrapper = storageType as? CNullable
-				if (wrapper != null) address = stored.payloadAddress(address, wrapper)
-				address = stored.fieldAddress(address, (wrapper?.payload ?: storageType) as CStruct, step.field)
-				storageType = step.field.type
-				parent = null
-			}
-
-			is PlaceStep.Index -> {
-				val raw = load()
-				val array = if (storageType is CNullable) nullable.payload(raw) else raw
-				val index = emitValue(step.index)
-				address = arrays.checkedAddress(array, step.array.element, index, semantics.typeOf(step.index))
-				storageType = step.array.element
-				parent = array to step.array
-			}
-		}
+		val location = resolvePlace(plan.place)
 		val op = Operators.fromCharacterRequired(statement.operator.lexeme)
 		val source = statement.value
 		val valueType = if (op == Operators.ASSIGN) semantics.typeOf(checkNotNull(source)) else semantics.typeOf(statement.target)
 		val value = if (op == Operators.ASSIGN) emitValue(checkNotNull(source)) else {
-			val raw = load()
-			val old = if (storageType is CNullable) nullable.payload(raw) else raw
+			val raw = loadPlace(location)
+			val old = if (location.type is CNullable) nullable.payload(raw) else raw
 			if (source == null) emitNumericUpdate(old, valueType, op == Operators.PLUS_PLUS)
 			else {
 				val right = emitValue(source)
@@ -353,9 +386,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				emitBinaryOperands(base, old, right, valueType, semantics.typeOf(source))
 			}
 		}
-		val prepared = snapshotValue(adaptValue(value, valueType, plan.type), plan.type)
-		val snapshot = parent?.let { arrays.shareChild(prepared, it.first, it.second) } ?: prepared
-		stored.store(address, snapshot, plan.type)
+		val prepared = snapshotForStore(adaptValue(value, valueType, plan.type), plan.type, bindings.ownerArena(plan.place.root))
+		val snapshot = location.parent?.let { arrays.shareChild(prepared, it.first, it.second) } ?: prepared
+		stored.store(location.address, snapshot, plan.type)
 		snapshot
 	} catch (_: Terminated) {
 		null

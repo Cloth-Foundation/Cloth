@@ -1,0 +1,51 @@
+pub typedef<struct> Position {
+    int x,
+    int y;
+
+    mt translate(int dx, int dy) {
+        x += dx
+        y += dy
+    }
+}
+
+typedef<struct> Entry {
+    usize id,
+    Position? position,
+    string[2] labels,
+    int<129> visits;
+
+    mt<Entry, int> move(int steps) {
+        if (position == null) return self, 0
+        position.translate(steps, 0)
+        visits++
+        return self, steps
+    }
+}
+
+fn<int> main() {
+    def<Entry> original := { 1, { 4, 6 }, ["north", "trail"], 18446744073709551616 }
+    // A fixed copy still permits changes through its methods.
+    def copy := original
+    copy.labels[0] = "ridge"
+    def moved, steps = copy.move(3)
+    def<Entry[2]> entries = [moved, { 2, null, ["unplaced", "trail"], 0 }]
+
+    // Foreach works on a snapshot. Each iteration can change its local entry.
+    for (def entry <- entries) {
+        if (entry.position == null) {
+            println(#"Entry {entry.id} has no position")
+            continue
+        }
+        entry.position.translate(0, 1)
+        println(#"Entry {entry.id}: {entry.labels[0]} at ({entry.position.x}, {entry.position.y}), visits={entry.visits}")
+    }
+
+    if (original.position == null || copy.position == null || moved.position == null) return 1
+    if (original.position.x != 4 || original.labels[0] != "north" || copy.position.x != 7) return 2
+    if (moved.position.x != 7 || moved.visits != 18446744073709551617 || steps != 3) return 3
+    def stored = entries[0]
+    if (stored.position == null || stored.position.y != 6) return 4
+    println(#"Original: {original.labels[0]} at ({original.position.x}, {original.position.y})")
+    println(#"Moved {steps} steps, stored y={stored.position.y}")
+    return 0
+}

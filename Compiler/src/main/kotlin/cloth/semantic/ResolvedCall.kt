@@ -1,13 +1,18 @@
 package cloth.semantic
 
 import cloth.builtin.BoundBuiltinCall
-import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.symbols.CallableSymbol
 
 internal sealed interface ResolvedCall {
 
 	val type: FunctionType
 
-	data class Source(val function: FunctionSymbol, override val type: FunctionType, val binding: ArgumentBinding) : ResolvedCall
+	data class Source(
+		val callable: CallableSymbol,
+		override val type: FunctionType,
+		val binding: ArgumentBinding,
+		val receiver: MethodReceiver? = null,
+	) : ResolvedCall
 
 	data class Builtin(val call: BoundBuiltinCall) : ResolvedCall {
 

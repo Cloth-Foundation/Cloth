@@ -3,7 +3,9 @@
 Integrated 2026-11-04. Read the [struct contract](semantics.md) for the accepted
 language behavior and the [plan](../../../../todo/basic-structs-plan.md) for
 later execution stages. The [Stage 2 semantic record](semantic-analysis.md)
-owns the current diagnostic boundary.
+records the basic struct semantic boundary. The later
+[method syntax stage](../../cloth-functions/references/method-syntax.md)
+adds `mt` members and receiver declaration scopes.
 
 The parser accepts the following source and retains its declarations and
 expressions in the AST. At Stage 1, compiling it reached the semantic boundary.
@@ -52,7 +54,8 @@ fn work() {
   RHS for later lowering.
 - C2007 locates forbidden `fn` declarations in struct bodies at the function
   keyword. The rule also applies when the function has a `pub` prefix.
-  Type members use `mt`, whose syntax and behavior are later work.
+  Type members use `mt`. Struct method syntax and scope are covered in the
+  [method syntax record](../../cloth-functions/references/method-syntax.md).
 - At Stage 1, C3077 stopped struct syntax during declaration and name
   resolution, or during snippet typing. Stage 2 moved the source unit gate to
   [emission validation](semantic-analysis.md#diagnostics-and-emission-boundary).

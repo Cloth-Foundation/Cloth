@@ -1,17 +1,18 @@
 package cloth.semantic.symbols
 
 import cloth.builtin.BuiltinDefinition
+import cloth.data.CStruct
+import cloth.data.StructField
 import cloth.data.ValueType
+import cloth.parser.declaration.CallableDeclaration
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.declaration.ParameterDeclaration
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
-import cloth.token.Keywords
-import cloth.token.Operators
-import cloth.token.Token
-import cloth.token.integerLiteralValue
+import cloth.token.*
 import java.math.BigInteger
 
 /** A structural declaration key, not a resolved or validated language type. */
@@ -32,6 +33,11 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 data class FunctionSignature(val name: String, val parameterTypes: List<SignatureType>) {
 
 	val spelling get() = "$name${Operators.PAREN_OPEN}${parameterTypes.joinToString("${Operators.COMMA} ") { it.spelling }}${Operators.PAREN_CLOSE}"
+
+	companion object {
+
+		internal fun of(declaration: CallableDeclaration) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { SignatureType.of(it.type) })
+	}
 }
 
 /** Symbols use object identity; two declarations with identical syntax remain distinct. */
@@ -40,16 +46,36 @@ sealed interface Symbol {
 	val name: Token
 }
 
-class FunctionSymbol(val declaration: FunctionDeclaration) : Symbol {
+sealed interface CallableSymbol : Symbol {
+
+	val declaration: CallableDeclaration
+	val signature: FunctionSignature
+	val parameters: List<ParameterSymbol>
+}
+
+class FunctionSymbol(override val declaration: FunctionDeclaration) : CallableSymbol {
 
 	override val name get() = declaration.name
-	val signature = FunctionSignature(name.lexeme, declaration.parameters.map { SignatureType.of(it.type) })
-	val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
+}
+
+class MethodSymbol(override val declaration: MethodDeclaration, val owner: CStruct) : CallableSymbol {
+
+	override val name get() = declaration.name
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters: List<ParameterSymbol> = declaration.parameters.map(::ParameterSymbol)
+	val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
 sealed interface CallableGroupSymbol : Symbol
 
 class FunctionGroupSymbol(val overloads: List<FunctionSymbol>) : CallableGroupSymbol {
+
+	override val name get() = overloads.first().name
+}
+
+class MethodGroupSymbol(val overloads: List<MethodSymbol>) : CallableGroupSymbol {
 
 	override val name get() = overloads.first().name
 }
@@ -61,6 +87,25 @@ sealed interface BindingSymbol : Symbol {
 
 	val mutable: Boolean
 	val declaredType: TypeReference?
+}
+
+class ReceiverSymbol(val owner: CStruct, val keyword: Token) : BindingSymbol {
+
+	override val name = Token(TokenType.Keyword, keyword.span, Keywords.SELF.toString())
+	override val mutable get() = false
+	override val declaredType get() = null
+	private val fields = mutableMapOf<String, ReceiverFieldSymbol>()
+	internal fun field(name: String): ReceiverFieldSymbol? = owner.field(name)?.let { field ->
+		fields.getOrPut(name) { ReceiverFieldSymbol(this, field) }
+	}
+}
+
+/** A field selected through the current receiver, including implicit name lookup. */
+class ReceiverFieldSymbol(val receiver: ReceiverSymbol, val field: StructField) : BindingSymbol {
+
+	override val name get() = field.declaration.name
+	override val mutable get() = true
+	override val declaredType get() = field.declaration.type
 }
 
 class ParameterSymbol(val declaration: ParameterDeclaration) : BindingSymbol {

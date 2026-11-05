@@ -4,13 +4,13 @@
 
 [Test.co](../../../../examples/Test.co) establishes the intended declaration,
 field and contextual aggregate syntax. The user accepted independent value copies
-on 2026-11-04 while planning basic structs before classes. None of the struct
-execution stages is claimed by this design record. See the
-[syntax record](syntax.md) and [semantic analysis record](semantic-analysis.md)
-for implemented support and verification.
+on 2026-11-04 while planning basic structs before classes. The
+[structs skill](../SKILL.md) routes to current implementation and verification.
 
-The [implementation plan](../../../../todo/basic-structs-plan.md) proposes a scoped
-path to executable structs. Its proposals are not confirmed semantics.
+The [completed plan](../../../../todo/basic-structs-plan.md) records the
+implementation stages. [Structs.co](../../../../examples/Structs.co) demonstrates
+the implemented value semantics and the [publication record](publication.md)
+lists verification and deferred features.
 
 ## Established syntax and visibility
 
@@ -28,10 +28,10 @@ pub typedef<struct> DeathInfo {
 The example uses an existing primitive for `cause` so its syntax does not depend
 on enum implementation. The intended `DeathInfo` in `Test.co` uses `DamageType`.
 
-Fields inherit the enclosing struct's visibility without needing `pub`, as
-already recorded in [visibility semantics](../../cloth-functions/references/semantics.md#visibility-in-cloth-source).
-[The shared type-body rule](../../cloth-language/references/semantics.md#callable-declarations-in-type-bodies)
-requires `mt` for callable members and forbids `fn` inside type declarations.
+Fields and methods inherit the enclosing struct's visibility. The field list
+comes first and ends with a semicolon when followed by another member. Read
+the [shared method contract](../../cloth-functions/references/semantics.md#user-defined-methods)
+for `mt`, its implicit receiver and the current design boundary.
 
 Contextual positional aggregate construction is established by `Test.co`:
 
@@ -39,8 +39,7 @@ Contextual positional aggregate construction is established by `Test.co`:
 def<DeathInfo> info = { 1, "Fell" }
 ```
 
-This is intended syntax, not a claim that it currently compiles. Exact grammar,
-field-write and contextual typing details below still need resolution.
+The annotation supplies the expected type for the brace literal.
 
 ## Nominal type identity (confirmed 2026-11-04)
 
@@ -129,9 +128,8 @@ position.x = 10       // Allowed: change a field.
 position = { 3, 4 }   // Error: replace an immutable binding.
 ```
 
-This intended example assumes a two-field `Position` declaration. Struct syntax
-is not implemented yet. Nested stored writes and temporary struct field-write
-restrictions follow the accepted rules below.
+This example assumes a two-field `Position` declaration. Nested stored writes
+and temporary struct field-write restrictions follow the rules below.
 
 ## Nested stored field and index writes: confirmed 2026-11-04
 
@@ -161,8 +159,8 @@ not introduce shared struct identity.
 - This also applies to nested field/index paths rooted in temporary struct
   values and to struct results produced by evaluated deferred function blocks.
   A deferred binding's name evaluates its block; it is not stored struct data.
-- Store the resulting struct in an ordinary binding before changing its fields.
-  This changes that stored independent value, not storage inside the producer.
+- For a direct field assignment, store the result in an ordinary binding first.
+  The write changes that stored independent value.
 
 ```cloth
 makePosition().x = 10 // Error: field assignment on a temporary struct.
@@ -171,8 +169,9 @@ def position = makePosition()
 position.x = 10       // Allowed: field assignment on a stored struct.
 ```
 
-This rule concerns temporary struct values; it does not define future class
-receiver or object-identity behavior.
+A method call on a temporary struct can change its fields through `self` for
+the duration of the call. See the
+[struct method receiver rule](../../cloth-functions/references/semantics.md#struct-method-receivers).
 
 ## Aggregate literals and deferred blocks: confirmed 2026-11-04
 
@@ -192,7 +191,7 @@ def<Position> next = {
 
 The first binding stores a value. Reading `next` executes its body and produces
 the returned struct value. The example assumes `Position` and `makePosition`
-declarations and is intended syntax, not current compiler support.
+declarations.
 
 For an expected struct type with one field, a single expression is sufficient.
 `def<Score> score = { 7 }` constructs a `Score` with an `int` field set to `7`.
@@ -352,13 +351,12 @@ use ordinary nullability rules. Comparisons of `typeinfo` values continue to
 use nominal type identity, and individual field comparisons use their own type
 rules.
 
-## Stage 0 completion and deferred extensions
+## Implemented slice and deferred extensions
 
-The rules above define the basic implementation slice. Apply existing
-expected-type propagation where a typed context supplies the struct type,
-including typed assignment targets and nested aggregate fields. The declaration
-and expression parsers should implement the accepted brace forms while
-preserving deferred blocks and first-error diagnostics.
+The compiler implements the rules above for ordinary source units, including
+typed assignments, nested aggregate fields, function arguments and results,
+deferred blocks and array traversal. Brace forms preserve existing deferred
+block behavior and the compiler reports the first detected error.
 
-The plan also defers whole-struct formatting and output, `::size` and other
-reflection, methods, constructors and defaults, generics, and a native struct ABI.
+Whole-struct formatting and output, `::size` and other reflection, methods,
+constructors and field defaults, generics, and a native struct ABI remain deferred.

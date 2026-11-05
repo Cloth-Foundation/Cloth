@@ -12,25 +12,25 @@ pub typedef<class> Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
     def<bool> alive = true
 
     pub mt<void> die () {
-        this.health = 0
-        this.alive = false
+        self.health = 0
+        self.alive = false
     }
 
     pub mt<bool> isAlive () {
-        return this.alive
+        return self.alive
     }
 
     pub<mod> mt<void> applyDamage (float amount) {
-        this.health -= amount
+        self.health -= amount
 
-        if (this.health <= 0) {
-            this.die()
+        if (self.health <= 0) {
+            self.die()
         }
     }
 
     @Override
     pub mt<float> getHealth () {
-        return this.health
+        return self.health
     }
 
 }
@@ -45,11 +45,11 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
     pub state<void> Alive {
 
         pub mt<DamageType, float> attack (DamageSource source) {
-            this.applyDamage(source.damageAmount)
+            self.applyDamage(source.damageAmount)
 
-            if (!this.isAlive()) {
+            if (!self.isAlive()) {
                 // Activate Dead and run its init before continuing
-                this -> Dead({
+                self -> Dead({
                     source.type,
                     #"{name} died from {source.type}!"
                 })
@@ -64,7 +64,7 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
     pub state<DeathInfo> Dead {
 
         init {
-            this.die()
+            self.die()
             println(state.message)
         }
 
@@ -75,7 +75,7 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
 pub typedef<state<DeathInfo>> Dead for Player {
 
     init {
-        this.die()
+        self.die()
         println(state.message)
     }
 
@@ -104,7 +104,10 @@ pub typedef<struct> DamageSource {
     float damageAmount;
 
     // can use self, which is in reference to the calling member DamageSource.
-    mt<float> addDamage(float damage) = self.damageAmount += damage
+    mt<float> addDamage(float damage) {
+        self.damageAmount += damage
+        return self.damageAmount
+    }
 
 }
 

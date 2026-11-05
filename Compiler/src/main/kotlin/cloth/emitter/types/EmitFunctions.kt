@@ -2,21 +2,21 @@ package cloth.emitter.types
 
 import cloth.data.CArray
 import cloth.data.CNullable
+import cloth.data.CStruct
 import cloth.data.ValueType
-import cloth.data.containsStruct
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
-import cloth.diagnostics.SemanticErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
-import cloth.parser.expression.CallExpression
-import cloth.parser.expression.FunctionBlockExpression
+import cloth.parser.expression.Expression
 import cloth.semantic.FunctionSemanticModel
+import cloth.semantic.FunctionType
 import cloth.semantic.ResolvedCall
 import cloth.semantic.ResultShape
-import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.MethodSymbol
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
@@ -26,65 +26,77 @@ import java.util.*
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
 
 	private val llvmTypes = LLVMTypes(context, abi.layout)
-	fun omissionCount(function: FunctionSymbol) = function.parameters.count { it.declaration.optional }
+	fun omissionCount(function: CallableSymbol) = function.parameters.count { it.declaration.optional }
 	private val results = EmitResults(context, abi.layout)
-	private val functions = IdentityHashMap<FunctionSymbol, LLVMValueRef>()
-	private val functionTypes = IdentityHashMap<FunctionSymbol, LLVMTypeRef>()
+	private val functions = IdentityHashMap<CallableSymbol, LLVMValueRef>()
+	private val functionTypes = IdentityHashMap<CallableSymbol, LLVMTypeRef>()
 	private val stringStorage = EmitStringArena(context, module, abi)
-	fun reference(function: FunctionSymbol): LLVMValueRef = functions.getValue(function)
-	fun signature(function: FunctionSymbol): LLVMTypeRef = functionTypes.getValue(function)
+	fun reference(function: CallableSymbol): LLVMValueRef = functions.getValue(function)
+	fun signature(function: CallableSymbol): LLVMTypeRef = functionTypes.getValue(function)
 
 	/** Raw binary16 bits avoid requiring external half-precision ABI conversion helpers. */
 	private fun abiType(type: ValueType): LLVMTypeRef = results.abiType(type)
 	fun encode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = results.encode(builder, value, type)
 	fun decode(builder: LLVMBuilderRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = results.decode(builder, value, type)
 
+	private class CallLayout(callable: CallableSymbol, type: FunctionType) {
+
+		val explicitStart = if (callable is MethodSymbol) 2 else 0
+		val resultArena = (explicitStart + type.parameters.size).takeIf { type.results.values.any { slot -> slot.indirect } }
+		val flagStart = explicitStart + type.parameters.size + if (resultArena != null) 1 else 0
+	}
+
 	fun emitAll() {
 		if (semantics.declarations.structs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
-		for ((index, function) in semantics.declarations.functions.withIndex()) {
+		for ((index, function) in semantics.declarations.callables.withIndex()) {
 			val type = semantics.typeOf(function)
-			// String and array results copy into an invocation arena supplied by the caller.
-			val buffered = type.results.values.any { it.indirect }
-			val flagStart = type.parameters.size + if (buffered) 1 else 0
-			val parameterCount = flagStart + omissionCount(function)
+			// Indirect results copy into an invocation arena supplied by the caller.
+			val layout = CallLayout(function, type)
+			val parameterCount = layout.flagStart + omissionCount(function)
 			val signature = PointerPointer<LLVMTypeRef>(parameterCount.toLong()).use { parameters ->
-				type.parameters.forEachIndexed { position, parameter -> parameters.put(position.toLong(), abiType(parameter)) }
-				if (buffered) parameters.put(type.parameters.size.toLong(), LLVMPointerTypeInContext(context, 0))
-				repeat(omissionCount(function)) { parameters.put((flagStart + it).toLong(), LLVMInt1TypeInContext(context)) }
+				val pointer = LLVMPointerTypeInContext(context, 0)
+				repeat(layout.explicitStart) { parameters.put(it.toLong(), pointer) }
+				type.parameters.forEachIndexed { position, parameter -> parameters.put((layout.explicitStart + position).toLong(), abiType(parameter)) }
+				layout.resultArena?.let { parameters.put(it.toLong(), pointer) }
+				repeat(omissionCount(function)) { parameters.put((layout.flagStart + it).toLong(), LLVMInt1TypeInContext(context)) }
 				LLVMFunctionType(results.abiType(type.results), parameters, parameterCount, 0)
 			}
 			functionTypes[function] = signature
-			val value = LLVMAddFunction(module, "cloth.fn.$index.${function.name.lexeme}", signature)
+			val kind = if (function is MethodSymbol) "method" else "fn"
+			val value = LLVMAddFunction(module, "cloth.$kind.$index.${function.name.lexeme}", signature)
 			LLVMSetLinkage(value, LLVMInternalLinkage)
 			functions[function] = value
 		}
-		for (function in semantics.declarations.functions) emitBody(function)
+		for (function in semantics.declarations.callables) emitBody(function)
 	}
 
-	private fun emitBody(function: FunctionSymbol) {
+	private fun emitBody(function: CallableSymbol) {
 		val builder = LLVMCreateBuilderInContext(context)
 		try {
 			val value = reference(function)
 			val signature = semantics.typeOf(function)
+			val layout = CallLayout(function, signature)
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
-			val frame = EmitFunctionFrame(context, builder, entry, signature.results, results.abiType(signature.results), stringStorage, if (signature.results.values.any { it.indirect }) LLVMGetParam(value, signature.parameters.size) else null)
+			val frame = EmitFunctionFrame(context, builder, entry, signature.results, results.abiType(signature.results), stringStorage, layout.resultArena?.let { LLVMGetParam(value, it) })
 			val bindings = EmitBindings(context, builder, entry, abi.layout)
+			if (function is MethodSymbol) bindings.bindReceiver(function.receiver, LLVMGetParam(value, 0), LLVMGetParam(value, 1))
 			val casts = EmitCast(context, builder, semantics.types, abi)
 			val strings = EmitString(context, builder, abi)
 			val expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.results, frame)
-			var flagIndex = signature.parameters.size + if (signature.results.values.any { it.indirect }) 1 else 0
+			var flagIndex = layout.flagStart
 			function.parameters.forEachIndexed { index, parameter ->
+				val position = layout.explicitStart + index
 				val type = signature.parameters[index]
 				val fallback = parameter.declaration.defaultValue
-				val argument = if (fallback == null) decode(builder, LLVMGetParam(value, index), type) else {
+				val argument = if (fallback == null) decode(builder, LLVMGetParam(value, position), type) else {
 					val suppliedBlock = LLVMAppendBasicBlockInContext(context, value, "parameter_supplied")
 					val defaultBlock = LLVMAppendBasicBlockInContext(context, value, "parameter_default")
 					val merge = LLVMAppendBasicBlockInContext(context, value, "parameter_ready")
 					LLVMBuildCondBr(builder, LLVMGetParam(value, flagIndex++), defaultBlock, suppliedBlock)
 					LLVMPositionBuilderAtEnd(builder, suppliedBlock)
 					// Omitted placeholders are never decoded, copied, or shape-checked.
-					val supplied = decode(builder, LLVMGetParam(value, index), type)
+					val supplied = decode(builder, LLVMGetParam(value, position), type)
 					val suppliedEnd = LLVMGetInsertBlock(builder)
 					LLVMBuildBr(builder, merge)
 					LLVMPositionBuilderAtEnd(builder, defaultBlock)
@@ -126,25 +138,27 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 	}
 
-	fun emitCall(call: CallExpression, expressions: EmitExpression, builder: LLVMBuilderRef): LLVMValueRef? {
-		val plan = semantics.selectedCall(call) as ResolvedCall.Source
-		val selected = plan.function
+	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef): LLVMValueRef? {
+		val selected = plan.callable
 		val type = plan.type
-		val buffered = type.results.values.any { it.indirect }
-		val flagStart = type.parameters.size + if (buffered) 1 else 0
-		val argumentCount = flagStart + omissionCount(selected)
+		val layout = CallLayout(selected, type)
+		val argumentCount = layout.flagStart + omissionCount(selected)
 		val result = PointerPointer<LLVMValueRef>(argumentCount.toLong()).use { arguments ->
+			plan.receiver?.let { receiver ->
+				val (address, ownerArena) = expressions.emitReceiver(receiver, (selected as MethodSymbol).owner)
+				arguments.put(0, address); arguments.put(1, ownerArena)
+			}
 			// Snapshot each argument in written order, then place it in its mapped slot.
-			call.arguments.forEachIndexed { index, expression ->
+			supplied.forEachIndexed { index, expression ->
 				val destination = plan.binding.parameterForArgument[index]
 				val parameter = type.parameters[destination]
 				val adapted = expressions.adaptValue(expressions.emitValue(expression), semantics.typeOf(expression), parameter)
 				val snapshot = expressions.transferArrayValue(adapted, parameter)
-				arguments.put(destination.toLong(), encode(builder, snapshot, parameter))
+				arguments.put((layout.explicitStart + destination).toLong(), encode(builder, snapshot, parameter))
 			}
-			for (index in plan.binding.omittedParameters) arguments.put(index.toLong(), LLVMConstNull(abiType(type.parameters[index])))
-			if (buffered) arguments.put(type.parameters.size.toLong(), expressions.stringReturnArena())
-			var flag = flagStart
+			for (index in plan.binding.omittedParameters) arguments.put((layout.explicitStart + index).toLong(), LLVMConstNull(abiType(type.parameters[index])))
+			layout.resultArena?.let { arguments.put(it.toLong(), expressions.stringReturnArena()) }
+			var flag = layout.flagStart
 			selected.parameters.forEachIndexed { index, parameter ->
 				if (parameter.declaration.optional) arguments.put((flag++).toLong(), LLVMConstInt(LLVMInt1TypeInContext(context), if (index in plan.binding.omittedParameters) 1 else 0, 0))
 			}
@@ -159,23 +173,18 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray    -> type.element != ValueType.VOID && supported(type.element)
 				is CNullable -> supported(type.payload)
+				is CStruct   -> true // Field types and layouts are validated at their declarations.
 				else         -> type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
 			}
-			for (function in semantics.declarations.functions) {
+			for (function in semantics.declarations.callables) {
 				val type = semantics.typeOf(function)
 				type.results.values.forEachIndexed { index, result ->
-					if (result.containsStruct) throw SemanticErrors.structsPending(function.declaration.returnTypes[index].span, "Function results")
 					if (!supported(result)) throw BackendErrors.functionType(result, function.declaration.returnTypes[index].span)
 				}
 				function.parameters.forEachIndexed { index, parameter ->
-					if (type.parameters[index].containsStruct) throw SemanticErrors.structsPending(parameter.declaration.type.span, "Function parameters")
 					if (!supported(type.parameters[index])) throw BackendErrors.functionType(type.parameters[index], parameter.declaration.type.span)
 				}
 			}
-			val deferred = semantics.types.expressions.entries.asSequence().filter { it.key is FunctionBlockExpression && it.value.containsStruct }.map { it.key.span }.minWithOrNull(compareBy({ it.startLine }, { it.startColumn }))
-			if (deferred != null) throw SemanticErrors.structsPending(deferred, "Deferred results")
-			val traversal = semantics.types.loops.entries.asSequence().filter { it.value.arraySourceType?.containsStruct == true }.map { it.key.span }.minWithOrNull(compareBy({ it.startLine }, { it.startColumn }))
-			if (traversal != null) throw SemanticErrors.structsPending(traversal, "Foreach traversal")
 		}
 	}
 }

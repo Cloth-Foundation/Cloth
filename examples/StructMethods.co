@@ -1,0 +1,41 @@
+pub typedef<struct> Counter {
+    int value,
+    int step,
+    string label;
+
+    mt<int> value() = value
+
+    mt<int> add(opt<int> amount ?: step) {
+        value += amount
+        return value
+    }
+
+    mt rename(string label) {
+        // The parameter shadows the field, so qualify the field with self.
+        self.label = label + "!"
+    }
+
+    mt<Counter, int> snapshot() = self, value()
+}
+
+fn<Counter, int> capture(Counter counter) = counter.snapshot()
+
+fn<Counter> fresh() = { 1, 3, "temporary" }
+
+fn<int> main() {
+    // A fixed binding still permits writes to the receiver's fields.
+    def<Counter> counter := { 10, 2, "main" }
+    if (counter.add() != 12) return 1
+    def saved, previous = capture(counter)
+
+    counter.rename("updated")
+    def updated = counter.add(amount=5)
+    def temporary = fresh().add()
+    if (previous != 12 || saved.value != 12 || saved.label != "main") return 2
+    if (updated != 17 || counter.value() != 17 || counter.label != "updated!" || temporary != 4) return 3
+
+    println(#"Saved {saved.label}: {previous}")
+    println(#"Current {counter.label}: {updated}")
+    println(#"Temporary result: {temporary}")
+    return 0
+}

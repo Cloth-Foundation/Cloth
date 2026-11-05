@@ -2,8 +2,8 @@ package cloth.semantic
 
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.CallArgument
-import cloth.parser.expression.CallExpression
-import cloth.semantic.symbols.FunctionSymbol
+import cloth.parser.expression.CallSite
+import cloth.semantic.symbols.ParameterSymbol
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -33,13 +33,12 @@ internal object ArgumentBinder {
 		}
 	}
 
-	fun bind(call: CallExpression, function: FunctionSymbol): BindingAttempt {
-		val parameters = function.parameters
+	fun bind(call: CallSite, name: Token, parameters: List<ParameterSymbol>): BindingAttempt {
 		val named = mutableMapOf<Int, Int>()
 		for ((source, argument) in call.suppliedArguments.withIndex()) {
 			val label = argument.label ?: continue
 			val destination = parameters.indexOfFirst { it.name.lexeme == label.lexeme }
-			if (destination < 0) return BindingAttempt(problem = BindingProblem("Unknown argument label '${label.lexeme}' for '${function.name.lexeme}'", label.span, function.name.span))
+			if (destination < 0) return BindingAttempt(problem = BindingProblem("Unknown argument label '${label.lexeme}' for '${name.lexeme}'", label.span, name.span))
 			named[destination] = source
 		}
 		val positionalCount = call.suppliedArguments.count { it.label == null }
@@ -53,7 +52,7 @@ internal object ArgumentBinder {
 				destinations[next++] = index
 			}
 		}
-		if (next < positionalCount) return BindingAttempt(problem = BindingProblem("Too many positional arguments for '${function.name.lexeme}'", call.suppliedArguments[next].span, function.name.span))
+		if (next < positionalCount) return BindingAttempt(problem = BindingProblem("Too many positional arguments for '${name.lexeme}'", call.suppliedArguments[next].span, name.span))
 		for ((destination, source) in named) destinations[source] = destination
 		val omitted = parameters.indices.filter { it !in destinations }
 		val missing = omitted.firstOrNull { !parameters[it].declaration.optional }

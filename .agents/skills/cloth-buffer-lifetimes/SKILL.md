@@ -44,6 +44,19 @@ member copy elision and proven arena/stack reclamation.
   loop proof permits inline writes without buffer publication when index and RHS
   effects are closed. Buffered and unknown writes keep frame lifetime. Native
   probes cover poisoned field buffers and full-width field updates.
+  [Stage 4](../cloth-structs/references/function-integration.md) uses the same
+  copies for arguments in written order, outgoing results before frame release
+  and independent foreach bindings. The closed cleanup proof accounts for
+  aggregate snapshots from calls and deferred reads. Poisoned-memory probes
+  check caller ownership, retained row shapes and cleanup across loop jumps.
+  The [publication record](../cloth-structs/references/publication.md) links
+  the maintained end-to-end example and the final target and regression evidence.
+- [Struct method execution](../cloth-functions/references/method-execution.md)
+  passes the selected receiver address and its owner arena separately from
+  explicit arguments and the result arena. Copy buffers published through
+  `self` into that owner, including nested receiver calls and writes to array
+  elements. A stored method call can publish buffers and stays outside the
+  closed temporary cleanup proof.
 
 - [Character attachments](../cloth-strings/references/character-attachments.md)
   consume scalars without retaining/publishing storage. Existing closed proofs

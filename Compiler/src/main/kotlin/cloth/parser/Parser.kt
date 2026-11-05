@@ -58,6 +58,7 @@ class Parser(private val tokens: List<Token>) {
 		val declarations = mutableListOf<Declaration>()
 		skipNewlines()
 		while (peek().type != TokenType.EOF) {
+			rejectMethodOutsideType()
 			val declaration = if (atKeyword(Keywords.TYPEDEF) || atKeyword(Keywords.PUBLIC) && atKeyword(Keywords.TYPEDEF, 1)) structParser.parse() else functionParser.parseFunction()
 			declarations.add(declaration)
 			// Only expression bodies have an optional terminator. A brace-bodied
@@ -77,6 +78,11 @@ class Parser(private val tokens: List<Token>) {
 	}
 
 	fun atKeyword(keyword: Keywords, offset: Int = 0) = peek(offset).let { it.type == TokenType.Keyword && it.lexeme == keyword.toString() }
+
+	private fun rejectMethodOutsideType() {
+		val offset = if (atKeyword(Keywords.PUBLIC)) 1 else 0
+		if (atKeyword(Keywords.METHOD, offset)) throw SyntaxErrors.methodOutsideType(peek(offset))
+	}
 
 	fun parseBlock(): BlockBody {
 		val opening = peek()
@@ -140,6 +146,7 @@ class Parser(private val tokens: List<Token>) {
 
 	/** The trailer context follows unbraced source bodies, never headers or delimiters. */
 	fun parseStatement(allowWhileTrailer: Boolean = false, multilineResults: Boolean = false): Statement {
+		rejectMethodOutsideType()
 		if (atKeyword(Keywords.FOR)) return forLoopParser.parseFor(allowWhileTrailer)
 		if (atKeyword(Keywords.WHILE)) return whileLoopParser.parseWhile(allowWhileTrailer)
 		if (atKeyword(Keywords.DO)) return doWhileLoopParser.parseDoWhile()
@@ -149,13 +156,13 @@ class Parser(private val tokens: List<Token>) {
 			val targets = mutableListOf(ReceivingTarget.of(advance()))
 			while (peek().lexeme == Operators.COMMA.toString()) {
 				advance()
-				targets.add(parseReceivingTarget())
+				targets.add(parseReceivingTarget(assignment = true))
 			}
 			if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) throw SyntaxErrors.reassignment(peek())
 			expect(Operators.ASSIGN)
 			return MultiAssignmentStatement(targets, parseResults(allowWhileTrailer = allowWhileTrailer))
 		}
-		if (peek().type == TokenType.Identifier && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
+		if ((peek().type == TokenType.Identifier || atKeyword(Keywords.SELF)) && peek(1).type == TokenType.Operator && peek(1).lexeme in assignmentOperators) {
 			val name = advance()
 			if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) {
 				throw SyntaxErrors.reassignment(peek())
@@ -236,19 +243,24 @@ class Parser(private val tokens: List<Token>) {
 
 	/** An identifier result list is an assignment only when followed by '=' or ':='. */
 	private fun startsAssignmentList(): Boolean {
-		if (!isReceivingTarget(peek())) return false
+		if (!isReceivingTarget(peek(), assignment = true)) return false
 		var offset = 1
 		while (peek(offset).lexeme == Operators.COMMA.toString()) {
-			if (!isReceivingTarget(peek(offset + 1))) return false
+			if (!isReceivingTarget(peek(offset + 1), assignment = true)) return false
 			offset += 2
 		}
 		return (offset > 1 || peek().lexeme == Operators.UNDERSCORE.toString()) && peek(offset).lexeme in setOf(Operators.ASSIGN.toString(), Operators.FINAL_ASSIGN.toString())
 	}
 
-	fun isReceivingTarget(token: Token) = token.type == TokenType.Identifier || (token.type == TokenType.Operator && token.lexeme == Operators.UNDERSCORE.toString())
+	fun isReceivingTarget(token: Token, assignment: Boolean = false) = when (token.type) {
+		TokenType.Identifier -> true
+		TokenType.Operator   -> token.lexeme == Operators.UNDERSCORE.toString()
+		TokenType.Keyword    -> assignment && token.lexeme == Keywords.SELF.toString()
+		else                 -> false
+	}
 
-	fun parseReceivingTarget(): ReceivingTarget {
-		if (!isReceivingTarget(peek())) throw SyntaxErrors.expected("a binding or assignment target name or '${Operators.UNDERSCORE}'", peek())
+	fun parseReceivingTarget(assignment: Boolean = false): ReceivingTarget {
+		if (!isReceivingTarget(peek(), assignment)) throw SyntaxErrors.expected("a binding or assignment target name or '${Operators.UNDERSCORE}'", peek())
 		return ReceivingTarget.of(advance())
 	}
 

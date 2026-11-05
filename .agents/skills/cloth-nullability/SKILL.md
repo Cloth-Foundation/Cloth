@@ -35,6 +35,13 @@ copying, retained shapes and presence-aware formatting. Read the
 [buffer integration record](references/buffers.md) before changing their handling.
 Nullable rectangular rows also execute under the
 [row integration contract](../cloth-arrays/references/nullable-rows.md).
+[Basic structs](../cloth-structs/references/publication.md) support nullable
+structs, nullable fields and arrays containing nullable structs. Presence proofs
+on unchanged stored paths permit payload access. Replacing a checked field or
+its containing value invalidates the proof. Copies skip absent payloads.
+[Struct method typing](../cloth-functions/references/method-typing.md) checks
+nullable receiver paths after explicit argument evaluation and invalidates
+proofs for fields a method may write. Proofs on independent paths still apply.
 Class lifetime and unsafe handles have separate work. Ordinary
 optional arguments are implemented under [their own skill](../cloth-optional-arguments/SKILL.md),
 including nullable string/array defaults such as `opt<string[]?> args ?: null`.

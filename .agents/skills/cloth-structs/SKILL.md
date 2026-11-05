@@ -5,12 +5,20 @@ description: Design or implement Cloth named structs, contextual aggregate const
 
 # Cloth structs
 
-Stages 0–3 are complete (2026-11-04). Local structs execute with inline storage,
-recursive value copies and resolved field writes. C3077 gates struct-bearing
-source function signatures, deferred struct results and struct foreach. Use the
-[syntax record](references/syntax.md) for parsing, the [semantic record](references/semantic-analysis.md)
-for type checking, and the [local storage record](references/local-storage.md)
-for lowering, lifetime invariants and verification.
+Basic structs are complete (2026-11-05). Start with the maintained
+[Structs.co](../../../examples/Structs.co) example and the
+[publication and verification record](references/publication.md).
+Structs execute in local storage, function arguments and results, deferred
+blocks and array foreach loops.
+Use the [syntax record](references/syntax.md) for parsing, the
+[semantic record](references/semantic-analysis.md) for type checking, the
+[local storage record](references/local-storage.md) for layout and stored writes,
+and the [function and traversal record](references/function-integration.md)
+for private transport, shape retention, cleanup and verification.
+Ordinary struct methods use the same callable pipeline as functions.
+[StructMethods.co](../../../examples/StructMethods.co) demonstrates receiver
+lookup, mutation, defaults and temporary calls. See the
+[method publication record](../cloth-functions/references/method-publication.md).
 
 Read [the struct contract](references/semantics.md) for accepted syntax,
 semantics and scope. Use the [basic structs plan](../../../todo/basic-structs-plan.md)
@@ -36,7 +44,8 @@ for stage boundaries, source routing and verification targets.
 - Write public declarations as `pub typedef<struct> Name { ... }`. Omit `pub`
   for private visibility. Fields inherit the enclosing struct's visibility.
   Type members use `mt`. A `fn` declaration in a type body is a syntax error
-  (C2007 in a struct). Stage 1 struct bodies support field declarations.
+  (C2007 in a struct). See [method syntax and scope](../cloth-functions/references/method-syntax.md)
+  for struct methods and receiver lookup.
 - For struct-typed bindings, field-value lists construct immediately; statement
   bodies with explicit returns remain deferred blocks executed on every read.
   Keep braces for both and preserve existing non-struct blocks, including void
@@ -78,6 +87,6 @@ For implementation interactions, load [buffer lifetimes](../cloth-buffer-lifetim
 
 Each integrated stage must update this skill and its references with actual
 support, diagnostics, tests and target evidence under
-[feature integration](../cloth-feature-integration/SKILL.md). Stage 3 verifies
-native local struct execution on Windows x64/x86 and IR and objects on all nine
-supported profiles.
+[feature integration](../cloth-feature-integration/SKILL.md). The
+[Stage 5 record](references/publication.md) tracks the full regression suite,
+native and foreign-target evidence, and the handoff to class design.

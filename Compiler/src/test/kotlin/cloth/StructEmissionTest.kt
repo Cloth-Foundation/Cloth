@@ -16,6 +16,18 @@ import kotlin.test.*
 
 internal fun structUnit(source: String) = Parser(Lexer(SourceFile("struct-runtime.co", source.trimIndent())).scanTokens()).parse()
 
+internal val structTargetTriples = listOf(
+	"x86_64-pc-windows-msvc",
+	"i686-pc-windows-msvc",
+	"aarch64-pc-windows-msvc",
+	"x86_64-unknown-linux-gnu",
+	"aarch64-unknown-linux-gnu",
+	"x86_64-unknown-linux-musl",
+	"aarch64-unknown-linux-musl",
+	"x86_64-apple-darwin",
+	"aarch64-apple-darwin",
+)
+
 internal fun structRunners(): List<NativeCABI> = NativeCABI.native().let { abi ->
 	if (abi.windows) listOf(abi, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(abi)
 }
@@ -73,8 +85,7 @@ class StructEmissionTest {
 
 	@Test
 	fun `struct storage verifies IR and object emission across supported targets`(@TempDir directory: Path) {
-		val triples = listOf("x86_64-pc-windows-msvc", "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "aarch64-apple-darwin")
-		for ((index, triple) in triples.withIndex()) {
+		for ((index, triple) in structTargetTriples.withIndex()) {
 			val emitter = LLVMEmitter(NativeCABI.forTarget(triple))
 			val unit = structUnit(core)
 			val ir = emitter.emitExecutable(unit)

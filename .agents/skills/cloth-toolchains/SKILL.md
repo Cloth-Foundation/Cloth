@@ -61,6 +61,16 @@ compile-only. See the [verification record](../cloth-language/references/develop
 
 ## Source and verification
 
+[Structs.co](../../../examples/Structs.co) executes on Windows x64/x86 and on
+GNU Linux x64 under WSL. `StructPublicationTest` verifies executable IR and emits
+objects across all nine profiles. Its foreign CLI object case requires no linker.
+See the [struct publication record](../cloth-structs/references/publication.md).
+
+[StructMethods.co](../../../examples/StructMethods.co) runs on the same native
+targets. `StructMethodPublicationTest` verifies executable IR and objects across
+all nine profiles and linker-free foreign CLI object emission. See the
+[method publication record](../cloth-functions/references/method-publication.md).
+
 Arbitrary integer widths have a [Stage 1 backend record](../cloth-numerics/references/arbitrary-width-backend.md)
 and opt-in `:Compiler:probeIntegerWidths` task. Raw LLVM cases run in timed child
 JVMs; a successful supervisor task can contain recorded crashes, link failures

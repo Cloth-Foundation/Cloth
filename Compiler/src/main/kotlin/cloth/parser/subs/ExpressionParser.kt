@@ -130,6 +130,8 @@ class ExpressionParser(val parser: Parser) {
 
 			TokenType.InterpolationStart                                                                    -> parseInterpolation()
 
+			TokenType.Keyword if token.lexeme == Keywords.SELF.toString()                                   -> NameExpression(parser.advance())
+
 			TokenType.Identifier                                                                            -> {
 				val name = parser.advance()
 				if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {

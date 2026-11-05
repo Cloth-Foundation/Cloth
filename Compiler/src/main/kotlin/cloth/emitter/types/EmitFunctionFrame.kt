@@ -1,6 +1,5 @@
 package cloth.emitter.types
 
-import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.semantic.ResultShape
 import org.bytedeco.javacpp.PointerPointer
@@ -8,7 +7,7 @@ import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Every normal exit joins here, so temporary return buffers are released exactly once.
- * String and array results copy into the caller's frame before this invocation is released.
+ * Indirect results copy into the caller's frame before this invocation is released.
  */
 internal class EmitFunctionFrame(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val returns: ResultShape, private val abiReturnType: LLVMTypeRef, private val strings: EmitStringArena, private val callerArena: LLVMValueRef?) {
 
@@ -25,8 +24,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 		strings.releaseTo(builder, stringReturnArena(), checkpoint)
 	}
 
-	fun copyArray(value: LLVMValueRef, type: CArray): LLVMValueRef = strings.copyValue(builder, stringReturnArena(), value, type)
-	fun copyValue(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.copyValue(builder, stringReturnArena(), value, type)
+	fun copyValue(value: LLVMValueRef, type: ValueType, destination: LLVMValueRef = stringReturnArena()): LLVMValueRef = strings.copyValue(builder, destination, value, type)
 
 	fun emitReturn(value: LLVMValueRef?) {
 		predecessors.add(LLVMGetInsertBlock(builder) to value)
