@@ -178,6 +178,29 @@ Read [Cloth target-sized integers](../../cloth-target-integers/references/semant
 Read [Cloth target-sized integers](../../cloth-target-integers/references/semantics.md#target-sized-signed-integer-isize) and its
 [feature skill](../../cloth-target-integers/SKILL.md).
 
+## Primitive attachments
+
+Integer `abs`, `clamp`, `signum`, zero-bit counts and radix formatting are covered
+by the [confirmed attachment contract](../../cloth-numerics/references/semantics.md#integer-attachments-design-confirmed-2026-11-04)
+and [implementation record](../../cloth-numerics/references/integer-attachments.md).
+
+Float `abs`, `clamp` and signed-int `signum` at widths 16/32/64 are covered by
+the [confirmed float contract](../../cloth-numerics/references/semantics.md#float-attachments-design-confirmed-2026-11-04)
+and [implementation record](../../cloth-numerics/references/float-attachments.md).
+
+Boolean `toInt()` is an explicit false-to-0/true-to-1 conversion to signed int32,
+covered by the [confirmed boolean contract](../../cloth-numerics/references/semantics.md#boolean-attachments-design-confirmed-2026-11-04)
+and [implementation record](../../cloth-numerics/references/bool-attachments.md).
+
+Character classification and code-point `toInt()` use pinned Unicode 17.0.0
+under the [confirmed character contract](../../cloth-strings/references/semantics.md#character-attachments-design-confirmed-2026-11-04)
+and [implementation record](../../cloth-strings/references/character-attachments.md).
+
+Character `toUpperCase()` and `toLowerCase()` return one char using pinned
+Unicode 17.0.0 simple mappings, independent of locale and context. Unmapped
+scalars remain unchanged; the [character casing record](../../cloth-strings/references/character-case.md)
+owns the integrated behavior, data and verification.
+
 ## Integer signedness and widths
 
 The [arbitrary-width decision](../../cloth-numerics/references/semantics.md#arbitrary-fixed-integer-widths-design-confirmed-2026-11-03)

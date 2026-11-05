@@ -1,0 +1,16 @@
+fn<int> main() {
+    def hasName = true
+    def hasEmail = false
+    println(hasName.toInt())
+    println(hasEmail.toInt())
+
+    def score = hasName.toInt() + hasEmail.toInt()
+    println(score)
+    println(score::type)
+
+    def<bool?> optional = null
+    println((optional ?: false).toInt())
+
+    if (score != 1) return 1
+    return 0
+}

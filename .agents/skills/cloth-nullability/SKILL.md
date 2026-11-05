@@ -113,6 +113,10 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   eligible after narrowing; a plain `5 ?: 0` is rejected. Bare-left null can use
   fallback context (`null ?: 5` is int); `null ?: null` needs explicit context.
   Type-check skipped source and retain the explicit nullable-binding rule.
+  Float payloads supply their fallback literal width even when Elvis is a member
+  receiver or output argument with no outer float context. Already-typed fallback
+  values still require exact types. The float attachment regression covers half
+  identity and float64 precision; see [float integration](../cloth-numerics/references/float-attachments.md).
 - Nullable-target casts preserve absence and perform ordinary payload conversion
   only when present. Plain values may convert and lift; `null -> int?` supplies
   an explicit type. A non-nullable cast target still needs proof or fallback.

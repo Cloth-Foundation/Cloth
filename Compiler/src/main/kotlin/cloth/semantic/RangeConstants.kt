@@ -25,7 +25,7 @@ internal class RangeConstants(private val model: SemanticModel) {
 		}
 	}
 
-	private fun integer(expression: Expression): BigInteger? {
+	fun integer(expression: Expression): BigInteger? {
 		val type = model.typeOf(expression) as? CInteger ?: return null
 		val value = when (expression) {
 			is IntegerLiteral           -> expression.value

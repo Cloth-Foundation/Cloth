@@ -2,7 +2,7 @@ package cloth.data
 
 import java.util.*
 
-/** Unicode 17.0.0 White_Space, 25 scalars. Deliberately independent of JVM/C
+/** Unicode 17.0.0 White_Space, 25 scalars. Deliberately independent
  * whitespace predicates and host locale. Updating this table changes Cloth semantics.
  * Source: https://www.unicode.org/Public/17.0.0/ucd/PropList.txt
  */

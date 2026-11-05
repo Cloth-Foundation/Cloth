@@ -37,6 +37,29 @@ member copy elision and proven arena/stack reclamation.
 
 ## Preserve the storage contract
 
+- [Character attachments](../cloth-strings/references/character-attachments.md)
+  consume scalars without retaining/publishing storage. Existing closed proofs
+  reclaim temporary char-array producers after predicates/code-point conversion
+  and repeated conditions. The character probe in `ArrayTemporaryCleanupTest`
+  checks live-byte bounds, preserved arrays and allocation balance under poisoned frees.
+  [Simple character casing](../cloth-strings/references/character-case.md) shares
+  this contract; its separate poisoned-free probe preserves saved char results
+  while reclaiming producers across 1,000 iterations and while/do-while conditions.
+
+- [Float attachments](../cloth-numerics/references/float-attachments.md) are
+  read-only scalar consumers. Existing closed proofs can reclaim temporary array
+  producers after abs/clamp/signum and repeated conditions; captured publication
+  stays conservative. The float probe in `ArrayTemporaryCleanupTest` verifies
+  bounded live bytes, preexisting arrays and allocation balance under poisoned frees.
+
+- [Integer attachments](../cloth-numerics/references/integer-attachments.md)
+  use ordinary wide operand snapshots and independent stack-backed radix strings.
+  Outgoing wide/text results copy before frame release. Preserve protection through
+  later operands, and reclaim scalar/discarded consumers only through the existing
+  closed proof. `IntegerAttachmentsTest` runs full-cap repeated storage probes on
+  Windows x64/x86; `ArrayTemporaryCleanupTest` poisons released radix-result frames
+  and verifies captured array publication and ordered wide/text results.
+
 - [String member calls](../cloth-strings/references/member-calls.md) capture the
   receiver before arguments and each argument before later operands, including
   strings extracted from mutable arrays. Opted-in read-only methods use loaded

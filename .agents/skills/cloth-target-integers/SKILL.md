@@ -21,6 +21,13 @@ bounds, reused ASTs, Windows x64/x86 execution and all-profile object emission.
 
 ## Preserve the integrated contract
 
+[Integer attachments](../cloth-numerics/references/integer-attachments.md)
+specialize lazily for exact `isize`/`usize` receivers and the selected target.
+Abs/clamp preserve those identities; signum returns fixed signed int32; bit counts
+return target usize. Radix takes fixed int32 and preserves all receiver bits.
+`IntegerAttachmentsTest` covers reused ASTs, native Windows x64/x86 and all-profile
+objects; do not alias these receivers to same-width `CInt` registrations.
+
 [Scalar string methods](../cloth-strings/references/scalar-methods.md) use exact
 target `usize` positions and nullable search results. The attachment registry
 specializes count signatures by width and every lookup selects the compilation

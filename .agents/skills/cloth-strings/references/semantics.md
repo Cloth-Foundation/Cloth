@@ -15,8 +15,57 @@ the parent skill for current implementation boundaries and source/test routing.
   bindings follow the ordinary binding rules.
 - One scalar need not be an entire displayed grapheme: a base letter followed
   by a combining mark contains multiple scalars and cannot be one `char` literal.
-- Character arithmetic, ordering, and conversions to other types have not been
-  designed. See development status for the supported operations and diagnostics.
+- Character arithmetic, ordering and ordinary numeric casts remain undesigned.
+  The explicit `toInt()` attachment is implemented below. See development status
+  for current supported operations.
+
+## Character attachments (design confirmed 2026-11-04)
+
+The user approved a separate `CharAttachments` provider using the shared named
+`valueMethod` registration style, with this first batch:
+
+- `isWhitespace()`, `isLetter()`, `isDigit()`, `isLetterOrDigit()`,
+  `isUpperCase()` and `isLowerCase()` take no explicit arguments and return bool.
+- Classification is pinned to Unicode 17.0.0 across all targets, matching string
+  whitespace methods. `isWhitespace()` uses the same White_Space definition as
+  trimming. `isDigit()` means Unicode decimal digits (General_Category `Nd`).
+- `isLetter()` uses General_Category `L`: `Lu`, `Ll`, `Lt`, `Lm` and `Lo`.
+  It does not use the broader Alphabetic property. Standalone combining marks,
+  digits and emoji are not letters under this contract. `isLetterOrDigit()` is
+  the union of the approved Letter and decimal-digit classifications.
+- `isUpperCase()` and `isLowerCase()` use the Unicode binary Uppercase and
+  Lowercase properties, respectively. These include Other_Uppercase and
+  Other_Lowercase contributions, so case classification does not imply Letter
+  membership. For example, circled capital A is uppercase but not a Letter.
+- `toInt()` takes no explicit arguments and returns the Unicode scalar's code
+  point as ordinary signed int32; it does not parse a digit value. For example,
+  `'7'.toInt()` produces 55, not 7.
+- Case conversion is outside this batch. Character arithmetic, ordering and
+  ordinary numeric casts are not introduced by approving these methods.
+
+The batch is implemented under the [character attachment record](character-attachments.md).
+Property definitions are governed by the
+[Unicode 17 UCD specification](https://www.unicode.org/reports/tr44/tr44-36.html);
+do not substitute host JVM/C behavior or locale tables for these pinned properties.
+Methods are read-only and evaluate receivers once; ordinary early-return,
+short-circuit and nullable proof/fallback rules apply. Typed result identities
+remain exact; static/type calls and named/extra arguments are not introduced.
+
+## Character case conversion (design confirmed 2026-11-04)
+
+The user confirmed that character `toUpperCase()` and `toLowerCase()` return
+`char` using Unicode simple uppercase/lowercase mappings. Each result is one
+Unicode scalar; full mappings that expand into strings are outside this feature.
+The methods are implemented in the existing separate `CharAttachments`
+provider. They take no explicit arguments and are locale-independent, using
+pinned Unicode 17.0.0 mappings. Results do not depend on the host locale or OS
+language settings; no locale parameter or locale-specific override is introduced.
+When no simple mapping exists, return the original scalar unchanged. For example,
+`'ß'.toUpperCase()` remains `'ß'`, `'İ'.toLowerCase()` yields `'i'`, and
+`'Σ'.toLowerCase()` yields `'σ'` without contextual final-sigma handling.
+Read the [character casing integration record](character-case.md) for source,
+data and verification. Full string casing, expansions, normalization, case folding
+and locale overloads remain outside this feature.
 
 ## Strings
 

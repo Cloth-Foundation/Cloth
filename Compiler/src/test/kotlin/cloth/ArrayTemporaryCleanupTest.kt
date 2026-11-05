@@ -949,6 +949,96 @@ class ArrayTemporaryCleanupTest {
 	}
 
 	@Test
+	fun `integer radix strings and wide results survive poisoned frames and captured publication`(@TempDir directory: Path) {
+		probe(directory, "integer_members", """
+			fn<string> digits(int<129> n) = n.toStringRadix(16)
+			fn<int<129>, string> pair(int<129> n) = n.abs(), n.toStringRadix(2)
+			fn<int> sample() {
+			    def saved = digits(int<129>::min)
+			    def magnitude, binary = pair(-8)
+			    def<string[]> values = [digits(255)]
+			    def<string> publish = { values[0] = digits(-255); return values[0] }
+			    if (publish != "-ff" || values[0] != "-ff") return 1
+			    for (def i <- 0..1000) {
+			        digits(255).contains("f")
+			        if (magnitude != 8 || binary != "-1000" || saved != "-100000000000000000000000000000000") return 2
+			    }
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `float member consumers reclaim array producers and preserve preexisting storage`(@TempDir directory: Path) {
+		probe(directory, "float_member_consumers", """
+			fn<float<64>[]> values() = [-3.5, 2.5]
+			fn<int> sample() {
+			    def saved = values()
+			    def baseline = liveBytes()
+			    for (def i <- 0..1000) {
+			        if (values()[0].abs() != 3.5) return 1
+			        values()[1].clamp(0.0, 1.0)
+			        values()[0].signum()
+			        if (liveBytes() != baseline || saved[0] != -3.5) return 2
+			    }
+			    def n = 0
+			    while (values()[0].abs() > 0.0 && n < 50) { n++ }
+			    do { n-- } while (values()[1].signum() > 0 && n > 0)
+			    if (n != 0 || liveBytes() != baseline || saved[1] != 2.5) return 3
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `character predicates and code points reclaim producers and preserve preexisting arrays`(@TempDir directory: Path) {
+		probe(directory, "char_member_consumers", """
+			fn<char[]> chars() = "a😀中".toChars()
+			fn<int> sample() {
+			    def saved = chars()
+			    def baseline = liveBytes()
+			    for (def i <- 0..1000) {
+			        if (chars()[0].isLetter().toInt() != 1) return 1
+			        if (chars()[1].toInt() != 128512) return 2
+			        chars()[2].isUpperCase()
+			        chars()[0].isWhitespace()
+			        if (liveBytes() != baseline || saved[1] != '😀') return 3
+			    }
+			    def n = 0
+			    while (chars()[0].isLetter() && n < 50) { n++ }
+			    do { n-- } while (chars()[2].isLetterOrDigit() && n > 0)
+			    if (n != 0 || liveBytes() != baseline || saved[2] != '中') return 4
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `simple character case results reclaim producers and preserve saved scalar values`(@TempDir directory: Path) {
+		probe(directory, "char_case_consumers", """
+			fn<char[]> chars() = "a😀İß".toChars()
+			fn<char> upper(char c) = c.toUpperCase()
+			fn<char, char> pair(char c) = c.toUpperCase(), c.toLowerCase()
+			fn<int> sample() {
+			    def saved = chars()
+			    def first, second = pair('é')
+			    def baseline = liveBytes()
+			    for (def i <- 0..1000) {
+			        if (chars()[0].toUpperCase() != 'A' || chars()[2].toLowerCase() != 'i') return 1
+			        if (chars()[1].toUpperCase() != '😀' || chars()[3].toUpperCase() != 'ß') return 2
+			        if (upper('z') != 'Z' || first != 'É' || second != 'é') return 3
+			        if (liveBytes() != baseline || saved[2] != 'İ') return 4
+			    }
+			    def n = 0
+			    while (chars()[0].toUpperCase() == 'A' && n < 50) { n++ }
+			    do { n-- } while (chars()[2].toLowerCase() == 'i' && n > 0)
+			    if (n != 0 || liveBytes() != baseline) return 5
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `read only string methods add no operand copies for literals or stored strings`(@TempDir directory: Path) {
 		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
 		probe(directory, "member_no_copies", """

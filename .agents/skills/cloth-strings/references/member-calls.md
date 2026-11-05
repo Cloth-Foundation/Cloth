@@ -51,8 +51,9 @@ Lookup uses the receiver type and method name; lexical names do not shadow
 members. These methods are not unqualified global functions. `string.isEmpty()`
 does not call a static method. `text::contains(...)` retains the separate,
 currently unsupported state-call meaning. Bare field access/method values,
-named method arguments, optional method parameters, member overloads, class
-methods and integer methods are outside this integrated slice.
+named method arguments, optional method parameters, member overloads and class
+methods remain deferred. Integer methods are now covered by the
+[integer attachment extension](../../cloth-numerics/references/integer-attachments.md).
 
 Arguments must have the exact required string type. No implicit text adaptation
 or `str` conversion applies. Nullable strings require existing presence proofs
@@ -73,15 +74,27 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   owns typed per-receiver registration and the `PrimitiveAttachments` lookup.
   Declaring a named entry registers it; there is no second hand-maintained method
   list. Duplicate names for one receiver are rejected. Published lookup lists
-  are read-only. Current registrations use exact receiver types and one signature
-  per method, leaving type-family selection/overloads for future work. Definitions
+  are read-only. Registrations use exact receiver types and one signature per
+  method; integer families now specialize lazily, while overloads remain deferred. Definitions
   are specialized by native count width and selected using the compilation target.
+  Primitive providers share inherited `valueMethod(name, parameters,
+  returns) { context, values -> ... }`, which explicitly opts into the read-only,
+  independent-result contract. Keep method names, signatures and bodies together
+  in named registrations; `register` retains unknown storage as its default.
 - [StringAttachments](../../../../Compiler/src/main/kotlin/cloth/builtin/attachments/StringAttachments.kt)
   owns the original four queries and the linked method extensions. Each definition builds on `BuiltinParameter`,
   `BuiltinOverload`, `BuiltinDefinition` and `BoundBuiltinCall`; the hidden receiver
   is its first internal parameter. Registry definitions hold no LLVM handles or
-  per-compilation state. The integer provider is an empty reserved shell and is
-  not published in the registry.
+  per-compilation state. Integer registrations and the representative name/result
+  catalog are owned by the integer extension. Float definitions and shared-name
+  handling for non-continuing receivers are covered by the
+  [float extension](../../cloth-numerics/references/float-attachments.md).
+  The [boolean extension](../../cloth-numerics/references/bool-attachments.md)
+  uses the same declaration and lookup path for its single `toInt` entry.
+  The [character extension](character-attachments.md) adds six Unicode predicates
+  and code-point `toInt` through the same provider style and target-independent lookup.
+  [Simple character casing](character-case.md) adds char-returning `toUpperCase`
+  and `toLowerCase` registrations to that same provider.
 - [MemberCallExpression](../../../../Compiler/src/main/kotlin/cloth/parser/expression/MemberCallExpression.kt)
   and `ExpressionParser.parseUnary` own ordinary dot-call syntax. Preserve receiver,
   supplied argument order/labels and original spans independently of lexical
@@ -153,8 +166,10 @@ no environment packages were installed.
 
 The earlier mockup also listed `toUpperCase`, `toLowerCase`,
 `trimLeft`, `trimRight`, `isNumeric`,
-`isAlpha`, `isAlphanumeric` and `toValue`. These remain proposals, not callable
-entries. Unicode case/numeric/letter classification policies, parsing
+`isAlpha`, `isAlphanumeric` and `toValue`. These remain proposals for strings, not callable
+string entries. Character `toUpperCase`/`toLowerCase` are implemented separately
+under [the simple character casing contract](character-case.md).
+String Unicode case/numeric/letter classification policies, parsing
 grammar/failure and type-valued arguments need separate decisions. Scalar indices
 and the five extraction/search/conversion methods are now covered by
 [the accepted extension](scalar-methods.md).
@@ -164,7 +179,8 @@ Literal replacement and prefix/suffix removal are covered by
 [the whitespace extension](whitespace-methods.md); the old left/right mock names
 are not aliases.
 
-The integer mockup listed `abs`, `clamp`, `signum`, `toStringRadix`, `leadingZeros`
-and `trailingZeros`. None is implemented. Signed minimum `abs`, integer type-family
-availability and result identities remain unresolved. This work does not settle
-static calls, class visibility/dispatch, method overrides or `toString()`.
+The integer mockup's `abs`, `clamp`, `signum`, `toStringRadix`, `leadingZeros`
+and `trailingZeros` are now implemented across every integer identity under the
+[integer attachment contract and evidence](../../cloth-numerics/references/integer-attachments.md).
+Static calls, class visibility/dispatch, method overrides and `toString()` remain
+outside this work.

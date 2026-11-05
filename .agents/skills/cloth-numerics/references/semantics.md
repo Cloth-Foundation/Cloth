@@ -5,6 +5,103 @@ User-confirmed rules govern intended behavior; historical implementation
 notes and unresolved choices retain their original qualifications. Read
 the parent skill for current implementation boundaries and source/test routing.
 
+## Boolean attachments (design confirmed 2026-11-04)
+
+The user approved only `bool.toInt()` in a separate `BoolAttachments` provider,
+using the same inherited `valueMethod` registration style as the other providers.
+It takes no explicit arguments and returns ordinary signed `int` (32 bits):
+`false` becomes 0 and `true` becomes 1. This is an explicit method conversion;
+bool remains separate from numeric types and ordinary boolean/numeric casts
+and implicit conversions retain their existing rejection rules.
+
+Evaluate the receiver once, preserving normal early-return, short-circuit and
+nullable proof/fallback rules. The method is read-only. Static/type calls,
+unqualified global calls and named/extra arguments are not introduced. Other
+boolean methods remain deferred. See the [implementation record](bool-attachments.md).
+
+## Float attachments (design confirmed 2026-11-04)
+
+Float attachments are implemented under the [float attachment record](float-attachments.md).
+The user approved a separate
+`FloatAttachments` provider with the same inherited `valueMethod` declaration
+style as integer/string providers, keeping room for type-specific methods.
+
+- The first batch is `abs()`, `clamp(min, max)` and `signum()` for
+  `float<16>`, `float<32>` and `float<64>`.
+- `abs()` preserves the exact float receiver type, maps negative zero to
+  positive zero and negative infinity to positive infinity, preserves positive
+  infinity, and returns NaN for NaN.
+- `clamp(min, max)` uses inclusive bounds with the receiver's exact float type
+  for both bounds and result. Equal bounds are valid. Reversed bounds and NaN
+  bounds are errors: diagnose known invalid bounds at compile time and guard
+  dynamic bounds at runtime with a located, controlled failure. Validate bounds
+  before returning a NaN receiver unchanged as NaN. Infinite bounds are allowed;
+  infinite receivers clamp to a finite bound when outside the interval. Preserve
+  the receiver, including its zero sign, when it is within the bounds; select a
+  bound only when strictly below or above it. Thus negative zero remains negative
+  even when both bounds are positive zero, since the zeros compare equal.
+- `signum()` always returns ordinary signed `int` (32 bits): -1 for negative
+  values, 0 for either signed zero, and 1 for positive values. Negative/positive
+  infinity produce -1/1 respectively. NaN produces a controlled error.
+- Integer zero-bit counts and integer radix formatting remain integer methods;
+  this batch does not add float equivalents.
+
+Calls use the ordinary read-only primitive member contract: receiver then arguments
+evaluate once in source order, with earlier values preserved across captured writes.
+Nullable receivers/arguments require proofs or fallbacks. Floating literals receive
+the exact bound parameter's width; already-typed values require exact types.
+Known invalid closed signum/clamp expressions are compile-time errors; dynamic
+cases use located runtime failures without PEC. Static/type calls and named method
+arguments remain unsupported.
+
+## Integer attachments (design confirmed 2026-11-04)
+
+The six methods below are implemented under the
+[integer attachment record](integer-attachments.md). The following rules were
+confirmed by the user.
+
+- Integer attachments cover signed `int<N>` and `unsigned int<N>` for every
+  supported width 1..65536, plus `isize` and `usize`. Preserve exact fixed-width
+  identities and distinct target-sized identities; odd and wide widths receive
+  the same API as ordinary integers.
+- `abs()` preserves the receiver's exact integer type, including width and
+  signedness. Unsigned `abs()` returns its input unchanged.
+- For signed integers, the minimum value has no representable positive magnitude
+  in the same type. `abs()` on that value is an error: diagnose known cases at
+  compile time and guard other cases at runtime with a located, controlled failure.
+  Do not wrap, saturate, widen, or return an unsigned result.
+- `signum()` always returns ordinary signed `int` (32 bits), independently of
+  the receiver's width, signedness or target-sized identity. Its result is -1
+  for negative values, 0 for zero and 1 for positive values. Unsigned receivers
+  therefore produce only 0 or 1. The result type also applies to `int<1>`.
+- `clamp(min, max)` uses inclusive bounds and preserves the receiver's exact
+  integer type. Both bounds require that exact type; integer literals receive
+  receiver-type context without implicitly converting already-typed values.
+  Values below `min` produce `min`; values above `max` produce `max`; values
+  within the interval are preserved. Equal bounds are valid and produce that
+  bound. Reversed bounds (`min > max`) are an error: diagnose known cases at
+  compile time and guard other cases at runtime with a located, controlled failure.
+- `leadingZeros()` and `trailingZeros()` return `usize`. They count zero bits
+  in the receiver's declared N-bit representation, excluding storage padding.
+  Both return N for zero. Signed receivers use their two's-complement bit pattern;
+  negative values therefore have zero leading zeros. For `isize` and `usize`,
+  N is the compilation target's integer width, not the host's width.
+- `toStringRadix(radix)` takes ordinary signed `int` (32 bits), with a radix
+  from 2 through 36 inclusive, and returns an independent `string`. Digits are
+  lowercase `0`-`9` and `a`-`z`, without a base prefix or leading zeros. Zero
+  produces `"0"`. Negative values use `-` followed by their magnitude, including
+  signed minimum, which formats successfully. Invalid radices are errors:
+  diagnose known cases at compile time and guard others at runtime with a
+  located, controlled failure.
+
+Calls use the ordinary primitive member contract: evaluate the receiver once,
+then explicit positional arguments once from left to right, preserving earlier
+received values across later captured writes. Early returns/jumps stop evaluation;
+short circuits skip execution while all source is statically checked. Nullable
+receivers/arguments require ordinary presence proofs or a non-null fallback.
+These are read-only methods; they do not change their receiver. Type/static calls,
+named method arguments and method values remain outside this slice.
+
 ## Decimal literal suffixes (design confirmed 2026-11-03)
 
 - Decimal numeric literals accept `i` / `I` to indicate an integer and `f` / `F`

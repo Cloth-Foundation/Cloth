@@ -71,7 +71,7 @@ internal class EmitWideInteger(private val context: LLVMContextRef, private val 
 	private fun install() {
 		val existing = LLVMGetNamedFunction(module, "cloth.integer.addsub")
 		if (existing != null && !existing.isNull) return
-		val source = IntegerKernelIR.source + "\n" + IntegerFloatKernelIR.source + "\n" + IntegerTextKernelIR.source
+		val source = IntegerKernelIR.source + "\n" + IntegerFloatKernelIR.source + "\n" + IntegerTextKernelIR.source + "\n" + IntegerMemberKernelIR.source
 		val helper = LLVMModuleRef()
 		val error = BytePointer(null as Pointer?)
 		var consumed = false

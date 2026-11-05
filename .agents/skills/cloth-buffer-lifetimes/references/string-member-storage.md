@@ -15,7 +15,8 @@ API, object lifetime change, reference counting or GC.
 adapters read operands without modifying/publishing/retaining them, and that
 buffered results own independent storage. This concerns storage, not IO purity.
 `PrimitiveAttachment.register` defaults to unknown. The 17 implemented string
-methods use `StringAttachments.valueMethod` to opt in. Future mutating, retaining,
+methods use inherited `PrimitiveAttachment.valueMethod` to opt in, sharing the
+same registration helper with the other primitive attachments. Future mutating, retaining,
 borrowed-result or otherwise unproven methods must not use that helper.
 
 `SemanticModel.memberCalls` retains the selected overload's contract alongside
@@ -80,6 +81,12 @@ Independent substring, editing, trimming and character-array results are still
 created. Stored/returned values preserve ordinary shape and copy rules. This does
 not promise bounded storage for arbitrary loops, unknown consumers such as output
 built-ins/providers, or repeated captured publication.
+
+[Simple character casing](../../cloth-strings/references/character-case.md) is
+another read-only independent scalar consumer under the same proof. Its
+`ArrayTemporaryCleanupTest` probe checks saved char results, preexisting arrays,
+1,000 repeated producer/mapping calls, while/do-while conditions and final live-byte
+balance with poisoned frees. It adds no new cleanup rule or buffer ownership path.
 
 ## Verification
 

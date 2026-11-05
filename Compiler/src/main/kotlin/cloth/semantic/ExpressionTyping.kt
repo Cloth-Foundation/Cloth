@@ -352,9 +352,22 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		}
 	}
 
+	/** A receiver that never returns has no concrete family. Use argument hints
+	 * when names are shared; zero-argument calls can use a catalog representative.
+	 * Normal operand typing still checks every written argument afterward.
+	 */
+	private fun nonReturningMember(expression: MemberCallExpression): cloth.builtin.attachments.Attachment? {
+		val candidates = PrimitiveAttachments.all(model.target).filter { it.definition.name == expression.name.lexeme }
+		if (candidates.size <= 1) return candidates.singleOrNull()
+		// Preserve label/arity priority before inspecting arguments for family hints.
+		if (expression.suppliedArguments.any { it.label != null } || candidates.all { it.parameters.size != expression.arguments.size }) return candidates.first()
+		val hint = expression.arguments.firstNotNullOfOrNull { arrayElementHint(it, contextualFloat = true)?.takeUnless { type -> type == ValueType.NEVER } } ?: expression.arguments.firstNotNullOfOrNull { arrayElementHint(it, contextualFloat = false)?.takeUnless { type -> type == ValueType.NEVER } }
+		return hint?.let { PrimitiveAttachments[it, expression.name.lexeme, model.target] } ?: candidates.first()
+	}
+
 	private fun memberCallType(expression: MemberCallExpression): ValueType = intrinsic {
 		val receiver = typeOf(expression.receiver)
-		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) PrimitiveAttachments.all(model.target).singleOrNull { it.definition.name == expression.name.lexeme } else null
+		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) nonReturningMember(expression) else null
 		val selected = attachment ?: throw SemanticErrors.unknownMember(receiver, expression.name)
 		if (selected.overload.returns.containsNullability && !supportsNullable) throw SemanticErrors.nullablePending(expression.span)
 		if (expression.suppliedArguments.any { it.label != null }) throw SemanticErrors.argumentBinding("Built-in member methods do not publish named argument labels yet", expression.span)
@@ -363,6 +376,35 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			val parameter = selected.parameters[index]
 			val actual = typeOf(argument, parameter.expectedType, contextualFloat = parameter.expectedType != null)
 			parameter.bind(actual, model.target) ?: throw SemanticErrors.memberArgument(expression.name, argument, actual, parameter)
+		}
+		if (receiver is CInteger) {
+			val constants = RangeConstants(model)
+			val methods = PrimitiveAttachments.integer(receiver, model.target)
+			when (selected) {
+				methods.ABS             -> if (!receiver.unsigned && constants.integer(expression.receiver) == receiver.minimum) throw SemanticErrors.integerAbs(receiver, expression.name.span)
+				methods.CLAMP           -> {
+					val minimum = constants.integer(expression.arguments[0])
+					val maximum = constants.integer(expression.arguments[1])
+					if (minimum != null && maximum != null && minimum > maximum) throw SemanticErrors.clampBounds(expression.name.span)
+				}
+
+				methods.TO_STRING_RADIX -> {
+					val radix = constants.integer(expression.arguments.single())
+					if (radix != null && (radix < BigInteger.TWO || radix > BigInteger.valueOf(36))) throw SemanticErrors.integerRadix(expression.arguments.single().span)
+				}
+			}
+		}
+		if (receiver is CFloat) {
+			val constants = RangeConstants(model)
+			val methods = PrimitiveAttachments.floating(receiver)
+			when (selected) {
+				methods.SIGNUM -> if (constants.floating(expression.receiver)?.isNaN() == true) throw SemanticErrors.floatSignum(expression.name.span)
+				methods.CLAMP  -> {
+					val minimum = constants.floating(expression.arguments[0])
+					val maximum = constants.floating(expression.arguments[1])
+					if (minimum?.isNaN() == true || maximum?.isNaN() == true || minimum != null && maximum != null && minimum > maximum) throw SemanticErrors.floatClampBounds(expression.name.span)
+				}
+			}
 		}
 		model.memberCalls[expression] = BoundBuiltinCall(selected.definition, selected.overload, arguments)
 		selected.overload.returns
@@ -599,7 +641,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		}
 		if (left !is CNullable) throw SemanticErrors.elvis("The left operand of '${Operators.ELVIS}' requires a nullable source type", expression.left.span)
 		val fallbackContext = if (expected is CNullable) left else left.payload
-		val fallback = typeOf(expression.fallback, fallbackContext, contextualFloat = contextualFloat, floatingLiteralType = (left.payload as? CFloat) ?: floatingLiteralType)
+		// Elvis owns its payload context even when consumed by a nonnumeric call
+		// or used as a member receiver, neither of which supplies a float context.
+		val fallback = typeOf(expression.fallback, fallbackContext, contextualFloat = contextualFloat || left.payload is CFloat, floatingLiteralType = (left.payload as? CFloat) ?: floatingLiteralType)
 		if (fallback == ValueType.NEVER) return left.payload
 		if (!left.accepts(fallback)) throw SemanticErrors.elvis("Fallback requires '${left.payload.spelling}' or '${left.spelling}', got '${fallback.spelling}'", expression.fallback.span)
 		return if (fallback is CNullable || fallback == ValueType.Null) left else left.payload

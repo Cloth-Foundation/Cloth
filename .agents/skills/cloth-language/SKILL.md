@@ -77,6 +77,9 @@ captures implementation scope and regression evidence.
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
 | Arbitrary fixed integer widths, private value transport, full decimal output and target evidence | [integrated integer implementation](../cloth-numerics/references/arbitrary-width-integers.md) |
+| Integer abs/clamp/signum, bit counts and radix formatting across every integer identity | [integer attachments](../cloth-numerics/references/integer-attachments.md) |
+| Float abs/clamp/signum, signed zeros, NaNs, infinities and software half comparison | [float attachments](../cloth-numerics/references/float-attachments.md) |
+| Boolean toInt conversion to signed int32 with separate BoolAttachments registration | [boolean attachments](../cloth-numerics/references/bool-attachments.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
 | Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
@@ -85,6 +88,8 @@ captures implementation scope and regression evidence.
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
+| Character Unicode classification, code-point toInt, pinned tables and generation | [character attachments](../cloth-strings/references/character-attachments.md) |
+| Character simple uppercase/lowercase mappings, char results and unchanged unmapped scalars | [character casing](../cloth-strings/references/character-case.md) |
 | String attachments, typed primitive registry and ordinary value member calls | [string member calls](../cloth-strings/references/member-calls.md) |
 | Scalar string positions, extraction, searches and character-array conversion | [scalar string methods](../cloth-strings/references/scalar-methods.md) |
 | Literal replacement and prefix/suffix removal | [string editing](../cloth-strings/references/editing-methods.md) |
