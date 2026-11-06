@@ -10,6 +10,9 @@ the parent skill for current implementation boundaries and source/test routing.
 - `is` supports both active-state checks, such as `player is Alive`, and runtime
   type checks, such as `entity is Player`. The target declaration determines
   which check is requested.
+- The [value-target overload](../../cloth-language/references/operand-contexts.md#forms-of-is)
+  applies to expressions such as `player is other`. Only the built-in
+  type-target check supplies a runtime type proof for narrowing.
 - `==` handles value equality and numeric range membership. Do not use it as a
   type-check or active-state-check operator.
 - Numeric `==` and `!=` support `int` and `float` operands and return `bool`.

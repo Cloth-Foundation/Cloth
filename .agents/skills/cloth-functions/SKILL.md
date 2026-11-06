@@ -27,6 +27,13 @@ mutable fields and positional reception of the returned struct and a scalar.
 - An omitted return annotation means void. Brace bodies require explicit returns;
   `= expression` bodies return implicitly. Preserve void expression returns,
   bare void returns, and explicit `-> void` discards. Check every completing path.
+- Void functions and methods also accept [one statement after `=`](references/semantics.md#function-return-contracts).
+  `FunctionParser` uses the unbraced statement parser and retains the `=` token
+  on the resulting `BlockBody`. Resolve and emit that body through the same
+  path as a brace body. Declaration boundaries allow a semicolon after
+  either body introduced by `=`. Ordinary operator declarations and
+  value-returning callables retain their expression-body rules.
+  See the [verification record](../cloth-language/references/development.md#single-statement-void-callable-bodies-2026-11-06).
 - Do-while Stage 3 can complete a non-void body through its guaranteed first
   entry or intentional nontermination. Only fallthrough/continue reaches the
   test; skipped tests supply no runtime returns or jumps. Deferred returns keep

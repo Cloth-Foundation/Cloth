@@ -19,8 +19,7 @@ types for size/count/width providers. Those source contracts now specify
 those result types for the supported primitives, arrays, strings and metadata.
 
 - Chunks 3.1 through 3.4 implement the confirmed contracts below for the
-  currently supported primitive/array types and built-in `typeinfo`. Class/state
-  execution, `addr` and class text conversion remain deferred. Recursive array
+  supported primitive/array types and built-in `typeinfo` at that stage. Recursive array
   `str` was integrated on 2026-11-02; see the
   [output contract](../../cloth-output/references/semantics.md#recursive-array-text). The early
   planning notes below are historical; subsequent confirmed decisions govern.
@@ -89,9 +88,11 @@ those result types for the supported primitives, arrays, strings and metadata.
   formatting as interpolation. It applies to integers, floats, booleans,
   characters and strings; string receivers preserve their contents. Type
   receivers are rejected. Recursive array formatting was subsequently confirmed
-  on 2026-11-02 under the linked output contract; class formatting remains deferred.
-  The user confirmed this on 2026-10-31. This does not settle the relationship
-  to the separately proposed `toString()` method or future class overrides.
+  on 2026-11-02 under the linked output contract. The user confirmed the
+  provider on 2026-10-31. The later [Object design](../../cloth-language/references/object-protocol.md#class-formatting-with-str)
+  extends it to class instances with `operator ::str()` as the override declaration.
+  The [class formatting record](../../cloth-language/references/class-formatting.md)
+  covers Stage 4 execution and presence checks for nullable receivers.
 - `type` returns a dedicated Cloth type-metadata value, preserving structural
   information such as numeric width, signedness and array element type rather
   than reducing the result to a type-name string. The user confirmed this on

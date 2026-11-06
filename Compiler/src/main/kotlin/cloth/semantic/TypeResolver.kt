@@ -7,14 +7,17 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout, private val namedType: (String) -> CMemberType? = { null }) {
+internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }) {
 
 	fun resolve(annotation: TypeReference, declarations: Boolean = false): ValueType {
 		val name = annotation.name.lexeme
 		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'${Keywords.VOID}' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
 		val base = if (name == Keywords.INTEGER.toString() || name == Keywords.FLOAT.toString()) {
-			val widthValue = annotation.width?.integerLiteralValue()
+			val widthValue = if (annotation.capturesWidth) {
+				if (!OperatorRules.supportsInferredWidth(annotation) || operatorWidth == null) throw SemanticErrors.type(annotation)
+				operatorWidth.toBigInteger()
+			} else annotation.width?.integerLiteralValue()
 			if (name == Keywords.INTEGER.toString()) {
 				if (widthValue != null && (widthValue < ValueType.MIN_INTEGER_BITS.toBigInteger() || widthValue > ValueType.MAX_INTEGER_BITS.toBigInteger())) throw SemanticErrors.integerWidth(annotation)
 				// Narrow only after checking the exact decoded magnitude, never by truncation.

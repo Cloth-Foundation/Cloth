@@ -160,6 +160,26 @@ class DiagnosticsTest {
 	}
 
 	@Test
+	fun `CLI rejects output paths that identify the source file`(@TempDir directory: Path) {
+		val source = directory.resolve("source.co")
+		val contents = "fn main() {}"
+		Files.writeString(source, contents)
+		val executableStem = directory.resolve("linked-output")
+		val hardLink = Files.createLink(directory.resolve("linked-output.exe"), source)
+		for (args in listOf(
+			arrayOf("--emit", "object", source.toString(), directory.resolve("./source.co").toString()),
+			arrayOf("--target", "x86_64-unknown-linux-gnu", source.toString(), source.toString()),
+			arrayOf("--target", "x86_64-pc-windows-msvc", source.toString(), executableStem.toString()),
+		)) {
+			val output = StringBuilder()
+			assertEquals(1, runCompiler(args, reporter(output)))
+			assertContains(output.toString(), "C0014")
+			assertEquals(contents, Files.readString(source))
+			assertTrue(Files.isSameFile(source, hardLink))
+		}
+	}
+
+	@Test
 	fun `CLI and IO diagnostics need no source snippets and debug traces are opt in`(@TempDir directory: Path) {
 		for ((args, code) in listOf(arrayOf("--unknown") to "C0001", arrayOf("--runtime") to "C0002", arrayOf("--runtime=invalid") to "C0003", arrayOf("one", "two", "three") to "C0004", arrayOf(directory.resolve("missing.co").toString()) to "C0010", arrayOf(directory.resolve("bad.txt").toString()) to "C0011")) {
 			val output = StringBuilder()

@@ -102,8 +102,17 @@ ordinary struct methods with stored or temporary receivers.
   applies to both explicit `return` and implicit returns from `= expression`
   bodies. For example, `fn<int<64>> ten() = 10` is valid, while returning an
   `int` binding from an `int<64>` function requires an explicit cast.
-- A `void` function's `=` body must yield void. A produced value can be
-  explicitly discarded with `expression -> void`, for example
+- A void function or method can use `=` followed by one statement, with
+  either an omitted return annotation or explicit `<void>`. The statement
+  follows the same scope and return rules as inside braces. For example, a
+  class with a mutable `float` field named `health` can declare
+  `pub mt<void> addHealth(float add) = health += add`. Plain assignments,
+  all five compound assignments, postfix updates, bindings, loops and bare
+  returns use the ordinary statement grammar. A conditional uses statement
+  form when it lacks an `else` or an arm ends without a result expression or
+  explicit return. A single optional semicolon can terminate the body.
+- A void function or method with an expression body must yield void. A produced
+  value can be explicitly discarded with `expression -> void`, for example
   `fn work() = calculate() -> void`. The cast evaluates its operand once,
   preserving its side effects, discards the result, and yields void. An
   expression that already yields void also satisfies the contract. A

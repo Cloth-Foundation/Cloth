@@ -3,6 +3,11 @@ package cloth.parser.subs
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.*
+import cloth.parser.expression.IfExpression
+import cloth.parser.statement.ExpressionStatement
+import cloth.parser.statement.ReturnStatement
+import cloth.parser.statement.Statement
+import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -17,7 +22,7 @@ class FunctionParser(private val parser: Parser) {
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a function name")
 		val parameters = parseParameters()
-		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function"), visibility)
+		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn()), visibility)
 	}
 
 	internal fun parseParameters(): List<ParameterDeclaration> = parser.delimited.parentheses {
@@ -42,7 +47,45 @@ class FunctionParser(private val parser: Parser) {
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a method name")
 		val parameters = parseParameters()
-		return MethodDeclaration(keyword, name, returnTypes, parameters, parseBody("method"), visibility)
+		return MethodDeclaration(keyword, name, returnTypes, parameters, parseBody("method", returnTypes.isVoidReturn()), visibility)
+	}
+
+	internal fun parseOperator(visibility: Token? = null): MethodDeclaration {
+		val keyword = parser.advance()
+		val hasSelector = parser.peek().lexeme == Operators.LESS.toString() && parser.peek(1).lexeme != Operators.PAREN_OPEN.toString()
+		parser.allowInferredOperatorWidth = hasSelector
+		try {
+			val selector = if (hasSelector) parser.delimited.angles { parser.typeParser.parse(allowArrays = true) } else null
+			parser.allowInferredOperatorWidth = selector?.capturesWidth == true
+			val provider = parser.peek().lexeme == Operators.COLON_COLON.toString()
+			val name = if (provider) {
+				parser.advance()
+				parser.expect(TokenType.Identifier, "an operator provider name")
+			} else {
+				val token = parser.peek()
+				if (token.type != TokenType.Operator && !parser.atKeyword(Keywords.IS)) throw SyntaxErrors.expected("an operator", token)
+				parser.advance()
+			}
+			var rightReceiver = false
+			val parameters = parser.delimited.parentheses {
+				parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
+					if (parser.atKeyword(Keywords.SELF)) {
+						parser.advance()
+						rightReceiver = true
+						parser.skipNewlines()
+						if (parser.peek().lexeme != Operators.PAREN_CLOSE.toString()) throw SyntaxErrors.expected("'${Operators.PAREN_CLOSE}' after '${Keywords.SELF}'", parser.peek())
+						null
+					} else parseParameter()
+				}.filterNotNull()
+			}
+			val result = if (parser.peek().lexeme == Operators.POINTER_RIGHT.toString()) {
+				parser.advance()
+				listOf(parser.typeParser.parse(allowArrays = true))
+			} else emptyList()
+			return MethodDeclaration(keyword, name, result, parameters, parseBody("operator"), visibility, OperatorMember(selector, rightReceiver, provider))
+		} finally {
+			parser.allowInferredOperatorWidth = false
+		}
 	}
 
 	internal fun <T> inBody(parseContents: () -> T): T {
@@ -60,13 +103,16 @@ class FunctionParser(private val parser: Parser) {
 		return inBody(parser::parseBlock)
 	}
 
-	internal fun parseBody(kind: String): FunctionBody {
+	private fun List<TypeReference>.isVoidReturn() = isEmpty() || singleOrNull()?.spelling == Keywords.VOID.toString()
+
+	private fun parseBody(kind: String, allowStatement: Boolean = false): FunctionBody {
 		parser.skipNewlines()
 		return inBody {
 			when (parser.peek().lexeme) {
 				Operators.BRACE_OPEN.toString() -> parser.parseBlock()
 				Operators.ASSIGN.toString()     -> {
 					val equals = parser.advance()
+					if (allowStatement) return@inBody parseVoidBody(equals)
 					val expression = parser.parseResults()
 					ExpressionBody(equals, expression, equals.span.through(parser.previous().span))
 				}
@@ -74,6 +120,30 @@ class FunctionParser(private val parser: Parser) {
 				else                            -> throw SyntaxErrors.expected("a $kind body ('${Operators.BRACE_OPEN}' or '${Operators.ASSIGN}')", parser.peek())
 			}
 		}
+	}
+
+	private fun parseVoidBody(equals: Token): FunctionBody {
+		val startsWithIf = parser.atKeyword(Keywords.IF)
+		val body = parser.parseUnbracedBody()
+		val span = equals.span.through(body.span)
+		val expression = (body.statements.singleOrNull() as? ExpressionStatement)?.expression
+		// Preserve the return contract of existing expression bodies. A bare
+		// conditional can also be a statement when an arm has no result expression.
+		if (expression == null || startsWithIf && expression is IfExpression && expression.isStatementForm()) {
+			return body.copy(span = span, equals = equals)
+		}
+		return ExpressionBody(equals, expression, span)
+	}
+
+	private fun IfExpression.isStatementForm(): Boolean {
+		val fallback = otherwise ?: return true
+		return branches.any { it.statements.endsInStatement() } || fallback.endsInStatement()
+	}
+
+	private fun List<Statement>.endsInStatement(): Boolean = when (val last = lastOrNull()) {
+		is ExpressionStatement -> (last.expression as? IfExpression)?.isStatementForm() == true
+		is ReturnStatement     -> false // Explicit returns already work in value branches.
+		else                   -> true
 	}
 
 }

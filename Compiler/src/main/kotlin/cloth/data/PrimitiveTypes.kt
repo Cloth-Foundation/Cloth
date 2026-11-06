@@ -162,7 +162,13 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		else                                                                    -> null
 	}
 
-	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || (actual is CArray && (size == null || actual.size == null || size == actual.size) && (element is CNullable) == (actual.element is CNullable) && element.accepts(actual.element))
+	override fun accepts(actual: ValueType): Boolean {
+		if (super.accepts(actual)) return true
+		if (actual !is CArray || size != null && actual.size != null && size != actual.size) return false
+		if ((element is CNullable) != (actual.element is CNullable)) return false
+		val payload = (element as? CNullable)?.payload ?: element
+		return if (payload is CClass) element == actual.element else element.accepts(actual.element)
+	}
 
 	override fun inferArraySizes(actual: ValueType): ValueType = if (actual is CArray) CArray(element.inferArraySizes(actual.element), size ?: actual.size) else this
 

@@ -92,6 +92,13 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 	}
 
 	private fun effects(expression: Expression): Effects {
+		if (expression in types.operatorContexts) return unknown
+		if (expression is TypeCheckExpression && expression in types.valueChecks) return unknown
+		if (expression is NameExpression && expression in types.projectedOperands) return Effects()
+		if (expression in types.operatorCalls) return unknown
+		if (expression is BinaryExpression && expression.left !is NullLiteral && expression.right !is NullLiteral && types.classComparisons[expression]?.checksLiveness == true) return unknown
+		if (expression is BinaryExpression && types.valueComparisons[expression]?.overload != null) return unknown
+		if (expression is FieldAccessExpression && functions?.declarations?.enumCases?.containsKey(expression) == true) return Effects()
 		memo[expression]?.let { return it }
 		if (!active.add(expression)) return unknown
 		val result = when (expression) {
@@ -100,7 +107,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			is NameExpression                                                                                    -> {
 				val symbol = functions?.declarations?.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol)
+				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol) || (symbol as? ReceiverFieldSymbol)?.field is EnumField
 				if (block == null) Effects(buffers = backed && types.resultOf(expression).values.any { it.indirect }) else effects(block)
 			}
 
@@ -127,14 +134,24 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 			}
 
 			is StructLiteral                                                                                     -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
-			is FieldAccessExpression                                                                             -> effects(expression.receiver) + Effects(buffers = types.fields[expression] is ClassField && types.resultOf(expression).values.any { it.indirect })
+			is FieldAccessExpression                                                                             -> {
+				val field = types.fields[expression]
+				effects(expression.receiver) + Effects(buffers = (field is ClassField || field is EnumField) && types.resultOf(expression).values.any { it.indirect })
+			}
 
 			is IndexExpression                                                                                   -> effects(expression.array) + effects(expression.index)
 			is UnaryExpression                                                                                   -> effects(expression.operand)
 			is BinaryExpression                                                                                  -> effects(expression.left) + effects(expression.right)
 			is CastExpression                                                                                    -> effects(expression.operand)
 			is TypeCheckExpression                                                                               -> effects(expression.operand)
-			is InterpolatedString                                                                                -> expression.parts.fold(Effects()) { result, part -> result + effects(part) }
+			is InterpolatedString                                                                                -> {
+				val callsFormatter = expression.parts.any { part ->
+					val type = types.typeOf(part)
+					val payload = (type as? CNullable)?.payload ?: type
+					payload.provider(CompilerDataProviders.STR.toString(), types.target)?.callsFormatter == true
+				}
+				if (callsFormatter) unknown else expression.parts.fold(Effects()) { result, part -> result + effects(part) }
+			}
 			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())

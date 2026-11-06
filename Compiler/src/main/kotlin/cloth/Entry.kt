@@ -9,6 +9,7 @@ import cloth.parser.Parser
 import cloth.settings.CompilerSettings
 import cloth.settings.OutputKind
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import kotlin.system.exitProcess
 
@@ -30,10 +31,17 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 		val output = compilerSettings.getOutputFile()?.toPath() ?: clothObject.path.resolveSibling(clothObject.name + if (compilerSettings.outputKind == OutputKind.OBJECT) ".o" else "")
 		val unit = Parser(Lexer(source).scanTokens()).parse()
 		val abi = compilerSettings.targetTriple?.let(NativeCABI::forTarget) ?: NativeCABI.native()
+		val destination = when (compilerSettings.outputKind) {
+			OutputKind.EXECUTABLE -> abi.executableFormat.executablePath(output)
+			OutputKind.OBJECT     -> output
+		}.toAbsolutePath().normalize()
+		if (Files.exists(destination) && Files.isSameFile(clothObject.path, destination)) {
+			throw CliErrors.outputOverwritesSource(destination)
+		}
 		val emitter = LLVMEmitter(abi, compilerSettings.linkOptions)
 		when (compilerSettings.outputKind) {
-			OutputKind.EXECUTABLE -> emitter.compile(unit, output)
-			OutputKind.OBJECT     -> emitter.compileObject(unit, output)
+			OutputKind.EXECUTABLE -> emitter.compile(unit, destination)
+			OutputKind.OBJECT     -> emitter.compileObject(unit, destination)
 		}
 		return 0
 	} catch (failure: ClothDiagnostic) {

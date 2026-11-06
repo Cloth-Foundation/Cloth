@@ -1,7 +1,11 @@
 package cloth.semantic
 
 import cloth.builtin.BoundBuiltinCall
+import cloth.data.ValueType
 import cloth.semantic.symbols.CallableSymbol
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.Expression
+import cloth.token.Operators
 
 internal sealed interface ResolvedCall {
 
@@ -19,3 +23,9 @@ internal sealed interface ResolvedCall {
 		override val type = FunctionType(call.arguments.map { it.parameterType }, call.overload.returns)
 	}
 }
+
+internal data class ResolvedOperator(val call: ResolvedCall.Source, val receiverIndex: Int)
+internal data class ResolvedOperatorContext(val application: BinaryExpression, val projections: List<ResolvedOperator?>)
+internal data class ProjectedOperand(val type: ValueType, val original: Expression?)
+
+internal data class ValueComparisonPlan(val operation: Operators, val overload: ResolvedOperator?, val negate: Boolean)

@@ -100,6 +100,43 @@ class ClassValueIntegrationTest {
 	}
 
 	@Test
+	fun `a non continuing nested index exits before the remaining path and store`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Box (pub def<int[1][1]> values) {
+			    pub mt<int> bare() {
+			        values[if (true) { return 2 } else { 0 }][9] = 9
+			    }
+			}
+			fn<int> explicit(Box box) {
+			    box.values[if (true) { return 1 } else { 0 }][9] = 9
+			}
+			fn<int> main() {
+			    def box = Box::new([[7]])
+			    def total = explicit(box) + box.bare() + box.values[0][0]
+			    box::delete
+			    return total - 10
+			}
+		"""
+		assertEquals(processCompletion().replace("\r\n", "\n"), runStructProgram(NativeCABI.native(), source, directory.resolve("early-index")))
+	}
+
+	@Test
+	fun `a header parameter can shadow its independently stored field during initialization`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Box (pub def<int[1]> values) {
+			    pub def<int> result = if (true) { values[0] = 9; values[0] } else { 0 }
+			}
+			fn<int> main() {
+			    def box = Box::new([1])
+			    def intact = box.result == 9 && box.values[0] == 1
+			    box::delete
+			    return if (intact) { 0 } else { 1 }
+			}
+		"""
+		assertEquals(processCompletion().replace("\r\n", "\n"), runStructProgram(NativeCABI.native(), source, directory.resolve("header-copy")))
+	}
+
+	@Test
 	fun `class value integration emits verified objects on all target profiles`(@TempDir directory: Path) {
 		for ((index, triple) in structTargetTriples.withIndex()) {
 			val emitter = LLVMEmitter(NativeCABI.forTarget(triple))

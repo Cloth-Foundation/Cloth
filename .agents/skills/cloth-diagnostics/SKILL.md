@@ -35,6 +35,11 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C0014 / OUTPUT_OVERWRITES_SOURCE** rejects a CLI output path that identifies
+the input file. The check uses the final target-specific filename and covers
+filesystem aliases such as hard links. `DiagnosticsTest` covers object output,
+an extensionless executable, and a Windows executable with an appended suffix.
+
 **C2007 / FUNCTION_IN_TYPE** rejects `fn` inside a parsed struct body at its
 keyword. **C3077 / UNSUPPORTED_STRUCTS** reports struct syntax sent to the
 body-only snippet analyzer. C3078–C3082 diagnose duplicate
@@ -47,6 +52,8 @@ CLI and native verification.
 **C2008 / METHOD_OUTSIDE_TYPE** locates an `mt` outside a type member list.
 **C3083 / DUPLICATE_METHOD** labels matching signatures in one nominal owner.
 **C3084 / RECEIVER_OUTSIDE_METHOD** locates a use of `self` outside method scope.
+**C3095 / INVALID_ENUM_MEMBER** locates invalid enum cases, payload
+declarations, and payload access. [Struct and enum operators](../cloth-language/references/value-operators.md)
 C3062 rejects lost receiver presence proofs before emission. C3085 was
 retired when [Stage 4 method execution](../cloth-functions/references/method-execution.md)
 was integrated. Runtime bounds and field shape guards still stop at the

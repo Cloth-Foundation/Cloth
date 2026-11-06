@@ -20,6 +20,7 @@ class Parser(private val tokens: List<Token>) {
 
 	val expressionParser: ExpressionParser = ExpressionParser(this)
 	val typeParser = TypeParser(this)
+	internal var allowInferredOperatorWidth = false
 	val delimited = DelimitedParser(this)
 	val forLoopParser = ForLoopParser(this, delimited)
 	val whileLoopParser = WhileLoopParser(this, delimited)
@@ -30,6 +31,7 @@ class Parser(private val tokens: List<Token>) {
 	val bindingsParser = BindingsParser(this)
 	private val structParser = StructParser(this)
 	private val classParser = ClassParser(this)
+	private val enumParser = EnumParser(this)
 	private var bindingBrace: BindingBraceSyntax? = null
 
 	private class BindingBraceSyntax {
@@ -62,16 +64,18 @@ class Parser(private val tokens: List<Token>) {
 			rejectMethodOutsideType()
 			val declaration = if (startsTypeDeclaration()) parseTypeDeclaration() else functionParser.parseFunction()
 			declarations.add(declaration)
-			// Only expression bodies have an optional terminator. A brace-bodied
+			// Only bodies introduced by '=' have an optional terminator. A brace-bodied
 			// function is already complete; file-level empty statements are invalid.
-			val terminated = declaration is FunctionDeclaration && declaration.body is ExpressionBody && isSemicolon(peek())
+			val body = (declaration as? FunctionDeclaration)?.body
+			val terminated = body?.equals != null && isSemicolon(peek())
 			if (terminated) advance()
 			if (!terminated && peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
-				if (declaration is FunctionDeclaration && declaration.body is BlockBody) {
+				if (body != null && body.equals == null) {
 					throw SyntaxErrors.expected("a newline or end of file after a brace-bodied function", peek())
 				}
 				if (declaration is StructDeclaration) throw SyntaxErrors.expected("a newline or end of file after a struct declaration", peek())
 				if (declaration is ClassDeclaration) throw SyntaxErrors.expected("a newline or end of file after a class declaration", peek())
+				if (declaration is EnumDeclaration) throw SyntaxErrors.expected("a newline or end of file after an enum declaration", peek())
 				throw SyntaxErrors.newline(peek())
 			}
 			skipNewlines()
@@ -94,11 +98,16 @@ class Parser(private val tokens: List<Token>) {
 			when {
 				atKeyword(Keywords.CLASS)                          -> advance()
 				atKeyword(Keywords.STRUCT) && finalKeyword == null -> advance()
+				atKeyword(Keywords.ENUM) && finalKeyword == null   -> advance()
 				finalKeyword != null                               -> throw SyntaxErrors.expected("'${Keywords.CLASS}' as the type declaration kind after '${Keywords.FINAL}'", token)
-				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}' or '${Keywords.CLASS}' as the type declaration kind", token)
+				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', or '${Keywords.ENUM}' as the type declaration kind", token)
 			}
 		}
-		return if (kind.lexeme == Keywords.CLASS.toString()) classParser.parse(keyword, visibility, finalKeyword) else structParser.parse(keyword, visibility)
+		return when (kind.lexeme) {
+			Keywords.CLASS.toString() -> classParser.parse(keyword, visibility, finalKeyword)
+			Keywords.ENUM.toString() -> enumParser.parse(keyword, visibility)
+			else -> structParser.parse(keyword, visibility)
+		}
 	}
 
 	fun atKeyword(keyword: Keywords, offset: Int = 0) = peek(offset).let { it.type == TokenType.Keyword && it.lexeme == keyword.toString() }

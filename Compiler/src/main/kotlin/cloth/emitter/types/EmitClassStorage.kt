@@ -25,7 +25,7 @@ internal class EmitClassStorage(private val context: LLVMContextRef, private val
 		val layout = field.owner.instanceStorage(context, abi.layout)
 		fun address(index: Int, name: String) = LLVMBuildStructGEP2(builder, layout, instance, index, name)
 		return ClassFieldStorage(
-			address(field.index, "field.${field.name.lexeme}"),
+			address(field.owner.fieldOffset + field.index, "field.${field.name.lexeme}"),
 			if (field.type.buffered) address(field.owner.arenaIndex(field), "field_arena") else null,
 			if (field.nullableArray != null) address(field.owner.shapeIndex(field), "field_shape") else null,
 		)

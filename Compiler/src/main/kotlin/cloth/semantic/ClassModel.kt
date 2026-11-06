@@ -6,6 +6,7 @@ import cloth.parser.expression.Expression
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.DestructorSymbol
 import cloth.semantic.symbols.ReceiverSymbol
+import cloth.token.Operators
 
 internal data class ClassDefinition(
 	val owner: CClass,
@@ -30,4 +31,8 @@ internal sealed interface ObjectReceiver {
 /** These projections start after resolving and validating the object identity. */
 internal data class InstancePlace(val receiver: ObjectReceiver, val steps: List<PlaceStep>)
 
-internal data class ClassDeletionPlan(val definition: ClassDefinition, val nullable: Boolean)
+internal data class ClassDeletionPlan(val owner: CClass, val nullable: Boolean)
+
+internal data class ClassComparisonPlan(val operation: Operators, val identityOverride: ResolvedOperator?) {
+	val checksLiveness get() = operation != Operators.IDENTITY || identityOverride != null
+}

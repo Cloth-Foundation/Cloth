@@ -56,6 +56,19 @@ emission.
 .\gradlew.bat :Compiler:test --offline --console=plain --no-daemon
 ```
 
+### Audit follow-up on 2026-11-05
+
+The full Windows suite passed 1,394 tests across 120 suites with zero failures,
+errors or skips using the command above. New native host cases cover early exit
+from nested class-field writes and ordered result reception, independent header
+parameter and field storage, and a loop with both live and deleted exits. The
+semantic cases cover deletion on break and continue paths in non-repeating
+do-while loops. The CLI cases verify C0014 and source preservation for object
+output, extensionless executables and a hard link at the final Windows filename.
+[Class values tests](../../../../Compiler/src/test/kotlin/cloth/ClassValueIntegrationTest.kt) ·
+[Lifetime tests](../../../../Compiler/src/test/kotlin/cloth/ClassLifetimeTest.kt) ·
+[Diagnostics tests](../../../../Compiler/src/test/kotlin/cloth/DiagnosticsTest.kt)
+
 ## Handoff to inheritance and states
 
 Basic classes use direct method calls and a private LLVM representation.

@@ -25,8 +25,7 @@ pub typedef<struct> DeathInfo {
 }
 ```
 
-The example uses an existing primitive for `cause` so its syntax does not depend
-on enum implementation. The intended `DeathInfo` in `Test.co` uses `DamageType`.
+The `DeathInfo` in `Test.co` uses a `DamageType` enum for `cause`.
 
 Fields and methods inherit the enclosing struct's visibility. The field list
 comes first and ends with a semicolon when followed by another member. Read
@@ -346,13 +345,13 @@ Metadata preserves nominal identity, so `ScreenPosition::type` and
 `WorldPosition::type` differ even when their field lists match. Metadata for a
 nullable stored field describes its declared type after a presence check.
 
-## Equality scope (confirmed 2026-11-04)
+## Equality scope
 
-Whole-struct `==` and `!=` are deferred, including equality between two
-nullable struct values. Nullable presence comparisons with `null` continue to
-use ordinary nullability rules. Comparisons of `typeinfo` values continue to
-use nominal type identity, and individual field comparisons use their own type
-rules.
+Whole-struct equality uses a same-type `operator ==(StructName other)`.
+The [Stage 5 operator record](../../cloth-language/references/value-operators.md)
+defines explicit `!=`, nullable presence checks, and operand snapshots.
+Comparisons of `typeinfo` values use nominal type identity, and individual
+field comparisons use their own type rules.
 
 ## Implemented slice and deferred extensions
 

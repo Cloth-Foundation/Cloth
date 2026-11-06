@@ -30,7 +30,9 @@ the parent skill for current implementation boundaries and source/test routing.
   is an internal parameter constraint rather than a boxed source type or a
   general implicit conversion to string. Formatting matches interpolation and
   `::str`, including canonical `typeinfo` text. Array values use the recursive
-  contract below; class value formatting remains deferred.
+  contract below. Class and enum values use the shared
+  [class formatter](../../cloth-language/references/class-formatting.md) or
+  [enum formatter](../../cloth-language/references/value-operators.md#enum-values-and-formatting).
 - Ordinary lexical lookup takes precedence over built-ins. A local or parameter
   binding shadows a built-in even in call position. A file-level function group
   shadows the entire same-named built-in group; a mismatched call does not fall
@@ -79,5 +81,7 @@ the parent skill for current implementation boundaries and source/test routing.
   admits whole nullable arrays and nullable scalar/string elements, printing
   absent values as `null`. Nullable rows also execute under the
   [row contract](../../cloth-arrays/references/nullable-rows.md), writing nested
-  present rows directly and absent rows as `null`. Class formatting and raw memory
-  access remain outside the executable scope.
+  present rows directly and absent rows as `null`. For class and enum
+  elements, the measuring pass captures formatter text once in element
+  order and the writing pass reuses it. Raw memory access remains
+  outside the executable scope.

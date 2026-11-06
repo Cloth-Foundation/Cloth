@@ -40,6 +40,24 @@ class FunctionParsingTest {
 	}
 
 	@Test
+	fun `void single statement bodies preserve their delimiter span and declaration boundaries`() {
+		val declarations = parse("""
+			fn increment(int value) = value++; fn<void> stop() = return;
+			fn define() = def value = 1
+			fn<int> next() = 1
+		""").declarations.map { assertIs<FunctionDeclaration>(it) }
+		val update = assertIs<BlockBody>(declarations[0].body)
+		assertEquals("=", update.equals?.lexeme)
+		assertEquals("= value++", textAt(update.span))
+		assertIs<UpdateStatement>(update.statements.single())
+		assertNull(assertIs<ReturnStatement>(assertIs<BlockBody>(declarations[1].body).statements.single()).value)
+		assertIs<BindingDeclaration>(assertIs<BlockBody>(declarations[2].body).statements.single())
+		assertIs<ExpressionBody>(declarations[3].body)
+		assertFailsWith<SyntaxException> { function("fn<int> increment(int value) = value += 1") }
+		assertFailsWith<SyntaxException> { function("fn increment(int value) = value++; value++") }
+	}
+
+	@Test
 	fun `final is a keyword and parameter syntax retains mutability types and source`() {
 		val tokens = Lexer("final finally finalValue").scanTokens()
 		assertEquals(listOf(TokenType.Keyword, TokenType.Identifier, TokenType.Identifier), tokens.take(3).map { it.type })
@@ -201,7 +219,7 @@ class FunctionParsingTest {
 
 	@Test
 	fun `malformed headers bodies returns and calls fail immediately with source diagnostics`() {
-		val malformed = listOf("fn", "pub", "pub pub fn work() {}", "fn<> work() {}", "fn<int work() {}", "fn<int>> work() {}", "fn () {}", "fn work {}", "fn work(", "fn work()", "fn work() := 10", "fn work() =", "fn work() {", "fn work(int) {}", "fn work(final) {}", "fn work(final final int value) {}", "fn work(int final value) {}", "fn work(def<int> value) {}", "fn work(int value = 1) {}", "fn work(int a int b) {}", "fn work(int a,) {}", "fn work(,int a) {}", "fn work(string[ args) {}", "fn work(string[x] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20", "fn work() { return + }", "fn work() { return 1 return 2 }", "fn work() = calculate(", "fn work() = calculate(1,)", "fn work() = calculate(,1)", "fn work() = calculate(1 2)", "fn work() = calculate(1,,2)", "fn work() = calculate(1}", "fn work() { calculate() calculate() }", "fn work() = return 1")
+		val malformed = listOf("fn", "pub", "pub pub fn work() {}", "fn<> work() {}", "fn<int work() {}", "fn<int>> work() {}", "fn () {}", "fn work {}", "fn work(", "fn work()", "fn work() := 10", "fn work() =", "fn work() {", "fn work(int) {}", "fn work(final) {}", "fn work(final final int value) {}", "fn work(int final value) {}", "fn work(def<int> value) {}", "fn work(int value = 1) {}", "fn work(int a int b) {}", "fn work(int a,) {}", "fn work(,int a) {}", "fn work(string[ args) {}", "fn work(string[x] args) {}", "fn work() {} fn next() {}", "fn work() = 10 20", "fn work() { return + }", "fn work() { return 1 return 2 }", "fn work() = calculate(", "fn work() = calculate(1,)", "fn work() = calculate(,1)", "fn work() = calculate(1 2)", "fn work() = calculate(1,,2)", "fn work() = calculate(1}", "fn work() { calculate() calculate() }", "fn<int> work() = return 1")
 		for (source in malformed) {
 			val failure = assertFailsWith<SyntaxException>(source) { parse(source) }
 			assertLocated(failure)

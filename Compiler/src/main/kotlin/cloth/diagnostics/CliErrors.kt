@@ -12,4 +12,5 @@ object CliErrors {
 	fun extension(extension: String) = ClothDiagnostic(DiagnosticCode.SOURCE_EXTENSION, "Unsupported source file extension '$extension'", guidance = "Use a .co source file or a .clib library file.")
 	fun read(path: Path, cause: Throwable) = ClothDiagnostic(DiagnosticCode.SOURCE_READ, "Unable to read source file '$path'", guidance = cause.message, cause = cause)
 	fun output(cause: Throwable) = ClothDiagnostic(DiagnosticCode.OUTPUT_IO, "Unable to write compiler output", guidance = cause.message, cause = cause)
+	fun outputOverwritesSource(path: Path) = ClothDiagnostic(DiagnosticCode.OUTPUT_OVERWRITES_SOURCE, "Compiler output '$path' would overwrite the source file", guidance = "Choose a different output path.")
 }

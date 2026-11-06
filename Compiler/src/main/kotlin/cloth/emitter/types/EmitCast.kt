@@ -1,5 +1,7 @@
 package cloth.emitter.types
 
+import cloth.data.CClass
+import cloth.data.CEnum
 import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.CNullable
@@ -53,7 +55,8 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 	}
 
 	private fun convert(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef {
-		if (source == target) return value
+		if (source == target || source is CClass && target is CClass && target.accepts(source)) return value
+		if (source is CEnum && target == ValueType.INT) return value
 		if (target.floating) return toFloating(value, source, target)
 		if (source is CInteger && target is CInteger && (source.bits > 64 || target.bits > 64)) return EmitWideInteger(context, builder, abi).integerCast(value, source, target)
 		if (source is CFloat && target is CInteger && target.bits > 64) return EmitWideInteger(context, builder, abi).fromFloating(value, source, target, location(expression))

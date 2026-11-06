@@ -3,7 +3,10 @@ package cloth.semantic
 import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
 import cloth.data.CClass
+import cloth.data.CEnum
 import cloth.data.ClassField
+import cloth.data.CompilerDataProviders
+import cloth.data.EnumField
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
@@ -14,6 +17,7 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.Token
 import cloth.token.TokenSpan
+import cloth.token.TokenType
 
 /** Collects source callable signatures, then resolves names in each body. */
 class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native()) {
@@ -22,6 +26,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 		val types = NamedTypes(unit.declarations, target)
 		val structs = types.resolveStructs()
 		types.resolveClassFields()
+		types.resolveEnumFields()
 		val classes = types.classes.mapValues { (_, owner) -> classDefinition(owner) }
 		val fileScope = LexicalScope()
 		val functions = mutableListOf<FunctionSymbol>()
@@ -35,17 +40,26 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val methods = (structs.values.map { it to it.declaration.methods } + types.classes.values.map { it to it.declaration.members.filterIsInstance<MethodDeclaration>() }).flatMap { (owner, members) ->
-			val methodSignatures = mutableMapOf<FunctionSignature, MethodSymbol>()
+		val enumDefaults = types.enums.values.filterNot { owner ->
+			owner.declaration.operators.any { it.operator?.provider == true && it.name.lexeme == CompilerDataProviders.STR.toString() }
+		}.associateWith(EnumModel::defaultFormatter)
+		val enumMembers = types.enums.values.map { owner ->
+			owner to (owner.declaration.operators + owner.fields.map { it.reader } + listOfNotNull(enumDefaults[owner]))
+		}
+		val methods = (structs.values.map { it to it.declaration.methods } + types.classes.values.map { it to it.declaration.members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
+			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean, Pair<SignatureType, Boolean>?>, MethodSymbol>()
 			members.map { declaration ->
+				OperatorRules.validate(declaration, owner)
 				val method = MethodSymbol(declaration, owner)
-				methodSignatures.putIfAbsent(method.signature, method)?.let {
+				val selector = declaration.operator?.selector?.let { SignatureType.of(it) to it.capturesWidth }
+				val key = Triple(method.signature, declaration.operator?.rightReceiver == true, selector)
+				methodSignatures.putIfAbsent(key, method)?.let {
 					throw SemanticErrors.duplicateMethod(owner.name, method.signature.spelling, it.name, method.name)
 				}
 				method
 			}
 		}
-		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods, classes)
+		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods, classes, types.root, types.enums, enumDefaults)
 		for (callable in model.callables) {
 			val scope = LexicalScope(fileScope)
 			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable
@@ -73,6 +87,11 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			when (val declaration = callable.declaration) {
 				is PrimaryConstructorDeclaration -> {
 					val definition = model.classes.getValue(declaration.name.lexeme)
+					declaration.owner.base?.let { base ->
+						val resolver = BodyResolver(model, null, preInitialization = true, classOwner = definition.owner)
+						ArgumentBinder.validate(base.suppliedArguments)
+						base.arguments.forEach { resolver.expression(it, scope) }
+					}
 					for ((field, expression) in definition.fieldInitializers) {
 						BodyResolver(model, receiver, initializingField = field).expression(expression, scope)
 					}
@@ -139,7 +158,9 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		private fun receiverField(self: ReceiverSymbol?, name: Token): ReceiverFieldSymbol? {
 			val field = self?.field(name.lexeme) ?: return null
-			if (initializingField != null && field.field.index >= initializingField.index) {
+			val classField = field.field as? ClassField
+			if (classField != null && classField.owner != classOwner && classField.visibility == null) throw SemanticErrors.privateClassMember(name, classField.name)
+			if (initializingField != null && classField?.owner == initializingField.owner && field.field.index >= initializingField.index) {
 				throw SemanticErrors.partialClassInstance("Field '${name.lexeme}' has not been initialized", name.span)
 			}
 			return field
@@ -163,8 +184,17 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 		private fun explicitReceiver(expression: Expression) = (expression as? NameExpression)?.let { model.names[it] as? ReceiverSymbol }
 
+		private fun receiverValue(operand: Expression, scope: LexicalScope) {
+			expression(operand, scope)
+			if (defaultContext) {
+				val root = model.storedRoot(operand)
+				if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyValueReceivers.add(operand)
+			}
+		}
+
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
 			val symbol = value(name, scope)
+			if (symbol is ReceiverFieldSymbol && symbol.field is EnumField) throw SemanticErrors.enumMember("Enum payload fields are read-only", name.span)
 			if (defaultContext && symbol is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameters are read-only in defaults", name.span)
 			checkReceiverWrite(symbol, name.span)
 			if (symbol !is BindingSymbol) throw SemanticErrors.bindingRequired(name, symbol.name.takeUnless { symbol is BuiltinGroupSymbol })
@@ -181,8 +211,8 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 			for (statement in statements) when (statement) {
 				is FieldWriteStatement        -> {
 					expression(statement.target, scope)
-					val root = statement.target.placeRoot()?.let { model.symbolOf(it) as? BindingSymbol }
-					if (model.classes.isEmpty() && (root == null || root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression)) throw SemanticErrors.fieldTarget(statement.target.span)
+					val root = statement.target.placeRoot()?.let { model.names[it] as? BindingSymbol }
+					if (model.classes.isEmpty() && model.enums.isEmpty() && (root == null || root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression)) throw SemanticErrors.fieldTarget(statement.target.span)
 					if (defaultContext && root is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
 					checkReceiverWrite(root, statement.target.span)
 					if (root != null) model.fieldRoots[statement] = root
@@ -306,11 +336,21 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 				is StructLiteral                                                                                                     -> expression.fields.forEach { expression(it, scope) }
 				is FieldAccessExpression                                                                                             -> {
 					val target = expression.receiver
+					if (target is NameExpression) {
+						val owner = model.enums[target.name.lexeme]
+						if (owner != null && lexical(target.name, scope) !is BindingSymbol && receiverField(receiver, target.name) == null) {
+							val case = owner.cases[expression.name.lexeme] ?: throw SemanticErrors.enumMember("Enum '${owner.spelling}' has no case '${expression.name.lexeme}'", expression.name.span)
+							model.enumCases[expression] = case
+							return
+						}
+					}
 					if (initializingField != null && target is NameExpression && target.name.lexeme == Keywords.SELF.toString()) model.names[target] = value(target.name, scope)
 					else expression(target, scope)
 					explicitReceiver(expression.receiver)?.let { self ->
 						model.receiverFields[expression] = receiverField(self, expression.name) ?: throw if (self.owner is CClass) {
 							SemanticErrors.classMember("Class '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+						} else if (self.owner is CEnum) {
+							SemanticErrors.enumMember("Enum '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
 						} else SemanticErrors.structField("Struct '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
 					}
 				}
@@ -325,7 +365,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 						if (symbol !is BindingSymbol && member == null) model.namedType(receiver.name.lexeme) else null
 					} else null
 					if (type != null && receiver is NameExpression) model.namedTypeReceivers[receiver] = type
-					else expression(receiver, scope)
+					else receiverValue(receiver, scope)
 				}
 
 				is MemberCallExpression                                                                                              -> {
@@ -346,6 +386,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 
 				is ClassCreationExpression                                                                                           -> {
 					val receiver = expression.receiver as? NameExpression
+					if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
 					val definition = receiver?.let { model.classes[it.name.lexeme] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
 					model.classCreations[expression] = definition
 					ArgumentBinder.validate(expression.suppliedArguments)
@@ -371,6 +412,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 					val child = LexicalScope(scope)
 					model.blockScopes[body] = child
 					classOwner?.let { model.classOwners[expression.declaration] = it }
+					(receiver?.owner as? CEnum)?.let { model.enumOwners[expression.declaration] = it }
 					BodyResolver(model, receiver, defaultContext, unavailable, allowNestedReturn = true, preInitialization = preInitialization, initializingField = initializingField, classOwner = classOwner).statements(body.statements, child)
 				}
 
@@ -396,23 +438,33 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 						model.implicitReceivers[expression] = checkNotNull(receiver)
 					}
 					model.calls[expression] = symbol
-					expression.arguments.forEach { expression(it, scope) }
+					expression.arguments.forEach { receiverValue(it, scope) }
 				}
 
-				is UnaryExpression                                                                                                   -> expression(expression.operand, scope)
+				is UnaryExpression                                                                                                   -> receiverValue(expression.operand, scope)
 				is ElvisExpression                                                                                                   -> {
 					expression(expression.left, scope)
 					expression(expression.fallback, scope)
 				}
 
 				is BinaryExpression                                                                                                  -> {
-					expression(expression.left, scope)
-					expression(expression.right, scope)
+					receiverValue(expression.left, scope)
+					receiverValue(expression.right, scope)
 				}
 
 				is CastExpression                                                                                                    -> expression(expression.operand, scope)
-				is TypeCheckExpression                                                                                               -> expression(expression.operand, scope)
-				is InterpolatedString                                                                                                -> expression.parts.forEach { expression(it, scope) }
+				is TypeCheckExpression                                                                                               -> {
+					val target = expression.target
+					val name = target.name
+					val bare = name.type == TokenType.Identifier && !target.hasNullability && target.width == null && !target.unsigned
+					val value = if (bare && model.namedType(name.lexeme) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
+					if (value is BindingSymbol) {
+						val check = BinaryExpression(expression.operand, expression.operator, NameExpression(name))
+						expression(check, scope)
+						model.valueChecks[expression] = check
+					} else expression(expression.operand, scope)
+				}
+				is InterpolatedString                                                                                                -> expression.parts.forEach { receiverValue(it, scope) }
 				is IfExpression                                                                                                      -> {
 					for (branch in expression.branches) {
 						expression(branch.condition, scope)

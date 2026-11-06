@@ -23,9 +23,10 @@ fn<int> main() { stop(); def x = value(); return x; }
 - A brace-bodied function ends at `}`. `fn main() {};` is rejected, including
   when the semicolon is separated from `}` by comments or newlines. Source files
   do not allow standalone empty statements or leading/repeated semicolons.
-- An expression-bodied function, such as `fn<int> value() = 10;`, may have one
-  optional terminator. This includes an expression body whose value is a
-  conditional ending in `}`; distinguish the grammar from the final token.
+- A callable body introduced by `=` may have one optional terminator.
+  This covers `fn<int> value() = 10;`, the [single-statement void form](../cloth-functions/references/semantics.md#function-return-contracts),
+  and a conditional ending in `}`. Use the body introducer to distinguish
+  these from brace bodies.
 - Semicolons cannot intervene before `else` or `else if`. Newlines before `else`
   still belong to the conditional chain. `if (flag) {}; else {}` is rejected.
   This also applies to unbraced branches: `if (flag) return 1 else return 2`
@@ -98,7 +99,7 @@ reject it; their traversal advances automatically through snapshot elements.
 ## Source and invariants
 
 [Parser](../../../Compiler/src/main/kotlin/cloth/parser/Parser.kt) distinguishes
-expression and brace function bodies at declaration boundaries, owns body-level
+`=` and brace bodies at declaration boundaries, owns body-level
 separators and contextual bare returns. Conditional and do-trailer lookahead
 skip newlines only at their corresponding grammar boundaries.
 [ExpressionParser](../../../Compiler/src/main/kotlin/cloth/parser/subs/ExpressionParser.kt)

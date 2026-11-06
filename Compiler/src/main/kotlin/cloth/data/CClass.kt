@@ -30,12 +30,17 @@ sealed interface InstanceField {
 class CClass internal constructor(val declaration: ClassDeclaration) : CMemberType(Keywords.CLASS) {
 
 	override val name get() = declaration.name
+	internal var base: CClass? = null
+	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
+	override fun accepts(actual: ValueType) = super.accepts(actual) || actual is CClass && this in actual.ancestry()
+	// The implicit root has no fields. A source base occupies the first slot.
+	internal val fieldOffset get() = if (base?.base != null) 1 else 0
 	override lateinit var fields: List<ClassField>
 		private set
 	private lateinit var fieldsByName: Map<String, ClassField>
 	internal val bufferedFields get() = fields.filter { it.type.buffered }
 	private val shapedFields get() = fields.filter { it.nullableArray != null }
-	internal override fun field(name: String): ClassField? = fieldsByName[name]
+	internal override fun field(name: String): ClassField? = fieldsByName[name] ?: base?.field(name)
 
 	internal fun defineFields(fields: List<ClassField>) {
 		this.fields = fields
@@ -44,19 +49,23 @@ class CClass internal constructor(val declaration: ClassDeclaration) : CMemberTy
 
 	/** A private slot and generation carrier, independent of the native pointer width. */
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMInt64TypeInContext(context)
+	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> =
+		super.providers(target) + (CompilerDataProviders.STR to ProviderResult.ClassText(this))
 
-	internal fun arenaIndex(field: ClassField) = fields.size + bufferedFields.indexOf(field)
-	internal fun shapeIndex(field: ClassField) = fields.size + bufferedFields.size + shapedFields.indexOf(field)
+	internal fun arenaIndex(field: ClassField) = fieldOffset + fields.size + bufferedFields.indexOf(field)
+	internal fun shapeIndex(field: ClassField) = fieldOffset + fields.size + bufferedFields.size + shapedFields.indexOf(field)
 
 	internal fun instanceStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef {
 		val buffered = bufferedFields
 		val shaped = shapedFields
-		val count = maxOf(1, fields.size + buffered.size + shaped.size)
+		val offset = fieldOffset
+		val count = maxOf(1, offset + fields.size + buffered.size + shaped.size)
 		return PointerPointer<LLVMTypeRef>(count.toLong()).use { members ->
-			if (fields.isEmpty()) members.put(0, LLVMInt8TypeInContext(context))
-			else fields.forEach { field -> members.put(field.index.toLong(), field.type.llvmStorage(context, target)) }
-			buffered.indices.forEach { members.put((fields.size + it).toLong(), LLVMPointerTypeInContext(context, 0)) }
-			shaped.forEachIndexed { index, field -> members.put((fields.size + buffered.size + index).toLong(), field.type.llvmStorage(context, target)) }
+			if (offset != 0) members.put(0, checkNotNull(base).instanceStorage(context, target))
+			else if (fields.isEmpty()) members.put(0, LLVMInt8TypeInContext(context))
+			fields.forEach { field -> members.put((offset + field.index).toLong(), field.type.llvmStorage(context, target)) }
+			buffered.indices.forEach { members.put((offset + fields.size + it).toLong(), LLVMPointerTypeInContext(context, 0)) }
+			shaped.forEachIndexed { index, field -> members.put((offset + fields.size + buffered.size + index).toLong(), field.type.llvmStorage(context, target)) }
 			LLVMStructTypeInContext(context, members, count, 0)
 		}
 	}

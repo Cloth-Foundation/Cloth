@@ -1,0 +1,32 @@
+pub typedef<class> Player (def<string> name, pub def<float> health) {
+
+    ~Player {
+        println(#"{name} died with {health} health!")
+    }
+
+    pub mt<void> addHealth(float add) = health += add
+
+    operator<string> +() = #"{health}"
+    operator<float<auto>> +() = health -> float
+
+    operator ::str () = name
+
+}
+
+fn<void> main (string[] args) {
+    def<Player> player = Player::new("John", 100f)
+
+    def newHealth = player + 10f
+    println(newHealth)
+    def<string> totalHealth = "Total Health: " + player
+    println(totalHealth)
+    println(player)
+    addHealth(player, 10)
+    println(player.health)
+
+    player::delete
+
+}
+
+fn addHealth(Player player, float add) = player.addHealth(add)
+fn addHealth(Player player, int add) = addHealth(player, add -> float)

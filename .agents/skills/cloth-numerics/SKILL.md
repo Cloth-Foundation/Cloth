@@ -54,6 +54,8 @@ widths independent of the source cap and retain the selected scalar/limb split.
 Read [confirmed numeric semantics](references/semantics.md). Use
 [target integers](../cloth-target-integers/SKILL.md) for usize/isize and
 [bindings](../cloth-bindings/SKILL.md) for assignment/update syntax.
+[Operand contexts](../cloth-language/references/operand-contexts.md) defines
+`int<auto>` and `float<auto>` matching and explicit casts at captured widths.
 
 For numeric literal prefixes/suffixes and contextual widths, read the
 [implementation plan](../../../todo/numeric-literals-plan.md) and

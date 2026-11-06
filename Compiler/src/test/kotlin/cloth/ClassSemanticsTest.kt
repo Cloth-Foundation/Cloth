@@ -135,7 +135,7 @@ class ClassSemanticsTest {
 		val deletes = statements.map { assertIs<ClassDeletionExpression>(assertIs<ExpressionStatement>(it).expression) }
 		val plans = deletes.map { model.classDeletions.getValue(it) }
 		assertEquals(listOf(true, false), plans.map { it.nullable })
-		assertTrue(plans.all { it.definition === model.declarations.classes.getValue("Value") })
+		assertTrue(plans.all { it.owner === model.declarations.classes.getValue("Value").owner })
 		assertTrue(deletes.all { model.typeOf(it) == ValueType.VOID })
 	}
 
@@ -156,6 +156,8 @@ class ClassSemanticsTest {
 			"typedef<class> C (def<int> x ?: self.x)" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
 			"typedef<class> C (def<int> x) { C(float y) : (self.x) {} }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
 			"typedef<class> C { def<int> x = self.y\ndef<int> y = 1 }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
+			"typedef<class> C { def<int[1]> a = [1]\ndef<int> x = if (true) { a[0] = 9; a[0] } else { 0 } }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
+			"typedef<class> C (def<int[1]> a) { def<int> x = if (true) { self.a[0] = 9; self.a[0] } else { 0 } }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
 			"typedef<class> C { def<int> x = read()\nmt<int> read() = 1 }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
 			"typedef<struct> S { mt<int> read() = 1 }\ntypedef<class> C (def<S> s) { def<int> x = self.s.read() }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,
 			"typedef<class> C { def<C> x = self }" to DiagnosticCode.PARTIAL_CLASS_INSTANCE,

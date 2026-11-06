@@ -164,7 +164,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 
 	fun copy(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef): LLVMValueRef = copyAligned(builder, destination, value, 1)
 
-	private fun copyAligned(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, alignment: Int): LLVMValueRef {
+	fun copyAligned(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, alignment: Int): LLVMValueRef {
 		val pointerBytes = target.pointerBits / 8
 		val headerBytes = (pointerBytes + alignment - 1) / alignment * alignment
 		val name = if (headerBytes == pointerBytes) "cloth.rt.string.copy" else "cloth.rt.buffer.copy.align$alignment"

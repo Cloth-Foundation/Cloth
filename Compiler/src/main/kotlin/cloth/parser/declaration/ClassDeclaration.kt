@@ -14,6 +14,7 @@ data class ClassDeclaration(
 	val parameters: List<ClassParameterDeclaration>,
 	val members: List<ClassMember>,
 	override val span: TokenSpan,
+	val base: ConstructorDelegation? = null,
 ) : Declaration
 
 data class ClassParameterDeclaration(val parameter: ParameterDeclaration, val fieldKeyword: Token? = null, val visibility: Token? = null) {

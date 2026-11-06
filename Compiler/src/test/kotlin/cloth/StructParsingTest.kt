@@ -191,7 +191,7 @@ class StructParsingTest {
 			assertEquals("fn", textAt(failure.sourceLabels.single().span))
 			assertContains(assertNotNull(failure.guidance), "mt")
 		}
-		for (kind in listOf("enum", "interface", "state")) {
+		for (kind in listOf("interface", "state")) {
 			val failure = assertFailsWith<SyntaxException> { parse("pub typedef<$kind> S {}") }
 			assertEquals(kind, textAt(failure.sourceLabels.single().span))
 		}

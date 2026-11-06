@@ -21,7 +21,12 @@ class ExpressionParser(val parser: Parser) {
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
-				left = TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
+				val target = parser.peek()
+				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
+				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || parser.atKeyword(Keywords.SELF) ||
+					target.type == TokenType.Identifier && hasValuePostfix
+				left = if (valueTarget) BinaryExpression(left, operator, parseUnary(stopAtRange, allowWhileTrailer))
+				else TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
 				continue
 			}
 			if (operator.type != TokenType.Operator) break
@@ -246,6 +251,6 @@ class ExpressionParser(val parser: Parser) {
 
 		data class OperatorPrecedence(val precedence: Int, val associativity: Associativity = Associativity.LEFT)
 
-		val binaryOperators = mapOf(Operators.ELVIS to OperatorPrecedence(0, Associativity.RIGHT), Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20), Operators.MUL_MUL to OperatorPrecedence(POWER_PRECEDENCE, Associativity.RIGHT))
+		val binaryOperators = mapOf(Operators.ELVIS to OperatorPrecedence(0, Associativity.RIGHT), Operators.OR to OperatorPrecedence(1), Operators.AND to OperatorPrecedence(2), Operators.EQUAL to OperatorPrecedence(5), Operators.NOT_EQUAL to OperatorPrecedence(5), Operators.IDENTITY to OperatorPrecedence(5), Operators.LESS to OperatorPrecedence(7), Operators.GREATER to OperatorPrecedence(7), Operators.LESS_EQUAL to OperatorPrecedence(7), Operators.GREATER_EQUAL to OperatorPrecedence(7), Operators.PLUS to OperatorPrecedence(10), Operators.MINUS to OperatorPrecedence(10), Operators.MULTIPLY to OperatorPrecedence(20), Operators.DIVIDE to OperatorPrecedence(20), Operators.MODULO to OperatorPrecedence(20), Operators.MUL_MUL to OperatorPrecedence(POWER_PRECEDENCE, Associativity.RIGHT))
 	}
 }

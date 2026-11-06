@@ -114,8 +114,10 @@ and locale overloads remain outside this feature.
 - On 2026-11-02 the user confirmed recursive contents for array interpolation,
   printing and `::str`, superseding that temporary restriction for supported
   arrays. Read [the output contract](../../cloth-output/references/semantics.md#recursive-array-text)
-  for formatting and once-only evaluation. `::addr`, class formatting and the
-  proposed `toString()` API remain deferred.
+  for formatting and once-only evaluation. The later
+  [Object design](../../cloth-language/references/object-protocol.md#class-formatting-with-str)
+  uses `::str` as the public conversion spelling and `operator ::str()` as the
+  class customization point, superseding the separate `toString()` proposal.
 - The user selected string definitions after character support. Explicit
   `def<string>` and inferred declarations such as `def hello := "Hello World!"`
   follow the ordinary fixed-type binding and `=` / `:=` rules shown in

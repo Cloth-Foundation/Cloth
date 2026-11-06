@@ -12,7 +12,9 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Explicit C ABI profiles selected from LLVM's normalized target triple. */
 internal class NativeCABI private constructor(val targetTriple: String, val profile: Profile, val architecture: Architecture, val environment: String) {
 
-	enum class Architecture { X86,
+	enum class Architecture {
+		// Dummy comment so X86 doesn't appear next to the brace. IntelliJ Kotlin formatting is kind of dumb.
+		X86,
 		X86_64,
 		AARCH64
 	}
@@ -40,6 +42,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	fun printArgument(type: ValueType): ValueType = when (type) {
 		is CStruct      -> throw InternalErrors.invariant("Structs have no native print argument")
 		is CClass       -> throw InternalErrors.invariant("Classes have no native print argument")
+		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
@@ -61,6 +64,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
 		is CStruct      -> throw InternalErrors.invariant("Structs have no native print format")
 		is CClass       -> throw InternalErrors.invariant("Classes have no native print format")
+		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
 		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")

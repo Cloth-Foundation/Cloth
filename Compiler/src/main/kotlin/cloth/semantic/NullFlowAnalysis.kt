@@ -1,5 +1,6 @@
 package cloth.semantic
 
+import cloth.builtin.BuiltinFunctions
 import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.data.*
 import cloth.parser.declaration.BlockBody
@@ -22,7 +23,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		data class Index(val constant: BigInteger?) : Segment
 	}
 
-	private data class Place(val root: BindingSymbol, val path: List<Segment> = emptyList()) {
+	private data class Place(val root: BindingSymbol, val path: List<Segment> = emptyList(), val narrowed: CClass? = null) {
 
 		fun invalidates(proof: Place): Boolean = root == proof.root && path.size <= proof.path.size && path.indices.all { index ->
 			val write = path[index]
@@ -83,8 +84,9 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	/** Use resolved declaration types when available. Inferred locals can
 	 * remain unknown here because this pass precedes overload typing.
 	 */
-	private fun receiverHint(expression: Expression): ValueType? {
+	private fun receiverHint(expression: Expression, unwrapNullable: Boolean = true): ValueType? {
 		val declared = when (expression) {
+			is ClassCreationExpression -> model.declarations.classCreations[expression]?.owner
 			is NameExpression        -> binding(expression)?.let { symbol ->
 				when (symbol) {
 					is ReceiverSymbol, is ReceiverFieldSymbol -> model.typeOf(symbol)
@@ -92,17 +94,107 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				}
 			}
 
-			is FieldAccessExpression -> (receiverHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
+			is FieldAccessExpression -> model.declarations.enumCases[expression]?.owner
+				?: (receiverHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
 			is IndexExpression       -> (receiverHint(expression.array) as? CArray)?.element
 			else                     -> null
 		}
-		return (declared as? CNullable)?.payload ?: declared
+		if (!unwrapNullable) return declared
+		val payload = (declared as? CNullable)?.payload ?: declared
+		val narrowed = (expression as? NameExpression)?.let { model.narrowedNames[it] }
+		return if (payload is CClass && narrowed != null && payload.accepts(narrowed)) narrowed else payload
 	}
 
 	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<MethodSymbol> = when (hint) {
 		is CMemberType -> model.declarations.methodGroup(hint, call.name.lexeme)?.overloads.orEmpty()
 		null           -> methodsByName[call.name.lexeme].orEmpty()
 		else           -> emptyList()
+	}
+
+	private fun operatorMayCall(value: Expression): Boolean {
+		val (operator, operands) = when (value) {
+			is UnaryExpression -> value.operator to listOf(value.operand)
+			is BinaryExpression -> value.operator to listOf(value.left, value.right)
+			else -> return false
+		}
+		val comparison = Operators.fromCharacter(operator.lexeme)
+		if (comparison in OperatorRules.classComparisons && operands.any { it is NullLiteral }) return false
+		fun unknownCouldCarryReceiver(operand: Expression) = when (operand) {
+			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral,
+			is ArrayLiteral, is InterpolatedString, is NullLiteral, is TypeCheckExpression -> false
+			is UnaryExpression, is BinaryExpression -> operatorMayCall(operand)
+			else -> true
+		}
+		if (comparison == Operators.EQUAL || comparison == Operators.NOT_EQUAL) {
+			val declarations = model.declarations
+			if (!declarations.hasOperator(comparison.toString()) && !declarations.hasOperator(Operators.EQUAL.toString())) return false
+			val hints = operands.map(::receiverHint)
+			if (!operands.zip(hints).all { (operand, hint) -> hint is CMemberType || hint == null && unknownCouldCarryReceiver(operand) }) return false
+			val owner = hints.filterIsInstance<CMemberType>().firstOrNull() ?: return true
+			if (owner is CClass) return true
+			if (hints.any { it != null && it != owner }) return false
+			return listOf(comparison, Operators.EQUAL).any { operation ->
+				declarations.operators(owner, operation.toString(), right = false, arity = 1).isNotEmpty() ||
+					declarations.operators(owner, operation.toString(), right = true, arity = 1).isNotEmpty()
+			}
+		}
+		if (!model.declarations.hasOperator(operator.lexeme)) return false
+		if (value is BinaryExpression && (contextMayCall(value.left, value.right, operator.lexeme) || contextMayCall(value.right, value.left, operator.lexeme))) return true
+		return operands.withIndex().any { (index, operand) ->
+			when (val hint = receiverHint(operand)) {
+				is CMemberType -> model.declarations.operators(hint, operator.lexeme, index == 1, operands.size - 1).isNotEmpty()
+				null -> unknownCouldCarryReceiver(operand)
+				else -> false
+			}
+		}
+	}
+
+	private fun contextMayCall(value: Expression, other: Expression, operator: String): Boolean {
+		if (!OperatorRules.supportsContext(Operators.fromCharacter(operator))) return false
+		val declarations = model.declarations
+		val candidates = when (val hint = receiverHint(value)) {
+			is CMemberType -> declarations.contextOperators(hint, operator)
+			null -> when (value) {
+				is NumberLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is InterpolatedString,
+				is NullLiteral, is ArrayLiteral, is TypeCheckExpression -> return false
+				is UnaryExpression, is BinaryExpression -> if (!operatorMayCall(value)) return false else null
+				else -> null
+			}
+			else -> return false
+		} ?: declarations.methods.filter { it.name.lexeme == operator && it.declaration.operator?.selector != null }
+		val peer = receiverHint(other, unwrapNullable = false)
+		return candidates.any { method ->
+			val selector = model.contextSelectorTypes[method]
+			fun matches(type: ValueType) =
+				selector?.accepts(type) ?: (OperatorRules.inferredSelectorWidth(method.declaration.operator?.selector, type) != null)
+			peer == null || matches(peer) || peer is CNullable && matches(peer.payload)
+		}
+	}
+
+	/** A statically applicable full overload keeps the left context from running
+	 * before the right expression. Unknown contracts retain conservative effects.
+	 */
+	private fun knownFullOperator(value: BinaryExpression): Boolean {
+		val left = receiverHint(value.left, unwrapNullable = false) ?: return false
+		val right = receiverHint(value.right, unwrapNullable = false) ?: return false
+		fun matches(receiver: ValueType, operand: ValueType, onRight: Boolean): Boolean =
+			receiver is CMemberType && model.declarations.operators(receiver, value.operator.lexeme, onRight, 1).any {
+				model.signatures.getValue(it).parameters.single().accepts(operand)
+			}
+		return matches(left, right, false) || matches(right, left, true)
+	}
+
+	private fun formattingMayCall(value: Expression): Boolean {
+		val provider = CompilerDataProviders.STR.toString()
+		if (!model.declarations.hasOperator(provider)) return false
+		val hint = receiverHint(value)
+		if (hint != null) return model.declarations.formattingMayCallUserCode(hint)
+		return when (value) {
+			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral,
+			is NullLiteral, is InterpolatedString, is TypeCheckExpression -> false
+			is ArrayLiteral -> value.elements.any(::formattingMayCall)
+			else -> true
+		}
 	}
 
 	private fun methodWrites(receiver: Place?, candidates: List<MethodSymbol>): List<Place> {
@@ -271,6 +363,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					if (symbol != null) {
 						val proven = bindingPlace(symbol) in initial
 						if (!sourceType && proven && nullable(symbol)) model.presentNames.add(value)
+						if (!sourceType) initial.asSequence().filter { it.root == symbol && it.path.isEmpty() }.mapNotNull { it.narrowed }
+							.maxByOrNull { it.ancestry().count() }?.let { model.narrowedNames[value] = it }
 						if (!nullable(symbol) || proven) presentResults.add(value)
 					}
 					Outcome(initial)
@@ -290,7 +384,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is UnaryExpression                         -> expression(value.operand, initial).let { if (value.operator.lexeme == Operators.NOT.toString()) Outcome(it.after, it.no, it.yes) else it }
 			is BinaryExpression                        -> {
 				val op = value.operator.lexeme
-				val test = op in setOf(Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()) && (value.left is NullLiteral || value.right is NullLiteral)
+				val test = Operators.fromCharacter(op) in OperatorRules.classComparisons && (value.left is NullLiteral || value.right is NullLiteral)
 				val left = expression(value.left, initial, sourceType = test)
 				if (op == Operators.AND.toString() || op == Operators.OR.toString()) {
 					val and = op == Operators.AND.toString()
@@ -311,7 +405,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					}
 					Outcome(after, yes, no)
 				} else {
-					val after = expression(value.right, left.after, sourceType = test).after
+					val beforeRight = if (contextMayCall(value.left, value.right, op) && !knownFullOperator(value)) forgetAliases(left.after) else left.after
+					val after = expression(value.right, beforeRight, sourceType = test).after
 					val symbol = if (test) stable(if (value.left is NullLiteral) value.right else value.left) else null
 					if (symbol == null) Outcome(after) else {
 						val absent = forget(after, listOf(symbol))
@@ -356,16 +451,27 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is ProviderAccessExpression                -> {
 				val annotation = stable(value.receiver)?.takeIf { it.path.isEmpty() }?.root?.declaredType
 				val scalarSize = value.name.lexeme == CompilerDataProviders.SIZE.toString() && annotation?.hasNullability == true && annotation.arraySuffixes.isEmpty() && annotation.name.lexeme != Keywords.STRING.toString()
-				expression(value.receiver, initial, sourceType = value.name.lexeme == CompilerDataProviders.TYPE.toString() || scalarSize)
+				val outcome = expression(value.receiver, initial, sourceType = value.name.lexeme == CompilerDataProviders.TYPE.toString() || scalarSize)
+				if (value.name.lexeme == CompilerDataProviders.STR.toString() && formattingMayCall(value.receiver)) Outcome(forgetAliases(outcome.after)) else outcome
 			}
 
 			is TypeReceiverExpression                  -> Outcome(initial)
 			is CastExpression                          -> expression(value.operand, initial)
-			is TypeCheckExpression                     -> expression(value.operand, initial)
+			is TypeCheckExpression                     -> {
+				model.declarations.valueChecks[value]?.let { return expression(it, initial) }
+				val after = expression(value.operand, initial).after
+				val subject = stable(value.operand)?.takeIf { it.path.isEmpty() && value.operand is NameExpression }
+				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }
+					?.let { model.declarations.namedType(it.name.lexeme) as? CClass }
+				if (subject == null || target == null) Outcome(after)
+				else Outcome(after, after + subject + subject.copy(narrowed = target), after)
+			}
 			is CallExpression                          -> {
 				val after = value.arguments.fold(initial) { facts, arg -> expression(arg, facts).after }
 				val remaining = forget(after, implicitMethodWrites(value))
-				Outcome(if (model.declarations.candidatesOf(value) is BuiltinGroupSymbol) remaining else forgetAliases(remaining))
+				val group = model.declarations.candidatesOf(value)
+				val formats = group is BuiltinGroupSymbol && (group.definition === BuiltinFunctions.PRINT || group.definition === BuiltinFunctions.PRINTLN)
+				Outcome(if (group is BuiltinGroupSymbol && !(formats && value.arguments.any(::formattingMayCall))) remaining else forgetAliases(remaining))
 			}
 
 			is MemberCallExpression                    -> {
@@ -394,9 +500,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is ArrayLiteral                            -> Outcome(value.elements.fold(initial) { facts, item -> expression(item, facts).after })
 			is StructLiteral                           -> Outcome(value.fields.fold(initial) { facts, item -> expression(item, facts).after })
 			is IndexExpression                         -> expression(value.index, expression(value.array, initial).after)
-			is InterpolatedString                      -> Outcome(value.parts.fold(initial) { facts, part -> expression(part, facts).after })
+			is InterpolatedString                      -> Outcome(value.parts.fold(initial) { facts, part ->
+				val after = expression(part, facts).after
+				if (formattingMayCall(part)) forgetAliases(after) else after
+			})
 			else                                       -> Outcome(initial)
 		}
+		if (operatorMayCall(value)) return Outcome(forgetAliases(result.after))
 		when (value) {
 			is ClassCreationExpression                                                                                                                                                                                                                                   -> presentResults.add(value)
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is ArrayLiteral, is StructLiteral, is InterpolatedString, is BinaryExpression, is UnaryExpression, is ProviderAccessExpression, is TypeCheckExpression -> presentResults.add(value)
@@ -442,7 +552,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 				is UnaryExpression          -> visit(value.operand)
 				is CastExpression           -> visit(value.operand)
-				is TypeCheckExpression      -> visit(value.operand)
+				is TypeCheckExpression      -> visit(model.declarations.valueChecks[value] ?: value.operand)
 				is ProviderAccessExpression -> visit(value.receiver)
 				is CallExpression           -> {
 					value.arguments.forEach(::visit)

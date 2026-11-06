@@ -46,6 +46,10 @@ Class lifetime and unsafe handles have separate work. Ordinary
 optional arguments are implemented under [their own skill](../cloth-optional-arguments/SKILL.md),
 including nullable string/array defaults such as `opt<string[]?> args ?: null`.
 
+[Class equality and identity](../cloth-language/references/class-equality.md)
+adds `==`, `!=`, and `===` for nullable class operands. The compiler checks
+presence before accessing either payload or selecting a live comparison body.
+
 Nullable type receivers expose instance-independent payload providers such as
 `int?::max` (plain int) and `int[2]?::size` (usize), preserving nullable-owned
 metadata and scalar storage size. Read the

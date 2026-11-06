@@ -24,6 +24,7 @@ enum class Operators(private val character: String) { // This comment has to exi
 	FINAL_ASSIGN(":="),
 
 	EQUAL("=="),
+	IDENTITY("==="),
 	NOT_EQUAL("!="),
 	NOT("!"),
 	AND("&&"),

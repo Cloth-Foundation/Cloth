@@ -21,8 +21,12 @@ class TypeParser(private val parser: Parser) {
 		val name = parser.advance()
 		// After a cast, '<' may instead start an ordering comparison. Only a
 		// complete numeric width suffix belongs to the type in this context.
-		val width = if (parser.peek().lexeme == Operators.LESS.toString() && (!inCast || (parser.peek(1).type == TokenType.IntegerLiteral && parser.peek(2).lexeme == Operators.GREATER.toString()))) {
-			parser.delimited.angles { parser.expect(TokenType.IntegerLiteral, "a numeric type width") }
+		fun widthToken(token: Token) = token.type == TokenType.IntegerLiteral ||
+			parser.allowInferredOperatorWidth && token.lexeme == Keywords.AUTO.toString()
+		val width = if (parser.peek().lexeme == Operators.LESS.toString() && (!inCast || (widthToken(parser.peek(1)) && parser.peek(2).lexeme == Operators.GREATER.toString()))) {
+			parser.delimited.angles {
+				if (widthToken(parser.peek())) parser.advance() else parser.expect(TokenType.IntegerLiteral, "a numeric type width")
+			}
 		} else null
 
 		fun nullableMarker(): cloth.token.TokenSpan? {
