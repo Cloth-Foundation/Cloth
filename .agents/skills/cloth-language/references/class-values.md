@@ -23,7 +23,8 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt)
 - A nested write saves its receiver identity and evaluates each index once
   before the right-hand side. It checks the same path in the current field
-  before storing. A compound write captures its old operand before the
+  before storing. An index that returns or jumps skips the rest of the path and
+  the store. A compound write captures its old operand before the
   right-hand side. A struct method backed by a class field uses a private,
   call-scoped resolver for the same captured path, including nested receiver
   calls. The resolver checks lifetime, nullable presence and bounds before

@@ -37,8 +37,12 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
 - Printable adaptation uses supported value-receiver `str` providers without
   changing ordinary expression typing or introducing general implicit conversion.
   Preserve canonical metadata text. Arrays recursively expose `str` when their
-  elements do; print, interpolation and `::str` share that recipe. Class value
-  formatting and `::addr` remain deferred.
+  elements do. Print, interpolation and `::str` share that recipe. The
+  [class formatting contract](../cloth-language/references/class-formatting.md)
+  covers checked `operator ::str()` dispatch and once-only array formatting.
+  [Enum formatting](../cloth-language/references/value-operators.md#enum-values-and-formatting)
+  uses the same output routes and array capture.
+  `::addr` remains outside current compiler support.
 - Evaluate an argument once before conversion/output. If it exits its enclosing
   function, emit no output or added newline on that path. General multi-result
   expansion is not a print call convention.

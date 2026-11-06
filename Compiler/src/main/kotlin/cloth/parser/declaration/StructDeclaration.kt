@@ -25,7 +25,10 @@ data class MethodDeclaration(
 	override val parameters: List<ParameterDeclaration>,
 	override val body: FunctionBody,
 	val visibility: Token? = null,
+	val operator: OperatorMember? = null,
 ) : CallableDeclaration, ClassMember {
 
 	override val span get() = (visibility ?: keyword).span.through(body.span)
 }
+
+data class OperatorMember(val selector: TypeReference?, val rightReceiver: Boolean, val provider: Boolean)

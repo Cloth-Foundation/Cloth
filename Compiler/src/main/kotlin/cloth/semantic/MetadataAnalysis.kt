@@ -187,7 +187,7 @@ internal class MetadataAnalysis(
 
 			is CastExpression           -> expression(value.operand).takeIf { model.typeOf(value) == CTypeInfo }
 			is TypeCheckExpression      -> {
-				expression(value.operand); null
+				expression(model.valueChecks[value] ?: value.operand); null
 			}
 
 			is MemberCallExpression     -> {
@@ -211,7 +211,8 @@ internal class MetadataAnalysis(
 			}
 
 			is FieldAccessExpression    -> {
-				expression(value.receiver); null
+				if (model.resultOf(value.receiver) != ResultShape.Empty) expression(value.receiver)
+				null
 			}
 
 			is IndexExpression          -> {

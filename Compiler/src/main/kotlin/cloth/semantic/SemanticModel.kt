@@ -9,9 +9,9 @@ import cloth.target.TargetLayout
 import java.util.*
 
 /** Identity keys distinguish equal-looking syntax used in different type contexts. */
-class SemanticModel(val target: TargetLayout = TargetLayout.native(), namedTypes: Map<String, CMemberType> = emptyMap()) {
+class SemanticModel(val target: TargetLayout = TargetLayout.native(), namedTypes: Map<String, CMemberType> = emptyMap(), operatorWidth: Int? = null) {
 
-	internal val typeResolver = TypeResolver(target, namedTypes::get)
+	internal val typeResolver = TypeResolver(target, operatorWidth, namedTypes::get)
 	internal val structLiterals = IdentityHashMap<StructLiteral, CStruct>()
 	internal val fields = IdentityHashMap<FieldAccessExpression, InstanceField>()
 	internal val fieldWrites = IdentityHashMap<FieldWriteStatement, FieldWritePlan>()
@@ -25,8 +25,14 @@ class SemanticModel(val target: TargetLayout = TargetLayout.native(), namedTypes
 	internal val statements = IdentityHashMap<Statement, ValueType>()
 	internal val receptions = IdentityHashMap<Statement, ReceptionPlan>()
 	internal val typeChecks = IdentityHashMap<TypeCheckExpression, ValueType>()
+	internal val valueChecks = IdentityHashMap<TypeCheckExpression, BinaryExpression>()
 	internal val providers = IdentityHashMap<ProviderAccessExpression, ProviderAccess>()
 	internal val memberCalls = IdentityHashMap<MemberCallExpression, BoundBuiltinCall>()
+	internal val operatorCalls = IdentityHashMap<Expression, ResolvedOperator>()
+	internal val projectedOperands = IdentityHashMap<NameExpression, ProjectedOperand>()
+	internal val operatorContexts = IdentityHashMap<Expression, ResolvedOperatorContext>()
+	internal val classComparisons = IdentityHashMap<BinaryExpression, ClassComparisonPlan>()
+	internal val valueComparisons = IdentityHashMap<BinaryExpression, ValueComparisonPlan>()
 	internal val payloadReads = IdentityHashMap<Expression, CNullable>()
 	internal val nullableComparisons = IdentityHashMap<BinaryExpression, ValueType>()
 	internal val updatePayloads = IdentityHashMap<UpdateStatement, CNullable>()

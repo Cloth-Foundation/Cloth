@@ -70,8 +70,9 @@ for stage boundaries, source routing and verification targets.
 - A null check can prove a stored field present when later access resolves the
   same unchanged path. Assigning the field or replacing a containing struct
   invalidates the proof. Use the existing nullable payload access and metadata rules.
-- Defer whole-struct equality. Use ordinary null comparisons for nullable
-  presence tests, and ordinary metadata and individual field comparisons.
+- Declare same-type `operator ==` for whole-struct equality. See
+  [struct and enum operators](../cloth-language/references/value-operators.md)
+  for `!=`, operand snapshots, and nullable comparisons.
 - Local storage holds struct fields inline. Borrow addresses for projections
   and copy inline bytes and live nested buffers at value transfer boundaries.
   Resolve a write's stored path and read its old compound operand before the RHS.

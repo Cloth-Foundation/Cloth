@@ -23,7 +23,13 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
-		fun of(type: TypeReference) = SignatureType(type.name.lexeme, type.unsigned, type.width?.integerLiteralValue() ?: if (type.name.lexeme in numericNames) defaultWidth else null, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
+		fun of(type: TypeReference): SignatureType {
+			val width = type.width?.takeUnless { type.capturesWidth }?.integerLiteralValue()
+				?: defaultWidth.takeIf { type.name.lexeme in numericNames }
+			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size,
+				type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() },
+				type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
+		}
 	}
 }
 
@@ -59,12 +65,11 @@ class FunctionSymbol(override val declaration: FunctionDeclaration) : CallableSy
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
 }
 
-class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType) : CallableSymbol {
+class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType, override val receiver: ReceiverSymbol = ReceiverSymbol(owner, declaration.keyword)) : CallableSymbol {
 
 	override val name get() = declaration.name
 	override val signature = FunctionSignature.of(declaration)
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map(::ParameterSymbol)
-	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
 internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass) : CallableSymbol {

@@ -7,6 +7,26 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Single-statement void callable bodies (2026-11-06)
+
+[Function return contracts](../../cloth-functions/references/semantics.md#function-return-contracts)
+records the void `= statement` form for ordinary functions and methods.
+[FunctionParser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/FunctionParser.kt)
+parses the ordinary statement grammar and retains the `=` token on the body
+for optional declaration termination. Statement bodies reuse the brace-body
+checks and LLVM emission. Void expression bodies retain explicit discard
+rules, and operator declarations retain their own result contract.
+
+[FunctionParsingTest](../../../../Compiler/src/test/kotlin/cloth/FunctionParsingTest.kt)
+covers spans, declaration boundaries and rejection in a value-returning body.
+[FunctionReturnsTest](../../../../Compiler/src/test/kotlin/cloth/FunctionReturnsTest.kt)
+covers value rejection in void bodies.
+[AssignmentOperatorsTest](../../../../Compiler/src/test/kotlin/cloth/AssignmentOperatorsTest.kt)
+executes all five float compound assignments, a struct field update and a
+single-statement loop on Windows x64 and x86. The full
+`./gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+1,428 tests across 126 suites with zero failures, errors or skips.
+
 ### Struct methods publication (2026-11-05)
 
 [StructMethods.co](../../../../examples/StructMethods.co) demonstrates the

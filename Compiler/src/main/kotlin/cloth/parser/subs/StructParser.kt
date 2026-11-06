@@ -15,13 +15,13 @@ internal class StructParser(private val parser: Parser) {
 		parser.skipNewlines()
 		val (fields, methods) = parser.delimited.braces {
 			parser.skipNewlines()
-			val fields = if (parser.atKeyword(Keywords.METHOD, memberOffset())) emptyList() else parseFields()
+			val fields = if (atMember()) emptyList() else parseFields()
 			if (fields.isNotEmpty() && !atEnd()) {
 				rejectFunction()
 				parser.expect(Operators.SEMICOLON)
 				parser.skipNewlines()
 				rejectFunction()
-				if (!parser.atKeyword(Keywords.METHOD, memberOffset())) throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration after the fields", parser.peek())
+				if (!atMember()) throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration after the fields", parser.peek())
 			}
 			fields to parseMethods()
 		}
@@ -30,6 +30,7 @@ internal class StructParser(private val parser: Parser) {
 
 	private fun atEnd() = parser.peek().lexeme == Operators.BRACE_CLOSE.toString()
 	private fun memberOffset() = if (parser.atKeyword(Keywords.PUBLIC)) 1 else 0
+	private fun atMember() = parser.atKeyword(Keywords.METHOD, memberOffset()) || parser.atKeyword(Keywords.OPERATOR, memberOffset())
 
 	private fun rejectFunction() {
 		val offset = memberOffset()
@@ -38,7 +39,7 @@ internal class StructParser(private val parser: Parser) {
 
 	private fun parseFields(): List<StructFieldDeclaration> = parser.delimited.commaSeparated(
 		Operators.BRACE_CLOSE,
-		endAfterItem = { parser.isSemicolon(parser.peek()) || parser.atKeyword(Keywords.METHOD, memberOffset()) || parser.atKeyword(Keywords.FUNCTION, memberOffset()) },
+		endAfterItem = { parser.isSemicolon(parser.peek()) || atMember() || parser.atKeyword(Keywords.FUNCTION, memberOffset()) },
 	) {
 		rejectFunction()
 		val type = parser.typeParser.parse(allowArrays = true)
@@ -48,14 +49,17 @@ internal class StructParser(private val parser: Parser) {
 	private fun parseMethods(): List<MethodDeclaration> = buildList {
 		while (!atEnd()) {
 			rejectFunction()
-			if (!parser.atKeyword(Keywords.METHOD)) throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration with inherited visibility", parser.peek())
-			val method = parser.functionParser.parseMethod()
+			val method = when {
+				parser.atKeyword(Keywords.METHOD) -> parser.functionParser.parseMethod()
+				parser.atKeyword(Keywords.OPERATOR) -> parser.functionParser.parseOperator()
+				else -> throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration with inherited visibility", parser.peek())
+			}
 			val body = method.body
 			add(method)
 			rejectFunction()
-			if (body is ExpressionBody && parser.isSemicolon(parser.peek())) parser.advance()
+			if (body.equals != null && parser.isSemicolon(parser.peek())) parser.advance()
 			else if (!atEnd() && parser.peek().type != TokenType.NewLine) {
-				if (body is BlockBody) throw SyntaxErrors.expected("a newline or '${Operators.BRACE_CLOSE}' after a brace-bodied method", parser.peek())
+				if (body.equals == null) throw SyntaxErrors.expected("a newline or '${Operators.BRACE_CLOSE}' after a brace-bodied method", parser.peek())
 				throw SyntaxErrors.newline(parser.peek())
 			}
 			parser.skipNewlines()

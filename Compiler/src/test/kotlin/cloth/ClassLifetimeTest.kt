@@ -150,11 +150,53 @@ class ClassLifetimeTest {
 			"fn bad(bool flag) { def item = Item::new(1); if (flag) return; item::delete; println(item.value) }",
 			"fn bad() { def item = Item::new(1); def<Item?> alias = item; item::delete; alias::delete }",
 			"fn bad() { def item = Item::new(1); do { item::delete } while (false); println(item.value) }",
+			"fn bad() { def item = Item::new(1); do { item::delete; break } while (false); println(item.value) }",
+			"fn bad() { def item = Item::new(1); do { item::delete; continue } while (false); println(item.value) }",
 		)) {
 			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer().analyze(structUnit(type + source)) }
 			assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, failure.diagnosticCode)
 		}
 		val recursive = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit("typedef<class> Item { ~Item { self::delete } }")) }
 		assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, recursive.diagnosticCode)
+	}
+
+	@Test
+	fun `ordered reception skips later positions when an earlier operand returns`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Item (pub def<int> value)
+			fn<int> define() {
+			    def item = Item::new(1)
+			    item::delete
+			    def<int, int> a, b = if (true) { return 7 } else { 0 }, item.value
+			}
+			fn<int> assign() {
+			    def item = Item::new(1)
+			    item::delete
+			    def a, b = 0, 0
+			    a, b = if (true) { return 8 } else { 0 }, item.value
+			}
+			fn<int> main() = define() + assign() - 15
+		"""
+		assertEquals(processCompletion().replace("\r\n", "\n"), runStructProgram(NativeCABI.native(), source, directory.resolve("early-results")))
+	}
+
+	@Test
+	fun `a live exit keeps a post loop access valid`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Item (pub def<int> value)
+			fn<int> read(bool drop) {
+			    def item = Item::new(7)
+			    do {
+			        if (drop) { item::delete; break }
+			        continue
+			    } while (false)
+			    if (drop) return 0
+			    def value = item.value
+			    item::delete
+			    return value
+			}
+			fn<int> main() = read(true) + read(false) - 7
+		"""
+		assertEquals(processCompletion().replace("\r\n", "\n"), runStructProgram(NativeCABI.native(), source, directory.resolve("live-exit")))
 	}
 }

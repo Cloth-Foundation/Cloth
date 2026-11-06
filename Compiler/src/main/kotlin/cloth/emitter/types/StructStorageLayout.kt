@@ -62,7 +62,9 @@ internal class StructStorageLayout(private val context: LLVMContextRef, module: 
 				type is CNullable  -> check(type.payload)
 			}
 		}
-		semantics.bindings.values.forEach(::check)
-		semantics.types.expressions.values.forEach(::check)
+		for (body in listOf(semantics) + semantics.specializedBodies.values) {
+			body.bindings.values.forEach(::check)
+			body.types.expressions.values.forEach(::check)
+		}
 	}
 }

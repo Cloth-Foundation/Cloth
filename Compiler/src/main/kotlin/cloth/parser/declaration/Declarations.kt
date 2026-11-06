@@ -57,9 +57,11 @@ data class ParameterDeclaration(
 sealed interface FunctionBody {
 
 	val span: TokenSpan
+	val equals: Token?
 }
 
-data class BlockBody(val statements: List<Statement>, override val span: TokenSpan) : FunctionBody
+/** A brace body or a single statement introduced by '='. */
+data class BlockBody(val statements: List<Statement>, override val span: TokenSpan, override val equals: Token? = null) : FunctionBody
 
 /** Distinct from a brace body's final expression; supplies an implicit function return. */
-data class ExpressionBody(val equals: Token, val expression: Expression, override val span: TokenSpan = equals.span.through(expression.span)) : FunctionBody
+data class ExpressionBody(override val equals: Token, val expression: Expression, override val span: TokenSpan = equals.span.through(expression.span)) : FunctionBody

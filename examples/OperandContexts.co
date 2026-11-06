@@ -1,0 +1,32 @@
+typedef<struct> Score {
+    int points;
+
+    operator +(int bonus) -> Score {
+        return { self.points + bonus }
+    }
+
+    operator +(int bonus, self) -> Score {
+        return { bonus + self.points }
+    }
+}
+
+typedef<class> Player (def<string> name, def<int> points, def<float> health) {
+    operator<int<auto>> +() = self.points -> int<auto>
+    operator<float<auto>> +() = self.health -> float<auto>
+    operator<string> +() = self.name
+}
+
+fn main() {
+    def<Score> score = { 12 }
+    def withBonus = score + 10
+    def fromLeft = 5 + score
+    println(#"Scores: {withBonus.points}, {fromLeft.points}")
+
+    def player = Player::new("Rin", 12, 100f)
+    def<int<64>> wide = 3
+    def<float<64>> heal = 2.5f -> float<64>
+    println(#"Points: {player + 4}, {wide + player}")
+    println(#"Health: {player + heal}")
+    println("Player: " + player)
+    player::delete
+}

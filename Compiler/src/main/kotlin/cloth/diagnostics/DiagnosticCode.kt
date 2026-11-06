@@ -47,6 +47,9 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_CLASS_LIFECYCLE("C3090"),
 	PARTIAL_CLASS_INSTANCE("C3091"),
 	DELETED_CLASS_ACCESS("C3092"),
+	INVALID_OPERATOR_DECLARATION("C3093"),
+	OPERATOR_MATCH("C3094"),
+	INVALID_ENUM_MEMBER("C3095"),
 
 	INVALID_ARRAY("C3038"),
 	INVALID_INDEX("C3039"),
@@ -91,6 +94,7 @@ enum class DiagnosticCode(val id: String) {
 	SOURCE_EXTENSION("C0011"),
 	INVALID_PATH("C0012"),
 	OUTPUT_IO("C0013"),
+	OUTPUT_OVERWRITES_SOURCE("C0014"),
 	UNEXPECTED_CHARACTER("C1000"),
 	UNTERMINATED_COMMENT("C1001"),
 	INVALID_SEPARATOR("C1002"),
@@ -152,6 +156,10 @@ enum class DiagnosticCode(val id: String) {
 	LLVM_TARGET("C4020"),
 	LLVM_OBJECT("C4021"),
 	LLVM_INITIALIZATION("C4022"),
+
+	// These should be almost impossible to hit (at least for the user)
+	// Not saying it's impossible, but they're unlikely
+	// These are thrown for bugs in the compiler, which shouldn't happen if we are testing our code correctly.
 	INTERNAL("C9000"),
 	INVALID_IR("C9001"),
 	ABI_LAYOUT("C9002")

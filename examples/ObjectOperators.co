@@ -1,0 +1,57 @@
+typedef<class> Account (pub def<int> id) {
+    operator ==(Object other) {
+        if (other is Account) return self.id == other.id
+        return false
+    }
+
+    operator is(Object other) = self == other
+    operator ::str() = #"Account {self.id}"
+
+    ~Account {
+        println(#"Closed account {self.id}")
+    }
+}
+
+typedef<class> Member (int id) : Account(id)
+
+typedef<struct> Score {
+    int points;
+
+    operator ==(Score other) = self.points == other.points
+}
+
+typedef<enum> Damage (pub def<int> amount = 1) {
+    HIT, FALL;
+
+    operator ::str() = #"damage {self.amount}"
+}
+
+typedef<enum> Priority (def<int> rank) {
+    LOW(1), BACKGROUND(1), HIGH(2);
+
+    operator ==(Priority other) = self.rank == other.rank
+}
+
+fn main() {
+    def member = Member::new(7)
+    def<Object> account = member
+    def<Object> other = Member::new(7)
+
+    println(#"Static type: {account::type}")
+    if (account is Account) println(#"Account ID: {account.id}")
+    println(account::str)
+    println(#"Equal: {account == other}, same instance: {account === other}")
+    println(#"Alias: {account === member}, value check: {member is other}")
+
+    def<Object?[3]> accounts = [account, null, other]
+    println(accounts)
+
+    def<Score> first = { 12 }
+    def<Score> second = { 12 }
+    println(#"Scores equal: {first == second}")
+    println(#"{Damage.FALL}, same case as HIT: {Damage.FALL == Damage.HIT}")
+    println(#"Priorities equal: {Priority.LOW == Priority.BACKGROUND}")
+
+    account::delete
+    other::delete
+}

@@ -35,9 +35,12 @@ internal class EmitArrayText(
 	private val overflow = "Array text is too large at $location"
 
 	fun emit(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef {
-		val length = walk(value, recipe, memory.count(0), null)
+		val cache = if (recipe.callsFormatter) TextCache() else null
+		val source = cache?.snapshot(value, recipe.receiverType) ?: value
+		val length = walk(source, recipe, memory.count(0), null, cache)
 		val data = memory.stack(byte, length, "array_text_bytes", overflow)
-		walk(value, recipe, memory.count(0), data)
+		walk(source, recipe, memory.count(0), data, cache)
+		cache?.release()
 		val result = LLVMBuildInsertValue(builder, LLVMGetUndef(types.value(ValueType.STRING)), data, 0, "array_text_data")
 		return LLVMBuildInsertValue(builder, result, length, 1, "array_text")
 	}
@@ -54,7 +57,7 @@ internal class EmitArrayText(
 		return LLVMBuildAdd(builder, offset, length, "array_text_offset")
 	}
 
-	private fun walk(value: LLVMValueRef, recipe: ProviderResult.ArrayText, offset: LLVMValueRef, destination: LLVMValueRef?): LLVMValueRef {
+	private fun walk(value: LLVMValueRef, recipe: ProviderResult.ArrayText, offset: LLVMValueRef, destination: LLVMValueRef?, cache: TextCache?): LLVMValueRef {
 		val initial = append(strings.literal(Operators.BRACKET_OPEN.toString()), offset, destination)
 		val length = LLVMBuildExtractValue(builder, value, 1, "array_text_count")
 		val data = LLVMBuildExtractValue(builder, value, 0, "array_text_elements")
@@ -76,16 +79,21 @@ internal class EmitArrayText(
 		val checkpoint = stackSave()
 		val element = EmitStoredValue(context, builder, target).load(arrays.address(data, elementType, index), elementType)
 		val elementText = recipe.elementText
-		val nextPosition = if (elementText is ProviderResult.ArrayText) walk(element, elementText, separated, destination)
+		val nextPosition = if (elementText is ProviderResult.ArrayText) walk(element, elementText, separated, destination, cache)
 		else if (elementText is ProviderResult.NullableText && elementText.payloadText is ProviderResult.ArrayText) {
 			val nullable = EmitNullable(context, builder, target)
 			checkNotNull(nullable.choose(nullable.present(element), memory.size, {
-				walk(nullable.payload(element), elementText.payloadText, separated, destination)
+				walk(nullable.payload(element), elementText.payloadText, separated, destination, cache)
 			}, { append(strings.literal(Keywords.NULL.toString()), separated, destination) }))
 		} else {
 			// Formatting may allocate numeric or UTF-8 scratch. Consume it before
 			// restoring the stack; only the integer offset survives the checkpoint.
-			val text = recipe.elementText.emit(providers, ProviderReceiver.Value(elementType, element))
+			val receiver = ProviderReceiver.Value(elementType, element)
+			val text = when {
+				cache == null -> elementText.emit(providers, receiver)
+				destination == null -> cache.capture(elementText, receiver)
+				else -> cache.next()
+			}
 			append(text, separated, destination)
 		}
 		stackRestore(checkpoint)
@@ -103,6 +111,50 @@ internal class EmitArrayText(
 		}
 		LLVMPositionBuilderAtEnd(builder, done)
 		return append(strings.literal(Operators.BRACKET_CLOSE.toString()), position, destination)
+	}
+
+	/** Keep the snapshot and the measured strings alive across stack checkpoints. */
+	private inner class TextCache {
+		private val storage = providers.textStorage()
+		private val entry = LLVMGetEntryBasicBlock(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
+		private val arena = storage.create(entry)
+		private val head = storage.create(entry)
+		private val tail = storage.create(entry)
+		private val cachedProviders = providers.withTextArena(arena)
+		private val textType = types.value(ValueType.STRING)
+		private val nodeType = PointerPointer<LLVMTypeRef>(2L).use { members ->
+			members.put(0, pointer); members.put(1, textType)
+			LLVMStructTypeInContext(context, members, 2, 0)
+		}
+		private val layout = LLVMGetModuleDataLayout(module)
+		private val nodeBytes = memory.count(LLVMABISizeOfType(layout, nodeType))
+		private val nodeAlignment = LLVMABIAlignmentOfType(layout, nodeType)
+
+		init {
+			LLVMBuildStore(builder, head, tail)
+		}
+
+		fun snapshot(value: LLVMValueRef, type: ValueType) = storage.copyValue(builder, arena, value, type)
+		fun release() = storage.release(builder, arena)
+		private fun field(node: LLVMValueRef, index: Int) = LLVMBuildStructGEP2(builder, nodeType, node, index, "captured_text_field")
+
+		fun capture(recipe: ProviderResult<*>, receiver: ProviderReceiver.Value): LLVMValueRef {
+			val text = recipe.emit(cachedProviders, receiver)
+			val scratch = memory.stack(nodeType, memory.count(1), "text_cache_scratch", overflow)
+			LLVMBuildStore(builder, LLVMConstNull(pointer), field(scratch, 0))
+			LLVMBuildStore(builder, text, field(scratch, 1))
+			val copied = storage.copyAligned(builder, arena, arrays.descriptor(scratch, nodeBytes), nodeAlignment)
+			val node = LLVMBuildExtractValue(builder, copied, 0, "captured_text_node")
+			LLVMBuildStore(builder, node, LLVMBuildLoad2(builder, pointer, tail, "captured_text_tail"))
+			LLVMBuildStore(builder, field(node, 0), tail)
+			return text
+		}
+
+		fun next(): LLVMValueRef {
+			val node = LLVMBuildLoad2(builder, pointer, head, "captured_text_head")
+			LLVMBuildStore(builder, LLVMBuildLoad2(builder, pointer, field(node, 0), "captured_text_next"), head)
+			return LLVMBuildLoad2(builder, textType, field(node, 1), "captured_text")
+		}
 	}
 
 	private fun intrinsic(name: String, type: LLVMTypeRef): LLVMValueRef {

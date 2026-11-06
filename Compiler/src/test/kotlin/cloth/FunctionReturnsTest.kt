@@ -54,7 +54,7 @@ class FunctionReturnsTest {
 
 	@Test
 	fun `void functions reject produced values in braces and expression bodies`() {
-		for (source in listOf("fn test() { return 1 }", "fn<void> test() { return true }", "fn test() = 1", "fn<void> test() = \"value\"", "fn<int> calculate() = 1\nfn test() = calculate()")) {
+		for (source in listOf("fn test() { return 1 }", "fn<void> test() { return true }", "fn test() = return 1", "fn test() = 1", "fn<void> test() = \"value\"", "fn<int> calculate() = 1\nfn test() = calculate()")) {
 			val result = failure(source, DiagnosticCode.VALUE_IN_VOID)
 			assertEquals(2, result.sourceLabels.size)
 		}

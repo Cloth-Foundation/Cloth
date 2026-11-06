@@ -21,6 +21,8 @@ enum class Keywords(private val keyword: String? = null) { // This comment has t
 	ENUM,
 
 	METHOD("mt"),
+	OPERATOR,
+	AUTO,
 	FUNCTION("fn"),
 	CONSTRUCTOR("ctor"),
 	PUBLIC("pub"),

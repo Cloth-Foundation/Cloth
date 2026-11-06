@@ -137,8 +137,8 @@ nullable-value behavior is unchanged.
   exception: `print` and `println` may accept nullable values without proof,
   render absence as the lowercase text `null`, and use ordinary formatting when
   present. Arguments still evaluate once, and existing output/newline rules hold.
-  This does not expose an unchecked nullable `::str` provider. The later buffer
-  integration supplies recursive array text; class formatting remains deferred.
+  Recursive array text applies the same presence rule to leaves. Present class
+  values use [checked class formatting](../../cloth-language/references/class-formatting.md).
   Null tests, agreed nullable equality,
   Elvis and declared-type metadata retain their absence-aware behavior.
 - The user also confirmed absence-aware interpolation without a presence proof:

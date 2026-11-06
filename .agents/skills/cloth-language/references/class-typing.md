@@ -21,7 +21,10 @@ the source behavior. See [Stage 1 syntax](class-syntax.md) and the
   only initialized fields through `self`. Passing the instance and using it as
   a method receiver require a fully initialized instance.
 - Member access uses the declaring class for privacy. Lexical bindings take
-  precedence over implicit `self` lookup. Method candidates outside the owner
+  precedence over implicit `self` lookup. During a field initializer, an
+  unqualified header parameter name selects the parameter, whose array value
+  is independent of the initialized instance field. Access through `self`
+  selects the field and allows reads only. Method candidates outside the owner
   include public overloads only. `::new` resolves the class name in the type
   namespace even when a local uses the same name.
 
@@ -38,7 +41,8 @@ the source behavior. See [Stage 1 syntax](class-syntax.md) and the
   address-based model. Preserve the distinction through lowering.
 - Deletion is a void operation. The typed plan identifies the class and its
   destructor and marks whether the operand can be absent. An absent nullable
-  operand has no destructor work. Class equality awaits its own contract.
+  operand has no destructor work. The later
+  [class equality record](class-equality.md) covers logical and identity comparisons.
   Stage 4 integrates conservative invalidation of field proofs through aliases.
   [Class values](class-values.md)
 - C3087 through C3091 cover conflicting type names, invalid class members,

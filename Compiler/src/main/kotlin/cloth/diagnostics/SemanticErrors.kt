@@ -30,6 +30,13 @@ object SemanticErrors {
 	fun classLifecycle(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_CLASS_LIFECYCLE, message, span)
 	fun partialClassInstance(message: String, span: TokenSpan) = issue(DiagnosticCode.PARTIAL_CLASS_INSTANCE, message, span)
 	fun deletedClassAccess(span: TokenSpan) = issue(DiagnosticCode.DELETED_CLASS_ACCESS, "This class object is no longer live for this access", span)
+	fun operatorDeclaration(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_OPERATOR_DECLARATION, message, span)
+	fun enumMember(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ENUM_MEMBER, message, span)
+	fun operatorMatch(operator: Token, span: TokenSpan, candidates: List<CallableSymbol>, ambiguous: Boolean) = SemanticException(
+		DiagnosticCode.OPERATOR_MATCH,
+		if (ambiguous) "Operator '${operator.lexeme}' is ambiguous" else "No matching overload for operator '${operator.lexeme}'",
+		listOf(SourceLabel(span, "operator application")) + candidates.map { SourceLabel(it.declaration.span, "candidate '${it.signature.spelling}'") },
+	)
 	fun structSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "Struct semantics require a declaration source unit", span)
 	fun duplicateStruct(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_STRUCT, "Struct '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun structCycle(name: Token, fields: List<StructFieldDeclaration>) = SemanticException(DiagnosticCode.RECURSIVE_STRUCT, "Field types form a cycle through struct '${name.lexeme}'", fields.map { SourceLabel(it.type.span, "field '${it.name.lexeme}' is part of this cycle") })

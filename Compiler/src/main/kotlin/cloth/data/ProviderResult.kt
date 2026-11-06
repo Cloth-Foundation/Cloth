@@ -39,6 +39,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 	open val receiverForms: Set<ProviderReceiverForm> get() = setOf(ProviderReceiverForm.VALUE)
 	open val integerConstant: BigInteger? get() = null
 	open val floatingConstant: BigDecimal? get() = null
+	open val callsFormatter: Boolean get() = false
 
 	fun emit(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
 		val resultType = type
@@ -193,6 +194,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 		}
 
 		override val type: CString get() = CString
+		override val callsFormatter get() = elementText.callsFormatter
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatArray((receiver as ProviderReceiver.Value).value, this)
 	}
 
@@ -200,7 +202,21 @@ internal sealed class ProviderResult<out T : ValueType> {
 	data class NullableText(override val receiverType: CNullable, val payloadText: ProviderResult<*>) : ProviderResult<CString>() {
 
 		override val type: CString get() = CString
+		override val callsFormatter get() = payloadText.callsFormatter
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatNullable((receiver as ProviderReceiver.Value).value, this)
+	}
+
+	data class ClassText(override val receiverType: CClass) : ProviderResult<CString>() {
+		override val type get() = CString
+		override val callsFormatter get() = true
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatClass((receiver as ProviderReceiver.Value).value)
+	}
+
+	data class EnumText(override val receiverType: CEnum) : ProviderResult<CString>() {
+		override val type get() = CString
+		override val callsFormatter get() = true
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef =
+			context.formatEnum((receiver as ProviderReceiver.Value).value, receiverType)
 	}
 
 	/** Source str and interpolation deliberately share one formatter. */

@@ -16,13 +16,19 @@ internal class ClassParser(private val parser: Parser) {
 		val parameters = if (at(Operators.PAREN_OPEN)) parser.delimited.parentheses {
 			parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::parseHeaderParameter)
 		} else emptyList()
+		val base = if (at(Operators.COLON)) {
+			val colon = parser.advance()
+			val target = parser.expect(TokenType.Identifier, "a base class name")
+			val arguments = if (at(Operators.PAREN_OPEN)) parser.functionParser.inBody { parser.expressionParser.parseArgumentList() } else emptyList()
+			ConstructorDelegation(target, arguments, colon.span.through(parser.previous().span))
+		} else null
 		val headerEnd = parser.currentIndex
 		parser.skipNewlines()
 		val members = if (at(Operators.BRACE_OPEN)) parser.delimited.braces { parseMembers(name) } else {
 			parser.currentIndex = headerEnd
 			emptyList()
 		}
-		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span))
+		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span), base)
 	}
 
 	private fun parseHeaderParameter(): ClassParameterDeclaration {
@@ -48,15 +54,16 @@ internal class ClassParser(private val parser: Parser) {
 				parser.atKeyword(Keywords.FUNCTION)                              -> throw SyntaxErrors.functionInType(parser.peek())
 				parser.atKeyword(Keywords.DEFINITION)                            -> parseField(visibility)
 				parser.atKeyword(Keywords.METHOD)                                -> parser.functionParser.parseMethod(visibility)
+				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
 				visibility == null && at(Operators.TILDE)                        -> parseDestructor(owner)
 				visibility == null && parser.peek().type == TokenType.Identifier -> parseConstructor(owner)
 				else                                                             -> throw SyntaxErrors.expected("a class member", parser.peek())
 			}
 			add(member)
-			val expressionMember = member is ClassFieldDeclaration || member is MethodDeclaration && member.body is ExpressionBody
-			if (expressionMember && parser.isSemicolon(parser.peek())) parser.advance()
+			val allowsTerminator = member is ClassFieldDeclaration || member is MethodDeclaration && member.body.equals != null
+			if (allowsTerminator && parser.isSemicolon(parser.peek())) parser.advance()
 			else if (!at(Operators.BRACE_CLOSE) && parser.peek().type != TokenType.NewLine) {
-				if (expressionMember) throw SyntaxErrors.newline(parser.peek())
+				if (allowsTerminator) throw SyntaxErrors.newline(parser.peek())
 				throw SyntaxErrors.expected("a newline or '${Operators.BRACE_CLOSE}' after a brace-bodied class member", parser.peek())
 			}
 			parser.skipNewlines()

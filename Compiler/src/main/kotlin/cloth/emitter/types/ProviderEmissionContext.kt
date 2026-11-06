@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.data.CEnum
 import cloth.data.MetadataQuery
 import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
@@ -20,6 +21,9 @@ internal class ProviderEmissionContext(
 	private val strings: EmitString,
 	private val casts: EmitCast,
 	private val location: String,
+	private val functions: EmitFunctions? = null,
+	private val returnArena: (() -> LLVMValueRef)? = null,
+	private val destructionPermission: LLVMValueRef? = null,
 ) {
 
 	val target get() = strings.target
@@ -27,6 +31,15 @@ internal class ProviderEmissionContext(
 	else LLVM.LLVMConstIntOfString(type.llvmValue(context, target), value.toString(), 10.toByte())
 
 	fun formatScalar(value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.interpolate(value, type, casts, location)
+	fun formatClass(value: LLVMValueRef): LLVMValueRef {
+		val emitter = checkNotNull(functions)
+		val access = ObjectAccess(value, destructionPermission ?: emitter.classes.permission(false))
+		return emitter.formatClass(builder, access, checkNotNull(returnArena)())
+	}
+	fun formatEnum(value: LLVMValueRef, type: CEnum): LLVMValueRef =
+		checkNotNull(functions).formatEnum(builder, value, type, checkNotNull(returnArena))
+	fun textStorage() = checkNotNull(functions).stringStorage
+	fun withTextArena(arena: LLVMValueRef) = ProviderEmissionContext(context, builder, strings, casts, location, functions, { arena })
 	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef = strings.formatArray(value, recipe, this, location)
 	fun formatNullable(value: LLVMValueRef, recipe: ProviderResult.NullableText): LLVMValueRef {
 		val nullable = EmitNullable(context, builder, target)

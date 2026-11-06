@@ -13,12 +13,13 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
-	private val indexType = LLVMInt32TypeInContext(context)
+	internal val indexType = LLVMInt32TypeInContext(context)
 	private val identityType = LLVMInt64TypeInContext(context)
-	private val size = LLVMIntTypeInContext(context, abi.layout.sizeBits)
-	private val slotType = PointerPointer<LLVMTypeRef>(4L).use { fields ->
+	internal val size = LLVMIntTypeInContext(context, abi.layout.sizeBits)
+	private val slotType = PointerPointer<LLVMTypeRef>(6L).use { fields ->
 		fields.put(0, pointer); fields.put(1, indexType); fields.put(2, indexType); fields.put(3, flag)
-		LLVMStructTypeInContext(context, fields, 4, 0)
+		fields.put(4, indexType); fields.put(5, indexType)
+		LLVMStructTypeInContext(context, fields, 6, 0)
 	}
 	private val slots = global("cloth.objects.slots", pointer)
 	private val count = global("cloth.objects.count", indexType)
@@ -104,7 +105,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildRet(builder, slot)
 	}
 
-	private fun emitAllocate() = helper("allocate", identityType, size) { builder, function ->
+	private fun emitAllocate() = helper("allocate", identityType, size, indexType) { builder, function ->
 		val memory = EmitMemory(context, builder, abi)
 		val payload = call(builder, malloc, "new_instance", LLVMGetParam(function, 0))
 		memory.guard(LLVMBuildIsNotNull(builder, payload, "allocated"), "Unable to allocate class instance")
@@ -158,6 +159,8 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		val slot = slot(builder, index)
 		LLVMBuildStore(builder, payload, address(builder, slot, 0))
 		LLVMBuildStore(builder, permission(false), address(builder, slot, 3))
+		LLVMBuildStore(builder, LLVMGetParam(function, 1), address(builder, slot, 4))
+		LLVMBuildStore(builder, integer(-1), address(builder, slot, 5))
 		val generation = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "instance_generation")
 		val upper = LLVMBuildShl(builder, memory.resize(generation, identityType), LLVMConstInt(identityType, 32, 0), "upper_generation")
 		LLVMBuildRet(builder, LLVMBuildOr(builder, upper, memory.resize(index, identityType), "instance_identity"))
@@ -183,15 +186,25 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildRetVoid(builder)
 	}
 
-	fun create(builder: LLVMBuilderRef, owner: CClass): ObjectAccess {
+	fun instanceBytes(builder: LLVMBuilderRef, owner: CClass): LLVMValueRef {
 		val memory = EmitMemory(context, builder, abi)
-		val bytes = memory.elementBytes(memory.count(1), owner.instanceStorage(context, abi.layout), "Class instance exceeds native allocation size")
-		val access = ObjectAccess(call(builder, allocate, "created_object", bytes), permission(false))
+		return memory.elementBytes(memory.count(1), owner.instanceStorage(context, abi.layout), "Class instance exceeds native allocation size")
+	}
+
+	fun create(builder: LLVMBuilderRef, bytes: LLVMValueRef, tag: LLVMValueRef): ObjectAccess {
+		val access = ObjectAccess(call(builder, allocate, "created_object", bytes, tag), permission(false))
 		LLVMBuildMemSet(builder, instance(builder, access), LLVMConstInt(LLVMInt8TypeInContext(context), 0, 0), bytes, 1)
 		return access
 	}
 
 	private fun checkedSlot(builder: LLVMBuilderRef, access: ObjectAccess) = call(builder, lookup, "checked_slot", access.identity, access.duringDestruction)
+	fun finishClass(builder: LLVMBuilderRef, access: ObjectAccess, tag: LLVMValueRef) {
+		val slot = checkedSlot(builder, access)
+		LLVMBuildStore(builder, tag, address(builder, slot, 5))
+	}
+
+	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef =
+		LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), 5), "initialized_class")
 	fun check(builder: LLVMBuilderRef, access: ObjectAccess) {
 		checkedSlot(builder, access)
 	}
@@ -203,6 +216,10 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	fun beginDelete(builder: LLVMBuilderRef, identity: LLVMValueRef): ObjectAccess {
 		val slot = checkedSlot(builder, ObjectAccess(identity, permission(false)))
+		val concrete = LLVMBuildLoad2(builder, indexType, address(builder, slot, 4), "concrete_class")
+		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, 5), "initialized_class")
+		val complete = LLVMBuildICmp(builder, LLVMIntEQ, initialized, concrete, "construction_complete")
+		EmitMemory(context, builder, abi).guard(complete, "Class object is still under construction")
 		LLVMBuildStore(builder, permission(true), address(builder, slot, 3))
 		return ObjectAccess(identity, permission(true))
 	}

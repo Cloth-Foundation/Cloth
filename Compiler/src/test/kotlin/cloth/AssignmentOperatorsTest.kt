@@ -109,6 +109,42 @@ class AssignmentOperatorsTest {
 	}
 
 	@Test
+	fun `native single statement void bodies use ordinary compound assignments`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Player (pub def<float> health) {
+			    pub mt<void> add(float amount) = health += amount; pub mt subtract(float amount) = self.health -= amount
+			    pub mt multiply(float amount) = health *= amount
+			    pub mt divide(float amount) = self.health /= amount
+			    pub mt remainder(float amount) = if (amount != 0f) health %= amount
+			}
+			typedef<struct> Counter {
+			    int value;
+			    mt increment() = value++;
+			}
+			fn<void> run(Player player) = while (player.health < 100f) player.add(10f);
+			fn<void> finish(Player player) = player::delete
+			fn<int> main() {
+			    def player = Player::new(90f)
+			    run(player)
+			    player.add(10f)
+			    player.subtract(2f)
+			    player.multiply(2f)
+			    player.divide(3f)
+			    player.remainder(7f)
+			    def<Counter> count = { 1 }
+			    count.increment()
+			    if (player.health != 2f || count.value != 2) return 1
+			    finish(player)
+			    return 0
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("statement_bodies_${abi.layout.sizeBits}"))
+			assertEquals(processCompletion().replace("\r\n", "\n"), output)
+		}
+	}
+
+	@Test
 	fun `native increment and decrement statements update numeric bindings`(@TempDir directory: Path) {
 		assertProgram(directory.resolve("updates"), """
 			def x = 10

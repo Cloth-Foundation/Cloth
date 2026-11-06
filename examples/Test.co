@@ -70,6 +70,11 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
 
     }
 
+    operator ::str () = "Player"
+
+    operator<int<auto>> +() = self.getHealth() -> int<auto>
+    operator<float<self.getHealth()::width>> +() = self.getHealth()
+
 }
 
 pub typedef<state<DeathInfo>> Dead for Player {

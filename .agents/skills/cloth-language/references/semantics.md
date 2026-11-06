@@ -138,6 +138,14 @@ Read [Cloth functions and function blocks](../../cloth-functions/references/sema
 
 Read [Cloth control flow](../../cloth-control-flow/references/semantics.md#type-checks-state-checks-and-equality) and its
 [feature skill](../../cloth-control-flow/SKILL.md).
+The [operator design](object-protocol.md) covers general overloading for
+classes, structs, and enums, including `==`, `===`, and `is` operand forms.
+[Struct and enum operators](value-operators.md) records explicit struct
+equality, nominal enum case identity, and enum formatting.
+[Operand contexts and value-target checks](operand-contexts.md) records
+operator context ranking, captured numeric widths, and narrowing boundaries.
+[Operator publication](operator-publication.md) links the runnable examples
+and target verification.
 
 ## Conditional expressions and statements
 
@@ -335,6 +343,10 @@ for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overl
 See the [basic classes plan](../../../../todo/basic-classes-plan.md) for the
 implementation sequence and the [class publication record](class-publication.md)
 for the maintained example and verification.
+
+The [Object design](object-protocol.md) describes the implicit root and
+operator protocols. The [class formatting record](class-formatting.md) covers
+the shared `::str`, interpolation, and output behavior.
 
 ## Object lifetime and nullability
 

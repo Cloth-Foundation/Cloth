@@ -75,6 +75,7 @@ captures implementation scope and regression evidence.
 | --- | --- |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
+| Enum cases and payloads, enum formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
@@ -129,6 +130,25 @@ captures implementation scope and regression evidence.
   [Runnable example](../../../examples/Classes.co) · [Publication and verification](references/class-publication.md) ·
   [Class syntax](references/class-syntax.md) · [Class typing](references/class-typing.md) ·
   [Class execution and lifetime](references/class-lifetime.md) · [Class values](references/class-values.md) · [Class plan](../../../todo/basic-classes-plan.md)
+
+- [Object and operator declarations](references/object-protocol.md) records
+  the implicit `Object` root and general operator overloading for classes,
+  structs, and enums, including formatting, equality, and instance checks.
+  [Class inheritance implementation](references/class-inheritance.md) covers
+  the `Object` root, base constructors, upcasts, class tests, and deletion.
+  [Operator declarations and resolution](references/operator-declarations.md)
+  covers ordinary operator execution, staged syntax, diagnostics, and verification.
+  [Class equality and identity](references/class-equality.md) covers class
+  comparison dispatch, nullable operands, and raw handle comparison.
+  [Class formatting](references/class-formatting.md) covers `operator ::str()`,
+  checked dispatch, output, and once-only formatting of array elements.
+  [Struct and enum operators](references/value-operators.md) covers explicit
+  struct equality and nominal enum cases, payloads, equality, and formatting.
+  [Operand contexts and value-target checks](references/operand-contexts.md)
+  covers eager binary contexts, `int<auto>` and `float<auto>`, and
+  overloads for value-target `is`.
+  [Operator publication](references/operator-publication.md) links the runnable
+  examples, supported feature records, and release verification.
 
 - Do-while: the [accepted contract](../cloth-control-flow/references/do-while-loops.md)
   owns `do body while (condition)`, semicolon boundaries, scopes, jumps and

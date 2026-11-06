@@ -36,9 +36,12 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
 ## Diagnostics and scope
 
 - C3092 reports provable invalid accesses, including local alias copies and
-  joins where all continuing paths establish deletion. Unknown identities
-  and effects use the runtime check. Repeated loops and deferred evaluation
-  conservatively discard mutable alias facts. [Lifetime analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/ClassLifetimeAnalysis.kt)
+  joins where all continuing paths establish deletion. A do-while with no
+  backedge joins its break exits with any exit through the trailing test.
+  Ordered result reception stops evaluating positions after an operand exits.
+  Unknown identities and effects use the runtime check. Repeated loops and
+  deferred evaluation conservatively discard mutable alias facts.
+  [Lifetime analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/ClassLifetimeAnalysis.kt)
 - The runtime reports `Class object is no longer live` and exits with status 1
   for an invalid lookup. Access through ordinary aliases during destruction,
   stale access after slot reuse, and recursive deletion use the same failure
