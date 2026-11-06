@@ -2,11 +2,7 @@ package cloth.semantic
 
 import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
-import cloth.data.CClass
-import cloth.data.CEnum
-import cloth.data.ClassField
-import cloth.data.CompilerDataProviders
-import cloth.data.EnumField
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
@@ -464,6 +460,7 @@ class DeclarationAnalyzer(private val target: TargetLayout = TargetLayout.native
 						model.valueChecks[expression] = check
 					} else expression(expression.operand, scope)
 				}
+
 				is InterpolatedString                                                                                                -> expression.parts.forEach { receiverValue(it, scope) }
 				is IfExpression                                                                                                      -> {
 					for (branch in expression.branches) {

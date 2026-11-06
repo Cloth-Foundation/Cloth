@@ -207,16 +207,17 @@ internal sealed class ProviderResult<out T : ValueType> {
 	}
 
 	data class ClassText(override val receiverType: CClass) : ProviderResult<CString>() {
+
 		override val type get() = CString
 		override val callsFormatter get() = true
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatClass((receiver as ProviderReceiver.Value).value)
 	}
 
 	data class EnumText(override val receiverType: CEnum) : ProviderResult<CString>() {
+
 		override val type get() = CString
 		override val callsFormatter get() = true
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef =
-			context.formatEnum((receiver as ProviderReceiver.Value).value, receiverType)
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatEnum((receiver as ProviderReceiver.Value).value, receiverType)
 	}
 
 	/** Source str and interpolation deliberately share one formatter. */

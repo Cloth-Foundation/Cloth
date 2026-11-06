@@ -12,9 +12,8 @@ import org.bytedeco.llvm.global.LLVM.*
 /** Explicit C ABI profiles selected from LLVM's normalized target triple. */
 internal class NativeCABI private constructor(val targetTriple: String, val profile: Profile, val architecture: Architecture, val environment: String) {
 
-	enum class Architecture {
-		// Dummy comment so X86 doesn't appear next to the brace. IntelliJ Kotlin formatting is kind of dumb.
-		X86,
+	enum class Architecture { // Dummy comment so X86 doesn't appear next to the brace. IntelliJ Kotlin formatting is kind of dumb.
+	X86,
 		X86_64,
 		AARCH64
 	}

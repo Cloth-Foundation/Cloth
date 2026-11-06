@@ -1,10 +1,6 @@
 package cloth.emitter.types
 
-import cloth.data.CEnum
-import cloth.data.MetadataQuery
-import cloth.data.ProviderReceiver
-import cloth.data.ProviderResult
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.types.primitives.EmitString
 import cloth.emitter.types.primitives.EmitWideInteger
@@ -36,8 +32,8 @@ internal class ProviderEmissionContext(
 		val access = ObjectAccess(value, destructionPermission ?: emitter.classes.permission(false))
 		return emitter.formatClass(builder, access, checkNotNull(returnArena)())
 	}
-	fun formatEnum(value: LLVMValueRef, type: CEnum): LLVMValueRef =
-		checkNotNull(functions).formatEnum(builder, value, type, checkNotNull(returnArena))
+
+	fun formatEnum(value: LLVMValueRef, type: CEnum): LLVMValueRef = checkNotNull(functions).formatEnum(builder, value, type, checkNotNull(returnArena))
 	fun textStorage() = checkNotNull(functions).stringStorage
 	fun withTextArena(arena: LLVMValueRef) = ProviderEmissionContext(context, builder, strings, casts, location, functions, { arena })
 	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef = strings.formatArray(value, recipe, this, location)

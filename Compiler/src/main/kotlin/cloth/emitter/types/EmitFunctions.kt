@@ -58,6 +58,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			LLVMFunctionType(flag, parameters, 4, 0)
 		}
 	}
+
 	fun reference(function: CallableSymbol): LLVMValueRef = functions.getValue(function)
 	fun signature(function: CallableSymbol): LLVMTypeRef = functionTypes.getValue(function)
 
@@ -73,7 +74,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val replayableStruct = hasClasses && callable is MethodSymbol && callable.owner is CStruct
 		val explicitStart = when {
 			replayableStruct                           -> 4
-			callable is ConstructorSymbol             -> 2
+			callable is ConstructorSymbol              -> 2
 			enumReceiver                               -> 1
 			objectReceiver || callable is MethodSymbol -> 2
 			else                                       -> 0
@@ -290,11 +291,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 	}
 
-	fun formatClass(builder: LLVMBuilderRef, access: ObjectAccess, arena: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(3L).use { arguments ->
-			arguments.put(0, access.identity); arguments.put(1, access.duringDestruction); arguments.put(2, arena)
-			LLVMBuildCall2(builder, classFormatterType, classFormatter, arguments, 3, "class_text")
-		}
+	fun formatClass(builder: LLVMBuilderRef, access: ObjectAccess, arena: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(3L).use { arguments ->
+		arguments.put(0, access.identity); arguments.put(1, access.duringDestruction); arguments.put(2, arena)
+		LLVMBuildCall2(builder, classFormatterType, classFormatter, arguments, 3, "class_text")
+	}
 
 	private fun emitClassFormatter(): LLVMValueRef {
 		val function = LLVMAddFunction(module, "cloth.objects.format", classFormatterType)
@@ -336,17 +336,14 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 	}
 
-	fun compareWithOverride(builder: LLVMBuilderRef, method: CallableSymbol, receiver: ObjectAccess, other: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(3L).use { arguments ->
-			arguments.put(0, receiver.identity); arguments.put(1, receiver.duringDestruction); arguments.put(2, other)
-			LLVMBuildCall2(builder, signature(method), reference(method), arguments, 3, "comparison_override")
-		}
+	fun compareWithOverride(builder: LLVMBuilderRef, method: CallableSymbol, receiver: ObjectAccess, other: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(3L).use { arguments ->
+		arguments.put(0, receiver.identity); arguments.put(1, receiver.duringDestruction); arguments.put(2, other)
+		LLVMBuildCall2(builder, signature(method), reference(method), arguments, 3, "comparison_override")
+	}
 
-	fun enumPayload(builder: LLVMBuilderRef, value: LLVMValueRef, field: EnumField, returnArena: () -> LLVMValueRef): LLVMValueRef =
-		emitEnumReader(builder, value, semantics.declarations.symbolOf(field.reader), returnArena)
+	fun enumPayload(builder: LLVMBuilderRef, value: LLVMValueRef, field: EnumField, returnArena: () -> LLVMValueRef): LLVMValueRef = emitEnumReader(builder, value, semantics.declarations.symbolOf(field.reader), returnArena)
 
-	fun formatEnum(builder: LLVMBuilderRef, value: LLVMValueRef, owner: CEnum, returnArena: () -> LLVMValueRef): LLVMValueRef =
-		emitEnumReader(builder, value, semantics.declarations.enumFormatter(owner), returnArena)
+	fun formatEnum(builder: LLVMBuilderRef, value: LLVMValueRef, owner: CEnum, returnArena: () -> LLVMValueRef): LLVMValueRef = emitEnumReader(builder, value, semantics.declarations.enumFormatter(owner), returnArena)
 
 	private fun emitEnumReader(builder: LLVMBuilderRef, value: LLVMValueRef, method: MethodSymbol, returnArena: () -> LLVMValueRef): LLVMValueRef {
 		val result = semantics.typeOf(method).returns
@@ -440,6 +437,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 					putStructReceiver(arguments, access, layout)
 				}
 			}
+
 			fun putArgument(expression: Expression, destination: Int) {
 				val parameter = type.parameters[destination]
 				val adapted = expressions.adaptValue(expressions.emitValue(expression), expressions.typeOf(expression), parameter)

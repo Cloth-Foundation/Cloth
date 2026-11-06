@@ -33,6 +33,7 @@ class CClass internal constructor(val declaration: ClassDeclaration) : CMemberTy
 	internal var base: CClass? = null
 	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
 	override fun accepts(actual: ValueType) = super.accepts(actual) || actual is CClass && this in actual.ancestry()
+
 	// The implicit root has no fields. A source base occupies the first slot.
 	internal val fieldOffset get() = if (base?.base != null) 1 else 0
 	override lateinit var fields: List<ClassField>
@@ -49,8 +50,7 @@ class CClass internal constructor(val declaration: ClassDeclaration) : CMemberTy
 
 	/** A private slot and generation carrier, independent of the native pointer width. */
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMInt64TypeInContext(context)
-	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> =
-		super.providers(target) + (CompilerDataProviders.STR to ProviderResult.ClassText(this))
+	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = super.providers(target) + (CompilerDataProviders.STR to ProviderResult.ClassText(this))
 
 	internal fun arenaIndex(field: ClassField) = fieldOffset + fields.size + bufferedFields.indexOf(field)
 	internal fun shapeIndex(field: ClassField) = fieldOffset + fields.size + bufferedFields.size + shapedFields.indexOf(field)

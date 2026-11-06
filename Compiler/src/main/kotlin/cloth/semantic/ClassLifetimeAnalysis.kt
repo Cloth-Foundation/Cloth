@@ -1,12 +1,8 @@
 package cloth.semantic
 
-import cloth.data.CClass
-import cloth.data.CNullable
-import cloth.data.ClassField
-import cloth.data.ProviderResult
-import cloth.data.ValueType
-import cloth.diagnostics.SemanticErrors
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
+import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
@@ -16,7 +12,7 @@ import cloth.parser.statement.*
 import cloth.semantic.symbols.*
 import cloth.token.Operators
 import cloth.token.TokenSpan
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Prove invalid local accesses. Unknown identity and effects remain runtime checks. */
 internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
@@ -46,6 +42,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 					arguments(declaration.owner.base?.arguments.orEmpty(), state)
 					declarations.classes.getValue(declaration.name.lexeme).fieldInitializers.forEach { expression(it.expression, state) }
 				}
+
 				is ConstructorDeclaration        -> arguments(declaration.delegation.arguments, state)
 				else                             -> Unit
 			}
@@ -249,9 +246,9 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		}
 		model.types.operatorCalls[value]?.let { operator ->
 			val operands = when (value) {
-				is UnaryExpression -> listOf(value.operand)
+				is UnaryExpression  -> listOf(value.operand)
 				is BinaryExpression -> listOf(value.left, value.right)
-				else -> throw InternalErrors.invariant("Operator call without operands")
+				else                -> throw InternalErrors.invariant("Operator call without operands")
 			}
 			val instance = (operator.call.callable as MethodSymbol).owner is CClass
 			var receiver: Handle? = null
@@ -313,6 +310,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (provider?.result is ProviderResult.ClassText) format(value.receiver, state)
 				else if (provider?.receiverForm != cloth.data.ProviderReceiverForm.TYPE) expression(value.receiver, state)
 			}
+
 			is StateCallExpression      -> arguments(listOf(value.receiver) + value.arguments, state)
 			is IfExpression             -> return conditional(value, state)
 			is BinaryExpression         -> {
@@ -343,6 +341,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 					check(handle, state, value.operand.span, permitDestruction = self)
 				}
 			}
+
 			is UnaryExpression          -> expression(value.operand, state)
 			is IndexExpression          -> arguments(listOf(value.array, value.index), state)
 			is ArrayLiteral             -> arguments(value.elements, state)

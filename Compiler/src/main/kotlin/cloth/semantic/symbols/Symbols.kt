@@ -24,11 +24,8 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
 		fun of(type: TypeReference): SignatureType {
-			val width = type.width?.takeUnless { type.capturesWidth }?.integerLiteralValue()
-				?: defaultWidth.takeIf { type.name.lexeme in numericNames }
-			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size,
-				type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() },
-				type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
+			val width = type.width?.takeUnless { type.capturesWidth }?.integerLiteralValue() ?: defaultWidth.takeIf { type.name.lexeme in numericNames }
+			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
 		}
 	}
 }

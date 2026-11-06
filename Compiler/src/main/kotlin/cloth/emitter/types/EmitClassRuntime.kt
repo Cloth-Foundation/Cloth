@@ -203,8 +203,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildStore(builder, tag, address(builder, slot, 5))
 	}
 
-	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef =
-		LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), 5), "initialized_class")
+	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef = LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), 5), "initialized_class")
 	fun check(builder: LLVMBuilderRef, access: ObjectAccess) {
 		checkedSlot(builder, access)
 	}

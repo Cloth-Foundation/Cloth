@@ -9,11 +9,7 @@ import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.*
-import cloth.emitter.types.primitives.EmitCharacter
-import cloth.emitter.types.primitives.EmitHalf
-import cloth.emitter.types.primitives.EmitIntegerText
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.primitives.EmitStringArena
+import cloth.emitter.types.primitives.*
 import cloth.semantic.*
 import cloth.settings.LinkOptions
 import cloth.token.Keywords

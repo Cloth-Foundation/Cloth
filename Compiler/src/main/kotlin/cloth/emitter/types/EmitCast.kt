@@ -1,11 +1,6 @@
 package cloth.emitter.types
 
-import cloth.data.CClass
-import cloth.data.CEnum
-import cloth.data.CFloat
-import cloth.data.CInteger
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.types.primitives.EmitHalf

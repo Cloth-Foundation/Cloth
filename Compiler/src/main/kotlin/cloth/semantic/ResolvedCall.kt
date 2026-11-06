@@ -2,9 +2,9 @@ package cloth.semantic
 
 import cloth.builtin.BoundBuiltinCall
 import cloth.data.ValueType
-import cloth.semantic.symbols.CallableSymbol
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
+import cloth.semantic.symbols.CallableSymbol
 import cloth.token.Operators
 
 internal sealed interface ResolvedCall {

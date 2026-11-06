@@ -38,6 +38,7 @@ class DeclarationModel internal constructor(
 	private val methodGroups = methods.filter { it.declaration.operator == null }.groupBy { it.owner }.mapValues { (_, members) ->
 		members.groupBy { it.name.lexeme }.mapValues { (_, overloads) -> MethodGroupSymbol(overloads) }
 	}
+
 	internal fun hasOperator(name: String) = name in operatorGroups
 	internal fun operators(owner: CMemberType, name: String, right: Boolean, arity: Int): List<MethodSymbol> {
 		val declarations = operatorGroups[name].orEmpty().filter {
@@ -46,6 +47,7 @@ class DeclarationModel internal constructor(
 		val owners = if (owner is CClass) owner.ancestry() else sequenceOf(owner)
 		return owners.flatMap { ancestor -> declarations.filter { it.owner == ancestor } }.distinctBy { it.signature }.toList()
 	}
+
 	internal fun contextOperators(owner: CMemberType, name: String): List<MethodSymbol> {
 		val candidates = operatorGroups[name].orEmpty().filter { it.declaration.operator?.selector != null }
 		val owners = if (owner is CClass) owner.ancestry() else sequenceOf(owner)
@@ -54,23 +56,21 @@ class DeclarationModel internal constructor(
 			SignatureType.of(selector) to selector.capturesWidth
 		}.toList()
 	}
-	internal fun equalityOverride(owner: CClass, operation: Operators): MethodSymbol? =
-		operators(owner, operation.toString(), right = false, arity = 1).firstOrNull()
-			?: if (operation == Operators.NOT_EQUAL) operators(owner, Operators.EQUAL.toString(), right = false, arity = 1).firstOrNull() else null
 
-	internal fun classFormatter(owner: CClass): MethodSymbol? =
-		operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull()
+	internal fun equalityOverride(owner: CClass, operation: Operators): MethodSymbol? = operators(owner, operation.toString(), right = false, arity = 1).firstOrNull() ?: if (operation == Operators.NOT_EQUAL) operators(owner, Operators.EQUAL.toString(), right = false, arity = 1).firstOrNull() else null
 
-	internal fun enumFormatter(owner: CEnum): MethodSymbol =
-		operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull() ?: symbolOf(enumDefaults.getValue(owner))
+	internal fun classFormatter(owner: CClass): MethodSymbol? = operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull()
+
+	internal fun enumFormatter(owner: CEnum): MethodSymbol = operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull() ?: symbolOf(enumDefaults.getValue(owner))
 
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
-		is CArray -> formattingMayCallUserCode(type.element)
-		is CClass -> classes.values.any { type.accepts(it.owner) && classFormatter(it.owner) != null }
-		is CEnum -> type !in enumDefaults
-		else -> false
+		is CArray    -> formattingMayCallUserCode(type.element)
+		is CClass    -> classes.values.any { type.accepts(it.owner) && classFormatter(it.owner) != null }
+		is CEnum     -> type !in enumDefaults
+		else         -> false
 	}
+
 	internal val namedTypeReceivers = IdentityHashMap<NameExpression, CMemberType>()
 	internal val classCreations = IdentityHashMap<ClassCreationExpression, ClassDefinition>()
 	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
@@ -115,6 +115,7 @@ class DeclarationModel internal constructor(
 		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }.distinctBy { it.signature }.toList()
 		return methods.takeIf { it.isNotEmpty() }?.let(::MethodGroupSymbol)
 	}
+
 	fun targetOf(statement: AssignmentStatement): BindingSymbol = assignments.getValue(statement)
 	fun targetsOf(statement: MultiAssignmentStatement): List<BindingSymbol?> = multiAssignments.getValue(statement)
 	fun targetOf(statement: UpdateStatement): BindingSymbol = updates.getValue(statement)

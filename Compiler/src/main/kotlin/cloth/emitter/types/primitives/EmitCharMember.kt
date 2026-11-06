@@ -7,7 +7,7 @@ import cloth.data.UnicodeWhiteSpace
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
-import java.util.Locale
+import java.util.*
 
 /** Module-local constant ranges and bounded binary searches, without locale APIs. */
 internal class EmitCharMember(private val context: LLVMContextRef, private val builder: LLVMBuilderRef) {

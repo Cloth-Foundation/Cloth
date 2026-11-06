@@ -105,8 +105,8 @@ class Parser(private val tokens: List<Token>) {
 		}
 		return when (kind.lexeme) {
 			Keywords.CLASS.toString() -> classParser.parse(keyword, visibility, finalKeyword)
-			Keywords.ENUM.toString() -> enumParser.parse(keyword, visibility)
-			else -> structParser.parse(keyword, visibility)
+			Keywords.ENUM.toString()  -> enumParser.parse(keyword, visibility)
+			else                      -> structParser.parse(keyword, visibility)
 		}
 	}
 

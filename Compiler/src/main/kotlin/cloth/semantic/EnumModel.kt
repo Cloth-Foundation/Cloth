@@ -17,6 +17,7 @@ import cloth.token.TokenType
 
 /** Payload readers use ordinary checked returns and buffered result transport. */
 internal object EnumModel {
+
 	fun defineFields(owner: CEnum, resolver: TypeResolver) {
 		val declaration = owner.declaration
 		val names = mutableMapOf<String, Token>()
@@ -67,14 +68,13 @@ internal object EnumModel {
 	private fun requireConstant(expression: Expression) {
 		when (expression) {
 			is NumberLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is NullLiteral -> Unit
-			is CastExpression -> requireConstant(expression.operand)
-			is UnaryExpression -> if (expression.operand !is NumberLiteral && expression.operand !is BooleanLiteral) invalidConstant(expression)
-			is ArrayLiteral -> expression.elements.forEach(::requireConstant)
-			is StructLiteral -> expression.fields.forEach(::requireConstant)
-			else -> invalidConstant(expression)
+			is CastExpression                                                                          -> requireConstant(expression.operand)
+			is UnaryExpression                                                                         -> if (expression.operand !is NumberLiteral && expression.operand !is BooleanLiteral) invalidConstant(expression)
+			is ArrayLiteral                                                                            -> expression.elements.forEach(::requireConstant)
+			is StructLiteral                                                                           -> expression.fields.forEach(::requireConstant)
+			else                                                                                       -> invalidConstant(expression)
 		}
 	}
 
-	private fun invalidConstant(expression: Expression): Nothing =
-		throw SemanticErrors.enumMember("An enum payload requires a constant literal or explicit cast", expression.span)
+	private fun invalidConstant(expression: Expression): Nothing = throw SemanticErrors.enumMember("An enum payload requires a constant literal or explicit cast", expression.span)
 }

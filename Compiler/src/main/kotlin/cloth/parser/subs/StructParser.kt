@@ -2,7 +2,9 @@ package cloth.parser.subs
 
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
-import cloth.parser.declaration.*
+import cloth.parser.declaration.MethodDeclaration
+import cloth.parser.declaration.StructDeclaration
+import cloth.parser.declaration.StructFieldDeclaration
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -50,9 +52,9 @@ internal class StructParser(private val parser: Parser) {
 		while (!atEnd()) {
 			rejectFunction()
 			val method = when {
-				parser.atKeyword(Keywords.METHOD) -> parser.functionParser.parseMethod()
+				parser.atKeyword(Keywords.METHOD)   -> parser.functionParser.parseMethod()
 				parser.atKeyword(Keywords.OPERATOR) -> parser.functionParser.parseOperator()
-				else -> throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration with inherited visibility", parser.peek())
+				else                                -> throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration with inherited visibility", parser.peek())
 			}
 			val body = method.body
 			add(method)
