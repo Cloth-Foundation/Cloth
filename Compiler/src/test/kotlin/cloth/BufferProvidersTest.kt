@@ -7,7 +7,7 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -18,7 +18,7 @@ class BufferProvidersTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("buffer-providers.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
-		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, failure.diagnosticCode, source)
 		assertLocated(failure)
 		return failure

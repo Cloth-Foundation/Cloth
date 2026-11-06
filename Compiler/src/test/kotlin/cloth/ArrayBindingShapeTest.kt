@@ -8,7 +8,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -19,7 +19,7 @@ class ArrayBindingShapeTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("binding-shapes.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertTrue(error.diagnosticCode in setOf(DiagnosticCode.INVALID_ARRAY, DiagnosticCode.TYPE_MISMATCH), error.message)
 		assertLocated(error)
 	}
@@ -53,7 +53,7 @@ class ArrayBindingShapeTest {
 	fun `unknown function return sizes are captured without changing static types`(@TempDir directory: Path) {
 		for ((index, declaration) in listOf("def a = make()", "def<int[]> a = make()").withIndex()) {
 			val source = "fn<int[]> make() = [1, 2]\nfn main() {\n $declaration\n a = [3]\n}"
-			val model = FunctionAnalyzer().analyze(parse(source))
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 			val body = model.declarations.functions.last().declaration.body as BlockBody
 			assertEquals("int[]", model.types.typeOf(body.statements.first() as BindingDeclaration).spelling)
 			native(directory, "function_$index", source, initialShapeError)
@@ -169,17 +169,10 @@ class ArrayBindingShapeTest {
 	}
 
 	@Test
-	fun `legacy snippet bindings preserve runtime inferred dimensions`(@TempDir directory: Path) {
+	fun `conditional array initializers preserve runtime inferred dimensions`(@TempDir directory: Path) {
 		val source = "def<int[]> a = if (true) { [1, 2] } else { [3] }\na = [4]"
-		val ast = Parser(Lexer(source).scanTokens()).parseSnippet()
-		val executable = LLVMEmitter().compileSnippet(ast, directory.resolve("snippet"), forcePrint = false)
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
-			assertNotEquals(0, process.exitValue())
-			assertContains(process.inputStream.readBytes().toString(Charsets.UTF_8), initialShapeError)
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+		val output = runExecutable(compileMain(directory.resolve("conditional_shape"), source), status = 1)
+		assertContains(output, initialShapeError)
+		assertFalse(output.contains("PEC:"))
 	}
 }

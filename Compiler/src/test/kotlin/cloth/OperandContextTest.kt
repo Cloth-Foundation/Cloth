@@ -1,10 +1,15 @@
 package cloth
 
+import cloth.data.CInt
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.expression.NameExpression
+import cloth.parser.expression.TypeCheckExpression
 import cloth.semantic.SemanticException
+import cloth.semantic.declarations.DeclarationAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -147,11 +152,66 @@ class OperandContextTest {
 	"""
 
 	@Test
+	fun `discarded trials do not publish width specializations for emission`() {
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(structUnit("""
+			typedef<enum> Peer {
+			    Item;
+			    operator<int<auto>> +() -> int<auto> {
+			        if (false) return Peer.Item + (1 -> int<auto>)
+			        return 1 -> int<auto>
+			    }
+			}
+			typedef<enum> Sample {
+			    Item;
+			    operator<int<auto>> +() = Peer.Item + (1 -> int<auto>)
+			}
+		"""))
+		val template = model.declarations.methods.single { it.owner.spelling == "Sample" && it.declaration.operator?.selector?.capturesWidth == true }
+		val rejected = model.trial()
+		val nested = rejected.model.trial()
+		val unused = nested.model.specialize(template, 8)
+		assertFalse(unused in rejected.model.callableBodies)
+		nested.commit()
+		assertEquals(2, rejected.model.callableBodies.count { it !in model.callableBodies })
+		assertFalse(unused in model.callableBodies)
+
+		val accepted = model.trial()
+		val used = accepted.model.specialize(template, 16)
+		assertSame(used, accepted.model.specialize(template, 16))
+		accepted.commit()
+		assertEquals(CInt(16), model.typeOf(used).returns)
+		assertFalse(unused in model.callableBodies)
+		val specialized = model.callableBodies.filter { it !in model.declarations.concreteCallables }
+		assertEquals(2, specialized.size)
+		assertTrue(specialized.all { model.typeOf(it).returns == CInt(16) })
+	}
+
+	@Test
 	fun `contexts select once from original operands and specialize their widths`(@TempDir directory: Path) {
 		val expected = "LR contexts\n" + processCompletion().replace("\r\n", "\n")
 		for (abi in structRunners()) {
 			assertEquals(expected, runStructProgram(abi, arithmetic, directory.resolve("context_${abi.layout.sizeBits}")))
 		}
+	}
+
+	@Test
+	fun `bare value checks keep their resolved operands and the selected receiver`() {
+		val unit = structUnit("""
+			typedef<class> Left
+			typedef<class> Right { operator is(Left other, self) = true }
+			fn<bool> check(Left left, Right right) = left is right
+		""")
+		val declarations = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
+		val function = declarations.functions.single()
+		val check = assertIs<TypeCheckExpression>(assertIs<ExpressionBody>(function.declaration.body).expression)
+		val application = assertNotNull(declarations.valueTargetOf(check))
+		assertSame(function.parameters[0], declarations.symbolOf(assertIs<NameExpression>(application.left)))
+		assertSame(function.parameters[1], declarations.symbolOf(assertIs<NameExpression>(application.right)))
+
+		val model = FunctionAnalyzer(declarations.target).analyze(declarations)
+		val bound = assertNotNull(model.types.valueCheckOf(check))
+		assertSame(application, bound.application)
+		assertEquals(1, bound.operator.receiverIndex)
 	}
 
 	@Test
@@ -199,9 +259,9 @@ class OperandContextTest {
 			    return 0
 			}
 		"""
-		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(fixture.replace("FULL", ""))) }
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(fixture.replace("FULL", ""))) }
 		assertEquals(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, failure.diagnosticCode)
-		FunctionAnalyzer().analyze(structUnit(fixture.replace("FULL", "operator +(int value) = value")))
+		FunctionAnalyzer(nativeTestLayout).analyze(structUnit(fixture.replace("FULL", "operator +(int value) = value")))
 	}
 
 	@Test
@@ -218,7 +278,7 @@ class OperandContextTest {
 			"typedef<class> A { operator is(int other) = true }" to DiagnosticCode.INVALID_OPERATOR_DECLARATION,
 		)
 		for ((source, code) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer().analyze(structUnit(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(code, failure.diagnosticCode, source)
 		}
 		val noNarrowing = """
@@ -231,6 +291,6 @@ class OperandContextTest {
 			    return 0
 			}
 		"""
-		assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(noNarrowing)) }
+		assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(noNarrowing)) }
 	}
 }

@@ -19,7 +19,7 @@ fn<Meter, int> update(Meter meter) = meter.add()
 
 ## Implementation
 
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   uses the shared source overload selector for explicit and implicit method
   calls. The receiver's nominal owner supplies candidates. Explicit argument
   placement, contextual typing, default omission and ordered results use the
@@ -35,7 +35,7 @@ fn<Meter, int> update(Meter meter) = meter.add()
   stored path rooted in read-only `self` or an earlier parameter is rejected.
   Calls on independent temporary structs and existing primitive operations
   follow their ordinary contracts.
-- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
   gives explicit and implicit receiver field paths the same identity. A
   stored call checks presence facts before and after its arguments, including
   nullable ancestors of the selected receiver. It can invalidate proofs

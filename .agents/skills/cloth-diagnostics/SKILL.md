@@ -40,14 +40,22 @@ the input file. The check uses the final target-specific filename and covers
 filesystem aliases such as hard links. `DiagnosticsTest` covers object output,
 an extensionless executable, and a Windows executable with an appended suffix.
 
+**C0015 / RUN_REQUIRES_EXECUTABLE** rejects `run --emit object` before reading
+source or creating output. **C0016 / PROGRAM_LAUNCH_FAILED** reports a failure
+to launch the emitted artifact or an interrupted wait. Both return 1. A child
+that completes supplies its own status. [Build and run commands](../cloth-toolchains/SKILL.md#build-and-run-commands)
+
 **C2007 / FUNCTION_IN_TYPE** rejects `fn` inside a parsed struct body at its
-keyword. **C3077 / UNSUPPORTED_STRUCTS** reports struct syntax sent to the
-body-only snippet analyzer. C3078–C3082 diagnose duplicate
+keyword. C3078–C3082 diagnose duplicate
 types, invalid fields, recursive dependencies, invalid literals and invalid
 stored targets. C3052 rejects inline structs exceeding the target addressable
 size. The [struct storage record](../cloth-structs/references/local-storage.md)
 and [Stage 4](../cloth-structs/references/function-integration.md) link fail-fast,
 CLI and native verification.
+
+**C3020 / UNKNOWN_NAME** reports unresolved names in function bodies. C3000,
+C3060, C3077 and C3086 are reserved after removal of the snippet checker.
+[Migration record](../cloth-language/references/development.md#production-path-fixture-migration-2026-11-06)
 
 **C2008 / METHOD_OUTSIDE_TYPE** locates an `mt` outside a type member list.
 **C3083 / DUPLICATE_METHOD** labels matching signatures in one nominal owner.

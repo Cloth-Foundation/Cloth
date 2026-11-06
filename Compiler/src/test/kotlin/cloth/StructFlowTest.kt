@@ -13,8 +13,8 @@ import cloth.parser.expression.IfExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -23,7 +23,7 @@ import kotlin.test.assertSame
 
 class StructFlowTest {
 
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(Parser(Lexer(SourceFile("struct-flow.co", """
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("struct-flow.co", """
 		typedef<struct> Point { int x }
 		typedef<struct> Record { Point? position, bool flag }
 	""".trimIndent() + "\n" + source.trimIndent())).scanTokens()).parse())

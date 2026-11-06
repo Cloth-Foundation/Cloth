@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -150,6 +150,17 @@ class ClassValueIntegrationTest {
 
 	@Test
 	fun `class array fields retain the first present shape across null`(@TempDir directory: Path) {
+		val knownMismatch = """
+			pub typedef<class> Fixed (pub def<int[2]> data)
+			fn main() {
+			    def box = Fixed::new([1, 2])
+			    box.data = [3]
+			}
+		"""
+		val error = assertFailsWith<SemanticException> { LLVMEmitter().emitExecutable(structUnit(knownMismatch)) }
+		assertEquals(DiagnosticCode.INVALID_ARRAY, error.diagnosticCode)
+		assertLocated(error)
+
 		val source = """
 			pub typedef<class> Box (pub def<int[]?> data ?: null)
 			fn main() {
@@ -238,10 +249,10 @@ class ClassValueIntegrationTest {
 	@Test
 	fun `class presence proofs work locally and expire after alias effects`() {
 		val declaration = "pub typedef<class> Box (pub def<int?> value)\n"
-		FunctionAnalyzer().analyze(structUnit(declaration + "fn<int> read(Box box) { if (box.value != null) return box.value + 1; return 0 }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(structUnit(declaration + "fn<int> read(Box box) { if (box.value != null) return box.value + 1; return 0 }"))
 		for (effect in listOf("alias.value = null", "clear(alias)")) {
 			val source = declaration + "fn clear(Box box) { box.value = null }\n" + "fn<int> read(Box box, Box alias) { if (box.value != null) { $effect; return box.value + 1 }; return 0 }"
-			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, failure.diagnosticCode)
 		}
 	}

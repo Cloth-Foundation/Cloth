@@ -79,7 +79,7 @@ new semantic suite owns arbitrary-width coverage.
   [TargetLayout](../../../../Compiler/src/main/kotlin/cloth/target/TargetLayout.kt)
   keep the machine set. This preserves existing synthetic machine-layout support
   without authorizing arbitrary pointer/native C widths.
-- [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/TypeResolver.kt)
+- [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/TypeResolver.kt)
   compares decoded width BigIntegers against the fixed interval before narrowing
   to host Int. Huge values that truncate to 31 or 32 cannot masquerade as valid
   widths. Float widths retain their three-member validation/message.
@@ -124,7 +124,7 @@ targets and loop bindings. It stops on one unsupported type and throws one
 located diagnostic. Sorting source facts for deterministic visitation does not
 collect diagnostics or add recovery.
 
-[EmitFunctions.validate](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+[EmitFunctions.validate](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
 and the [LLVM emitter](../../../../Compiler/src/main/kotlin/cloth/emitter/LLVM.kt)
 run this preflight before creating LLVM modules or output paths. Executable and
 snippet compilation also check before linker discovery. Direct CInteger LLVM

@@ -11,8 +11,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.*
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -21,9 +20,9 @@ import kotlin.test.*
 
 class ProviderSyntaxTest {
 
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("providers.co", source.trimIndent())).scanTokens()).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(source, "providers.co")
 	private fun unit(source: String) = Parser(Lexer(SourceFile("providers.co", source.trimIndent())).scanTokens()).parse()
-	private fun expression(source: String) = (snippet(source).statements.single() as ExpressionStatement).expression
+	private fun expression(source: String) = (bodyUnit(source).mainStatements.single() as ExpressionStatement).expression
 
 	@Test
 	fun `postfix access chains left to right with indexing and tight precedence`() {
@@ -46,7 +45,7 @@ class ProviderSyntaxTest {
 		assertEquals("max", call.name.lexeme)
 		assertTrue(call.arguments.isEmpty())
 		assertIs<ProviderAccessExpression>(expression("int::max"))
-		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit("fn<int> test() = int::max()")) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<int> test() = int::max()")) }
 		assertEquals(DiagnosticCode.UNSUPPORTED_STATE_CALL, failure.diagnosticCode)
 		assertLocated(failure)
 	}
@@ -55,48 +54,48 @@ class ProviderSyntaxTest {
 	fun `integer bounds preserve width signedness and explicit receiver forms`() {
 		for (width in listOf(8, 16, 32, 64)) for (unsigned in listOf(false, true)) {
 			val type = CInt(width, unsigned)
-			val ast = snippet("${type.spelling}::min::max")
-			val semantics = SemanticAnalyzer().analyze(ast)
-			val outer = (ast.statements.single() as ExpressionStatement).expression as ProviderAccessExpression
+			val ast = bodyUnit("${type.spelling}::min::max")
+			val semantics = FunctionAnalyzer(nativeTestLayout).analyze(ast).types
+			val outer = (ast.mainStatements.single() as ExpressionStatement).expression as ProviderAccessExpression
 			assertEquals(type, semantics.typeOf(outer))
 			assertEquals(ProviderReceiverForm.VALUE, semantics.providerAccess(outer).receiverForm)
 			assertEquals(ProviderReceiverForm.TYPE, semantics.providerAccess(outer.receiver as ProviderAccessExpression).receiverForm)
 		}
-		val arrays = snippet("[int<64>::max, 1]")
-		assertEquals(CArray(CInt(64), 2), SemanticAnalyzer().analyze(arrays).typeOf(arrays.statements.single()))
+		val arrays = bodyUnit("[int<64>::max, 1]")
+		assertEquals(CArray(CInt(64), 2), FunctionAnalyzer(nativeTestLayout).analyze(arrays).typeOf(arrays.mainStatements.single()))
 	}
 
 	@Test
 	fun `accessors are typed values and do not retarget their receiver from outer context`() {
-		val ast = snippet("1 + int<8>::max")
-		assertEquals(CInt(8), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
+		val ast = bodyUnit("1 + int<8>::max")
+		assertEquals(CInt(8), FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(ast.mainStatements.single()))
 		for (source in listOf("def<int<64>> wide = int::max", "def<int<64>> wide = 1::max")) {
-			val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet(source)) }
+			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit(source)) }
 			assertEquals(DiagnosticCode.TYPE_MISMATCH, failure.diagnosticCode)
 			assertLocated(failure)
 		}
-		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit("fn<int<64>> wrong() = int::max")) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<int<64>> wrong() = int::max")) }
 		assertEquals(DiagnosticCode.RETURN_TYPE, failure.diagnosticCode)
 	}
 
 	@Test
 	fun `unknown uppercase and unavailable providers fail at the accessor name`() {
 		for (source in listOf("int::MAX", "int::missing", "bool::min", "int::addr")) {
-			val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet(source)) }
+			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit(source)) }
 			assertEquals(DiagnosticCode.UNKNOWN_PROVIDER, failure.diagnosticCode)
 			assertLocated(failure)
 			assertEquals(source.substringAfter("::"), failure.sourceLabels.single().span.let {
 				source.substring(it.startColumn - 1, it.endColumn - 1)
 			})
 		}
-		val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet("int")) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit("int")) }
 		assertEquals(DiagnosticCode.TYPE_RECEIVER_VALUE, failure.diagnosticCode)
 	}
 
 	@Test
 	fun `all assignment and update forms reject direct accessor targets`() {
 		for (operator in listOf("= 1", ":= 1", "+= 1", "-= 1", "*= 2", "/= 2", "%= 2", "++", "--")) {
-			val failure = assertFailsWith<ClothDiagnostic> { snippet("int::max $operator") }
+			val failure = assertFailsWith<ClothDiagnostic> { bodyUnit("int::max $operator") }
 			assertEquals(DiagnosticCode.READ_ONLY_PROVIDER, failure.diagnosticCode, operator)
 			assertLocated(failure)
 			assertEquals(6, failure.sourceLabels.single().span.startColumn)
@@ -106,13 +105,13 @@ class ProviderSyntaxTest {
 	@Test
 	fun `provider errors remain intrinsic inside overload probes and fail at the first detected error`() {
 		val source = "fn<int> take(int value) = value\nfn<int> take(int<64> value) = 0\nfn<int> test() = take(int::missing)"
-		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(DiagnosticCode.UNKNOWN_PROVIDER, failure.diagnosticCode)
 		assertLocated(failure)
-		val first = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet("int::first\nint::second")) }
+		val first = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit("int::first\nint::second")) }
 		assertEquals(DiagnosticCode.UNKNOWN_PROVIDER, first.diagnosticCode)
 		assertContains(first.summary, "first")
-		assertEquals(1, first.sourceLabels.single().span.startLine)
+		assertEquals(2, first.sourceLabels.single().span.startLine)
 	}
 
 	@Test

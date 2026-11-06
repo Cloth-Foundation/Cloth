@@ -16,8 +16,7 @@ import cloth.emitter.NativeCABI
 import cloth.emitter.types.primitives.EmitCharMember
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.Operators
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.PointerPointer
@@ -39,7 +38,7 @@ class CharAttachmentsTest {
 	private fun unit(source: String) = Parser(Lexer(SourceFile("char-members.co", source.trimIndent())).scanTokens()).parse()
 	private fun scalar(point: Int) = "${Operators.QUOTATION}${String(Character.toChars(point))}${Operators.QUOTATION}"
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -85,17 +84,17 @@ class CharAttachmentsTest {
 		val predicates = listOf(chars.IS_WHITESPACE, chars.IS_LETTER, chars.IS_DIGIT, chars.IS_LETTER_OR_DIGIT, chars.IS_UPPER_CASE, chars.IS_LOWER_CASE)
 		assertEquals(predicates + listOf(chars.TO_INT, chars.TO_UPPER_CASE, chars.TO_LOWER_CASE), chars.all.toList())
 		for (method in chars.all) {
-			assertSame(method, PrimitiveAttachments[ValueType.CHAR, method.definition.name])
+			assertSame(method, PrimitiveAttachments[ValueType.CHAR, method.definition.name, nativeTestLayout])
 			assertEquals(emptyList(), method.parameters)
 			assertEquals(ValueType.CHAR, method.receiver)
 			assertEquals(BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, method.overload.storage)
 		}
 		assertTrue(predicates.all { it.overload.returns == ValueType.BOOL })
 		assertEquals(ValueType.INT, chars.TO_INT.overload.returns)
-		assertNull(PrimitiveAttachments[ValueType.STRING, "isLetter"])
-		assertEquals(ValueType.CHAR, PrimitiveAttachments[ValueType.CHAR, "toUpperCase"]?.overload?.returns)
-		assertEquals(ValueType.CHAR, PrimitiveAttachments[ValueType.CHAR, "toLowerCase"]?.overload?.returns)
-		assertNull(PrimitiveAttachments[ValueType.CHAR, "IsDigit"])
+		assertNull(PrimitiveAttachments[ValueType.STRING, "isLetter", nativeTestLayout])
+		assertEquals(ValueType.CHAR, PrimitiveAttachments[ValueType.CHAR, "toUpperCase", nativeTestLayout]?.overload?.returns)
+		assertEquals(ValueType.CHAR, PrimitiveAttachments[ValueType.CHAR, "toLowerCase", nativeTestLayout]?.overload?.returns)
+		assertNull(PrimitiveAttachments[ValueType.CHAR, "IsDigit", nativeTestLayout])
 		assertNotSame(chars.TO_INT, PrimitiveAttachments.BOOL.TO_INT)
 		assertEquals("17.0.0", UnicodeCharacterProperties.VERSION)
 		for ((property, counts) in listOf(UnicodeCharacterProperty.LETTER to (684 to 145672), UnicodeCharacterProperty.DIGIT to (72 to 770), UnicodeCharacterProperty.UPPERCASE to (660 to 2006), UnicodeCharacterProperty.LOWERCASE to (677 to 2595))) {
@@ -252,8 +251,8 @@ class CharAttachmentsTest {
 			assertTrue(Files.size(emitter.compileObject(example, directory.resolve("example_$index.o"))) > 0)
 		}
 		for (abi in IntegerKernelProgram.targets()) assertEquals("true\ntrue\ntrue\ntrue\ntrue\ntrue\n55\n128512\nfalse\n" + completion(), execute(directory, "example_${abi.architecture}", source, abi))
-		val snippet = Parser(Lexer("'7'.toInt()").scanTokens()).parseSnippet()
-		assertEquals(ValueType.INT, SemanticAnalyzer().analyze(snippet).typeOf((snippet.statements.single() as cloth.parser.statement.ExpressionStatement).expression))
+		val program = parseMain("'7'.toInt()")
+		assertEquals(ValueType.INT, FunctionAnalyzer(nativeTestLayout).analyze(program).typeOf(program.mainStatements.single()))
 	}
 
 	@Test

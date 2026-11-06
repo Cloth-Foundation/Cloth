@@ -14,11 +14,10 @@ import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.DeclarationAnalyzer
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
-import cloth.semantic.TypeResolver
+import cloth.semantic.declarations.DeclarationAnalyzer
+import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.symbols.SignatureType
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.TokenSpan
 import cloth.token.TokenType
 import org.junit.jupiter.api.Test
@@ -29,8 +28,7 @@ class NullabilityParsingTest {
 	private fun parser(source: String) = Parser(Lexer(SourceFile("nullable.co", source.trimIndent())).scanTokens())
 	private fun unit(source: String) = parser(source).parse()
 	private fun function(source: String) = assertIs<FunctionDeclaration>(unit(source).declarations.single())
-	private fun snippet(source: String) = parser(source).parseSnippet()
-	private fun expression(source: String) = assertIs<ExpressionStatement>(snippet(source).statements.single()).expression
+	private fun expression(source: String) = assertIs<ExpressionStatement>(parseMain(source, "nullable.co").mainStatements.single()).expression
 	private fun annotation(source: String) = function("fn<$source> value() = null").returnTypes.single()
 	private fun text(span: TokenSpan): String {
 		val source = assertNotNull(span.source).text
@@ -131,9 +129,9 @@ class NullabilityParsingTest {
 		val nullable = SignatureType.of(annotation("int?"))
 		assertEquals(nullable, SignatureType.of(annotation("int<32>?")))
 		assertNotEquals(nullable, SignatureType.of(annotation("int")))
-		val declarations = DeclarationAnalyzer().analyze(unit("fn take(int value) {}\nfn take(int? value) {}"))
+		val declarations = DeclarationAnalyzer(nativeTestLayout).analyze(unit("fn take(int value) {}\nfn take(int? value) {}"))
 		assertEquals(2, declarations.functions.size)
-		val duplicate = assertFailsWith<ClothDiagnostic> { DeclarationAnalyzer().analyze(unit("fn take(int? value) {}\nfn take(int<32>? value) {}")) }
+		val duplicate = assertFailsWith<ClothDiagnostic> { DeclarationAnalyzer(nativeTestLayout).analyze(unit("fn take(int? value) {}\nfn take(int<32>? value) {}")) }
 		assertEquals(DiagnosticCode.DUPLICATE_FUNCTION, duplicate.diagnosticCode)
 		assertLocated(duplicate)
 	}
@@ -143,7 +141,7 @@ class NullabilityParsingTest {
 		for (triple in listOf("x86_64-pc-windows-msvc", "i686-pc-windows-msvc")) {
 			val target = NativeCABI.forTarget(triple).layout
 			val resolver = TypeResolver(target)
-			assertEquals(CNullable(CInt(64, unsigned = true)), resolver.resolve(annotation("unsigned int<64>?"), declarations = true))
+			assertEquals(CNullable(CInt(64, unsigned = true)), resolver.resolve(annotation("unsigned int<64>?")))
 			assertEquals(CNullable(CUSize(target.sizeBits)), resolver.resolve(annotation("usize?")))
 			assertEquals(CNullable(CISize(target.sizeBits)), resolver.resolve(annotation("isize?")))
 		}
@@ -156,8 +154,8 @@ class NullabilityParsingTest {
 		assertTrue(nullable.accepts(CNullable(ValueType.INT)))
 		assertFalse(nullable.accepts(CInt(64)))
 		assertFalse(ValueType.INT.accepts(nullable))
-		assertNull(nullable.provider("str"))
-		assertNotNull(nullable.provider("type"))
+		assertNull(nullable.provider("str", nativeTestLayout))
+		assertNotNull(nullable.provider("type", nativeTestLayout))
 		assertFailsWith<IllegalArgumentException> { CNullable(ValueType.VOID) }
 		assertFailsWith<IllegalArgumentException> { CNullable(ValueType.NEVER) }
 		assertFailsWith<IllegalArgumentException> { CNullable(nullable) }
@@ -172,18 +170,17 @@ class NullabilityParsingTest {
 		for (source in listOf("fn<void?> invalid() = null", "fn invalid(void? value) {}", "fn invalid() { def<void?> value = null }", "fn invalid() { println(void?::type) }", "fn invalid() { value -> void? }")) {
 			// A cast's operand name still follows ordinary name-resolution precedence.
 			val resolved = source.replace("value -> void?", "null -> void?")
-			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(resolved)) }
+			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(resolved)) }
 			assertEquals(DiagnosticCode.INVALID_NULLABLE_TYPE, failure.diagnosticCode, source)
 			assertLocated(failure)
 		}
 	}
 
 	@Test
-	fun `nullable buffers and rows resolve while snippet checking remains deliberately limited`() {
-		for (source in listOf("fn<string?> value() = null", "fn main(string? value) {}", "fn main() { def<int[]?> value = null }", "fn main() { def<int?[]> value = [1] }")) FunctionAnalyzer().analyze(unit(source))
-		FunctionAnalyzer().analyze(unit("fn f(int[]?[2] rows) {}"))
-		val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet("def<int?> n = null")) }
-		assertEquals(DiagnosticCode.UNSUPPORTED_NULLABILITY, failure.diagnosticCode)
-		assertLocated(failure)
+	fun `nullable scalars buffers and rows resolve in functions`() {
+		for (source in listOf("fn<string?> value() = null", "fn main(string? value) {}", "fn main() { def<int[]?> value = null }", "fn main() { def<int?[]> value = [1] }")) FunctionAnalyzer(nativeTestLayout).analyze(unit(source))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn f(int[]?[2] rows) {}"))
+		val program = parseMain("def<int?> n = null", "nullable.co")
+		assertEquals(CNullable(CInt()), FunctionAnalyzer(nativeTestLayout).analyze(program).typeOf(program.mainStatements.single()))
 	}
 }

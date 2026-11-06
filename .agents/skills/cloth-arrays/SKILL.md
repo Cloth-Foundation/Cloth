@@ -36,6 +36,11 @@ argument snapshots, returned storage, or cleanup.
 - Preserve rectangular shape recursively. A stored binding fixes every initial
   dimension; an unsized signature permits differing shapes across invocations.
   Function-block results may vary between reads until stored in a binding.
+- Use `EmitArray.constrain` for declared extents and retained destination
+  shapes. Binding and row writes can retain live descriptors. Nullable class fields
+  retain a witness across null and arena replacement. Use `constrainPresent`
+  when a nullable destination can still be establishing its first shape.
+  [Shared shape operations](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt)
 - Keep known shape failures at compile time and unknown shape checks at runtime.
   A zero outer count does not erase inner-axis shape metadata.
 - Reads and writes evaluate operands once in source order. Resolve assignment
@@ -88,8 +93,8 @@ cover executable independence, shape checks, saved values and bounded safe regio
 ## Source and verification
 
 Start with [CArray](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.kt),
-[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
-and [EmitArray](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt).
+[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt),
+and [EmitArray](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt).
 Runnable examples are [Arrays.co](../../../examples/Arrays.co) and
 [ArrayAssignment.co](../../../examples/ArrayAssignment.co), plus
 [ForEach.co](../../../examples/ForEach.co) for independent snapshot traversal.
@@ -104,3 +109,4 @@ storage. Read the [array milestones](../cloth-language/references/development.md
 for recorded verification; historical descriptor widths are superseded by usize.
 Use the target-integer skill for target-sized counts. Record fresh results after
 running the relevant suites; the historical counts are not a current test run.
+[Transfer and formatting integration](../cloth-language/references/development.md#shared-value-transfer-and-text-recipes-2026-11-06)

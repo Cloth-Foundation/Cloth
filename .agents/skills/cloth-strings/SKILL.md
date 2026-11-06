@@ -95,9 +95,9 @@ returned text, interpolation buffers, or nested string arrays; use
 ## Source and verification
 
 Inspect [Lexer](../../../Compiler/src/main/kotlin/cloth/lexer/Lexer.kt),
-[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
-[EmitString](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt),
-and [EmitCharacter](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitCharacter.kt).
+[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt),
+[EmitString](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitString.kt),
+and [EmitOutput](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitOutput.kt).
 Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
@@ -105,7 +105,9 @@ Examples: [Strings.co](../../../examples/Strings.co),
 Relevant suites are `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
-recursion and balanced cleanup. Read the
+recursion and balanced cleanup. Native literal and interpolation fixtures
+assert explicit output through the [shared runner](../cloth-language/SKILL.md#compiler-fixtures).
+Read the
 [formatting guard record](../../../todo/native-formatting-guards.md) and
 [development history](../cloth-language/references/development.md#earlier-milestone-snapshots)
 for recorded evidence. Recheck current code and run relevant tests before making

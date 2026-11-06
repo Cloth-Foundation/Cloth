@@ -13,7 +13,7 @@ import cloth.parser.expression.CallExpression
 import cloth.parser.expression.IfExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -22,7 +22,7 @@ import kotlin.test.assertIs
 class NullabilityTypingTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("nullable-typing.co", source.trimIndent())).scanTokens()).parse()
-	private fun valid(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)
@@ -84,7 +84,7 @@ class NullabilityTypingTest {
 				println(input)
 			}
 		""")
-		val model = FunctionAnalyzer().analyze(ast)
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
 		val body = assertIs<BlockBody>(assertIs<FunctionDeclaration>(ast.declarations.single()).body).statements
 		assertEquals(ValueType.INT, model.typeOf(body[1]))
 		val metadata = assertIs<ProviderAccessExpression>(assertIs<CallExpression>(assertIs<ExpressionStatement>(body[2]).expression).arguments.single())
@@ -164,7 +164,7 @@ class NullabilityTypingTest {
 				if (input != null) { println(input ?: 1) }
 			}
 		""")
-		val model = FunctionAnalyzer().analyze(ast)
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
 		val body = assertIs<BlockBody>(assertIs<FunctionDeclaration>(ast.declarations.single()).body).statements
 		assertEquals(ValueType.INT, model.typeOf(body[0]))
 		assertEquals(CNullable(ValueType.INT), model.typeOf(body[1]))
@@ -189,7 +189,7 @@ class NullabilityTypingTest {
 				if (value != null) { narrowed(value) }
 			}
 		""")
-		val model = FunctionAnalyzer().analyze(ast)
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
 		val body = assertIs<BlockBody>(assertIs<FunctionDeclaration>(ast.declarations.last()).body).statements
 		val literal = assertIs<CallExpression>(assertIs<ExpressionStatement>(body[0]).expression)
 		val before = assertIs<CallExpression>(assertIs<ExpressionStatement>(body[1]).expression)

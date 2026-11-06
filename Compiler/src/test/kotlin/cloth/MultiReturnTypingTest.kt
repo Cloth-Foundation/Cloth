@@ -19,6 +19,10 @@ import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.Statement
 import cloth.semantic.*
+import cloth.semantic.typing.ExpressionTyping
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
+import cloth.semantic.typing.SemanticModel
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -28,7 +32,7 @@ import kotlin.test.*
 class MultiReturnTypingTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("multi-result-types.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun function(model: FunctionSemanticModel, name: String = "values") = model.declarations.functions.single { it.name.lexeme == name }
 	private fun expression(model: FunctionSemanticModel, name: String = "values") = assertIs<ExpressionBody>(function(model, name).declaration.body).expression
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
@@ -45,7 +49,7 @@ class MultiReturnTypingTest {
 		assertEquals(shape, model.typeOf(function(model)).results)
 		val result = expression(model)
 		assertEquals(shape, model.resultOf(result))
-		assertFalse(model.types.expressions.containsKey(result))
+		assertNull(model.types.scalarTypeOrNull(result))
 		assertEquals(DiagnosticCode.MULTIPLE_RESULTS_IN_SCALAR, assertFailsWith<ClothDiagnostic> { model.typeOf(result) }.diagnosticCode)
 		assertEquals(listOf(CString, CInt(), CBool), assertIs<ResultListExpression>(result).values.map { model.typeOf(it) })
 	}
@@ -101,7 +105,7 @@ class MultiReturnTypingTest {
 		val unit = parse("fn sample() { def x, _ = if (true) { true, false } else { false, true } }")
 		val declaration = (unit.declarations.single() as cloth.parser.declaration.FunctionDeclaration)
 		val producer = assertIs<BindingGroupDeclaration>(assertIs<BlockBody>(declaration.body).statements.single()).initializer
-		val facts = SemanticModel()
+		val facts = SemanticModel(nativeTestLayout)
 		val producerTyping = object : ExpressionTyping(facts) {
 			override fun nameType(expression: NameExpression): ValueType = error("This producer uses no names")
 			override fun statement(statement: Statement) = error("This producer has only branch tails")
@@ -235,9 +239,9 @@ class MultiReturnTypingTest {
 		val conditional = assertIs<IfExpression>(consume.arguments.single())
 		val forwarded = assertIs<CallExpression>(assertIs<ReturnStatement>(conditional.branches.single().statements.single()).value)
 		assertEquals(listOf(CInt(), CBool), model.resultOf(forwarded).values)
-		val fork = model.fork()
-		assertEquals(model.resultOf(forwarded), fork.resultOf(forwarded))
-		model.commit(fork)
+		val trial = model.trial()
+		assertEquals(model.resultOf(forwarded), trial.model.resultOf(forwarded))
+		trial.commit()
 		assertEquals("pair", model.selectedFunction(forwarded).name.lexeme)
 	}
 
@@ -260,11 +264,11 @@ class MultiReturnTypingTest {
 	@Test
 	fun `executable main still rejects multiple results while a library main may declare them`() {
 		val unit = parse("fn<int, bool> main() = 0, true")
-		val error = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer().analyze(unit) }
+		val error = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(nativeTestLayout).analyze(unit) }
 		assertEquals(DiagnosticCode.INVALID_MAIN_RETURN, error.diagnosticCode)
 		assertEquals(4, error.sourceLabels.single().span.startColumn)
 		assertEquals(13, error.sourceLabels.single().span.endColumn)
-		val library = ProgramAnalyzer().analyze(unit, ProgramKind.LIBRARY)
+		val library = ProgramAnalyzer(nativeTestLayout).analyze(unit, ProgramKind.LIBRARY)
 		assertEquals(listOf(CInt(), CBool), library.functions.typeOf(library.functions.declarations.functions.single()).results.values)
 	}
 
@@ -272,7 +276,7 @@ class MultiReturnTypingTest {
 	fun `valid producers emit verified native modules and executables`(@TempDir directory: Path) {
 		for ((index, source) in listOf("fn<int, bool> pair() = 1, true\nfn main() {}", "fn main() { 1, true }").withIndex()) {
 			val unit = parse(source)
-			FunctionAnalyzer().analyze(unit)
+			FunctionAnalyzer(nativeTestLayout).analyze(unit)
 			val destination = directory.resolve("absent-$index").resolve("program")
 			assertTrue(Files.exists(LLVMEmitter().compile(unit, destination)))
 			assertContains(LLVMEmitter().emit(unit), "define")

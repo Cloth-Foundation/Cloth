@@ -13,7 +13,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.CastExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.SemanticModel
 import cloth.token.Operators
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -135,9 +135,10 @@ class ArbitraryIntegerIntegrationTest {
 				integer(EmitIntegerDivision(context, builder, abi).emit(a, b, type, false, "dispatch"), (BigInteger.ONE.shiftLeft(100) + 5.toBigInteger()) / 3.toBigInteger(), 129, "division emitter")
 				integer(EmitPower(context, builder, abi).emit(b, b, type, "dispatch"), 27.toBigInteger(), 129, "power emitter")
 				fun cast(source: cloth.data.ValueType, target: cloth.data.ValueType, value: org.bytedeco.llvm.LLVM.LLVMValueRef): org.bytedeco.llvm.LLVM.LLVMValueRef {
-					val expression = (Parser(Lexer("1 -> int").scanTokens()).parseSnippet().statements.single() as ExpressionStatement).expression as CastExpression
+					val expression = (parseMain("1 -> int").mainStatements.single() as ExpressionStatement).expression as CastExpression
 					val model = SemanticModel(abi.layout)
-					model.expressions[expression.operand] = source; model.expressions[expression] = target
+					model.recordType(expression.operand, source)
+					model.recordType(expression, target)
 					return EmitCast(context, builder, model, abi).emit(expression, value)
 				}
 				integer(cast(CInt(32), type, int(-1)), -BigInteger.ONE, 129, "scalar widening")

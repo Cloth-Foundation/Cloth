@@ -7,17 +7,16 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.text.EmitString
+import cloth.emitter.text.ProviderEmissionContext
 import cloth.emitter.types.EmitCast
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.ProviderEmissionContext
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.CallExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.SemanticModel
 import cloth.target.TargetLayout
 import cloth.token.TokenType
 import org.bytedeco.llvm.global.LLVM.*
@@ -29,7 +28,7 @@ class ISizeTest {
 
 	private val targets = listOf("x86_64-pc-windows-msvc", "i686-pc-windows-msvc").map { NativeCABI.forTarget(it).layout }
 	private fun unit(source: String) = Parser(Lexer(SourceFile("isize.co", source.trimIndent())).scanTokens()).parseDeclarations()
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("isize.co", source.trimIndent())).scanTokens()).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(source, "isize.co")
 	private fun failure(source: String, code: DiagnosticCode, target: TargetLayout) {
 		val diagnostic = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer(target).analyze(unit(source)) }
 		assertEquals(code, diagnostic.diagnosticCode, source)
@@ -39,14 +38,14 @@ class ISizeTest {
 	@Test
 	fun `one parsed source resolves isize independently for each target`() {
 		assertEquals(TokenType.Keyword, Lexer("isize").scanTokens().first().type)
-		val ast = snippet("def<isize> value = -7\ndef copied = value\ndef<int> defaultWidth = 0\ndef<int<64>> fixed = 0\nvalue::min")
+		val ast = bodyUnit("def<isize> value = -7\ndef copied = value\ndef<int> defaultWidth = 0\ndef<int<64>> fixed = 0\nvalue::min")
 		val functions = unit("fn<isize> identity(isize value) = value\nfn<isize[]> make(isize value) = [value, -1]")
 		val context = LLVMContextCreate()
 		try {
 			for (target in targets + targets.first()) {
 				val type = CISize(target.sizeBits)
-				val semantics = SemanticAnalyzer(target).analyze(ast)
-				assertEquals(listOf(type, type, CInt(), CInt(64), type), ast.statements.map { semantics.typeOf(it) })
+				val semantics = FunctionAnalyzer(target).analyze(ast).types
+				assertEquals(listOf(type, type, CInt(), CInt(64), type), ast.mainStatements.map { semantics.typeOf(it) })
 				val model = FunctionAnalyzer(target).analyze(functions)
 				val identity = model.typeOf(model.declarations.functions.first())
 				assertEquals(listOf(type), identity.parameters)
@@ -154,9 +153,9 @@ class ISizeTest {
 			val size = assertIs<ProviderResult.IntegerConstant>(type.provider("size", target))
 			assertEquals(count, size.type)
 			assertEquals(BigInteger.valueOf((target.sizeBits / 8).toLong()), size.value)
-			val ast = snippet("isize::min\nisize::max\nisize::size\nisize::type\nisize::type::str\nisize::type::width\nisize::type::isunsigned\nisize::type::isnumeric\nisize[3]::size\nisize[3]::type::rank\nisize[3]::type::extent")
-			val semantics = SemanticAnalyzer(target).analyze(ast)
-			assertEquals(listOf(type, type, count, CTypeInfo, CString, count, CBool, CBool, count, count, count), ast.statements.map { semantics.typeOf(it) })
+			val ast = bodyUnit("isize::min\nisize::max\nisize::size\nisize::type\nisize::type::str\nisize::type::width\nisize::type::isunsigned\nisize::type::isnumeric\nisize[3]::size\nisize[3]::type::rank\nisize[3]::type::extent")
+			val semantics = FunctionAnalyzer(target).analyze(ast).types
+			assertEquals(listOf(type, type, count, CTypeInfo, CString, count, CBool, CBool, count, count, count), ast.mainStatements.map { semantics.typeOf(it) })
 			failure("fn bad() { isize::str }", DiagnosticCode.INVALID_PROVIDER_RECEIVER, target)
 			failure("fn bad() { isize::max = 0 }", DiagnosticCode.READ_ONLY_PROVIDER, target)
 		}

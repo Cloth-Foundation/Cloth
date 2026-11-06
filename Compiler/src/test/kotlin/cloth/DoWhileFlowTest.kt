@@ -12,15 +12,15 @@ import cloth.parser.expression.IfExpression
 import cloth.parser.statement.DoWhileStatement
 import cloth.parser.statement.LoopJumpStatement
 import cloth.parser.statement.WhileStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.ResultShape
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class DoWhileFlowTest {
 
-	private fun valid(source: String) = FunctionAnalyzer().analyze(Parser(Lexer(SourceFile("do-while-flow.co", source.trimIndent())).scanTokens()).parse())
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("do-while-flow.co", source.trimIndent())).scanTokens()).parse())
 	private fun body(facts: FunctionSemanticModel, name: String = "test") = assertIs<BlockBody>(facts.declarations.functions.single { it.name.lexeme == name }.declaration.body).statements
 	private fun loop(facts: FunctionSemanticModel, name: String = "test") = body(facts, name).filterIsInstance<DoWhileStatement>().single()
 	private fun invalid(source: String, code: DiagnosticCode): ClothDiagnostic {

@@ -30,10 +30,60 @@ pointer, reference, or `mut` qualifiers.
 - Compilation stops at the first detected error, with one diagnostic and any
   labels needed to explain it. Preserve this across every compiler feature.
 
+## Compiler package ownership
+
+The shared driver resolves the ABI and passes its `TargetLayout` to
+`ProgramAnalyzer`. LLVM emission consumes the checked model and verifies that
+its layout matches the selected ABI. Use a synthetic layout for analysis-only
+tests or `nativeTestLayout` from the fixtures for host-specific cases.
+[Driver](../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt) ·
+[Target and toolchain rules](../cloth-toolchains/SKILL.md)
+
+- `semantic.declarations` resolves names, scopes and declared types using the
+  identities in `semantic.symbols`.
+  [Declaration analyzer](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
+- `semantic.typing` checks bodies and resolves calls and operators. It owns
+  inferred types, candidate trials and committed callable facts.
+  [Function analyzer](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
+- `semantic.flow` owns completion, presence, metadata and class lifetime
+  analysis. Entry validation and shared plans, including reception and places,
+  live in `semantic`.
+  [Completion model](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt)
+- `emitter.callables` owns callable ABI lowering, entry adapters, argument
+  and result transport, and function frames.
+  [Function emitter](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
+- `emitter.storage` owns bindings, places, shapes, value transfer and arena
+  lifetimes.
+  [Value transfer](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitValueTransfer.kt)
+- `emitter.text` owns provider emission services, metadata materialization,
+  formatting and UTF-8 output.
+  [Provider context](../../../Compiler/src/main/kotlin/cloth/emitter/text/ProviderEmissionContext.kt)
+
+Kotlin `internal` visibility still applies across the compiler module.
+Keep helpers private to their file or class when all callers live there.
+
+## Focused verification
+
 For a focused verification run from the repository root, use
 `.\gradlew.bat :Compiler:test --tests cloth.ArraysTest --offline --console=plain --no-daemon`,
 substituting the suite identified by the feature skill. Use `./gradlew` on Unix.
 Choose tests for the affected behavior; report actual results and target scope.
+
+## Compiler fixtures
+
+Use [ProgramFixtures](../../../Compiler/src/test/kotlin/cloth/ProgramFixtures.kt)
+to wrap focused bodies in a complete `fn main() { ... }` source unit.
+`parseMain` and `mainStatements` expose syntax for parser tests.
+`FunctionAnalyzer` checks bodies and returns using the production model.
+Use `DeclarationAnalyzer` for tests of name resolution and scopes alone.
+Tests that check file-level syntax or exact source identity should pass a
+complete source file directly to the parser.
+
+`compileMain` calls the shared compiler driver. Put `print` or `println` in the
+Cloth source to observe values. `assertMainOutput` checks UTF-8 output and the
+normal completion report. Use `runExecutable` to check other exit statuses and
+runtime diagnostics. Keep direct LLVM module composition for ABI probes and
+fault injection. [Migration record](references/development.md#production-path-fixture-migration-2026-11-06)
 
 ## Canonical operator and keyword spellings
 
@@ -106,7 +156,7 @@ captures implementation scope and regression evidence.
 | print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |
-| Targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
+| Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
 

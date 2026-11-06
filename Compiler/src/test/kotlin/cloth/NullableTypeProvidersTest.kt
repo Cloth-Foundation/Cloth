@@ -9,7 +9,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -52,9 +52,9 @@ class NullableTypeProvidersTest {
 				assertEquals(nullable, assertIs<ProviderResult.TypeMetadata>(nullable.provider("type", abi.layout)).receiverType)
 			}
 		}
-		assertNull(CNullable(ValueType.STRING).provider("size"))
-		assertNull(CNullable(CArray(ValueType.INT)).provider("size"))
-		assertIs<ProviderResult.NullableType>(CNullable(CArray(ValueType.INT, 2)).provider("size"))
+		assertNull(CNullable(ValueType.STRING).provider("size", nativeTestLayout))
+		assertNull(CNullable(CArray(ValueType.INT)).provider("size", nativeTestLayout))
+		assertIs<ProviderResult.NullableType>(CNullable(CArray(ValueType.INT, 2)).provider("size", nativeTestLayout))
 		assertFailsWith<IllegalArgumentException> { ProviderResult.NullableType(CNullable(ValueType.INT), ProviderResult.ScalarText(ValueType.INT)) }
 	}
 
@@ -118,7 +118,7 @@ class NullableTypeProvidersTest {
 	@Test
 	fun `unsupported receiver forms absent values and exact bound result types remain checked`() {
 		for ((source, code) in invalid) {
-			val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(source)) }
+			val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 			assertEquals(code, error.diagnosticCode, source)
 			assertLocated(error)
 		}

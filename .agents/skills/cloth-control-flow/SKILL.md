@@ -22,6 +22,13 @@ Read [confirmed checks and conditional semantics](references/semantics.md).
 Keep confirmed language decisions distinct from the current implementation's
 final-else, branch compatibility and final-expression policies.
 
+[ExpressionOperands](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ExpressionOperands.kt)
+provides eager children in source order, including the operands of a resolved
+value-target `is`. Keep branch merging, short circuits, Elvis fallbacks, loop
+edges and deferred-body handling in their respective passes. A bare value
+target follows the ordinary operator call path and supplies no narrowing proof.
+[Operand contexts and checks](../cloth-language/references/operand-contexts.md)
+
 The reference also owns [confirmed for-loop and range design](references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred).
 Both forms use `<-`; only numeric ranges admit a required `; stepper` clause.
 Preserve the accepted fixed-bound/free-direction, strict typing, default `+1`,
@@ -64,7 +71,7 @@ complete; the linked record retains exact commands, evidence and deferred scope.
   wrapping and integer division failures remain. Float updates round in their
   declared format; finite and unchanged-update guards retain located failures.
   Closed nonfinite endpoint/step constants get C3068; unknown values are guarded.
-- Loop/body binding allocation stays in the entry block, including snippets.
+- Loop and body bindings use resolved symbols and allocate in the function's entry block.
   EmitForEach captures its source once, transfers fresh results or copies stored
   values, traverses with usize counts, and receives a mutable independent value
   each iteration. Preserve recursive row/string copies, shapes and saved values.
@@ -86,6 +93,13 @@ Runnable examples: [ForRanges.co](../../../examples/ForRanges.co),
 syntax without treating it as a class-execution acceptance test.
 
 ## Development rules and current boundaries
+
+- `ConditionalsTest` uses complete function fixtures for syntax, typing and
+  lowering. Its native fixtures use the shared compiler driver and explicitly
+  print each observed value. A standalone conditional with no output checks for
+  the program's completion report alone.
+  [Program fixtures](../../../Compiler/src/test/kotlin/cloth/ProgramFixtures.kt) ·
+  [Migration evidence](../cloth-language/references/development.md#production-path-fixture-migration-2026-11-06)
 
 - `IfParser` accepts either braces or one ordinary expression/statement per
   `if`/`else if`/`else` body, including definitions, returns, assignments, nested
@@ -166,8 +180,8 @@ syntax without treating it as a class-execution acceptance test.
 ## Source and verification
 
 Inspect [ExpressionParser](../../../Compiler/src/main/kotlin/cloth/parser/subs/ExpressionParser.kt),
-[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
-[ControlFlowModel](../../../Compiler/src/main/kotlin/cloth/semantic/ControlFlowModel.kt),
+[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt),
+[ControlFlowModel](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt),
 and [EmitExpression](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt).
 Example: [Conditionals.co](../../../examples/Conditionals.co).
 

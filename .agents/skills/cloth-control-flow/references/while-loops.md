@@ -77,7 +77,7 @@ while (i > 0) i--
 
 Source owners: WhileStatement.kt, Parser.parseWhile/parseLoopBody,
 DeclarationAnalyzer and DeclarationModel body scopes, ExpressionTyping.checkWhile,
-the function/snippet checkers, ControlFlowModel, NullFlowAnalysis,
+FunctionAnalyzer, ControlFlowModel, NullFlowAnalysis,
 MetadataAnalysis, EmitWhileLoop and ArrayTemporaryAnalysis. All share LoopTarget
 identities and the existing jump implementation. No while-specific semantic plan
 or target-dependent receiving binding is needed.
@@ -85,7 +85,7 @@ or target-dependent receiving binding is needed.
 Maintained example: [While.co](../../../../examples/While.co).
 [WhileTest](../../../../Compiler/src/test/kotlin/cloth/WhileTest.kt) adds 20 tests
 for syntax/spans, strict conditions, scope/errors, completion, nullable and
-metadata facts, captured writes, jumps, snippets, effects and failures.
+metadata facts, captured writes, jumps, effects and failures.
 The example executes on Windows x64/x86; one shared AST emits verified IR and
 nonempty objects across all nine supported ABI profiles.
 [ArrayTemporaryCleanupTest](../../../../Compiler/src/test/kotlin/cloth/ArrayTemporaryCleanupTest.kt)

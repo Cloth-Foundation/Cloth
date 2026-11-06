@@ -10,7 +10,7 @@ import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -22,7 +22,7 @@ class MultiBindingsTest {
 	private fun parse(source: String) = Parser(Lexer(SourceFile("multi-bindings.co", source.trimIndent())).scanTokens()).parse()
 
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
-		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(source)) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertEquals(code, diagnostic.diagnosticCode)
 		assertLocated(diagnostic)
 		return diagnostic
@@ -46,7 +46,7 @@ class MultiBindingsTest {
 		val unit = parse("fn test() { def x, y, z = 10 }")
 		val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
 		assertEquals(listOf("x", "y", "z"), group.targets.map { it.token.lexeme })
-		val model = FunctionAnalyzer().analyze(unit)
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit)
 		val declarations = model.declarations.symbolsOf(group).filterNotNull()
 		assertEquals(listOf("x", "y", "z"), declarations.map { it.name.lexeme })
 		for (declaration in declarations) {
@@ -54,7 +54,7 @@ class MultiBindingsTest {
 			assertTrue(declaration.mutable)
 			assertEquals(ValueType.INT, model.typeOf(declaration))
 		}
-		FunctionAnalyzer().analyze(parse("fn test() {\n def x, y, z = 10\n x += 1\n y = 20\n z++\n}"))
+		FunctionAnalyzer(nativeTestLayout).analyze(parse("fn test() {\n def x, y, z = 10\n x += 1\n y = 20\n z++\n}"))
 	}
 
 	@Test
@@ -62,7 +62,7 @@ class MultiBindingsTest {
 		for (initializer in listOf("1.5", "true", "'a'", "\"hello\"", "[1, 2]", "int<64>::type")) {
 			val unit = parse("fn test() { def x, y, z = $initializer }")
 			val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
-			val model = FunctionAnalyzer().analyze(unit)
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(unit)
 			val declarations = model.declarations.symbolsOf(group).filterNotNull()
 			val first = model.typeOf(declarations.first())
 			for (declaration in declarations) assertEquals(first, model.typeOf(declaration))
@@ -74,7 +74,7 @@ class MultiBindingsTest {
 		for (assignment in listOf("=", ":=")) {
 			val unit = parse("fn test() { def<unsigned int<8>> x, y, z $assignment 255 }")
 			val group = assertIs<BindingGroupDeclaration>(((unit.declarations.single() as FunctionDeclaration).body as BlockBody).statements.single())
-			val model = FunctionAnalyzer().analyze(unit)
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(unit)
 			val declarations = model.declarations.symbolsOf(group).filterNotNull()
 			for (declaration in declarations) {
 				assertEquals(assignment == "=", declaration.mutable)

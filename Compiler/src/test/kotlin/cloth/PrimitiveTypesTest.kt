@@ -3,9 +3,7 @@ package cloth
 import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.emitter.LLVMTypes
-import cloth.lexer.Lexer
-import cloth.parser.Parser
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -27,16 +25,16 @@ class PrimitiveTypesTest {
 			def array = [1, 2]
 			def matrix = [[true], [false]]
 		""".trimIndent()
-		val ast = Parser(Lexer(source).scanTokens()).parseSnippet()
-		val semantics = SemanticAnalyzer().analyze(ast)
-		assertEquals(listOf(CInt(), CInt(64, true), CFloat(16), CBool, CChar, CString, CArray(CInt(), 2), CArray(CArray(CBool, 1), 2)), ast.statements.map { semantics.typeOf(it) })
+		val ast = parseMain(source)
+		val semantics = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+		assertEquals(listOf(CInt(), CInt(64, true), CFloat(16), CBool, CChar, CString, CArray(CInt(), 2), CArray(CArray(CBool, 1), 2)), ast.mainStatements.map { semantics.typeOf(it) })
 	}
 
 	@Test
 	fun `descriptors preserve scalar and aggregate LLVM representations`() {
 		val context = LLVMContextCreate()
 		try {
-			val types = LLVMTypes(context)
+			val types = LLVMTypes(context, nativeTestLayout)
 			val cases = buildList {
 				for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) add(CInt(width, unsigned) to "i$width")
 				add(CFloat(16) to "half")
@@ -70,8 +68,8 @@ class PrimitiveTypesTest {
 		val second = LLVMContextCreate()
 		try {
 			for (type in listOf(CInt(64, true), CFloat(16), CBool, CChar, CString, CArray(CArray(CInt())))) {
-				val firstType = type.llvmValue(first)
-				val secondType = type.llvmValue(second)
+				val firstType = type.llvmValue(first, nativeTestLayout)
+				val secondType = type.llvmValue(second, nativeTestLayout)
 				assertEquals(first.address(), LLVMGetTypeContext(firstType).address(), type.spelling)
 				assertEquals(second.address(), LLVMGetTypeContext(secondType).address(), type.spelling)
 				assertEquals(spelling(firstType), spelling(secondType), type.spelling)

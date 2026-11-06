@@ -76,20 +76,23 @@ typedef<class> Player (pub def<int> points, def<string> name) {
 
 ## Implementation ownership
 
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [OperatorResolution](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/OperatorResolution.kt)
   selects full overloads and context selectors. It checks the application
   with typed placeholders and shares the ordinary callable and binary rules.
-- [FunctionSemanticModel](../../../../Compiler/src/main/kotlin/cloth/semantic/FunctionSemanticModel.kt)
-  keeps width-specific body facts. [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/TypeResolver.kt)
+- [OperatorBodies](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/OperatorBodies.kt)
+  checks each width in a separate body model. The requesting trial owns the
+  specialized signature and body until commit. [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/TypeResolver.kt)
   resolves the captured width in body annotations and casts.
 - [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
   captures each reached operand before the next expression and consumes the
-  typed application through ordinary lowering. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  typed application through ordinary lowering. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   uses the ordinary callable ABI for contexts and value-target overloads.
-- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
-  distinguishes a bare value target from a type name. [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
-  preserves the built-in narrowing rule and accounts for calls during context
-  evaluation.
+- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
+  distinguishes a bare value target from a type name and publishes its
+  resolved operands to flow. The typed check carries the selected operator
+  and receiver position into lowering and class lifetime checks.
+  [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
+  preserves the built-in narrowing rule and accounts for calls during context evaluation.
 
 ## Verification
 

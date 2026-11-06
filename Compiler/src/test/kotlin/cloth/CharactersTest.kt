@@ -3,21 +3,17 @@ package cloth
 import cloth.data.ValueType
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
-import cloth.parser.Parser
 import cloth.parser.expression.CharacterLiteral
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.TokenType
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class CharactersTest {
-
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `literals decode one Unicode scalar and the existing escapes`() {
@@ -27,10 +23,10 @@ class CharactersTest {
 			assertEquals(TokenType.CharacterLiteral, tokens[0].type)
 			assertEquals(source, tokens[0].lexeme)
 			assertEquals(source.length + 1, tokens[1].span.startColumn)
-			val ast = parse(source)
-			val literal = assertIs<CharacterLiteral>(assertIs<ExpressionStatement>(ast.statements.single()).expression)
+			val ast = parseMain(source)
+			val literal = assertIs<CharacterLiteral>(assertIs<ExpressionStatement>(ast.mainStatements.single()).expression)
 			assertEquals(expected, literal.value, source)
-			assertEquals(ValueType.CHAR, SemanticAnalyzer().analyze(ast).typeOf(literal))
+			assertEquals(ValueType.CHAR, FunctionAnalyzer(nativeTestLayout).analyze(ast).types.typeOf(literal))
 		}
 		assertEquals(32, ValueType.CHAR.bits)
 		assertEquals(32, ValueType.CHAR.storageBits)
@@ -50,7 +46,7 @@ class CharactersTest {
 
 	@Test
 	fun `bindings preserve character types mutability and independent storage`() {
-		val ast = parse("""
+		val ast = parseMain("""
 			def<char> letter = 'n'
 			def copy := letter
 			def<bool> alive = true
@@ -59,11 +55,11 @@ class CharactersTest {
 			letter = '😀'
 			copy
 		""")
-		val model = SemanticAnalyzer().analyze(ast)
-		assertEquals(ValueType.CHAR, model.typeOf(ast.statements[0]))
-		assertEquals(ValueType.CHAR, model.typeOf(ast.statements[1]))
-		assertEquals(ValueType.CHAR, model.typeOf(ast.statements.last()))
-		val ir = LLVMEmitter().emitSnippet(ast)
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast).types
+		assertEquals(ValueType.CHAR, model.typeOf(ast.mainStatements[0]))
+		assertEquals(ValueType.CHAR, model.typeOf(ast.mainStatements[1]))
+		assertEquals(ValueType.CHAR, model.typeOf(ast.mainStatements.last()))
+		val ir = LLVMEmitter().emit(ast)
 		assertContains(ir, "%letter = alloca i32")
 		assertContains(ir, "%copy = alloca i32")
 		assertContains(ir, "store i32 128512, ptr %letter")
@@ -74,7 +70,7 @@ class CharactersTest {
 	fun `characters reject type changes unsupported modifiers and invalid bindings`() {
 		val cases = listOf("def<char> c = 110", "def<char> c = 1.0", "def<char> c = true", "def c = 'n'\nc = 1", "def c = 1\nc = 'n'", "def<bool> b = 'n'", "def c := 'n'\nc = 'x'", "def<char> c = c", "def c = 'n'\ndef c = 'x'", "def<unsigned char> c = 'n'", "def<char<8>> c = 'n'", "def<char<32>> c = 'n'")
 		for (source in cases) {
-			assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+			assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parseMain(source)) }
 		}
 	}
 
@@ -99,14 +95,14 @@ class CharactersTest {
 			add("true || ('a' == true)")
 		}
 		for (source in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emitSnippet(parse(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parseMain(source)) }
 			assertLocated(failure)
 		}
 	}
 
 	@Test
 	fun `native copies assignments equality and logical composition work`(@TempDir directory: Path) {
-		assertProgram(directory.resolve("bindings"), """
+		assertMainOutput(directory.resolve("bindings"), """
 			def<char> c = '中'
 			def copy := c
 			def same = c == copy
@@ -115,14 +111,14 @@ class CharactersTest {
 			def flag = true
 			def fraction = 1.5
 			c = '😀'
-			same && !different && c != copy && copy == '中' && c == '😀' && flag && number == 42 && fraction == 1.5
-		""", "true")
-		assertProgram(directory.resolve("false_equality"), "def c = 'a'\nc == 'b'", "false")
-		assertProgram(directory.resolve("false_inequality"), "def c = '😀'\nc != '😀'", "false")
-		assertProgram(directory.resolve("composition"), "def c = 'a'\n(c == 'a' || false) == !(c != 'a')", "true")
-		assertProgram(directory.resolve("assignment"), "def c = 'a'\nc = '😀'", "😀")
-		assertProgram(directory.resolve("snapshot"), "def c = 'a'\ndef copy := c\nc = '😀'\ncopy", "a")
-		assertProgram(directory.resolve("identity"), "def<char> c = '😀' -> char\nc", "😀")
+			println(same && !different && c != copy && copy == '中' && c == '😀' && flag && number == 42 && fraction == 1.5)
+		""", "true\n")
+		assertMainOutput(directory.resolve("false_equality"), "def c = 'a'\nprintln(c == 'b')", "false\n")
+		assertMainOutput(directory.resolve("false_inequality"), "def c = '😀'\nprintln(c != '😀')", "false\n")
+		assertMainOutput(directory.resolve("composition"), "def c = 'a'\nprintln((c == 'a' || false) == !(c != 'a'))", "true\n")
+		assertMainOutput(directory.resolve("assignment"), "def c = 'a'\nc = '😀'\nprintln(c)", "😀\n")
+		assertMainOutput(directory.resolve("snapshot"), "def c = 'a'\ndef copy := c\nc = '😀'\nprintln(copy)", "a\n")
+		assertMainOutput(directory.resolve("identity"), "def<char> c = '😀' -> char\nprintln(c)", "😀\n")
 	}
 
 	@Test
@@ -131,25 +127,11 @@ class CharactersTest {
 		for (point in points) {
 			val character = String(Character.toChars(point))
 			val source = if (point == 0) "'\\0'" else "'$character'"
-			assertProgram(directory.resolve("literal_$point"), source, character)
-			assertProgram(directory.resolve("binding_$point"), "def<char> c = $source\nc", character)
+			assertMainOutput(directory.resolve("literal_$point"), "println($source)", character + "\n")
+			assertMainOutput(directory.resolve("binding_$point"), "def<char> c = $source\nprintln(c)", character + "\n")
 		}
 		for ((index, pair) in listOf("'\\n'" to "\n", "'\\r'" to "\r", "'\\t'" to "\t", "'\\\\'" to "\\", "'\\''" to "'", "'\\\"'" to "\"").withIndex()) {
-			assertProgram(directory.resolve("escape_$index"), pair.first, pair.second)
-		}
-	}
-
-	private fun assertProgram(output: Path, source: String, expected: String) {
-		val executable = LLVMEmitter().compileSnippet(parse(source), output)
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")
-			val bytes = process.inputStream.use { it.readBytes() }
-			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			val expectedOutput = (expected + "\n").replace("\n", System.lineSeparator())
-			assertContentEquals(expectedOutput.toByteArray(Charsets.UTF_8), bytes, source)
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
+			assertMainOutput(directory.resolve("escape_$index"), "println(${pair.first})", pair.second + "\n")
 		}
 	}
 }

@@ -13,12 +13,14 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.semantic.*
 import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class StructMethodTypingTest {
 
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(structUnit(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source))
 
 	@Test
 	fun `method selection uses contextual overloads named defaults and ordered results`() {

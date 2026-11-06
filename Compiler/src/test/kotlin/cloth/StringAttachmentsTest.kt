@@ -17,8 +17,7 @@ import cloth.parser.expression.IndexExpression
 import cloth.parser.expression.MemberCallExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -33,7 +32,7 @@ class StringAttachmentsTest {
 	private fun parser(source: String) = Parser(Lexer(SourceFile("members.co", source.trimIndent())).scanTokens())
 	private fun unit(source: String) = parser(source).parse()
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 		return error
@@ -41,15 +40,15 @@ class StringAttachmentsTest {
 
 	@Test
 	fun `typed registrations publish only implemented members and preserve identity`() {
-		val strings = PrimitiveAttachments.STRING
-		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all.filter { it.receiver == ValueType.STRING })
-		assertSame(strings.CONTAINS, PrimitiveAttachments[ValueType.STRING, "contains"])
+		val strings = PrimitiveAttachments.string(nativeTestLayout)
+		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all(nativeTestLayout).filter { it.receiver == ValueType.STRING })
+		assertSame(strings.CONTAINS, PrimitiveAttachments[ValueType.STRING, "contains", nativeTestLayout])
 		assertEquals(listOf(BuiltinParameter.Exact(ValueType.STRING)), strings.CONTAINS.parameters)
 		assertEquals(ValueType.BOOL, strings.CONTAINS.overload.returns)
-		assertEquals(ValueType.INT, PrimitiveAttachments[ValueType.INT, "abs"]?.overload?.returns)
-		assertNull(PrimitiveAttachments[ValueType.STRING, "Contains"])
-		assertNull(PrimitiveAttachments[ValueType.STRING, "split"])
-		assertFailsWith<UnsupportedOperationException> { (PrimitiveAttachments.all as MutableList).clear() }
+		assertEquals(ValueType.INT, PrimitiveAttachments[ValueType.INT, "abs", nativeTestLayout]?.overload?.returns)
+		assertNull(PrimitiveAttachments[ValueType.STRING, "Contains", nativeTestLayout])
+		assertNull(PrimitiveAttachments[ValueType.STRING, "split", nativeTestLayout])
+		assertFailsWith<UnsupportedOperationException> { (PrimitiveAttachments.all(nativeTestLayout) as MutableList).clear() }
 		assertFailsWith<UnsupportedOperationException> { (strings.all as MutableCollection).clear() }
 	}
 
@@ -71,11 +70,11 @@ class StringAttachmentsTest {
 	}
 
 	@Test
-	fun `snippet typing and emission share member contracts`() {
-		val ast = parser("\"a\\0b\".contains(\"\\0\")").parseSnippet()
-		val expression = (ast.statements.single() as ExpressionStatement).expression
-		assertEquals(ValueType.BOOL, SemanticAnalyzer().analyze(ast).typeOf(expression))
-		assertContains(LLVMEmitter().emitSnippet(ast), "search_compare")
+	fun `function body typing and emission share member contracts`() {
+		val ast = parseMain("\"a\\0b\".contains(\"\\0\")")
+		val expression = (ast.mainStatements.single() as ExpressionStatement).expression
+		assertEquals(ValueType.BOOL, FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(expression))
+		assertContains(LLVMEmitter().emit(ast), "search_compare")
 	}
 
 	@Test
@@ -104,7 +103,7 @@ class StringAttachmentsTest {
 		val declarations = "fn accept(bool x) {}\nfn accept(int x) {}\n"
 		failure(declarations + "fn main() { accept(\"x\".contains(1)) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
 		failure(declarations + "fn main() { accept(\"x\".missing()) }", DiagnosticCode.UNKNOWN_MEMBER)
-		FunctionAnalyzer().analyze(unit(declarations + "fn main() { accept(\"x\".isEmpty()) }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit(declarations + "fn main() { accept(\"x\".isEmpty()) }"))
 	}
 
 	@Test

@@ -208,9 +208,9 @@ class RangeMembershipTest {
 	}
 
 	@Test
-	fun `nullable presence proofs and snippet results retain ordinary behavior`(@TempDir dir: Path) {
+	fun `membership uses nullable presence proofs and preserves float64 precision`(@TempDir dir: Path) {
 		success(dir.resolve("proof"), "fn<int> main() { def<int<8>?> x = 2; if (x != null && x == 1..3) return 0; return 1 }")
-		assertEquals("true\n", run(LLVMEmitter().compileSnippet(parser("def<float<64>> x = 16777217.0; 16777216.5..16777217.5 == x").parseSnippet(), dir.resolve("snippet"))))
+		assertMainOutput(dir.resolve("precise"), "def<float<64>> x = 16777217.0; println(16777216.5..16777217.5 == x)", "true\n")
 	}
 
 	private val portableProgram = """

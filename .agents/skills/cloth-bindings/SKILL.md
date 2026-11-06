@@ -41,10 +41,10 @@ overflow rule. Existing division/remainder invalid-operation checks still apply.
 ## Source and verification
 
 Inspect [Parser](../../../Compiler/src/main/kotlin/cloth/parser/Parser.kt),
-[DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt),
-[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
+[DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt),
+[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt),
 [ReceptionPlan](../../../Compiler/src/main/kotlin/cloth/semantic/ReceptionPlan.kt),
-[EmitBindings](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitBindings.kt),
+[EmitBindings](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitBindings.kt),
 and [EmitStatement](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStatement.kt).
 Example: [Bindings.co](../../../examples/Bindings.co).
 
@@ -54,5 +54,17 @@ Existing cases check once-total execution, independent storage, duplicate/unknow
 names, strict types, source labels and captured side effects. Recorded evidence:
 [multiple definitions](../cloth-language/references/development.md#multiple-binding-definitions-2026-10-31)
 and [assignment milestone](../cloth-language/references/development.md#multiple-assignment-to-existing-bindings-2026-10-31).
+
+`BindingsTest` and `AssignmentOperatorsTest` parse complete function fixtures and
+check them through the production analyzer. Native fixtures use the shared
+compile driver, print observed values explicitly and check `PEC` on normal
+completion. Reuse these fixture helpers for new binding cases.
+[Program fixtures](../../../Compiler/src/test/kotlin/cloth/ProgramFixtures.kt) ·
+[Migration evidence](../cloth-language/references/development.md#production-path-fixture-migration-2026-11-06)
+
+`MultiAssignmentTest` checks each immutable target through declaration
+resolution, including the declaration and reassignment labels. Its native
+cases share the fixture runner. [Reception test evidence](../cloth-language/references/development.md#production-path-reception-tests-2026-11-06)
+
 Forward/self local reads are currently rejected; that is not a specification for
 future class/module declaration resolution.

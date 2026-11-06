@@ -22,7 +22,7 @@ pub typedef<struct> Meter {
   list ends with a semicolon when followed by a method. A method-only body
   starts directly with `mt`. Methods inherit the struct's visibility.
   Method parameters and bodies use the shared function parser.
-- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
   collects signatures for each nominal owner before resolving bodies.
   Method overloads share the function signature key and receive independent
   declaration scopes. Only file-level functions enter the file callable

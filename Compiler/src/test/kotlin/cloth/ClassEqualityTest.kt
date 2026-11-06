@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -134,7 +134,7 @@ class ClassEqualityTest {
 	@Test
 	fun `invalid comparison declarations and proved stale checks stop compilation`() {
 		for (member in listOf("operator ==(Item other) = true", "operator !=(Object other, self) = false", "operator ===(int other) = true")) {
-			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit("typedef<class> Item { $member }")) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit("typedef<class> Item { $member }")) }
 			assertEquals(DiagnosticCode.INVALID_OPERATOR_DECLARATION, failure.diagnosticCode)
 		}
 		for (op in listOf("==", "!=", "===")) {
@@ -146,7 +146,7 @@ class ClassEqualityTest {
 				    println(a $op a)
 				}
 			"""
-			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, failure.diagnosticCode)
 		}
 	}

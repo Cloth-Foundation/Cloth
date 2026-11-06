@@ -12,8 +12,8 @@ import cloth.parser.expression.CallExpression
 import cloth.parser.expression.IfExpression
 import cloth.parser.expression.NameExpression
 import cloth.parser.statement.*
-import cloth.semantic.DeclarationAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.LocalSymbol
@@ -26,7 +26,7 @@ class DeclarationScopesTest {
 	private fun body(function: FunctionDeclaration) = assertIs<BlockBody>(function.body)
 	private fun expression(function: FunctionDeclaration) = assertIs<ExpressionBody>(function.body).expression
 	private fun failure(text: String, code: DiagnosticCode): SemanticException {
-		val failure = assertFailsWith<SemanticException> { DeclarationAnalyzer().analyze(parse(text)) }
+		val failure = assertFailsWith<SemanticException> { DeclarationAnalyzer(nativeTestLayout).analyze(parse(text)) }
 		assertEquals(code, failure.diagnosticCode)
 		assertLocated(failure)
 		return failure
@@ -39,7 +39,7 @@ class DeclarationScopesTest {
 			fn<int> second(int n) = first(n)
 			fn<int> recurse(int n) = recurse(n)
 		""")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val functions = unit.declarations.map { assertIs<FunctionDeclaration>(it) }
 		for ((caller, callee) in listOf(0 to 1, 1 to 0, 2 to 2)) {
 			val call = assertIs<CallExpression>(expression(functions[caller]))
@@ -55,7 +55,7 @@ class DeclarationScopesTest {
 			fn choose(int<8> value) {}
 			fn choose(int<64> value) {}
 		""")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val call = assertIs<CallExpression>(assertIs<ExpressionStatement>(body(model.functions[0].declaration).statements.single()).expression)
 		val group = assertIs<FunctionGroupSymbol>(model.candidatesOf(call))
 		assertSame(model.fileScope.lookup("choose"), group)
@@ -92,7 +92,7 @@ class DeclarationScopesTest {
 			fn choose(int a, bool b) {}
 			fn choose(bool a, int b) {}
 		""")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		assertEquals(13, model.functions.map { it.signature }.toSet().size)
 		assertEquals(13, assertIs<FunctionGroupSymbol>(model.fileScope.lookup("choose")).overloads.size)
 	}
@@ -121,7 +121,7 @@ class DeclarationScopesTest {
 		failure("fn sample() {\n def value = 1\n def value = 2\n}", DiagnosticCode.DUPLICATE_BINDING)
 		val unit = parse("fn sample(int value) { def other = value }")
 		val declaration = assertIs<FunctionDeclaration>(unit.declarations.single())
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		assertSame(model.scopeOf(declaration), model.scopeOf(body(declaration)))
 		assertSame(model.fileScope, model.scopeOf(declaration).parent)
 		assertEquals(2, model.scopeOf(declaration).symbols.size)
@@ -140,7 +140,7 @@ class DeclarationScopesTest {
 			}
 		""")
 		val declaration = assertIs<FunctionDeclaration>(unit.declarations.single())
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val parameter = model.symbolOf(declaration.parameters.single())
 		val conditional = assertIs<IfExpression>(assertIs<ExpressionStatement>(body(declaration).statements[0]).expression)
 		val branch = conditional.branches.single()
@@ -164,7 +164,7 @@ class DeclarationScopesTest {
 			}
 		""")
 		val declaration = assertIs<FunctionDeclaration>(unit.declarations.single())
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val conditional = assertIs<IfExpression>(assertIs<ExpressionStatement>(body(declaration).statements.single()).expression)
 		val scopes = conditional.branches.map { model.scopeOf(it) } + assertNotNull(model.otherwiseScopeOf(conditional))
 		val symbols = scopes.map { assertIs<LocalSymbol>(it.lookup("value")) }
@@ -202,7 +202,7 @@ class DeclarationScopesTest {
 			    target()
 			}
 		""")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val declaration = model.functions[1].declaration
 		val statements = body(declaration).statements
 		val conditional = assertIs<IfExpression>(assertIs<ExpressionStatement>(statements[0]).expression)
@@ -222,7 +222,7 @@ class DeclarationScopesTest {
 			    local--
 			}
 		""")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val function = model.functions.single().declaration
 		val statements = body(function).statements
 		val parameter = model.symbolOf(function.parameters.single())
@@ -258,7 +258,7 @@ class DeclarationScopesTest {
 	@Test
 	fun `multiple uses of the same name across functions do not share binding identities`() {
 		val unit = parse("fn<int> first(int value) = value\nfn<int> second(int value) = value")
-		val model = DeclarationAnalyzer().analyze(unit)
+		val model = DeclarationAnalyzer(nativeTestLayout).analyze(unit)
 		val functions = model.functions.map { it.declaration }
 		val first = model.symbolOf(assertIs<NameExpression>(expression(functions[0])))
 		val second = model.symbolOf(assertIs<NameExpression>(expression(functions[1])))
@@ -269,7 +269,7 @@ class DeclarationScopesTest {
 
 	@Test
 	fun `analyzer reuse does not leak declarations or a failed body's scope`() {
-		val analyzer = DeclarationAnalyzer()
+		val analyzer = DeclarationAnalyzer(nativeTestLayout)
 		val unit = parse("fn<int> first(int value) = value")
 		val first = analyzer.analyze(unit)
 		assertFailsWith<SemanticException> { analyzer.analyze(parse("fn sample() { missing }")) }
@@ -290,14 +290,14 @@ class DeclarationScopesTest {
 			fn main(string[] args) {}
 			fn custom(UndeclaredType value) = value
 		""")
-		assertEquals(7, DeclarationAnalyzer().analyze(unit).functions.size)
+		assertEquals(7, DeclarationAnalyzer(nativeTestLayout).analyze(unit).functions.size)
 	}
 
 	@Test
 	fun `name errors preserve CRLF source positions and stop before later failures`() {
 		val source = SourceFile("crlf.co", "fn sample() {\r\n\tfirstMissing\r\n\tsecondMissing\r\n}")
 		val diagnostic = assertFailsWith<SemanticException> {
-			DeclarationAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parseDeclarations())
+			DeclarationAnalyzer(nativeTestLayout).analyze(Parser(Lexer(source).scanTokens()).parseDeclarations())
 		}
 		assertEquals(DiagnosticCode.UNKNOWN_NAME, diagnostic.diagnosticCode)
 		val span = diagnostic.sourceLabels.single().span

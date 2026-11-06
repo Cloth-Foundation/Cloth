@@ -10,19 +10,19 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.CallExpression
 import cloth.parser.statement.MultiAssignmentStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.token.Keywords
+import cloth.token.Operators
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class MultiAssignmentTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("multi-assignment.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
 		val diagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }
 		assertEquals(code, diagnostic.diagnosticCode)
@@ -32,20 +32,13 @@ class MultiAssignmentTest {
 
 	private fun native(directory: Path, name: String, source: String, exit: Int = 0, expectedOutput: String = ""): String {
 		val executable = LLVMEmitter().compile(parse(source), directory.resolve(name))
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(15, TimeUnit.SECONDS), name)
-			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
-			assertEquals(exit, process.exitValue(), output)
-			if (exit == 0) {
-				assertEquals(expectedOutput + processCompletion(), output)
-			} else {
-				assertFalse(output.contains("PEC:"), output)
-			}
-			return output
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
+		val output = runExecutable(executable, status = exit)
+		if (exit == 0) {
+			assertEquals(expectedOutput + processCompletion(), output)
+		} else {
+			assertFalse(output.contains("PEC:"), output)
 		}
+		return output
 	}
 
 	@Test
@@ -59,10 +52,15 @@ class MultiAssignmentTest {
 
 	@Test
 	fun `every target must be an existing mutable binding`() {
-		for (name in listOf("x", "y", "z")) {
-			val definitions = listOf("x", "y", "z").joinToString("\n") { "def $it ${if (it == name) ":=" else "="} 10" }
+		val names = listOf("x", "y", "z")
+		for ((index, name) in names.withIndex()) {
+			val definitions = names.joinToString("\n") { target ->
+				val assignment = if (target == name) Operators.FINAL_ASSIGN else Operators.ASSIGN
+				"${Keywords.DEFINITION} $target $assignment 10"
+			}
 			val diagnostic = failure("fn test() {\n $definitions\n x, y, z = 20\n}", DiagnosticCode.IMMUTABLE_BINDING)
 			assertContains(diagnostic.summary, "'$name'")
+			assertEquals(listOf(index + 2, 5), diagnostic.sourceLabels.map { it.span.startLine })
 		}
 		failure("fn test() {\n def x = 1\n x, missing = 20\n}", DiagnosticCode.UNKNOWN_NAME)
 		failure("fn test() {\n def x = 1\n x, later = 20\n def later = 1\n}", DiagnosticCode.UNKNOWN_NAME)
@@ -95,14 +93,6 @@ class MultiAssignmentTest {
 		for (statement in listOf("x, = 20", "x,,y = 20", "x, y =", "x, y := 20", "x, y += 20", "x, y[0] = 20", "x, int::size = 20", "x, y = 20 def z = 1")) {
 			assertFailsWith<ClothDiagnostic>(statement) { parse("fn test() { $statement }") }
 		}
-	}
-
-	@Test
-	fun `snippet analysis also validates every target`() {
-		fun snippet(source: String) = Parser(Lexer(source).scanTokens()).parseSnippet()
-		SemanticAnalyzer().analyze(snippet("def x, y, z = 10\nx, y, z = 20"))
-		val diagnostic = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet("def x = 1\ndef y := 2\nx, y = 20")) }
-		assertEquals(DiagnosticCode.IMMUTABLE_BINDING, diagnostic.diagnosticCode)
 	}
 
 	@Test

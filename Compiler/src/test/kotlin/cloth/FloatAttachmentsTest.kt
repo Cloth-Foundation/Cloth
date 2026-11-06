@@ -17,8 +17,7 @@ import cloth.emitter.types.primitives.EmitFloatMember
 import cloth.emitter.types.primitives.EmitHalf
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -36,7 +35,7 @@ class FloatAttachmentsTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("float-members.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -47,17 +46,17 @@ class FloatAttachmentsTest {
 			val type = CFloat(bits)
 			val floats = PrimitiveAttachments.floating(type)
 			assertEquals(listOf(floats.ABS, floats.CLAMP, floats.SIGNUM), floats.all.toList())
-			assertSame(floats.ABS, PrimitiveAttachments[type, "abs"])
+			assertSame(floats.ABS, PrimitiveAttachments[type, "abs", nativeTestLayout])
 			assertEquals(type, floats.ABS.overload.returns)
 			assertEquals(type, floats.CLAMP.overload.returns)
 			assertEquals(List(2) { BuiltinParameter.Exact(type) }, floats.CLAMP.parameters)
 			assertEquals(ValueType.INT, floats.SIGNUM.overload.returns)
 			assertTrue(floats.all.all { it.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT })
-			assertNull(PrimitiveAttachments[type, "leadingZeros"])
-			assertNull(PrimitiveAttachments[type, "toStringRadix"])
-			assertNull(PrimitiveAttachments[type, "Abs"])
+			assertNull(PrimitiveAttachments[type, "leadingZeros", nativeTestLayout])
+			assertNull(PrimitiveAttachments[type, "toStringRadix", nativeTestLayout])
+			assertNull(PrimitiveAttachments[type, "Abs", nativeTestLayout])
 		}
-		assertNotSame(PrimitiveAttachments[ValueType.INT, "abs"], PrimitiveAttachments[ValueType.FLOAT, "abs"])
+		assertNotSame(PrimitiveAttachments[ValueType.INT, "abs", nativeTestLayout], PrimitiveAttachments[ValueType.FLOAT, "abs", nativeTestLayout])
 		assertFailsWith<UnsupportedOperationException> { (PrimitiveAttachments.floating(ValueType.FLOAT).all as MutableCollection).clear() }
 	}
 
@@ -264,8 +263,8 @@ class FloatAttachmentsTest {
 			assertTrue(Files.size(emitter.compileObject(ast, directory.resolve("float_$index.o"))) > 0)
 			assertTrue(Files.size(emitter.compileObject(example, directory.resolve("example_$index.o"))) > 0)
 		}
-		val snippet = Parser(Lexer("(-3.5).abs()").scanTokens()).parseSnippet()
-		assertEquals(ValueType.FLOAT, SemanticAnalyzer().analyze(snippet).typeOf((snippet.statements.single() as cloth.parser.statement.ExpressionStatement).expression))
+		val program = parseMain("(-3.5).abs()")
+		assertEquals(ValueType.FLOAT, FunctionAnalyzer(nativeTestLayout).analyze(program).typeOf(program.mainStatements.single()))
 	}
 
 	@Test

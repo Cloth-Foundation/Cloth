@@ -12,9 +12,8 @@ import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.CallExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.ProgramAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.target.TargetLayout
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -27,13 +26,13 @@ import kotlin.test.*
 class USizeTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("usize.co", source.trimIndent())).scanTokens()).parseDeclarations()
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("usize.co", source.trimIndent())).scanTokens()).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(source, "usize.co")
 	private fun synthetic32() = NativeCABI.native().layout.copy(
 		targetTriple = "i686-unknown-linux-gnu", pointerBits = 32, sizeBits = 32,
 		pointerAlignmentBits = 32, cLongBits = 32,
 	)
 
-	private fun failure(source: String, code: DiagnosticCode, target: TargetLayout = TargetLayout.native()) {
+	private fun failure(source: String, code: DiagnosticCode, target: TargetLayout = nativeTestLayout) {
 		val diagnostic = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer(target).analyze(unit(source)) }
 		assertEquals(code, diagnostic.diagnosticCode, source)
 		assertLocated(diagnostic)
@@ -66,9 +65,9 @@ class USizeTest {
 			val wide = NativeCABI.native().layout
 			for (target in listOf(small, wide, small)) {
 				val type = CUSize(target.sizeBits)
-				val ast = snippet("def<usize> value = ${type.maximum}\ndef copy := value\ndef<int<64>> fixed = 9223372036854775807\nvalue::max")
-				val semantics = SemanticAnalyzer(target).analyze(ast)
-				assertEquals(listOf(type, type, CInt(64), type), ast.statements.map { semantics.typeOf(it) })
+				val ast = bodyUnit("def<usize> value = ${type.maximum}\ndef copy := value\ndef<int<64>> fixed = 9223372036854775807\nvalue::max")
+				val semantics = FunctionAnalyzer(target).analyze(ast).types
+				assertEquals(listOf(type, type, CInt(64), type), ast.mainStatements.map { semantics.typeOf(it) })
 				val functions = FunctionAnalyzer(target).analyze(unit("fn<usize> identity(usize value) = value\nfn<usize[]> make(usize value) = [value, 1]"))
 				val identity = functions.typeOf(functions.declarations.functions.first())
 				assertEquals(listOf(type), identity.parameters)
@@ -83,8 +82,8 @@ class USizeTest {
 					assertSame(type, provider.type)
 					assertEquals(value, provider.value)
 				}
-				val size = snippet("usize::size")
-				assertEquals(type, SemanticAnalyzer(target).analyze(size).typeOf(size.statements.single()))
+				val size = bodyUnit("usize::size")
+				assertEquals(type, FunctionAnalyzer(target).analyze(size).typeOf(size.mainStatements.single()))
 				assertEquals(BigInteger.valueOf((target.sizeBits / 8).toLong()), assertIs<ProviderResult.IntegerConstant>(type.provider("size", target)).value)
 				failure("fn<usize> bad() = -1", DiagnosticCode.INTEGER_RANGE, target)
 				if (target.sizeBits < 64) failure("fn<usize> bad() = ${type.maximum + BigInteger.ONE}", DiagnosticCode.INTEGER_RANGE, target)
@@ -274,9 +273,9 @@ class USizeTest {
 			val expected = CUSize(target.sizeBits)
 			val fixed = "unsigned int<${target.sizeBits}>"
 			for (expression in measurements) {
-				val ast = snippet("def<usize> measured = $expression\ndef copied = measured\n[$expression, 0]")
-				val semantics = SemanticAnalyzer(target).analyze(ast)
-				assertEquals(listOf(expected, expected, CArray(expected, 2)), ast.statements.map { semantics.typeOf(it) }, expression)
+				val ast = bodyUnit("def<usize> measured = $expression\ndef copied = measured\n[$expression, 0]")
+				val semantics = FunctionAnalyzer(target).analyze(ast).types
+				assertEquals(listOf(expected, expected, CArray(expected, 2)), ast.mainStatements.map { semantics.typeOf(it) }, expression)
 				FunctionAnalyzer(target).analyze(unit("fn<usize> measure() = $expression\nfn<usize> identity(usize value) = value\nfn<usize> pass() = identity($expression)"))
 				failure("fn bad() { def<$fixed> wrong = $expression }", DiagnosticCode.TYPE_MISMATCH, target)
 				failure("fn<$fixed> wrong() = $expression", DiagnosticCode.RETURN_TYPE, target)

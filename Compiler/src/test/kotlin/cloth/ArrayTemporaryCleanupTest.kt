@@ -1314,8 +1314,8 @@ class ArrayTemporaryCleanupTest {
 			val builder = LLVMCreateBuilderInContext(context)
 			try {
 				val pointer = LLVMPointerTypeInContext(context, 0)
-				val integer = LLVMTypes(context).value(abi.intType)
-				val size = LLVMTypes(context).value(abi.sizeType)
+				val integer = LLVMTypes(context, abi.layout).value(abi.intType)
+				val size = LLVMTypes(context, abi.layout).value(abi.sizeType)
 				fun int(value: Long) = LLVMConstInt(integer, value, 0)
 				fun count(value: Long) = LLVMConstInt(size, value, 0)
 				fun signature(result: LLVMTypeRef, vararg params: LLVMTypeRef) = PointerPointer<LLVMTypeRef>(params.size.toLong()).use { values ->

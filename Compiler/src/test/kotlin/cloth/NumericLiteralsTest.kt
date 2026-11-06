@@ -12,8 +12,7 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.CallExpression
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.target.TargetLayout
 import cloth.token.TokenType
 import cloth.token.floatingLiteralText
@@ -25,10 +24,10 @@ import kotlin.test.*
 class NumericLiteralsTest {
 
 	private fun tokens(source: String) = Lexer(SourceFile("numbers.co", source)).scanTokens()
-	private fun snippet(source: String) = Parser(tokens(source)).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(SourceFile("numbers.co", source))
 	private fun unit(source: String) = Parser(tokens(source.trimIndent())).parse()
-	private fun check(source: String, target: TargetLayout = TargetLayout.native()) = SemanticAnalyzer(target).analyze(snippet(source))
-	private fun failure(source: String, code: DiagnosticCode, declarations: Boolean = false, target: TargetLayout = TargetLayout.native()): ClothDiagnostic {
+	private fun check(source: String, target: TargetLayout = nativeTestLayout) = FunctionAnalyzer(target).analyze(bodyUnit(source)).types
+	private fun failure(source: String, code: DiagnosticCode, declarations: Boolean = false, target: TargetLayout = nativeTestLayout): ClothDiagnostic {
 		val error = assertFailsWith<ClothDiagnostic>(source) {
 			if (declarations) FunctionAnalyzer(target).analyze(unit(source)) else check(source, target)
 		}
@@ -166,8 +165,8 @@ class NumericLiteralsTest {
 	@Test
 	fun `numeric type widths and fixed extents share value decoding and structural identity`() {
 		for (width in listOf("0x08", "0b1000", "0o10", "8i", "8I")) {
-			val ast = snippet("def<int<$width>[0b11]> values = [0x7F, 0o17, 3i]")
-			assertEquals(CArray(CInt(8), 3), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
+			val ast = bodyUnit("def<int<$width>[0b11]> values = [0x7F, 0o17, 3i]")
+			assertEquals(CArray(CInt(8), 3), FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(ast.mainStatements.single()))
 		}
 		for (width in listOf("0x0", "0b0", "65537i", "18446744073709551616i")) failure("def<int<$width>> x = 0", DiagnosticCode.UNSUPPORTED_WIDTH)
 		failure("def<int<8f>> x = 0", DiagnosticCode.EXPECTED_TOKEN)
@@ -181,10 +180,10 @@ class NumericLiteralsTest {
 	fun `floating literals receive declared widths in assignments and both return forms`() {
 		for (bits in ValueType.FLOAT_WIDTHS) for (literal in listOf("123.f", "123f", "123.0f", "123.F", "123F", "123.0F", "123.0")) {
 			val type = CFloat(bits)
-			val ast = snippet("def<${type.spelling}> x = $literal\nx = -$literal")
-			val model = SemanticAnalyzer().analyze(ast)
-			assertTrue(ast.statements.all { model.typeOf(it) == type })
-			FunctionAnalyzer().analyze(unit("fn<${type.spelling}> implicit() = $literal\nfn<${type.spelling}> explicit() { return $literal }"))
+			val ast = bodyUnit("def<${type.spelling}> x = $literal\nx = -$literal")
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+			assertTrue(ast.mainStatements.all { model.typeOf(it) == type })
+			FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<${type.spelling}> implicit() = $literal\nfn<${type.spelling}> explicit() { return $literal }"))
 		}
 		for (bits in ValueType.FLOAT_WIDTHS) {
 			val cutoff = "${CFloat(bits).overflowThreshold}f"
@@ -208,12 +207,12 @@ class NumericLiteralsTest {
 		check("def<int<8>> x = 128i -> int<8>") // Explicit casts retain existing truncation rules.
 		failure("def<int<8>> x = 0xDEADBEEF -> int<8>", DiagnosticCode.INTEGER_RANGE)
 		failure("fn<float<64>> sample(float x) = x", DiagnosticCode.RETURN_TYPE, declarations = true)
-		val ast = snippet("def<float<16>> half = 1f\ndef mixed = half + 1.0\ndef inferred = 123f")
-		val model = SemanticAnalyzer().analyze(ast)
-		assertEquals(listOf(CFloat(16), ValueType.FLOAT, ValueType.FLOAT), ast.statements.map { model.typeOf(it) })
-		val comparison = snippet("def<float<16>> half = 1f\ndef<bool> same = half == 1.00048828125f")
-		val comparisonModel = SemanticAnalyzer().analyze(comparison)
-		val right = assertIs<BinaryExpression>(assertIs<BindingDeclaration>(comparison.statements.last()).initializer).right
+		val ast = bodyUnit("def<float<16>> half = 1f\ndef mixed = half + 1.0\ndef inferred = 123f")
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+		assertEquals(listOf(CFloat(16), ValueType.FLOAT, ValueType.FLOAT), ast.mainStatements.map { model.typeOf(it) })
+		val comparison = bodyUnit("def<float<16>> half = 1f\ndef<bool> same = half == 1.00048828125f")
+		val comparisonModel = FunctionAnalyzer(nativeTestLayout).analyze(comparison)
+		val right = assertIs<BinaryExpression>(assertIs<BindingDeclaration>(comparison.mainStatements.last()).initializer).right
 		assertEquals(ValueType.FLOAT, comparisonModel.typeOf(right))
 	}
 
@@ -221,9 +220,9 @@ class NumericLiteralsTest {
 	fun `floating arithmetic keeps declared width alongside integer peer context`() {
 		for (integer in listOf("int<8>", "unsigned int<8>", "int", "int<64>", "usize", "isize")) {
 			for (value in listOf("16777217f + i", "i + 16777217f", "(16777217f + i) + d", "d + (i + 16777217f)", "-(16777217f + i)", "i + (if (true) { 16777217f } else { 16777219f })")) {
-				val ast = snippet("def<$integer> i = 0\ndef<float<64>> d = 0f\ndef<float<64>> x = $value\nx = $value")
-				val model = SemanticAnalyzer().analyze(ast)
-				assertEquals(CFloat(64), model.typeOf(ast.statements.last()))
+				val ast = bodyUnit("def<$integer> i = 0\ndef<float<64>> d = 0f\ndef<float<64>> x = $value\nx = $value")
+				val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+				assertEquals(CFloat(64), model.typeOf(ast.mainStatements.last()))
 			}
 		}
 		val huge = "${ValueType.FLOAT.overflowThreshold}f"
@@ -235,13 +234,13 @@ class NumericLiteralsTest {
 		failure("def i = 0\ndef<float<32>> x = $huge + i", DiagnosticCode.FLOAT_RANGE)
 		failure("def i = 0\ndef<float<16>> x = 70000f + i", DiagnosticCode.FLOAT_RANGE)
 		failure("def i = 0\ndef<float<16>> x = 1f + i", DiagnosticCode.TYPE_MISMATCH) // Mixed arithmetic still uses at least float32.
-		FunctionAnalyzer().analyze(unit("fn<float<64>> value(int i) = 16777217f + i\nfn take(float<64> x) {}\nfn sample(int i) { take(16777217f + i) }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<float<64>> value(int i) = 16777217f + i\nfn take(float<64> x) {}\nfn sample(int i) { take(16777217f + i) }"))
 	}
 
 	@Test
 	fun `nullable destinations propagate their payload width through literal arithmetic`() {
 		for (bits in ValueType.FLOAT_WIDTHS) {
-			FunctionAnalyzer().analyze(unit("""
+			FunctionAnalyzer(nativeTestLayout).analyze(unit("""
 				fn take(float<$bits>? x) {}
 				fn<float<$bits>?> implicit() = 1f + 2f
 				fn<float<$bits>?> explicit() { return 1f + 2f }
@@ -260,8 +259,8 @@ class NumericLiteralsTest {
 			failure("fn sample() { def<float<$bits>?[]> x = [$overflow + 0f] }", DiagnosticCode.FLOAT_RANGE, declarations = true)
 		}
 		val huge = "${ValueType.FLOAT.overflowThreshold}f"
-		FunctionAnalyzer().analyze(unit("fn<float<64>?> value() = $huge + 0f"))
-		FunctionAnalyzer().analyze(unit("fn sample() { def<int<8>?> x = 0x7E + 1i; x = -0x80 + 0i }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<float<64>?> value() = $huge + 0f"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn sample() { def<int<8>?> x = 0x7E + 1i; x = -0x80 + 0i }"))
 		failure("fn sample() { def<int<8>?> x = 0x80 + 0i }", DiagnosticCode.INTEGER_RANGE, declarations = true)
 		failure("fn sample() { def<usize?> x = -1i + 0i }", DiagnosticCode.INTEGER_RANGE, declarations = true)
 		failure("fn sample() { def value = 1f; def<float<64>?> x = value + 1f }", DiagnosticCode.TYPE_MISMATCH, declarations = true)
@@ -271,7 +270,7 @@ class NumericLiteralsTest {
 	@Test
 	fun `new spellings retain default overload preference and contextual range filtering`() {
 		for ((literal, expected) in listOf("0x7B" to ValueType.INT, "123i" to ValueType.INT, "123f" to ValueType.FLOAT, "123.f" to ValueType.FLOAT, "${ValueType.FLOAT.overflowThreshold}f" to CFloat(64))) {
-			val model = FunctionAnalyzer().analyze(unit("""
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("""
 				fn pick(int x) {}
 				fn pick(int<64> x) {}
 				fn pick(float x) {}
@@ -283,7 +282,7 @@ class NumericLiteralsTest {
 			assertEquals(expected, model.typeOf(model.selectedFunction(call)).parameters.single())
 		}
 		val huge = "${ValueType.FLOAT.overflowThreshold}f"
-		FunctionAnalyzer().analyze(unit("fn pick(float<64> x) {}\nfn test() { pick($huge) }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn pick(float<64> x) {}\nfn test() { pick($huge) }"))
 		failure("fn pick(int<8> x) {}\nfn pick(int<64> x) {}\nfn test() { pick(0x7B) }", DiagnosticCode.AMBIGUOUS_CALL, declarations = true)
 	}
 }

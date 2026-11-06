@@ -38,9 +38,9 @@ boundaries. All five stages are complete for implemented value types.
 
 Inspect [ResultShape](../../../Compiler/src/main/kotlin/cloth/semantic/ResultShape.kt),
 [ReceptionPlan](../../../Compiler/src/main/kotlin/cloth/semantic/ReceptionPlan.kt),
-[FunctionSemanticModel](../../../Compiler/src/main/kotlin/cloth/semantic/FunctionSemanticModel.kt),
-[EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitResults.kt),
-and [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt).
+[FunctionSemanticModel](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionSemanticModel.kt),
+[EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitResults.kt),
+and [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt).
 Example: [MultiReturns.co](../../../examples/MultiReturns.co), including its
 optional-parameter declaration, is now executable. Read [optional arguments](../cloth-optional-arguments/SKILL.md)
 when changing named argument placement or default evaluation around result producers.
@@ -49,6 +49,13 @@ Relevant suites: `MultiReturnParsingTest`, `MultiReturnTypingTest`,
 `DestructuringTest`, `MultiReturnEmissionTest`, `MultiReturnIntegrationTest`,
 and `MultiReturnReviewTest`. Recorded verification covers Windows x64/x86 native
 execution and verified IR across nine profiles. Keep those scopes distinct.
+
+`DestructuringTest` checks positional reception and swapped metadata in full
+function bodies. Its native fixture checks the received values and `PEC`
+through the shared compile driver, and the same body emits a nonempty object.
+[Program fixtures](../../../Compiler/src/test/kotlin/cloth/ProgramFixtures.kt) ·
+[Reception test evidence](../cloth-language/references/development.md#production-path-reception-tests-2026-11-06)
+
 See the [final review](../cloth-language/references/multi-return-implementation.md#final-review)
 for discarded-array constraints and remaining implementation boundaries.
 Numeric result selection (`call().1`) remains a

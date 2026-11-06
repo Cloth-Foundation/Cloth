@@ -10,8 +10,7 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.TokenSpan
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -208,12 +207,12 @@ class MultiReturnParsingTest {
 			"fn test() { def<int, int> a, b = { return 1, 2 } }", "fn test() { def<int> _, b = { return 1 } }",
 		)) {
 			val unit = parse(source)
-			val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer().analyze(unit) }
+			val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer(nativeTestLayout).analyze(unit) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_MULTIPLE_RESULTS, error.diagnosticCode)
 			assertEquals(1, error.sourceLabels.size)
 			assertLocated(error)
 		}
-		val snippet = Parser(Lexer(SourceFile("snippet.co", "def _, x = 1")).scanTokens()).parseSnippet()
-		assertEquals(cloth.semantic.ReceptionKind.BROADCAST, SemanticAnalyzer().analyze(snippet).receptionOf(snippet.statements.single()).kind)
+		val program = parseMain("def _, x = 1")
+		assertEquals(cloth.semantic.ReceptionKind.BROADCAST, FunctionAnalyzer(nativeTestLayout).analyze(program).types.receptionOf(program.mainStatements.single()).kind)
 	}
 }

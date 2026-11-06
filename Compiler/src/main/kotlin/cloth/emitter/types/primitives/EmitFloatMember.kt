@@ -3,7 +3,7 @@ package cloth.emitter.types.primitives
 import cloth.builtin.attachments.FloatMethod
 import cloth.data.CFloat
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitMemory
+import cloth.emitter.storage.EmitMemory
 import cloth.token.Operators
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef

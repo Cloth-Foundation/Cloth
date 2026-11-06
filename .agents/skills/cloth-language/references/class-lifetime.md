@@ -14,13 +14,13 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
   exhausted generation retires its slot. The table retains its peak capacity
   for reuse. Each explicit deletion frees that instance's storage. Nullable
   presence is a separate flag. [Class representation](../../../../Compiler/src/main/kotlin/cloth/data/CClass.kt) Â·
-  [Instance table](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassRuntime.kt)
+  [Instance table](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassRuntime.kt)
 - Supplied operands are evaluated in written order. Defaults run in parameter
   order before the selected constructor proceeds. Secondary delegation invokes
   the primary constructor once, and the primary allocates and initializes the
   instance before the secondary body receives `self`. Header fields precede
   body fields in source order. A non-continuing default contributes no incoming
-  edge to the supplied argument path. [Callable lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  edge to the supplied argument path. [Callable lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
 - Method calls capture receiver identity before operands, check liveness before
   argument effects, and check again at method entry and after defaults. Field
   writes check the captured identity again after the right-hand side. Slot
@@ -31,7 +31,7 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
   on `self`. Passing or copying an identity carries only the slot and
   generation. Release looks up the identity again after the destructor, so
   it can release the correct slot even if the destructor grew the table.
-  Absent nullable deletion skips lookup and destructor execution. [Instance table](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassRuntime.kt)
+  Absent nullable deletion skips lookup and destructor execution. [Instance table](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassRuntime.kt)
 
 ## Diagnostics and scope
 
@@ -41,7 +41,7 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
   Ordered result reception stops evaluating positions after an operand exits.
   Unknown identities and effects use the runtime check. Repeated loops and
   deferred evaluation conservatively discard mutable alias facts.
-  [Lifetime analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/ClassLifetimeAnalysis.kt)
+  [Lifetime analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/ClassLifetimeAnalysis.kt)
 - The runtime reports `Class object is no longer live` and exits with status 1
   for an invalid lookup. Access through ordinary aliases during destruction,
   stale access after slot reuse, and recursive deletion use the same failure

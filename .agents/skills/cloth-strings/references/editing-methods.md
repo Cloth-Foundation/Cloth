@@ -68,7 +68,7 @@ Maintained example: [StringEditing.co](../../../../examples/StringEditing.co).
 - `StringAttachments` declares the four named registrations; declaration also
   publishes them. They reuse the existing typed hidden receiver, strict string
   parameters and `BoundBuiltinCall` result checks. `BuiltinEmissionContext`
-  borrows [EmitStringEdit](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringEdit.kt)
+  borrows [EmitStringEdit](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitStringEdit.kt)
   for the current module/call/source location. Reusable registry definitions
   retain no LLVM handles or per-emission mutable state.
 - Boundary removal uses existing bounded prefix/suffix predicates, selects a

@@ -13,7 +13,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -29,7 +29,7 @@ class StringScalarMethodsTest {
 	private fun literal(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\u0000", "\\0").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\""
 	private fun character(scalar: Int) = "'" + String(Character.toChars(scalar)).replace("\\", "\\\\").replace("'", "\\'").replace("\u0000", "\\0").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "'"
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -87,7 +87,7 @@ class StringScalarMethodsTest {
 		failure("fn main() { \"x\".substring(start = 0, end = 1) }", DiagnosticCode.INVALID_ARGUMENT_BINDING)
 		failure("fn test(usize? index) { \"x\".charAt(index) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
 		failure("fn main() { def<usize?> p = \"x\".indexOf(\"x\"); \"x\".charAt(p) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
-		FunctionAnalyzer().analyze(unit("fn main() { def<usize?> p = \"x\".indexOf(\"x\"); if (p != null) println(\"x\".charAt(p)) }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(unit("fn main() { def<usize?> p = \"x\".indexOf(\"x\"); if (p != null) println(\"x\".charAt(p)) }"))
 	}
 
 	@Test

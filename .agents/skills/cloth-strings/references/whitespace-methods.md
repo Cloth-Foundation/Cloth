@@ -57,7 +57,7 @@ boundaries and independent results use [scalar methods](scalar-methods.md).
   not a host whitespace predicate. No locale-dependent C classification or JVM
   `Character.isWhitespace`/`isSpaceChar` is used for Cloth behavior.
 - `StringAttachments` declares the four typed registrations. `BuiltinEmissionContext`
-  borrows [EmitStringWhitespace](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringWhitespace.kt)
+  borrows [EmitStringWhitespace](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitStringWhitespace.kt)
   for this module/call/source location. Definitions remain reusable without LLVM
   handles or per-compilation mutable state.
 - `EmitStringAccess.decode` supplies the existing full-scalar UTF-8 decoder with

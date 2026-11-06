@@ -51,19 +51,19 @@ qualifiers do not supersede the subsequently accepted ordinary-function contract
   `CallArgument` is shared by ordinary/state-call syntax; its labels are
   metadata rather than name reads or assignment expressions. The computed
   `arguments` view preserves written order for flow, effects and cleanup walkers.
-- [ArgumentBinder](../../../Compiler/src/main/kotlin/cloth/semantic/ArgumentBinding.kt)
+- [ArgumentBinder](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ArgumentBinding.kt)
   computes one placement per candidate without expression typing. Preserve its
   required-slot reservations, named duplicate policy and source-index mapping.
-  [CallAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+  [FunctionAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   probes isolated facts and stores the selected binding in `ResolvedCall.Source`.
   Emission consumes that plan and never searches for a new mapping.
-- [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+- [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
   resolves defaults in a separate declaration scope containing earlier parameter
   symbols. Their views are read-only, including array elements and deferred
   captured writes. Default-local copies remain ordinary independent values.
   Returns may belong to an explicitly nested deferred block, never escape the
   default. Every default is typed and metadata-checked even without omitted calls.
-- [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+- [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   appends one internal i1 omission flag per optional parameter after ordinary
   parameters and any return arena. The definition-owned prelude branches before
   decoding an optional payload, evaluates missing values in declaration order,

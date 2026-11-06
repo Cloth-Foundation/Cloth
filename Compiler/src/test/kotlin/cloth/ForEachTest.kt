@@ -263,15 +263,7 @@ class ForEachTest {
 	}
 
 	@Test
-	fun `snippet foreach captures once and restores outer names`(@TempDir dir: Path) {
-		val executable = LLVMEmitter().compileSnippet(parser("def value = [1, 2]; def total = 0; for (def value <- value) total += value; total + value[0]").parseSnippet(), dir.resolve("snippet"))
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(10, TimeUnit.SECONDS))
-			assertEquals("4\n", process.inputStream.readBytes().toString(Charsets.UTF_8).replace("\r\n", "\n"))
-			assertEquals(0, process.exitValue())
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+	fun `foreach captures the outer source and restores its name`(@TempDir dir: Path) {
+		assertMainOutput(dir.resolve("shadowed_source"), "def value = [1, 2]; def total = 0; for (def value <- value) total += value; println(total + value[0])", "4\n")
 	}
 }

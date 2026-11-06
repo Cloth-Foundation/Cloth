@@ -7,7 +7,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -18,7 +18,7 @@ import kotlin.test.*
 class NullabilityRulesTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("nullable-rules.co", source.trimIndent())).scanTokens()).parse()
-	private fun valid(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)
@@ -104,7 +104,7 @@ class NullabilityRulesTest {
 		for (query in listOf("bool?::type::width", "char?::type::width", "int?::type::element", "int?::type::extent", "typeinfo?::type::width")) {
 			val error = assertFailsWith<ClothDiagnostic> { valid("fn test() { $query }") }
 			assertContains(error.summary, "::${query.substringAfterLast("::")}")
-			assertNotEquals(DiagnosticCode.UNSUPPORTED_NULLABILITY, error.diagnosticCode)
+			assertEquals(DiagnosticCode.INVALID_METADATA_ACCESS, error.diagnosticCode)
 			assertLocated(error)
 		}
 		valid("fn<usize> width() = int?::type::width\nfn<usize> size(int? value) = value::size")

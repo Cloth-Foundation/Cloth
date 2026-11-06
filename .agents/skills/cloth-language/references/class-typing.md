@@ -8,12 +8,12 @@ the source behavior. See [Stage 1 syntax](class-syntax.md) and the
 
 ## Name and type resolution
 
-- [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/NamedTypes.kt)
+- [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/NamedTypes.kt)
   registers class and struct names together. Class types have nominal identity
   before fields resolve. A class value ends inline layout recursion, so a
   struct can contain a class value whose instance contains that struct.
   Inline struct cycles still fail.
-- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
   registers primary and secondary constructor signatures, instance fields,
   direct `mt` overloads and the optional destructor. Header fields precede
   ordered body initializers. Plain inputs are constructor parameters only.
@@ -30,7 +30,7 @@ the source behavior. See [Stage 1 syntax](class-syntax.md) and the
 
 ## Typed call and receiver plans
 
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   binds creation and delegation with the shared argument binder. A creation
   call selects one constructor and produces the class type. A secondary
   delegation clause binds only to the primary signature. Explicit `null`

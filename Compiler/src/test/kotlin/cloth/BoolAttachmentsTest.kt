@@ -13,8 +13,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -26,7 +25,7 @@ class BoolAttachmentsTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("bool-members.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -35,17 +34,17 @@ class BoolAttachmentsTest {
 	fun `single named registration has the ordinary read only int32 contract`() {
 		val provider = PrimitiveAttachments.BOOL
 		assertEquals(listOf(provider.TO_INT), provider.all.toList())
-		assertSame(provider.TO_INT, PrimitiveAttachments[ValueType.BOOL, "toInt"])
+		assertSame(provider.TO_INT, PrimitiveAttachments[ValueType.BOOL, "toInt", nativeTestLayout])
 		assertEquals(ValueType.BOOL, provider.TO_INT.receiver)
 		assertEquals(emptyList(), provider.TO_INT.parameters)
 		assertEquals(listOf(BuiltinParameter.Exact(ValueType.BOOL)), provider.TO_INT.overload.parameters)
 		assertEquals(ValueType.INT, provider.TO_INT.overload.returns)
 		assertEquals(BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, provider.TO_INT.overload.storage)
 		assertFailsWith<UnsupportedOperationException> { (provider.all as MutableCollection).clear() }
-		assertNull(PrimitiveAttachments[ValueType.BOOL, "toint"])
-		assertNull(PrimitiveAttachments[ValueType.BOOL, "abs"])
-		assertNull(PrimitiveAttachments[ValueType.INT, "toInt"])
-		assertNull(PrimitiveAttachments[ValueType.FLOAT, "toInt"])
+		assertNull(PrimitiveAttachments[ValueType.BOOL, "toint", nativeTestLayout])
+		assertNull(PrimitiveAttachments[ValueType.BOOL, "abs", nativeTestLayout])
+		assertNull(PrimitiveAttachments[ValueType.INT, "toInt", nativeTestLayout])
+		assertNull(PrimitiveAttachments[ValueType.FLOAT, "toInt", nativeTestLayout])
 	}
 
 	@Test
@@ -136,8 +135,8 @@ class BoolAttachmentsTest {
 		}
 		val source = Files.readString(Path.of("examples", "BoolAttachments.co"))
 		for (abi in IntegerKernelProgram.targets()) assertEquals("1\n0\n1\nint<32>\n0\n" + completion(), execute(directory, "example_${abi.architecture}", source, abi))
-		val snippet = Parser(Lexer("true.toInt()").scanTokens()).parseSnippet()
-		assertEquals(ValueType.INT, SemanticAnalyzer().analyze(snippet).typeOf((snippet.statements.single() as cloth.parser.statement.ExpressionStatement).expression))
+		val program = parseMain("true.toInt()")
+		assertEquals(ValueType.INT, FunctionAnalyzer(nativeTestLayout).analyze(program).typeOf(program.mainStatements.single()))
 	}
 
 	@Test

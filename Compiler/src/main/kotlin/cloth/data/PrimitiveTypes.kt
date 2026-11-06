@@ -138,8 +138,8 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 	val hasNullableRows: Boolean get() = element is CNullable && element.payload is CArray || (element as? CArray)?.hasNullableRows == true
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
 		val providers = super.providers(target) + (CompilerDataProviders.SIZE to ProviderResult.ArraySize(this, CUSize(target.sizeBits)))
-		val text = if (element is CNullable) element.payload.provider(CompilerDataProviders.STR.toString(), target)?.let { ProviderResult.NullableText(element, it) } else element.provider(CompilerDataProviders.STR.toString(), target)
-		return if (text?.type == CString && ProviderReceiverForm.VALUE in text.receiverForms) providers + (CompilerDataProviders.STR to ProviderResult.ArrayText(this, text)) else providers
+		val text = element.implicitText(target) ?: return providers
+		return providers + (CompilerDataProviders.STR to ProviderResult.ArrayText(this, text))
 	}
 
 	override val spelling: String get() = arraySpelling(false)

@@ -10,8 +10,7 @@ import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.WhileStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -24,7 +23,7 @@ import kotlin.test.*
 class WhileTest {
 
 	private fun parser(source: String) = Parser(Lexer(SourceFile("while.co", source.trimIndent())).scanTokens())
-	private fun valid(source: String) = FunctionAnalyzer().analyze(parser(source).parse())
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parser(source).parse())
 	private fun invalid(source: String, code: DiagnosticCode): ClothDiagnostic {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)
@@ -207,10 +206,8 @@ class WhileTest {
 	}
 
 	@Test
-	fun `while snippets execute and report only their final expression`(@TempDir dir: Path) {
-		val snippet = parser("def i = 0; while (i < 3) i++; i").parseSnippet()
-		SemanticAnalyzer().analyze(snippet)
-		assertEquals("3\n", execute(LLVMEmitter().compileSnippet(snippet, dir)).replace("\r\n", "\n"))
+	fun `while updates remain visible after the loop exits`(@TempDir dir: Path) {
+		assertMainOutput(dir.resolve("after_while"), "def i = 0; while (i < 3) i++; println(i)", "3\n")
 	}
 
 	@Test

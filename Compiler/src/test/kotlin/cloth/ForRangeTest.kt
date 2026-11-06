@@ -492,16 +492,7 @@ class ForRangeTest {
 	}
 
 	@Test
-	fun `snippet ranges execute and restore shadowed storage`(@TempDir dir: Path) {
-		val ast = parser("def i = 3; def sum = 0; for (def i <- i..5) { def local = i; sum += local }; sum + i").parseSnippet()
-		val executable = LLVMEmitter().compileSnippet(ast, dir.resolve("snippet"))
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(10, TimeUnit.SECONDS))
-			assertEquals("10\n", process.inputStream.readBytes().toString(Charsets.UTF_8).replace("\r\n", "\n"))
-			assertEquals(0, process.exitValue())
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+	fun `ranges preserve outer bindings shadowed by the counter`(@TempDir dir: Path) {
+		assertMainOutput(dir.resolve("shadowed_counter"), "def i = 3; def sum = 0; for (def i <- i..5) { def local = i; sum += local }; println(sum + i)", "10\n")
 	}
 }

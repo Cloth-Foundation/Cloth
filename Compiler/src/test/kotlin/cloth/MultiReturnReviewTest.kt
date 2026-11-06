@@ -7,7 +7,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -141,13 +141,13 @@ class MultiReturnReviewTest {
 		val functions = "fn<int, int> pair() = 1, 2\n"
 		for (operator in listOf("+=", "-=", "*=", "/=", "%=")) {
 			val diagnostic = assertFailsWith<ClothDiagnostic> {
-				FunctionAnalyzer().analyze(parse(functions + "fn main() { def x, y = pair()\nx $operator pair() }"))
+				FunctionAnalyzer(nativeTestLayout).analyze(parse(functions + "fn main() { def x, y = pair()\nx $operator pair() }"))
 			}
 			assertEquals(DiagnosticCode.MULTIPLE_RESULTS_IN_SCALAR, diagnostic.diagnosticCode, operator)
 		}
 		val cases = listOf("def x, y = pair()\nx *= if (true) { 1, 2 } else { 3, 4 }" to DiagnosticCode.MULTIPLE_RESULTS_IN_SCALAR, "def x, y := pair()\nx += 1" to DiagnosticCode.IMMUTABLE_BINDING, "def<int<8>, int> x, y = 1, 2\nx += 128" to DiagnosticCode.INTEGER_RANGE, "def<unsigned int, int> x, y = 1, 2\nx *= y" to DiagnosticCode.MIXED_INTEGERS)
 		for ((source, code) in cases) {
-			val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(functions + "fn main() { $source }")) }
+			val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(functions + "fn main() { $source }")) }
 			assertEquals(code, diagnostic.diagnosticCode, source)
 			assertTrue(diagnostic.sourceLabels.isNotEmpty())
 		}

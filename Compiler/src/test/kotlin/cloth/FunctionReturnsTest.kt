@@ -15,13 +15,17 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.semantic.*
+import cloth.semantic.declarations.DeclarationAnalyzer
+import cloth.semantic.flow.ControlFlow
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class FunctionReturnsTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("returns.co", source.trimIndent())).scanTokens()).parseDeclarations()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun function(model: FunctionSemanticModel, name: String = "test") = model.declarations.functions.single { it.name.lexeme == name }.declaration
 	private fun body(model: FunctionSemanticModel) = assertIs<BlockBody>(function(model).body).statements
 	private fun failure(source: String, code: DiagnosticCode): SemanticException {
@@ -300,12 +304,12 @@ class FunctionReturnsTest {
 	@Test
 	fun `CRLF source snapshots and flow caches remain local to each analysis`() {
 		val source = SourceFile("crlf.co", "fn<int> test() {\r\n\t1\r\n}")
-		val result = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parseDeclarations()) }
+		val result = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(source).scanTokens()).parseDeclarations()) }
 		assertEquals(DiagnosticCode.MISSING_RETURN, result.diagnosticCode)
 		assertSame(source, result.sourceLabels.first().span.source)
 		assertEquals(3, result.sourceLabels.first().span.startLine)
 		val unit = parse("fn<int> test() = 1")
-		val analyzer = FunctionAnalyzer()
+		val analyzer = FunctionAnalyzer(nativeTestLayout)
 		val first = analyzer.analyze(unit)
 		assertFailsWith<SemanticException> { analyzer.analyze(parse("fn<int> wrong() {}")) }
 		val second = analyzer.analyze(unit)
@@ -314,11 +318,11 @@ class FunctionReturnsTest {
 	}
 
 	@Test
-	fun `earlier analysis stages retain their boundaries and entry point checks remain deferred`() {
+	fun `declaration analysis precedes return validation and entry point selection`() {
 		val unit = parse("fn<int> missing() {}\nfn wrong() { return 1 }")
-		assertEquals(2, DeclarationAnalyzer().analyze(unit).functions.size)
-		assertEquals(2, CallAnalyzer().analyze(unit).declarations.functions.size)
-		assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(unit) }
+		assertEquals(2, DeclarationAnalyzer(nativeTestLayout).analyze(unit).functions.size)
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(unit) }
+		assertEquals(DiagnosticCode.MISSING_RETURN, failure.diagnosticCode)
 		analyze("fn main() {}\nfn main(string[] args) {}")
 	}
 }

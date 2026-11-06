@@ -50,7 +50,7 @@ the parent skill for current implementation boundaries and source/test routing.
   the resulting signed C int. A negative isize result such as -2 therefore
   reports PEC: -2. Native operating-system process status interpretation still
   applies; this adds no checked exit-range failure or pointer-width exit status.
-- These rules were confirmed by the user on 2026-10-30. File-level executable
-  snippets now exist only in internal test helpers, not the source-file grammar.
+- These rules were confirmed by the user on 2026-10-30. Tests use complete
+  function declarations and ordinary executable startup.
   See [development status](../../cloth-language/references/development.md) for implemented Unicode argument-array
   construction and target-specific execution evidence.

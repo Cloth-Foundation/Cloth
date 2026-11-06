@@ -23,7 +23,7 @@ fn<int> main() {
 
 ## Implementation
 
-- [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+- [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   prepends two private operands to struct method entries. They carry the
   receiver address and its owner arena. Explicit arguments, any result arena
   and omission flags follow. Functions and methods share the existing
@@ -34,13 +34,13 @@ fn<int> main() {
   The method reads the selected address after arguments run, so replacing
   the contents of a selected inline slot is visible through `self`. A
   temporary receiver gets an independent caller-owned snapshot before arguments.
-- [EmitBindings](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitBindings.kt)
+- [EmitBindings](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitBindings.kt)
   binds `self` to the supplied address. Implicit field symbols project into
   that same storage. Whole field writes, positional assignments and nested
   field or element writes copy live buffers and shape data into the receiver's
   owner arena. A method calling another method through `self` forwards that
   owner. Outgoing results copy separately into the caller's result arena.
-- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
   treats source method calls conservatively. A scalar or discarded method
   result can still accompany a stored write, so its surrounding region
   retains the owning frame's lifetime.

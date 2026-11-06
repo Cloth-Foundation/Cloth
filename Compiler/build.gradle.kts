@@ -38,28 +38,18 @@ application {
 
 tasks.named<JavaExec>("run") {
 	workingDir(rootProject.projectDir)
-}
-
-val development = sourceSets.create("development") {
-	compileClasspath += sourceSets.main.get().output
-	runtimeClasspath += sourceSets.main.get().output
-}
-
-configurations[development.implementationConfigurationName].extendsFrom(configurations.implementation.get())
-configurations[development.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
-
-kotlin.target.compilations.named(development.name) {
-	associateWith(kotlin.target.compilations.getByName("main"))
+	standardInput = System.`in`
 }
 
 tasks.register<JavaExec>("runExample") {
 	group = "application"
-	description = "Compile the CompilerSettings example and run its native executable."
-	classpath = development.runtimeClasspath
-	mainClass.set("cloth.development.RunExampleKt")
+	description = "Build and run a Cloth example through the compiler's run command."
+	classpath = sourceSets.main.get().runtimeClasspath
+	mainClass.set(application.mainClass)
 	jvmArgs(application.applicationDefaultJvmArgs)
 	workingDir(rootProject.projectDir)
 	standardInput = System.`in`
+	doFirst { setArgs(listOf("run") + args.orEmpty()) }
 }
 
 tasks.test {

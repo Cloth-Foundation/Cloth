@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -112,11 +112,11 @@ class ClassInheritanceTest {
 			"typedef<class> Base : Child()\ntypedef<class> Child : Base()",
 			"typedef<class> Object",
 		)) {
-			val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(DiagnosticCode.INVALID_CLASS_MEMBER, error.diagnosticCode)
 		}
 		val error = assertFailsWith<SemanticException> {
-			FunctionAnalyzer().analyze(structUnit("""
+			FunctionAnalyzer(nativeTestLayout).analyze(structUnit("""
 				typedef<class> Child
 				fn main() {
 				    def child = Child::new
@@ -142,7 +142,7 @@ class ClassInheritanceTest {
 			    }
 			}
 		"""
-		val first = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(reassigned)) }
+		val first = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(reassigned)) }
 		assertEquals(DiagnosticCode.UNKNOWN_MEMBER, first.diagnosticCode)
 
 		for ((declared, checked) in listOf("Object" to "Child", "Child" to "Object")) {
@@ -160,7 +160,7 @@ class ClassInheritanceTest {
 				}
 				fn main() {}
 			"""
-			val second = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(mutated)) }
+			val second = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(mutated)) }
 			assertEquals(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, second.diagnosticCode)
 		}
 	}

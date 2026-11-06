@@ -7,8 +7,8 @@ import cloth.parser.declaration.ClassDeclaration
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.expression.CastExpression
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -99,7 +99,7 @@ class OperatorDeclarationsTest {
 			fn<int> add(A a, B b) = a + b
 		"""
 		for ((source, message) in listOf(missing to "No matching overload", ambiguous to "is ambiguous")) {
-			val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(DiagnosticCode.OPERATOR_MATCH, error.diagnosticCode)
 			assertContains(checkNotNull(error.message), message)
 		}
@@ -114,7 +114,7 @@ class OperatorDeclarationsTest {
 			"operator<unsigned int<auto>> +() = 1",
 			"operator +(int other) = self + other",
 		)) {
-			val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit("typedef<class> A { $member }")) }
+			val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit("typedef<class> A { $member }")) }
 			assertEquals(DiagnosticCode.INVALID_OPERATOR_DECLARATION, error.diagnosticCode)
 		}
 		val duplicate = """
@@ -123,7 +123,7 @@ class OperatorDeclarationsTest {
 			    operator +(int<32> other) = other
 			}
 		"""
-		val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(duplicate)) }
+		val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(duplicate)) }
 		assertEquals(DiagnosticCode.DUPLICATE_METHOD, error.diagnosticCode)
 	}
 
@@ -153,7 +153,7 @@ class OperatorDeclarationsTest {
 			absent to DiagnosticCode.NULLABLE_PAYLOAD_ACCESS,
 			readOnly to DiagnosticCode.INVALID_PARAMETER_DEFAULT,
 		)) {
-			val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(code, error.diagnosticCode)
 		}
 	}

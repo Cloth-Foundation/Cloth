@@ -11,6 +11,9 @@ import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.*
+import cloth.semantic.declarations.DeclarationAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.settings.CompilerSettings
 import cloth.target.TargetLayout
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -22,16 +25,12 @@ import kotlin.test.*
 class TargetLayoutTest {
 
 	private fun unit(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseDeclarations()
-	private fun synthetic32(): TargetLayout = NativeCABI.native().layout.copy(
-		targetTriple = "i686-unknown-linux-gnu", pointerBits = 32, sizeBits = 32,
-		pointerAlignmentBits = 32, cLongBits = 32,
-	)
+	private fun synthetic32() = TargetLayout("i686-unknown-linux-gnu", pointerBits = 32, cLongBits = 32)
 
 	@Test
-	fun `native ABI facts and native semantic defaults agree`() {
+	fun `native ABI layout is accepted by explicit semantic analysis`() {
 		val native = NativeCABI.native()
-		assertEquals(native.layout, SemanticAnalyzer().analyze(Parser(Lexer("1").scanTokens()).parseSnippet()).target)
-		assertEquals(native.layout, FunctionAnalyzer().analyze(unit("fn test() {}")).target)
+		assertSame(native.layout, FunctionAnalyzer(native.layout).analyze(unit("fn test() {}")).target)
 		for (triple in listOf("x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-apple-darwin")) {
 			val abi = NativeCABI.forTarget(triple)
 			assertEquals(abi.targetTriple, abi.layout.targetTriple)
@@ -42,6 +41,22 @@ class TargetLayoutTest {
 			assertEquals(abi.longLongType.bits, abi.layout.cLongLongBits)
 			assertEquals(abi.doubleType.format, abi.layout.cDoubleFormat)
 		}
+	}
+
+	@Test
+	fun `driver applies selected target bounds before publishing an object`(@TempDir directory: Path) {
+		val source = Files.writeString(directory.resolve("target.co"), "fn<usize> limit() = 4294967296")
+		val output = directory.resolve("objects/target.obj")
+		fun settings(triple: String) = CompilerSettings(arrayOf(
+			source.toString(), output.toString(), "--emit", "object", "--target", triple,
+		))
+
+		val error = assertFailsWith<ClothDiagnostic> { compileArtifact(settings("i686-pc-windows-msvc")) }
+		assertEquals(DiagnosticCode.INTEGER_RANGE, error.diagnosticCode)
+		assertFalse(Files.exists(output.parent))
+		val artifact = compileArtifact(settings("x86_64-pc-windows-msvc"))
+		assertEquals(output, artifact)
+		assertTrue(Files.size(artifact) > 0)
 	}
 
 	@Test
@@ -62,15 +77,14 @@ class TargetLayoutTest {
 		""")
 		for (target in listOf(small, wide, small)) {
 			val declarations = DeclarationAnalyzer(target).analyze(source)
-			val calls = CallAnalyzer().analyze(declarations)
-			val functions = FunctionAnalyzer().analyze(declarations)
+			val functions = FunctionAnalyzer(declarations.target).analyze(declarations)
 			val program = ProgramAnalyzer(target).analyze(source)
-			for (model in listOf(calls, functions, program.functions)) {
+			for (model in listOf(functions, program.functions)) {
 				assertSame(target, model.target)
 				assertSame(target, model.declarations.target)
 				assertSame(target, model.types.target)
 				assertSame(target, model.types.typeResolver.target)
-				assertSame(target, model.fork().target)
+				assertSame(target, model.trial().model.target)
 				val count = model.declarations.functions.single { it.name.lexeme == "count" }
 				assertEquals(CUSize(target.sizeBits), model.typeOf(count).returns)
 				assertEquals(CUSize(target.sizeBits), model.types.providers.values.single { it.result.receiverType.arrayDimensions.isNotEmpty() }.result.type)
@@ -81,7 +95,7 @@ class TargetLayoutTest {
 	}
 
 	@Test
-	fun `fixed integer widths and snippet providers are independent of target size`() {
+	fun `fixed integer widths and providers are independent of target size`() {
 		val context = LLVMContextCreate()
 		try {
 			for (target in listOf(synthetic32(), NativeCABI.native().layout)) {
@@ -89,16 +103,16 @@ class TargetLayoutTest {
 				assertSame(target, types.target)
 				for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 					val prefix = if (unsigned) "unsigned " else ""
-					val ast = Parser(Lexer("def<$prefix int<$width>> n = 1\nn::max").scanTokens()).parseSnippet()
-					val semantics = SemanticAnalyzer(target).analyze(ast)
+					val ast = parseMain("def<$prefix int<$width>> n = 1\nn::max")
+					val semantics = FunctionAnalyzer(target).analyze(ast)
 					assertSame(target, semantics.target)
-					assertEquals(CInt(width, unsigned), semantics.typeOf(ast.statements.first()))
-					assertEquals(CInt(width, unsigned), semantics.typeOf(ast.statements.last()))
+					assertEquals(CInt(width, unsigned), semantics.typeOf(ast.mainStatements.first()))
+					assertEquals(CInt(width, unsigned), semantics.typeOf(ast.mainStatements.last()))
 					assertEquals(width, LLVMGetIntTypeWidth(types.value(CInt(width, unsigned))))
 					assertEquals(width, LLVMGetIntTypeWidth(types.storage(CInt(width, unsigned))))
 				}
-				val ast = Parser(Lexer("int::size").scanTokens()).parseSnippet()
-				assertEquals(CUSize(target.sizeBits), SemanticAnalyzer(target).analyze(ast).typeOf(ast.statements.single()))
+				val ast = parseMain("int::size")
+				assertEquals(CUSize(target.sizeBits), FunctionAnalyzer(target).analyze(ast).typeOf(ast.mainStatements.single()))
 			}
 		} finally {
 			LLVMContextDispose(context)
@@ -106,21 +120,21 @@ class TargetLayoutTest {
 	}
 
 	@Test
-	fun `semantic stages reject mixing explicit targets and cross-target fact commits`() {
+	fun `semantic stages reject mismatched targets and trials inherit their analysis target`() {
 		val source = unit("fn<int> test() = 1")
 		val small = DeclarationAnalyzer(synthetic32()).analyze(source)
-		val native = DeclarationAnalyzer().analyze(source)
-		assertFailsWith<ClothDiagnostic> { CallAnalyzer(native.target).analyze(small) }
+		val native = DeclarationAnalyzer(nativeTestLayout).analyze(source)
 		assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(native.target).analyze(small) }
-		val smallFacts = FunctionAnalyzer().analyze(small)
-		val nativeFacts = FunctionAnalyzer().analyze(native)
-		assertFailsWith<ClothDiagnostic> { smallFacts.commit(nativeFacts) }
+		val smallFacts = FunctionAnalyzer(small.target).analyze(small)
+		val trial = smallFacts.trial()
+		assertSame(small.target, trial.model.target)
+		trial.commit()
 		assertSame(small.target, smallFacts.target)
 		assertEquals(CInt(), smallFacts.typeOf(small.functions.single()).returns)
 	}
 
 	@Test
-	fun `supported injected targets install LLVM layout for functions snippets and executables`() {
+	fun `supported injected targets install LLVM layout for functions and executables`() {
 		val source = unit("fn<int> main() {\n def a = [1, 2]\n println(a::size)\n return a[0]\n}")
 		val triples = listOf("x86_64", "aarch64").flatMap { architecture -> listOf("pc-windows-msvc", "unknown-linux-gnu", "apple-darwin").map { platform -> "$architecture-$platform" } } + "i686-pc-windows-msvc"
 		for (triple in triples) {
@@ -136,8 +150,7 @@ class TargetLayoutTest {
 				assertEquals(abi.layout.pointerAlignmentBits, LLVMABIAlignmentOfType(layout, pointer) * 8)
 				emitter.verify(module)
 			}
-			val snippets = Parser(Lexer("def<int<64>> value = 7\nvalue").scanTokens()).parseSnippet()
-			for (ir in listOf(emitter.emit(source), emitter.emitExecutable(source), emitter.emitSnippet(snippets))) {
+			for (ir in listOf(emitter.emit(source), emitter.emitExecutable(source))) {
 				assertContains(ir, "target triple = \"${abi.targetTriple}\"")
 				assertContains(ir, "target datalayout = \"")
 			}

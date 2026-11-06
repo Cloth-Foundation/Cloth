@@ -9,7 +9,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.ArrayLiteral
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -19,7 +19,7 @@ import kotlin.test.*
 class ArraysTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("arrays.co", source.trimIndent())).scanTokens()).parse()
-	private fun check(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun check(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
 		val diagnostic = assertFailsWith<ClothDiagnostic> { check(source) }
 		assertEquals(code, diagnostic.diagnosticCode)

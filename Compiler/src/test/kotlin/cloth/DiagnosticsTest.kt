@@ -5,8 +5,8 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.TokenSpan
 import com.opencastsoftware.yvette.Range
 import com.opencastsoftware.yvette.Severity
@@ -33,7 +33,7 @@ internal fun assertLocated(failure: Throwable) {
 
 class DiagnosticsTest {
 
-	private fun parse(text: String, name: String = "test.co") = Parser(Lexer(SourceFile(name, text)).scanTokens()).parseSnippet()
+	private fun parse(text: String, name: String = "test.co") = parseMain(SourceFile(name, text))
 	private fun render(diagnostic: ClothDiagnostic): String = buildString {
 		DiagnosticReporter(this, GraphicalReportHandler.builder().withColours(false).withUnicode(false).withTerminalLinks(false).withTerminalWidth(100).withCauseChain(false).buildFor(this)).report(diagnostic)
 	}.replace("\r\n", "\n")
@@ -44,8 +44,8 @@ class DiagnosticsTest {
 	fun `codes are unique and severity help and source survive the Yvette contract`() {
 		assertEquals(DiagnosticCode.entries.size, DiagnosticCode.entries.map { it.id }.toSet().size)
 		val source = SourceFile("test.co", "x")
-		val diagnostic = ClothDiagnostic(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding 'x'", listOf(SourceLabel(TokenSpan(1, 1, 1, 2, source), "unknown name")), "Declare x.", Severity.Warning)
-		assertEquals("C3000", diagnostic.code())
+		val diagnostic = ClothDiagnostic(DiagnosticCode.UNKNOWN_NAME, "Unknown name 'x'", listOf(SourceLabel(TokenSpan(1, 1, 1, 2, source), "unknown name")), "Declare x.", Severity.Warning)
+		assertEquals("C3020", diagnostic.code())
 		assertEquals(Severity.Warning, diagnostic.severity())
 		assertEquals("Declare x.", diagnostic.help()!!.render())
 		assertSame(source, diagnostic.sourceCode())
@@ -56,11 +56,11 @@ class DiagnosticsTest {
 	fun `legacy Windows stderr uses readable ASCII drawing characters`() {
 		val bytes = ByteArrayOutputStream()
 		PrintStream(bytes, true, Charset.forName("windows-1252")).use { output ->
-			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse("missing")) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parse("missing")) }
 			DiagnosticReporter(output).report(failure)
 		}
 		val rendered = bytes.toString(Charset.forName("windows-1252"))
-		assertContains(rendered, "C3000")
+		assertContains(rendered, "C3020")
 		assertContains(rendered, ",-[test.co")
 		assertFalse(rendered.contains('\u001b'))
 		assertFalse(rendered.contains('?'))
@@ -69,22 +69,22 @@ class DiagnosticsTest {
 	@Test
 	fun `EX concatenation renders both operands with its stable code and actionable help`() {
 		val ast = parse("def x = 19\nx = x + 1\n\ndef<string> answer = \"The answer is: \" + x\n\nanswer", "examples/EX.co")
-		val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(ast) }
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(ast) }
 		assertEquals(DiagnosticCode.STRING_CONCATENATION, failure.diagnosticCode)
 		assertEquals(listOf(22, 42), failure.sourceLabels.map { it.span.startColumn })
 		assertEquals(listOf(39, 43), failure.sourceLabels.map { it.span.endColumn })
-		assertEquals(listOf(4, 4), failure.sourceLabels.map { it.span.startLine })
+		assertEquals(listOf(5, 5), failure.sourceLabels.map { it.span.startLine })
 		assertEquals("""
 			C3017
 
 			  x String concatenation requires two strings, got 'string' and 'int'
-			   ,-[examples/EX.co:3:1]
-			 3 | 
-			 4 | def<string> answer = "The answer is: " + x
+			   ,-[examples/EX.co:4:1]
+			 4 |${' '}
+			 5 | def<string> answer = "The answer is: " + x
 			   :                      ^^^^^^^^|^^^^^^^^   |
 			   :                              |           `-- has type 'int'
 			   :                              `-- has type 'string'
-			 5 | 
+			 6 |${' '}
 			   `----
 			  help: '+' joins two strings. Cloth does not implicitly convert numbers or other values to strings.
 
@@ -95,31 +95,32 @@ class DiagnosticsTest {
 	fun `literal and composite expression spans retain original source characters`() {
 		for (literal in listOf("true", "1.25", "'😀'", "\"a\\n😀\"", "\"\"\"first\nlast\"\"\"")) {
 			val ast = parse("def item = $literal")
-			val value = assertIs<BindingDeclaration>(ast.statements.single()).initializer
+			val value = assertIs<BindingDeclaration>(ast.mainStatements.single()).initializer
 			assertEquals(12, value.span.startColumn)
 			assertEquals("test.co", value.span.source!!.name)
-			assertEquals(if ('\n' in literal) 2 else 1, value.span.endLine)
+			assertEquals(if ('\n' in literal) 3 else 2, value.span.endLine)
 		}
-		val value = assertIs<BindingDeclaration>(parse("def x = 1 + 2 -> unsigned int<64>").statements.single()).initializer
+		val value = assertIs<BindingDeclaration>(parse("def x = 1 + 2 -> unsigned int<64>").mainStatements.single()).initializer
 		assertEquals(9, value.span.startColumn)
 		assertEquals(34, value.span.endColumn)
 	}
 
 	@Test
 	fun `CRLF tabs trailing newlines and empty sources have renderable positions`() {
-		val source = SourceFile("tabs.co", "\tdef x = 1\r\n\tx = true\r\n")
-		val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parseSnippet()) }
+		val source = SourceFile("tabs.co", "fn main() {\r\n\tdef x = 1\r\n\tx = true\r\n}\r\n")
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(source).scanTokens()).parse()) }
 		assertEquals(DiagnosticCode.TYPE_MISMATCH, failure.diagnosticCode)
+		assertSame(source, failure.sourceCode())
 		assertEquals(6, failure.sourceLabels.first().span.startColumn)
 		assertEquals(8, failure.labels().first().start().character())
 		val output = render(failure)
-		assertContains(output, "2 |     x = true")
+		assertContains(output, "3 |     x = true")
 		assertFalse('\t' in output)
 		assertFalse('\r' in output)
 		assertContains(output, "binding has type 'int'")
-		assertTrue(parse("").statements.isEmpty())
+		assertTrue(parse("").mainStatements.isEmpty())
 		for (text in listOf("def x =", "if (true) {\n", "if (true) {\r\n")) {
-			val syntax = assertFailsWith<SyntaxException> { parse(text) }
+			val syntax = assertFailsWith<SyntaxException> { Parser(Lexer(SourceFile("test.co", "fn main() {\n$text")).scanTokens()).parse() }
 			assertContains(render(syntax), "end of file")
 			assertContains(render(syntax), "test.co")
 		}
@@ -138,7 +139,7 @@ class DiagnosticsTest {
 	@Test
 	fun `binding and branch errors retain both original and conflicting locations`() {
 		for ((text, code) in listOf("def x = 1\ndef x = 2" to DiagnosticCode.DUPLICATE_BINDING, "def x := 1\nx = 2" to DiagnosticCode.IMMUTABLE_BINDING, "def x = 1\nx = false" to DiagnosticCode.TYPE_MISMATCH, "def x = if (true) { 1 } else { false }" to DiagnosticCode.BRANCH_TYPE_MISMATCH)) {
-			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse(text)) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parse(text)) }
 			assertEquals(code, failure.diagnosticCode)
 			assertEquals(2, failure.sourceLabels.size)
 			assertNotEquals(failure.sourceLabels[0].span, failure.sourceLabels[1].span)

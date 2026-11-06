@@ -12,9 +12,9 @@ import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.exception.SyntaxException
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.ProgramAnalyzer
 import cloth.semantic.ProgramKind
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.settings.CompilerSettings
 import cloth.settings.LinkOptions
 import cloth.settings.OutputKind
@@ -31,19 +31,19 @@ class ProgramEntryTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("program.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
-		val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer().analyze(parse(source)) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertEquals(code, diagnostic.diagnosticCode)
 		assertLocated(diagnostic)
 		return diagnostic
 	}
 
 	@Test
-	fun `normal parsing requires declarations while body test helpers remain explicit`() {
+	fun `file scope requires declarations and functions accept body statements`() {
 		for (source in listOf("1", "def x = 1", "x = 2", "if (true) {}", "return")) {
 			val diagnostic = assertFailsWith<SyntaxException> { parse(source) }
 			assertLocated(diagnostic)
 		}
-		assertEquals(1, Parser(Lexer("1").scanTokens()).parseSnippet().statements.size)
+		assertEquals(1, parseMain("1").mainStatements.size)
 		assertEquals(1, parse("fn main() {}").declarations.size)
 	}
 
@@ -67,7 +67,7 @@ class ProgramEntryTest {
 	@Test
 	fun `main accepts no arguments or one string array regardless of binding name and final`() {
 		for (parameters in listOf("", "string[] args", "final string[] values", "string[]? args", "final opt<string[]?> args ?: null")) {
-			val program = ProgramAnalyzer().analyze(parse("fn main($parameters) {}"))
+			val program = ProgramAnalyzer(nativeTestLayout).analyze(parse("fn main($parameters) {}"))
 			assertEquals("main", program.entryPoint?.name?.lexeme)
 			assertEquals(ProgramKind.EXECUTABLE, program.kind)
 		}
@@ -78,9 +78,9 @@ class ProgramEntryTest {
 
 	@Test
 	fun `main permits void isize and each signed integer width but rejects unsigned returns`() {
-		for (header in listOf("fn main()", "fn<void> main()")) ProgramAnalyzer().analyze(parse("$header {}"))
+		for (header in listOf("fn main()", "fn<void> main()")) ProgramAnalyzer(nativeTestLayout).analyze(parse("$header {}"))
 		for (width in ValueType.MACHINE_INTEGER_WIDTHS) {
-			val program = ProgramAnalyzer().analyze(parse("pub fn<int<$width>> main() = 0"))
+			val program = ProgramAnalyzer(nativeTestLayout).analyze(parse("pub fn<int<$width>> main() = 0"))
 			assertEquals(CInt(width), program.functions.typeOf(checkNotNull(program.entryPoint)).returns)
 		}
 		for (abi in listOf(NativeCABI.native(), NativeCABI.forTarget("i686-pc-windows-msvc"))) for (parameters in listOf("", "string[] args")) {
@@ -141,16 +141,16 @@ class ProgramEntryTest {
 
 	@Test
 	fun `library validation neither requires nor selects main and still checks function bodies`() {
-		val empty = ProgramAnalyzer().analyze(parse(""), ProgramKind.LIBRARY)
+		val empty = ProgramAnalyzer(nativeTestLayout).analyze(parse(""), ProgramKind.LIBRARY)
 		assertNull(empty.entryPoint)
-		val library = ProgramAnalyzer().analyze(parse("fn<float> main() = 1.0\nfn<bool> main(bool flag) = flag\nfn helper() {}"), ProgramKind.LIBRARY)
+		val library = ProgramAnalyzer(nativeTestLayout).analyze(parse("fn<float> main() = 1.0\nfn<bool> main(bool flag) = flag\nfn helper() {}"), ProgramKind.LIBRARY)
 		assertNull(library.entryPoint)
 		assertEquals(3, library.functions.declarations.functions.size)
 		assertEquals(ProgramKind.LIBRARY, library.kind)
 		for (type in listOf("usize", "isize")) {
-			assertNull(ProgramAnalyzer().analyze(parse("fn<$type> main() = 0"), ProgramKind.LIBRARY).entryPoint)
+			assertNull(ProgramAnalyzer(nativeTestLayout).analyze(parse("fn<$type> main() = 0"), ProgramKind.LIBRARY).entryPoint)
 		}
-		val invalid = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer().analyze(parse("fn<int> missing() {}"), ProgramKind.LIBRARY) }
+		val invalid = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(nativeTestLayout).analyze(parse("fn<int> missing() {}"), ProgramKind.LIBRARY) }
 		assertEquals(DiagnosticCode.MISSING_RETURN, invalid.diagnosticCode)
 	}
 
@@ -241,7 +241,7 @@ class ProgramEntryTest {
 	@Test
 	fun `valid string array main emits native startup`(@TempDir directory: Path) {
 		val unit = parse("fn main(string[] args) {}")
-		assertNotNull(ProgramAnalyzer().analyze(unit).entryPoint)
+		assertNotNull(ProgramAnalyzer(nativeTestLayout).analyze(unit).entryPoint)
 		assertProgram(LLVMEmitter().compile(unit, directory.resolve("args/program")), 0)
 	}
 
@@ -264,6 +264,44 @@ class ProgramEntryTest {
 		assertEquals(0, runCompiler(arrayOf(source.toString(), target.toString()), DiagnosticReporter(reports)), reports.toString())
 		assertTrue(reports.isEmpty())
 		assertProgram(ExecutableFormat.current.executablePath(target), 7)
+	}
+
+	@Test
+	fun `CLI run launches the emitted path with program arguments and stops after a failed rebuild`(@TempDir directory: Path) {
+		val source = directory.resolve("main program.co")
+		Files.writeString(source, """
+			fn<int> main(string[] args) {
+			    if (args::size != 7) return 21
+			    if (args[0] != "two words" || args[1] != "" || args[2] != "é中😀") return 22
+			    if (args[3] != "--debug" || args[4] != "--") return 23
+			    if (args[5] != "a\"b\\" || args[6] != "\"quoted\"") return 24
+			    return 7
+			}
+		""".trimIndent())
+		val target = directory.resolve("binary path/program")
+		val args = arrayOf("run", source.toString(), target.toString(), "--", "two words", "", "é中😀", "--debug", "--", "a\"b\\", "\"quoted\"")
+		val reports = StringBuilder()
+		val reporter = DiagnosticReporter(reports)
+		assertEquals(7, runCompiler(args, reporter), reports.toString())
+		assertTrue(reports.isEmpty())
+		assertTrue(Files.isRegularFile(ExecutableFormat.current.executablePath(target)))
+
+		Files.writeString(source, "fn<int> main() = true")
+		assertEquals(1, runCompiler(args, reporter))
+		assertContains(reports.toString(), DiagnosticCode.RETURN_TYPE.id)
+		assertFalse(reports.contains("\tat cloth."))
+	}
+
+	@Test
+	fun `CLI run rejects object mode before creating output`(@TempDir directory: Path) {
+		val source = directory.resolve("program.co")
+		Files.writeString(source, "fn main() {}")
+		val target = directory.resolve("objects/program.o")
+		val reports = StringBuilder()
+		val args = arrayOf("run", source.toString(), target.toString(), "--emit", "object")
+		assertEquals(1, runCompiler(args, DiagnosticReporter(reports)))
+		assertContains(reports.toString(), DiagnosticCode.RUN_REQUIRES_EXECUTABLE.id)
+		assertFalse(Files.exists(target.parent))
 	}
 
 	@Test
@@ -310,7 +348,7 @@ class ProgramEntryTest {
 	@Test
 	fun `object mode permits ordinary main overloads without synthesizing startup`() {
 		val unit = parse("fn<float> main() = 1.0\nfn<bool> main(bool flag) = flag")
-		assertNull(ProgramAnalyzer().analyze(unit, ProgramKind.LIBRARY).entryPoint)
+		assertNull(ProgramAnalyzer(nativeTestLayout).analyze(unit, ProgramKind.LIBRARY).entryPoint)
 		assertFalse(LLVMEmitter().emit(unit).contains("@main("))
 	}
 
@@ -339,7 +377,7 @@ class ProgramEntryTest {
 	@Test
 	fun `empty and CRLF entry diagnostics preserve exact source snapshots`() {
 		val source = SourceFile("crlf.co", "fn helper() {}\r\n")
-		val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer().analyze(Parser(Lexer(source).scanTokens()).parse()) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { ProgramAnalyzer(nativeTestLayout).analyze(Parser(Lexer(source).scanTokens()).parse()) }
 		assertEquals(DiagnosticCode.MISSING_MAIN, diagnostic.diagnosticCode)
 		assertSame(source, diagnostic.sourceCode())
 		assertEquals(2, diagnostic.sourceLabels.single().span.startLine)
@@ -348,8 +386,8 @@ class ProgramEntryTest {
 
 	@Test
 	fun `declaration-only function analysis still does not impose executable rules`() {
-		assertEquals(1, FunctionAnalyzer().analyze(parse("fn helper() {}")).declarations.functions.size)
-		assertEquals(2, FunctionAnalyzer().analyze(parse("fn main() {}\nfn main(string[] args) {}")).declarations.functions.size)
+		assertEquals(1, FunctionAnalyzer(nativeTestLayout).analyze(parse("fn helper() {}")).declarations.functions.size)
+		assertEquals(2, FunctionAnalyzer(nativeTestLayout).analyze(parse("fn main() {}\nfn main(string[] args) {}")).declarations.functions.size)
 	}
 
 	private fun assertProgram(executable: Path, expectedStatus: Int, expectedOutput: String = "") {

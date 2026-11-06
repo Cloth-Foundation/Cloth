@@ -244,9 +244,8 @@ class ForParsingTest {
 	}
 
 	@Test
-	fun `snippet grammar and deferred function blocks share loop parsing`() {
-		val snippet = Parser(Lexer("for (def i <- 0..2) println(i)").scanTokens()).parseSnippet()
-		assertIs<ForStatement>(snippet.statements.single())
+	fun `function bodies and deferred blocks share loop parsing`() {
+		assertIs<ForStatement>(parseMain("for (def i <- 0..2) println(i)").mainStatements.single())
 		val deferred = assertIs<BindingDeclaration>(body("fn main() { def<int> work = { for (def i <- 0..2) return i; return 0 } }").single())
 		val block = assertIs<FunctionBlockExpression>(deferred.initializer)
 		assertIs<ForStatement>(assertIs<BlockBody>(block.declaration.body).statements.first())

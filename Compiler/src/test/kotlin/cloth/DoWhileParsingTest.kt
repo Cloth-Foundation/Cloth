@@ -287,8 +287,8 @@ class DoWhileParsingTest {
 	}
 
 	@Test
-	fun `snippets and deferred blocks share parsing without claiming semantic support`() {
-		assertIs<DoWhileStatement>(parser("do {} while (false)").parseSnippet().statements.single())
+	fun `function bodies and deferred blocks parse do loops`() {
+		assertIs<DoWhileStatement>(parseMain("do {} while (false)").mainStatements.single())
 		val binding = assertIs<BindingDeclaration>(body("fn main() { def work = { do return while (false) } }").single())
 		val deferred = assertIs<FunctionBlockExpression>(binding.initializer)
 		assertIs<DoWhileStatement>(assertIs<BlockBody>(deferred.declaration.body).statements.single())

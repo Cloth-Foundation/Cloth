@@ -10,8 +10,8 @@ import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -143,9 +143,10 @@ class ClassParsingTest {
 	}
 
 	@Test
-	fun `legacy snippets report the unsupported lifecycle diagnostic`() {
-		val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parser("Counter::new()").parseSnippet()) }
-		assertEquals(DiagnosticCode.UNSUPPORTED_CLASSES, failure.diagnosticCode)
+	fun `class creation requires a declared class type`() {
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parseMain("Counter::new()", "classes.co")) }
+		assertEquals(DiagnosticCode.INVALID_CLASS_LIFECYCLE, failure.diagnosticCode)
+		assertLocated(failure)
 	}
 
 	@Test

@@ -1,49 +1,29 @@
 package cloth
 
 import cloth.diagnostics.*
-import cloth.emitter.LLVMEmitter
-import cloth.emitter.NativeCABI
-import cloth.file.ClothObject
-import cloth.lexer.Lexer
-import cloth.parser.Parser
 import cloth.settings.CompilerSettings
 import cloth.settings.OutputKind
+import cloth.util.ExecutableFormat
 import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.InvalidPathException
+import java.nio.file.Path
 import kotlin.system.exitProcess
-
-var settings: CompilerSettings? = null
 
 fun main(args: Array<String>) {
 	val status = runCompiler(args)
 	if (status != 0) exitProcess(status)
 }
 
-/** Testable CLI boundary: expected failures never escape as JVM stack traces. */
+/** Build status, or the child process status after a successful `run`. */
 fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticReporter()): Int {
-	val debug = "--debug" in args.takeWhile { it != "--" }
+	val run = args.firstOrNull() == "run"
+	val separator = args.indexOf("--").takeIf { it >= 0 } ?: args.size
+	val debug = "--debug" in args.take(separator)
 	try {
-		val compilerSettings = CompilerSettings(args)
-		settings = compilerSettings
-		val clothObject = ClothObject(compilerSettings.getSourceFile())
-		val source = SourceFile(clothObject.path.toString(), clothObject.getContents())
-		val output = compilerSettings.getOutputFile()?.toPath() ?: clothObject.path.resolveSibling(clothObject.name + if (compilerSettings.outputKind == OutputKind.OBJECT) ".o" else "")
-		val unit = Parser(Lexer(source).scanTokens()).parse()
-		val abi = compilerSettings.targetTriple?.let(NativeCABI::forTarget) ?: NativeCABI.native()
-		val destination = when (compilerSettings.outputKind) {
-			OutputKind.EXECUTABLE -> abi.executableFormat.executablePath(output)
-			OutputKind.OBJECT     -> output
-		}.toAbsolutePath().normalize()
-		if (Files.exists(destination) && Files.isSameFile(clothObject.path, destination)) {
-			throw CliErrors.outputOverwritesSource(destination)
-		}
-		val emitter = LLVMEmitter(abi, compilerSettings.linkOptions)
-		when (compilerSettings.outputKind) {
-			OutputKind.EXECUTABLE -> emitter.compile(unit, destination)
-			OutputKind.OBJECT     -> emitter.compileObject(unit, destination)
-		}
-		return 0
+		val settings = CompilerSettings(if (run) args.copyOfRange(1, separator) else args)
+		if (run && settings.outputKind != OutputKind.EXECUTABLE) throw CliErrors.runRequiresExecutable()
+		val artifact = compileArtifact(settings)
+		return if (run) launch(artifact, args.drop(separator + 1)) else 0
 	} catch (failure: ClothDiagnostic) {
 		reporter.report(failure, debug)
 		return if (failure.code().startsWith("C9")) 2 else 1
@@ -59,5 +39,40 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 	} catch (failure: LinkageError) {
 		reporter.report(InternalErrors.failure(failure), debug)
 		return 2
+	}
+}
+
+private fun launch(executable: Path, arguments: List<String>): Int {
+	val command = listOf(executable.toString()) + launchArguments(arguments)
+	val process = try {
+		ProcessBuilder(command).inheritIO().start()
+	} catch (failure: IOException) {
+		throw CliErrors.runFailed(executable, failure)
+	} catch (failure: IllegalArgumentException) {
+		throw CliErrors.runFailed(executable, failure)
+	}
+	try {
+		return process.waitFor()
+	} catch (failure: InterruptedException) {
+		Thread.currentThread().interrupt()
+		throw CliErrors.runFailed(executable, failure)
+	} finally {
+		if (process.isAlive) process.destroyForcibly()
+	}
+}
+
+private val windowsQuoteOrEnd = Regex("""(\\*)("|\z)""")
+
+private fun launchArguments(arguments: List<String>): List<String> {
+	if (ExecutableFormat.current != ExecutableFormat.PE) return arguments
+	// The default Windows JDK launcher leaves embedded quotes to the caller.
+	return arguments.map { argument ->
+		if ('"' !in argument) argument else {
+			val escaped = windowsQuoteOrEnd.replace(argument) { match ->
+				val (backslashes, quote) = match.destructured
+				backslashes.repeat(2) + if (quote.isEmpty()) "" else "\\\""
+			}
+			"\"$escaped\""
+		}
 	}
 }

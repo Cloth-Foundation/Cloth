@@ -16,17 +16,16 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.ResultShape
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class ForSemanticsTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("for-semantics.co", source.trimIndent())).scanTokens()).parse()
-	private fun valid(source: String) = FunctionAnalyzer().analyze(unit(source))
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(unit(source))
 	private fun loop(facts: FunctionSemanticModel, name: String = "i") = facts.types.loops.keys.single { it.binding.name.lexeme == name }
 	private fun bindingType(source: String, name: String = "i"): ValueType {
 		val facts = valid(source)
@@ -159,7 +158,7 @@ class ForSemanticsTest {
 		val parsed = unit("fn main() { def i = 5; for (def i <- i..10; i += 1) { def i = 7; println(i) }; println(i) }")
 		val statements = assertIs<BlockBody>(assertIs<FunctionDeclaration>(parsed.declarations.single()).body).statements
 		val syntax = assertIs<ForStatement>(statements[1])
-		val facts = FunctionAnalyzer().analyze(parsed)
+		val facts = FunctionAnalyzer(nativeTestLayout).analyze(parsed)
 		val outer = facts.declarations.symbolOf(assertIs<BindingDeclaration>(statements[0]))
 		val received = facts.declarations.symbolOf(syntax)
 		val local = facts.declarations.symbolOf(assertIs<BindingDeclaration>(syntax.body.statements[0]))
@@ -224,12 +223,12 @@ class ForSemanticsTest {
 	}
 
 	@Test
-	fun `snippet loops share exact inference and lexical isolation without extending call syntax`() {
-		val ast = Parser(Lexer("def i = 8; for (def i <- 0..2; i++) { def copy = i }; i").scanTokens()).parseSnippet()
-		val facts = SemanticAnalyzer().analyze(ast)
-		assertEquals(ValueType.INT, facts.loopOf(assertIs<ForStatement>(ast.statements[1])).bindingType)
-		assertEquals(ValueType.INT, facts.typeOf(assertIs<ExpressionStatement>(ast.statements[2]).expression))
-		val arrays = Parser(Lexer("for (def row <- [[1, 2]]) for (def value <- row) value").scanTokens()).parseSnippet()
-		assertEquals(2, SemanticAnalyzer().analyze(arrays).loops.size)
+	fun `range and nested foreach loops infer their bindings in function bodies`() {
+		val unit = parseMain("def i = 8; for (def i <- 0..2; i++) { def copy = i }; i")
+		val facts = FunctionAnalyzer(nativeTestLayout).analyze(unit)
+		assertEquals(ValueType.INT, facts.types.loopOf(assertIs<ForStatement>(unit.mainStatements[1])).bindingType)
+		assertEquals(ValueType.INT, facts.typeOf(assertIs<ExpressionStatement>(unit.mainStatements[2]).expression))
+		val arrays = parseMain("for (def row <- [[1, 2]]) for (def value <- row) value")
+		assertEquals(2, FunctionAnalyzer(nativeTestLayout).analyze(arrays).types.loops.size)
 	}
 }

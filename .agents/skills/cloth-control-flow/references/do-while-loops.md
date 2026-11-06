@@ -215,29 +215,25 @@ and publication checks are in the
 
 ## Stage 2: scopes, types and jump resolution (2026-11-03)
 
-- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+- [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
   resolves the body in a child lexical scope with this loop's target active.
   It then removes that target and resolves the condition in the surrounding
   scope. Body locals cannot leak into the condition or following code; shadowed
   outer names remain available. Existing function/deferred boundaries reset
   jump context. Earlier-parameter read-only/default rules remain enforced.
-- [ExpressionTyping.checkDoWhile](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping.checkDoWhile](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   checks the body first, leaves its scope/target, checks a scalar bool or valid
   non-continuing condition, and records ResultShape.Empty. The trailing test
   reuses C3014 with Keywords.WHILE; void/multiple results keep their existing
   diagnostics. Unreachable source remains checked, and traversal stops on the
   first detected error. Existing separate compiler passes retain their order.
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   dispatches do-while from ordinary/deferred functions, defaults and overload
   trials. A probe uses ordinary non-probe loop checking so intrinsic body/test
   diagnostics cannot become a generic candidate mismatch. Generic loop-target
   maps and statement results survive existing semantic forks/commits.
-- [SemanticAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/SemanticAnalyzer.kt)
-  reuses the checker and generic body scope/target hook for legacy snippets.
-  It retains the snippet API's existing nullable/deferred-form boundaries.
-- Declaration, call and function analysis all accept the Stage 2 slice. Stage 2
-  added semantic checking only; Stage 4 below adds emission. A maintained runnable
-  example follows in Stage 5 below.
+- Stage 2 added semantic checking. Stage 4 added emission, and Stage 5 records
+  a maintained runnable example.
 
 ### Conservative flow bridge and remaining Stage 3 work
 
@@ -273,7 +269,7 @@ in the [Stage 2 development record](../../cloth-language/references/development.
 
 ### Completion and backedge reachability
 
-[ControlFlowModel](../../../../Compiler/src/main/kotlin/cloth/semantic/ControlFlowModel.kt)
+[ControlFlowModel](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt)
 models unconditional first body entry. Only body fallthrough or reachable body
 continues reach the condition. Ordinary exits are reachable body breaks and
 reachable completing tests that may be false. A syntax-proven true test without
@@ -292,7 +288,7 @@ general termination analysis.
 
 ### Nullable and represented-type path joins
 
-[NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+[NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
 invalidates repeated body/test writes before body checking when a backedge is
 possible, including nested loops and transitive deferred captures. A first body
 never receives the trailing test's true facts. Provably nonrepeating bodies may
@@ -307,7 +303,7 @@ An unreachable test is still analyzed for source checking, but supplies no exit
 facts. Nested condition jumps carry the facts captured at the jump to their
 enclosing body's join. Returned paths contribute no normal exit facts.
 
-[MetadataAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/MetadataAnalysis.kt)
+[MetadataAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/MetadataAnalysis.kt)
 forgets visible mutable represented-type facts before a body that may repeat,
 then joins body-fallthrough and continue snapshots for its test. It joins only
 reachable break and false-test snapshots at the exit. Disagreement means unknown,
@@ -353,7 +349,7 @@ use the facts and checked recipes established by Stage 3.
 
 ### Proven cleanup and retained publication
 
-[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
 recognizes nested do-while statements in iteration proofs and adds a whole-loop
 proof over body plus condition. Body and test regions are independently proven:
 safe bodies release storage before testing, including on continue, and safe

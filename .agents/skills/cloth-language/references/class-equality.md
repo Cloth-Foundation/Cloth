@@ -46,14 +46,14 @@ typedef<class> Account (def<int> id) {
 ## Implementation ownership
 
 - [OperatorRules](../../../../Compiler/src/main/kotlin/cloth/semantic/OperatorRules.kt)
-  checks class declaration forms. [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+  checks class declaration forms. [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   enforces the class signatures and selects a static identity overload.
-  [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+  [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   records class comparisons independently of ordinary operators and primitive
   nullable equality.
 - [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
   shares presence guards with nullable equality and separates raw identity
-  from checked accesses. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  from checked accesses. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   emits private dispatch functions for logical comparisons. The functions use
   checked class tags and ordinary callable signatures. The lifetime pass
   diagnoses provably stale checked operands and leaves conditional or escaped

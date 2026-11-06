@@ -13,7 +13,7 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.IndexExpression
 import cloth.parser.expression.IntegerLiteral
 import cloth.parser.statement.ElementAssignmentStatement
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -23,7 +23,7 @@ import kotlin.test.*
 class ArrayAssignmentTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("array-writes.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
 		val diagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }
 		assertEquals(code, diagnostic.diagnosticCode)
@@ -259,17 +259,8 @@ class ArrayAssignmentTest {
 	}
 
 	@Test
-	fun `legacy snippets use the same copied storage and indexed write pipeline`(@TempDir directory: Path) {
-		val ast = Parser(Lexer("def a = [1]\ndef b = a\nb[0] = 10\na[0] + b[0]").scanTokens()).parseSnippet()
-		val executable = LLVMEmitter().compileSnippet(ast, directory.resolve("snippet"))
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
-			assertEquals(0, process.exitValue())
-			assertEquals("11" + System.lineSeparator(), process.inputStream.readBytes().toString(Charsets.UTF_8))
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+	fun `indexed writes preserve independently copied arrays`(@TempDir directory: Path) {
+		assertMainOutput(directory.resolve("indexed_copy"), "def a = [1]\ndef b = a\nb[0] = 10\nprintln(a[0] + b[0])", "11\n")
 	}
 
 	@Test

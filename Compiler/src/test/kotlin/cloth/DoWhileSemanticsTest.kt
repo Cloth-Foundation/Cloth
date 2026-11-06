@@ -11,6 +11,9 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.*
+import cloth.semantic.declarations.DeclarationAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import cloth.token.TokenSpan
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -18,7 +21,7 @@ import kotlin.test.*
 class DoWhileSemanticsTest {
 
 	private fun parser(source: String) = Parser(Lexer(SourceFile("do-while-semantics.co", source.trimIndent())).scanTokens())
-	private fun valid(source: String) = FunctionAnalyzer().analyze(parser(source).parse())
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parser(source).parse())
 	private fun body(facts: FunctionSemanticModel, name: String = "main") = assertIs<BlockBody>(facts.declarations.functions.single { it.name.lexeme == name }.declaration.body).statements
 	private fun loop(facts: FunctionSemanticModel, name: String = "main") = body(facts, name).filterIsInstance<DoWhileStatement>().single()
 	private fun chain(statement: Statement) = assertIs<IfExpression>(assertIs<ExpressionStatement>(statement).expression)
@@ -37,17 +40,14 @@ class DoWhileSemanticsTest {
 	}
 
 	@Test
-	fun `declaration call and function entry points share typed empty-result loops`() {
+	fun `function analysis retains declaration identities for empty-result loops`() {
 		val source = "fn main() { def flag = true; do { flag = false } while (flag) }"
-		val declarations = DeclarationAnalyzer().analyze(parser(source).parse())
-		val calls = CallAnalyzer().analyze(declarations)
-		val functions = FunctionAnalyzer().analyze(declarations)
-		for (facts in listOf(calls, functions)) {
-			val parsed = loop(facts)
-			assertEquals(ValueType.BOOL, facts.typeOf(parsed.condition))
-			assertEquals(ResultShape.Empty, facts.resultOf(parsed))
-			assertSame(declarations.symbolOf(assertIs<BindingDeclaration>(body(facts)[0])), declarations.symbolOf(assertIs<NameExpression>(parsed.condition)))
-		}
+		val declarations = DeclarationAnalyzer(nativeTestLayout).analyze(parser(source).parse())
+		val facts = FunctionAnalyzer(declarations.target).analyze(declarations)
+		val parsed = loop(facts)
+		assertEquals(ValueType.BOOL, facts.typeOf(parsed.condition))
+		assertEquals(ResultShape.Empty, facts.resultOf(parsed))
+		assertSame(declarations.symbolOf(assertIs<BindingDeclaration>(body(facts)[0])), declarations.symbolOf(assertIs<NameExpression>(parsed.condition)))
 	}
 
 	@Test
@@ -214,19 +214,18 @@ class DoWhileSemanticsTest {
 	}
 
 	@Test
-	fun `snippet checking reuses body scopes bool typing and local jump targets`() {
-		val fragment = parser("def count = 0; do { count++; continue } while (count < 3); count").parseSnippet()
-		val facts = SemanticAnalyzer().analyze(fragment)
-		val parsed = assertIs<DoWhileStatement>(fragment.statements[1])
+	fun `do loops resolve body scopes bool typing and local jump targets`() {
+		val facts = FunctionAnalyzer(nativeTestLayout).analyze(parseMain("def count = 0; do { count++; continue } while (count < 3); count"))
+		val parsed = loop(facts)
 		assertEquals(ResultShape.Empty, facts.resultOf(parsed))
 		assertEquals(ValueType.BOOL, facts.typeOf(parsed.condition))
-		assertSame(parsed.loopTarget, facts.targetOf(assertIs<LoopJumpStatement>(parsed.body.statements[1])))
+		assertSame(parsed.loopTarget, facts.types.targetOf(assertIs<LoopJumpStatement>(parsed.body.statements[1])))
 		for ((source, code) in listOf(
 			"do {} while (1)" to DiagnosticCode.NON_BOOLEAN_CONDITION,
-			"do def local = 1 while (false); local" to DiagnosticCode.UNKNOWN_BINDING,
+			"do def local = 1 while (false); local" to DiagnosticCode.UNKNOWN_NAME,
 			"do {} while (if (true) { break } else { false })" to DiagnosticCode.INVALID_LOOP_JUMP,
 		)) {
-			val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(parser(source).parseSnippet()) }
+			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parseMain(source)) }
 			assertEquals(code, failure.diagnosticCode, failure.summary)
 			assertLocated(failure)
 		}

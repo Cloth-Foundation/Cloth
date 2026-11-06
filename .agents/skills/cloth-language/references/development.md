@@ -1100,6 +1100,209 @@ Verification on Windows x64:
   Temporary verification scripts, fixtures, binaries and validation dependencies
   were removed afterward.
 
+### Shared compiler driver and run command (2026-11-06)
+
+The CLI's build and run modes share `compileArtifact(CompilerSettings)`. The
+driver returns the actual emitted path. `cloth run` separates program
+arguments at `--`, validates executable mode before compilation and starts
+the returned path with inherited console streams. The Gradle `runExample`
+task now invokes the same command. [Build and run contract](../../cloth-toolchains/SKILL.md#build-and-run-commands)
+
+On Windows, `ProgramEntryTest`, `DiagnosticsTest`, `CompilerSettingsTest`,
+`NativeCABITest` and `ToolchainResolverTest` passed 57 tests in the focused
+run. The new regressions check a spaced output path, Unicode and literal
+arguments, exit status 7, stale-binary prevention, and object rejection before
+output creation. `:Compiler:run` built and ran `MultiReturns.co` on x64 with
+`Cloth: 8` and `PEC: 0`. `:Compiler:runExample` built and ran `Functions.co`
+on x86 with `PEC: 0`. The smoke artifacts' PE machine fields were `0x8664`
+and `0x014C`. Native launcher verification covers Windows x64 and x86.
+The full `:Compiler:test --offline --console=plain --no-daemon` run passed
+1,434 tests in 127 suites with zero failures, errors or skips. Skill metadata
+and changed links were checked directly because the validator requires PyYAML.
+
+### Production path test pilot (2026-11-06)
+
+`BindingsTest`, `AssignmentOperatorsTest` and `ConditionalsTest` wrap body
+fixtures in complete Cloth functions. Syntax tests inspect parsed statements,
+semantic tests use `FunctionAnalyzer` and IR tests use declaration module
+emission. Native fixtures use `compileArtifact`, observe values with explicit
+output calls and assert the real completion report. The same process runner
+serves the existing struct fixtures. [Program fixtures](../../../../Compiler/src/test/kotlin/cloth/ProgramFixtures.kt)
+
+The migrated expectations use the production diagnostic `C3020` for unknown
+names. The type-check fixtures exercise `1 is void` producing `false`
+and reject the invalid `void?` target. The negative integer power case checks
+the fatal exit without a completion report. Compiler semantics were preserved.
+
+On Windows x64, all 74 tests in the three pilot suites passed, together with
+the four `StructEmissionTest` cases. The struct native fixtures also ran on
+Windows x86.
+The focused Gradle run used `:Compiler:test` with the four named `--tests`
+filters and `--offline --console=plain --no-daemon`.
+The full `:Compiler:test --offline --console=plain --no-daemon` run passed
+1,434 tests in 127 suites with zero failures, errors or skips.
+
+### Production path reception tests (2026-11-06)
+
+`MultiAssignmentTest` folds the old snippet-only mutability check into the
+production target checks. Each immutable-target diagnostic locates both the
+declaration and the assignment. `DestructuringTest` checks positional plans
+for declarations, assignments and discards inside one function. Its metadata
+swap case verifies that a binding holding string metadata after the swap
+cannot expose an array element type. The native fixture observes the
+received values and `PEC`, then compiles the same body as an object.
+[Multi-assignment tests](../../../../Compiler/src/test/kotlin/cloth/MultiAssignmentTest.kt) ·
+[Destructuring tests](../../../../Compiler/src/test/kotlin/cloth/DestructuringTest.kt)
+
+The focused `:Compiler:test` run passed 97 tests in eight suites with zero
+failures, errors or skips. Filters covered `MultiAssignmentTest`,
+`DestructuringTest`, `MultiBindingsTest` and `cloth.MultiReturn*Test` with
+`--offline --console=plain --no-daemon`. Coverage included Windows x64/x86
+execution and verified multi-result IR for all nine profiles.
+
+### Production path fixture migration (2026-11-06)
+
+The compiler API cleanup's second stage moved the remaining snippet and
+call-only fixtures to complete source units. Parser checks inspect real
+function bodies. Semantic checks use `FunctionAnalyzer`, and
+`DeclarationAnalyzer` serves tests of scope and name resolution.
+Native body fixtures use the compile driver, explicit `print` or `println`,
+and exact UTF-8 output with the normal process completion report. Runtime
+failure cases check the actual status and diagnostic. ABI and fault injection
+tests can still compose LLVM modules directly.
+[Compiler fixture guidance](../SKILL.md#compiler-fixtures)
+
+Removed `ASTStructure`, `parseSnippet`, `SemanticAnalyzer` and the snippet
+emitter and printer. `FunctionAnalyzer` now owns full call and body checking.
+Operators without declared results infer a return type before the ordinary
+body and return checks.
+Binding storage and lowering take `BindingSymbol` throughout. The migrated
+fixtures use C3020 for unresolved names and check production diagnostics with
+their source labels. C3000, C3060, C3077 and C3086 remain reserved.
+[Function analyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt) ·
+[Binding storage](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitBindings.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,431 tests in 127 suites with zero failures, errors or skips.
+The three removed cases covered retired snippet or call-only behavior.
+The suite ran native Windows x64 and x86 fixtures. Portable fixtures such as
+`WhileTest` also verified IR and object emission for all nine supported targets.
+A final focused run passed all 18 tests in `StringAttachmentsTest` and
+`NativeCABITest` after renaming a fixture and retaining the cast guard's
+`puts` ABI assertion. Skill metadata and changed links were checked directly.
+
+### Semantic facts and overload trials (2026-11-06)
+
+`FunctionAnalyzer` validates declared contracts and runs the semantic passes.
+`BodyTyping` checks bodies, and the call and operator resolvers own their
+separate ranking rules. `ResultShape` owns result facts. Scalar queries derive
+from the stored shape. Trial snapshots use identity-keyed tables registered
+at their declarations. A trial publishes to its parent, including any nested
+call choices, inferred operator signatures and completed width specializations.
+Each width gets its own expression facts even when the syntax is shared.
+[Body facts and overload trials](../../cloth-functions/SKILL.md#body-facts-and-overload-trials)
+
+The specialization regression reproduced an abandoned width appearing in the
+emitter's callable list. The fixed case checks nested commits, distinct widths,
+and a recursive annotated context. The bare value-target `is` fixture checks
+operand identities before typing and the selected receiver after typing.
+The flow passes share eager operand order and keep their own continuation and
+effect rules. Metadata slots use resolved binding identities for declarations,
+grouped targets, assignments and loop bindings.
+[Operand contexts](operand-contexts.md) ·
+[Eager operands](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/ExpressionOperands.kt)
+
+The focused overload and ordered-result run passed 85 tests in six suites.
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,433 tests in 127 suites with zero failures, errors or skips.
+`OperandContextTest` ran native Windows x64 and x86 fixtures and verified IR
+and object emission for all nine supported targets. The full run also covered
+nullable proofs, metadata, class lifetimes, temporary cleanup and loop completion.
+Skill metadata and changed links were checked directly.
+
+The overload benchmark reused one parsed unit with 100 calls to four overloads.
+Each call contains an `if` argument with a nested call that requires a wider
+literal context. On OpenJDK 25 with a 512 MiB heap, 12 warmups and 15 samples,
+median thread allocation fell from 122,635,104 to 78,945,408 bytes per analysis.
+Median elapsed analysis time fell from 36.15 to 21.82 ms in those local runs.
+The samples measure the complete declaration and body analysis of that unit.
+Trial storage uses eager copies.
+
+### Shared value transfer and text recipes (2026-11-06)
+
+Bindings, rows and class fields use `EmitArray.constrain` to apply declared
+extents or merge retained dimensions. Bindings retain live shape descriptors.
+Rows in nullable-row arrays share their parent's shape vector. Nullable fields
+preserve a witness across null and arena replacement. `EmitValueTransfer` owns
+frame snapshots and one-use freshness for arrays and result carriers. Class field storage
+owns allocation replacement and releases superseded buffers after copying.
+[Shape operation](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt) ·
+[Value transfer](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitValueTransfer.kt)
+
+`EmitPlaces` saves indices before the source runs and replays destinations
+whose storage can move. Grouped declarations and assignments evaluate a
+producer once and prepare positional results before publishing stores.
+Broadcast stores retain their source order. The field shape fixture checks
+a known extent error before emission, a valid replacement after null, and
+a runtime mismatch that stops after the preceding output.
+[Place lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitPlaces.kt) ·
+[Grouped reception](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStatement.kt)
+
+`implicitText` binds print arguments, interpolation parts and array elements.
+Interpolation keeps its recipe in the semantic model. All three paths
+use `NullableText` for optional values, while explicit `::str` uses source
+receiver checks. Nested array rows write directly into the shared buffer,
+and effectful leaf formatters run once before the writing pass.
+[Output contract](../../cloth-output/SKILL.md) ·
+[Recipe regression](../../../../Compiler/src/test/kotlin/cloth/BuiltinFunctionsTest.kt)
+
+The transfer and replay run passed 178 tests in 10 suites. The formatting
+run passed 75 tests in nine suites. The focused runs exercised Windows x64
+and x86 binaries and verified IR and object emission for all nine supported
+targets. The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,434 tests in 127 suites with zero failures, errors or skips.
+Skill metadata and changed links were checked directly.
+
+### Compiler package ownership and target handoff (2026-11-06)
+
+Declaration resolution and named types live in `semantic.declarations` beside
+the existing `semantic.symbols` identities. Body and call typing, candidate
+trials and operator specialization live in `semantic.typing`. Completion,
+presence, metadata and class lifetimes live in `semantic.flow`. Constructor
+initializer operands come from the declaration model and feed both presence
+and metadata analysis. Shared plans and program entry validation live in
+`semantic`.
+
+The backend groups frames, arguments, results and entry adapters in
+`emitter.callables`. Places, bindings, array shapes, copies and arenas live in
+`emitter.storage`. Provider emission, metadata materialization, formatting
+and string operations live in `emitter.text`. These packages organize
+imports within the existing Compiler module. The owning feature skills
+link to the moved sources.
+[Package ownership](../SKILL.md#compiler-package-ownership)
+
+The shared driver resolves the ABI, then passes its layout to the program
+analyzer and hands the checked model to the emitter. Semantic analysis,
+provider lookup, built-in binding and LLVM type lowering take an explicit
+layout. Tests can inject synthetic layouts or use the selected native ABI's
+layout. The emitter checks agreement between the analyzed layout and its ABI.
+[Driver](../../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt) ·
+[Target layout](../../../../Compiler/src/main/kotlin/cloth/target/TargetLayout.kt)
+
+The focused run passed 45 tests in `TargetLayoutTest`, `CompilerSettingsTest`,
+`ProgramEntryTest` and `WindowsX86Test`. The driver regression rejects a
+`usize` literal of 4294967296 on x86 before creating an output directory,
+then emits an x64 object from the same source.
+[Target regression](../../../../Compiler/src/test/kotlin/cloth/TargetLayoutTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,435 tests in 127 suites with zero failures, errors or skips.
+The publication and x86 suites verified IR and objects for all nine supported
+profiles and ran native binaries on Windows x64 and x86. The updated skill
+metadata and links passed direct checks. The bundled validator requires
+PyYAML, which was unavailable in the test environment.
+[Operator publication suite](../../../../Compiler/src/test/kotlin/cloth/OperatorPublicationTest.kt)
+
 ### While loops (2026-11-02)
 
 Implemented strict-bool while conditions with pre-body/repeated testing,
@@ -4550,7 +4753,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   In a cast, only a complete `<number>` suffix is consumed as a width; other
   following `<` tokens remain available for ordering comparisons.
   General generic type arguments are not implemented.
-- `cloth/semantic/DeclarationAnalyzer.kt` collects declaration signatures and
+- `cloth/semantic/declarations/DeclarationAnalyzer.kt` collects declaration signatures and
   resolves function-body names through `DeclarationModel`, using the symbols
   and lexical scopes in `cloth/semantic/symbols`. This path consumes `SourceUnit`
   separately from the legacy snippet analyzer and does not select overloads or
@@ -4563,7 +4766,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   snippet binding behavior is retained. Return-flow checks are available through
   `FunctionAnalyzer`; native scalar function emission is implemented through
   the declaration-based LLVM entry points.
-- `cloth/semantic/FunctionAnalyzer.kt` enables the full implemented function
+- `cloth/semantic/typing/FunctionAnalyzer.kt` enables the full implemented function
   checker, adding return contracts and `ControlFlowModel` completion facts for
   function emission. Earlier declaration/call APIs retain their stage
   boundaries.
@@ -4588,7 +4791,7 @@ Inspected from repository source through 2026-10-30; recheck before relying on i
   Bindings become available after their initializer is checked;
   forward/self reads are currently rejected. This is implementation coverage,
   not a decision about declaration resolution for the broader language.
-- `cloth/emitter/types/EmitFunctions.kt` declares every scalar/void function
+- `cloth/emitter/callables/EmitFunctions.kt` declares every scalar/void function
   signature before emitting bodies. `LLVMEmitter.emit(SourceUnit)` and
   `compileObject(SourceUnit, Path)` use `FunctionAnalyzer` and this emitter;
   they generate verified declaration modules without synthesizing a native

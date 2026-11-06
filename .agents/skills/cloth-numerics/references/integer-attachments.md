@@ -32,10 +32,10 @@ owns the API for all signed/unsigned fixed widths 1..65536 and distinct target
   pre-typing presence analysis and non-continuing receiver lookup; it is not an
   exhaustive list of receiver specializations. Registry entries retain no LLVM
   handles or compilation state. Published catalogs remain read-only.
-- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   gives bounds the receiver's numeric context and radix ordinary `int` context.
   Already-typed values still require exact identities. It applies the shared
-  [RangeConstants](../../../../Compiler/src/main/kotlin/cloth/semantic/RangeConstants.kt)
+  [RangeConstants](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/RangeConstants.kt)
   closed integer evaluator after operand typing: literals, constant providers,
   integer casts, signs and basic arithmetic with per-operation wrapping. Binding
   reads/calls are not executed or propagated by this evaluator. They retain runtime

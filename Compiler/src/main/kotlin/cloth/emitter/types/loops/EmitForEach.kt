@@ -2,12 +2,13 @@ package cloth.emitter.types.loops
 
 import cloth.data.CUSize
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitBindings
+import cloth.emitter.storage.EmitArray
+import cloth.emitter.storage.EmitBindings
 import cloth.emitter.types.EmitExpression
-import cloth.emitter.types.primitives.EmitArray
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
-import cloth.semantic.SemanticModel
+import cloth.semantic.symbols.LoopBindingSymbol
+import cloth.semantic.typing.SemanticModel
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
@@ -25,13 +26,13 @@ internal class EmitForEach(
 	private val expressions: EmitExpression,
 ) {
 
-	fun emit(statement: ForStatement, key: Any) {
+	fun emit(statement: ForStatement, key: LoopBindingSymbol) {
 		val source = (statement.source as ForSource.Elements).expression
 		val raw = expressions.emit(source)
 		if (expressions.terminated()) return
 		val plan = semantics.loopOf(statement)
 		val arrayType = checkNotNull(plan.arraySourceType)
-		val snapshot = expressions.transferArrayValue(checkNotNull(raw), arrayType)
+		val snapshot = expressions.valueTransfer.transfer(checkNotNull(raw), arrayType)
 		val arrays = EmitArray(context, builder, abi)
 		val size = CUSize(abi.layout.sizeBits)
 		val length = LLVMBuildExtractValue(builder, snapshot, 1, "foreach_count")
@@ -59,8 +60,8 @@ internal class EmitForEach(
 			expressions.emitIteration(statement) {
 				bindings.withScope {
 					val element = arrays.index(snapshot, arrayType.element, index, size)
-					val received = expressions.snapshotValue(expressions.adaptValue(element, arrayType.element, plan.bindingType), plan.bindingType)
-					bindings.declare(key, statement.binding.name.lexeme, plan.bindingType, received)
+					val received = expressions.valueTransfer.snapshot(expressions.adaptValue(element, arrayType.element, plan.bindingType), plan.bindingType)
+					bindings.declare(key, plan.bindingType, received)
 					bindings.withScope { expressions.emitStatements(statement.body.statements) }
 				}
 			}

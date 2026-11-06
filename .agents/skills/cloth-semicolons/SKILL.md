@@ -32,7 +32,7 @@ fn<int> main() { stop(); def x = value(); return x; }
   This also applies to unbraced branches: `if (flag) return 1 else return 2`
   is valid inside an int-returning function, while a semicolon before `else`
   ends the chain. See [conditional bodies](../cloth-control-flow/references/semantics.md#conditional-expressions-and-statements).
-- Empty statements inside function bodies and internal snippet bodies are
+- Empty statements inside function bodies are
   tolerated, as in C/Java statement contexts. They create no AST nodes and do
   not change a branch's final value. A semicolon after a complete standalone
   conditional is an empty statement, not part of the conditional chain.
@@ -124,7 +124,7 @@ and omitted-clause forms; ForIntegrationTest checks their native x64/x86 executi
 [SemicolonsTest](../../../Compiler/src/test/kotlin/cloth/SemicolonsTest.kt) covers
 valid placement, malformed syntax, body-sensitive function termination,
 conditional-chain boundaries, source spans, ordered results, final branch values,
-snippet grammar, first-error locations, literal preservation, verified LLVM IR
+statement grammar, first-error locations, literal preservation, verified LLVM IR
 and a native Windows x64 program returning 11. The user's array-printing example
 is rejected at its final semicolon and emits verified IR after removing it.
 
