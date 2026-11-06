@@ -12,8 +12,8 @@ import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.expression.StructLiteral
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -22,7 +22,7 @@ import kotlin.test.assertSame
 
 class StructCallResolutionTest {
 
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(Parser(Lexer(SourceFile("struct-calls.co", source.trimIndent())).scanTokens()).parse())
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("struct-calls.co", source.trimIndent())).scanTokens()).parse())
 
 	@Test
 	fun `candidate field contexts select a unique overload and commit its nested plans`() {

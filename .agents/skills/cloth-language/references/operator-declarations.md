@@ -57,10 +57,10 @@ typedef<class> Player (def<int> points) {
   checks the supported declaration shapes. C3093 reports invalid operator
   declarations and staged forms. Duplicate ordinary operator declarations use
   C3083 and distinguish the receiver position.
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [OperatorResolution](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/OperatorResolution.kt)
   probes operands and candidates in separate semantic facts, commits the
   selected call, and reports C3094 for a missing or ambiguous match.
-  [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   writes the receiver and argument slots while preserving source evaluation
   order. Lifetime checks treat the selected operator as a call, and the
   nullable and temporary analyses account for its potential effects. Default

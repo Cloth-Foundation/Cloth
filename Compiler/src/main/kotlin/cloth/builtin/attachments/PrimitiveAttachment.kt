@@ -47,18 +47,17 @@ internal object PrimitiveAttachments {
 	val CHAR = CharAttachments()
 	private val integers = ConcurrentHashMap<Pair<CInteger, Int>, IntegerAttachments>()
 	private fun integers(type: CInteger, sizeBits: Int) = integers.computeIfAbsent(type to sizeBits) { IntegerAttachments(type, sizeBits) }
-	val STRING: StringAttachments get() = strings.getValue(TargetLayout.native().sizeBits)
-	val all: List<Attachment> get() = all(TargetLayout.native())
 
 	// Name/result catalog for pre-typing presence and non-continuing receivers.
 	// Integer families have identical names and nullability; one representative
 	// avoids eagerly materializing 131,072 fixed receiver types for these passes.
 	private val definitions = strings.mapValues { (sizeBits, provider) -> Collections.unmodifiableList(provider.all.toList() + integers(ValueType.INT, sizeBits).all + floats.values.flatMap { it.all } + BOOL.all + CHAR.all) }
 	fun all(target: TargetLayout): List<Attachment> = definitions.getValue(target.sizeBits)
+	fun string(target: TargetLayout): StringAttachments = strings.getValue(target.sizeBits)
 	fun integer(type: CInteger, target: TargetLayout): IntegerAttachments = integers(type, target.sizeBits)
 	fun floating(type: CFloat): FloatAttachments = floats.getValue(type)
-	operator fun get(receiver: ValueType, name: String, target: TargetLayout = TargetLayout.native()): Attachment? = when (receiver) {
-		ValueType.STRING -> strings.getValue(target.sizeBits)[name]
+	operator fun get(receiver: ValueType, name: String, target: TargetLayout): Attachment? = when (receiver) {
+		ValueType.STRING -> string(target)[name]
 		ValueType.BOOL   -> BOOL[name]
 		ValueType.CHAR   -> CHAR[name]
 		is CInteger      -> integer(receiver, target)[name]

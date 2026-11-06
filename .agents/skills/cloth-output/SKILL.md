@@ -37,7 +37,10 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
 - Printable adaptation uses supported value-receiver `str` providers without
   changing ordinary expression typing or introducing general implicit conversion.
   Preserve canonical metadata text. Arrays recursively expose `str` when their
-  elements do. Print, interpolation and `::str` share that recipe. The
+  elements do. `implicitText` binds the conversion for a print argument,
+  interpolation part or array element. Interpolation records its recipe during
+  typing and lowering consumes it. Explicit `::str` checks its receiver through
+  ordinary provider resolution. The
   [class formatting contract](../cloth-language/references/class-formatting.md)
   covers checked `operator ::str()` dispatch and once-only array formatting.
   [Enum formatting](../cloth-language/references/value-operators.md#enum-values-and-formatting)
@@ -58,7 +61,7 @@ Inspect [BuiltinFunctions](../../../Compiler/src/main/kotlin/cloth/builtin/Built
 [BuiltinFunction](../../../Compiler/src/main/kotlin/cloth/builtin/BuiltinFunction.kt),
 [PrintFunction](../../../Compiler/src/main/kotlin/cloth/builtin/PrintFunction.kt),
 [BuiltinEmissionContext](../../../Compiler/src/main/kotlin/cloth/emitter/types/BuiltinEmissionContext.kt),
-and [EmitOutput](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitOutput.kt).
+and [EmitOutput](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitOutput.kt).
 Example: [Builtins.co](../../../examples/Builtins.co).
 
 Use `BuiltinFunctionsTest`, affected `CallResolutionTest` cases, and native output
@@ -73,17 +76,19 @@ before claiming new validation.
 Read [the array text contract](references/semantics.md#recursive-array-text).
 `CArray.providers` in `PrimitiveTypes.kt` owns capability registration, and
 `ProviderResult.ArrayText` retains the element recipe. `ProviderEmissionContext`
-delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
+delegates to [EmitArrayText](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitArrayText.kt)
 through `EmitString`. Keep the traversal out of print built-ins and reusable type
 descriptors. Interpolation resolves the same typed value-receiver providers.
 
 Nullable whole arrays, rows and scalar/string elements render absence as `null`.
-`ProviderResult.NullableText` is an internal element recipe; `EmitArrayText` must
-decode stored nullable carriers and branch on presence in both passes. It does
-not expose unproven nullable `::str`. See the
+`ProviderResult.NullableText` handles implicit conversion. `EmitArrayText`
+decodes stored carriers and uses the same presence branch in both passes.
+Explicit nullable `::str` requires a presence proof. See the
 [nullable buffer record](../cloth-nullability/references/buffers.md) and
 [row implementation](../cloth-arrays/references/nullable-rows.md). Nested nullable
 rows branch on presence while writing directly into the shared text buffer.
+[Printable recipes](../../../Compiler/src/main/kotlin/cloth/data/ImplicitText.kt) ·
+[Integration record](../cloth-language/references/development.md#shared-value-transfer-and-text-recipes-2026-11-06)
 
 The emitter measures checked target-sized bytes, then fills one result buffer.
 Nested arrays write directly into it; do not concatenate growing prefixes or

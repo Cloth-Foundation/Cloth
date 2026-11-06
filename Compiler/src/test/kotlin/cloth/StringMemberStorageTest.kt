@@ -8,10 +8,10 @@ import cloth.data.ValueType
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.primitives.ArrayTemporaryAnalysis
+import cloth.emitter.storage.ArrayTemporaryAnalysis
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -31,18 +31,18 @@ class StringMemberStorageTest {
 	@Test
 	fun `only explicit independent read only contracts permit member reclamation`() {
 		assertEquals(BuiltinStorageContract.UNKNOWN, BuiltinOverload(emptyList(), ValueType.VOID, BuiltinBody { _, _ -> null }).storage)
-		assertTrue(PrimitiveAttachments.all.all { it.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT })
-		val model = FunctionAnalyzer().analyze(unit("fn<bool> query(string text) = text.isEmpty()"))
+		assertTrue(PrimitiveAttachments.all(nativeTestLayout).all { it.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT })
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<bool> query(string text) = text.isEmpty()"))
 		val (expression, call) = model.types.memberCalls.entries.single()
-		assertTrue(ArrayTemporaryAnalysis(model.types, model).canReclaim(expression))
+		assertTrue(ArrayTemporaryAnalysis(model).canReclaim(expression))
 		// Model a future member with an unproven body without mutating global registrations.
 		model.types.memberCalls[expression] = call.copy(overload = call.overload.copy(storage = BuiltinStorageContract.UNKNOWN))
-		assertFalse(ArrayTemporaryAnalysis(model.types, model).canReclaim(expression))
+		assertFalse(ArrayTemporaryAnalysis(model).canReclaim(expression))
 	}
 
 	@Test
 	fun `captured publication keeps reclamation conservative even for read only members`() {
-		val model = FunctionAnalyzer().analyze(unit("""
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("""
 			fn<string> fresh() = "published"
 			fn main() {
 			    def saved = "old"
@@ -51,7 +51,7 @@ class StringMemberStorageTest {
 			}
 		"""))
 		val expression = model.types.memberCalls.keys.single()
-		assertFalse(ArrayTemporaryAnalysis(model.types, model).canReclaim(expression))
+		assertFalse(ArrayTemporaryAnalysis(model).canReclaim(expression))
 	}
 
 	@Test

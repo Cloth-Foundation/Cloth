@@ -10,7 +10,7 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** IEEE binary16 storage and round-to-nearest-even conversions without native half runtime helpers. */
-internal class EmitHalf(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val target: TargetLayout = TargetLayout.native()) {
+internal class EmitHalf(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val target: TargetLayout) {
 
 	private val types = LLVMTypes(context, target)
 	private val half = ValueType.HALF

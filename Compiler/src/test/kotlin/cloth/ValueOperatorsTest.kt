@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -138,7 +138,7 @@ class ValueOperatorsTest {
 			"typedef<enum> E (pub def<int> code) { A(make()) }\nfn<int> make() = 1" to DiagnosticCode.INVALID_ENUM_MEMBER,
 		)
 		for ((source, diagnostic) in cases) {
-			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer().analyze(structUnit(source)) }
+			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(diagnostic, failure.diagnosticCode, source)
 		}
 		for (source in listOf(
@@ -146,7 +146,7 @@ class ValueOperatorsTest {
 			"typedef<enum> E { A }\nfn<bool> test() = E.A == 0",
 			"typedef<struct> S {}\nfn<bool> test(S a, S b) = a == b",
 		)) {
-			assertFailsWith<SemanticException>(source) { FunctionAnalyzer().analyze(structUnit(source)) }
+			assertFailsWith<SemanticException>(source) { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 		}
 	}
 }

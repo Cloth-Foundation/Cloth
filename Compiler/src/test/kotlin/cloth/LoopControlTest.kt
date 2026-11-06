@@ -11,8 +11,7 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.statement.LoopJumpStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -25,7 +24,7 @@ import kotlin.test.*
 class LoopControlTest {
 
 	private fun parser(source: String) = Parser(Lexer(SourceFile("loop-jumps.co", source.trimIndent())).scanTokens())
-	private fun valid(source: String) = FunctionAnalyzer().analyze(parser(source).parse())
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parser(source).parse())
 	private fun invalid(source: String, code: DiagnosticCode = DiagnosticCode.INVALID_LOOP_JUMP) {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)
@@ -207,10 +206,8 @@ class LoopControlTest {
 	}
 
 	@Test
-	fun `jumps execute in snippets and deferred blocks with their own loops`(@TempDir dir: Path) {
-		val snippet = parser("def sum = 0; for (def i <- 0..5) { if (i == 1) { continue }; if (i == 3) { break }; sum += i }; sum").parseSnippet()
-		SemanticAnalyzer().analyze(snippet)
-		assertEquals("2\n", execute(LLVMEmitter().compileSnippet(snippet, dir.resolve("snippet"))).replace("\r\n", "\n"))
+	fun `jumps execute in main and deferred blocks with their own loops`(@TempDir dir: Path) {
+		assertMainOutput(dir.resolve("main_loop"), "def sum = 0; for (def i <- 0..5) { if (i == 1) { continue }; if (i == 3) { break }; sum += i }; println(sum)", "2\n")
 		assertEquals(processCompletion(), run(dir.resolve("block"), "fn<int> main() { def<int> work = { def sum = 0; for (def i <- 0..5) { if (i == 1) { continue }; if (i == 3) { break }; sum += i }; return sum }; return work - 2 }"))
 	}
 
@@ -228,7 +225,7 @@ class LoopControlTest {
 		for (jump in listOf("break 1", "continue outer", "break()")) {
 			assertFailsWith<ClothDiagnostic> { parser("fn main() { for (def i <- 0..3) { $jump } }").parse() }
 		}
-		val error = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(parser("continue").parseSnippet()) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parseMain("continue")) }
 		assertEquals(DiagnosticCode.INVALID_LOOP_JUMP, error.diagnosticCode)
 	}
 

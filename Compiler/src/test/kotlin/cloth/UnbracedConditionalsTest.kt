@@ -10,8 +10,8 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.exception.SyntaxException
 import cloth.parser.expression.IfExpression
 import cloth.parser.statement.*
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.TokenSpan
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -43,10 +43,10 @@ class UnbracedConditionalsTest {
 		assertEquals(2, conditional.branches.size)
 		conditional.branches.forEach { assertIs<ReturnStatement>(it.statements.single()) }
 		assertIs<ReturnStatement>(conditional.otherwise!!.single())
-		val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(parse(source)) }
+		val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertEquals(DiagnosticCode.RETURN_TYPE, error.diagnosticCode)
 		assertEquals(3, error.sourceLabels.first().span.startLine)
-		FunctionAnalyzer().analyze(parse(source.replace("return 2", "return true")))
+		FunctionAnalyzer(nativeTestLayout).analyze(parse(source.replace("return 2", "return true")))
 	}
 
 	@Test
@@ -107,7 +107,7 @@ class UnbracedConditionalsTest {
 	@Test
 	fun `bare return before else and result lists use ordinary return handling`() {
 		val unit = parse("fn test(bool flag) { if (flag) return else return }")
-		FunctionAnalyzer().analyze(unit)
+		FunctionAnalyzer(nativeTestLayout).analyze(unit)
 		val conditional = chain(assertIs<BlockBody>(assertIs<FunctionDeclaration>(unit.declarations.single()).body).statements.single())
 		assertNull(assertIs<ReturnStatement>(conditional.branches.single().statements.single()).value)
 		assertNull(assertIs<ReturnStatement>(conditional.otherwise!!.single()).value)
@@ -123,7 +123,7 @@ class UnbracedConditionalsTest {
 			"fn<int> test(bool flag) = if (flag) 1",
 			"fn<int> test(bool flag) = if (flag) 1 else false",
 		)) assertFailsWith<SemanticException>(source) { LLVMEmitter().emit(parse(source)) }
-		FunctionAnalyzer().analyze(parse("fn test(bool flag) { if (flag) def local = 1 else def local = false\ndef local = 2 }"))
+		FunctionAnalyzer(nativeTestLayout).analyze(parse("fn test(bool flag) { if (flag) def local = 1 else def local = false\ndef local = 2 }"))
 	}
 
 	@Test

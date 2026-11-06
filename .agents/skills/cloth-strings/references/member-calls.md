@@ -102,8 +102,7 @@ error; do not accumulate errors or proceed to output/linker work after failure.
 - `ExpressionTyping.memberCallType` binds the receiver and explicit arguments,
   keeping errors intrinsic during enclosing overload probes. `SemanticModel.memberCalls`
   retains committed bound calls; `FunctionSemanticModel.commit` copies these
-  facts with other trial facts. Both ordinary source units and the legacy snippet
-  analyzer/emitter support this slice.
+  facts with other trial facts.
 - `DeclarationAnalyzer`, `ControlFlowModel`, `NullFlowAnalysis` and
   `MetadataAnalysis` traverse the receiver before arguments. Preserve captured
   write invalidation, presence proofs and non-fallthrough completion. Pre-typing
@@ -118,7 +117,7 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   Future result kinds must extend freshness and lifetime handling
   deliberately; string, char-array and nullable-count results are integrated by
   [the scalar extension](scalar-methods.md).
-- [EmitString](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt)
+- [EmitString](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitString.kt)
   emits length-aware predicates and shares its target-correct C `memcmp` signature
   with string equality. Empty needles exit before reads; longer needles exit
   before offset subtraction/pointer arithmetic. Prefix/suffix comparisons use a
@@ -147,7 +146,7 @@ canonical diagnostic spelling cleanup were followed by that 30-test focused run
 matrix checks 430 predicates against host string expectations, including empty,
 overlapping, long, case-sensitive, decomposed/accented, supplementary and NUL
 inputs. Other cases cover typed registration identity/read-only publication,
-parser spans/chaining, snippets, strict rejections, intrinsic outer-probe errors,
+parser spans/chaining, strict rejections, intrinsic outer-probe errors,
 captured array-element writes, once-only receiver/argument effects, short circuits,
 nullable proofs/result presence, early returns, metadata write invalidation,
 first-error CLI rejection and composed receivers in loop conditions.

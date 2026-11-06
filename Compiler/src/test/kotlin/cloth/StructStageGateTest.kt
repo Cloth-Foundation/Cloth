@@ -2,12 +2,8 @@ package cloth
 
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
-import cloth.diagnostics.SourceFile
-import cloth.lexer.Lexer
-import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -19,8 +15,6 @@ import kotlin.test.assertFalse
 
 class StructStageGateTest {
 
-	private fun parser(source: String) = Parser(Lexer(SourceFile("structs.co", source)).scanTokens())
-
 	@Test
 	fun `earlier struct parameter fields are read only in optional defaults`() {
 		val unit = structUnit("""
@@ -28,16 +22,8 @@ class StructStageGateTest {
 			fn consume(Item earlier, opt<int> later ?: if (true) { earlier.value = 7; 0 } else { 1 }) {}
 			fn main() {}
 		""")
-		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(unit) }
+		val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(unit) }
 		assertEquals(DiagnosticCode.INVALID_PARAMETER_DEFAULT, failure.diagnosticCode)
-	}
-
-	@Test
-	fun `snippet typing and flow reject struct nodes with the same diagnostic`() {
-		for (source in listOf("{ 1, 2 }", "value.field", "value.field = 1", "do { value.field++ } while (false)")) {
-			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parser(source).parseSnippet()) }
-			assertEquals(DiagnosticCode.UNSUPPORTED_STRUCTS, failure.diagnosticCode, source)
-		}
 	}
 
 	@Test

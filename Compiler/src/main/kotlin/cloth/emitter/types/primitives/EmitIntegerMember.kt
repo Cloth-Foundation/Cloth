@@ -4,7 +4,7 @@ import cloth.builtin.attachments.IntegerMethod
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitMemory
+import cloth.emitter.storage.EmitMemory
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef

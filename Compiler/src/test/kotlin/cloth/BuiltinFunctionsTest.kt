@@ -4,6 +4,7 @@ import cloth.builtin.BuiltinFunctions
 import cloth.builtin.PrintFunction
 import cloth.builtin.PrintlnFunction
 import cloth.data.CInt
+import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
@@ -13,10 +14,12 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.CallExpression
+import cloth.parser.expression.InterpolatedString
+import cloth.parser.expression.NameExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.ResolvedCall
 import cloth.semantic.symbols.BuiltinGroupSymbol
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -27,7 +30,7 @@ class BuiltinFunctionsTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("builtins.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 		return error
@@ -49,7 +52,7 @@ class BuiltinFunctionsTest {
 
 	@Test
 	fun `unimported calls retain registry identities concrete types and selected text recipes`() {
-		val model = FunctionAnalyzer().analyze(unit("fn main() {\n print(10)\n println(int[3]::type)\n println()\n}"))
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("fn main() {\n print(10)\n println(int[3]::type)\n println()\n}"))
 		val statements = (model.declarations.functions.single().declaration.body as BlockBody).statements
 		val calls = statements.map { (it as ExpressionStatement).expression as CallExpression }
 		assertSame(BuiltinFunctions.PRINT, assertIs<BuiltinGroupSymbol>(model.declarations.candidatesOf(calls[0])).definition)
@@ -57,10 +60,32 @@ class BuiltinFunctionsTest {
 		assertSame(BuiltinFunctions.PRINT, print.definition)
 		assertEquals(ValueType.INT, print.arguments.single().sourceType)
 		assertEquals(ValueType.STRING, print.arguments.single().parameterType)
-		assertEquals(ValueType.INT.provider("str"), print.arguments.single().text)
+		assertEquals(ValueType.INT.provider("str", nativeTestLayout), print.arguments.single().text)
 		assertEquals(ValueType.TYPEINFO, assertIs<ResolvedCall.Builtin>(model.selectedCall(calls[1])).call.arguments.single().sourceType)
 		assertTrue(assertIs<ResolvedCall.Builtin>(model.selectedCall(calls[2])).call.arguments.isEmpty())
 		calls.forEach { assertEquals(ValueType.VOID, model.typeOf(it)) }
+	}
+
+	@Test
+	fun `print interpolation and array elements bind the same nullable recipe`() {
+		val unit = parseMain("""
+			def<int?> value = null
+			print(value)
+			#"{value}"
+			def<int?[]> items = [value]
+			print(items)
+		""")
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit)
+		fun recipe(index: Int): ProviderResult<*>? {
+			val call = assertIs<CallExpression>(assertIs<ExpressionStatement>(unit.mainStatements[index]).expression)
+			return assertIs<ResolvedCall.Builtin>(model.selectedCall(call)).call.arguments.single().text
+		}
+		val nullable = assertIs<ProviderResult.NullableText>(recipe(1))
+		val interpolation = assertIs<InterpolatedString>(assertIs<ExpressionStatement>(unit.mainStatements[2]).expression)
+		val hole = interpolation.parts.filterIsInstance<NameExpression>().single()
+		assertEquals(nullable, model.types.interpolationTextOf(hole))
+		assertEquals(nullable, assertIs<ProviderResult.ArrayText>(recipe(4)).elementText)
+		failure("fn main() { def<int?> value = null; value::str }", DiagnosticCode.NULLABLE_PAYLOAD_ACCESS)
 	}
 
 	@Test

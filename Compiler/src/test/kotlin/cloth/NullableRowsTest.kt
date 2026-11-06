@@ -10,7 +10,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -40,7 +40,7 @@ class NullableRowsTest {
 	}
 
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertEquals(code, error.diagnosticCode, error.message)
 		assertLocated(error)
 	}
@@ -99,7 +99,7 @@ class NullableRowsTest {
 
 	@Test
 	fun `row layout marker identity and fixed dimension order stay exact`() {
-		val model = FunctionAnalyzer().analyze(parse("fn f(int[2]?[3] rows, int[2][3]? matrix, int?[2]?[3]? both) {}"))
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(parse("fn f(int[2]?[3] rows, int[2][3]? matrix, int?[2]?[3]? both) {}"))
 		val type = model.typeOf(model.declarations.functions.single())
 		assertEquals(CArray(CNullable(CArray(CInt(32), 3)), 2), type.parameters[0])
 		assertEquals("int[2]?[3]", type.parameters[0].spelling)

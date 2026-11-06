@@ -178,9 +178,9 @@ class DoWhileTest {
 	}
 
 	@Test
-	fun `snippets emit loop statements silently and print only a final expression`(@TempDir directory: Path) {
-		assertEquals("3\n", execute(LLVMEmitter().compileSnippet(parser("def i = 0; do i++ while (i < 3); i").parseSnippet(), directory.resolve("value"))).replace("\r\n", "\n"))
-		assertEquals("", execute(LLVMEmitter().compileSnippet(parser("do {} while (false)").parseSnippet(), directory.resolve("silent"))))
+	fun `do loops preserve post-loop values and remain silent without explicit output`(@TempDir directory: Path) {
+		assertMainOutput(directory.resolve("value"), "def i = 0; do i++ while (i < 3); println(i)", "3\n")
+		assertMainOutput(directory.resolve("silent"), "do {} while (false)")
 	}
 
 	@Test

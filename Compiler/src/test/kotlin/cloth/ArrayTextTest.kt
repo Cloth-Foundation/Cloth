@@ -8,7 +8,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -23,15 +23,15 @@ class ArrayTextTest {
 	fun `arrays own recursive value-only text recipes and addresses remain deferred`() {
 		for (leaf in listOf(CInt(), CFloat(16), CBool, CChar, CString, CTypeInfo)) {
 			val type = CArray(CArray(leaf))
-			val text = assertIs<ProviderResult.ArrayText>(type.provider("str"))
+			val text = assertIs<ProviderResult.ArrayText>(type.provider("str", nativeTestLayout))
 			assertEquals(type, text.receiverType)
 			assertEquals(CString, text.type)
 			assertEquals(setOf(ProviderReceiverForm.VALUE), text.receiverForms)
 			assertEquals(leaf, assertIs<ProviderResult.ArrayText>(text.elementText).elementText.receiverType)
-			assertNull(type.provider("addr"))
+			assertNull(type.provider("addr", nativeTestLayout))
 		}
 		for (source in listOf("fn main() { int[2]::str }", "fn main() { int[][]::str }")) {
-			val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+			val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 			assertEquals(DiagnosticCode.INVALID_PROVIDER_RECEIVER, error.diagnosticCode)
 			assertLocated(error)
 		}

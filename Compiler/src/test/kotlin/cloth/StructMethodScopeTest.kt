@@ -9,8 +9,8 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.FieldWriteStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.UpdateStatement
-import cloth.semantic.DeclarationAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.MethodGroupSymbol
 import cloth.semantic.symbols.ParameterSymbol
@@ -24,7 +24,7 @@ import kotlin.test.*
 
 class StructMethodScopeTest {
 
-	private fun analyze(source: String) = DeclarationAnalyzer().analyze(structUnit(source))
+	private fun analyze(source: String) = DeclarationAnalyzer(nativeTestLayout).analyze(structUnit(source))
 
 	@Test
 	fun `method groups belong to nominal owners and a method main stays out of file scope`() {

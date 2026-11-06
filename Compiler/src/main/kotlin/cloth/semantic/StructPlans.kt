@@ -4,6 +4,7 @@ import cloth.data.CArray
 import cloth.data.InstanceField
 import cloth.data.ValueType
 import cloth.parser.expression.*
+import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol

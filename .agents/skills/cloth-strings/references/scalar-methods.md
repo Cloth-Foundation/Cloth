@@ -66,11 +66,9 @@ The full maintained example is [StringScalars.co](../../../../examples/StringSca
   a host-width `usize` as a foreign target type, and no definition holds LLVM handles.
 - `ExpressionTyping.memberCallType` supplies exact count contexts before binding
   arguments. Search results are nullable; the pre-typing presence pass must not
-  mark them present. Legacy snippets retain their unsupported-nullability guard
-  for search results; charAt/substring/toChars and ordinary source units use
-  the shared member path. Existing intrinsic operand diagnostics remain fatal
-  during outer overload trials.
-- [EmitStringAccess](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringAccess.kt)
+  mark them present. Intrinsic operand diagnostics remain fatal during outer
+  overload trials.
+- [EmitStringAccess](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitStringAccess.kt)
   owns scalar-position traversal, UTF-8 decoding, extraction and scalar-indexed
   search. It borrows per-emission services/source location via
   `BuiltinEmissionContext`; the global registry holds no emitter state.

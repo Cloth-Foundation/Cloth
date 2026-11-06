@@ -40,6 +40,11 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   calls and results. Static known failures stay compile-time errors; unknown
   capabilities use the existing runtime guard. Probe candidates without leaking
   type or metadata facts into subsequent overload candidates.
+- [MetadataAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/flow/MetadataAnalysis.kt)
+  keys slots by resolved binding identity. Use the existing declaration and
+  assignment symbols for declarations, grouped targets, writes and loop bindings.
+  Keep slot facts scoped to the current branch or body and preserve the separate
+  merge rules for represented types.
 - Add behavior to the actual shared type descriptors and typed provider recipes;
   avoid parallel wrapper types and scattered provider-name switches. LLVM handles
   belong to the emission context, not reusable provider definitions.
@@ -79,8 +84,8 @@ owns completed integration, maintained examples and target/resource evidence.
 Start with [PrimitiveTypes](../../../Compiler/src/main/kotlin/cloth/data/PrimitiveTypes.kt),
 [ProviderResult](../../../Compiler/src/main/kotlin/cloth/data/ProviderResult.kt),
 [MetadataQuery](../../../Compiler/src/main/kotlin/cloth/data/MetadataQuery.kt),
-[MetadataAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/MetadataAnalysis.kt),
-and [EmitTypeInfo](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitTypeInfo.kt).
+[MetadataAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/flow/MetadataAnalysis.kt),
+and [EmitTypeInfo](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitTypeInfo.kt).
 
 Relevant suites: `PrimitiveTypesTest`, `ProviderResultsTest`, `ProviderSyntaxTest`,
 `ScalarProvidersTest`, `BufferProvidersTest`, `TypeInfoTest`,

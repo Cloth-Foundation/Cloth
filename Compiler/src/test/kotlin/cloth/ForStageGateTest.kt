@@ -7,6 +7,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.*
+import cloth.semantic.typing.FunctionAnalyzer
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -17,19 +18,13 @@ import kotlin.test.*
 class ForStageGateTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("loops.co", source)).scanTokens()).parse()
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("loops.co", source)).scanTokens()).parseSnippet()
 
 	@Test
 	fun `semantic and emission paths accept foreach after snapshot integration`() {
 		val parsed = unit("fn main() { for (def i <- [0, 1, 2]) println(i) }")
-		DeclarationAnalyzer().analyze(parsed)
-		CallAnalyzer().analyze(parsed)
-		FunctionAnalyzer().analyze(parsed)
+		val facts = FunctionAnalyzer(nativeTestLayout).analyze(parsed)
+		assertTrue(facts.controlFlow.of(parsed.mainStatements.single()).canFallThrough)
 		assertContains(LLVMEmitter().emit(parsed), "foreach_test")
-		val fragment = snippet("for (def value <- [1, 2]) value")
-		SemanticAnalyzer().analyze(fragment)
-		assertTrue(ControlFlowModel().of(fragment.statements.single()).canFallThrough)
-		assertContains(LLVMEmitter().emitSnippet(fragment), "foreach_test")
 	}
 
 	@Test
@@ -44,7 +39,7 @@ class ForStageGateTest {
 	@Test
 	fun `earlier source errors are not replaced by the stage gate`() {
 		val failure = assertFailsWith<SemanticException> {
-			FunctionAnalyzer().analyze(unit("fn main() { missing(); for (def i <- 0..2) println(i) }"))
+			FunctionAnalyzer(nativeTestLayout).analyze(unit("fn main() { missing(); for (def i <- 0..2) println(i) }"))
 		}
 		assertEquals(DiagnosticCode.UNKNOWN_NAME, failure.diagnosticCode)
 	}
@@ -62,16 +57,14 @@ class ForStageGateTest {
 	}
 
 	@Test
-	fun `library executable object and snippet APIs emit foreach and create requested outputs`(@TempDir directory: Path) {
+	fun `library executable and object APIs emit foreach and create requested outputs`(@TempDir directory: Path) {
 		val parsed = unit("fn main() { for (def i <- [0, 1]) println(i) }")
-		val fragment = snippet("for (def i <- [0, 1]) i")
 		val emitter = LLVMEmitter()
 		assertContains(emitter.emit(parsed), "foreach_test")
 		assertContains(emitter.emitExecutable(parsed), "foreach_test")
 		assertTrue(Files.exists(emitter.compileObject(parsed, directory.resolve("object/program.obj"))))
-		assertTrue(Files.exists(emitter.compile(parsed, directory.resolve("native/program"))))
-		assertContains(emitter.emitSnippet(fragment), "foreach_test")
-		assertTrue(Files.exists(emitter.compileSnippet(fragment, directory.resolve("snippet/program"))))
+		val executable = emitter.compile(parsed, directory.resolve("native/program"))
+		assertEquals("0\n1\n".replace("\n", System.lineSeparator()) + processCompletion(), runExecutable(executable))
 	}
 
 	@Test

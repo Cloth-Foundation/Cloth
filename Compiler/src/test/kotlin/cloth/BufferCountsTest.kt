@@ -7,15 +7,19 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
+import cloth.emitter.callables.EmitArguments
+import cloth.emitter.storage.EmitArray
+import cloth.emitter.storage.EmitMemory
+import cloth.emitter.storage.EmitStringArena
+import cloth.emitter.storage.RetainedArrayShape
+import cloth.emitter.text.EmitString
+import cloth.emitter.text.EmitStringEdit
+import cloth.emitter.text.ProviderEmissionContext
 import cloth.emitter.types.*
-import cloth.emitter.types.primitives.EmitArray
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.primitives.EmitStringArena
-import cloth.emitter.types.primitives.EmitStringEdit
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.SemanticModel
 import cloth.settings.LinkOptions
 import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
@@ -85,12 +89,12 @@ class BufferCountsTest {
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(maximum, 1)))
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(zero, 1)))
 			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(inner(maximum, 0)).toULong().toString())
-			val merged = arrays.matchShape(unknown, maximum, erased, merge = true)
+			val merged = arrays.constrain(unknown, erased, RetainedArrayShape(maximum))
 			val constrained = arrays.constrain(merged, type)
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(constrained, 1)))
 			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(inner(constrained, 0)).toULong().toString())
 			val child = arrays.childShape(arrays.descriptor(nullPointer, memory.constant(CUSize(bits).maximum), row), constrained, row)
-			arrays.matchShape(child, child, row)
+			arrays.constrain(child, row, RetainedArrayShape(child))
 			val raw = ProviderResult.ArrayExtent(erased, 1, CInt(64, true))
 			assertEquals(-1L, LLVMConstIntGetZExtValue(raw.emit(providers, ProviderReceiver.Value(erased, unknown))))
 			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(raw.emit(providers, ProviderReceiver.Value(erased, maximum))).toULong().toString())

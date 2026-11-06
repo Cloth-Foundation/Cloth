@@ -6,16 +6,15 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
+import cloth.emitter.text.EmitString
+import cloth.emitter.text.ProviderEmissionContext
 import cloth.emitter.types.EmitCast
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.ProviderEmissionContext
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.SemanticModel
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -26,7 +25,7 @@ import kotlin.test.*
 
 class ScalarProvidersTest {
 
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("scalar-providers.co", source.trimIndent())).scanTokens()).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(source, "scalar-providers.co")
 	private fun unit(source: String) = Parser(Lexer(SourceFile("scalar-providers.co", source.trimIndent())).scanTokens()).parse()
 
 	@Test
@@ -36,8 +35,8 @@ class ScalarProvidersTest {
 			val type = CFloat(width)
 			assertEquals(maximum, type.maximum)
 			assertEquals(maximum.negate(), type.minimum)
-			val high = assertIs<ProviderResult.FloatingConstant>(type.provider("max"))
-			val low = assertIs<ProviderResult.FloatingConstant>(type.provider("min"))
+			val high = assertIs<ProviderResult.FloatingConstant>(type.provider("max", nativeTestLayout))
+			val low = assertIs<ProviderResult.FloatingConstant>(type.provider("min", nativeTestLayout))
 			assertEquals(type, high.type)
 			assertEquals(type, low.receiverType)
 			assertEquals(maximum, high.value)
@@ -52,12 +51,12 @@ class ScalarProvidersTest {
 		val builder = LLVMCreateBuilderInContext(context)
 		try {
 			val abi = NativeCABI.native()
-			val services = ProviderEmissionContext(context, builder, EmitString(context, builder, abi), EmitCast(context, builder, SemanticModel(), abi), "bounds-test")
+			val services = ProviderEmissionContext(context, builder, EmitString(context, builder, abi), EmitCast(context, builder, SemanticModel(nativeTestLayout), abi), "bounds-test")
 			val formats = listOf(Triple(16, 0x7bffuL, 0xfbffuL), Triple(32, 0x7f7fffffuL, 0xff7fffffuL), Triple(64, 0x7fefffffffffffffuL, 0xffefffffffffffffuL))
 			for ((width, maximum, minimum) in formats) {
 				val type = CFloat(width)
 				for ((name, expected) in listOf("max" to maximum, "min" to minimum)) {
-					val value = assertNotNull(type.provider(name)).emit(services, ProviderReceiver.Type(type))
+					val value = assertNotNull(type.provider(name, abi.layout)).emit(services, ProviderReceiver.Type(type))
 					val bits = LLVMConstBitCast(value, LLVMIntTypeInContext(context, width))
 					assertEquals(expected, LLVMConstIntGetZExtValue(bits).toULong(), "$type::$name")
 				}
@@ -71,13 +70,13 @@ class ScalarProvidersTest {
 	@Test
 	fun `source scalar providers preserve float widths and use usize byte counts`() {
 		for (width in listOf(16, 32, 64)) for (source in listOf("float<$width>::min::max", "(1 -> float<$width>)::min")) {
-			val ast = snippet(source)
-			assertEquals(CFloat(width), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()), source)
+			val ast = bodyUnit(source)
+			assertEquals(CFloat(width), FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(ast.mainStatements.single()), source)
 		}
 		for ((spelling, initializer, bytes) in scalars()) {
-			val ast = snippet("def<$spelling> value = $initializer\n$spelling::size\nvalue::size")
-			val semantics = SemanticAnalyzer().analyze(ast)
-			for (statement in ast.statements.drop(1)) {
+			val ast = bodyUnit("def<$spelling> value = $initializer\n$spelling::size\nvalue::size")
+			val semantics = FunctionAnalyzer(nativeTestLayout).analyze(ast).types
+			for (statement in ast.mainStatements.drop(1)) {
 				val expression = (statement as ExpressionStatement).expression as ProviderAccessExpression
 				assertEquals(CUSize(semantics.target.sizeBits), semantics.typeOf(expression), spelling)
 				assertEquals(BigDecimal(bytes).toBigIntegerExact(), assertIs<ProviderResult.IntegerConstant>(semantics.providerAccess(expression).result).value)
@@ -90,14 +89,14 @@ class ScalarProvidersTest {
 	@Test
 	fun `provider result types do not change to satisfy an enclosing annotation`() {
 		for (source in listOf("def<float<64>> wide = float::max", "def<unsigned int> count = bool::size", "def<int<64>> count = char::size")) {
-			val failure = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet(source)) }
+			val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit(source)) }
 			assertEquals(DiagnosticCode.TYPE_MISMATCH, failure.diagnosticCode, source)
 			assertLocated(failure)
 		}
-		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit("fn<float<64>> wrong() = float::min")) }
+		val failure = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<float<64>> wrong() = float::min")) }
 		assertEquals(DiagnosticCode.RETURN_TYPE, failure.diagnosticCode)
 		for (source in listOf("float::MAX", "bool::SIZE", "char::max")) {
-			val unknown = assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(snippet(source)) }
+			val unknown = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(bodyUnit(source)) }
 			assertEquals(DiagnosticCode.UNKNOWN_PROVIDER, unknown.diagnosticCode)
 			assertLocated(unknown)
 		}

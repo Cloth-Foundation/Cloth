@@ -6,8 +6,6 @@ import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.lexer.Lexer
-import cloth.parser.Parser
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
 import kotlin.test.assertContains
@@ -71,12 +69,14 @@ class NativeCABITest {
 	@Test
 	fun `native emitted IR records the selected LLVM target and ABI declarations`() {
 		val abi = NativeCABI.native()
-		val ast = Parser(Lexer("def fraction = 3.75\nfraction -> int").scanTokens()).parseSnippet()
-		val ir = LLVMEmitter().emitSnippet(ast, forcePrint = true)
+		val unit = parseMain("def fraction = 3.75\nprintln(fraction -> int)")
+		val ir = LLVMEmitter().emitExecutable(unit)
+		val entry = if (abi.windows) "wmain" else "main"
 		assertContains(ir, "target triple = \"${abi.targetTriple}\"")
-		assertContains(ir, "define i${abi.intType.bits} @main()")
+		assertContains(ir, "define i${abi.intType.bits} @$entry(i${abi.intType.bits}")
 		assertContains(ir, "declare i${abi.intType.bits} @printf(")
-		assertContains(ir, "declare i${abi.intType.bits} @puts(")
+		assertContains(ir, "declare i${abi.intType.bits} @snprintf(ptr, i${abi.sizeType.bits}, ptr, ...)")
+		assertContains(ir, "declare i${abi.intType.bits} @puts(ptr)")
 		assertContains(ir, "declare void @exit(i${abi.intType.bits})")
 		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) {
 			val signed = CInt(bits)

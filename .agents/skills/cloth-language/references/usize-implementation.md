@@ -54,7 +54,7 @@ continuing. Later steps still need the size/descriptor/integer migrations below.
 - `data/PrimitiveTypes.kt` and `data/ValueType.kt` own shared semantic descriptors
   and LLVM mappings. `CInt` is a final data class; integer bounds/providers and
   some consumers require that concrete class.
-- `semantic/TypeResolver.kt` has no target parameter. The declaration, call,
+- `semantic/declarations/TypeResolver.kt` has no target parameter. The declaration, call,
   function, program and legacy snippet analyzers currently resolve types before
   the emitter selects its ABI. `ExpressionTyping` contextualizes integer literals
   with `as? CInt`; `EmitCast` casts float-to-integer targets to `CInt`.

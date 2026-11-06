@@ -53,18 +53,18 @@ fn<int> main() {
 ## Implementation ownership
 
 - [ClassParser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/ClassParser.kt)
-  records the constructor clause. [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/NamedTypes.kt)
+  records the constructor clause. [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/NamedTypes.kt)
   establishes the nominal base chain before resolving field types.
-  [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+  [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   binds the constructor clause and applies subtype compatibility to the normal
-  value paths. [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+  value paths. [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
   tracks class narrowing alongside presence.
 - [CClass](../../../../Compiler/src/main/kotlin/cloth/data/CClass.kt) uses a
   zero-offset base prefix so a base member can address its own layout within
-  any derived instance. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  any derived instance. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   forwards the concrete allocation size and class tag through constructor
   delegation. The first source base allocates the concrete storage once.
-- [EmitClassRuntime](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassRuntime.kt)
+- [EmitClassRuntime](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassRuntime.kt)
   stores the concrete and initialized class tags in the validated slot.
   Type checks and destructor selection check the slot and generation. Field cleanup
   resolves the storage again after destructor calls. Ordinary virtual dispatch,

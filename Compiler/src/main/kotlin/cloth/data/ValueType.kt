@@ -30,7 +30,7 @@ sealed class ValueType(val keyword: Keywords) {
 	/** Every source type describes itself without constructing an instance. */
 	internal open fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> = mapOf(CompilerDataProviders.TYPE to ProviderResult.TypeMetadata(this))
 
-	internal fun provider(spelling: String, target: TargetLayout = TargetLayout.native()): ProviderResult<*>? = CompilerDataProviders.fromSpelling(spelling)?.let { providers(target)[it] }
+	internal fun provider(spelling: String, target: TargetLayout): ProviderResult<*>? = CompilerDataProviders.fromSpelling(spelling)?.let { providers(target)[it] }
 
 	/** Fixed numeric metadata includes widths; distinct primitives may supply their canonical name. */
 	open val metadataSpelling: String
@@ -41,8 +41,8 @@ sealed class ValueType(val keyword: Keywords) {
 		}
 
 	/** LLVM types belong to the supplied context; descriptors never cache native handles. */
-	abstract fun llvmValue(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef
-	open fun llvmStorage(context: LLVMContextRef, target: TargetLayout = TargetLayout.native()): LLVMTypeRef = llvmValue(context, target)
+	abstract fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef
+	open fun llvmStorage(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = llvmValue(context, target)
 
 	enum class FloatingFormat(val bits: Int, val exponentBits: Int) { HALF(16, 5),
 		SINGLE(32, 8),

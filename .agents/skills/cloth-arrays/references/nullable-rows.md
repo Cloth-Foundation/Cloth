@@ -35,7 +35,7 @@ array equality remain unsupported.
   subtrees to a receiving array's vector, offset by depth, recursively matching
   and retaining dimensions. Present row writes can establish unknown dimensions
   shared by all siblings, including through nested non-nullable arrays.
-- `EmitExpression` snapshots replacement values before attaching them. Binding
+- `EmitValueTransfer` snapshots replacement values before attaching them. Binding
   replacements retain the original constraint vector; whole-array null assigns
   retain the existing separate nullable binding shape state. Null row assignments
   skip payload/shape operations and never clear witnesses.

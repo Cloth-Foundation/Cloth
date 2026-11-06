@@ -66,13 +66,13 @@ or implicit typed-value conversions; the later Stage 2 adds the width model.
   context is known; wider declarations/candidates can admit values beyond float32.
   The literal milestone retained the uint64 parser ceiling; Stage 2 lifts that
   bound to 65536-bit magnitudes without changing no-context int32 inference.
-- [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/TypeResolver.kt)
+- [TypeResolver](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/TypeResolver.kt)
   and [SignatureType](../../../../Compiler/src/main/kotlin/cloth/semantic/symbols/Symbols.kt)
   share integer decoding for widths/extents. Arbitrarily large width tokens are
   rejected by supported-width validation without narrowing or format exceptions.
-- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   propagates floating context through the existing reception machinery, including
-  nullable and array types. [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+  nullable and array types. [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   retains default-type preference and contextual candidate range filtering.
 - Existing constant emission and `RangeConstants` consume normalized AST values;
   they do not interpret literal spelling or choose host-dependent integer bounds.

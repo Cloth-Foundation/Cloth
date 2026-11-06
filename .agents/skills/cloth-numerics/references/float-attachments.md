@@ -39,7 +39,7 @@ early-return integer and float calls without inventing source member overloads.
 
 ## Validation and emission
 
-- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   resolves exact float signatures and validates by cached registration identity.
   Floating literals receive bound-parameter context; typed integer/float values
   are not implicitly converted. Nullable values require existing proofs/fallbacks.

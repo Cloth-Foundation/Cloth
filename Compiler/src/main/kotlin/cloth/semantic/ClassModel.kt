@@ -1,25 +1,10 @@
 package cloth.semantic
 
 import cloth.data.CClass
-import cloth.data.ClassField
 import cloth.parser.expression.Expression
-import cloth.semantic.symbols.ConstructorSymbol
-import cloth.semantic.symbols.DestructorSymbol
 import cloth.semantic.symbols.ReceiverSymbol
+import cloth.semantic.typing.ResolvedOperator
 import cloth.token.Operators
-
-internal data class ClassDefinition(
-	val owner: CClass,
-	val primary: ConstructorSymbol,
-	val secondary: List<ConstructorSymbol>,
-	val destructor: DestructorSymbol?,
-	val fieldInitializers: List<ClassFieldInitializer>,
-) {
-
-	val constructors = listOf(primary) + secondary
-}
-
-internal data class ClassFieldInitializer(val field: ClassField, val expression: Expression)
 
 /** A selected object identity, independent of any binding that happens to hold it. */
 internal sealed interface ObjectReceiver {

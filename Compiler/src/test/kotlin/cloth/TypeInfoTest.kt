@@ -7,8 +7,7 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -19,7 +18,7 @@ class TypeInfoTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("typeinfo.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode = DiagnosticCode.INVALID_METADATA_ACCESS): ClothDiagnostic {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 		return error
@@ -31,8 +30,8 @@ class TypeInfoTest {
 		assertEquals("int<32>", CInt().metadataSpelling)
 		assertEquals("unsigned int<32>[2][]", CArray(CArray(CInt(unsigned = true)), 2).metadataSpelling)
 		for (source in listOf("int::type", "float::type", "unsigned int<64>[0][]::type", "typeinfo::type", "void::type", "true::type", "\"x\"::type")) {
-			val ast = Parser(Lexer(source).scanTokens()).parseSnippet()
-			assertEquals(CTypeInfo, SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
+			val ast = parseMain(source)
+			assertEquals(CTypeInfo, FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(ast.mainStatements.single()))
 		}
 		val ir = LLVMEmitter().emit(unit("fn<typeinfo> describe() = unsigned int<64>[18446744073709551615][]::type"))
 		assertContains(ir, "private constant")

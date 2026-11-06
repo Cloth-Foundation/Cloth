@@ -1,6 +1,5 @@
 package cloth.parser
 
-import cloth.ast.ASTStructure
 import cloth.ast.SourceUnit
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.declaration.*
@@ -48,13 +47,8 @@ class Parser(private val tokens: List<Token>) {
 		return tokens[currentIndex++]
 	}
 
-	/** Complete source files contain declarations, never file-level executable snippets. */
+	/** Parse a complete source unit. */
 	fun parse(): SourceUnit = parseDeclarations()
-
-	/** Body fragment grammar for focused tests; not a source-file entry point. */
-	internal fun parseSnippet(): ASTStructure {
-		return ASTStructure(parseStatements(inBlock = false))
-	}
 
 	/** File-level declarations retain source order. */
 	fun parseDeclarations(): SourceUnit {
@@ -119,7 +113,7 @@ class Parser(private val tokens: List<Token>) {
 
 	fun parseBlock(): BlockBody {
 		val opening = peek()
-		val statements = delimited.braces { parseStatements(inBlock = true) }
+		val statements = delimited.braces { parseStatements() }
 		return BlockBody(statements, opening.span.through(previous().span))
 	}
 
@@ -132,7 +126,7 @@ class Parser(private val tokens: List<Token>) {
 		bindingBrace = syntax
 		inFunctionBody = true
 		val statements = try {
-			delimited.braces { parseStatements(inBlock = true, braceSyntax = syntax) }
+			delimited.braces { parseStatements(syntax) }
 		} finally {
 			bindingBrace = previousBrace
 			inFunctionBody = previousBody
@@ -149,10 +143,10 @@ class Parser(private val tokens: List<Token>) {
 		return deferred(BlockBody(statements, span))
 	}
 
-	private fun parseStatements(inBlock: Boolean, braceSyntax: BindingBraceSyntax? = null): List<Statement> {
+	private fun parseStatements(braceSyntax: BindingBraceSyntax? = null): List<Statement> {
 		val statements = mutableListOf<Statement>()
 
-		while (peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.toString())) {
+		while (peek().type != TokenType.EOF && peek().lexeme != Operators.BRACE_CLOSE.toString()) {
 			if (isStatementSeparator(peek())) {
 				if (braceSyntax != null && isSemicolon(peek())) braceSyntax.hasSemicolon = true
 				advance()
@@ -160,7 +154,7 @@ class Parser(private val tokens: List<Token>) {
 				if (braceSyntax != null && statements.isNotEmpty() && braceSyntax.secondStatement == null) braceSyntax.secondStatement = peek()
 				if (atKeyword(Keywords.DEFINITION)) statements.addAll(bindingsParser.parseBindings())
 				else statements.add(parseStatement(multilineResults = braceSyntax != null))
-				if (!isStatementSeparator(peek()) && peek().type != TokenType.EOF && !(inBlock && peek().lexeme == Operators.BRACE_CLOSE.toString())) {
+				if (!isStatementSeparator(peek()) && peek().type != TokenType.EOF && peek().lexeme != Operators.BRACE_CLOSE.toString()) {
 					throw SyntaxErrors.newline(peek())
 				}
 			}

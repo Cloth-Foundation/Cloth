@@ -10,9 +10,8 @@ import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.IntegerLiteral
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.SemanticModel
 import cloth.target.TargetLayout
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -25,10 +24,10 @@ class ArbitraryIntegerWidthsTest {
 
 	private val widths = listOf(1, 2, 3, 7, 8, 9, 12, 24, 31, 32, 33, 63, 64, 65, 127, 128, 129, 257, 1024, 4096, 65535, 65536)
 	private val one = BigInteger.ONE
-	private fun snippet(source: String) = Parser(Lexer(SourceFile("widths.co", source.trimIndent())).scanTokens()).parseSnippet()
+	private fun bodyUnit(source: String) = parseMain(source, "widths.co")
 	private fun unit(source: String) = Parser(Lexer(SourceFile("widths.co", source.trimIndent())).scanTokens()).parse()
-	private fun check(source: String, target: TargetLayout = TargetLayout.native()): SemanticModel = SemanticAnalyzer(target).analyze(snippet(source))
-	private fun declarations(source: String, target: TargetLayout = TargetLayout.native()) = FunctionAnalyzer(target).analyze(unit(source))
+	private fun check(source: String, target: TargetLayout = nativeTestLayout): SemanticModel = FunctionAnalyzer(target).analyze(bodyUnit(source)).types
+	private fun declarations(source: String, target: TargetLayout = nativeTestLayout) = FunctionAnalyzer(target).analyze(unit(source))
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
 		val failure = assertFailsWith<ClothDiagnostic> { check(source) }
 		assertEquals(code, failure.diagnosticCode, source.take(200))
@@ -49,9 +48,9 @@ class ArbitraryIntegerWidthsTest {
 			assertFailsWith<IllegalArgumentException> { CFloat(bits) }
 			assertFailsWith<IllegalArgumentException> { CUSize(bits) }
 			assertFailsWith<IllegalArgumentException> { CISize(bits) }
-			assertFailsWith<IllegalArgumentException> { TargetLayout.native().copy(pointerBits = bits) }
-			assertFailsWith<IllegalArgumentException> { TargetLayout.native().copy(sizeBits = bits) }
-			assertFailsWith<IllegalArgumentException> { TargetLayout.native().copy(cLongBits = bits) }
+			assertFailsWith<IllegalArgumentException> { nativeTestLayout.copy(pointerBits = bits) }
+			assertFailsWith<IllegalArgumentException> { nativeTestLayout.copy(sizeBits = bits) }
+			assertFailsWith<IllegalArgumentException> { nativeTestLayout.copy(cLongBits = bits) }
 		}
 		assertEquals(CInt(32), ValueType.INT)
 		assertEquals(CInt(32, true), ValueType.UINT)
@@ -67,9 +66,9 @@ class ArbitraryIntegerWidthsTest {
 			assertEquals(minimum, type.minimum)
 			assertEquals(maximum, type.maximum)
 			for (value in listOf(minimum, maximum)) {
-				val ast = snippet("def<${type.spelling}> x = $value\nx = $value")
-				val model = SemanticAnalyzer().analyze(ast)
-				assertTrue(ast.statements.all { model.typeOf(it) == type })
+				val ast = bodyUnit("def<${type.spelling}> x = $value\nx = $value")
+				val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+				assertTrue(ast.mainStatements.all { model.typeOf(it) == type })
 			}
 			for (value in listOf(minimum - one, maximum + one)) {
 				assertFalse(type.acceptsLiteral(value))
@@ -86,9 +85,9 @@ class ArbitraryIntegerWidthsTest {
 				2 -> "0b"; 8 -> "0o"; 16 -> "0x"; else -> ""
 			}
 			val suffix = if (radix == 10) "I" else ""
-			val ast = snippet("def<unsigned int<$bits>> value = $prefix${maximum.toString(radix)}$suffix")
-			val model = SemanticAnalyzer().analyze(ast)
-			assertEquals(CInt(bits, true), model.typeOf(ast.statements.single()))
+			val ast = bodyUnit("def<unsigned int<$bits>> value = $prefix${maximum.toString(radix)}$suffix")
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+			assertEquals(CInt(bits, true), model.typeOf(ast.mainStatements.single()))
 		}
 		failure("18446744073709551616", DiagnosticCode.INTEGER_RANGE)
 		failure("${one.shiftLeft(65536)}", DiagnosticCode.INVALID_INTEGER)
@@ -99,8 +98,8 @@ class ArbitraryIntegerWidthsTest {
 	@Test
 	fun `width decoding is exact and floating width diagnostics retain their finite set`() {
 		for (width in listOf("31", "0x1F", "0b11111", "0o37", "31i", "31I")) {
-			val ast = snippet("def<int<$width>> x = 12")
-			assertEquals(CInt(31), SemanticAnalyzer().analyze(ast).typeOf(ast.statements.single()))
+			val ast = bodyUnit("def<int<$width>> x = 12")
+			assertEquals(CInt(31), FunctionAnalyzer(nativeTestLayout).analyze(ast).typeOf(ast.mainStatements.single()))
 		}
 		for (width in listOf("0", "65537", "0x1_0001", "65537I", "4294967327", "18446744073709551647", "9".repeat(1000))) {
 			val error = failure("def<int<$width>> x = 0", DiagnosticCode.UNSUPPORTED_WIDTH)
@@ -131,10 +130,10 @@ class ArbitraryIntegerWidthsTest {
 	fun `wide bounds and storage providers can be analyzed without constructing LLVM carriers`() {
 		for (bits in listOf(1, 12, 31, 65, 65536)) {
 			val type = CInt(bits)
-			assertSame(type, assertIs<ProviderResult.IntegerConstant>(type.provider("max")).type)
-			assertIs<ProviderResult.StorageSize>(type.provider("size"))
+			assertSame(type, assertIs<ProviderResult.IntegerConstant>(type.provider("max", nativeTestLayout)).type)
+			assertIs<ProviderResult.StorageSize>(type.provider("size", nativeTestLayout))
 			val model = declarations("fn probe() { ${type.spelling}::min\n${type.spelling}::max\n${type.spelling}::size\n${type.spelling}::type::width }")
-			assertTrue(model.types.expressions.values.any { it == type })
+			assertTrue(model.types.expressionValueTypes().any { it == type })
 		}
 	}
 
@@ -228,21 +227,20 @@ class ArbitraryIntegerWidthsTest {
 	fun `wide decimal values pass every emission API without a stage boundary`() = scratch { directory ->
 		val abi = NativeCABI.native()
 		val emitter = LLVMEmitter(abi)
-		val ast = unit("fn main() { def<int<65>> x = 12\nx::str }")
+		val ast = unit("fn main() { def<int<65>> x = 12\nprintln(x) }")
 		assertContains(emitter.emit(ast), "cloth.integer.decimal")
 		assertContains(emitter.emitExecutable(ast), "cloth.integer.decimal")
 		assertTrue(Files.size(emitter.compileObject(ast, directory.resolve("result.o"))) > 0)
-		assertTrue(Files.size(emitter.compile(ast, directory.resolve("result"))) > 0)
-		assertContains(emitter.emitSnippet(snippet("def<int<65>> x = 12\nx::str")), "cloth.integer.decimal")
-		assertTrue(Files.size(emitter.compileSnippet(snippet("def<int<65>> x = 12"), directory.resolve("snippet"))) > 0)
+		val executable = emitter.compile(ast, directory.resolve("result"))
+		assertEquals("12" + System.lineSeparator() + processCompletion(), runExecutable(executable))
 		for (source in listOf("fn probe(int<65> value) { println(value) }", "fn probe(int<65>[] values) { values::str }")) {
 			assertContains(emitter.emit(unit(source)), "cloth.integer.decimal")
 		}
 		for (source in listOf("fn<int<65>> signature() = 0", "fn signature(int<65>[] values) {}", "fn probe() { int<65536>::size }", "fn probe() { 1 is int<65> }", "fn probe() { false && ((1 -> int<65>) == 1) }")) emitter.emit(unit(source))
 		val context = LLVMContextCreate()
 		try {
-			assertEquals(LLVMPointerTypeKind, LLVMGetTypeKind(CInt(65536).llvmValue(context)))
-			assertEquals((65536 / TargetLayout.native().pointerBits).toLong(), LLVMGetArrayLength2(CInt(65536).llvmStorage(context)))
+			assertEquals(LLVMPointerTypeKind, LLVMGetTypeKind(CInt(65536).llvmValue(context, nativeTestLayout)))
+			assertEquals((65536 / nativeTestLayout.pointerBits).toLong(), LLVMGetArrayLength2(CInt(65536).llvmStorage(context, nativeTestLayout)))
 		} finally {
 			LLVMContextDispose(context)
 		}

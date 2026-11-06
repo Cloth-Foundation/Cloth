@@ -16,12 +16,15 @@ import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.FieldWriteStatement
 import cloth.semantic.*
 import cloth.semantic.symbols.ParameterSymbol
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
+import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class ClassSemanticsTest {
 
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(Parser(Lexer(SourceFile("classes.co", source.trimIndent())).scanTokens()).parse())
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("classes.co", source.trimIndent())).scanTokens()).parse())
 	private fun FunctionSemanticModel.functionExpression(name: String) = assertIs<ExpressionBody>(declarations.functions.single { it.name.lexeme == name }.declaration.body).expression
 
 	@Test

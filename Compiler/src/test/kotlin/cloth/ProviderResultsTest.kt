@@ -6,9 +6,12 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
+import cloth.emitter.callables.EmitFunctionFrame
+import cloth.emitter.callables.EmitFunctions
+import cloth.emitter.storage.EmitBindings
+import cloth.emitter.storage.EmitStringArena
+import cloth.emitter.text.EmitString
 import cloth.emitter.types.*
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.primitives.EmitStringArena
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
@@ -16,9 +19,9 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.Expression
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ReturnStatement
-import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.ProviderAccess
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import cloth.settings.LinkOptions
 import cloth.token.TokenType
 import org.bytedeco.javacpp.PointerPointer
@@ -39,8 +42,8 @@ class ProviderResultsTest {
 	fun `integer bounds retain exact widths signedness and values`() {
 		for (width in ValueType.MACHINE_INTEGER_WIDTHS) for (unsigned in listOf(false, true)) {
 			val type = CInt(width, unsigned)
-			val minimum = assertIs<ProviderResult.IntegerConstant>(type.provider("min"))
-			val maximum = assertIs<ProviderResult.IntegerConstant>(type.provider("max"))
+			val minimum = assertIs<ProviderResult.IntegerConstant>(type.provider("min", nativeTestLayout))
+			val maximum = assertIs<ProviderResult.IntegerConstant>(type.provider("max", nativeTestLayout))
 			assertEquals(type, minimum.type)
 			assertEquals(type, maximum.receiverType)
 			assertEquals(if (unsigned) BigInteger.ZERO else BigInteger.ONE.shiftLeft(width - 1).negate(), minimum.value)
@@ -56,17 +59,17 @@ class ProviderResultsTest {
 			assertEquals(TokenType.Identifier, Lexer(provider.toString()).scanTokens().first().type)
 		}
 		assertNull(CompilerDataProviders.fromSpelling("MAX"))
-		assertNull(CInt().provider("unknown"))
-		assertNull(CInt().provider("addr"))
-		assertIs<ProviderResult.TypeMetadata>(CInt().provider("type"))
+		assertNull(CInt().provider("unknown", target))
+		assertNull(CInt().provider("addr", target))
+		assertIs<ProviderResult.TypeMetadata>(CInt().provider("type", target))
 		assertEquals(setOf(CompilerDataProviders.MIN, CompilerDataProviders.MAX, CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CFloat().providers(target).keys)
 		for (type in listOf(CBool, CChar, CString)) assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), type.providers(target).keys)
 		assertEquals(setOf(CompilerDataProviders.SIZE, CompilerDataProviders.STR, CompilerDataProviders.TYPE), CArray(CInt()).providers(target).keys)
 		assertEquals(setOf(CompilerDataProviders.TYPE), ValueType.VOID.providers(target).keys)
 		assertTrue(ValueType.NEVER.providers(target).isEmpty())
-		val ast = Parser(Lexer("1").scanTokens()).parseSnippet()
-		val semantics = SemanticAnalyzer().analyze(ast)
-		val expression = (ast.statements.single() as cloth.parser.statement.ExpressionStatement).expression
+		val ast = parseMain("1")
+		val semantics = FunctionAnalyzer(nativeTestLayout).analyze(ast).types
+		val expression = (ast.mainStatements.single() as cloth.parser.statement.ExpressionStatement).expression
 		assertEquals(CInt(), assertNotNull(semantics.providerAccess(expression, "max")).type)
 		assertEquals(CUSize(target.sizeBits), assertNotNull(semantics.providerAccess(expression, "size")).type)
 	}
@@ -96,7 +99,7 @@ class ProviderResultsTest {
 			}
 			for (width in ValueType.FLOAT_WIDTHS) {
 				val value = assertNotNull(expressions.emitProvider(ProviderAccess(receiver, ProviderResult.FloatingConstant(CFloat(width), BigDecimal("1.5"), CInt()))))
-				assertEquals(CFloat(width).llvmValue(context).address(), LLVMTypeOf(value).address())
+				assertEquals(CFloat(width).llvmValue(context, nativeTestLayout).address(), LLVMTypeOf(value).address())
 				val losesInfo = org.bytedeco.javacpp.IntPointer(1L)
 				try {
 					assertEquals(1.5, LLVMConstRealGetDouble(value, losesInfo))
@@ -124,7 +127,7 @@ class ProviderResultsTest {
 			val declaration = (semantics.declarations.functions.single().declaration.body as BlockBody).statements.first() as BindingDeclaration
 			for (count in 1..2) {
 				val result = assertNotNull(expressions.emitProvider(bound))
-				check(LLVMBuildICmp(builder, LLVMIntEQ, result, LLVMConstInt(CInt(8).llvmValue(context), 127, 0), "bound_valid"))
+				check(LLVMBuildICmp(builder, LLVMIntEQ, result, LLVMConstInt(CInt(8).llvmValue(context, nativeTestLayout), 127, 0), "bound_valid"))
 				check(LLVMBuildICmp(builder, LLVMIntEQ, bindings.read(semantics.declarations.symbolOf(declaration)), int(count), "count_valid"))
 			}
 		}
@@ -148,7 +151,7 @@ class ProviderResultsTest {
 			val dynamicType = semantics.typeOf(dynamic) as CArray
 			assertNull(dynamicType.size)
 			val dynamicValue = assertNotNull(expressions.emitProvider(ProviderAccess(dynamic, ProviderResult.ArrayExtent(dynamicType, 0, CInt(64, true)))))
-			check(LLVMBuildICmp(builder, LLVMIntEQ, dynamicValue, LLVMConstInt(CInt(64).llvmValue(context), 3, 0), "dynamic_valid"))
+			check(LLVMBuildICmp(builder, LLVMIntEQ, dynamicValue, LLVMConstInt(CInt(64).llvmValue(context, nativeTestLayout), 3, 0), "dynamic_valid"))
 			val known = receiver("known")
 			val knownValue = assertNotNull(expressions.emitProvider(ProviderAccess(known, ProviderResult.ArrayExtent(semantics.typeOf(known) as CArray, 0, CInt(64)))))
 			assertEquals(2L, LLVMConstIntGetSExtValue(knownValue))
@@ -189,7 +192,7 @@ class ProviderResultsTest {
 				val expression = receiver(name)
 				val type = semantics.typeOf(expression) as CArray
 				val value = assertNotNull(expressions.emitProvider(ProviderAccess(expression, ProviderResult.ArrayExtent(type, 1, CInt(64)))))
-				check(LLVMBuildICmp(builder, LLVMIntEQ, value, LLVMConstInt(CInt(64).llvmValue(context), expected, 1), "inner_extent_valid"))
+				check(LLVMBuildICmp(builder, LLVMIntEQ, value, LLVMConstInt(CInt(64).llvmValue(context, nativeTestLayout), expected, 1), "inner_extent_valid"))
 			}
 		}
 	}
@@ -202,7 +205,7 @@ class ProviderResultsTest {
 		""") {
 			val wrapperType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 				parameters.put(0, LLVMPointerTypeInContext(context, 0))
-				LLVMFunctionType(CString.llvmValue(context), parameters, 1, 0)
+				LLVMFunctionType(CString.llvmValue(context, nativeTestLayout), parameters, 1, 0)
 			}
 			val wrapper = LLVMAddFunction(module, "provider_wrapper", wrapperType)
 			val nestedBuilder = LLVMCreateBuilderInContext(context)
@@ -254,7 +257,7 @@ class ProviderResultsTest {
 		emitter.withFunctions(ast) { context, module, functions, semantics ->
 			val builder = LLVMCreateBuilderInContext(context)
 			try {
-				val signature = LLVMFunctionType(CInt().llvmValue(context), null as PointerPointer<*>?, 0, 0)
+				val signature = LLVMFunctionType(CInt().llvmValue(context, nativeTestLayout), null as PointerPointer<*>?, 0, 0)
 				val main = LLVMAddFunction(module, "main", signature)
 				val harness = Harness(context, module, builder, functions, semantics, main)
 				harness.action()
@@ -306,15 +309,15 @@ class ProviderResultsTest {
 		val bindings: EmitBindings
 		val strings: EmitString
 		val expressions: EmitExpression
-		var success: LLVMValueRef = LLVMConstInt(CBool.llvmValue(context), 1, 0)
+		var success: LLVMValueRef = LLVMConstInt(CBool.llvmValue(context, nativeTestLayout), 1, 0)
 
 		init {
 			LLVMPositionBuilderAtEnd(builder, entry)
-			frame = EmitFunctionFrame(context, builder, entry, returnType, returnType.llvmValue(context), EmitStringArena(context, module, abi), callerArena)
-			bindings = EmitBindings(context, builder, entry)
+			frame = EmitFunctionFrame(context, builder, entry, returnType, returnType.llvmValue(context, nativeTestLayout), EmitStringArena(context, module, abi), callerArena)
+			bindings = EmitBindings(context, builder, entry, abi.layout)
 			strings = EmitString(context, builder, abi)
 			val casts = EmitCast(context, builder, semantics.types, abi)
-			expressions = EmitExpression(context, builder, bindings, semantics.types, casts, strings, EmitPower(context, builder, abi), abi, functions, semantics, cloth.semantic.ResultShape.of(returnType), frame)
+			expressions = EmitExpression(context, builder, bindings, casts, strings, EmitPower(context, builder, abi), abi, functions, semantics, cloth.semantic.ResultShape.of(returnType), frame)
 		}
 
 		fun receiver(name: String = "sample"): Expression = when (val body = semantics.declarations.functions.single { it.name.lexeme == name }.declaration.body) {
@@ -325,7 +328,7 @@ class ProviderResultsTest {
 			}
 		}
 
-		fun int(value: Int): LLVMValueRef = LLVMConstInt(CInt().llvmValue(context), value.toLong(), 1)
+		fun int(value: Int): LLVMValueRef = LLVMConstInt(CInt().llvmValue(context, nativeTestLayout), value.toLong(), 1)
 		fun check(condition: LLVMValueRef) {
 			success = LLVMBuildAnd(builder, success, condition, "checks_pass")
 		}

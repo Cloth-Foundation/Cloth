@@ -94,10 +94,9 @@ class SemicolonsTest {
 	}
 
 	@Test
-	fun `snippet parser shares the separator rules`() {
-		val ast = Parser(Lexer(";;def x = 1; x++;\nx;").scanTokens()).parseSnippet()
-		assertEquals(3, ast.statements.size)
-		assertTrue(Parser(Lexer(";;;").scanTokens()).parseSnippet().statements.isEmpty())
+	fun `function bodies accept empty statements and mixed separators`() {
+		assertEquals(3, parseMain(";;def x = 1; x++;\nx;").mainStatements.size)
+		assertTrue(parseMain(";;;").mainStatements.isEmpty())
 	}
 
 	@Test

@@ -14,13 +14,12 @@ import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
+import cloth.emitter.storage.EmitStackScope
+import cloth.emitter.text.EmitString
 import cloth.emitter.types.primitives.EmitIntegerMember
-import cloth.emitter.types.EmitStackScope
-import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.SemanticAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -35,7 +34,7 @@ class IntegerAttachmentsTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("integer-members.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -57,9 +56,9 @@ class IntegerAttachmentsTest {
 				assertNull(PrimitiveAttachments[type, "Abs", target])
 			}
 		}
-		assertNull(PrimitiveAttachments[ValueType.BOOL, "abs"])
-		assertEquals(ValueType.FLOAT, PrimitiveAttachments[ValueType.FLOAT, "abs"]?.overload?.returns)
-		assertNull(PrimitiveAttachments[ValueType.CHAR, "abs"])
+		assertNull(PrimitiveAttachments[ValueType.BOOL, "abs", nativeTestLayout])
+		assertEquals(ValueType.FLOAT, PrimitiveAttachments[ValueType.FLOAT, "abs", nativeTestLayout]?.overload?.returns)
+		assertNull(PrimitiveAttachments[ValueType.CHAR, "abs", nativeTestLayout])
 	}
 
 	@Test
@@ -213,8 +212,8 @@ class IntegerAttachmentsTest {
 		val bounded = unit("fn<usize> f() { def<usize> n = 4294967296; return n.leadingZeros() }")
 		assertContains(LLVMEmitter(NativeCABI.forTarget("x86_64-pc-windows-msvc")).emit(bounded), "i64")
 		assertEquals(DiagnosticCode.INTEGER_RANGE, assertFailsWith<ClothDiagnostic> { LLVMEmitter(NativeCABI.forTarget("i686-pc-windows-msvc")).emit(bounded) }.diagnosticCode)
-		val parser = Parser(Lexer("(-8).abs()").scanTokens()).parseSnippet()
-		assertEquals(ValueType.INT, SemanticAnalyzer().analyze(parser).typeOf((parser.statements.single() as cloth.parser.statement.ExpressionStatement).expression))
+		val program = parseMain("(-8).abs()")
+		assertEquals(ValueType.INT, FunctionAnalyzer(nativeTestLayout).analyze(program).typeOf(program.mainStatements.single()))
 	}
 
 	@Test

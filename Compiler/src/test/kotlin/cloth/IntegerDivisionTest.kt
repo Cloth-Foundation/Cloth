@@ -9,7 +9,7 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.settings.LinkOptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -21,7 +21,7 @@ import kotlin.test.*
 class IntegerDivisionTest {
 
 	private fun parser(source: String) = Parser(Lexer(SourceFile("division.co", source.trimIndent())).scanTokens())
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parser(source).parse())
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parser(source).parse())
 	private fun failure(source: String, code: DiagnosticCode) {
 		val diagnostic = assertFailsWith<ClothDiagnostic>(source) { analyze(source) }
 		assertEquals(code, diagnostic.diagnosticCode)
@@ -60,7 +60,7 @@ class IntegerDivisionTest {
 		val source = "fn main() { 0 / 0 }"
 		val target = directory.resolve("absent/program")
 		val emitter = LLVMEmitter(LinkOptions(linker = Path.of("missing-linker")))
-		for (action in listOf<() -> Any>({ emitter.compile(parser(source).parse(), target) }, { emitter.compileObject(parser(source).parse(), target) }, { emitter.emitExecutable(parser(source).parse()) }, { emitter.emit(parser(source).parse()) }, { emitter.emitSnippet(parser("0 / 0").parseSnippet()) })) {
+		for (action in listOf<() -> Any>({ emitter.compile(parser(source).parse(), target) }, { emitter.compileObject(parser(source).parse(), target) }, { emitter.emitExecutable(parser(source).parse()) }, { emitter.emit(parser(source).parse()) })) {
 			assertEquals(DiagnosticCode.INTEGER_ZERO_DIVISOR, assertFailsWith<ClothDiagnostic> { action() }.diagnosticCode)
 			assertFalse(Files.exists(target.parent))
 		}

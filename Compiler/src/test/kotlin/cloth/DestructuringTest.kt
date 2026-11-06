@@ -18,17 +18,18 @@ import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.MultiAssignmentStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.semantic.*
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class DestructuringTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("destructuring.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun function(model: FunctionSemanticModel, name: String = "values") = model.declarations.functions.single { it.name.lexeme == name }
 	private fun body(model: FunctionSemanticModel, name: String = "values") = assertIs<BlockBody>(function(model, name).declaration.body).statements
 	private fun group(model: FunctionSemanticModel) = body(model).filterIsInstance<BindingGroupDeclaration>().single()
@@ -227,6 +228,13 @@ class DestructuringTest {
 		assertEquals(listOf(CString, CInt()), model.types.representedResultsOf(returned))
 		val repeated = analyze("fn<typeinfo> values() { def t = int::type\n t, t = string::type, bool::type\n return t }")
 		assertEquals(listOf(CBool), repeated.types.representedResultsOf(assertIs<ReturnStatement>(body(repeated).last()).value!!))
+		failure("""
+			fn values() {
+				def a, b = int[2]::type, string::type
+				a, b = b, a
+				a::element
+			}
+		""", DiagnosticCode.INVALID_METADATA_ACCESS)
 	}
 
 	@Test
@@ -264,9 +272,9 @@ class DestructuringTest {
 		val declaration = assertIs<BindingGroupDeclaration>(conditional.branches.single().statements.first())
 		val plan = model.types.receptionOf(declaration)
 		assertEquals(ReceptionKind.POSITIONAL, plan.kind)
-		val fork = model.fork()
-		assertEquals(plan, fork.types.receptionOf(declaration))
-		model.commit(fork)
+		val trial = model.trial()
+		assertEquals(plan, trial.model.types.receptionOf(declaration))
+		trial.commit()
 		assertEquals(listOf(CInt(8), CBool), model.declarations.symbolsOf(declaration).filterNotNull().map { model.typeOf(it) })
 	}
 
@@ -283,26 +291,29 @@ class DestructuringTest {
 	}
 
 	@Test
-	fun `snippet checking shares definition assignment discard and metadata rules`() {
-		fun snippet(source: String) = Parser(Lexer(SourceFile("reception-snippet.co", source)).scanTokens()).parseSnippet()
-		val ast = snippet("def<int<8>, int<64>> a, b = 1, 2\na, b = 3, 4\n_, _ = a, b")
-		val model = SemanticAnalyzer().analyze(ast)
-		assertTrue(ast.statements.all { model.receptionOf(it).kind == ReceptionKind.POSITIONAL })
-		val bad = snippet("def a, b = int::type, string::type\na, b = b, a\n a::element")
-		assertEquals(DiagnosticCode.INVALID_METADATA_ACCESS, assertFailsWith<ClothDiagnostic> { SemanticAnalyzer().analyze(bad) }.diagnosticCode)
+	fun `typed definitions assignments and discards retain positional plans in one body`() {
+		val model = analyze("""
+			fn values() {
+				def<int<8>, int<64>> a, b = 1, 2
+				a, b = 3, 4
+				_, _ = a, b
+			}
+		""")
+		assertEquals(List(3) { ReceptionKind.POSITIONAL }, body(model).map { model.types.receptionOf(it).kind })
 	}
 
 	@Test
-	fun `positional producers emit through source object and snippet paths`(@TempDir directory: Path) {
-		val unit = parse("fn main() { def x, _ = if (true) { true, false } else { false, true } }")
-		FunctionAnalyzer().analyze(unit)
-		val path = directory.resolve("absent").resolve("program")
-		assertTrue(Files.exists(LLVMEmitter().compile(unit, path)))
-		assertTrue(Files.exists(LLVMEmitter().compileObject(unit, directory.resolve("module.o"))))
-		val snippet = Parser(Lexer(SourceFile("native-snippet.co", "def a, b = 1, true")).scanTokens()).parseSnippet()
-		SemanticAnalyzer().analyze(snippet)
-		assertTrue(Files.exists(LLVMEmitter().compileSnippet(snippet, directory.resolve("snippet"))))
-		assertContains(LLVMEmitter().emitSnippet(snippet), "define")
+	fun `positional producers emit an object and receive values in a native program`(@TempDir directory: Path) {
+		val source = """
+			def selected, _ = if (true) { true, false } else { false, true }
+			def number, ready = 1, true
+			println(selected)
+			println(number)
+			println(ready)
+		"""
+		assertMainOutput(directory.resolve("program"), source, "true\n1\ntrue\n")
+		val objectFile = LLVMEmitter().compileObject(parseMain(source), directory.resolve("module.o"))
+		assertTrue(Files.size(objectFile) > 0)
 	}
 
 	@Test
@@ -333,15 +344,7 @@ class DestructuringTest {
 			val ir = emitter.emit(unit)
 			assertFalse(Regex("%_(?:\\.\\d+)? = alloca").containsMatchIn(ir), ir)
 			val executable = emitter.compile(unit, directory.resolve("broadcast-$index"))
-			val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-			try {
-				assertTrue(process.waitFor(20, TimeUnit.SECONDS))
-				val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
-				assertEquals(0, process.exitValue(), output)
-				assertEquals(("made" + System.lineSeparator()).repeat(4) + processCompletion(), output)
-			} finally {
-				if (process.isAlive) process.destroyForcibly()
-			}
+			assertEquals(("made" + System.lineSeparator()).repeat(4) + processCompletion(), runExecutable(executable))
 		}
 	}
 }

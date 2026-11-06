@@ -4,7 +4,7 @@ import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.diagnostics.BackendErrors
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitMemory
+import cloth.emitter.storage.EmitMemory
 import cloth.emitter.types.EmitRuntimeError
 import cloth.emitter.types.kernel.IntegerFloatKernelIR
 import cloth.emitter.types.kernel.IntegerKernelIR

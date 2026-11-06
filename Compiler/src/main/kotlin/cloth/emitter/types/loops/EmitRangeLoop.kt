@@ -5,13 +5,15 @@ import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.storage.EmitBindings
 import cloth.emitter.types.*
 import cloth.emitter.types.primitives.EmitHalf
 import cloth.emitter.types.primitives.EmitIntegerDivision
 import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
-import cloth.semantic.SemanticModel
+import cloth.semantic.symbols.LoopBindingSymbol
+import cloth.semantic.typing.SemanticModel
 import cloth.token.Operators
 import cloth.token.TokenSpan
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
@@ -54,7 +56,7 @@ internal class EmitRangeLoop(
 		return rangeValues.compare(left, right, type, relation)
 	}
 
-	fun emit(statement: ForStatement, key: Any) {
+	fun emit(statement: ForStatement, key: LoopBindingSymbol) {
 		val source = statement.source as ForSource.Range
 		val type = semantics.loopOf(statement).bindingType
 		// Each endpoint dominates the backedge; return/failure skips the remaining source.
@@ -65,7 +67,7 @@ internal class EmitRangeLoop(
 		if (expressions.terminated()) return
 		finite(checkNotNull(end), type, source.end.span)
 		bindings.withScope {
-			bindings.declare(key, statement.binding.name.lexeme, type, start)
+			bindings.declare(key, type, start)
 			val ascending = compare(start, end, type, Operators.LESS_EQUAL)
 			fun member(value: LLVMValueRef): LLVMValueRef {
 				val forward = LLVMBuildAnd(builder, compare(start, value, type, Operators.LESS_EQUAL), compare(value, end, type, if (source.inclusive) Operators.LESS_EQUAL else Operators.LESS), "range_forward")

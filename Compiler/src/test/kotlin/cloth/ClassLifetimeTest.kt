@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -153,10 +153,10 @@ class ClassLifetimeTest {
 			"fn bad() { def item = Item::new(1); do { item::delete; break } while (false); println(item.value) }",
 			"fn bad() { def item = Item::new(1); do { item::delete; continue } while (false); println(item.value) }",
 		)) {
-			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer().analyze(structUnit(type + source)) }
+			val failure = assertFailsWith<SemanticException>(source) { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(type + source)) }
 			assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, failure.diagnosticCode)
 		}
-		val recursive = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit("typedef<class> Item { ~Item { self::delete } }")) }
+		val recursive = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit("typedef<class> Item { ~Item { self::delete } }")) }
 		assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, recursive.diagnosticCode)
 	}
 

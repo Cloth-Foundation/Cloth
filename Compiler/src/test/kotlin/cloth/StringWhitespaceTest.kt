@@ -8,7 +8,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -24,7 +24,7 @@ class StringWhitespaceTest {
 	private fun unit(source: String) = parser(source).parse()
 	private fun literal(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\u0000", "\\0").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\""
 	private fun failure(source: String, code: DiagnosticCode) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, error.diagnosticCode, source)
 		assertLocated(error)
 	}
@@ -154,9 +154,9 @@ class StringWhitespaceTest {
 	}
 
 	@Test
-	fun `legacy snippets share the whitespace methods without additional syntax`() {
-		val ast = parser("\"　😀 \".trim().isBlank()").parseSnippet()
-		assertContains(LLVMEmitter().emitSnippet(ast), "unicode_white_space")
+	fun `chained whitespace methods emit through function bodies`() {
+		val ast = parseMain("\"　😀 \".trim().isBlank()")
+		assertContains(LLVMEmitter().emit(ast), "unicode_white_space")
 	}
 
 	@Test

@@ -18,19 +18,19 @@ fn<typeinfo> update(final Cell cell) {
 
 ## Nominal types and contextual literals
 
-- [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/NamedTypes.kt)
+- [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/NamedTypes.kt)
   collects names before resolving fields or function signatures. It builds one
   `CStruct` per declaration and reuses it in arrays, nullable values, fields and
   calls. Duplicate names, void fields, unknown field types, omitted dimensions
   and dependency cycles stop analysis. A cycle through an array or nullable
   wrapper receives a single diagnostic with field labels.
-- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   uses the expected nominal type for a literal. Each declared field supplies
   context for its expression, including nested literals, contextual numbers,
   arrays and null. Count and type mismatches carry source labels. Fixed extents
   use ordinary array checking. A source array with unknown extents carries a
   shape obligation through the field's declared type for lowering.
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   checks literal arguments in the existing isolated candidate models. Each
   candidate supplies its own expected type. The selected candidate commits its
   nested literal, field and assignment facts. Distinct nominal contexts that
@@ -52,7 +52,7 @@ fn<typeinfo> update(final Cell cell) {
   arithmetic checks. Fields of final bindings remain writable. Writes through
   temporary or deferred struct results fail, and earlier parameter fields in a
   default follow the existing read-only policy.
-- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
   tracks stable paths by binding identity, field names and constant indices.
   Assignment to a path clears proofs for that path and descendants. Unknown
   write indices conservatively overlap any index at that position. A dynamic
@@ -78,7 +78,7 @@ At Stage 2, valid source units with structs reached C3077 during emission
 validation, before LLVM lowering, toolchain lookup or output creation. Stage 3
 introduced [local execution](local-storage.md), and
 [Stage 4](function-integration.md) completes source function and traversal support.
-Snippet APIs still report C3077 for struct syntax because they accept body fragments.
+The production body fixtures use source units with struct declarations.
 
 ## Verification
 

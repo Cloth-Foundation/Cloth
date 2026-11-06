@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 internal fun structUnit(source: String) = Parser(Lexer(SourceFile("struct-runtime.co", source.trimIndent())).scanTokens()).parse()
@@ -32,18 +31,8 @@ internal fun structRunners(): List<NativeCABI> = NativeCABI.native().let { abi -
 	if (abi.windows) listOf(abi, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(abi)
 }
 
-internal fun runStructProgram(abi: NativeCABI, source: String, output: Path, status: Int = 0): String {
-	val executable = LLVMEmitter(abi).compile(structUnit(source), output)
-	val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-	try {
-		assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Struct executable timed out on ${abi.targetTriple}")
-		val result = process.inputStream.readBytes().toString(Charsets.UTF_8).replace("\r\n", "\n")
-		assertEquals(status, process.exitValue(), "${abi.targetTriple}: $result")
-		return result
-	} finally {
-		if (process.isAlive) process.destroyForcibly()
-	}
-}
+internal fun runStructProgram(abi: NativeCABI, source: String, output: Path, status: Int = 0): String =
+	runExecutable(LLVMEmitter(abi).compile(structUnit(source), output), status).replace("\r\n", "\n")
 
 class StructEmissionTest {
 

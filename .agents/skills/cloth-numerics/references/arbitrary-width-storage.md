@@ -48,7 +48,7 @@ requests remain checked. Bare type metadata does not request numeric formatting.
   classifies private transport separately from `buffered`. A wide integer remains
   a fixed scalar, not a source array/string. Arithmetic uses stack scratch, without
   allocating a heap object per operation. Nullable types propagate transport.
-- [EmitStoredValue](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStoredValue.kt)
+- [EmitStoredValue](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStoredValue.kt)
   bridges inline bytes and immutable expression snapshots. A binding/element read
   copies into independent stack storage before later operand/argument effects.
   Writes copy into the destination bytes. Whole limb arrays are never loaded as
@@ -61,7 +61,7 @@ requests remain checked. Bare type metadata does not request numeric formatting.
 
 ## Private calls, results and lifetime
 
-[EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+[EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
 passes wide arguments as pointers to completed snapshots. Each callee receives
 an independent inline parameter binding. This preserves written argument order,
 later captured mutations, named placement, recursion and omission defaults; omitted
@@ -71,8 +71,8 @@ hidden result-arena parameter as before.
 Wide results use the existing caller-supplied destination arena, returning a
 pointer (or small nullable/multiple-result carrier). This refines the Stage 1
 private indirect-result design using the established caller-owned copy mechanism.
-[EmitFunctionFrame](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt)
-and [EmitStringArena.copyValue](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt)
+[EmitFunctionFrame](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctionFrame.kt)
+and [EmitStringArena.copyValue](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStringArena.kt)
 copy outgoing bytes before releasing the callee arena/frame. Multiple results
 copy each escaping slot independently. No public ABI or C interop is promised.
 
@@ -81,7 +81,7 @@ data; they do not allocate one heap block per integer element. Recursion into
 string/nested-array storage continues under existing rules. Row extraction,
 assignment, nullable rows and foreach snapshots retain independent values/shapes.
 
-[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+[ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
 recognizes wide temporary production while preserving the closed escape proof.
 Inline wide writes cannot publish temporary pointers. Safe loop iterations and
 conditions release arena suffixes and restore stack checkpoints; range membership
@@ -108,14 +108,14 @@ min/max through immutable limb constants; nullable type bounds return plain exac
 payload types. Metadata spelling/equality and receiver effects are preserved.
 Descriptors never retain context-bound LLVM handles or target-local sizes.
 
-[EmitArray.checkedAddress](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt)
+[EmitArray.checkedAddress](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt)
 compares the entire original wide index against a zero-extended target-sized
 bound before narrowing for addressing. Negative signed bit patterns exceed every
 such bound. Large indices with low zero bits cannot alias element zero, and
 indexed assignment validates before evaluating the RHS. Allocation/count limits
 remain target usize and signed pointer index limits, independent of 65536.
 
-[EmitEntryPoint](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitEntryPoint.kt)
+[EmitEntryPoint](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitEntryPoint.kt)
 supplies a result arena for wide signed main, loads low native C-int bits before
 releasing result/argument storage, then emits ordinary PEC and returns that status.
 Unsigned main results remain rejected. Object emission requires no main and

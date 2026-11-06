@@ -3,8 +3,8 @@ package cloth
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.FunctionAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -155,7 +155,7 @@ class ClassFormattingTest {
 			"typedef<class> Item\nfn main() { def item = Item::new; def<Item?> alias = item; item::delete; println(alias) }" to DiagnosticCode.DELETED_CLASS_ACCESS,
 		)
 		for ((source, code) in cases) {
-			val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+			val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 			assertEquals(code, error.diagnosticCode, source)
 		}
 	}
@@ -176,7 +176,7 @@ class ClassFormattingTest {
 			    return "absent"
 			}
 		"""
-		val error = assertFailsWith<SemanticException> { FunctionAnalyzer().analyze(structUnit(source)) }
+		val error = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }
 		assertEquals(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, error.diagnosticCode)
 	}
 }

@@ -43,7 +43,7 @@ under their historical milestones below and resolved in step 3.
 Implementation record:
 
 - `token/Keywords.kt`, `parser/subs/TypeParser.kt` and
-  `semantic/TypeResolver.kt` recognize isize annotations, casts, type receivers,
+  `semantic/declarations/TypeResolver.kt` recognize isize annotations, casts, type receivers,
   function parameters/results and array element types. Explicit isize width
   suffixes and unsigned modifiers are rejected by existing diagnostics.
 - `data/CISize.kt` supplies signedness and canonical spelling. Shared CInteger

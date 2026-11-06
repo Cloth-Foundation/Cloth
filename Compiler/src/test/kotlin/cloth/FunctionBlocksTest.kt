@@ -12,8 +12,8 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.FunctionBlockExpression
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.ControlFlow
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.flow.ControlFlow
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -24,7 +24,7 @@ import kotlin.test.*
 class FunctionBlocksTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("blocks.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic {
 		val diagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }
 		assertEquals(code, diagnostic.diagnosticCode)

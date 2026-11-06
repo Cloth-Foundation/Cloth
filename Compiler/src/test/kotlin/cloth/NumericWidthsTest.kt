@@ -3,24 +3,20 @@ package cloth
 import cloth.data.CFloat
 import cloth.data.CInt
 import cloth.data.ValueType
-import cloth.emitter.LLVMEmitter
-import cloth.lexer.Lexer
-import cloth.parser.Parser
-import cloth.semantic.SemanticAnalyzer
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.Keywords
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class NumericWidthsTest {
-
-	private fun parse(source: String) = Parser(Lexer(source.trimIndent()).scanTokens()).parseSnippet()
 
 	@Test
 	fun `numeric families carry validated widths and derive their spelling from keywords`() {
@@ -28,9 +24,9 @@ class NumericWidthsTest {
 			val type = CInt(bits, unsigned)
 			val spelling = (if (unsigned) "${Keywords.UNSIGNED} " else "") + Keywords.INTEGER + (if (bits == ValueType.DEFAULT_BITS) "" else "<$bits>")
 			assertEquals(spelling, type.spelling)
-			val ast = parse("def<${if (unsigned) "${Keywords.UNSIGNED} " else ""}${Keywords.INTEGER}<$bits>> value = 1\ndef copy := value + 1")
-			val model = SemanticAnalyzer().analyze(ast)
-			assertTrue(ast.statements.all { model.typeOf(it) == type })
+			val ast = parseMain("def<${if (unsigned) "${Keywords.UNSIGNED} " else ""}${Keywords.INTEGER}<$bits>> value = 1\ndef copy := value + 1")
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+			assertTrue(ast.mainStatements.all { model.typeOf(it) == type })
 		}
 		for (bits in ValueType.FLOAT_WIDTHS) {
 			val type = CFloat(bits)
@@ -48,24 +44,24 @@ class NumericWidthsTest {
 			val minimum = if (unsigned) 0 else -(1 shl (bits - 1))
 			val maximum = (1 shl (bits - if (unsigned) 0 else 1)) - 1
 			for (value in listOf(minimum, maximum)) {
-				SemanticAnalyzer().analyze(parse("def<${type.spelling}> x = $value\nx = $value"))
+				FunctionAnalyzer(nativeTestLayout).analyze(parseMain("def<${type.spelling}> x = $value\nx = $value"))
 			}
 			for (value in listOf(minimum - 1, maximum + 1)) {
-				val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse("def<${type.spelling}> x = $value")) }
+				val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parseMain("def<${type.spelling}> x = $value")) }
 				assertContains(failure.message.orEmpty(), "out of range")
 			}
 		}
 		for (type in listOf("int<0>", "int<65537>", "int<131072>", "float<8>", "float<128>", "int<18446744073709551615>", "bool<8>")) {
-			assertFailsWith<SemanticException>(type) { SemanticAnalyzer().analyze(parse("1 -> $type")) }
+			assertFailsWith<SemanticException>(type) { FunctionAnalyzer(nativeTestLayout).analyze(parseMain("1 -> $type")) }
 		}
 		for (source in listOf("def<int<8>> x = 1\nx = 1 -> int<16>", "def<int<8>> x = 1\ndef<int<16>> y = 1\nx + y", "def value = 1.0\ndef<float<16>> x = value", "def<float<16>> x = 1.0\ndef value = 1.0\nx = value")) {
-			assertFailsWith<SemanticException>(source) { SemanticAnalyzer().analyze(parse(source)) }
+			assertFailsWith<SemanticException>(source) { FunctionAnalyzer(nativeTestLayout).analyze(parseMain(source)) }
 		}
 	}
 
 	@Test
 	fun `half arithmetic preserves half while mixed expressions widen`() {
-		val ast = parse("""
+		val ast = parseMain("""
 			def half = 1 -> float<16>
 			def other = 2 -> float<16>
 			def sum = half + other
@@ -73,8 +69,8 @@ class NumericWidthsTest {
 			def mixedFloat = half + 1.0
 			def mixedWide = half + (1 -> float<64>)
 		""")
-		val model = SemanticAnalyzer().analyze(ast)
-		assertEquals(listOf(16, 16, 16, 32, 32, 64).map { CFloat(it) }, ast.statements.map { model.typeOf(it) })
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+		assertEquals(listOf(16, 16, 16, 32, 32, 64).map { CFloat(it) }, ast.mainStatements.map { model.typeOf(it) })
 	}
 
 	@Test
@@ -85,27 +81,27 @@ class NumericWidthsTest {
 			val unsigned = "unsigned int<$bits>"
 			val minimum = -(1 shl (bits - 1))
 			val maximum = (1 shl bits) - 1
-			cases += "def<$signed> x = $minimum\nx" to "$minimum"
-			cases += "def<$signed> x = -5\nx / 2" to "-2"
-			cases += "def<$signed> x = -5\nx % 2" to "-1"
-			cases += "def<$unsigned> x = $maximum\nx" to "$maximum"
-			cases += "def<$unsigned> x = $maximum\nx + 1" to "0"
-			cases += "def<$unsigned> x = 0\nx - 1" to "$maximum"
-			cases += "def<$unsigned> x = $maximum\nx / 2" to "${maximum / 2}"
-			cases += "def<$unsigned> x = $maximum\nx % 2" to "1"
-			cases += "def<$unsigned> x = $maximum\nx > 1 && 1 < x && x != 0" to "true"
-			cases += "def<$signed> x = $minimum\nx < 0 && x <= $minimum" to "true"
-			cases += "def<$signed> x = -1\nx -> int<64>" to "-1"
-			cases += "def<$unsigned> x = $maximum\nx -> int<64>" to "$maximum"
-			cases += "def<$unsigned> x = $maximum\nx -> float<64>" to "$maximum"
-			cases += "def<$unsigned> x = $maximum\ndef copy := x\nx = x + 1\ncopy" to "$maximum"
+			cases += "def<$signed> x = $minimum\nprintln(x)" to "$minimum"
+			cases += "def<$signed> x = -5\nprintln(x / 2)" to "-2"
+			cases += "def<$signed> x = -5\nprintln(x % 2)" to "-1"
+			cases += "def<$unsigned> x = $maximum\nprintln(x)" to "$maximum"
+			cases += "def<$unsigned> x = $maximum\nprintln(x + 1)" to "0"
+			cases += "def<$unsigned> x = 0\nprintln(x - 1)" to "$maximum"
+			cases += "def<$unsigned> x = $maximum\nprintln(x / 2)" to "${maximum / 2}"
+			cases += "def<$unsigned> x = $maximum\nprintln(x % 2)" to "1"
+			cases += "def<$unsigned> x = $maximum\nprintln(x > 1 && 1 < x && x != 0)" to "true"
+			cases += "def<$signed> x = $minimum\nprintln(x < 0 && x <= $minimum)" to "true"
+			cases += "def<$signed> x = -1\nprintln(x -> int<64>)" to "-1"
+			cases += "def<$unsigned> x = $maximum\nprintln(x -> int<64>)" to "$maximum"
+			cases += "def<$unsigned> x = $maximum\nprintln(x -> float<64>)" to "$maximum"
+			cases += "def<$unsigned> x = $maximum\ndef copy := x\nx = x + 1\nprintln(copy)" to "$maximum"
 		}
 		assertPrograms(directory, cases)
 	}
 
 	@Test
 	fun `native half conversions arithmetic and comparisons round at half precision`(@TempDir directory: Path) {
-		assertPrograms(directory, listOf("def half = 3 -> float<16>\nhalf" to "3", "def half = 3 -> float<16>\n-half" to "-3", "def half = 3 -> float<16>\nhalf + half" to "6", "def half = 3 -> float<16>\nhalf / (2 -> float<16>)" to "1.5", "def half = 3 -> float<16>\nhalf % (2 -> float<16>)" to "1", "def half = 2048 -> float<16>\n(half + (1 -> float<16>)) -> int" to "2048", "def half = 2048 -> float<16>\n(half + 1) -> int" to "2049", "def half = 2049 -> float<16>\nhalf -> float<64> -> int" to "2048", "def half = 65504 -> float<16>\nhalf -> int" to "65504", "def half = 3.75 -> float<16>\nhalf -> int<8>" to "3", "def half = -0.75 -> float<16>\nhalf -> unsigned int<8>" to "0", "def half = 1 -> float<16>\ndef copy := half\nhalf = half + half\ncopy < half && half == 2" to "true", "def zero = 0 -> float<16>\ndef nan = zero / zero\nnan != nan && !(nan == nan) && !(nan < zero)" to "true", "def zero = 0 -> float<16>\n1 / zero > 0 && -1 / zero < 0 && -zero == zero" to "true"))
+		assertPrograms(directory, listOf("def half = 3 -> float<16>\nprintln(half)" to "3", "def half = 3 -> float<16>\nprintln(-half)" to "-3", "def half = 3 -> float<16>\nprintln(half + half)" to "6", "def half = 3 -> float<16>\nprintln(half / (2 -> float<16>))" to "1.5", "def half = 3 -> float<16>\nprintln(half % (2 -> float<16>))" to "1", "def half = 2048 -> float<16>\nprintln((half + (1 -> float<16>)) -> int)" to "2048", "def half = 2048 -> float<16>\nprintln((half + 1) -> int)" to "2049", "def half = 2049 -> float<16>\nprintln(half -> float<64> -> int)" to "2048", "def half = 65504 -> float<16>\nprintln(half -> int)" to "65504", "def half = 3.75 -> float<16>\nprintln(half -> int<8>)" to "3", "def half = -0.75 -> float<16>\nprintln(half -> unsigned int<8>)" to "0", "def half = 1 -> float<16>\ndef copy := half\nhalf = half + half\nprintln(copy < half && half == 2)" to "true", "def zero = 0 -> float<16>\ndef nan = zero / zero\nprintln(nan != nan && !(nan == nan) && !(nan < zero))" to "true", "def zero = 0 -> float<16>\nprintln(1 / zero > 0 && -1 / zero < 0 && -zero == zero)" to "true"))
 	}
 
 	@Test
@@ -129,7 +125,7 @@ class NumericWidthsTest {
 				}
 				appendLine("def okay$index = $check")
 			}
-			appendLine(values.indices.joinToString(" && ") { "okay$it" })
+			appendLine(values.indices.joinToString(" && ", prefix = "println(", postfix = ")") { "okay$it" })
 		}
 		assertPrograms(directory, listOf(source to "true"))
 		assertPrograms(directory.resolve("double"), listOf("""
@@ -139,13 +135,13 @@ class NumericWidthsTest {
 				def below = (midpoint - epsilon) -> float<16>
 				def tie = midpoint -> float<16>
 				def above = (midpoint + epsilon) -> float<16>
-				below == 1.0 && tie == 1.0 && above == 1.0009765625
+				println(below == 1.0 && tie == 1.0 && above == 1.0009765625)
 			""" to "true", """
 				def threshold = 65520 -> float<64>
 				def epsilon = (1 -> float<64>) / 1048576
 				def below = (threshold - epsilon) -> float<16>
 				def above = (threshold + epsilon) -> float<16>
-				below == 65504.0 && above > 65504.0
+				println(below == 65504.0 && above > 65504.0)
 			""" to "true"))
 	}
 
@@ -159,39 +155,27 @@ class NumericWidthsTest {
 		val largest = java.math.BigDecimal(Float.MAX_VALUE.toDouble()).setScale(1).toPlainString()
 		val cutoff = ValueType.FLOAT.overflowThreshold
 		for (value in listOf(cutoff, cutoff + java.math.BigInteger.ONE)) {
-			val failure = assertFailsWith<SemanticException> { SemanticAnalyzer().analyze(parse("$value.0")) }
+			val failure = assertFailsWith<SemanticException> { FunctionAnalyzer(nativeTestLayout).analyze(parseMain("$value.0")) }
 			assertContains(failure.message.orEmpty(), Keywords.FLOAT.toString())
 		}
-		assertPrograms(directory, listOf("$midpoint == 1.0 && $below == 1.0 && $above == 1.00000011920928955078125" to "true", "${cutoff - java.math.BigInteger.ONE}.0 == $largest" to "true", "def value = $above\ndef copy := value\ncopy > 1.0 && value == 1.00000011920928955078125" to "true"))
+		assertPrograms(directory, listOf("println($midpoint == 1.0 && $below == 1.0 && $above == 1.00000011920928955078125)" to "true", "println(${cutoff - java.math.BigInteger.ONE}.0 == $largest)" to "true", "def value = $above\ndef copy := value\nprintln(copy > 1.0 && value == 1.00000011920928955078125)" to "true"))
 	}
 
 	@Test
 	fun `small float to integer casts check the truncated range`(@TempDir directory: Path) {
-		assertPrograms(directory, listOf("-128.75 -> int<8>" to "-128", "127.75 -> int<8>" to "127", "255.75 -> unsigned int<8>" to "255", "-0.75 -> unsigned int<8>" to "0", "-32768.75 -> int<16>" to "-32768", "32767.75 -> int<16>" to "32767", "65535.75 -> unsigned int<16>" to "65535"))
+		assertPrograms(directory, listOf("println(-128.75 -> int<8>)" to "-128", "println(127.75 -> int<8>)" to "127", "println(255.75 -> unsigned int<8>)" to "255", "println(-0.75 -> unsigned int<8>)" to "0", "println(-32768.75 -> int<16>)" to "-32768", "println(32767.75 -> int<16>)" to "32767", "println(65535.75 -> unsigned int<16>)" to "65535"))
 		for ((index, source) in listOf("-129.0 -> int<8>", "128.0 -> int<8>", "256.0 -> unsigned int<8>", "-32769.0 -> int<16>", "32768.0 -> int<16>", "65536.0 -> unsigned int<16>", "def zero = 0 -> float<16>\n(zero / zero) -> int<8>").withIndex()) {
-			val (exit, output) = runProgram(directory.resolve("invalid_$index"), source)
-			assertEquals(1, exit, source)
+			val output = runExecutable(compileMain(directory.resolve("invalid_$index"), source), status = 1)
+			assertFalse(output.contains("PEC:"), output)
 			assertContains(output, "Invalid numeric cast:")
 		}
 	}
 
 	private fun assertPrograms(directory: Path, cases: List<Pair<String, String>>) {
+		Files.createDirectories(directory)
 		for ((index, case) in cases.withIndex()) {
 			val (source, expected) = case
-			val (exit, output) = runProgram(directory.resolve("program_$index"), source)
-			assertEquals(0, exit, output)
-			assertEquals(expected, output, source)
-		}
-	}
-
-	private fun runProgram(output: Path, source: String): Pair<Int, String> {
-		val executable = LLVMEmitter().compileSnippet(parse(source), output)
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Executable timed out: $source")
-			return process.exitValue() to process.inputStream.bufferedReader().use { it.readText().trim() }
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
+			assertMainOutput(directory.resolve("program_$index"), source, "$expected\n")
 		}
 	}
 }

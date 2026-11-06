@@ -4,6 +4,8 @@ import cloth.ast.SourceUnit
 import cloth.data.*
 import cloth.diagnostics.EntryErrors
 import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import cloth.target.TargetLayout
 
 enum class ProgramKind { EXECUTABLE,
@@ -13,7 +15,7 @@ enum class ProgramKind { EXECUTABLE,
 data class ProgramModel(val kind: ProgramKind, val functions: FunctionSemanticModel, val entryPoint: FunctionSymbol?)
 
 /** Entry-point rules apply to executables, independently of function-body validation. */
-class ProgramAnalyzer(private val target: TargetLayout? = null) {
+class ProgramAnalyzer(private val target: TargetLayout) {
 
 	fun analyze(unit: SourceUnit, kind: ProgramKind = ProgramKind.EXECUTABLE): ProgramModel {
 		val functions = FunctionAnalyzer(target).analyze(unit)

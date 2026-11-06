@@ -37,6 +37,14 @@ member copy elision and proven arena/stack reclamation.
 
 ## Preserve the storage contract
 
+- [EmitValueTransfer](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitValueTransfer.kt)
+  owns frame snapshots, one-use array and result-carrier freshness, and row
+  publication. Keep positional preparation ahead of destination stores.
+  [EmitPlaces](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitPlaces.kt)
+  captures indices and revalidates destinations whose addresses can move.
+  Field arena replacement and release stay in class storage.
+  [Integration record](../cloth-language/references/development.md#shared-value-transfer-and-text-recipes-2026-11-06)
+
 - Class fields own their buffers separately from call frames. Whole-field
   replacement swaps the allocation chain. Nested buffered writes repack the
   live field before releasing the old chain. Class-backed receiver paths
@@ -184,11 +192,11 @@ and use `DoWhileTest` plus six probes in `ArrayTemporaryCleanupTest`: repeated
 body/test and outward-jump arena peaks, poisoned publication/returns, and
 2,000 full-cap wide-integer iterations preserving pre-loop storage.
 
-Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt),
-[EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt),
+Inspect [EmitFunctionFrame](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctionFrame.kt),
+[EmitStringArena](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStringArena.kt),
 [EmitExpression](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt),
-[ArrayTemporaryAnalysis](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt),
-and the affected [array emitter](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt).
+[ArrayTemporaryAnalysis](../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt),
+and the affected [array emitter](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt).
 
 Use `ForEachTest`, `ArrayCopyElisionTest`, `ArrayTemporaryCleanupTest`, `StringFunctionTest`, and
 the array assignment/shape suites. Allocation counters and poisoned freed memory

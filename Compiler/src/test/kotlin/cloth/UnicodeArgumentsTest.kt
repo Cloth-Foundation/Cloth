@@ -5,7 +5,7 @@ import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
-import cloth.emitter.types.EmitEntryPoint
+import cloth.emitter.callables.EmitEntryPoint
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.ProgramKind

@@ -23,7 +23,6 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
-	fun classSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_CLASSES, "Class lifecycle expressions require a declaration source unit", span)
 	fun duplicateClassType(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_CLASS_TYPE, "Type '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun classMember(message: String, span: TokenSpan, previous: Token? = null) = SemanticException(DiagnosticCode.INVALID_CLASS_MEMBER, message, listOfNotNull(SourceLabel(span, "class member here"), previous?.let { SourceLabel(it.span, "first declared here") }))
 	fun privateClassMember(name: Token, declaration: Token) = SemanticException(DiagnosticCode.PRIVATE_CLASS_MEMBER, "Class member '${name.lexeme}' is private", listOf(SourceLabel(name.span, "access outside the declaring class"), SourceLabel(declaration.span, "private member declared here")))
@@ -38,7 +37,6 @@ object SemanticErrors {
 		listOf(SourceLabel(span, "operator application")) + candidates.map { SourceLabel(it.declaration.span, "candidate '${it.signature.spelling}'") },
 	)
 
-	fun structSnippet(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_STRUCTS, "Struct semantics require a declaration source unit", span)
 	fun duplicateStruct(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_STRUCT, "Struct '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun structCycle(name: Token, fields: List<StructFieldDeclaration>) = SemanticException(DiagnosticCode.RECURSIVE_STRUCT, "Field types form a cycle through struct '${name.lexeme}'", fields.map { SourceLabel(it.type.span, "field '${it.name.lexeme}' is part of this cycle") })
 	fun structField(message: String, span: TokenSpan, declaration: TokenSpan? = null) = SemanticException(DiagnosticCode.INVALID_STRUCT_FIELD, message, listOfNotNull(SourceLabel(span, "field use here"), declaration?.let { SourceLabel(it, "field declared here") }))
@@ -57,7 +55,6 @@ object SemanticErrors {
 	fun parameterDefault(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_PARAMETER_DEFAULT, message, span)
 
 	fun nullableType(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_NULLABLE_TYPE, message, span)
-	fun nullablePending(span: TokenSpan, message: String = "This nullable form is not implemented yet") = issue(DiagnosticCode.UNSUPPORTED_NULLABILITY, message, span, "Nullable scalars, strings, whole arrays, elements and rectangular rows are supported in function bodies; this context does not support the requested nullable form.")
 	fun nullableContext(span: TokenSpan) = issue(DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "A nullable value requires an explicit nullable destination type", span, "Declare a matching 'T${Operators.QUESTION}' type, or use a presence proof or non-null fallback to obtain a non-null value. Cloth never infers nullability.")
 	fun nullablePayload(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Access to '${type.spelling}' requires proof that its payload is present", span, "Check the value against ${Keywords.NULL}, or supply a non-null fallback with '${Operators.ELVIS}'.")
 	fun elvis(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ELVIS, message, span)
@@ -89,7 +86,6 @@ object SemanticErrors {
 	fun metadata(represented: ValueType, name: Token, requirement: String) = issue(DiagnosticCode.INVALID_METADATA_ACCESS, "Type metadata ${Operators.COLON_COLON}${name.lexeme} requires $requirement, got '${represented.metadataSpelling}'", name.span)
 	fun typeReceiver(span: TokenSpan) = issue(DiagnosticCode.TYPE_RECEIVER_VALUE, "A type receiver is not an executable value", span, "Select compiler data from the type with '${Operators.COLON_COLON}name'.")
 	fun stateCall(name: Token) = issue(DiagnosticCode.UNSUPPORTED_STATE_CALL, "State-method calls are not implemented yet", name.span, "Parentheses select a state-method call; compiler data access uses no parentheses.")
-	fun unknown(name: Token) = issue(DiagnosticCode.UNKNOWN_BINDING, "Unknown binding '${name.lexeme}'", name.span, "Declare this binding before using it.")
 	fun unknownName(name: Token) = issue(DiagnosticCode.UNKNOWN_NAME, "Unknown name '${name.lexeme}'", name.span, "Declare a visible binding or function with this name.")
 	fun duplicateFunction(signature: String, first: Token, duplicate: Token) = SemanticException(DiagnosticCode.DUPLICATE_FUNCTION, "Function '$signature' is already declared", listOf(SourceLabel(first.span, "first declared here"), SourceLabel(duplicate.span, "same name and parameter types")), "Return types, parameter names and '${Keywords.FINAL}' do not distinguish overloads.")
 	fun notCallable(name: Token, declaration: Token) = SemanticException(DiagnosticCode.NOT_CALLABLE, "Binding '${name.lexeme}' is not callable", listOf(SourceLabel(declaration.span, "binding declared here"), SourceLabel(name.span, "called here")), "A local binding shadows a function with the same name.")
@@ -105,7 +101,7 @@ object SemanticErrors {
 	internal fun builtinArity(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.CALL_ARITY, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinNoMatch(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.NO_MATCHING_CALL, "No overload of '${call.name.lexeme}' accepts these arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinAmbiguous(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Call to '${call.name.lexeme}' is ambiguous", call.span, "Use explicit casts. Built-in signatures: ${definition.signatures}")
-	internal fun builtinArgument(call: CallExpression, argument: Expression, actual: ValueType, parameter: BuiltinParameter) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Built-in '${call.name.lexeme}' requires ${parameter.spelling}, got '${actual.spelling}'", argument.span, if (parameter == BuiltinParameter.Text) "Printing uses the value's str provider; array and class text formatting are not implemented yet." else "Argument types must match exactly; typed numeric values need explicit casts.")
+	internal fun builtinArgument(call: CallExpression, argument: Expression, actual: ValueType, parameter: BuiltinParameter) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Built-in '${call.name.lexeme}' requires ${parameter.spelling}, got '${actual.spelling}'", argument.span, if (parameter == BuiltinParameter.Text) "Printing uses the value's str provider. Arrays require printable elements." else "Argument types must match exactly; typed numeric values need explicit casts.")
 	fun voidValue(span: TokenSpan) = issue(DiagnosticCode.VOID_VALUE, "A ${Keywords.VOID} expression cannot supply a value", span)
 	fun voidType(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot be used as a parameter, binding or array element type", span)
 	fun voidResult(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot occupy a position in a multiple-result contract", span, "Use '${Operators.LESS}${Keywords.VOID}${Operators.GREATER}' for no results, or list only value types for multiple results.")

@@ -3,10 +3,11 @@ package cloth.emitter.types
 import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.storage.EmitNullable
 import cloth.emitter.types.primitives.EmitHalf
 import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.expression.CastExpression
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.SemanticModel
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef

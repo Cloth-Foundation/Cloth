@@ -42,7 +42,7 @@ nullable presence/fallbacks, ordered results and chained integer methods.
 Receiver effects occur once, while short circuits and early returns skip calls.
 While/do-while conditions and foreach scalar reception execute through existing
 flow paths. Strict arity/namespaces/result identities and first-error CLI failures
-are located and stop before object/linker work. A snippet check uses the same API.
+are located and stop before object/linker work.
 
 The maintained example and source integration fixtures execute on Windows
 x64/MSVC and x86/MSVC. Parameterized bool-to-int IR contains zero extension;

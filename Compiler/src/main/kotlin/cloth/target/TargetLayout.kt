@@ -1,7 +1,6 @@
 package cloth.target
 
 import cloth.data.ValueType
-import cloth.emitter.NativeCABI
 
 /** Immutable compilation facts, with no LLVM handles or process-global target state.
  * A synthetic layout can be used for semantic tests without enabling a native ABI.
@@ -23,11 +22,5 @@ data class TargetLayout(
 		require(pointerBits in ValueType.MACHINE_INTEGER_WIDTHS && sizeBits in ValueType.MACHINE_INTEGER_WIDTHS)
 		require(pointerAlignmentBits >= 8 && pointerAlignmentBits and (pointerAlignmentBits - 1) == 0)
 		require(listOf(cIntBits, cLongBits, cLongLongBits).all { it in ValueType.MACHINE_INTEGER_WIDTHS })
-	}
-
-	companion object {
-
-		/** Resolve a fresh configuration; never change an already selected compilation. */
-		fun native(): TargetLayout = NativeCABI.native().layout
 	}
 }

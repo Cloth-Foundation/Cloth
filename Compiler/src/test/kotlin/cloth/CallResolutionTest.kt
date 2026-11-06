@@ -13,16 +13,16 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.CallAnalyzer
-import cloth.semantic.FunctionSemanticModel
 import cloth.semantic.SemanticException
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
 import kotlin.test.*
 
 class CallResolutionTest {
 
-	private fun analyze(source: String) = CallAnalyzer().analyze(Parser(Lexer(SourceFile("calls.co", source.trimIndent())).scanTokens()).parseDeclarations())
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("calls.co", source.trimIndent())).scanTokens()).parseDeclarations())
 	private fun function(model: FunctionSemanticModel, name: String = "test") = model.declarations.functions.single { it.name.lexeme == name }.declaration
 	private fun body(model: FunctionSemanticModel) = assertIs<BlockBody>(function(model).body).statements
 	private fun call(model: FunctionSemanticModel, index: Int = 0) = assertIs<CallExpression>(assertIs<ExpressionStatement>(body(model)[index]).expression)
@@ -121,7 +121,7 @@ class CallResolutionTest {
 	@Test
 	fun `typed parameters and inferred call results select their exact overload`() {
 		val model = analyze("""
-			fn<float<64>> create() {}
+			fn<float<64>> create() = 1.0
 			fn choose(float value) {}
 			fn choose(float<64> value) {}
 			fn test(float<64> input) {
@@ -183,8 +183,10 @@ class CallResolutionTest {
 
 	@Test
 	fun `return types and surrounding expected types never select a call overload`() {
-		failure("fn<int> choose(int<8> a) {}\nfn<int<64>> choose(int<64> a) {}\nfn<int<64>> test() = choose(10)", DiagnosticCode.AMBIGUOUS_CALL)
-		val model = analyze("fn<int> choose(int a) {}\nfn<int<64>> choose(int<64> a) {}\nfn<int<64>> test() = choose(10)")
+		failure("fn<int> choose(int<8> a) = 1\nfn<int<64>> choose(int<64> a) = 2\nfn<int<64>> test() = choose(10)", DiagnosticCode.AMBIGUOUS_CALL)
+		val declarations = "fn<int> choose(int a) = 1\nfn<int<64>> choose(int<64> a) = 2\n"
+		failure(declarations + "fn<int<64>> test() = choose(10)", DiagnosticCode.RETURN_TYPE)
+		val model = analyze(declarations + "fn<int> test() = choose(10)")
 		val call = assertIs<CallExpression>(assertIs<ExpressionBody>(function(model).body).expression)
 		assertEquals(ValueType.INT, model.typeOf(call))
 		assertEquals(ValueType.INT, parameter(model, call))
@@ -192,10 +194,10 @@ class CallResolutionTest {
 
 	@Test
 	fun `nested calls use declared return types and remain strict arguments`() {
-		val model = analyze("fn<int<64>> create() {}\nfn choose(int value) {}\nfn choose(int<64> value) {}\nfn test() { choose(create()) }")
+		val model = analyze("fn<int<64>> create() = 1\nfn choose(int value) {}\nfn choose(int<64> value) {}\nfn test() { choose(create()) }")
 		assertEquals(CInt(64), parameter(model))
 		assertEquals("create", model.selectedFunction(assertIs<CallExpression>(call(model).arguments.single())).name.lexeme)
-		failure("fn<int> create() {}\nfn choose(int<64> value) {}\nfn test() { choose(create()) }", DiagnosticCode.NO_MATCHING_CALL)
+		failure("fn<int> create() = 1\nfn choose(int<64> value) {}\nfn test() { choose(create()) }", DiagnosticCode.NO_MATCHING_CALL)
 	}
 
 	@Test
@@ -247,7 +249,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `typed integer call results supply context to neighboring integer literals`() {
-		val model = analyze("fn<unsigned int<64>> create() {}\nfn choose(unsigned int<64> value) {}\nfn test() { choose(create() + 1) }")
+		val model = analyze("fn<unsigned int<64>> create() = 1\nfn choose(unsigned int<64> value) {}\nfn test() { choose(create() + 1) }")
 		val expression = assertIs<BinaryExpression>(call(model).arguments.single())
 		assertEquals(CInt(64, true), model.typeOf(expression.right))
 		assertEquals(CInt(64, true), parameter(model))
@@ -263,7 +265,7 @@ class CallResolutionTest {
 
 	@Test
 	fun `discarded void and value calls are allowed but void cannot supply a binding or argument`() {
-		val model = analyze("fn idle() {}\nfn<int> create() {}\nfn test() {\n idle()\n create()\n create() -> void\n idle() -> void\n}")
+		val model = analyze("fn idle() {}\nfn<int> create() = 1\nfn test() {\n idle()\n create()\n create() -> void\n idle() -> void\n}")
 		assertEquals(ValueType.VOID, model.typeOf(assertIs<ExpressionStatement>(body(model)[0]).expression))
 		assertEquals(ValueType.INT, model.typeOf(assertIs<ExpressionStatement>(body(model)[1]).expression))
 		assertEquals(ValueType.VOID, model.typeOf(assertIs<ExpressionStatement>(body(model)[2]).expression))
@@ -273,11 +275,11 @@ class CallResolutionTest {
 
 	@Test
 	fun `calls in conditions interpolation and skipped code are still checked`() {
-		val model = analyze("fn<bool> ready() {}\nfn<int> create() {}\nfn test() {\n if (ready()) { create() }\n #\"Value: {create()}\"\n}")
+		val model = analyze("fn<bool> ready() = true\nfn<int> create() = 1\nfn test() {\n if (ready()) { create() }\n #\"Value: {create()}\"\n}")
 		val conditional = assertIs<IfExpression>(assertIs<ExpressionStatement>(body(model)[0]).expression)
 		assertEquals(ValueType.BOOL, model.typeOf(conditional.branches.single().condition))
 		failure("fn choose(int n) {}\nfn test() { if (false) { choose() } }", DiagnosticCode.CALL_ARITY)
-		failure("fn<bool> choose(int n) {}\nfn test() = true || choose()", DiagnosticCode.CALL_ARITY)
+		failure("fn<bool> choose(int n) = true\nfn test() = true || choose()", DiagnosticCode.CALL_ARITY)
 	}
 
 	@Test
@@ -299,12 +301,6 @@ class CallResolutionTest {
 	}
 
 	@Test
-	fun `return flow and entry point checks remain deferred to later chunks`() {
-		val model = analyze("fn<int> missing() {}\nfn<void> wrong() { return 10 }\nfn<int> bare() { return }\nfn main() {}\nfn main(string[] args) {}\nfn ignored() = 10")
-		assertEquals(6, model.declarations.functions.size)
-	}
-
-	@Test
 	fun `call diagnostics label declarations and preserve first failure and CRLF positions`() {
 		val source = "fn choose(int value) {}\r\nfn test() {\r\n\tchoose(true)\r\n\tchoose()\r\n}"
 		val diagnostic = failure(source, DiagnosticCode.NO_MATCHING_CALL)
@@ -319,7 +315,7 @@ class CallResolutionTest {
 	@Test
 	fun `analyzer reuse does not share committed types or selected function symbols`() {
 		val source = Parser(Lexer("fn choose(int<64> value) {}\nfn test() { choose(10) }").scanTokens()).parseDeclarations()
-		val analyzer = CallAnalyzer()
+		val analyzer = FunctionAnalyzer(nativeTestLayout)
 		val first = analyzer.analyze(source)
 		val second = analyzer.analyze(source)
 		assertNotSame(first.selectedFunction(call(first)), second.selectedFunction(call(second)))

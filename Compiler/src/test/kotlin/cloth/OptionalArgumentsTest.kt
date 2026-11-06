@@ -11,15 +11,15 @@ import cloth.parser.expression.ArrayLiteral
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.ElvisExpression
 import cloth.parser.expression.NameExpression
-import cloth.semantic.FunctionAnalyzer
-import cloth.semantic.ResolvedCall
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class OptionalArgumentsTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("optional.co", source.trimIndent())).scanTokens()).parse()
-	private fun analyze(source: String) = FunctionAnalyzer().analyze(parse(source))
+	private fun analyze(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 	private fun failure(source: String, code: DiagnosticCode) {
 		val error = assertFailsWith<ClothDiagnostic> { analyze(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)

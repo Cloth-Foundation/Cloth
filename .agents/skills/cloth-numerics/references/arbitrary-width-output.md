@@ -42,13 +42,12 @@ source bitwise operators, C interop or a public wide-integer ABI.
 
 ## Shared lowering and capacity
 
-[EmitString.interpolate](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitString.kt)
+[EmitString.interpolate](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitString.kt)
 is the common scalar formatting entry for typed providers and every source output
 route. Widths through 64 retain the validated native C formatting fast path;
 wider values call
-[EmitIntegerText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerText.kt).
-The legacy snippet printer uses the same formatter for wide values, then writes
-the resulting length-aware string. No wide scalar/pointer is sent to C varargs.
+[EmitIntegerText](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitIntegerText.kt).
+The formatter publishes a length-aware string and keeps wide values out of C varargs.
 
 `EmitIntegerText` also accepts small scalar inputs, packing them into canonical
 bytes before the helper. This path is oracle-tested at small/one-bit widths as
@@ -87,7 +86,7 @@ wide-integer runtime dependency, precision growth or source-visible storage type
 
 ## Recursive formatting and lifetime
 
-[EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
+[EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitArrayText.kt)
 retains two passes over an already evaluated value: measure checked bytes, then
 fill one output buffer, with nested rows writing directly into it. The formatter
 does not reevaluate source expressions or concatenate growing prefixes.

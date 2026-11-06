@@ -125,7 +125,7 @@ for (def<int[]> row <- matrix) {
 
 ### Conservative loop cleanup
 
-- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+- [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
   adds closed proofs for iteration bodies, numeric step expressions, and whole
   loops. Permit local definitions with safe initializers, safe scalar stores and
   updates, supported safe conditional branches, returns and nested loops. Deferred
@@ -139,7 +139,7 @@ for (def<int[]> row <- matrix) {
   expression proof remains conservative for statement-bearing blocks; these loop
   proofs do not turn every surrounding expression into a reclaimable region.
 - EmitExpression.temporaryRegion takes an arena checkpoint and an
-  [EmitStackScope](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitStackScope.kt)
+  [EmitStackScope](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStackScope.kt)
   stacksave before a proven region. On normal completion, release the allocation
   suffix, then stackrestore dynamic literal storage, and discard fresh-ownership
   facts created inside it. Prior allocations and entry binding slots survive.
@@ -231,7 +231,7 @@ the numeric semantics and tests below remain relevant.
   Label explicit failures at the stepper and implicit failures at the header.
   Finite failures label the evaluated endpoint/operand or resulting update.
   Normal overshoot and checked integer overflow end traversal without errors.
-- [RangeConstants](../../../../Compiler/src/main/kotlin/cloth/semantic/RangeConstants.kt)
+- [RangeConstants](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/RangeConstants.kt)
   diagnoses closed nonfinite float endpoint/step expressions with C3068 during
   ExpressionTyping. It recognizes numeric literals/providers, signs, numeric
   casts and basic arithmetic, with ordinary per-operation format rounding and
@@ -298,13 +298,13 @@ supersedes this milestone's execution boundary; the semantic invariants remain.
 
 - [LoopBindingSymbol](../../../../Compiler/src/main/kotlin/cloth/semantic/symbols/Symbols.kt)
   gives each reception its own mutable identity without fabricating a local
-  initializer. [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt)
+  initializer. [DeclarationAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt)
   resolves endpoints/source in surrounding scope, then introduces the loop scope
   and a separate body scope. Header steppers cannot read body locals; source
   expressions and following code retain outer names. Unbraced declarations,
   nested loops, shadowing, duplicate names and default-parameter shadowing use
   existing lexical rules. DeclarationModel exposes loop binding/header/body scopes.
-- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   shares range/foreach validation between functions and legacy snippets. Infer
   one exact type from already-typed endpoints before defaulting contextual
   literals, independent of endpoint order, body and stepper. Preserve fixed
@@ -336,20 +336,20 @@ supersedes this milestone's execution boundary; the semantic invariants remain.
 
 ### Repeated flow and metadata
 
-- [ControlFlowModel](../../../../Compiler/src/main/kotlin/cloth/semantic/ControlFlowModel.kt)
+- [ControlFlowModel](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt)
   composes endpoint/source completion before a possible iteration. Preserve the
   zero-trip continuation; an always-returning body alone does not satisfy a
   required function return. Body/stepper returns belong to the enclosing function
   or deferred block; an endpoint that unconditionally returns prevents continuation.
   Nonempty ranges are not used as total-return proofs in this conservative stage.
-- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+- [NullFlowAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
   evaluates entry facts first, then invalidates bindings written by the repeated
   body/stepper, including transitive deferred-block writes, **before** publishing
   occurrence proofs. It does not publish an optimistic first-iteration pass.
   Body guards can reestablish presence, body assignments can establish stepper
   presence, and exits include zero iterations. Unaffected input facts survive.
   Captured-effect scanning traverses nested loops, entry expressions and steppers.
-- [MetadataAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/MetadataAnalysis.kt)
+- [MetadataAnalysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/MetadataAnalysis.kt)
   conservatively forgets visible mutable represented-type metadata before a
   repeated body and after the loop. Immutable metadata/body-local facts remain
   definite; foreach typeinfo elements start unknown, not as the first element's

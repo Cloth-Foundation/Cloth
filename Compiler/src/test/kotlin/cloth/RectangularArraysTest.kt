@@ -8,7 +8,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -19,7 +19,7 @@ class RectangularArraysTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("rectangles.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(binding: String) {
-		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse("fn main() { $binding }")) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse("fn main() { $binding }")) }
 		assertEquals(DiagnosticCode.INVALID_ARRAY, diagnostic.diagnosticCode)
 		assertLocated(diagnostic)
 	}
@@ -51,7 +51,7 @@ class RectangularArraysTest {
 	fun `known and unknown extents merge without changing numeric element types`(@TempDir directory: Path) {
 		for ((index, elements) in listOf("row(), [3, 4]", "[3, 4], row()").withIndex()) {
 			val source = "fn<int[]> row() = [1, 2]\nfn<int> main() {\n def a = [$elements]\n return a[0][0] + a[1][0] - 4\n}"
-			val model = FunctionAnalyzer().analyze(parse(source))
+			val model = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 			val body = model.declarations.functions.last().declaration.body as BlockBody
 			assertEquals("int[2][2]", model.types.typeOf(body.statements.first() as BindingDeclaration).spelling)
 			native(directory, "mixed_$index", source)

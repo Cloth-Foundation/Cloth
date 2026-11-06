@@ -1,6 +1,6 @@
 ---
 name: cloth-toolchains
-description: Extend or troubleshoot Cloth target layouts, native C ABI profiles, CLI build options, object emission, linker and CRT discovery, or target-specific validation.
+description: Extend or troubleshoot Cloth build and run commands, target layouts, native C ABI profiles, object emission, linker and CRT discovery, or target-specific validation.
 ---
 
 # Cloth targets and toolchains
@@ -30,36 +30,51 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
   runtime linkage, GUI/console startup, sysroots, and ordered user libraries.
   Preserve paths with spaces as arguments; resolve dependencies before creating
   output artifacts. Static system CRT linking on macOS is rejected.
-- Keep build/runtime execution separate. A successful compiler status does not
-  describe the emitted program's later status.
+- Keep compilation separate from launch. The shared driver returns the emitted
+  path. Build mode reports compilation status and `run` reports the child
+  process status after a successful build and launch.
 - The no-argument example source is a developer convenience, not a production
   compiler contract (user clarification, 2026-11-02). Do not pin its filename in
   tests; verify explicit source/output arguments and supported CLI options.
 
+## Build and run commands
+
+`cloth run examples/Functions.co build/functions` builds and launches a program.
+The first `--` in `run` separates build options from program arguments. The
+launcher passes the remaining arguments in order and inherits the caller's
+working directory and console streams. The default Windows JVM launcher needs
+explicit escaping for literal quotes. Preserve empty, Unicode and spaced
+arguments. Treat flags such as `--debug` after the separator as program arguments.
+
+`compileArtifact(CompilerSettings)` is the shared driver for build and run. It
+parses the source, selects the ABI, protects the input from output aliases and
+passes the ABI's `TargetLayout` explicitly to `ProgramAnalyzer`. Frontend
+analysis can use a synthetic layout without resolving the host. The emitter
+checks that the analyzed layout agrees with its ABI and returns the actual
+`Path`. CLI option parsing, diagnostics and launch
+belong to `Entry.kt`. Keep the existing `cloth [source.co] [output]` build form,
+including its use of `--` before literal paths. `run --emit object` reports
+C0015 before source or output work. A failed build stops launch even when the
+destination already holds an executable. A launch failure reports C0016. The
+host must be able to execute the selected ABI.
+[Driver](../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt) ·
+[CLI](../../../Compiler/src/main/kotlin/cloth/Entry.kt)
+
 ## One-click example execution
 
-Run `:Compiler:runExample` from IntelliJ's Gradle `application` group, or use
-`.\gradlew.bat :Compiler:runExample` from the repository root. No source path or
-target argument is required: the development launcher calls `runCompiler` with
-the supplied arguments, and `CompilerSettings.getSourceFile()` owns the current
-default example. Native target selection remains the compiler's existing default.
-Optional `--args` accepts normal compiler arguments, including source/output
-overrides; output must be executable and runnable on the host.
-
-[Compiler/build.gradle.kts](../../../Compiler/build.gradle.kts) owns the task and
-its separate `development` source set;
-[RunExample.kt](../../../Compiler/src/development/kotlin/cloth/development/RunExample.kt)
-owns execution. The development Kotlin compilation is associated with main for
-internal ABI access, inherits its dependencies/JVM native-access option, and stays
-outside the production compiler JAR/distribution. Keep source/output selection in
-sync with `Entry.kt` and `CompilerSettings`, including default source-adjacent
-output and ABI-specific executable extensions. Launch only after compiler status
-zero; a stale binary must never run following compilation failure. Forward console
-input/output and the native exit status through JavaExec (nonzero status fails the
-Gradle task). Object output is rejected without executing it. Normal `run` remains
-compile-only. See the [verification record](../cloth-language/references/development.md#one-click-example-execution-2026-11-02).
+Run `.\gradlew.bat :Compiler:run --args="run examples/Functions.co build/functions"`
+or use `:Compiler:runExample` in IntelliJ's Gradle `application` group. The
+example task prepends `run` to its `--args` and uses the same compiler entry
+point. `CompilerSettings.getSourceFile()` owns the default example, and ABI
+selection defaults to the native target. A nonzero child status fails JavaExec.
+[Compiler Gradle tasks](../../../Compiler/build.gradle.kts)
 
 ## Source and verification
+
+Use `ProgramEntryTest` for `run` argument forwarding, exit status, failed
+rebuilds and object rejection. Use `DiagnosticsTest` for output aliases and
+first-error precedence. The [run command record](../cloth-language/references/development.md#shared-compiler-driver-and-run-command-2026-11-06)
+tracks native launch and Gradle task verification.
 
 [Structs.co](../../../examples/Structs.co) executes on Windows x64/x86 and on
 GNU Linux x64 under WSL. `StructPublicationTest` verifies executable IR and emits

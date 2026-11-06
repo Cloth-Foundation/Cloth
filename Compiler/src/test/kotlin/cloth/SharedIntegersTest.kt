@@ -5,9 +5,10 @@ import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
+import cloth.emitter.text.EmitString
+import cloth.emitter.text.ProviderEmissionContext
 import cloth.emitter.types.*
 import cloth.emitter.types.primitives.EmitIntegerDivision
-import cloth.emitter.types.primitives.EmitString
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.expression.CastExpression
@@ -15,8 +16,8 @@ import cloth.parser.expression.Expression
 import cloth.parser.expression.NameExpression
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.Statement
-import cloth.semantic.ExpressionTyping
-import cloth.semantic.SemanticModel
+import cloth.semantic.typing.ExpressionTyping
+import cloth.semantic.typing.SemanticModel
 import cloth.token.Keywords
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
@@ -34,10 +35,10 @@ class SharedIntegersTest {
 		override val metadataSpelling get() = spelling
 	}
 
-	private fun expression(source: String): Expression = (Parser(Lexer(source).scanTokens()).parseSnippet().statements.single() as ExpressionStatement).expression
+	private fun expression(source: String): Expression = (parseMain(source).mainStatements.single() as ExpressionStatement).expression
 
 	private fun check(source: String, integer: CInteger, expected: ValueType? = null): Pair<Expression, SemanticModel> {
-		val model = SemanticModel()
+		val model = SemanticModel(nativeTestLayout)
 		val typing = object : ExpressionTyping(model) {
 			override fun nameType(expression: NameExpression): ValueType {
 				check(expression.name.lexeme == "n")
@@ -64,13 +65,13 @@ class SharedIntegersTest {
 				assertFalse(distinct.accepts(fixed))
 				assertNotEquals(fixed.metadataSpelling, distinct.metadataSpelling)
 				assertNotEquals(CArray(fixed, 2).metadataSpelling, CArray(distinct, 2).metadataSpelling)
-				assertEquals(fixed.llvmValue(context).address(), distinct.llvmValue(context).address())
-				assertEquals(fixed.llvmStorage(context).address(), distinct.llvmStorage(context).address())
+				assertEquals(fixed.llvmValue(context, nativeTestLayout).address(), distinct.llvmValue(context, nativeTestLayout).address())
+				assertEquals(fixed.llvmStorage(context, nativeTestLayout).address(), distinct.llvmStorage(context, nativeTestLayout).address())
 				for (type in listOf<CInteger>(fixed, distinct)) {
 					assertEquals(fixed.minimum, type.minimum)
 					assertEquals(fixed.maximum, type.maximum)
 					for (name in listOf("min", "max")) {
-						val bound = assertIs<ProviderResult.IntegerConstant>(type.provider(name))
+						val bound = assertIs<ProviderResult.IntegerConstant>(type.provider(name, nativeTestLayout))
 						assertSame(type, bound.type)
 						assertEquals(if (name == "min") type.minimum else type.maximum, bound.value)
 					}
@@ -141,8 +142,8 @@ class SharedIntegersTest {
 					// Supply backend facts directly; no test-only type is added to source resolution.
 					val cast = expression("1.5 -> int<$width>") as CastExpression
 					val semantics = SemanticModel(abi.layout)
-					semantics.expressions[cast.operand] = ValueType.FLOAT
-					semantics.expressions[cast] = type
+					semantics.recordType(cast.operand, ValueType.FLOAT)
+					semantics.recordType(cast, type)
 					val casts = EmitCast(context, builder, semantics, abi)
 					val converted = casts.emit(cast, LLVMGetParam(function, 1))
 					val quotient = EmitIntegerDivision(context, builder, abi).emit(LLVMGetParam(function, 0), converted, type, false, "shared-test")

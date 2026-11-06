@@ -6,7 +6,7 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -17,7 +17,7 @@ class ProviderIntegrationTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("provider-integration.co", source.trimIndent())).scanTokens()).parse()
 	private fun invalid(source: String, provider: String) {
-		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(DiagnosticCode.INVALID_METADATA_ACCESS, error.diagnosticCode)
 		assertLocated(error)
 		assertContains(error.summary, "::$provider")

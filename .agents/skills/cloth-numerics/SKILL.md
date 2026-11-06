@@ -165,7 +165,7 @@ cover all admitted formats/identities, finite failures and unchanged updates.
 Use `ForRangeTest` when changing numeric emission shared with loops.
 
 Inspect [CInteger](../../../Compiler/src/main/kotlin/cloth/data/CInteger.kt),
-[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt),
+[ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt),
 [EmitCast](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitCast.kt),
 [EmitHalf](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitHalf.kt),
 [EmitIntegerDivision](../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitIntegerDivision.kt),

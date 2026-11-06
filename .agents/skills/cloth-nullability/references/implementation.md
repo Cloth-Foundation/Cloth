@@ -59,7 +59,7 @@ this scalar milestone alone. Class execution and unsafe handles remain deferred.
 
 Paths are relative to `Compiler/src/main/kotlin/cloth/`:
 
-- `semantic/ExpressionTyping.kt` validates cast payload compatibility, records
+- `semantic/typing/ExpressionTyping.kt` validates cast payload compatibility, records
   scalar `is` targets, and derives bare-left-null context. Inferred nullable
   bindings/conditional results remain rejected by the existing checks.
 - `emitter/types/EmitCast.kt` reuses the ordinary conversion helper within
@@ -67,7 +67,7 @@ Paths are relative to `Compiler/src/main/kotlin/cloth/`:
   Float-to-int guards execute only on the present path, and actual continuing
   predecessor blocks feed the nullable result phi.
 - `data/MetadataQuery.kt` owns the metadata payload subject and capability
-  preconditions. `semantic/MetadataAnalysis.kt` tracks known descriptors and
+  preconditions. `semantic/flow/MetadataAnalysis.kt` tracks known descriptors and
   merges fallback effects conservatively; a literal-left null executes its
   fallback facts. `EmitTypeInfo` populates payload properties but names/equality
   still use the complete nullable descriptor spelling.
@@ -75,7 +75,7 @@ Paths are relative to `Compiler/src/main/kotlin/cloth/`:
   non-buffered payloads. It queries `LLVMABISizeOfType` on the actual storage
   representation and the emitted module's installed data layout. Do not sum
   payload bits and a flag or cache LLVM handles in descriptors.
-- `semantic/NullFlowAnalysis.kt` preserves declared scalar nullable receivers for
+- `semantic/flow/NullFlowAnalysis.kt` preserves declared scalar nullable receivers for
   `::size`, just as it already preserves declared type for `::type`. Ordinary
   payload reads and `is` remain flow-adjusted. Buffered size receivers must retain
   their separate presence-dependent semantics when Stage 4 is implemented.

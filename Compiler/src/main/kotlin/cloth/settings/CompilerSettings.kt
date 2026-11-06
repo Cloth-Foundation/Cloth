@@ -99,7 +99,8 @@ class CompilerSettings(val args: Array<String>) {
 	companion object {
 
 		private val optionNames = setOf("--target", "--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
-		private const val usage = "Usage: cloth [source.co] [output] [--target TRIPLE] [--emit executable|object] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]"
+		private const val usage = "Usage: cloth [source.co] [output] [--target TRIPLE] [--emit executable|object] [--debug] [--linker PATH] [--linker-driver lld|msvc|cc] " + "[--runtime default|static|dynamic] [--subsystem console|windows] [-L DIR] [-l NAME] " + "[--sysroot DIR] [--msvc-tools DIR] [--windows-sdk DIR] [--windows-sdk-version VERSION]\n" +
+			"       cloth run [source.co] [output] [build options] [-- program arguments]"
 		private fun errorValue(name: String, value: String, expected: String): Nothing = throw CliErrors.value(name, value, expected)
 		private fun path(value: String): Path = try {
 			Path.of(value)

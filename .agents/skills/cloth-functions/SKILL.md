@@ -85,10 +85,9 @@ complete. Run [StructMethods.co](../../../examples/StructMethods.co) and see
 the [publication record](references/method-publication.md) for exact output,
 target coverage, full regression results and the class handoff.
 
-Start with [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationAnalyzer.kt),
-[CallAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt),
-[FunctionAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/FunctionAnalyzer.kt),
-and [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt).
+Start with [DeclarationAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt),
+[FunctionAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt),
+and [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt).
 Examples: [Functions.co](../../../examples/Functions.co) and
 [FunctionBlocks.co](../../../examples/FunctionBlocks.co).
 
@@ -97,5 +96,32 @@ Relevant suites: `FunctionParsingTest`, `DeclarationScopesTest`,
 `FunctionBlocksTest`; add `StringFunctionTest` for buffered captures/returns.
 Recorded stages and native verification are in the
 [development history](../cloth-language/references/development.md#earlier-milestone-snapshots).
-Use source units with function declarations for block checks; the legacy snippet
-analyzer is a separate internal API. Historical test totals are not current runs.
+Use complete function declarations for body and call checks. `FunctionAnalyzer`
+resolves calls and validates returns and completion. Executable entry selection
+belongs to `ProgramAnalyzer`. [Compiler fixtures](../cloth-language/SKILL.md#compiler-fixtures)
+
+## Body facts and overload trials
+
+[FunctionAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
+orchestrates signature validation and [BodyTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/BodyTyping.kt).
+[CallResolution](../../../Compiler/src/main/kotlin/cloth/semantic/typing/CallResolution.kt)
+uses `ArgumentBinder` and the written argument order to select a
+`ResolvedCall`. Ordinary exact matches precede compatible matches and
+contextual typing. Omission counts break ties between identical supplied
+types. [OperatorResolution](../../../Compiler/src/main/kotlin/cloth/semantic/typing/OperatorResolution.kt)
+owns receiver sides, specificity and the full-overload priority over contexts.
+
+Use `FunctionSemanticModel.trial()` for candidate typing. Commit the selected
+trial to its parent and drop the others. Each fact table registers its
+snapshot behavior beside its declaration. Preserve identity keys for syntax
+and bindings. Share declared callable contracts and pre-typing flow facts.
+Keep inferred signatures and width-specific operator bodies inside the
+requesting trial until it commits. Catch only `CandidateMismatch` when rejecting
+a candidate so located errors retain the first-error rule.
+[Function semantic model](../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionSemanticModel.kt) ·
+[Operator bodies](../../../Compiler/src/main/kotlin/cloth/semantic/typing/OperatorBodies.kt)
+
+`ResultShape` owns expression and statement results. Derive scalar queries
+from it and preserve ordered results as one shape.
+[Semantic model](../../../Compiler/src/main/kotlin/cloth/semantic/typing/SemanticModel.kt) ·
+[Integration record](../cloth-language/references/development.md#semantic-facts-and-overload-trials-2026-11-06)

@@ -5,21 +5,15 @@ import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
-import cloth.emitter.*
-import cloth.emitter.types.EmitCast
-import cloth.emitter.types.primitives.EmitString
+import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.settings.LinkOptions
 import cloth.settings.RuntimeLinkage
-import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.LLVMValueRef
-import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class FunctionEmissionTest {
@@ -259,44 +253,11 @@ class FunctionEmissionTest {
 		native(directory, "dynamic", "fn<float> power(float value) = value ** 2.0\nfn<float> test() = power(1.5)", "2.25", LinkOptions(runtime = RuntimeLinkage.DYNAMIC))
 	}
 
-	/** Test instrumentation, not Cloth startup or implicit output semantics. */
 	private fun native(directory: Path, name: String, source: String, expected: String?, options: LinkOptions = LinkOptions()) {
-		val emitter = LLVMEmitter(options)
-		val abi = NativeCABI.native()
-		val configuration = ToolchainResolver.native(abi, options)
-		val executable = abi.executableFormat.executablePath(directory.resolve(name))
-		val objectFile = directory.resolve("$name.obj")
-		emitter.withFunctions(parse(source)) { context, module, functions, semantics ->
-			val builder = LLVMCreateBuilderInContext(context)
-			try {
-				val types = LLVMTypes(context)
-				val mainType = LLVMFunctionType(types.value(abi.intType), null as PointerPointer<*>?, 0, 0)
-				val main = LLVMAddFunction(module, "main", mainType)
-				LLVMPositionBuilderAtEnd(builder, LLVMAppendBasicBlockInContext(context, main, "entry"))
-				val entry = semantics.declarations.functions.single { it.name.lexeme == "test" && it.parameters.isEmpty() }
-				val type = semantics.typeOf(entry).returns
-				val call = LLVMBuildCall2(builder, functions.signature(entry), functions.reference(entry), null as PointerPointer<LLVMValueRef>?, 0, if (type == ValueType.VOID) "" else "test_result")
-				if (type != ValueType.VOID) emitter.emitPrint(context, module, builder, functions.decode(builder, call, type), type, EmitCast(context, builder, semantics.types, abi), EmitString(context, builder, abi))
-				LLVMBuildRet(builder, LLVMConstInt(types.value(abi.intType), 0, 0))
-				emitter.verify(module)
-				emitter.emitObject(module, objectFile)
-			} finally {
-				LLVMDisposeBuilder(builder)
-			}
-		}
-		try {
-			NativeLinker.link(objectFile, executable, configuration)
-		} finally {
-			Files.deleteIfExists(objectFile)
-		}
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(15, TimeUnit.SECONDS), "$name timed out")
-			val bytes = process.inputStream.readBytes()
-			assertEquals(0, process.exitValue(), bytes.toString(Charsets.UTF_8))
-			assertContentEquals((expected?.let { it + System.lineSeparator() } ?: "").toByteArray(Charsets.UTF_8), bytes, name)
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+		val statement = if (expected == null) "test()" else "println(test())"
+		val program = parse(source.trimIndent() + "\nfn main() { $statement }")
+		val executable = LLVMEmitter(options).compile(program, directory.resolve(name))
+		val output = expected?.let { it + System.lineSeparator() }.orEmpty() + processCompletion()
+		assertEquals(output, runExecutable(executable), name)
 	}
 }

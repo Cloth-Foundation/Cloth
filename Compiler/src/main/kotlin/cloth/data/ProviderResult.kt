@@ -1,7 +1,7 @@
 package cloth.data
 
 import cloth.diagnostics.InternalErrors
-import cloth.emitter.types.ProviderEmissionContext
+import cloth.emitter.text.ProviderEmissionContext
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -198,8 +198,18 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatArray((receiver as ProviderReceiver.Value).value, this)
 	}
 
-	/** Source str and interpolation deliberately share one formatter. */
+	data object NullText : ProviderResult<CString>() {
+		override val receiverType get() = ValueType.Null
+		override val type get() = CString
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.nullText()
+	}
+
+	/** Implicit text conversion checks presence before reading the payload. */
 	data class NullableText(override val receiverType: CNullable, val payloadText: ProviderResult<*>) : ProviderResult<CString>() {
+
+		init {
+			require(payloadText.receiverType == receiverType.payload && payloadText.type == CString && ProviderReceiverForm.VALUE in payloadText.receiverForms)
+		}
 
 		override val type: CString get() = CString
 		override val callsFormatter get() = payloadText.callsFormatter

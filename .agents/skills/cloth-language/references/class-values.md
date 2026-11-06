@@ -14,13 +14,13 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
 - Instance fields own recursive string, array and inline struct buffers.
   Ordinary reads snapshot buffered and indirect values before later operands
   can replace the field or delete the instance. Deletion releases the field
-  allocations after the destructor. [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassStorage.kt) ·
-  [Recursive copies](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitStringArena.kt)
+  allocations after the destructor. [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassStorage.kt) ·
+  [Recursive copies](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStringArena.kt)
 - Array fields keep their initialized dimensions. A nullable field first
   establishes dimensions when a present value is assigned and retains known
   dimensions across absence. The retained witness stores extents separately
   from live element and shape allocations. Nullable rows can establish a
-  previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArray.kt)
+  previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt)
 - A nested write saves its receiver identity and evaluates each index once
   before the right-hand side. It checks the same path in the current field
   before storing. An index that returns or jumps skips the rest of the path and
@@ -28,21 +28,21 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   right-hand side. A struct method backed by a class field uses a private,
   call-scoped resolver for the same captured path, including nested receiver
   calls. The resolver checks lifetime, nullable presence and bounds before
-  accessing current storage. [Expression lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt) ·
-  [Receiver resolver](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitReceiverAccess.kt)
+  accessing current storage. [Place lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitPlaces.kt) ·
+  [Receiver resolver](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitReceiverAccess.kt)
 - Whole-field replacement detaches and frees the old allocation chain after
   copying the new value. Nested buffered writes repack the live root field
   before freeing its previous chain. This can copy the entire field per
   buffered nested write. Batched writes keep their prepared values in the
   call frame until each store publishes. Scalar or identity writes need no repack. Proven
   class-owned writes can release frame temporaries at iteration exit.
-  [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitClassStorage.kt) ·
-  [Temporary analysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+  [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassStorage.kt) ·
+  [Temporary analysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
 - Null checks establish field proofs on a stable path. Potentially aliasing
   writes and source calls forget those proofs conservatively. A saved local
   value keeps the ordinary binding rules. Metadata queries on mutable fields
-  use the current descriptor and its runtime checks. [Presence analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt) ·
-  [Metadata analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/MetadataAnalysis.kt)
+  use the current descriptor and its runtime checks. [Presence analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt) ·
+  [Metadata analysis](../../../../Compiler/src/main/kotlin/cloth/semantic/flow/MetadataAnalysis.kt)
 
 ## Verification
 

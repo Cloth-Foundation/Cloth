@@ -61,16 +61,17 @@ Maintained executable example: [NullableBuffers.co](../../../../examples/Nullabl
   carrier into storage with a different presence representation.
 - `EmitStringArena.copyValue` recursively copies only present payloads, including
   nullable strings inside arrays. Return copying finishes before frame release.
-  `EmitExpression` recursively snapshots nullable arrays on arguments, bindings,
+  `EmitValueTransfer` recursively snapshots nullable arrays on arguments, bindings,
   branches, block/results and assignments. Nullable wrappers conservatively copy;
   they do not acquire a fresh-array transfer proof merely by being unwrapped.
 - `EmitBindings` retains separate nullable array shape storage. First-present
   assignments initialize it; later present assignments validate/merge dimensions;
   absent assignments leave it intact. Shape storage is initialized at the actual
   declaration execution, including repeated loop declarations.
-- `ProviderResult.NullableText` is an internal array-element formatting recipe.
-  It is not a public nullable str provider. `EmitArrayText` decodes stored
-  nullable elements before using it; both sizing/filling passes branch on presence.
+- Implicit print arguments, interpolation holes and array elements use
+  `ProviderResult.NullableText`. Explicit nullable `::str` requires a presence
+  proof. `EmitArrayText` decodes stored carriers and uses the shared presence
+  branch in its measuring and writing passes.
 - `ProgramAnalyzer`/`EmitEntryPoint` admit and wrap nullable argument arrays.
   Buffer-returning functions retain the existing caller arena and optional
   omission flags. No public native ABI, GC, destruction or error recovery is added.

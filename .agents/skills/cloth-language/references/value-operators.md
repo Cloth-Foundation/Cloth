@@ -66,19 +66,19 @@ fn<bool> isFall(DamageType kind) = kind == DamageType.FALL
 
 - [EnumParser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/EnumParser.kt)
   parses case lists and reuses the operator member parser.
-  [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/NamedTypes.kt)
-  registers nominal enum types. [EnumModel](../../../../Compiler/src/main/kotlin/cloth/semantic/EnumModel.kt)
+  [NamedTypes](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/NamedTypes.kt)
+  registers nominal enum types. [EnumModel](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/EnumModel.kt)
   checks payload forms and builds private readers for case payloads.
-- [CallAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/CallAnalyzer.kt)
+- [FunctionAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/FunctionAnalyzer.kt)
   checks equality signatures and uses the shared comparison overload ranking.
-  [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+  [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   records the selected comparison and the nullable presence path.
 - [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
   snapshots both operands and guards payload comparisons.
-  [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   uses the ordinary callable ABI for overloaded comparisons and formatter
   results. Enums carry an ordinal in storage and at call boundaries.
-- [EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
+- [EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitArrayText.kt)
   shares its text capture arena between enum and class formatter recipes.
 
 ## Verification

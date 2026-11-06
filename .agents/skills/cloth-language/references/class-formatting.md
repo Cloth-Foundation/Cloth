@@ -40,13 +40,13 @@ fn<string> describe(Object value) = value::str
 
 - [OperatorRules](../../../../Compiler/src/main/kotlin/cloth/semantic/OperatorRules.kt)
   enforces the declaration form. [CClass](../../../../Compiler/src/main/kotlin/cloth/data/CClass.kt)
-  supplies the class text recipe. [DeclarationModel](../../../../Compiler/src/main/kotlin/cloth/semantic/DeclarationModel.kt)
+  supplies the class text recipe. [DeclarationModel](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationModel.kt)
   looks up inherited overrides and potential formatter effects.
 - [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
   passes class runtime services and the caller's string arena to provider
-  emission. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+  emission. [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   emits checked dispatch through the ordinary callable ABI.
-- [EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/EmitArrayText.kt)
+- [EmitArrayText](../../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitArrayText.kt)
   takes an independent snapshot and captures class leaf strings during
   measurement in a temporary arena. The writing pass uses the captured text
   before releasing the arena. The resulting string has its own storage.

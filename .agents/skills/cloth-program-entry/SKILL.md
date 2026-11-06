@@ -44,8 +44,8 @@ Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 ## Source, evidence, and limits
 
 Inspect [ProgramAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/ProgramAnalyzer.kt),
-[EmitEntryPoint](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitEntryPoint.kt),
-[EmitArguments](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitArguments.kt),
+[EmitEntryPoint](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitEntryPoint.kt),
+[EmitArguments](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitArguments.kt),
 and [NativeCABI](../../../Compiler/src/main/kotlin/cloth/emitter/NativeCABI.kt).
 
 Relevant suites: `ProgramEntryTest`, `UnicodeArgumentsTest`, `WindowsX86Test`,

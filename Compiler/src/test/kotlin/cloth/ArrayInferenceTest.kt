@@ -10,7 +10,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.statement.BindingDeclaration
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -23,12 +23,12 @@ class ArrayInferenceTest {
 
 	private fun parse(source: String) = Parser(Lexer(SourceFile("array-inference.co", source.trimIndent())).scanTokens()).parse()
 	private fun types(body: String): Map<String, String> {
-		val model = FunctionAnalyzer().analyze(parse("fn test() {\n$body\n}"))
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(parse("fn test() {\n$body\n}"))
 		return ((model.declarations.functions.single().declaration.body as BlockBody).statements).filterIsInstance<BindingDeclaration>().associate { it.name.lexeme to model.types.typeOf(it).spelling }
 	}
 
 	private fun failure(source: String, code: DiagnosticCode = DiagnosticCode.INVALID_ARRAY) {
-		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(parse(source)) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 		assertEquals(code, diagnostic.diagnosticCode)
 		assertLocated(diagnostic)
 	}
@@ -223,16 +223,7 @@ class ArrayInferenceTest {
 	}
 
 	@Test
-	fun `inference works through the shared legacy snippet pipeline`(@TempDir directory: Path) {
-		val ast = Parser(Lexer("def<int<64>> n = 2\ndef a = [1, n]\na[0] + a[1]").scanTokens()).parseSnippet()
-		val executable = LLVMEmitter().compileSnippet(ast, directory.resolve("snippet"))
-		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
-		try {
-			assertTrue(process.waitFor(15, TimeUnit.SECONDS))
-			assertEquals(0, process.exitValue())
-			assertEquals("3" + System.lineSeparator(), process.inputStream.readBytes().toString(Charsets.UTF_8))
-		} finally {
-			if (process.isAlive) process.destroyForcibly()
-		}
+	fun `array inference uses a later typed element for earlier literals`(@TempDir directory: Path) {
+		assertMainOutput(directory.resolve("inferred_elements"), "def<int<64>> n = 2\ndef a = [1, n]\nprintln(a[0] + a[1])", "3\n")
 	}
 }

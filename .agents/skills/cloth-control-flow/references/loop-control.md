@@ -51,8 +51,7 @@ Maintained runnable example: [LoopControl.co](../../../../examples/LoopControl.c
 - DeclarationAnalyzer resolves each jump once, entering targets only for bodies
   and resetting the target stack for deferred blocks. DeclarationModel retains
   these resolutions; SemanticModel exposes targetOf(jump). FunctionSemanticModel
-  preserves resolutions across forks/commits. Legacy snippets use the generic
-  ExpressionTyping.loopBody hook and the same target model.
+  preserves resolutions across forks/commits.
 - ControlFlow distinguishes canFallThrough, canReturn, breaks and continues.
   Sequential composition propagates subsequent effects only along fallthrough;
   alternatives union outcomes. Jump sets retain originating syntax, which maps
@@ -98,7 +97,7 @@ Labels and nonlocal jumps remain deferred.
 [LoopControlTest](../../../../Compiler/src/test/kotlin/cloth/LoopControlTest.kt)
 covers syntax/spans, invalid placements, deferred boundaries, nearest targets,
 completion/value branches, nullable/metadata joins, range update effects and
-guards, snapshot independence, expression/header jumps, snippets and CLI failure
+guards, snapshot independence, expression/header jumps and CLI failure
 before output. The maintained example executes on Windows x64/x86; one shared AST
 emits verified IR and nonempty objects across all nine supported ABI profiles.
 

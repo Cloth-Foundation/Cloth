@@ -150,17 +150,17 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   structural identity and context-specific LLVM carriers, without nullable heap
   boxing. Value presence uses i1; stored presence uses a byte. Preserve bool's
   byte payload storage and nullable half's raw i16 call/result ABI transport in
-  [EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitResults.kt).
+  [EmitResults](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitResults.kt).
   An internal absence marker is never an inferred source binding type.
-- [NullFlowAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/NullFlowAnalysis.kt)
+- [NullFlowAnalysis](../../../Compiler/src/main/kotlin/cloth/semantic/flow/NullFlowAnalysis.kt)
   records proofs per symbol/occurrence independently of contextual overload
   probes. Assignments, joins, short-circuit paths and captured effects must remain
   sound. Deferred declarations execute no effects; deferred bodies inherit no
   mutable-capture presence proofs, and execution invalidates transitive writes.
-- [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/ExpressionTyping.kt)
+- [ExpressionTyping](../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
   and call checking own explicit contexts/adaptations. Keep candidate facts
   isolated; emission must not invent unwraps or guess result nullability.
-- [EmitNullable](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitNullable.kt)
+- [EmitNullable](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitNullable.kt)
   guards semantic payload extraction, conversion, formatting and comparison.
   Absent payloads are deterministic and never treated as present. Branches and
   phis use actual continuing predecessors, including nested returns and guards.

@@ -7,13 +7,13 @@ import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.statement.ForSource
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class ForFlowTest {
 
-	private fun valid(source: String) = FunctionAnalyzer().analyze(Parser(Lexer(SourceFile("for-flow.co", source.trimIndent())).scanTokens()).parse())
+	private fun valid(source: String) = FunctionAnalyzer(nativeTestLayout).analyze(Parser(Lexer(SourceFile("for-flow.co", source.trimIndent())).scanTokens()).parse())
 	private fun invalid(source: String, code: DiagnosticCode): ClothDiagnostic {
 		val error = assertFailsWith<ClothDiagnostic> { valid(source) }
 		assertEquals(code, error.diagnosticCode, error.summary)

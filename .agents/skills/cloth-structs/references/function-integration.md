@@ -26,7 +26,7 @@ and each parameter and foreach binding receives an independent value.
 
 ## Implementation and invariants
 
-- [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctions.kt)
+- [EmitFunctions](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
   uses the existing private indirect-value ABI. A struct travels as a pointer
   to its snapshot. A nullable struct carries a presence bit and the payload
   pointer. Array descriptors retain extents and nullable-row shape witnesses.
@@ -35,7 +35,7 @@ and each parameter and foreach binding receives an independent value.
   evaluate in declaration order and can read earlier parameters, whose fields
   are read-only in a default. The callee stores each parameter in an inline
   binding and can mutate its independent fields.
-- [EmitFunctionFrame](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitFunctionFrame.kt)
+- [EmitFunctionFrame](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctionFrame.kt)
   copies every indirect outgoing result slot recursively into the caller's
   arena before freeing the callee's frame. This includes forwarded results,
   nested nullable structs, arrays containing structs and array fields with
@@ -52,7 +52,7 @@ and each parameter and foreach binding receives an independent value.
   takes an independent snapshot of the source contents and shape before
   traversal and copies each element into its binding. Continue keeps the source
   snapshot alive, break exits the traversal, and returns copy outgoing data
-  before frame release. [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/types/primitives/ArrayTemporaryAnalysis.kt)
+  before frame release. [ArrayTemporaryAnalysis](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/ArrayTemporaryAnalysis.kt)
   recognizes aggregate snapshots introduced by source calls, deferred reads,
   branches and result lists. The closed proof retains frame lifetime for
   unproven effects or buffered publication through captures and stored places.
@@ -61,9 +61,8 @@ and each parameter and foreach binding receives an independent value.
 
 Ordinary calls, recursion, defaults, named arguments, ordered results, forwarding,
 deferred reads and foreach support structs through the private Cloth ABI.
-C3077 applies to struct syntax in the body-only snippet analyzer. Methods,
-native C struct ABI, whole-struct equality and whole-struct formatting remain
-deferred.
+At Stage 4, methods, the native C struct ABI, whole-struct equality and
+whole-struct formatting were deferred.
 
 All 284 selected compiler tests passed on Windows with zero failures or skips.
 The `StructIntegrationTest` call and traversal fixtures ran natively on Windows

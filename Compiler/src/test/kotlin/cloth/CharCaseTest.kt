@@ -14,7 +14,7 @@ import cloth.emitter.NativeCABI
 import cloth.emitter.types.primitives.EmitCharCase
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.FunctionAnalyzer
+import cloth.semantic.typing.FunctionAnalyzer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
@@ -33,7 +33,7 @@ class CharCaseTest {
 
 	private fun unit(source: String) = Parser(Lexer(SourceFile("char-case.co", source.trimIndent())).scanTokens()).parse()
 	private fun failure(source: String, code: DiagnosticCode) {
-		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer().analyze(unit(source)) }
+		val diagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(unit(source)) }
 		assertEquals(code, diagnostic.diagnosticCode, source)
 		assertLocated(diagnostic)
 	}
@@ -61,12 +61,12 @@ class CharCaseTest {
 	@Test
 	fun `case registrations have exact char contracts and immutable pinned mappings`() {
 		for ((name, registration) in listOf("toUpperCase" to PrimitiveAttachments.CHAR.TO_UPPER_CASE, "toLowerCase" to PrimitiveAttachments.CHAR.TO_LOWER_CASE)) {
-			assertSame(registration, PrimitiveAttachments[ValueType.CHAR, name])
+			assertSame(registration, PrimitiveAttachments[ValueType.CHAR, name, nativeTestLayout])
 			assertEquals(ValueType.CHAR, registration.receiver)
 			assertEquals(ValueType.CHAR, registration.overload.returns)
 			assertEquals(emptyList(), registration.parameters)
 			assertEquals(BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, registration.overload.storage)
-			assertNull(PrimitiveAttachments[ValueType.STRING, name])
+			assertNull(PrimitiveAttachments[ValueType.STRING, name, nativeTestLayout])
 		}
 		assertEquals("17.0.0", UnicodeCharacterCaseMappings.VERSION)
 		assertEquals(1505, UnicodeCharacterCaseMappings.mappings(true).size)
