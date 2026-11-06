@@ -60,8 +60,8 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			}
 			FunctionType(parameters, when {
 				function is ConstructorSymbol -> ResultShape.of(function.owner)
-				fixed != null -> ResultShape.of(fixed)
-				else -> ResultShape.of(results)
+				fixed != null                 -> ResultShape.of(fixed)
+				else                          -> ResultShape.of(results)
 			})
 		}.toMutableMap()
 		val model = FunctionSemanticModel(declarations, signatures)
@@ -162,12 +162,13 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 	private fun checkBody(function: CallableSymbol, checker: BodyTyping, facts: FunctionSemanticModel) {
 		when (val body = function.declaration.body) {
-			is BlockBody -> {
+			is BlockBody      -> {
 				checker.check(body.statements)
 				if (validateReturns && bodyResults(function, facts) != ResultShape.Empty && facts.controlFlow.of(body).canFallThrough) {
 					throw SemanticErrors.missingReturn(function.declaration, body)
 				}
 			}
+
 			is ExpressionBody -> checker.checkExpressionBody(body)
 		}
 	}
@@ -179,7 +180,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 		val metadata = MetadataAnalysis(model.types, function.parameters.map { it.name.lexeme to it.mutable }, model.controlFlow)
 		initializationExpressions(function.declaration, model.declarations).forEach(metadata::expression)
 		when (val body = function.declaration.body) {
-			is BlockBody -> metadata.statements(body.statements)
+			is BlockBody      -> metadata.statements(body.statements)
 			is ExpressionBody -> metadata.expression(body.expression)
 		}
 	}
@@ -406,7 +407,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			is FieldAccessExpression -> {
 				val field = model.fields[expression]
 				when {
-					field is EnumField -> null
+					field is EnumField  -> null
 					field is ClassField -> InstancePlace(ObjectReceiver.Explicit(expression.receiver), listOf(PlaceStep.Field(field)))
 					field != null       -> instancePlace(expression.receiver)?.let { it.copy(steps = it.steps + PlaceStep.Field(field)) }
 					else                -> null
@@ -428,9 +429,9 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 
 		private fun enumPayloadPlace(expression: Expression): Expression? = when (expression) {
 			is FieldAccessExpression -> if (model.fields[expression] is EnumField) expression else enumPayloadPlace(expression.receiver)
-			is IndexExpression -> enumPayloadPlace(expression.array)
-			is NameExpression -> expression.takeIf { (facts.declarations.names[it] as? ReceiverFieldSymbol)?.field is EnumField }
-			else -> null
+			is IndexExpression       -> enumPayloadPlace(expression.array)
+			is NameExpression        -> expression.takeIf { (facts.declarations.names[it] as? ReceiverFieldSymbol)?.field is EnumField }
+			else                     -> null
 		}
 
 		private fun storedPlace(expression: Expression): StoredPlace? {
@@ -466,6 +467,7 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 				reject { SemanticErrors.operatorMatch(operator, expression.span, emptyList(), ambiguous = false) }
 			}
 			data class Candidate(val method: MethodSymbol, val receiver: Int, val types: List<ValueType>)
+
 			val candidates = ordinary.flatMapIndexed { index, type ->
 				val owner = type as? CMemberType ?: return@flatMapIndexed emptyList()
 				facts.declarations.operators(owner, operator.lexeme, index == 1, operands.size - 1).map { method ->
@@ -474,13 +476,15 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 					Candidate(method, index, types)
 				}
 			}
+
 			data class Match(val candidate: Candidate, val quality: Int, val trial: FunctionSemanticModel)
+
 			val matches = candidates.mapNotNull { candidate ->
 				val quality = candidate.types.zip(ordinary).maxOf { (expected, actual) ->
 					when {
-						expected == actual -> 0
+						expected == actual                         -> 0
 						actual != null && expected.accepts(actual) -> 1
-						else -> 2
+						else                                       -> 2
 					}
 				}
 				if (quality < 2) return@mapNotNull Match(candidate, quality, ordinaryTrial)
@@ -552,14 +556,15 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			val owner = type as? CMemberType ?: return null
 			if (peer == ValueType.NEVER || peer == ValueType.Null) return null
 			data class Match(val method: MethodSymbol, val selector: ValueType, val rank: Int, val width: Int? = null)
+
 			val matches = facts.declarations.contextOperators(owner, operator.lexeme).mapNotNull { method ->
 				val selector = facts.contextSelectorTypes[method]
 				val width = OperatorRules.inferredSelectorWidth(method.declaration.operator?.selector, peer)
 				when {
-					width != null -> Match(method, peer, 1, width)
-					selector == peer -> Match(method, selector, 0)
+					width != null                   -> Match(method, peer, 1, width)
+					selector == peer                -> Match(method, selector, 0)
 					selector?.accepts(peer) == true -> Match(method, selector, 2)
-					else -> null
+					else                            -> null
 				}
 			}
 			if (matches.isEmpty()) return null
@@ -591,12 +596,13 @@ class CallAnalyzer internal constructor(private val validateReturns: Boolean, pr
 			return staticComparisonOverride(expression, operation, listOf(left, right))
 		}
 
-		override fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? =
-			staticComparisonOverride(expression, operation, listOf(owner, owner))
+		override fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = staticComparisonOverride(expression, operation, listOf(owner, owner))
 
 		private fun staticComparisonOverride(expression: BinaryExpression, operation: Operators, actual: List<CMemberType>): ResolvedOperator? {
 			val declarations = facts.declarations
+
 			data class Candidate(val method: MethodSymbol, val receiver: Int, val types: List<ValueType>)
+
 			val candidates = actual.flatMapIndexed { index, owner ->
 				declarations.operators(owner, operation.toString(), index == 1, 1).map { method ->
 					val parameter = facts.typeOf(method).parameters.single()

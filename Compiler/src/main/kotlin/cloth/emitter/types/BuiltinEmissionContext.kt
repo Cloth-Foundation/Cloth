@@ -9,14 +9,7 @@ import cloth.data.CInteger
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
-import cloth.emitter.types.primitives.EmitCharCase
-import cloth.emitter.types.primitives.EmitCharMember
-import cloth.emitter.types.primitives.EmitFloatMember
-import cloth.emitter.types.primitives.EmitIntegerMember
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.primitives.EmitStringAccess
-import cloth.emitter.types.primitives.EmitStringEdit
-import cloth.emitter.types.primitives.EmitStringWhitespace
+import cloth.emitter.types.primitives.*
 import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef

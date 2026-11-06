@@ -1,7 +1,6 @@
 package cloth.semantic
 
 import cloth.data.CClass
-import cloth.data.CMemberType
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.parser.expression.*
@@ -57,6 +56,7 @@ class FunctionSemanticModel internal constructor(
 			checkNotNull(inferOperatorType)(callable)
 		} else type
 	}
+
 	fun selectedFunction(call: CallExpression): FunctionSymbol = (selectedCall(call) as ResolvedCall.Source).callable as FunctionSymbol
 	internal fun selectedCall(call: CallExpression): ResolvedCall = calls.getValue(call)
 

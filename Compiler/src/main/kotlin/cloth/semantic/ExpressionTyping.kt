@@ -91,9 +91,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	private fun overloadedType(expression: Expression): ValueType? = when (expression) {
-		is UnaryExpression -> operatorType(expression, expression.operator, listOf(expression.operand))
+		is UnaryExpression  -> operatorType(expression, expression.operator, listOf(expression.operand))
 		is BinaryExpression -> operatorType(expression, expression.operator, listOf(expression.left, expression.right))
-		else -> null
+		else                -> null
 	}
 
 	private fun operandContext(expression: Expression, floating: Boolean): ValueType? {
@@ -125,8 +125,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	/** Discover fixed value types before defaulting contextual literals. This checks
 	 * types only; emission still evaluates every element once in source order.
 	 */
-	private fun arrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? =
-		overloadedType(expression) ?: ordinaryArrayElementHint(expression, contextualFloat)
+	private fun arrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? = overloadedType(expression) ?: ordinaryArrayElementHint(expression, contextualFloat)
 
 	private fun ordinaryArrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? = when (expression) {
 		is StructLiteral        -> null
@@ -683,8 +682,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val message = "Type '${receiver.spelling}' has no field '${expression.name.lexeme}'"
 		val field = (receiver as? CMemberType)?.field(expression.name.lexeme) ?: throw when (receiver) {
 			is CClass -> SemanticErrors.classMember(message, expression.name.span)
-			is CEnum -> SemanticErrors.enumMember(message, expression.name.span)
-			else -> SemanticErrors.structField(message, expression.name.span)
+			is CEnum  -> SemanticErrors.enumMember(message, expression.name.span)
+			else      -> SemanticErrors.structField(message, expression.name.span)
 		}
 		validateFieldAccess(field, expression.name)
 		model.fields[expression] = field

@@ -34,5 +34,6 @@ internal data class InstancePlace(val receiver: ObjectReceiver, val steps: List<
 internal data class ClassDeletionPlan(val owner: CClass, val nullable: Boolean)
 
 internal data class ClassComparisonPlan(val operation: Operators, val identityOverride: ResolvedOperator?) {
+
 	val checksLiveness get() = operation != Operators.IDENTITY || identityOverride != null
 }

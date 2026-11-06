@@ -90,9 +90,9 @@ internal class EmitArrayText(
 			// restoring the stack; only the integer offset survives the checkpoint.
 			val receiver = ProviderReceiver.Value(elementType, element)
 			val text = when {
-				cache == null -> elementText.emit(providers, receiver)
+				cache == null       -> elementText.emit(providers, receiver)
 				destination == null -> cache.capture(elementText, receiver)
-				else -> cache.next()
+				else                -> cache.next()
 			}
 			append(text, separated, destination)
 		}
@@ -115,6 +115,7 @@ internal class EmitArrayText(
 
 	/** Keep the snapshot and the measured strings alive across stack checkpoints. */
 	private inner class TextCache {
+
 		private val storage = providers.textStorage()
 		private val entry = LLVMGetEntryBasicBlock(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 		private val arena = storage.create(entry)

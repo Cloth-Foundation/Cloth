@@ -5,7 +5,10 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
 import cloth.parser.type.TypeReference
 import cloth.target.TargetLayout
-import cloth.token.*
+import cloth.token.Keywords
+import cloth.token.Token
+import cloth.token.TokenSpan
+import cloth.token.TokenType
 
 /** Resolve inline struct dependencies and stop layout traversal at class identity. */
 internal class NamedTypes(declarations: List<Declaration>, target: TargetLayout) {
@@ -27,10 +30,10 @@ internal class NamedTypes(declarations: List<Declaration>, target: TargetLayout)
 	init {
 		for (declaration in declarations) {
 			val typeName = when (declaration) {
-				is ClassDeclaration -> declaration.name
+				is ClassDeclaration  -> declaration.name
 				is StructDeclaration -> declaration.name
-				is EnumDeclaration -> declaration.name
-				else -> null
+				is EnumDeclaration   -> declaration.name
+				else                 -> null
 			}
 			if (typeName?.lexeme == root.spelling) throw SemanticErrors.classMember("'${root.spelling}' is the built-in class root", typeName.span)
 			when (declaration) {
@@ -47,7 +50,7 @@ internal class NamedTypes(declarations: List<Declaration>, target: TargetLayout)
 					classNames[name.lexeme] = CClass(declaration)
 				}
 
-				is EnumDeclaration -> {
+				is EnumDeclaration   -> {
 					val name = declaration.name
 					val previous = names[name.lexeme]?.name ?: classes[name.lexeme]?.name ?: enums[name.lexeme]?.name
 					if (previous != null) throw SemanticErrors.duplicateClassType(name, previous)
@@ -59,8 +62,7 @@ internal class NamedTypes(declarations: List<Declaration>, target: TargetLayout)
 		}
 		for (owner in classes.values) {
 			val clause = owner.declaration.base
-			val base = if (clause == null) root else classNamed(clause.name.lexeme)
-				?: throw SemanticErrors.classMember("'${clause.name.lexeme}' is not a class base", clause.name.span)
+			val base = if (clause == null) root else classNamed(clause.name.lexeme) ?: throw SemanticErrors.classMember("'${clause.name.lexeme}' is not a class base", clause.name.span)
 			if (base.declaration.finalKeyword != null) throw SemanticErrors.classMember("Cannot inherit from final class '${base.spelling}'", checkNotNull(clause).name.span, base.name)
 			if (base == root && clause?.arguments?.isNotEmpty() == true) throw SemanticErrors.classMember("'${root.spelling}' takes no base arguments", clause.span)
 			owner.base = base

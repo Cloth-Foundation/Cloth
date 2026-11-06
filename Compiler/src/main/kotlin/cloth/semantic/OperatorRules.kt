@@ -14,17 +14,17 @@ internal object OperatorRules {
 	private val ordering = setOf(Operators.LESS, Operators.LESS_EQUAL, Operators.GREATER, Operators.GREATER_EQUAL)
 	private val binary = ordering + setOf(Operators.PLUS, Operators.MINUS, Operators.MULTIPLY, Operators.DIVIDE, Operators.MODULO, Operators.MUL_MUL)
 	fun supportsContext(operator: Operators?) = operator in binary
-	fun supportsInferredWidth(type: TypeReference) =
-		!type.unsigned && (type.name.lexeme == Keywords.INTEGER.toString() || type.name.lexeme == Keywords.FLOAT.toString())
+	fun supportsInferredWidth(type: TypeReference) = !type.unsigned && (type.name.lexeme == Keywords.INTEGER.toString() || type.name.lexeme == Keywords.FLOAT.toString())
 
 	fun inferredSelectorWidth(selector: TypeReference?, peer: ValueType): Int? {
 		if (selector?.capturesWidth != true || selector.name.lexeme != peer.keyword.toString()) return null
 		return when (peer) {
-			is CInt -> peer.bits.takeUnless { peer.unsigned }
+			is CInt   -> peer.bits.takeUnless { peer.unsigned }
 			is CFloat -> peer.bits
-			else -> null
+			else      -> null
 		}
 	}
+
 	val equality = setOf(Operators.EQUAL, Operators.NOT_EQUAL)
 	val classComparisons = equality + Operators.IDENTITY
 

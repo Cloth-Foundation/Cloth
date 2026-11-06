@@ -152,6 +152,7 @@ internal class ArrayTemporaryAnalysis(private val types: SemanticModel, private 
 				}
 				if (callsFormatter) unknown else expression.parts.fold(Effects()) { result, part -> result + effects(part) }
 			}
+
 			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())

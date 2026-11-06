@@ -23,8 +23,7 @@ class ExpressionParser(val parser: Parser) {
 				parser.advance()
 				val target = parser.peek()
 				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
-				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || parser.atKeyword(Keywords.SELF) ||
-					target.type == TokenType.Identifier && hasValuePostfix
+				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || parser.atKeyword(Keywords.SELF) || target.type == TokenType.Identifier && hasValuePostfix
 				left = if (valueTarget) BinaryExpression(left, operator, parseUnary(stopAtRange, allowWhileTrailer))
 				else TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
 				continue

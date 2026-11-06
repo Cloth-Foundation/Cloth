@@ -8,12 +8,7 @@ import cloth.emitter.types.loops.EmitDoWhileLoop
 import cloth.emitter.types.loops.EmitForEach
 import cloth.emitter.types.loops.EmitRangeLoop
 import cloth.emitter.types.loops.EmitWhileLoop
-import cloth.emitter.types.primitives.ArrayTemporaryAnalysis
-import cloth.emitter.types.primitives.EmitArray
-import cloth.emitter.types.primitives.EmitHalf
-import cloth.emitter.types.primitives.EmitIntegerDivision
-import cloth.emitter.types.primitives.EmitString
-import cloth.emitter.types.primitives.EmitWideInteger
+import cloth.emitter.types.primitives.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -136,6 +131,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		if (terminated()) throw Terminated()
 		return value ?: throw InternalErrors.invariant("A value was required from a ${Keywords.VOID} expression")
 	}
+
 	fun typeOf(expression: Expression) = semantics.typeOf(expression)
 	private val projectedValues = java.util.IdentityHashMap<NameExpression, LLVMValueRef>()
 
@@ -215,10 +211,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun stringReturnArena(): LLVMValueRef = checkNotNull(frame).stringReturnArena()
 
 	fun adaptValue(value: LLVMValueRef, source: ValueType, destination: ValueType): LLVMValueRef = when {
-		source == destination -> value
+		source == destination                                                    -> value
 		source is CArray && destination is CArray && destination.accepts(source) -> value
 		source is CClass && destination is CClass && destination.accepts(source) -> value
-		else -> nullable.adapt(value, source, destination)
+		else                                                                     -> nullable.adapt(value, source, destination)
 	}
 
 	fun adaptResults(value: LLVMValueRef, source: ResultShape, destination: ResultShape): LLVMValueRef {
@@ -972,9 +968,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
-	private fun emitOperator(operator: ResolvedOperator, operands: List<Expression>): LLVMValueRef? =
-		checkNotNull(functions).emitCall(operator.call, operands, this, builder, operatorReceiver = operator.receiverIndex)
-			?.let { freshResults(it, operator.call.type.results) }
+	private fun emitOperator(operator: ResolvedOperator, operands: List<Expression>): LLVMValueRef? = checkNotNull(functions).emitCall(operator.call, operands, this, builder, operatorReceiver = operator.receiverIndex)?.let { freshResults(it, operator.call.type.results) }
 
 	private fun emitOperatorContext(expression: BinaryExpression, plan: ResolvedOperatorContext): LLVMValueRef {
 		val names = listOf(plan.application.left as NameExpression, plan.application.right as NameExpression)
@@ -1102,27 +1096,27 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		})
 	}
 
-	private fun emitClassComparison(expression: BinaryExpression, plan: ClassComparisonPlan): LLVMValueRef =
-		emitPresenceComparison(expression, plan.operation == Operators.NOT_EQUAL) { left, right ->
-			if (!plan.checksLiveness) LLVMBuildICmp(builder, LLVMIntEQ, left, right, "raw_identity")
-			else {
-				val emitter = checkNotNull(functions)
-				fun access(operand: Expression, value: LLVMValueRef): ObjectAccess {
-					val symbol = (operand as? NameExpression)?.let { functionSemantics?.declarations?.names?.get(it) } as? ReceiverSymbol
-					val permission = symbol?.let(bindings::objectAccess)?.duringDestruction ?: emitter.classes.permission(false)
-					return ObjectAccess(value, permission)
-				}
-				val a = access(expression.left, left)
-				val b = access(expression.right, right)
-				val overload = plan.identityOverride
-				if (overload == null) emitter.compareClasses(builder, a, b, plan.operation) else {
-					emitter.classes.check(builder, a)
-					emitter.classes.check(builder, b)
-					if (overload.receiverIndex == 0) emitter.compareWithOverride(builder, overload.call.callable, a, right)
-					else emitter.compareWithOverride(builder, overload.call.callable, b, left)
-				}
+	private fun emitClassComparison(expression: BinaryExpression, plan: ClassComparisonPlan): LLVMValueRef = emitPresenceComparison(expression, plan.operation == Operators.NOT_EQUAL) { left, right ->
+		if (!plan.checksLiveness) LLVMBuildICmp(builder, LLVMIntEQ, left, right, "raw_identity")
+		else {
+			val emitter = checkNotNull(functions)
+			fun access(operand: Expression, value: LLVMValueRef): ObjectAccess {
+				val symbol = (operand as? NameExpression)?.let { functionSemantics?.declarations?.names?.get(it) } as? ReceiverSymbol
+				val permission = symbol?.let(bindings::objectAccess)?.duringDestruction ?: emitter.classes.permission(false)
+				return ObjectAccess(value, permission)
+			}
+
+			val a = access(expression.left, left)
+			val b = access(expression.right, right)
+			val overload = plan.identityOverride
+			if (overload == null) emitter.compareClasses(builder, a, b, plan.operation) else {
+				emitter.classes.check(builder, a)
+				emitter.classes.check(builder, b)
+				if (overload.receiverIndex == 0) emitter.compareWithOverride(builder, overload.call.callable, a, right)
+				else emitter.compareWithOverride(builder, overload.call.callable, b, left)
 			}
 		}
+	}
 
 	private fun emitValueComparison(expression: BinaryExpression, plan: ValueComparisonPlan): LLVMValueRef {
 		val unequal = plan.operation == Operators.NOT_EQUAL
@@ -1142,6 +1136,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val value = emitValue(operand)
 			return if (snapshot) snapshotValue(value, semantics.typeOf(operand)) else value
 		}
+
 		val left = capture(expression.left)
 		val right = capture(expression.right)
 		val leftType = semantics.typeOf(expression.left)
