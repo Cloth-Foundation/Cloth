@@ -18,8 +18,9 @@ pinned to Unicode 17.0.0 simple uppercase/lowercase fields; missing entries retu
 the receiver unchanged. This includes digits, emoji, NUL, unassigned scalars and
 characters that only have expanding full mappings. Results are independent of
 locale, neighboring characters, OS settings and JVM/native Unicode versions.
-No string methods, expansions, final-sigma context, locale overrides, folding,
-normalization or titlecase method are introduced. Simple conversion is not
+These char methods introduce no expansions or final-sigma context. The
+[separate string methods](string-case.md) now implement full default casing.
+Locale overrides, folding, normalization and titlecase remain outside the API. Simple conversion is not
 guaranteed to round-trip or to produce a value satisfying a case predicate.
 
 ## Registration, values and diagnostics
@@ -27,7 +28,7 @@ guaranteed to round-trip or to produce a value satisfying a case predicate.
 [CharAttachments](../../../../Compiler/src/main/kotlin/cloth/builtin/attachments/CharAttachments.kt)
 declares named `TO_UPPER_CASE` and `TO_LOWER_CASE` values using inherited
 `valueMethod`, matching the existing string/integer/float/bool registration style.
-Exact receiver lookup keeps these methods exclusive to chars. Results remain
+Exact receiver lookup keeps these char implementations separate from strings. Results remain
 chars through bindings, calls, arrays, ordered/deferred/recursive returns,
 nullable presence proofs/Elvis fallback, chaining and compiler-data type queries.
 
@@ -64,14 +65,16 @@ the registry. Executables need no UCD files, JVM casing API, CRT casing function
 or locale library at runtime.
 
 The [offline D generator](../../../../UnicodeGenerator/UnicodeGenerator.d)
-authenticates all five inputs before writing; the
+authenticates all six inputs before writing; the
 [classification record](character-attachments.md#reproducible-unicode-resources)
 owns the shared command, remaining inputs and license instructions. Casing uses
 fields 12/13 (zero-based) of the complete official
 [UnicodeData.txt](https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt), governed by
 [UAX #44 for Unicode 17](https://www.unicode.org/reports/tr44/tr44-36.html).
 Its SHA256 is `2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c`.
-Full/contextual/locale mappings from SpecialCasing are deliberately excluded.
+Full/contextual mappings from SpecialCasing are excluded from these char tables
+and are owned by the [string casing extension](string-case.md). Locale mappings
+remain excluded from both APIs.
 The production resource retains source/hash metadata and
 [Unicode License V3](../../../../Compiler/src/main/resources/cloth/unicode/17.0.0/LICENSE.txt).
 Tests retain the complete compressed official input, independently checking its

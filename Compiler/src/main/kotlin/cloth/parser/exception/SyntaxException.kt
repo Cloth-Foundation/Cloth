@@ -5,4 +5,4 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceLabel
 import cloth.token.TokenSpan
 
-class SyntaxException(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null) : ClothDiagnostic(code, message, listOf(SourceLabel(span, "here")), help)
+class SyntaxException(code: DiagnosticCode, message: String, span: TokenSpan, help: String? = null, related: List<SourceLabel> = emptyList()) : ClothDiagnostic(code, message, listOf(SourceLabel(span, "here")) + related, help)

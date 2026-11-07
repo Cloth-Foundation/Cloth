@@ -26,7 +26,7 @@ internal fun Expression.eagerOperands(declarations: DeclarationModel? = null): L
 	is InterpolatedString               -> parts
 	is BooleanLiteral, is CharacterLiteral, is FunctionBlockExpression, is NameExpression,
 	is NullLiteral, is NumberLiteral, is StringLiteral, is TypeReceiverExpression,
-		-> emptyList()
+	                                    -> emptyList()
 
 	is IfExpression, is ElvisExpression -> throw InternalErrors.invariant("Conditional operands require their own traversal")
 	else                                -> throw InternalErrors.invariant("Unsupported expression during operand traversal: $this")

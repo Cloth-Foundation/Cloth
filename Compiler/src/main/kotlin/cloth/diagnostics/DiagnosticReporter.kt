@@ -1,5 +1,6 @@
 package cloth.diagnostics
 
+import com.opencastsoftware.yvette.Diagnostic
 import com.opencastsoftware.yvette.handlers.ReportHandler
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import com.opencastsoftware.yvette.handlers.graphical.RgbColours
@@ -15,7 +16,7 @@ class DiagnosticReporter(
 	}.buildFor(output),
 ) {
 
-	fun report(diagnostic: ClothDiagnostic, debug: Boolean = false) {
+	fun report(diagnostic: Diagnostic, debug: Boolean = false) {
 		handler.display(diagnostic, output)
 		if (debug) {
 			val trace = StringWriter()

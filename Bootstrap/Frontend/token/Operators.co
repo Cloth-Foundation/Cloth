@@ -1,0 +1,65 @@
+pub typedef<enum> Operators(def<string> character) {
+
+    PLUS("+"),
+	PLUS_PLUS("++"),
+	PLUS_EQUAL("+="),
+
+	MINUS("-"),
+	MINUS_MINUS("--"),
+	MINUS_EQUAL("-="),
+
+	MULTIPLY("*"),
+	MUL_MUL("**"),
+	MUL_EQUAL("*="),
+	DIVIDE("/"),
+	DIV_EQUAL("/="),
+	MODULO("%"),
+	MOD_EQUAL("%="),
+
+	ASSIGN("="),
+	FINAL_ASSIGN(":="),
+
+	EQUAL("=="),
+	IDENTITY("==="),
+	NOT_EQUAL("!="),
+	NOT("!"),
+	AND("&&"),
+	OR("||"),
+
+	GREATER(">"),
+	LESS("<"),
+	GREATER_EQUAL(">="),
+	LESS_EQUAL("<="),
+
+	POINTER_RIGHT("->"),
+	POINTER_LEFT("<-"),
+
+	QUESTION("?"),
+	ELVIS("?:"),
+	RANGE(".."),
+	RANGE_INCLUSIVE("..="),
+
+	PAREN_OPEN("("),
+	PAREN_CLOSE(")"),
+	BRACE_OPEN("{"),
+	BRACE_CLOSE("}"),
+	BRACKET_OPEN("["),
+	BRACKET_CLOSE("]"),
+
+	COMMA(","),
+	DOT("."),
+	COLON(":"),
+	BACKTICK("`"),
+	QUOTATION("'"),
+	DOUBLE_QUOTATION("\""),
+	TILDE("~"),
+	POUND("#"),
+	COLON_COLON("::"),
+	SEMICOLON(";"),
+	UNDERSCORE("_");
+
+	pub mt<char> toChar() = character.toChar()[0]
+
+	operator ::str() = character
+
+}

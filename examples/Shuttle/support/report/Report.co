@@ -1,0 +1,5 @@
+using token.Token: Token
+
+fn<string> prefix() = "token"
+
+pub fn<string> describe(Token token) = #"{prefix()} {token.kind}: {token.text}"

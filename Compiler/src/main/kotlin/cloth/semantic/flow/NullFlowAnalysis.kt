@@ -40,7 +40,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private val effects = IdentityHashMap<FunctionBlockExpression, Set<Place>>()
 	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<Place>>()
 	private val methodsByName = model.declarations.methods.groupBy { it.name.lexeme }
-	private val hasClasses = model.declarations.classes.isNotEmpty()
+	private val hasClasses = model.declarations.classDefinitions.isNotEmpty()
 	private val flow get() = model.controlFlow
 	private fun block(symbol: BindingSymbol?) = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 	private fun binding(value: Expression) = (value as? NameExpression)?.let { model.declarations.names[it] as? BindingSymbol }
@@ -131,6 +131,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		if (comparison == Operators.EQUAL || comparison == Operators.NOT_EQUAL) {
 			val declarations = model.declarations
 			if (!declarations.hasOperator(comparison.toString()) && !declarations.hasOperator(Operators.EQUAL.toString())) return false
+			if (value is BinaryExpression && (contextMayCall(value.left, value.right, operator.lexeme) || contextMayCall(value.right, value.left, operator.lexeme))) return true
 			val hints = operands.map(::receiverHint)
 			if (!operands.zip(hints).all { (operand, hint) -> hint is CMemberType || hint == null && unknownCouldCarryReceiver(operand) }) return false
 			val owner = hints.filterIsInstance<CMemberType>().firstOrNull() ?: return true
@@ -154,8 +155,15 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun contextMayCall(value: Expression, other: Expression, operator: String): Boolean {
 		if (!OperatorRules.supportsContext(Operators.fromCharacter(operator))) return false
 		val declarations = model.declarations
+		if (Operators.fromCharacter(operator) in OperatorRules.equality) {
+			if (value is NullLiteral || other is NullLiteral) return false
+			val left = receiverHint(value)
+			val right = receiverHint(other)
+			if (left != null && left == right || left is CClass && right is CClass) return false
+		}
+		val names = if (operator == Operators.NOT_EQUAL.toString()) setOf(operator, Operators.EQUAL.toString()) else setOf(operator)
 		val candidates = when (val hint = receiverHint(value)) {
-			is CMemberType -> declarations.contextOperators(hint, operator)
+			is CMemberType -> names.flatMap { declarations.contextOperators(hint, it) }
 			null           -> when (value) {
 				is NumberLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is InterpolatedString,
 				is NullLiteral, is ArrayLiteral, is TypeCheckExpression,
@@ -166,7 +174,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			}
 
 			else           -> return false
-		} ?: declarations.methods.filter { it.name.lexeme == operator && it.declaration.operator?.selector != null }
+		} ?: declarations.methods.filter { it.name.lexeme in names && it.declaration.operator?.selector != null }
 		val peer = receiverHint(other, unwrapNullable = false)
 		return candidates.any { method ->
 			val selector = model.contextSelectorType(method)
@@ -465,7 +473,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
 				val subject = stable(value.operand)?.takeIf { it.path.isEmpty() && value.operand is NameExpression }
-				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let { model.declarations.namedType(it.name.lexeme) as? CClass }
+				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let { model.declarations.namedType(it.name) as? CClass }
 				if (subject == null || target == null) Outcome(after)
 				else Outcome(after, after + subject + subject.copy(narrowed = target), after)
 			}

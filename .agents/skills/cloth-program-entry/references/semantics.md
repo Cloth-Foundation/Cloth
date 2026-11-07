@@ -54,3 +54,13 @@ the parent skill for current implementation boundaries and source/test routing.
   function declarations and ordinary executable startup.
   See [development status](../../cloth-language/references/development.md) for implemented Unicode argument-array
   construction and target-specific execution evidence.
+
+## Project entry selection
+
+The [compiler request contract](../../cloth-imports/references/compiler-api.md#entry-selection)
+extends entry selection for the source graph: only the selected primary
+file contributes executable main candidates. Its unique main obeys the existing
+signature/startup rules above. Other loaded files' main declarations remain
+ordinary callables; they do not add process entry points. Object mode selects a
+primary source without requiring any main. [Import Stage 6](../../cloth-imports/references/stage-6.md)
+implements this policy without changing the native startup or completion path.

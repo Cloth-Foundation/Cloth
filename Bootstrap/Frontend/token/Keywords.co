@@ -1,0 +1,58 @@
+pub typedef<enum> Keywords(def<string?> keyword ?: null) {
+
+    MODULE("mod"),
+	DEFINITION("def"),
+	TYPEDEF,
+	USING,
+	SELF,
+	RETURN,
+	CONST,
+	DEFAULT,
+	INTEROP,
+
+	NEW,
+	DELETE,
+	FINAL,
+	OPT,
+
+	CLASS,
+	STRUCT,
+	ENUM,
+
+	METHOD("mt"),
+	OPERATOR,
+	AUTO,
+	FUNCTION("fn"),
+	CONSTRUCTOR("ctor"),
+	PUBLIC("pub"),
+
+	BOOLEAN("bool"),
+	STRING,
+	FLOAT,
+	INTEGER("int"),
+	CHARACTER("char"),
+	VOID,
+	TYPEINFO,
+	STATE,
+	TRUE,
+	FALSE,
+	NULL,
+	UNSIGNED,
+	USIZE,
+	ISIZE,
+
+	INIT,
+
+	IF,
+	ELSE,
+	IS,
+
+	FOR,
+	WHILE,
+	DO,
+	CONTINUE,
+	BREAK;
+
+	operator ::str() = keyword ?: self::name.toLowerCase()
+
+}

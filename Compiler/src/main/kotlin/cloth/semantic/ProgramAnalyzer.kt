@@ -3,6 +3,7 @@ package cloth.semantic
 import cloth.ast.SourceUnit
 import cloth.data.*
 import cloth.diagnostics.EntryErrors
+import cloth.semantic.declarations.FileBindings
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel
@@ -19,9 +20,16 @@ class ProgramAnalyzer(private val target: TargetLayout) {
 
 	fun analyze(unit: SourceUnit, kind: ProgramKind = ProgramKind.EXECUTABLE): ProgramModel {
 		val functions = FunctionAnalyzer(target).analyze(unit)
+		return program(functions, kind)
+	}
+
+	internal fun analyze(files: FileBindings, kind: ProgramKind = ProgramKind.EXECUTABLE): ProgramModel = program(FunctionAnalyzer(target).analyze(files), kind)
+
+	private fun program(functions: FunctionSemanticModel, kind: ProgramKind): ProgramModel {
 		if (kind == ProgramKind.LIBRARY) return ProgramModel(kind, functions, null)
-		val mains = functions.declarations.functions.filter { it.name.lexeme == "main" }
-		if (mains.isEmpty()) throw EntryErrors.missing(unit.end)
+		val primary = functions.declarations.files.primary
+		val mains = primary.functions.filter { it.name.lexeme == "main" }
+		if (mains.isEmpty()) throw EntryErrors.missing(primary.unit.end)
 		if (mains.size > 1) throw EntryErrors.duplicate(mains)
 		val main = mains.single()
 		val type = functions.typeOf(main)

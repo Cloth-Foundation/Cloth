@@ -43,14 +43,29 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
 
 ## Build and run commands
 
-Shuttle is Cloth's project build system. TOML manifest loading, schema validation,
-project/module discovery and project build orchestration belong in the repository's
-`Shuttle` module. Source imports, semantic checking, ABI selection and native
-emission belong to Compiler. The [Shuttle and imports plan](../../../todo/shuttle-and-imports-plan.md)
-proposes a one-way `Shuttle -> Compiler` dependency through an explicit compiler
-request API; Compiler must remain independent of TOML and Shuttle. This is
-planned scope, not implemented project commands. The direct single-source CLI
-below is the current supported interface.
+Use [shuttle-build](../shuttle-build/SKILL.md) for project TOML, discovery and
+build/run orchestration, and [cloth-imports](../cloth-imports/SKILL.md) for source
+imports and file scopes. Stage 0 publishes their contracts and the
+[compiler request boundary](../cloth-imports/references/compiler-api.md): a one-way
+`Shuttle -> Compiler` dependency, with Compiler independent of TOML and Shuttle.
+Stage 1 implements the one-file public facade and a Shuttle consumer fixture;
+its [evidence](../cloth-imports/references/stage-1.md) records the verified scope.
+Stage 2 implements [manifest loading and request conversion](../shuttle-build/references/stage-2.md)
+without choosing an ABI or discovering a linker. Stage 3 parses
+[import headers](../cloth-imports/references/stage-3.md). Stage 4 discovers
+[reachable source graphs](../cloth-imports/references/stage-4.md), including cycles,
+without native target selection. It protects every loaded source from output
+aliases. Stage 5 adds [per-file binding and graph checking](../cloth-imports/references/stage-5.md):
+selection errors precede ABI work, while signatures/bodies use the selected target.
+[Stage 6](../cloth-imports/references/stage-6.md) emits the checked graph as one
+LLVM program/object and selects only the primary file's own main. C3105 is
+retired; direct single-unit analysis retains C3096. [Shuttle Stage 6](../shuttle-build/references/stage-6.md)
+adds packaged project build/run commands; the direct source CLI remains supported.
+[Stage 7](../cloth-imports/references/stage-7.md) verifies the maintained
+[nested project](../../../examples/Shuttle/README.md) and Bootstrap on Windows
+x64/x86 and GNU Linux x64 under WSL, with executable IR/startup objects across
+all nine profiles. The developer default source is a single-file example;
+project sources with imports use Shuttle or explicit roots through the API.
 
 `cloth run examples/Functions.co build/functions` builds and launches a program.
 The first `--` in `run` separates build options from program arguments. The
@@ -59,7 +74,9 @@ working directory and console streams. The default Windows JVM launcher needs
 explicit escaping for literal quotes. Preserve empty, Unicode and spaced
 arguments. Treat flags such as `--debug` after the separator as program arguments.
 
-`compileArtifact(CompilerSettings)` is the shared driver for build and run. It
+`ClothCompiler.compile(CompilationRequest)` is the public graph build facade.
+The `compileArtifact(CompilerSettings)` CLI/test adapter resolves absolute paths
+and forwards to it, preserving direct build/run commands. The request driver
 parses the source, selects the ABI, protects the input from output aliases and
 passes the ABI's `TargetLayout` explicitly to `ProgramAnalyzer`. Frontend
 analysis can use a synthetic layout without resolving the host. The emitter
@@ -72,6 +89,20 @@ destination already holds an executable. A launch failure reports C0016. The
 host must be able to execute the selected ABI.
 [Driver](../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt) ·
 [CLI](../../../Compiler/src/main/kotlin/cloth/Entry.kt)
+
+Both CLI adapters use [CompilerOptions](../../../Compiler/src/main/kotlin/cloth/settings/CompilerOptions.kt)
+for shared build flags and [NativeProgram](../../../Compiler/src/main/kotlin/cloth/util/NativeProgram.kt)
+for ordered arguments, inherited streams/cwd and interrupted-child cleanup.
+[JavaCommandLine](../../../Compiler/src/main/kotlin/cloth/util/JavaCommandLine.kt)
+recovers direct Windows Java-main arguments through GetCommandLineW and
+CommandLineToArgvW, using JDK 25's foreign API and freeing the native argv with
+LocalFree. Match the explicit main class or -jar application boundary; do not
+reinterpret in-process arrays or independently expand JVM argument files.
+This avoids the installed JDK launcher's native-code-page replacement before
+main receives Unicode. The adapter passes UTF-16 units through unchanged;
+Cloth's generated startup still owns program-argument Unicode validation.
+The generated Gradle launchers enable native access. [Stage 6 evidence](../shuttle-build/references/stage-6.md)
+distinguishes native host execution from foreign-object coverage.
 
 ## One-click example execution
 

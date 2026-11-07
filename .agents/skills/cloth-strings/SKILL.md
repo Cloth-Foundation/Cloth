@@ -1,6 +1,6 @@
 ---
 name: cloth-strings
-description: Design, explain, or extend Cloth characters, strings, Unicode validation, character and string attachments, interpolation, scalar-indexed methods, literal delimiter splitting, literal editing, whitespace methods, typed member calls, and string function boundaries.
+description: Design, explain, or extend Cloth characters, strings, Unicode validation, character and string attachments, full Unicode string casing, interpolation, scalar-indexed methods, literal delimiter splitting, literal editing, whitespace methods, typed member calls, and string function boundaries.
 ---
 
 # Cloth strings and characters
@@ -23,7 +23,11 @@ Read [character casing](references/character-case.md) for implemented
 `toUpperCase()` and `toLowerCase()`: char results, pinned Unicode 17.0.0 simple
 mappings, zero arguments, locale-independent behavior and unchanged unmapped
 scalars. `CharCaseTest` checks both mappings exhaustively against the official
-raw data. Full string casing and contextual/locale overrides remain deferred.
+raw data. Their char behavior remains distinct from full string casing.
+Read [full string casing](references/string-case.md) for string-returning
+`toUpperCase`/`toLowerCase`, Unicode 17 full expansions, original-text final-sigma
+context, immutable Cased/Case_Ignorable tables and checked UTF-8 measure/fill.
+Locale tailoring, normalization, folding and titlecase APIs remain outside scope.
 Read [string attachments and member calls](references/member-calls.md) for
 `isEmpty`, `contains`, `startsWith`, `endsWith`, typed registry ownership,
 receiver-call traversal, diagnostics, lifetime rules and target evidence.
@@ -92,6 +96,12 @@ returned text, interpolation buffers, or nested string arrays; use
   NULs and non-property scalars remain content. Decode complete live UTF-8 scalars
   before classification and keep byte counts target-sized. Version upgrades
   require explicit semantic review; no custom trim-character arguments are added.
+- String casing takes no arguments and returns independent strings using pinned
+  Unicode 17 default full mappings, including expansions and final-sigma context.
+  Consume Case_Ignorable before testing Cased when scanning original context;
+  the properties overlap. Check output bytes before allocation and encode without
+  per-scalar buffers. Extend the existing D generator; retain existing char data
+  and behavior. Do not use host casing or introduce normalization/locale options.
 - Interpolation uses `#"value: {expression}"`. Check holes even in skipped code;
   evaluate them once, left to right, preserving early returns. Formatting resolves
   value-receiver `str` providers, including recursive array contents; see the
@@ -115,8 +125,9 @@ Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
 [StringAttachments.co](../../../examples/StringAttachments.co) includes delimiter splitting.
+[StringCase.co](../../../examples/StringCase.co) demonstrates full string casing.
 
-Relevant suites are `StringSplitTest`, `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
+Relevant suites are `StringCaseTest`, `StringSplitTest`, `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
 recursion and balanced cleanup. Native literal and interpolation fixtures

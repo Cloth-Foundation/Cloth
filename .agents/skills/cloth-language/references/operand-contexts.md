@@ -66,7 +66,8 @@ typedef<class> Player (pub def<int> points, def<string> name) {
 | --- | --- |
 | Unary `+`, `-`, `!` | Full overloads with implicit `self`. |
 | Binary `+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=` | Full overloads and operand contexts. |
-| `==`, `!=`, `===` | Existing [class comparison](class-equality.md) and [value equality](value-operators.md) rules. Contexts for these operations need a presence and dispatch contract. |
+| `==`, `!=` | Existing [class comparison](class-equality.md) and [value equality](value-operators.md) keep their priority; [equality operand contexts](equality-operand-contexts.md) contribute values for mixed present operands. |
+| `===` | Existing class identity rules; no operand contexts. |
 | `::str()` | [Class](class-formatting.md) and [enum](value-operators.md#enum-values-and-formatting) formatters. |
 | Value-target `is` | Full class overloads with ordinary receiver positions. |
 | Type and state targets of `is` | Type targets use built-in checks. State targets depend on the class state runtime. User-defined narrowing requires a verified proof contract. |

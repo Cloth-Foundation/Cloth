@@ -1,6 +1,8 @@
 package cloth.parser
 
+import cloth.ast.ImportDeclaration
 import cloth.ast.SourceUnit
+import cloth.diagnostics.ImportErrors
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
@@ -31,6 +33,7 @@ class Parser(private val tokens: List<Token>) {
 	private val structParser = StructParser(this)
 	private val classParser = ClassParser(this)
 	private val enumParser = EnumParser(this)
+	private val importParser = ImportParser(this)
 	private var bindingBrace: BindingBraceSyntax? = null
 
 	private class BindingBraceSyntax {
@@ -53,8 +56,15 @@ class Parser(private val tokens: List<Token>) {
 	/** File-level declarations retain source order. */
 	fun parseDeclarations(): SourceUnit {
 		val declarations = mutableListOf<Declaration>()
+		val imports = mutableListOf<ImportDeclaration>()
 		skipNewlines()
 		while (peek().type != TokenType.EOF) {
+			if (atKeyword(Keywords.USING)) {
+				if (declarations.isNotEmpty()) throw ImportErrors.outsideHeader(peek())
+				imports.add(importParser.parse())
+				skipNewlines()
+				continue
+			}
 			rejectMethodOutsideType()
 			val declaration = if (startsTypeDeclaration()) parseTypeDeclaration() else functionParser.parseFunction()
 			declarations.add(declaration)
@@ -74,7 +84,7 @@ class Parser(private val tokens: List<Token>) {
 			}
 			skipNewlines()
 		}
-		return SourceUnit(declarations, peek().span)
+		return SourceUnit(declarations, peek().span, imports)
 	}
 
 	private fun startsTypeDeclaration(): Boolean {
@@ -173,6 +183,7 @@ class Parser(private val tokens: List<Token>) {
 
 	/** The trailer context follows unbraced source bodies, never headers or delimiters. */
 	fun parseStatement(allowWhileTrailer: Boolean = false, multilineResults: Boolean = false): Statement {
+		if (atKeyword(Keywords.USING)) throw ImportErrors.outsideHeader(peek())
 		rejectMethodOutsideType()
 		if (atKeyword(Keywords.FOR)) return forLoopParser.parseFor(allowWhileTrailer)
 		if (atKeyword(Keywords.WHILE)) return whileLoopParser.parseWhile(allowWhileTrailer)

@@ -262,6 +262,10 @@ equality compares cases of the same enum type. An enum equality overload uses
 [Struct and enum operators](value-operators.md) records the payload,
 comparison, and formatting rules.
 
+[Equality operand contexts](equality-operand-contexts.md) also admit a text
+contribution for a comparison with a string. The selector names the peer type;
+the context body supplies the receiver's contributed value, not the final bool.
+
 ```cloth
 typedef<enum> DamageType (pub def<int> number = 1) {
     ATTACK,

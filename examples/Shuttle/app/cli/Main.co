@@ -1,0 +1,13 @@
+using token.Token: Token, TokenType
+using report.Report: describe
+using math.Even: *
+
+fn<int> main(string[] args) {
+    def<Token> token = { TokenType.Name, "Cloth" }
+    println(describe(token))
+
+    if (token.kind != "name" || "name" != token.kind) return 1
+    if (!even(12) || even(13)) return 1
+    if (args::size > 0) println(args[0])
+    return 0
+}

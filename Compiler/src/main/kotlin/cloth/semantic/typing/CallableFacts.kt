@@ -29,7 +29,7 @@ internal class CallableFacts {
 	fun specialization(template: MethodSymbol, width: Int): MethodSymbol? = contexts[ContextKey(template, width)]
 
 	fun reserve(template: MethodSymbol, width: Int, signature: FunctionType): MethodSymbol {
-		val method = MethodSymbol(template.declaration, template.owner, template.receiver)
+		val method = template.specialization()
 		contexts[ContextKey(template, width)] = method
 		specializations[method] = Specialization(signature)
 		return method

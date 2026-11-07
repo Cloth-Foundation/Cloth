@@ -31,6 +31,10 @@ fn showDamageTypes() {
 
 ## Equality
 
+- For mixed present operands, [equality operand contexts](equality-operand-contexts.md)
+  let an enum contribute text for a string comparison, such as
+  `operator<string> ==() = self::name.toLowerCase()`. The comparison still returns
+  bool. This complements the same-nominal full overloads below.
 - A struct or enum can declare `operator ==(Type other)` or
   `operator !=(Type other)`. The operand has the same non-nullable nominal type
   as `self`, and the result is `bool`. A trailing `self` places the receiver on

@@ -7,6 +7,276 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Shuttle and imports Stage 7 nested projects and Bootstrap (2026-11-07)
+
+The maintained [Shuttle example](../../../../examples/Shuttle/README.md) uses a
+nested entry file, selective/wildcard imports, private defining-file helpers and
+a circular even/odd pair across module roots. New backend-free regressions verify
+deep imports and nested configured entries without flattening folders or adding
+subfolder manifests. C3097 now guides project users to Shuttle or explicit API
+roots. The standalone developer default source is a runnable single-file example.
+
+Bootstrap's nested lexer/token paths already resolved. Source fixes change its
+class default to `?:`, supply source/SourceFile.co and explicitly delete the lexer
+before returning its result. The user's clarification confirmed the intended
+enum/string operand context. Its existing syntax was correct; equality was
+excluded from integration and its full-comparison signature check assumed an
+explicit parameter. The shared path now supports mixed present-value ==/!=
+contributions while preserving ordinary nominal/class comparisons, null handling,
+readonly defaults and alias invalidation. No new native platform adapter is added.
+[Equality context semantics and evidence](equality-operand-contexts.md)
+
+The focused integration run passes in 54s. Both maintained projects execute on
+Windows x64/x86 and as GNU Linux x64 executables linked under Ubuntu WSL, with
+exact output and one PEC: 0 each. Verified executable IR/startup objects cover all
+nine existing profiles; unavailable native hosts remain distinct from that
+emission evidence. The packaged Shuttle launcher also runs Bootstrap/the example
+and emits Linux ARM64 object output with a nonexistent linker override.
+[Stage 7 record](../../cloth-imports/references/stage-7.md) owns source routing,
+reproduction and the final full-suite/publication results.
+
+An incremental full run lost compiled semantic classes and was interrupted.
+Final validation uses a fresh isolated build directory/project cache with Kotlin
+incremental compilation disabled and in-process compilation. The full check and
+installDist pass in 8m 17s: 1,610 Compiler tests across 144 suites, 51 Shuttle
+tests across six suites, 23 syntax, 28 resolution, 33 native-disabled semantic
+and 25 backend-free configuration tests. All have zero failures, errors or skips.
+The README's Gradle example and Bootstrap commands also run successfully.
+A concurrent Bootstrap dogfooding banner is preserved; six publication cases
+pass again in 24s with smoke checks that permit its evolving diagnostic output,
+and the current Linux startup object runs successfully after relinking under WSL.
+All five changed skills pass metadata validation. Publication checks pass for
+19 documents, 786 local links, 98 anchors, three TOML examples, three manifests
+and 26 source/configuration files. Root/submodule whitespace checks pass.
+Temporary helpers, exported artifacts, dependencies and isolated outputs
+are removed after verification. The plan marks Stages 0-7 complete.
+
+### Shuttle and imports Stage 6 whole-program build/run (2026-11-07)
+
+The compiler now emits the complete checked source graph through one LLVM module,
+selecting only the primary file's own main for startup. Other files' mains remain
+ordinary callables; object mode needs no main or linker. Original symbols, private
+struct/class/enum identities, defaults and buffered results cross files through
+the shared callable ABI. Runtime typeinfo interning now distinguishes nominal
+declarations and recursive wrappers while preserving unqualified display text.
+C3105 is retired. [Compiler Stage 6 evidence](../../cloth-imports/references/stage-6.md)
+owns implementation and target scope.
+
+Shuttle now packages its real application entry point and executes project build/
+run through the plain compiler request. Shared compiler-option parsing, absolute
+path adaptation and launch transport preserve ordered flags/arguments, inherited
+I/O/cwd, actual artifact paths, child status and one PEC. Failed builds stop before
+launch, and manifest/source output aliases stay protected. Direct Windows Java
+main arguments recover original UTF-16 from the OS command line because this
+JDK's native code page replaces some Unicode before main. In-process arrays remain
+authoritative and JVM argument-file expansion stays with Java.
+[Shuttle Stage 6 evidence](../../shuttle-build/references/stage-6.md) records commands,
+diagnostic codes and the native argument adapter.
+
+The full isolated check/installDist run passes in 7m 34s: 1,600 Compiler tests
+across 142 suites; 47 Shuttle tests across five suites; 23 syntax, 27 resolution,
+33 native-disabled semantic and 24 backend-free configuration tests. Zero failures,
+errors or skips. Seven new compiler integration tests cover circular native
+execution, primary entry isolation, private emission/metadata, buffered/default
+contexts and objects across all nine profiles. Nineteen Shuttle tests add actual
+build/run, failure, process transport and shared standalone compiler-main evidence.
+Native imported execution here is Windows x64; broader imported-program portability,
+maintained examples and publication remain Stage 7. The packaged shuttle.bat also
+passes Unicode-path circular build/run (statuses 0/7, one PEC) and Linux ARM64 object
+emission with a nonexistent linker (status 0). Other workspace work is preserved.
+
+All seven changed skills pass validation. Publication checks pass for 16 documents,
+710 local links, 94 anchors, two TOML examples, fences and whitespace. All 24 touched
+source/build files and root/submodule diff whitespace checks pass. Temporary
+helpers, dependencies, fixtures and isolated outputs are removed after verification.
+The plan marks Stages 0-6 complete.
+
+### Shuttle and imports Stage 5 per-file semantics (2026-11-07)
+
+The compiler now predeclares nominal/function identities across source cycles,
+binds each file's own public exports, and checks signatures, defaults and bodies
+through original defining-file contexts. Same-spelled private nominal types stay
+distinct; method signature keys retain nominal identity. Struct identities precede
+field resolution. Global class/struct/enum catalogs use identity and share one
+Object root, with primary-file name views retained for single-file compatibility.
+
+[Stage 5 evidence](../../cloth-imports/references/stage-5.md) owns sources, behavior
+and verification. C3102-C3104 locate missing/private/conflicting imports; C3101 is
+retired. The driver binds before target selection, checks the whole graph with
+the actual layout, then reports C3105 until Stage 6 emission. Existing type/body
+diagnostics propagate unchanged. Direct single-unit adapters retain C3096.
+
+Thirty-three source-tree cases cover privacy, exports, overloads, original default
+contexts, nominal isolation, class/struct/enum integration, providers, cross-module
+cycles, invalid layout/inheritance cycles and shared Object identity. The isolated
+semantic task retains the existing builtin JVM API dependencies but excludes
+platform binaries and disables native loading. Parser/discovery tasks still
+exclude every LLVM/JavaCPP jar. Three public-facade cases check the semantic and
+emission boundaries.
+
+The final full isolated check passes in 6m 59s: 1,593 Compiler tests across 141
+suites, 23 isolated syntax tests, 27 isolated graph tests and 33 isolated semantic
+tests. Shuttle's 28 normal and 24 isolated configuration tests also pass. Every
+task has zero failures, errors or skips. Existing native/foreign-object regressions
+remain covered; imported-program emission/execution and graph entry integration
+remain Stage 6. Other concurrent workspace changes are preserved.
+All eight changed skills pass validation. Publication checks pass for 15
+documents, 710 local links, 97 anchors, two TOML examples, fences and whitespace,
+plus 26 touched Compiler source/build files. The plan marks Stages 0-5 complete.
+
+### Full Unicode string casing (2026-11-07)
+
+String `toUpperCase`/`toLowerCase` now return independent strings using Unicode
+17 default full mappings and original-text final-sigma context. Existing char
+casing and all seven original Unicode artifacts remain unchanged. The existing
+`UnicodeGenerator.d` pipeline adds authenticated SpecialCasing input and three
+new artifacts; all ten reproduce byte for byte with DMD 2.113.0.
+
+The [string casing record](../../cloth-strings/references/string-case.md) owns
+semantics, source routing and evidence. The focused run passes 218 tests across
+13 suites in 58 seconds, with zero failures, errors or skips. Exhaustive mapping
+and context predicates execute on Windows x64/x86; source conversion, poisoned
+lifetimes and all-nine-profile IR/object checks pass. The final full run passes
+1,557 tests across 139 suites in 6m 55s, with zero failures, errors or skips.
+It isolates both compiler outputs and Gradle project-cache/execution history from
+concurrent builds; the focused record explains the initial missing-class run.
+
+### Shuttle and imports Stage 4 source graphs (2026-11-07)
+
+The compiler now discovers exact-case source paths across supplied module roots,
+checks ambiguity before selectors/cache lookup, and retains separate source units
+and located import edges. Canonical paths plus filesystem/file-key identity
+deduplicate physical aliases. Explicit DFS frames and loading/loaded states
+preserve self/mutual/longer cycles without recursion or topological ordering.
+Reads use strict UTF-8 and keep original snapshots. Request validation remains
+shared and precedes all source work; no TOML discovery enters Compiler.
+
+[Stage 4 evidence](../../cloth-imports/references/stage-4.md) owns sources,
+diagnostics and scope. C3097-C3100 locate discovery failures; C0010 retains
+source read causes. Completed graphs protect every loaded source from output
+aliases and then stop with C3101 while binding is pending. Direct single-unit
+analysis retains C3096. No-import ABI/body/output behavior remains covered.
+
+The final 44-second run passes 117 Compiler tests across nine suites, 27 isolated
+graph tests and 23 isolated syntax/boundary tests. Shuttle's 28 normal and 24
+isolated configuration tests also pass. All have zero failures, errors or skips.
+Coverage includes a 768-file cycle, cross-module/diamond/repeated imports, exact
+case, ambiguity, original snapshots, hard links, NTFS directory junctions and a
+null-file-key provider. Host policy restricts symbolic links; the junction
+fallback keeps that directory-alias fixture active. Existing no-import native
+Windows x64 and all-nine-target object regressions pass; imported-program
+binding/emission and Linux/macOS host filesystem checks remain future work.
+All five changed skills pass the bundled validator. Publication checks pass for
+12 documents, 605 local links, 82 anchors, two TOML examples, fences and whitespace,
+plus 10 Compiler source/build files. The plan marks Stages 0-4 complete.
+
+### Shuttle and imports Stage 3 syntax (2026-11-07)
+
+Keywords.USING and located import/path/selection nodes now support the confirmed
+selective/wildcard file header. SourceUnit preserves ordered imports, declarations,
+EOF and original source identity; optional semicolons remain separate from node
+spans. Continuations occur only after colon/comma, with physical line checks
+preserving boundaries through multiline block comments. Malformed, misplaced,
+legacy and repeated selectors fail first with original spans; C2010 labels the
+first/repeated selector as one error.
+
+The [Stage 3 record](../../cloth-imports/references/stage-3.md) owns source routing,
+codes, commands and observed scope. Imports are parsed but not resolved/bound.
+C3096 prevents the driver and single-unit semantic adapters from silently
+ignoring imports. The driver checks before ABI/body/output work; CLI build/run
+report one failure, preserve stale output and never launch after rejection.
+
+The final 15-second run passes 90 tests across eight Compiler suites, plus 23
+import tests with native backend jars removed and class-resource absence checked.
+Shuttle's 28 normal tests and 24 isolated configuration tests also pass through
+the Git submodule layout. All tasks have zero failures, errors or skips. Existing
+request regressions retain Windows x64 native execution and all-nine-profile
+object coverage for no-import sources. This does not establish imported-program
+execution, foreign host execution or circular binding. Stage 4 source discovery
+is next; the full regression remains a later integration check.
+All six changed skills pass the bundled validator. Publication checks pass for
+13 documents, 610 local links, 88 anchors, two TOML examples, fences and whitespace,
+along with 13 Compiler source/build files. The plan marks Stages 0-3 complete.
+
+### Shuttle and imports Stage 2 manifests (2026-11-07)
+
+Shuttle now owns production Compiler/Jackson TOML dependencies, strict UTF-8
+manifest parsing, schema validation, project discovery, canonical module roots,
+exact-case entry files and an immutable resolved project model. It prepares
+plain compiler requests without parsing Cloth, selecting an ABI, discovering a
+linker or writing output. Stable S0001-S0013 failures retain original manifest
+snapshots, parser locations where available and honest schema key/file context.
+Bootstrap's three module manifests use canonical lowercase tables.
+
+The [Stage 2 record](../../shuttle-build/references/stage-2.md) routes sources and
+tests. All 28 Shuttle tests pass across three suites; the separate configuration
+task passes 24 manifest/model tests with LLVM/JavaCPP jars removed from the test
+runtime. Both runs have zero failures, errors or skips. A real loaded-TOML fixture
+emits an AArch64 Linux ELF object without main or a linker and preserves the
+original compiler diagnostic on a later source error. This verifies foreign
+object emission on Windows x64, not AArch64 execution or Linux/macOS hosts.
+
+The [Shuttle skill](../../shuttle-build/SKILL.md), shared routing and
+[plan](../../../../todo/shuttle-and-imports-plan.md) reflect Stages 0-2 complete.
+Compiler production code is unchanged in this stage. Source imports follow in
+Stages 3-6. Application packaging stays with the actual Stage 6 build/run CLI;
+there is no Shuttle launcher yet. Loading Bootstrap is verified, compiling its
+entire source scaffold is not.
+All four changed skills pass the bundled validator. Publication checks pass for
+10 documents, 538 local links, 76 anchors, two TOML examples, fences and whitespace.
+The final Shuttle build, including both test tasks, passes in 10 seconds; compile
+dependency reports confirm TOML stays inside Shuttle and native backend libraries
+remain absent from its compile classpath.
+
+### Shuttle and imports Stage 1 compiler API (2026-11-07)
+
+The [public compiler facade](../../../../Compiler/src/main/kotlin/cloth/api/ClothCompiler.kt)
+now accepts immutable CompilationRequest/SourceModule inputs and returns the
+actual CompilationResult artifact for one source file. The existing CLI/test
+driver adapts its settings and paths to this same boundary. Request shape/root
+validation uses C0017, while source, syntax, target, body, output-alias and I/O
+diagnostics retain their original identities and fail-first ordering.
+
+[Stage 1 evidence](../../cloth-imports/references/stage-1.md) records 71 passing
+tests across seven suites in 17 seconds on the final run, with zero failures/errors/skips.
+The 13 new request tests cover snapshots, validation, silent diagnostics,
+failure priority, I/O and overwrite protection, Windows x64 native execution and
+architecture-checked objects for all nine targets. Three Shuttle consumer tests
+prove public compilation and diagnostic rendering across the Gradle boundary.
+The consumer compile classpath contains diagnostic API libraries and no
+LLVM/JavaCPP or TOML. Native API execution on other targets was not newly tested.
+
+The [imports skill](../../cloth-imports/SKILL.md),
+[Shuttle skill](../../shuttle-build/SKILL.md) and
+[plan](../../../../todo/shuttle-and-imports-plan.md) describe the supported slice.
+Shuttle's Compiler dependency remains test-scoped; manifest/project loading and
+source import parsing/graphs are later stages.
+All five changed skills pass the bundled validator. Publication checks pass
+for 12 documents, 380 file links, 53 anchors, two TOML examples, fences and
+whitespace. Stages 0-1 are complete; Stage 2 is next.
+
+### Shuttle and imports Stage 0 publication (2026-11-07)
+
+Stage 0 publishes focused [cloth-imports](../../cloth-imports/SKILL.md) and
+[shuttle-build](../../shuttle-build/SKILL.md) guidance, moving import authority
+out of this shared index. The contracts select the initial import header,
+collision/overload, file identity, manifest discovery/schema and primary-file
+entry rules, preserving the user's circular-import decision. The
+[public API contract](../../cloth-imports/references/compiler-api.md) keeps
+Shuttle's TOML/model ownership separate from compiler source graphs and emission.
+
+The selected Jackson TOML 2.21.1 dependency passes 23 focused checks, including
+strict duplicates, original syntax locations and a gated Reader proving first
+failure abort without later-statement reads. Successful-tree field locations
+are unavailable; schema diagnostics will carry key paths and honest file-level
+labels. The [evidence](../../shuttle-build/references/stage-0.md) and
+[plan](../../../../todo/shuttle-and-imports-plan.md) record verification and scope.
+No compiler facade/import implementation, manifest loader, Shuttle command or
+product Gradle dependency is added by this stage.
+All six new/changed skills pass the bundled validator. Publication checks pass
+for 14 documents, 366 file links, 57 anchors, two TOML examples, code fences and
+whitespace. Stage 0 is complete; Stages 1-7 remain pending.
+
 ### Shuttle and compiler import planning (2026-11-07)
 
 The user selected TOML for project/module manifests and identified Shuttle as

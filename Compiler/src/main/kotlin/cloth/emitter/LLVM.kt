@@ -48,6 +48,11 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 
 	fun emitExecutable(unit: SourceUnit): String {
 		val program = ProgramAnalyzer(abi.layout).analyze(unit)
+		return emitExecutable(program)
+	}
+
+	internal fun emitExecutable(program: ProgramModel): String {
+		if (program.entryPoint == null) throw InternalErrors.invariant("Executable emission requires a validated entry point")
 		validate(program.functions)
 		return withExecutableModule(program, ::moduleText)
 	}

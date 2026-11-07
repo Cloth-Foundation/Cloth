@@ -1,8 +1,11 @@
 using lexer.Lexer: *
 
 pub fn<isize> main (string[] args) {
-    def input = "pub fn main(string[] args) { }"
+    println("Cloth Dogfooding")
+    def input := "pub fn main(string[] args) { }"
     def lexer = Lexer::new(input)
 
-    return lexer.lexTokens()
+    def status := lexer.lexTokens()
+    lexer::delete
+    return status
 }

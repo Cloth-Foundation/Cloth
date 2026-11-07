@@ -11,12 +11,24 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 /** One descriptor per declaration per source unit. Equality is nominal. */
-class CStruct internal constructor(val declaration: StructDeclaration, override val fields: List<StructField>) : CMemberType(Keywords.STRUCT) {
+class CStruct internal constructor(val declaration: StructDeclaration, fields: List<StructField>? = null) : CMemberType(Keywords.STRUCT) {
 
 	override val name get() = declaration.name
 	override val indirect get() = true
-	override val buffered = fields.any { it.type.buffered }
-	private val fieldsByName = fields.associateBy { it.declaration.name.lexeme }
+	override lateinit var fields: List<StructField>
+		private set
+	override val buffered get() = fields.any { it.type.buffered }
+	private lateinit var fieldsByName: Map<String, StructField>
+
+	init {
+		if (fields != null) defineFields(fields)
+	}
+
+	internal fun defineFields(fields: List<StructField>) {
+		this.fields = fields
+		fieldsByName = fields.associateBy { it.name.lexeme }
+	}
+
 	internal override fun field(name: String): StructField? = fieldsByName[name]
 
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMPointerTypeInContext(context, 0)

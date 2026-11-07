@@ -62,6 +62,12 @@ mutable fields and positional reception of the returned struct and a scalar.
 
 ## Boundaries, source, and verification
 
+Import [Stage 5](../cloth-imports/references/stage-5.md) predeclares functions across
+source cycles, then binds each file's own public export groups. Imported functions
+retain original symbols, private helpers and default contexts. Cross-file groups
+never merge by spelling; method signature keys include nominal parameter identity.
+Type annotations and body lookup use the declaration's original file context.
+
 `EmittedCallable` owns each declared callable's private LLVM signature and
 argument slots. The body and callers share its layout for receiver or
 constructor fields, explicit arguments, result arena and omission flags.

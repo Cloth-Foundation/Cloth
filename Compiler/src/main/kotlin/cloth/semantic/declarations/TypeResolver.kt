@@ -6,9 +6,10 @@ import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.Token
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }) {
+internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }, private val contextualNamedType: ((Token) -> CMemberType?)? = null) {
 
 	fun resolve(annotation: TypeReference): ValueType {
 		val name = annotation.name.lexeme
@@ -38,7 +39,7 @@ internal class TypeResolver(val target: TargetLayout, private val operatorWidth:
 				Keywords.STRING.toString()    -> ValueType.STRING
 				Keywords.TYPEINFO.toString()  -> ValueType.TYPEINFO
 				Keywords.VOID.toString()      -> ValueType.VOID
-				else                          -> namedType(name) ?: throw SemanticErrors.type(annotation)
+				else                          -> (if (contextualNamedType != null) contextualNamedType.invoke(annotation.name) else namedType(name)) ?: throw SemanticErrors.type(annotation)
 			}
 		}
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)

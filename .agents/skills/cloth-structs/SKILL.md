@@ -26,6 +26,11 @@ for stage boundaries, source routing and verification targets.
 
 ## Preserve these boundaries
 
+- Import [Stage 5](../cloth-imports/references/stage-5.md) registers struct identity
+  before resolving fields. Global catalogs use declaration identity and each
+  annotation resolves in its defining file, including through circular imports.
+  Inline value-layout cycles still fail. Finalize fields before consuming layout
+  or buffered-value facts; cached simple-name lookup cannot represent graph types.
 - Each struct declaration defines a distinct type. Match struct values by
   declaration identity even when field lists are identical.
 - A type and a variable can share a spelling. Type annotations and ordinary

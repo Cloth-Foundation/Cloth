@@ -8,7 +8,7 @@ import cloth.token.Token
 /** Check source payloads before generated reader branches can choose their diagnostics. */
 internal fun checkEnumPayloads(model: FunctionSemanticModel) {
 	val constants = EnumConstantExpressions(model.types)
-	for (owner in model.declarations.enums.values) {
+	for (owner in model.declarations.enumTypes) {
 		val fields = owner.fields
 		val checkers = fields.map { BodyTyping(model, it.reader, ResultShape.of(it.type)) }
 		fun check(index: Int, expression: Expression, caseName: Token? = null) {

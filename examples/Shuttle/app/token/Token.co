@@ -1,0 +1,9 @@
+pub typedef<enum> TokenType {
+    Name, Number;
+    operator<string> ==() = self::name.toLowerCase()
+}
+
+pub typedef<struct> Token {
+    TokenType kind,
+    string text
+}

@@ -5,9 +5,11 @@ build/
 !**/src/test/**/build/
 **/test/
 !Compiler/src/test/
+!Shuttle/src/test/
 .kotlin
 .idea
 README.md
+!examples/Shuttle/README.md
 
 todo/*
 

@@ -95,8 +95,8 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		return descriptor(data, memory.resize(length))
 	}
 
-	/** Encode one scalar; unused bytes are outside the descriptor's length. */
-	private fun character(value: LLVMValueRef): LLVMValueRef {
+	/** Nonallocating UTF-8 length and four candidate bytes for one validated scalar. */
+	fun scalarEncoding(value: LLVMValueRef): Pair<LLVMValueRef, List<LLVMValueRef>> {
 		val scalarType = types.value(ValueType.CHAR)
 		fun constant(n: Int) = LLVMConstInt(scalarType, n.toLong(), 0)
 		fun fits(limit: Int) = LLVMBuildICmp(builder, LLVMIntULT, value, constant(limit), "utf8_fits")
@@ -109,6 +109,12 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 		val length = select(one, constant(1), select(two, constant(2), select(three, constant(3), constant(4))))
 		val lead = select(one, value, select(two, LLVMBuildOr(builder, shift(6), constant(0xc0), "utf8_lead2"), select(three, LLVMBuildOr(builder, shift(12), constant(0xe0), "utf8_lead3"), LLVMBuildOr(builder, shift(18), constant(0xf0), "utf8_lead4"))))
 		val bytes = listOf(lead, select(two, continuation(0), select(three, continuation(6), continuation(12))), select(three, continuation(0), continuation(6)), continuation(0))
+		return memory.resize(length) to bytes
+	}
+
+	/** Encode one scalar; unused bytes are outside the descriptor's length. */
+	private fun character(value: LLVMValueRef): LLVMValueRef {
+		val (length, bytes) = scalarEncoding(value)
 		val byteType = LLVMInt8TypeInContext(context)
 		val data = memory.stack(byteType, memory.count(4), "char_bytes", "Unable to allocate character storage")
 		for ((index, byte) in bytes.withIndex()) {
@@ -118,7 +124,7 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 			}
 			LLVMBuildStore(builder, LLVMBuildTrunc(builder, byte, byteType, "char_byte"), address)
 		}
-		return descriptor(data, memory.resize(length))
+		return descriptor(data, length)
 	}
 
 	/** All Cloth strings are well-formed UTF-8. Count leading bytes, including NUL,

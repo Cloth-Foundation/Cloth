@@ -38,6 +38,8 @@ internal class StringAttachments(sizeBits: Int) : PrimitiveAttachment(ValueType.
 	val TRIM_START = trimming("trimStart", start = true, end = false)
 	val TRIM_END = trimming("trimEnd", start = false, end = true)
 	val IS_BLANK = valueMethod("isBlank", emptyList(), ValueType.BOOL) { context, values -> context.stringIsBlank(values[0]) }
+	val TO_UPPER_CASE = valueMethod("toUpperCase", emptyList(), ValueType.STRING) { context, values -> context.stringCase(values[0], upper = true) }
+	val TO_LOWER_CASE = valueMethod("toLowerCase", emptyList(), ValueType.STRING) { context, values -> context.stringCase(values[0], upper = false) }
 
 	private fun trimming(name: String, start: Boolean, end: Boolean) = valueMethod(name, emptyList(), ValueType.STRING) { context, values ->
 		context.stringTrim(values[0], start, end)

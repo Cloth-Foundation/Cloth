@@ -123,6 +123,8 @@ captures implementation scope and regression evidence.
 
 | Work area | Skill |
 | --- | --- |
+| Source imports, selected/wildcard exports, circular graphs, file scopes and compiler requests | [cloth-imports](../cloth-imports/SKILL.md) |
+| Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
@@ -143,6 +145,7 @@ captures implementation scope and regression evidence.
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
 | Character Unicode classification, code-point toInt, pinned tables and generation | [character attachments](../cloth-strings/references/character-attachments.md) |
 | Character simple uppercase/lowercase mappings, char results and unchanged unmapped scalars | [character casing](../cloth-strings/references/character-case.md) |
+| Full Unicode string casing, expansions, final sigma and D-generated context tables | [string casing](../cloth-strings/references/string-case.md) |
 | String attachments, typed primitive registry and ordinary value member calls | [string member calls](../cloth-strings/references/member-calls.md) |
 | Scalar string positions, extraction, searches and character-array conversion | [scalar string methods](../cloth-strings/references/scalar-methods.md) |
 | Char/string delimiter overloads, empty pieces and independent string arrays | [string splitting](../cloth-strings/references/split-method.md) |
@@ -161,22 +164,32 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
-- Imports use `using file.path : TypeName, functionName` or `using file.path : *`.
-  The path identifies the actual `.co` file within a configured module; names
-  enter the importing file's scope directly. Types and functions can be listed
-  in any order. Module context comes from Shuttle's `build.toml`; import paths
-  omit module names. This supersedes the earlier mandatory module-prefix decision and
-  dotted per-declaration/wildcard examples. The [import design](references/semantics.md#imports)
-  records the confirmed syntax, allowed circular source imports, ambiguity error
-  for duplicate source-file paths, Shuttle's confirmed TOML ownership, proposed project/module roots, and
-  unresolved discovery and imported-name conflict rules. The
-  [Shuttle and compiler imports plan](../../../todo/shuttle-and-imports-plan.md)
-  separates manifest/build orchestration in `Shuttle` from the compiler's
-  manifest-independent API, source graph and file scopes. Implementation is
-  pending; future stages must add focused imports and Shuttle skills.
-  The compiler currently processes one source unit and has no import parsing
-  or resolution. The legacy `Keywords.USE` spelling does not establish the
-  intended import keyword.
+- Imports and Shuttle: Stage 0 publishes the
+  [import contract](../cloth-imports/references/semantics.md),
+  [compiler API boundary](../cloth-imports/references/compiler-api.md) and
+  [Shuttle manifest/build contract](../shuttle-build/references/semantics.md).
+  Use [cloth-imports](../cloth-imports/SKILL.md) for source paths, selected/wildcard
+  exports, file scopes and circular imports, and [shuttle-build](../shuttle-build/SKILL.md)
+  for TOML, project roots and build orchestration.
+  The [plan](../../../todo/shuttle-and-imports-plan.md) stages implementation.
+  Stage 1 implements the one-file public request facade and a Shuttle consumer
+  fixture; see its [integration evidence](../cloth-imports/references/stage-1.md).
+  Stage 2 implements [Shuttle manifests and the resolved project model](../shuttle-build/references/stage-2.md),
+  preparing compiler requests without compiling source. Stage 3 implements
+  [located import headers](../cloth-imports/references/stage-3.md), with a
+  diagnostic preventing unresolved imports from being ignored. Stage 4 adds
+  [source graphs and exact file resolution](../cloth-imports/references/stage-4.md),
+  retaining circular imports and loaded-source output protection. Stage 5 adds
+  [per-file binding and contextual graph semantics](../cloth-imports/references/stage-5.md).
+  [Stage 6](../cloth-imports/references/stage-6.md) adds whole-program emission,
+  primary-file executable entry selection and exact nominal runtime metadata.
+  [Shuttle Stage 6](../shuttle-build/references/stage-6.md) adds packaged build/run
+  commands, shared compiler options and Unicode process argument transport.
+  [Stage 7](../cloth-imports/references/stage-7.md) verifies the maintained nested
+  project, Bootstrap's current scaffold and available native profiles. The user's
+  Bootstrap enum comparison also integrates
+  [equality operand contexts](references/equality-operand-contexts.md); preserve
+  their one-pass evaluation, nominal/class comparison priority and alias effects.
 
 - Basic structs are complete. [Structs.co](../../../examples/Structs.co)
   demonstrates contextual construction, nested writes, independent copies,

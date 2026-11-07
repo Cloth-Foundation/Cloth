@@ -76,13 +76,16 @@ library dependency; emitted executables do not read UCD files at runtime.
 ### Reproducible Unicode resources
 
 [The D generator](../../../../UnicodeGenerator/UnicodeGenerator.d)
-validates all five local input hashes before writing anything. It coalesces sorted
+validates all six local input hashes before writing anything. It coalesces sorted
 Letter/Nd/general-case ranges into the production text table, preserves the
 [Unicode License V3](../../../../Compiler/src/main/resources/cloth/unicode/17.0.0/LICENSE.txt),
 and writes compressed, complete official input files for the independent test
 oracle. The casing extension also emits a simple-mapping table and compressed
 UnicodeData fixture. Production needs only the small text tables/license; tests use full input
 fixtures with checked decompressed hashes.
+The [full string casing extension](string-case.md) adds separate full-mapping and
+context tables plus the SpecialCasing fixture while preserving the original seven
+artifacts byte for byte.
 
 Inputs:
 
@@ -90,6 +93,7 @@ Inputs:
 - [DerivedCoreProperties.txt](https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt)
 - [PropList.txt](https://www.unicode.org/Public/17.0.0/ucd/PropList.txt)
 - [UnicodeData.txt](https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt)
+- [SpecialCasing.txt](https://www.unicode.org/Public/17.0.0/ucd/SpecialCasing.txt)
 - [LICENSE.txt](https://www.unicode.org/license.txt), exact snapshot hash pinned in the generator
 
 Run from the repository root with DMD on `PATH`.
@@ -99,7 +103,7 @@ dmd -run UnicodeGenerator/UnicodeGenerator.d "path/to/unicode-inputs"
 ```
 
 The generator performs no downloads. Normal compilation/tests require no network.
-The D port reproduced all seven checked-in artifacts byte for byte with DMD
+The original D port reproduced all seven original artifacts byte for byte with DMD
 2.113.0 on Windows x64. Updating
 Unicode semantics requires explicit review and new inputs/hashes/evidence, not
 following the latest host runtime or upstream release automatically.

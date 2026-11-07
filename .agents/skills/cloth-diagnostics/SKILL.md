@@ -36,14 +36,56 @@ multi-error reporter. Multiple labels may explain that same error.
 ## Source and verification
 
 **C0014 / OUTPUT_OVERWRITES_SOURCE** rejects a CLI output path that identifies
-the input file. The check uses the final target-specific filename and covers
+any loaded input source. The emission path checks the final target-specific filename and covers
 filesystem aliases such as hard links. `DiagnosticsTest` covers object output,
 an extensionless executable, and a Windows executable with an appended suffix.
+Stage 4 adds transitive graph/source identity checks. Imported executable
+requests conservatively check all possible final
+suffixes before ABI selection. [Graph verification](../cloth-imports/references/stage-4.md)
 
 **C0015 / RUN_REQUIRES_EXECUTABLE** rejects `run --emit object` before reading
 source or creating output. **C0016 / PROGRAM_LAUNCH_FAILED** reports a failure
 to launch the emitted artifact or an interrupted wait. Both return 1. A child
 that completes supplies its own status. [Build and run commands](../cloth-toolchains/SKILL.md#build-and-run-commands)
+
+**C0017 / INVALID_COMPILATION_REQUEST** rejects invalid public request paths,
+entry/output combinations and module IDs/physical roots before source work.
+The public facade preserves original compiler diagnostics, maps source/output
+I/O to C0010/C0013 with causes, and performs no reporting or process launch.
+[Request tests](../../../Compiler/src/test/kotlin/cloth/CompilationRequestTest.kt) ·
+[API integration](../cloth-imports/references/stage-1.md)
+
+**C2009 / IMPORT_OUTSIDE_HEADER** rejects imports after declarations and at
+function-statement boundaries. Imports in type bodies are rejected by their
+existing located grammar checks. **C2010 / DUPLICATE_IMPORT_SELECTION** labels
+the repeated selector and its original occurrence as one syntax diagnostic.
+**C3096 / IMPORTS_REQUIRE_SOURCE_GRAPH** prevents direct single-unit semantic
+adapters from silently ignoring parsed imports. Stage 4's driver discovers
+the graph instead: **C3097 / MISSING_IMPORT_CONTEXT**, **C3098 /
+IMPORTED_SOURCE_NOT_FOUND**, **C3099 / AMBIGUOUS_IMPORT_SOURCE** and **C3100 /
+IMPORT_SOURCE_ACCESS** locate discovery failures at the original import path.
+Ambiguity lists matching module/file candidates before parsing them or selecting
+symbols. Imported read/UTF-8 errors retain C0010, import context and their cause;
+syntax failures retain the imported source's original code/snapshot/location.
+C3097 now guides direct CLI users to Shuttle or explicit request module roots;
+it does not infer roots from source folders or discover manifests in Compiler.
+**C3101 is retired** after Stage 5. **C3102 / IMPORT_NAME_NOT_FOUND** locates a
+selector absent from the target file's own exports. **C3103 / IMPORT_PRIVATE_NAME**
+labels the selector and private definition. **C3104 / IMPORT_NAME_CONFLICT** labels
+the conflicting import, existing/imported definitions and earlier import when
+applicable. Bindings reuse original symbols; repeated identities are idempotent.
+**C3105 is retired** after Stage 6 whole-program emission. Other
+malformed import grammar retains C2000/C2001 and exact EOF positions.
+[Import diagnostics](../../../Compiler/src/main/kotlin/cloth/diagnostics/ImportErrors.kt) ·
+[Stage 3 verification](../cloth-imports/references/stage-3.md)
+
+The [Stage 5 record](../cloth-imports/references/stage-5.md) covers defining-file
+contexts and graph-wide checking. Binding diagnostics precede ABI selection;
+type/body errors keep their original code and source. [Stage 6](../cloth-imports/references/stage-6.md)
+emits checked graphs without an intermediate diagnostic gate. DiagnosticReporter
+renders the common Yvette Diagnostic base so Shuttle can report its S codes and
+propagate original C diagnostics through the same renderer. Shuttle command and
+launch codes/statuses are owned by its [Stage 6 record](../shuttle-build/references/stage-6.md).
 
 **C4030 / UNSUPPORTED_FUNCTION_ABI** identifies the rejected type at the
 parameter or result annotation. `EmitFunctions.validate` owns the callable ABI

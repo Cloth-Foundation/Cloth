@@ -1,0 +1,9 @@
+fn main() {
+    println("Straße".toUpperCase())
+    println("İ".toLowerCase())
+    println("ΟΣ".toLowerCase())
+    println("ΟΣΑ".toLowerCase())
+    println("A😀B\0".toLowerCase()::size)
+    println('ß'.toUpperCase())
+    println('İ'.toLowerCase())
+}

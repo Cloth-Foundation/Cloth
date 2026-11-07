@@ -1263,6 +1263,38 @@ class ArrayTemporaryCleanupTest {
 	}
 
 	@Test
+	fun `full string casing preserves returned buffers copies and captured publication across poisoned frees`(@TempDir directory: Path) {
+		probe(directory, "string_case_results", """
+			fn<string> text() = "Stra" + "ße ΟΣ"
+			fn<string, string> pair() = text().toUpperCase(), text().toLowerCase()
+			fn<int> sample() {
+			    def upper, lower = pair()
+			    pair() -> void
+			    if (upper != "STRASSE ΟΣ" || lower != "straße ος") return 1
+			    def<string[]> values = [text().toUpperCase(), text().toLowerCase()]
+			    def independent = values
+			    independent[0] = "changed"
+			    if (values[0] != "STRASSE ΟΣ" || values[1] != "straße ος" || independent[0] != "changed") return 2
+			    def<string> publish = { values[0] = text().toLowerCase(); return values[0] }
+			    def received = publish.toUpperCase()
+			    if (received != "STRASSE ΟΣ" || values[0] != "straße ος") return 3
+			    def<string> deferred = { return text().toLowerCase() }
+			    if (deferred != "straße ος") return 4
+			    def baseline = liveBytes()
+			    for (def i <- 0..1000) {
+			        if (!text().toUpperCase().startsWith("STRASSE") || !text().toLowerCase().endsWith("ος")) return 5
+			        if (liveBytes() != baseline || upper != "STRASSE ΟΣ" || lower != "straße ος") return 6
+			    }
+			    def n = 0
+			    while (text().toUpperCase().startsWith("STRASSE") && n < 50) { n++ }
+			    do { n-- } while (text().toLowerCase().endsWith("ος") && n > 0)
+			    if (n != 0 || liveBytes() != baseline || received != "STRASSE ΟΣ") return 7
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `read only string methods add no operand copies for literals or stored strings`(@TempDir directory: Path) {
 		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
 		probe(directory, "member_no_copies", """
@@ -1275,6 +1307,7 @@ class ArrayTemporaryCleanupTest {
 			    if (text.substring(0, 3) != "abc" || text.trim() != "abc" || text.trimStart() != "abc" || text.trimEnd() != "abc") return 3
 			    if (text.replace("b", "x") != "axc" || text.replaceFirst("b", "x") != "axc") return 4
 			    if (text.removePrefix("a") != "bc" || text.removeSuffix("c") != "ab" || text.toChars()[1] != 'b') return 5
+			    if (text.toUpperCase() != "ABC" || text.toLowerCase() != "abc") return 8
 			    if (!"".isEmpty() || !"　".isBlank() || liveBytes() != baseline) return 6
 			    def chars = text.toChars()
 			    chars[0] = 'x'

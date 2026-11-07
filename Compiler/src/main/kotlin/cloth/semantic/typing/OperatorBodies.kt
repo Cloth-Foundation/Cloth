@@ -39,7 +39,7 @@ internal class OperatorBodies {
 			val method = body.reserveSpecialization(template, width, signature)
 			BodyTyping(body, declaration, signature.results).checkBody()
 			checkCallableMetadata(method, body)
-			if (body.declarations.classes.isNotEmpty()) ClassLifetimeAnalysis(body).analyze(listOf(method))
+			if (body.declarations.classDefinitions.isNotEmpty()) ClassLifetimeAnalysis(body).analyze(listOf(method))
 			facts.publishSpecialization(method, body)
 			method
 		} finally {

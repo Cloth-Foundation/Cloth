@@ -1,5 +1,6 @@
 plugins {
 	application
+	`java-library`
 	kotlin("jvm") version "2.4.20"
 }
 
@@ -22,8 +23,8 @@ dependencies {
 	runtimeOnly("org.bytedeco:llvm-platform:22.1.8-1.5.14")
 
 	// Errors
-	implementation("com.opencastsoftware:yvette:0.2.0")
-	implementation("com.opencastsoftware:prettier4j:0.3.1")
+	api("com.opencastsoftware:yvette:0.2.0")
+	api("com.opencastsoftware:prettier4j:0.3.1")
 	implementation("org.fusesource.jansi:jansi:2.4.0")
 }
 
@@ -56,6 +57,49 @@ tasks.test {
 	useJUnitPlatform()
 	workingDir(rootProject.projectDir)
 	systemProperty("cloth.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+}
+
+// Verify import syntax and its current analysis boundary without native backend jars.
+tasks.register<Test>("importSyntaxTest") {
+	workingDir(rootProject.projectDir)
+	systemProperty("cloth.test.nativeFreeImports", true)
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath.filter {
+		!it.name.startsWith("llvm-") && !it.name.startsWith("javacpp-")
+	}
+	useJUnitPlatform()
+	filter {
+		includeTestsMatching("cloth.ImportParsingTest")
+		includeTestsMatching("cloth.ImportStageBoundaryTest")
+	}
+}
+
+tasks.check {
+	dependsOn("importSyntaxTest", "importResolutionTest", "importSemanticsTest")
+}
+
+tasks.register<Test>("importResolutionTest") {
+	workingDir(rootProject.projectDir)
+	systemProperty("cloth.test.nativeFreeImports", true)
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath.filter {
+		!it.name.startsWith("llvm-") && !it.name.startsWith("javacpp-")
+	}
+	useJUnitPlatform()
+	filter { includeTestsMatching("cloth.ImportResolutionTest") }
+}
+
+tasks.register<Test>("importSemanticsTest") {
+	workingDir(rootProject.projectDir)
+	systemProperty("cloth.test.nativeFreeSemantics", true)
+	systemProperty("org.bytedeco.javacpp.loadlibraries", "false")
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath.filter {
+		// Builtin descriptors reference JVM API types; platform binary jars are unnecessary.
+		!Regex("(?:llvm|javacpp)-.*-(?:android|ios|linux|macosx|windows)-.*\\.jar").matches(it.name)
+	}
+	useJUnitPlatform()
+	filter { includeTestsMatching("cloth.ImportSemanticsTest") }
 }
 
 tasks.register<JavaExec>("probeIntegerWidths") {

@@ -5,6 +5,14 @@ description: Design, explain, or extend Cloth optional semicolons and valid stat
 
 # Cloth optional semicolons
 
+The [import contract](../cloth-imports/references/semantics.md#syntax-and-file-scope)
+defines file-header import terminators and list continuations. Stage 3 parses
+these boundaries: a complete selection ends at newline/EOF or one optional
+semicolon; only colon/comma permit list continuation. An explicit semicolon can
+separate imports or a following declaration on the same line. No leading,
+repeated or later-line empty file statements are introduced. See
+[Stage 3 evidence](../cloth-imports/references/stage-3.md).
+
 ## Confirmed behavior and implemented scope
 
 On 2026-11-02 the user confirmed optional semicolons at the usual statement

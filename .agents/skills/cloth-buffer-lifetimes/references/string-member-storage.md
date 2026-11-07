@@ -89,6 +89,12 @@ another read-only independent scalar consumer under the same proof. Its
 1,000 repeated producer/mapping calls, while/do-while conditions and final live-byte
 balance with poisoned frees. It adds no new cleanup rule or buffer ownership path.
 
+[Full string casing](../../cloth-strings/references/string-case.md) uses the same
+read-only contract with independent text results. Its shared scalar encoding
+calculation introduces no per-scalar buffer allocation. The no-operand-copy probe
+includes both methods; a separate poisoned-free probe checks outgoing strings,
+arrays, captured publication and repeated scalar/condition consumers.
+
 ## Verification
 
 The existing string/lifetime regression command passed after the core change:

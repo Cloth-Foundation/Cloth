@@ -44,7 +44,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			when (val declaration = callable.declaration) {
 				is PrimaryConstructorDeclaration -> {
 					arguments(declaration.owner.base?.arguments.orEmpty(), state)
-					declarations.classes.getValue(declaration.name.lexeme).fieldInitializers.forEach { expression(it.expression, state) }
+					declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration)).fieldInitializers.forEach { expression(it.expression, state) }
 				}
 
 				is ConstructorDeclaration        -> arguments(declaration.delegation.arguments, state)

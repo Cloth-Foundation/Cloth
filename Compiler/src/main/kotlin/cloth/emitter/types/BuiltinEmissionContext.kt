@@ -34,6 +34,7 @@ internal class BuiltinEmissionContext(
 	private val stringEdit by lazy { EmitStringEdit(context, builder, abi, strings, location) }
 	private val stringSplit by lazy { EmitStringSplit(context, builder, abi, strings, location) }
 	private val stringWhitespace by lazy { EmitStringWhitespace(context, builder, abi, strings, location) }
+	private val stringCase by lazy { EmitStringCase(context, builder, abi, strings, location) }
 
 	fun writeStdout(text: LLVMValueRef) = strings.write(module, text)
 	fun writeNewline() = strings.write(module, strings.literal("\n"))
@@ -48,6 +49,7 @@ internal class BuiltinEmissionContext(
 	fun stringRemoveAffix(value: LLVMValueRef, affix: LLVMValueRef, suffix: Boolean) = stringEdit.removeAffix(value, affix, suffix)
 	fun stringTrim(value: LLVMValueRef, start: Boolean, end: Boolean) = stringWhitespace.trim(value, start, end)
 	fun stringIsBlank(value: LLVMValueRef) = stringWhitespace.isBlank(value)
+	fun stringCase(value: LLVMValueRef, upper: Boolean) = stringCase.emit(value, upper)
 	fun boolToInt(value: LLVMValueRef) = LLVMBuildZExt(builder, value, ValueType.INT.llvmValue(context, abi.layout), "bool_to_int")
 	fun charToInt(value: LLVMValueRef) = value
 	fun charCase(value: LLVMValueRef, upper: Boolean) = EmitCharCase(context, builder).emit(value, upper)

@@ -20,6 +20,15 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
 
 ## Development rules
 
+- Import [Stage 5](../cloth-imports/references/stage-5.md) resolves nominal type
+  receivers and annotations through original source context. Same-spelled private
+  types in separate files stay distinct in represented-type metadata. Preserve
+  this context through callable trials and width-specialized method bodies.
+  [Stage 6](../cloth-imports/references/stage-6.md) also preserves this identity in
+  native typeinfo descriptors and equality, recursively through arrays/nullable
+  types. Intern descriptors within the emitted module by canonical structural
+  identity plus nominal source/position, never displayed type text alone. Keep
+  displayed type names unchanged; binary cross-module metadata ABIs remain deferred.
 - `value::name` and `Type::name` are read-only, lowercase, case-sensitive access.
   Each provider declares supported receiver forms. Parentheses select the separate
   state-call syntax; `int::max()` is not an alternate provider invocation.

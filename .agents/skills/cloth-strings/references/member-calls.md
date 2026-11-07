@@ -11,6 +11,8 @@ The [Unicode whitespace extension](whitespace-methods.md) adds `trim`, `trimStar
 The [delimiter splitting extension](split-method.md) adds exact `split(char)` and
 `split(string)` overloads returning independent `string[]`, including every
 leading, repeated and trailing empty piece and scalar-boundary empty delimiters.
+The [full casing extension](string-case.md) adds string `toUpperCase` and
+`toLowerCase`, with Unicode expansions and original-text final-sigma context.
 The [storage cleanup](../../cloth-buffer-lifetimes/references/string-member-storage.md)
 preserves the contracts below while eliding immutable operand byte copies and
 admitting opted-in calls to closed arena/stack cleanup proofs.
@@ -171,12 +173,12 @@ no environment packages were installed.
 
 ## Deferred API inventory
 
-The earlier mockup also listed `toUpperCase`, `toLowerCase`,
-`trimLeft`, `trimRight`, `isNumeric`,
+The earlier mockup also listed `trimLeft`, `trimRight`, `isNumeric`,
 `isAlpha`, `isAlphanumeric` and `toValue`. These remain proposals for strings, not callable
 string entries. Character `toUpperCase`/`toLowerCase` are implemented separately
-under [the simple character casing contract](character-case.md).
-String Unicode case/numeric/letter classification policies, parsing
+under [the simple character casing contract](character-case.md); string
+`toUpperCase`/`toLowerCase` are implemented under [full string casing](string-case.md).
+String numeric/letter classification policies, parsing
 grammar/failure and type-valued arguments need separate decisions. Scalar indices
 and the five extraction/search/conversion methods are now covered by
 [the accepted extension](scalar-methods.md).

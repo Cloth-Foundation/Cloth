@@ -66,7 +66,7 @@ class CharCaseTest {
 			assertEquals(ValueType.CHAR, registration.overload.returns)
 			assertEquals(emptyList(), registration.parameters)
 			assertEquals(BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT, registration.overload.storage)
-			assertNull(PrimitiveAttachments[ValueType.STRING, name, nativeTestLayout])
+			assertEquals(ValueType.STRING, PrimitiveAttachments[ValueType.STRING, name, nativeTestLayout]?.overload?.returns)
 		}
 		assertEquals("17.0.0", UnicodeCharacterCaseMappings.VERSION)
 		assertEquals(1505, UnicodeCharacterCaseMappings.mappings(true).size)
@@ -227,7 +227,7 @@ class CharCaseTest {
 		failure("fn main() { 'a'.toUpperCase(true) }", DiagnosticCode.CALL_ARITY)
 		failure("fn main() { 'A'.toLowerCase(locale = \"tr\") }", DiagnosticCode.INVALID_ARGUMENT_BINDING)
 		failure("fn f(char? c) { c.toUpperCase() }", DiagnosticCode.UNKNOWN_MEMBER)
-		failure("fn main() { \"a\".toUpperCase() }", DiagnosticCode.UNKNOWN_MEMBER)
+		failure("fn main() { 1.toUpperCase() }", DiagnosticCode.UNKNOWN_MEMBER)
 		failure("fn main() { char.toLowerCase() }", DiagnosticCode.TYPE_RECEIVER_VALUE)
 		failure("fn main() { 'a'::toUpperCase() }", DiagnosticCode.UNSUPPORTED_STATE_CALL)
 		failure("fn main() { toLowerCase() }", DiagnosticCode.UNKNOWN_NAME)

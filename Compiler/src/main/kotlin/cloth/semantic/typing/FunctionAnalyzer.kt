@@ -12,6 +12,7 @@ import cloth.semantic.OperatorRules
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.declarations.DeclarationModel
+import cloth.semantic.declarations.FileBindings
 import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
@@ -19,6 +20,7 @@ import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.MethodSymbol
+import cloth.source.SourceGraph
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -27,10 +29,12 @@ import cloth.token.Operators
 class FunctionAnalyzer(private val target: TargetLayout) {
 
 	fun analyze(unit: SourceUnit): FunctionSemanticModel = analyze(DeclarationAnalyzer(target).analyze(unit))
+	internal fun analyze(graph: SourceGraph): FunctionSemanticModel = analyze(DeclarationAnalyzer(target).analyze(graph))
+	internal fun analyze(files: FileBindings): FunctionSemanticModel = analyze(DeclarationAnalyzer(target).analyze(files))
 
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
 		if (target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
-		val resolver = TypeResolver(declarations.target, namedType = declarations::namedType)
+		val resolver = TypeResolver(declarations.target, contextualNamedType = declarations::namedType)
 		val signatures = declarations.concreteCallables.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
 				resolver.resolve(parameter.declaredType).also {
@@ -47,7 +51,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			if (operator?.name?.lexeme == Keywords.IS.toString() && parameters.single() !is CClass) {
 				throw SemanticErrors.operatorDeclaration("Value-target '${Keywords.IS}' requires a non-nullable class operand", function.parameters.single().name.span)
 			}
-			if (operator != null && comparison in OperatorRules.classComparisons) {
+			if (operator != null && operator.operator?.selector == null && comparison in OperatorRules.classComparisons) {
 				val operand = parameters.single()
 				val owner = (function as MethodSymbol).owner
 				val requiredType = if (owner is CClass) declarations.objectRoot else owner
@@ -96,9 +100,9 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			val checker = BodyTyping(model, function.declaration, returnResults)
 			when (val declaration = function.declaration) {
 				is PrimaryConstructorDeclaration -> {
-					val definition = declarations.classes.getValue(declaration.name.lexeme)
+					val definition = declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration))
 					declaration.owner.base?.let { clause ->
-						declarations.classes[clause.name.lexeme]?.let { checker.bindConstructor(clause, it.constructors) }
+						definition.owner.base?.let { declarations.classDefinitions[it] }?.let { checker.bindConstructor(clause, it.constructors) }
 					}
 					for ((field, expression) in definition.fieldInitializers) {
 						checker.checkInitializer(expression, field.type, field.name)
@@ -107,7 +111,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 
 				is ConstructorDeclaration        -> {
 					val owner = declarations.classOwners.getValue(declaration)
-					val primary = declarations.classes.getValue(owner.spelling).primary
+					val primary = declarations.classDefinitions.getValue(owner).primary
 					checker.bindConstructor(declaration.delegation, listOf(primary))
 				}
 
@@ -116,7 +120,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			checker.checkBody()
 		}
 		for (function in declarations.concreteCallables) checkCallableMetadata(function, model)
-		if (declarations.classes.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
+		if (declarations.classDefinitions.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
 		return model
 	}
 

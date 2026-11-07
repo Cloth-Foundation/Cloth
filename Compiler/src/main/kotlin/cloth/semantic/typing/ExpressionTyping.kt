@@ -39,6 +39,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun callType(expression: CallExpression): ValueType = throw SemanticErrors.unknownName(expression.name)
 	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
 	protected open fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? = null
+	protected open fun equalityContextType(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? = null
 	protected open fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? = null
 	protected open fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = null
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.FALLTHROUGH
@@ -612,6 +613,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				} else null
 				val left = typeOf(expression.left, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
+				equalityContextType(expression, operation, left, right)?.let { return it }
 				classComparison(expression, operation, left, right)?.let { return it }
 				valueComparison(expression, operation, left, right)?.let { return it }
 				if (left is CNullable || left == ValueType.Null) throw SemanticErrors.nullablePayload(left, expression.left.span)

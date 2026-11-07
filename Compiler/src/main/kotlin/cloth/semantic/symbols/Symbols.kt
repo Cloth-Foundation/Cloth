@@ -14,7 +14,7 @@ import cloth.token.*
 import java.math.BigInteger
 
 /** A structural declaration key, not a resolved or validated language type. */
-data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }) {
+data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }, val nominal: CMemberType? = null) {
 
 	val spelling: String
 		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "${Operators.LESS}$it${Operators.GREATER}" } ?: "") + (if (nullable) Operators.QUESTION.toString() else "") + arraySizes.mapIndexed { index, size -> "${Operators.BRACKET_OPEN}${size ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(index) == true) Operators.QUESTION.toString() else "" }.joinToString("")
@@ -23,9 +23,9 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
-		fun of(type: TypeReference): SignatureType {
+		fun of(type: TypeReference, nominal: CMemberType? = null): SignatureType {
 			val width = type.width?.takeUnless { type.capturesWidth }?.integerLiteralValue() ?: defaultWidth.takeIf { type.name.lexeme in numericNames }
-			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null })
+			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null }, nominal)
 		}
 	}
 }
@@ -37,7 +37,7 @@ data class FunctionSignature(val name: String, val parameterTypes: List<Signatur
 
 	companion object {
 
-		internal fun of(declaration: CallableDeclaration) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { SignatureType.of(it.type) })
+		internal fun of(declaration: CallableDeclaration, nominal: (TypeReference) -> CMemberType? = { null }) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { SignatureType.of(it.type, nominal(it.type)) })
 	}
 }
 
@@ -55,24 +55,25 @@ sealed interface CallableSymbol : Symbol {
 	val receiver: ReceiverSymbol? get() = null
 }
 
-class FunctionSymbol(override val declaration: FunctionDeclaration) : CallableSymbol {
+class FunctionSymbol(override val declaration: FunctionDeclaration, private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
 
 	override val name get() = declaration.name
-	override val signature = FunctionSignature.of(declaration)
+	override val signature by lazy { FunctionSignature.of(declaration, nominal) }
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
 }
 
-class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType, override val receiver: ReceiverSymbol = ReceiverSymbol(owner, declaration.keyword)) : CallableSymbol {
+class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType, override val receiver: ReceiverSymbol = ReceiverSymbol(owner, declaration.keyword), private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
 
 	override val name get() = declaration.name
-	override val signature = FunctionSignature.of(declaration)
+	override val signature = FunctionSignature.of(declaration, nominal)
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map(::ParameterSymbol)
+	internal fun specialization() = MethodSymbol(declaration, owner, receiver, nominal)
 }
 
-internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass) : CallableSymbol {
+internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass, nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
 
 	override val name get() = declaration.name
-	override val signature = FunctionSignature.of(declaration)
+	override val signature = FunctionSignature.of(declaration, nominal)
 	override val parameters = declaration.parameters.map(::ParameterSymbol)
 	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }

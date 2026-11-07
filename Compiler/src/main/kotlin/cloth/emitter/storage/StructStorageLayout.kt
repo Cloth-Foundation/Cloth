@@ -54,7 +54,7 @@ internal class StructStorageLayout(private val context: LLVMContextRef, module: 
 	}
 
 	fun validate() {
-		semantics.declarations.structs.values.forEach { shape(it) }
+		semantics.declarations.allStructs.forEach { shape(it) }
 		fun check(type: ValueType) {
 			when {
 				type.isStructValue -> shape(type)

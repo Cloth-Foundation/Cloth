@@ -7,28 +7,37 @@ import cloth.parser.statement.*
 import cloth.semantic.symbols.*
 import cloth.target.TargetLayout
 import cloth.token.Operators
+import cloth.token.Token
 import java.util.*
 
 /** Declaration identities and name resolutions, before expression/call type checking. */
 class DeclarationModel internal constructor(
-	val fileScope: LexicalScope,
+	internal val files: FileBindings,
 	val functions: List<FunctionSymbol>,
 	val target: TargetLayout,
-	val structs: Map<String, CStruct>,
+	internal val allStructs: List<CStruct>,
 	val methods: List<MethodSymbol>,
-	internal val classes: Map<String, ClassDefinition>,
+	internal val classDefinitions: Map<CClass, ClassDefinition>,
 	internal val objectRoot: CClass,
-	internal val enums: Map<String, CEnum>,
+	internal val enumTypes: List<CEnum>,
 	private val enumNames: Map<CEnum, MethodDeclaration>,
 ) {
 
-	internal val callables: List<CallableSymbol> = functions + methods + classes.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
+	/** Compatibility views contain only the primary file's visible names. Global storage is identity keyed. */
+	val fileScope get() = files.primary.scope
+	val structs = files.primary.types.filterValues { it is CStruct }.mapValues { it.value as CStruct }
+	internal val classes = files.primary.types.mapNotNull { (name, type) -> (type as? CClass)?.let { classDefinitions[it]?.let { definition -> name to definition } } }.toMap()
+	internal val enums = files.primary.types.filterValues { it is CEnum }.mapValues { it.value as CEnum }
+	internal val callables: List<CallableSymbol> = functions + methods + classDefinitions.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
 	internal val widthTemplates = methods.filter { it.declaration.operator?.selector?.capturesWidth == true }.toSet()
 	internal val concreteCallables get() = callables.filterNot { it in widthTemplates }
-	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else classes[name]?.owner ?: structs[name] ?: enums[name]
+	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else files.primary.types[name]
+	internal fun namedType(name: Token): CMemberType? = files.nominal(name)
+	internal fun fileScopeOf(name: Token): LexicalScope = files.context(name).scope
+	internal fun signatureType(type: cloth.parser.type.TypeReference) = SignatureType.of(type, namedType(type.name))
 
 	internal fun initializationExpressions(declaration: CallableDeclaration): List<Expression> = when (declaration) {
-		is PrimaryConstructorDeclaration -> declaration.owner.base?.arguments.orEmpty() + classes.getValue(declaration.name.lexeme).fieldInitializers.map { it.expression }
+		is PrimaryConstructorDeclaration -> declaration.owner.base?.arguments.orEmpty() + classDefinitions.getValue(classOwners.getValue(declaration)).fieldInitializers.map { it.expression }
 		is ConstructorDeclaration        -> declaration.delegation.arguments
 		else                             -> emptyList()
 	}
@@ -65,7 +74,7 @@ class DeclarationModel internal constructor(
 		val owners = if (owner is CClass) owner.ancestry() else sequenceOf(owner)
 		return owners.flatMap { ancestor -> candidates.filter { it.owner == ancestor } }.distinctBy {
 			val selector = checkNotNull(it.declaration.operator?.selector)
-			SignatureType.of(selector) to selector.capturesWidth
+			signatureType(selector) to selector.capturesWidth
 		}.toList()
 	}
 
@@ -80,7 +89,7 @@ class DeclarationModel internal constructor(
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
 		is CArray    -> formattingMayCallUserCode(type.element)
-		is CClass    -> classes.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
+		is CClass    -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
 		is CEnum     -> formatterOverride(type) != null
 		else         -> false
 	}

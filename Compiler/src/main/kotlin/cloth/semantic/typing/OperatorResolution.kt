@@ -2,6 +2,7 @@ package cloth.semantic.typing
 
 import cloth.data.CClass
 import cloth.data.CMemberType
+import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.BinaryExpression
@@ -113,6 +114,17 @@ internal class OperatorResolution(
 		}
 	}
 
+	/** Mixed present values have no ordinary class/nominal equality overload.
+	 * Keep null handling, same-type value equality and class dispatch on their existing paths.
+	 */
+	fun equalityContext(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
+		if (operation !in OperatorRules.equality || left == right || left is CClass && right is CClass) return null
+		val operands = listOf(expression.left, expression.right)
+		if (listOf(left, right).any { it is CNullable || it == ValueType.Null || it == ValueType.NEVER }) return null
+		if (operands.any { it in model.projectedOperands }) return null
+		return resolveOperandContexts(expression, operands, listOf(left, right), facts.trial())
+	}
+
 	private fun resolveOperandContexts(expression: BinaryExpression, operands: List<Expression>, originalTypes: List<ValueType?>, trial: FunctionSemanticModel.Trial): ValueType? {
 		val left = originalTypes[0] ?: return null
 		val right = originalTypes[1] ?: return null
@@ -140,7 +152,7 @@ internal class OperatorResolution(
 		if (peer == ValueType.NEVER || peer == ValueType.Null) return null
 		data class Match(val method: MethodSymbol, val selector: ValueType, val rank: ContextRank, val width: Int? = null)
 
-		val matches = facts.declarations.contextOperators(owner, operator.lexeme).mapNotNull { method ->
+		fun matchesFor(name: String) = facts.declarations.contextOperators(owner, name).mapNotNull { method ->
 			val selector = trial.contextSelectorType(method)
 			val width = OperatorRules.inferredSelectorWidth(method.declaration.operator?.selector, peer)
 			when {
@@ -149,6 +161,10 @@ internal class OperatorResolution(
 				selector?.accepts(peer) == true -> Match(method, selector, ContextRank.COMPATIBLE)
 				else                            -> null
 			}
+		}
+
+		val matches = matchesFor(operator.lexeme).ifEmpty {
+			if (operator.lexeme == Operators.NOT_EQUAL.toString()) matchesFor(Operators.EQUAL.toString()) else emptyList()
 		}
 		if (matches.isEmpty()) return null
 		val rank = matches.minOf(Match::rank)
@@ -171,7 +187,7 @@ internal class OperatorResolution(
 	fun classComparison(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? {
 		val declarations = facts.declarations
 		if (operation != Operators.IDENTITY) {
-			if (expression.left in declarations.readOnlyValueReceivers && declarations.classes.values.any { definition ->
+			if (expression.left in declarations.readOnlyValueReceivers && declarations.classDefinitions.values.any { definition ->
 					val owner = definition.owner
 					left.accepts(owner) && right.accepts(owner) && declarations.equalityOverride(owner, operation) != null
 				}) throw SemanticErrors.parameterDefault("A default cannot call a user-defined operator through a read-only receiver", expression.operator.span)

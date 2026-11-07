@@ -60,99 +60,32 @@ their feature-owned reference.
 
 ## Imports
 
-The user confirmed the current import design on 2026-11-06. Imports use
-`using`, a dotted source-file path, `:`, and either selected declaration names
-or `*`:
+Read the [import contract](../../cloth-imports/references/semantics.md) and
+[imports skill](../../cloth-imports/SKILL.md) for selected/wildcard imports,
+module-free source paths, visibility, file ambiguity, circular source graphs
+and Stage 0's initial binding/grammar decisions. The
+[compiler API contract](../../cloth-imports/references/compiler-api.md) defines
+explicit roots, primary source, entry selection and the one-way Shuttle boundary.
 
-```cloth
-using token.Token : Token, TokenType, TokenSpan
-using token.Token : *
-using my.path.MyFile : someMethod
-```
-
-The path before `:` identifies an actual source file, not an individual
-declaration. `token.Token` identifies `token/Token.co` within a configured
-module's source root. The final path identifier is the file's basename without
-`.co`.
-
-The comma-separated names after `:` select declarations from that file. Types
-and file-level functions can appear together in any order, with no category
-ordering requirement. Selected names are available directly in the importing
-file; importing `someMethod` permits calls as `someMethod(...)`.
-
-`using token.Token : *` imports all declarations available for import from that
-source file into the current file. Preserve the existing declaration visibility
-contract; the wildcard decision does not grant access to file-private declarations.
-
-### Module context
-
-Import paths do not include module-name qualification. Shuttle's `build.toml`
-declares the modules being used; Shuttle supplies that module context explicitly
-to the compiler for resolving source-file paths. This applies to imports within
-the current module and across configured
-modules. The user explicitly rejected the earlier mandatory module-prefix
-decision. Do not retain it as a requirement or infer it from older examples.
-
-The colon-list and colon-wildcard forms are the current design. Earlier dotted
-per-declaration examples and dotted wildcards are superseded discussion syntax,
-not additional accepted forms. The D analogy establishes the selective syntax,
-not D's entire import model.
-
-### Circular source imports
-
-The user confirmed on 2026-11-07 that circular source imports are allowed.
-For example, file A may import B while B imports A; longer cycles and cycles
-across configured modules are also allowed. Circularity alone is not an error
-and must not impose a module or file compilation order.
-
-The implementation must discover each source file once, retaining edges to
-files already being loaded, and register declaration identities before resolving
-signatures, fields or bodies. Imports keep their ordinary visibility and
-ambiguity rules within a cycle. Existing errors for inheritance cycles or
-recursive inline value layouts still apply; allowing import cycles does not
-make those type definitions valid.
-
-This is confirmed language design, pending compiler implementation. It does not
-decide future Shuttle package/build-artifact dependency-cycle rules.
-
-### Project-root proposal
-
-The project-layout proposal uses the directory containing `build.toml` as the
-project root. The project configuration declares modules, and each module's
-`module.toml` establishes that module's source root. For the
-current Bootstrap layout, `using token.Token : Token` would select `Token`
-from `Bootstrap/Frontend/token/Token.co` through the configured `Frontend`
-module. The exact root/discovery model remains a proposal; import paths do not
-spell the module name.
-
-### Ambiguous source-file paths
-
-When multiple configured modules contain the source-file path named by an
-import, compilation fails with one ambiguous-import diagnostic identifying the
-matching files. The user accepted this rule on 2026-11-06. For example, two
-configured modules containing `token/Token.co` make `using token.Token : Token`
-ambiguous. Module declaration order must not silently select a matching file.
-
-Project/module discovery and imported-name conflicts remain unresolved. Do not
-infer those rules from other languages or treat the confirmed decisions as a
-complete import contract. No import parsing or resolution is implemented yet.
-
-### Shuttle ownership and TOML configuration
-
-The user selected TOML for configuration and named the build system Shuttle.
-Project/module manifests use `build.toml` and `module.toml`; the earlier `.ccf`
-format discussion is superseded. Configuration parsing, schema validation,
-project/module discovery and build orchestration belong in the repository's
-`Shuttle` module. The compiler owns source import parsing, file resolution and
-binding, and accepts explicit module roots through a manifest-independent API.
-It must not depend on Shuttle or parse/discover its TOML manifests.
-
-The [Shuttle and compiler imports plan](../../../../todo/shuttle-and-imports-plan.md)
-records the proposed API, manifest schema, ownership and implementation stages.
-The parser library and exact discovery/schema/conflict rules beyond the
-confirmed decisions remain to be settled. The current TOML files and Shuttle
-Gradle module are scaffolding; no configuration loader or import implementation
-has been integrated.
+Shuttle owns TOML configuration, project/module discovery and build orchestration;
+read its [build skill](../../shuttle-build/SKILL.md) and
+[manifest contract](../../shuttle-build/references/semantics.md).
+The [plan](../../../../todo/shuttle-and-imports-plan.md) owns implementation stages.
+Stage 0 publishes these contracts and a verified dependency-selection probe.
+Stage 1 implements the one-file public compiler API and a Shuttle consumer
+fixture; see its [evidence](../../cloth-imports/references/stage-1.md).
+Stage 2 implements [manifest loading, configuration diagnostics and request conversion](../../shuttle-build/references/stage-2.md).
+Stage 3 implements [located import syntax](../../cloth-imports/references/stage-3.md).
+Stage 4 adds [source resolution and circular graphs](../../cloth-imports/references/stage-4.md).
+Stage 5 adds [per-file binding and graph semantic analysis](../../cloth-imports/references/stage-5.md),
+preserving public exports, private definition contexts and nominal identities
+across cycles. [Stage 6](../../cloth-imports/references/stage-6.md) adds whole-program
+emission, primary-file executable entry selection and nominal runtime metadata.
+[Shuttle Stage 6](../../shuttle-build/references/stage-6.md) implements packaged
+project build/run commands. C3105 is retired. [Stage 7](../../cloth-imports/references/stage-7.md)
+completes nested examples, Bootstrap's current scaffold and target verification.
+Its [equality context correction](equality-operand-contexts.md) records the user's
+confirmation that an enum can contribute its case name for a string comparison.
 
 ## Nested type declarations
 
@@ -387,6 +320,11 @@ results and user-selected scalar-boundary empty-search matches.
 [Unicode whitespace methods](../../cloth-strings/references/whitespace-methods.md)
 add `trim`, `trimStart`, `trimEnd` and `isBlank`, pinning Unicode 17.0.0 White_Space
 with independent trimmed values and empty strings considered blank.
+
+[Full string casing](../../cloth-strings/references/string-case.md) adds
+zero-argument string `toUpperCase`/`toLowerCase`, independent string results,
+Unicode 17 full expansions and original-text final-sigma context. Existing char
+methods keep their simple one-scalar mappings; no locale tailoring is introduced.
 
 [Literal delimiter splitting](../../cloth-strings/references/split-method.md)
 adds exact `split(char)` and `split(string)` overloads returning independent

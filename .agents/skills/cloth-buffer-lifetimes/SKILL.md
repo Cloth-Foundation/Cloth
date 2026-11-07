@@ -128,6 +128,11 @@ member copy elision and proven arena/stack reclamation.
   The string-delimiter overload protects both received descriptors while walking;
   no result retains delimiter storage. Its separate poisoned-free probe covers
   dynamic source/delimiter returns and scalar-boundary empty-delimiter arrays.
+- [Full string casing](../cloth-strings/references/string-case.md) measures and
+  fills one independent UTF-8 result from the same protected original text.
+  Encoding calculations allocate no per-scalar scratch. Preserve outgoing copies
+  and closed scalar/discard cleanup. Its poisoned-free probe checks returned text,
+  copied arrays, captured publication, saved values and repeated conditions.
 
 - Buffered arguments snapshot or transfer their values before later arguments
   execute. Later captured writes must not change a previously received value.

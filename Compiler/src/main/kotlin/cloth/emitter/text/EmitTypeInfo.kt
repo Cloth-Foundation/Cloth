@@ -12,8 +12,8 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
 
-/** Immutable, module-owned descriptors. No native handles escape into ValueType recipes.
- * Equality uses canonical type text so independently emitted descriptors compare equally.
+/** Immutable, interned module-owned descriptors. No native handles escape into ValueType recipes.
+ * Declaration locations distinguish nominal types while displayed text stays unqualified.
  */
 internal class EmitTypeInfo(
 	private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
@@ -39,7 +39,7 @@ internal class EmitTypeInfo(
 
 	fun constant(type: ValueType): LLVMValueRef {
 		val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
-		val name = "cloth_type_" + type.metadataSpelling.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
+		val name = "cloth_type_" + identity(type).toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
 		val existing = LLVMGetNamedGlobal(module, name)
 		if (existing != null && !existing.isNull) return existing
 		val global = LLVMAddGlobal(module, descriptor, name)
@@ -69,7 +69,18 @@ internal class EmitTypeInfo(
 	}
 
 	fun text(value: LLVMValueRef): LLVMValueRef = field(value, 0, CString.llvmValue(context, target))
-	fun equal(left: LLVMValueRef, right: LLVMValueRef): LLVMValueRef = strings.equal(text(left), text(right))
+	fun equal(left: LLVMValueRef, right: LLVMValueRef): LLVMValueRef = LLVMBuildICmp(builder, LLVMIntEQ, left, right, "typeinfo_equal")
+
+	private fun identity(type: ValueType): String = when (type) {
+		is CNullable   -> "nullable:${identity(type.payload)}"
+		is CArray      -> "array:${type.size}:${identity(type.element)}"
+		is CMemberType -> type.name.span.let { span ->
+			val source = span.source?.name.orEmpty()
+			"nominal:${source.length}:$source:${span.startLine}:${span.startColumn}:${type.spelling}"
+		}
+
+		else           -> type.metadataSpelling
+	}
 
 	fun property(value: LLVMValueRef, query: MetadataQuery, location: String): LLVMValueRef {
 		query.precondition?.let { condition ->

@@ -38,7 +38,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
 	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
 	private fun transfersAggregate(type: ValueType) = type is CArray || type.containsStruct
-	private val hasClasses = functions.declarations.classes.isNotEmpty()
+	private val hasClasses = functions.declarations.classDefinitions.isNotEmpty()
 	private fun ownsField(key: BindingSymbol) = (key as? ReceiverFieldSymbol)?.field is ClassField
 	private fun independentInstanceWrite(statement: Statement, source: Expression?): Boolean {
 		val place = types.instanceWrites[statement] ?: return false

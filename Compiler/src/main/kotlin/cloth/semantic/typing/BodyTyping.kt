@@ -284,6 +284,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	override fun callType(expression: CallExpression): ValueType = callResults(expression).let { it.scalarOrNull() ?: throw SemanticErrors.scalarResults(it, expression.span) }
 
 	override fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? = operators.resolve(expression, operator, operands)
+	override fun equalityContextType(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? = operators.equalityContext(expression, operation, left, right)
 
 	override fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? = operators.classComparison(expression, operation, left, right)
 

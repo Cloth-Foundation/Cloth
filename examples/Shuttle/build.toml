@@ -1,0 +1,7 @@
+[project]
+name = "Imports"
+entryPoint = "App.cli.Main.main"
+
+[modules]
+App = "app"
+Support = "support"

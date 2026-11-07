@@ -20,10 +20,16 @@ Read [confirmed entry semantics](references/semantics.md) and the shared
 Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 [output](../cloth-output/SKILL.md) for explicit print/println calls.
 
+For multi-file/project entry selection, read the
+[Stage 0 API contract](../cloth-imports/references/compiler-api.md#entry-selection).
+It selects main from the primary file and keeps other files' mains ordinary
+callables. [Import Stage 6](../cloth-imports/references/stage-6.md) implements this
+policy over a complete checked source graph, preserving the startup rules below.
+
 ## Development rules
 
 - File scope accepts declarations. Executable validation requires exactly one
-  `main`, accepting no parameters or one `string[]` or `string[]?`. Startup always
+  own `main` in the primary file, accepting no parameters or one `string[]` or `string[]?`. Startup always
   supplies a present array, including for `opt<string[]?> args ?: null`.
   Valid results are void,
   signed fixed-width integers, or isize; all unsigned main results are rejected.

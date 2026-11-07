@@ -64,10 +64,16 @@ When no simple mapping exists, return the original scalar unchanged. For example
 `'ß'.toUpperCase()` remains `'ß'`, `'İ'.toLowerCase()` yields `'i'`, and
 `'Σ'.toLowerCase()` yields `'σ'` without contextual final-sigma handling.
 Read the [character casing integration record](character-case.md) for source,
-data and verification. Full string casing, expansions, normalization, case folding
-and locale overloads remain outside this feature.
+data and verification. [Full string casing](string-case.md) is implemented
+separately and does not change these char mappings. Normalization, case folding
+and locale overloads remain outside these APIs.
 
 ## Strings
+
+- On 2026-11-07 the user requested implementing string `toUpperCase()` and
+  `toLowerCase()`. The [string casing contract](string-case.md) owns the implemented
+  Unicode 17 default full mapping policy, expansions, original-text final-sigma
+  context, independent string results and the existing D generator extension.
 
 - On 2026-11-06 the user requested `split(char)` returning `string[]`.
   The user then requested `split(string)` for multi-character delimiters.

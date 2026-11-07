@@ -4,7 +4,7 @@ enum class Keywords(private val keyword: String? = null) { // This comment has t
 	MODULE("mod"),
 	DEFINITION("def"),
 	TYPEDEF,
-	USE,
+	USING,
 	SELF,
 	RETURN,
 	CONST,

@@ -1,0 +1,6 @@
+using math.Odd: odd
+
+pub fn<bool> even(int value) {
+    if (value == 0) return true
+    return odd(value - 1)
+}

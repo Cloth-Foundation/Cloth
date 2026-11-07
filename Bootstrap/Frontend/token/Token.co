@@ -1,4 +1,6 @@
-pub typedef<class> TokenSpan (def<int> startLine, def<int> startColumn, def<int> endLine, def<int> endColumn, def<SourceFile?> source = null) {
+using source.SourceFile: SourceFile
+
+pub typedef<class> TokenSpan (def<int> startLine, def<int> startColumn, def<int> endLine, def<int> endColumn, def<SourceFile?> source ?: null) {
 
     pub mt<TokenSpan> through(TokenSpan end) {
         return TokenSpan::new(startLine, startColumn, end.endLine, end.endColumn, source)
@@ -32,6 +34,6 @@ pub typedef<enum> TokenType {
     InterpolationEnd;
 
     operator ::str() = self::name
-    operator<string> ==() = self::name.toLower()
+    operator<string> ==() = self::name.toLowerCase()
 
 }

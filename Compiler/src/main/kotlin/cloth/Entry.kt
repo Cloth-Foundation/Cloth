@@ -6,14 +6,23 @@ import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.InternalErrors
 import cloth.settings.CompilerSettings
 import cloth.settings.OutputKind
-import cloth.util.ExecutableFormat
+import cloth.util.JavaCommandLine
+import cloth.util.NativeProgram
 import java.io.IOException
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-	val status = runCompiler(args)
+	val status = try {
+		runCompiler(JavaCommandLine.arguments(args, "cloth.EntryKt"))
+	} catch (failure: Exception) {
+		DiagnosticReporter().report(InternalErrors.failure(failure))
+		2
+	} catch (failure: LinkageError) {
+		DiagnosticReporter().report(InternalErrors.failure(failure))
+		2
+	}
 	if (status != 0) exitProcess(status)
 }
 
@@ -46,36 +55,13 @@ fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticRe
 }
 
 private fun launch(executable: Path, arguments: List<String>): Int {
-	val command = listOf(executable.toString()) + launchArguments(arguments)
-	val process = try {
-		ProcessBuilder(command).inheritIO().start()
+	return try {
+		NativeProgram.run(executable, arguments)
 	} catch (failure: IOException) {
 		throw CliErrors.runFailed(executable, failure)
 	} catch (failure: IllegalArgumentException) {
 		throw CliErrors.runFailed(executable, failure)
-	}
-	try {
-		return process.waitFor()
 	} catch (failure: InterruptedException) {
-		Thread.currentThread().interrupt()
 		throw CliErrors.runFailed(executable, failure)
-	} finally {
-		if (process.isAlive) process.destroyForcibly()
-	}
-}
-
-private val windowsQuoteOrEnd = Regex("""(\\*)("|\z)""")
-
-private fun launchArguments(arguments: List<String>): List<String> {
-	if (ExecutableFormat.current != ExecutableFormat.PE) return arguments
-	// The default Windows JDK launcher leaves embedded quotes to the caller.
-	return arguments.map { argument ->
-		if ('"' !in argument) argument else {
-			val escaped = windowsQuoteOrEnd.replace(argument) { match ->
-				val (backslashes, quote) = match.destructured
-				backslashes.repeat(2) + if (quote.isEmpty()) "" else "\\\""
-			}
-			"\"$escaped\""
-		}
 	}
 }

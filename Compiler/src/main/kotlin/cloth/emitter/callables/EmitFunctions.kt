@@ -43,8 +43,8 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	internal val classes by lazy { EmitClassRuntime(context, module, abi) }
 	internal val classStorage by lazy { EmitClassStorage(context, module, abi, classes, stringStorage) }
 	internal val receivers by lazy { EmitReceiverAccess(context, module, abi, classStorage) }
-	internal val hasClasses = semantics.declarations.classes.isNotEmpty()
-	private val classTags = semantics.declarations.classes.values.mapIndexed { index, definition -> definition.owner to index }.toMap()
+	internal val hasClasses = semantics.declarations.classDefinitions.isNotEmpty()
+	private val classTags = semantics.declarations.classDefinitions.values.mapIndexed { index, definition -> definition.owner to index }.toMap()
 	private fun classTag(owner: CClass) = LLVMConstInt(classes.indexType, classTags.getValue(owner).toLong(), 0)
 	private val classComparisons = mutableMapOf<Operators, LLVMValueRef>()
 	private val classFormatter by lazy { emitClassFormatter() }
@@ -70,7 +70,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun signature(function: CallableSymbol): LLVMTypeRef = callable(function).signature
 
 	fun emitAll() {
-		if (semantics.declarations.structs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
+		if (semantics.declarations.allStructs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
 		val bodies = semantics.callableBodies
 		for ((index, function) in bodies.withIndex()) {
 			val kind = when (function) {
@@ -189,7 +189,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 					val field = checkNotNull(owner.field(input.parameter.name.lexeme))
 					classStorage.replace(builder, access, field, bindings.read(constructor.parameters[index]), initializing = true)
 				}
-				for ((field, expression) in semantics.declarations.classes.getValue(owner.spelling).fieldInitializers) {
+				for ((field, expression) in semantics.declarations.classDefinitions.getValue(owner).fieldInitializers) {
 					val value = expressions.emit(expression)
 					if (expressions.terminated()) return null
 					val adapted = expressions.adaptValue(checkNotNull(value), semantics.typeOf(expression), field.type)
@@ -236,7 +236,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 
 	private fun destroy(builder: LLVMBuilderRef, access: ObjectAccess, concrete: CClass) {
 		for (owner in concrete.ancestry()) {
-			semantics.declarations.classes[owner.spelling]?.destructor?.let { destructor ->
+			semantics.declarations.classDefinitions[owner]?.destructor?.let { destructor ->
 				callable(destructor).call(builder) { setReceiver(access) }
 			}
 		}
