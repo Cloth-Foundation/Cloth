@@ -14,7 +14,10 @@ import cloth.semantic.typing.FunctionSemanticModel
 import cloth.settings.LinkOptions
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMModuleRef
+import org.bytedeco.llvm.LLVM.LLVMTargetMachineRef
+import org.bytedeco.llvm.LLVM.LLVMTargetRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,11 +38,7 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 		Files.createDirectories(executable.parent)
 		val objectFile = Files.createTempFile("cloth-", ".o")
 		try {
-			withFunctions(program.functions) { context, module, functions, _ ->
-				EmitEntryPoint(context, module, abi).emit(program, functions)
-				verify(module)
-				emitObject(module, objectFile)
-			}
+			withExecutableModule(program) { module -> emitObject(module, objectFile) }
 			NativeLinker.link(objectFile, executable, configuration)
 			return executable
 		} finally {
@@ -49,27 +48,12 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 
 	fun emitExecutable(unit: SourceUnit): String {
 		val program = ProgramAnalyzer(abi.layout).analyze(unit)
-		return withFunctions(program.functions) { context, module, functions, _ ->
-			EmitEntryPoint(context, module, abi).emit(program, functions)
-			verify(module)
-			val ir = LLVMPrintModuleToString(module)
-			try {
-				ir.string
-			} finally {
-				LLVMDisposeMessage(ir)
-			}
-		}
+		validate(program.functions)
+		return withExecutableModule(program, ::moduleText)
 	}
 
 	/** Declaration module only; use emitExecutable to include program startup. */
-	fun emit(unit: SourceUnit): String = withFunctions(unit) { _, module, _, _ ->
-		val ir = LLVMPrintModuleToString(module)
-		try {
-			ir.string
-		} finally {
-			LLVMDisposeMessage(ir)
-		}
-	}
+	fun emit(unit: SourceUnit): String = withFunctions(unit) { _, module, _, _ -> moduleText(module) }
 
 	fun compileObject(unit: SourceUnit, output: Path): Path = compileObject(ProgramAnalyzer(abi.layout).analyze(unit, ProgramKind.LIBRARY).functions, output)
 
@@ -85,6 +69,17 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 
 	private fun <T> withFunctions(semantics: FunctionSemanticModel, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T {
 		validate(semantics)
+		return withValidatedFunctions(semantics, action)
+	}
+
+	/** Callers validate the program before linker or output work. */
+	private fun <T> withExecutableModule(program: ProgramModel, action: (LLVMModuleRef) -> T): T = withValidatedFunctions(program.functions) { context, module, functions, _ ->
+		EmitEntryPoint(context, module, abi).emit(program, functions)
+		verify(module)
+		action(module)
+	}
+
+	private fun <T> withValidatedFunctions(semantics: FunctionSemanticModel, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T {
 		val targetABI = abi
 		val context = LLVMContextCreate()
 		val module = LLVMModuleCreateWithNameInContext("cloth", context)
@@ -103,6 +98,15 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 	private fun validate(semantics: FunctionSemanticModel) {
 		if (semantics.target != abi.layout) throw InternalErrors.invariant("Semantic and emission targets differ")
 		EmitFunctions.validate(semantics)
+	}
+
+	private fun moduleText(module: LLVMModuleRef): String {
+		val ir = LLVMPrintModuleToString(module)
+		return try {
+			ir.string
+		} finally {
+			LLVMDisposeMessage(ir)
+		}
 	}
 
 	internal fun verify(module: LLVMModuleRef) = checkLLVM(BackendErrors::invalidIR) { LLVMVerifyModule(module, LLVMReturnStatusAction, it) }

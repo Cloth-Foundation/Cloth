@@ -25,6 +25,10 @@ nullable destinations, rectangular shapes, independent array values and lifetime
   conditional/Elvis expressions, exact nullable-target casts and metadata.
   Array literals receive explicit nullable element context; existing typed arrays
   do not implicitly convert their element storage to a different nullable layout.
+  Conditional destinations can declare nullable elements or rows without making
+  the whole array nullable: `fn<int?[2]> pick(bool first) = if (first) { [1, null] }
+  else { [null, 2] }`. Enum payload annotations supply the same context for
+  generated case readers, including header defaults.
 - Omission and null stay separate. `opt<string[]?> args ?: null` defaults only
   on omission; explicit null remains a supplied value. A non-null fallback is
   skipped for a supplied null. Present arrays follow ordinary snapshot rules.
@@ -55,6 +59,11 @@ Maintained executable example: [NullableBuffers.co](../../../../examples/Nullabl
   for a trailing marker. Earlier array markers compose the implemented nullable rows.
 - `CNullable` delegates compatible array shape acceptance/inference/merging to
   its payload without allowing typed-array element layout conversions.
+- `ExpressionTyping.conditionalResults` checks `containsNullability` recursively
+  on the explicit destination, matching the branch-value check. An outer
+  `CNullable` wrapper is not required when an array annotation declares nullable
+  elements or rows. Ordinary type compatibility and rectangular shape checks
+  still apply; absent context cannot infer nullable conditional results.
 - `EmitNullable` presence branches dominate payload transformations. Value flags
   are i1; stored flags are bytes. `EmitArray` converts nullable elements on loads
   and stores, including bool bytes and half payloads. Never memcpy an LLVM value
@@ -80,7 +89,11 @@ Maintained executable example: [NullableBuffers.co](../../../../examples/Nullabl
 
 Use `NullableBuffersTest`, all `Nullability*` and `OptionalArguments*` suites,
 `ArrayTemporaryCleanupTest`, array shape/copy/text suites, foreach and entry suites.
-The new suite executes on Windows x64/x86 and verifies its mixed nullable-buffer
+`NullabilityTypingTest` and `EnumPayloadTest` cover explicit conditional array
+contexts, including returns, arguments, bindings, assignments, broadcast and
+positional results, enum cases, defaults and recursive rows.
+[Conditional-context evidence](../../cloth-language/references/development.md#nullable-array-conditional-contexts-2026-11-06)
+`NullableBuffersTest` executes on Windows x64/x86 and verifies its mixed nullable-buffer
 fixture across all nine supported target profiles. This does not claim native
 Linux/macOS execution. The cleanup probe counts actual allocations, poisons freed
 buffers, checks outgoing string/array survival, and observes zero live allocations

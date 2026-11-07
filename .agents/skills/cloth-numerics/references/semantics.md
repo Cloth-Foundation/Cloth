@@ -296,6 +296,10 @@ named method arguments and method values remain outside this slice.
 - Booleans and numbers remain separate, including for explicit casts.
   `true -> int` and `1 -> bool` are errors. Casting a boolean to `bool` preserves
   its value without introducing numeric truthiness.
+- On 2026-11-07, enum payload integration added compile-time validation of
+  trapping numeric casts within the currently admitted constant forms. It uses
+  these same wrapping, rounding, truncated-range and nullable-presence rules.
+  [Enum constant contract](../../cloth-language/references/value-operators.md#enum-values-and-formatting)
 
 ## Booleans and storage
 

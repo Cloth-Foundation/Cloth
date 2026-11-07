@@ -8,13 +8,12 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.ResultShape
-import cloth.semantic.scalar
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.ParameterSymbol
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.token.Operators
-import java.util.IdentityHashMap
+import java.util.*
 
 internal fun checkCallableMetadata(function: CallableSymbol, model: FunctionSemanticModel) {
 	function.parameters.forEachIndexed { index, parameter ->
@@ -183,7 +182,7 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 				item.value?.let { expression(it) }; null
 			}
 
-			else -> throw InternalErrors.invariant("Unsupported statement during metadata analysis: $item")
+			else                          -> throw InternalErrors.invariant("Unsupported statement during metadata analysis: $item")
 		}
 		return result
 	}
@@ -292,7 +291,7 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 				results.firstOrNull().takeIf { first -> results.all { it == first } }
 			}
 
-			else -> {
+			else                        -> {
 				value.eagerOperands(declarations).forEach(::expression)
 				null
 			}

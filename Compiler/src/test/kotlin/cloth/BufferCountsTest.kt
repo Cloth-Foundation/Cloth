@@ -15,7 +15,7 @@ import cloth.emitter.storage.RetainedArrayShape
 import cloth.emitter.text.EmitString
 import cloth.emitter.text.EmitStringEdit
 import cloth.emitter.text.ProviderEmissionContext
-import cloth.emitter.types.*
+import cloth.emitter.types.EmitCast
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.typing.FunctionAnalyzer
@@ -75,7 +75,8 @@ class BufferCountsTest {
 	@Test
 	fun `native descriptors distinguish zero maximum and unknown inner shapes`() {
 		for (bits in listOf(32, 64)) fixture(layout(bits)) {
-			val row = CArray(CInt(), CUSize(bits).maximum)
+			val countType = CUSize(bits)
+			val row = CArray(CInt(), countType.maximum)
 			val type = CArray(row, 0)
 			assertEquals("{ ptr, i$bits, { i$bits, i1 } }", LLVMPrintTypeToString(type.llvmValue(context, target)).string)
 			assertEquals((bits / 8 * 2).toLong(), LLVMABISizeOfType(LLVMGetModuleDataLayout(module), CString.llvmValue(context, target)))
@@ -88,16 +89,19 @@ class BufferCountsTest {
 			assertEquals(0, LLVMConstIntGetZExtValue(inner(unknown, 1)))
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(maximum, 1)))
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(zero, 1)))
-			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(inner(maximum, 0)).toULong().toString())
+			assertEquals(0, LLVMConstIntGetZExtValue(inner(zero, 0)))
+			assertEquals(countType.maximum.toString(), LLVMConstIntGetZExtValue(inner(maximum, 0)).toULong().toString())
 			val merged = arrays.constrain(unknown, erased, RetainedArrayShape(maximum))
 			val constrained = arrays.constrain(merged, type)
 			assertEquals(1, LLVMConstIntGetZExtValue(inner(constrained, 1)))
-			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(inner(constrained, 0)).toULong().toString())
-			val child = arrays.childShape(arrays.descriptor(nullPointer, memory.constant(CUSize(bits).maximum), row), constrained, row)
-			arrays.constrain(child, row, RetainedArrayShape(child))
-			val raw = ProviderResult.ArrayExtent(erased, 1, CInt(64, true))
-			assertEquals(-1L, LLVMConstIntGetZExtValue(raw.emit(providers, ProviderReceiver.Value(erased, unknown))))
-			assertEquals(CUSize(bits).maximum.toString(), LLVMConstIntGetZExtValue(raw.emit(providers, ProviderReceiver.Value(erased, maximum))).toULong().toString())
+			assertEquals(countType.maximum.toString(), LLVMConstIntGetZExtValue(inner(constrained, 0)).toULong().toString())
+			val erasedRow = CArray(CInt())
+			val child = arrays.childShape(arrays.descriptor(nullPointer, memory.count(0), erasedRow), constrained, erasedRow)
+			val checked = arrays.constrain(child, row, RetainedArrayShape(child))
+			val size = assertIs<ProviderResult.ArraySize>(erasedRow.provider(CompilerDataProviders.SIZE.toString(), target))
+			val count = size.emit(providers, ProviderReceiver.Value(erasedRow, checked))
+			assertEquals(bits, LLVMGetIntTypeWidth(LLVMTypeOf(count)))
+			assertEquals(countType.maximum.toString(), LLVMConstIntGetZExtValue(count).toULong().toString())
 		}
 	}
 

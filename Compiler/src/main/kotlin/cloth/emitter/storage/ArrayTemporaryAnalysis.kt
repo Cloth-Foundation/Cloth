@@ -5,7 +5,8 @@ import cloth.data.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.*
+import cloth.semantic.ObjectReceiver
+import cloth.semantic.PlaceStep
 import cloth.semantic.flow.eagerOperands
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
@@ -107,23 +108,23 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 		memo[expression]?.let { return it }
 		if (!active.add(expression)) return unknown
 		val result = when (expression) {
-			is ResultListExpression                                                                              -> expression.values.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, value -> result + effects(value) }
-			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral -> Effects()
-			is NameExpression                                                                                    -> {
+			is ResultListExpression                                                                                -> expression.values.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, value -> result + effects(value) }
+			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral   -> Effects()
+			is NameExpression                                                                                      -> {
 				val symbol = functions.declarations.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol) || (symbol as? ReceiverFieldSymbol)?.field is EnumField
 				if (block == null) Effects(buffers = backed && types.resultOf(expression).values.any { it.indirect }) else effects(block)
 			}
 
-			is FunctionBlockExpression                                                                           -> Effects(transfersAggregate(types.typeOf(expression))) + statements((expression.declaration.body as BlockBody).statements)
-			is MemberCallExpression                                                                              -> {
+			is FunctionBlockExpression                                                                             -> Effects(transfersAggregate(types.typeOf(expression))) + statements((expression.declaration.body as BlockBody).statements)
+			is MemberCallExpression                                                                                -> {
 				val contract = types.memberCalls[expression]?.overload?.storage
 				if (contract != BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT) unknown
 				else (listOf(expression.receiver) + expression.arguments).fold(Effects(buffers = true)) { result, operand -> result + effects(operand) }
 			}
 
-			is CallExpression                                                                                    -> {
+			is CallExpression                                                                                      -> {
 				val selected = functions.selectedCall(expression)
 				if (selected !is ResolvedCall.Source || selected.receiver != null) unknown else {
 					val type = selected.type
@@ -131,30 +132,29 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 				}
 			}
 
-			is ArrayLiteral                                                                                      -> expression.elements.fold(Effects()) { result, element ->
+			is ArrayLiteral                                                                                        -> expression.elements.fold(Effects()) { result, element ->
 				val type = types.typeOf(element)
 				result + Effects(transfersAggregate(type)) + effects(element)
 			}
 
-			is StructLiteral                                                                                     -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
-			is FieldAccessExpression                                                                             -> {
+			is StructLiteral                                                                                       -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
+			is FieldAccessExpression                                                                               -> {
 				val field = types.fields[expression]
 				effects(expression.receiver) + Effects(buffers = (field is ClassField || field is EnumField) && types.resultOf(expression).values.any { it.indirect })
 			}
 
-			is IndexExpression, is UnaryExpression, is BinaryExpression, is CastExpression, is TypeCheckExpression ->
-				expression.eagerOperands().fold(Effects()) { result, operand -> result + effects(operand) }
+			is IndexExpression, is UnaryExpression, is BinaryExpression, is CastExpression, is TypeCheckExpression -> expression.eagerOperands().fold(Effects()) { result, operand -> result + effects(operand) }
 
-			is InterpolatedString                                                                                -> {
+			is InterpolatedString                                                                                  -> {
 				val callsFormatter = expression.parts.any { types.interpolationTextOf(it)?.callsFormatter == true }
 				if (callsFormatter) unknown else expression.parts.fold(Effects()) { result, part -> result + effects(part) }
 			}
 
-			is IfExpression                                                                                      -> expression.branches.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, branch ->
+			is IfExpression                                                                                        -> expression.branches.fold(Effects(types.resultOf(expression).values.any(::transfersAggregate))) { result, branch ->
 				result + effects(branch.condition) + statements(branch.statements)
 			} + (expression.otherwise?.let(::statements) ?: Effects())
 
-			else                                                                                                 -> unknown
+			else                                                                                                   -> unknown
 		}
 		active.remove(expression)
 		val allocating = result + Effects(types.resultOf(expression).values.any { it.indirect && inlineInteger(it) })

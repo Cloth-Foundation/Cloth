@@ -11,7 +11,9 @@ import cloth.emitter.callables.EmitFunctions
 import cloth.emitter.storage.EmitBindings
 import cloth.emitter.storage.EmitStringArena
 import cloth.emitter.text.EmitString
-import cloth.emitter.types.*
+import cloth.emitter.types.EmitCast
+import cloth.emitter.types.EmitExpression
+import cloth.emitter.types.EmitPower
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
@@ -79,8 +81,6 @@ class ProviderResultsTest {
 		assertFailsWith<IllegalArgumentException> { ProviderResult.IntegerConstant(CInt(8), BigInteger.valueOf(128)) }
 		assertFailsWith<IllegalArgumentException> { ProviderResult.IntegerConstant(CInt(64, true), BigInteger.valueOf(-1)) }
 		assertFailsWith<IllegalArgumentException> { ProviderResult.FloatingConstant(CFloat(16), CFloat(16).overflowThreshold.toBigDecimal()) }
-		assertFailsWith<IllegalArgumentException> { ProviderResult.ArrayExtent(CArray(CInt()), 1, CInt(64)) }
-		assertFailsWith<IllegalArgumentException> { ProviderResult.ArrayExtent(CArray(CInt()), 0, CInt(32)) }
 		assertFailsWith<IllegalArgumentException> { ProviderResult.ScalarText(CArray(CString)) }
 	}
 
@@ -134,8 +134,8 @@ class ProviderResultsTest {
 	}
 
 	@Test
-	fun `array extent operations read runtime metadata and retain known extent effects`(@TempDir directory: Path) {
-		native(directory, "array_extents", """
+	fun `array size reads runtime counts and evaluates fixed size receivers`(@TempDir directory: Path) {
+		native(directory, "array_size", """
 			fn<int[]> make(bool many) = if (many) { [1, 2, 3] } else { [1] }
 			fn<int[]> dynamic() = make(true)
 			fn<int[2]> known() {
@@ -148,13 +148,18 @@ class ProviderResultsTest {
 			}
 		""") {
 			val dynamic = receiver("dynamic")
-			val dynamicType = semantics.typeOf(dynamic) as CArray
-			assertNull(dynamicType.size)
-			val dynamicValue = assertNotNull(expressions.emitProvider(ProviderAccess(dynamic, ProviderResult.ArrayExtent(dynamicType, 0, CInt(64, true)))))
-			check(LLVMBuildICmp(builder, LLVMIntEQ, dynamicValue, LLVMConstInt(CInt(64).llvmValue(context, nativeTestLayout), 3, 0), "dynamic_valid"))
+			val size = CompilerDataProviders.SIZE.toString()
+			val dynamicAccess = assertNotNull(semantics.types.providerAccess(dynamic, size))
+			val recipe = assertIs<ProviderResult.ArraySize>(dynamicAccess.result)
+			assertNull(recipe.receiverType.size)
+			assertEquals(CUSize(semantics.target.sizeBits), recipe.type)
+			val dynamicValue = assertNotNull(expressions.emitProvider(dynamicAccess))
+			val expected = LLVMConstInt(recipe.type.llvmValue(context, semantics.target), 3, 0)
+			check(LLVMBuildICmp(builder, LLVMIntEQ, dynamicValue, expected, "dynamic_valid"))
 			val known = receiver("known")
-			val knownValue = assertNotNull(expressions.emitProvider(ProviderAccess(known, ProviderResult.ArrayExtent(semantics.typeOf(known) as CArray, 0, CInt(64)))))
-			assertEquals(2L, LLVMConstIntGetSExtValue(knownValue))
+			val knownAccess = assertNotNull(semantics.types.providerAccess(known, size))
+			val knownValue = assertNotNull(expressions.emitProvider(knownAccess))
+			assertEquals(2L, LLVMConstIntGetZExtValue(knownValue))
 			val declaration = (semantics.declarations.functions.single { it.name.lexeme == "known" }.declaration.body as BlockBody).statements.first() as BindingDeclaration
 			check(LLVMBuildICmp(builder, LLVMIntEQ, bindings.read(semantics.declarations.symbolOf(declaration)), int(1), "known_effect_valid"))
 		}
@@ -181,18 +186,23 @@ class ProviderResultsTest {
 	}
 
 	@Test
-	fun `internal extent reads preserve inner axes and unwitnessed dimension sentinels`(@TempDir directory: Path) {
+	fun `array returns preserve known and unknown inner extents`(@TempDir directory: Path) {
 		native(directory, "inner_extents", """
 			fn<int[][]> grid() = [[1, 2], [3, 4]]
 			fn<int[][]> dynamic() = grid()
 			fn<int[][]> empty() = []
 			fn<int[][]> emptyCall() = empty()
 		""") {
-			for ((name, expected) in listOf("dynamic" to 2L, "emptyCall" to -1L)) {
-				val expression = receiver(name)
-				val type = semantics.typeOf(expression) as CArray
-				val value = assertNotNull(expressions.emitProvider(ProviderAccess(expression, ProviderResult.ArrayExtent(type, 1, CInt(64)))))
-				check(LLVMBuildICmp(builder, LLVMIntEQ, value, LLVMConstInt(CInt(64).llvmValue(context, nativeTestLayout), expected, 1), "inner_extent_valid"))
+			for ((name, expected) in listOf("dynamic" to 2L, "emptyCall" to null)) {
+				val descriptor = expressions.emitValue(receiver(name))
+				val extent = LLVMBuildExtractValue(builder, descriptor, 2, "inner_extent")
+				val known = LLVMBuildExtractValue(builder, extent, 1, "inner_known")
+				val expectedFlag = LLVMConstInt(LLVMTypeOf(known), if (expected == null) 0 else 1, 0)
+				check(LLVMBuildICmp(builder, LLVMIntEQ, known, expectedFlag, "inner_known_valid"))
+				if (expected != null) {
+					val count = LLVMBuildExtractValue(builder, extent, 0, "inner_count")
+					check(LLVMBuildICmp(builder, LLVMIntEQ, count, LLVMConstInt(LLVMTypeOf(count), expected, 0), "inner_count_valid"))
+				}
 			}
 		}
 	}

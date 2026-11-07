@@ -9,9 +9,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ClassFormattingTest {
+
 	private val formatting = """
 		typedef<class> Tick (def<string> label) {
 		    def<int> calls = 0

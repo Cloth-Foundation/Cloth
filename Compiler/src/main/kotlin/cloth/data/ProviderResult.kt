@@ -122,37 +122,6 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = LLVMConstRealOfString(type.llvmValue(context.context, context.target), value.toPlainString())
 	}
 
-	/** Legacy raw extent boundary: unknown inner axes still return -1 here, while
-	 * native descriptors keep a separate known flag. This does not define source size.
-	 */
-	data class ArrayExtent(
-		override val receiverType: CArray,
-		val dimension: Int,
-		override val type: CInteger,
-	) : ProviderResult<CInteger>() {
-
-		init {
-			require(dimension in receiverType.arrayDimensions.indices) { "Invalid array extent dimension" }
-			require(type.width == 64) { "Legacy raw extent recipes require a 64-bit result type" }
-		}
-
-		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
-			val known = receiverType.arrayDimensions[dimension]
-			if (known != null) return LLVMConstIntOfString(type.llvmValue(context.context, context.target), known.toString(), 10.toByte())
-			val raw = LLVMBuildExtractValue(context.builder, (receiver as ProviderReceiver.Value).value, dimension + 1, "provider_extent")
-			if (dimension == 0) return legacyBits(context, raw)
-			val count = legacyBits(context, LLVMBuildExtractValue(context.builder, raw, 0, "raw_extent_count"))
-			val knownFlag = LLVMBuildExtractValue(context.builder, raw, 1, "raw_extent_known")
-			return LLVMBuildSelect(context.builder, knownFlag, count, LLVMConstAllOnes(type.llvmValue(context.context, context.target)), "raw_extent_bits")
-		}
-
-		/** This unregistered internal recipe retains its historical 64-bit raw encoding. */
-		private fun legacyBits(context: ProviderEmissionContext, value: LLVMValueRef): LLVMValueRef {
-			val result = type.llvmValue(context.context, context.target)
-			return if (LLVMTypeOf(value).address() == result.address()) value else LLVMBuildZExt(context.builder, value, result, "raw_extent_widen")
-		}
-	}
-
 	/** Source size: the outer extent only, with no narrowing or byte-count arithmetic. */
 	data class ArraySize(override val receiverType: CArray, override val type: CUSize) : ProviderResult<CUSize>() {
 
@@ -199,6 +168,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 	}
 
 	data object NullText : ProviderResult<CString>() {
+
 		override val receiverType get() = ValueType.Null
 		override val type get() = CString
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.nullText()
@@ -221,6 +191,25 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override val type get() = CString
 		override val callsFormatter get() = true
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatClass((receiver as ProviderReceiver.Value).value)
+	}
+
+	data class EnumName(override val receiverType: CEnum) : ProviderResult<CString>() {
+
+		override val type get() = CString
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.enumName((receiver as ProviderReceiver.Value).value, receiverType)
+	}
+
+	/** Declaration order and nominal identity survive custom equality and formatting. */
+	data class EnumValues(override val receiverType: CEnum) : ProviderResult<CArray>() {
+
+		override val type = CArray(receiverType, receiverType.cases.size)
+		override val receiverForms get() = setOf(ProviderReceiverForm.TYPE)
+		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef {
+			val elementType = receiverType.llvmValue(context.context, context.target)
+			return context.arrayLiteral(receiverType, receiverType.cases.values.map { case ->
+				{ LLVMConstInt(elementType, case.ordinal.toLong(), 0) }
+			})
+		}
 	}
 
 	data class EnumText(override val receiverType: CEnum) : ProviderResult<CString>() {

@@ -25,7 +25,11 @@ class CEnum internal constructor(val declaration: EnumDeclaration) : CMemberType
 	}
 
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout) = LLVMInt32TypeInContext(context)
-	override fun providers(target: TargetLayout) = super.providers(target) + (CompilerDataProviders.STR to ProviderResult.EnumText(this))
+	override fun providers(target: TargetLayout) = super.providers(target) + mapOf(
+		CompilerDataProviders.NAME to ProviderResult.EnumName(this),
+		CompilerDataProviders.VALUES to ProviderResult.EnumValues(this),
+		CompilerDataProviders.STR to ProviderResult.EnumText(this),
+	)
 }
 
 internal data class EnumCase(val owner: CEnum, val declaration: EnumCaseDeclaration, val ordinal: Int)

@@ -118,9 +118,9 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 		when (expression) {
 			// Declaring a deferred block executes none of its statements. Its returns
 			// belong to a separate contract and never complete the enclosing function.
-			is FunctionBlockExpression                                                                                                              -> ControlFlow.FALLTHROUGH
-			is ElvisExpression                                                                                                                      -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
-			is BinaryExpression                                                                                                                     -> {
+			is FunctionBlockExpression -> ControlFlow.FALLTHROUGH
+			is ElvisExpression         -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
+			is BinaryExpression        -> {
 				val left = of(expression.left)
 				val right = of(expression.right)
 				when (expression.operator.lexeme) {
@@ -136,7 +136,7 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 				}
 			}
 
-			is IfExpression                                                                                                                         -> {
+			is IfExpression            -> {
 				var remaining = ControlFlow.FALLTHROUGH
 				var result = ControlFlow.NONE
 				for (branch in expression.branches) {
@@ -155,7 +155,7 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 				result.or(remaining.then(expression.otherwise?.let { of(it) } ?: ControlFlow.FALLTHROUGH))
 			}
 
-			else -> expression.eagerOperands(declarations).fold(ControlFlow.FALLTHROUGH) { flow, operand -> flow.then(of(operand)) }
+			else                       -> expression.eagerOperands(declarations).fold(ControlFlow.FALLTHROUGH) { flow, operand -> flow.then(of(operand)) }
 		}
 	}
 

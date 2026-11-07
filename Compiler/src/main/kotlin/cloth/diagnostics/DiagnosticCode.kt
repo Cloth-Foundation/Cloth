@@ -13,6 +13,7 @@ enum class DiagnosticCode(val id: String) {
 	RECEPTION_ARITY("C3057"),
 	RECEPTION_ANNOTATIONS("C3058"),
 	INVALID_NULLABLE_TYPE("C3059"),
+
 	// C3060 retired with snippet checking.
 	EXPLICIT_NULLABLE_TYPE("C3061"),
 	NULLABLE_PAYLOAD_ACCESS("C3062"),
@@ -30,6 +31,7 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_INTEGER_RADIX("C3074"),
 	FLOAT_SIGNUM_NAN("C3075"),
 	INVALID_FLOAT_CLAMP_BOUNDS("C3076"),
+
 	// C3077 retired with snippet checking.
 	DUPLICATE_STRUCT("C3078"),
 	INVALID_STRUCT_FIELD("C3079"),
@@ -120,6 +122,7 @@ enum class DiagnosticCode(val id: String) {
 	EXPECTED_EXPRESSION("C2006"),
 	FUNCTION_IN_TYPE("C2007"),
 	METHOD_OUTSIDE_TYPE("C2008"),
+
 	// C3000 retired with snippet checking.
 	DUPLICATE_BINDING("C3001"),
 	IMMUTABLE_BINDING("C3002"),

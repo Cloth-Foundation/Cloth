@@ -15,5 +15,11 @@ fn<int> main() {
     println(text.toChars()::size)
     println(text.toChars())
 
+    println("one,two,,three,".split(','))
+    println("A😀B😀".split('😀'))
+    println("a\0b".split('\0'))
+    println("one::two::::three::".split("::"))
+    println("A😀B".split(""))
+
     return (text::size -> int) % (text::size -> int)
 }

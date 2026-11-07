@@ -8,25 +8,16 @@ import cloth.emitter.callables.ConstructorAllocation
 import cloth.emitter.callables.EmitFunctionFrame
 import cloth.emitter.callables.EmitFunctions
 import cloth.emitter.callables.EmitResults
-import cloth.emitter.storage.ArrayParent
-import cloth.emitter.storage.ArrayTemporaryAnalysis
-import cloth.emitter.storage.EmitArray
-import cloth.emitter.storage.EmitBindings
-import cloth.emitter.storage.EmitMemory
-import cloth.emitter.storage.EmitNullable
-import cloth.emitter.storage.EmitPlaces
-import cloth.emitter.storage.EmitStackScope
-import cloth.emitter.storage.EmitStoredValue
-import cloth.emitter.storage.EmitValueTransfer
-import cloth.emitter.storage.ObjectAccess
-import cloth.emitter.storage.ReceiverAccess
+import cloth.emitter.storage.*
 import cloth.emitter.text.EmitString
 import cloth.emitter.text.ProviderEmissionContext
 import cloth.emitter.types.loops.EmitDoWhileLoop
 import cloth.emitter.types.loops.EmitForEach
 import cloth.emitter.types.loops.EmitRangeLoop
 import cloth.emitter.types.loops.EmitWhileLoop
-import cloth.emitter.types.primitives.*
+import cloth.emitter.types.primitives.EmitHalf
+import cloth.emitter.types.primitives.EmitIntegerDivision
+import cloth.emitter.types.primitives.EmitWideInteger
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -36,16 +27,15 @@ import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.symbols.ReceiverSymbol
-import cloth.semantic.typing.FunctionSemanticModel
-import cloth.semantic.typing.ResolvedCall
-import cloth.semantic.typing.ResolvedOperator
-import cloth.semantic.typing.ResolvedOperatorContext
-import cloth.semantic.typing.ValueComparisonPlan
+import cloth.semantic.typing.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 internal class EmitExpression(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val bindings: EmitBindings, private val casts: EmitCast, private val strings: EmitString, private val power: EmitPower, private val abi: NativeCABI, private val functions: EmitFunctions, private val functionSemantics: FunctionSemanticModel, private val returnResults: ResultShape, private val frame: EmitFunctionFrame) {
@@ -550,8 +540,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			is NameExpression           -> {
 				projectedValues[expression]?.let { return it }
-				val symbol = functionSemantics.declarations.symbolOf(expression) as? BindingSymbol
-					?: throw InternalErrors.invariant("Value name has no binding symbol")
+				val symbol = functionSemantics.declarations.symbolOf(expression) as? BindingSymbol ?: throw InternalErrors.invariant("Value name has no binding symbol")
 				val field = (symbol as? ReceiverFieldSymbol)?.field
 				if (field is EnumField) return emitEnumPayload(bindings.read(symbol.receiver), field, expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression

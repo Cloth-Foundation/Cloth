@@ -19,6 +19,8 @@ enum class CompilerDataProviders(private val spelling: String?) {
 	MIN("min"),
 	ADDR("addr"),
 	TYPE("type"),
+	NAME("name"),
+	VALUES("values"),
 	STR("str"),
 	ELEMENT("element"),
 	ISARRAY("isarray"),

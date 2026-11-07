@@ -13,7 +13,7 @@ import cloth.emitter.storage.EmitArray
 import cloth.emitter.text.EmitIntegerText
 import cloth.emitter.text.EmitString
 import cloth.emitter.text.ProviderEmissionContext
-import cloth.emitter.types.*
+import cloth.emitter.types.EmitCast
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.semantic.typing.SemanticModel

@@ -41,13 +41,16 @@ class StringAttachmentsTest {
 	@Test
 	fun `typed registrations publish only implemented members and preserve identity`() {
 		val strings = PrimitiveAttachments.string(nativeTestLayout)
-		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all(nativeTestLayout).filter { it.receiver == ValueType.STRING })
+		assertEquals(listOf(strings.IS_EMPTY, strings.CONTAINS, strings.STARTS_WITH, strings.ENDS_WITH, strings.CHAR_AT, strings.SUBSTRING, strings.INDEX_OF, strings.LAST_INDEX_OF, strings.TO_CHARS, strings.SPLIT, strings.REPLACE, strings.REPLACE_FIRST, strings.REMOVE_PREFIX, strings.REMOVE_SUFFIX, strings.TRIM, strings.TRIM_START, strings.TRIM_END, strings.IS_BLANK), PrimitiveAttachments.all(nativeTestLayout).filter { it.receiver == ValueType.STRING })
 		assertSame(strings.CONTAINS, PrimitiveAttachments[ValueType.STRING, "contains", nativeTestLayout])
 		assertEquals(listOf(BuiltinParameter.Exact(ValueType.STRING)), strings.CONTAINS.parameters)
 		assertEquals(ValueType.BOOL, strings.CONTAINS.overload.returns)
 		assertEquals(ValueType.INT, PrimitiveAttachments[ValueType.INT, "abs", nativeTestLayout]?.overload?.returns)
 		assertNull(PrimitiveAttachments[ValueType.STRING, "Contains", nativeTestLayout])
-		assertNull(PrimitiveAttachments[ValueType.STRING, "split", nativeTestLayout])
+		assertSame(strings.SPLIT, PrimitiveAttachments[ValueType.STRING, "split", nativeTestLayout])
+		assertEquals(listOf(listOf(BuiltinParameter.Exact(ValueType.STRING), BuiltinParameter.Exact(ValueType.CHAR)), List(2) { BuiltinParameter.Exact(ValueType.STRING) }), strings.SPLIT.overloads.map { it.parameters })
+		assertTrue(strings.SPLIT.overloads.all { it.returns == cloth.data.CArray(ValueType.STRING) })
+		assertFailsWith<UnsupportedOperationException> { (strings.SPLIT.overloads as MutableList).clear() }
 		assertFailsWith<UnsupportedOperationException> { (PrimitiveAttachments.all(nativeTestLayout) as MutableList).clear() }
 		assertFailsWith<UnsupportedOperationException> { (strings.all as MutableCollection).clear() }
 	}
@@ -235,7 +238,7 @@ class StringAttachmentsTest {
 		assumeTrue(ExecutableFormat.current == ExecutableFormat.PE)
 		val source = Files.readString(Path.of("examples", "StringAttachments.co"))
 		for ((index, triple) in listOf("x86_64-pc-windows-msvc", "i686-pc-windows-msvc").withIndex()) {
-			native(directory, "example_$index", source, "true\ntrue\ntrue\ntrue\n😀\n😀B\n1\n3\nnull\n5\n[A, 😀, B, 😀, \u0000]\n", NativeCABI.forTarget(triple))
+			native(directory, "example_$index", source, "true\ntrue\ntrue\ntrue\n😀\n😀B\n1\n3\nnull\n5\n[A, 😀, B, 😀, \u0000]\n[one, two, , three, ]\n[A, B, ]\n[a, b]\n[one, two, , three, ]\n[, A, 😀, B, ]\n", NativeCABI.forTarget(triple))
 		}
 	}
 

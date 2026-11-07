@@ -1,10 +1,13 @@
 package cloth.semantic.typing
 
 import cloth.ast.SourceUnit
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.*
+import cloth.parser.declaration.ConstructorDeclaration
+import cloth.parser.declaration.MethodDeclaration
+import cloth.parser.declaration.PrimaryConstructorDeclaration
 import cloth.semantic.OperatorRules
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationAnalyzer
@@ -13,7 +16,9 @@ import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
 import cloth.semantic.flow.checkCallableMetadata
-import cloth.semantic.symbols.*
+import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.ConstructorSymbol
+import cloth.semantic.symbols.MethodSymbol
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -79,6 +84,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			presence.analyze(function.declaration)
 			presence.analyzeExpressions(declarations.initializationExpressions(function.declaration))
 		}
+		checkEnumPayloads(model)
 		for (function in declarations.concreteCallables) {
 			val checker = BodyTyping(model, function.declaration, bodyResults(function, model))
 			function.parameters.forEachIndexed { index, parameter ->

@@ -4,7 +4,6 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
-import cloth.semantic.scalar
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.integerLiteralValue

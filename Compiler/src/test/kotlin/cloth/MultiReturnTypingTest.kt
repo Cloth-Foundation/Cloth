@@ -18,7 +18,10 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.Statement
-import cloth.semantic.*
+import cloth.semantic.ProgramAnalyzer
+import cloth.semantic.ProgramKind
+import cloth.semantic.ReceptionKind
+import cloth.semantic.ResultShape
 import cloth.semantic.typing.ExpressionTyping
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel

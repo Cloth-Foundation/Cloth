@@ -80,6 +80,7 @@ class BuiltinFunctionsTest {
 			val call = assertIs<CallExpression>(assertIs<ExpressionStatement>(unit.mainStatements[index]).expression)
 			return assertIs<ResolvedCall.Builtin>(model.selectedCall(call)).call.arguments.single().text
 		}
+
 		val nullable = assertIs<ProviderResult.NullableText>(recipe(1))
 		val interpolation = assertIs<InterpolatedString>(assertIs<ExpressionStatement>(unit.mainStatements[2]).expression)
 		val hole = interpolation.parts.filterIsInstance<NameExpression>().single()

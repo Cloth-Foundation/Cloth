@@ -7,6 +7,46 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Shuttle and compiler import planning (2026-11-07)
+
+The user selected TOML for project/module manifests and identified Shuttle as
+Cloth's build system, with an existing `Shuttle` Gradle module. The
+[implementation plan](../../../../todo/shuttle-and-imports-plan.md) assigns
+manifest loading and build orchestration to Shuttle, and source import parsing,
+resolution and binding to Compiler through a manifest-independent request API.
+Circular source imports were confirmed allowed, including cycles across
+configured modules. The plan requires single-load graph discovery, declaration
+preregistration and semantic/runtime cycle coverage; ordinary invalid type-layout
+and inheritance cycles remain errors.
+It stages configuration, compiler API, located imports, source graphs, file
+scopes, whole-program execution and publication. Only planning and documentation
+are integrated; no Shuttle command, manifest loader or compiler imports are
+implemented. Verification for this task covers documentation and source links.
+
+### String delimiter split overload (2026-11-06)
+
+The user requested `split(string) -> string[]` for multi-character delimiters.
+The [split record](../../cloth-strings/references/split-method.md) owns exact
+char/string overload registration, binding/presence integration, literal
+non-overlapping matching, scalar-boundary empty delimiters and independent
+results. The focused run passes 151 tests across seven suites in 36 seconds,
+with zero failures, errors or skips. Native Windows x64/x86 example/stress runs
+and all-nine-profile IR/object checks pass. The final full regression passes
+1,470 tests across 132 suites in 6m 44s, with zero failures, errors or skips.
+It isolated compiler classes/reports from concurrent workspace builds; an earlier
+shared-class run encountered enum-diagnostics assertions during unrelated edits.
+
+### Character-delimited string splitting (2026-11-06)
+
+`StringAttachments.SPLIT` implements the user-requested `split(char) -> string[]`.
+The [split integration record](../../cloth-strings/references/split-method.md)
+owns matching, preserved empty pieces, independent nested storage, emitter
+invariants and verification. The focused run passes 107 tests; the full compiler
+suite passes 1,459 tests across 131 suites in 6m 31s, with zero failures, errors
+or skips. The maintained example and discarded-buffer stress program execute on
+Windows x64/x86; parameterized split results verify IR and objects for all nine
+profiles. Native Linux/macOS/Windows ARM64 split execution remains untested.
+
 ### Single-statement void callable bodies (2026-11-06)
 
 [Function return contracts](../../cloth-functions/references/semantics.md#function-return-contracts)
@@ -1302,6 +1342,264 @@ profiles and ran native binaries on Windows x64 and x86. The updated skill
 metadata and links passed direct checks. The bundled validator requires
 PyYAML, which was unavailable in the test environment.
 [Operator publication suite](../../../../Compiler/src/test/kotlin/cloth/OperatorPublicationTest.kt)
+
+### Shared private call ABI (2026-11-06)
+
+`EmittedCallable` owns the declared LLVM signature and private call slots for
+each Cloth symbol. Its body reads receiver or allocation fields, parameter
+values, the caller's result arena and omission flags from that layout. Calls
+use the same layout to pack evaluated operands and delegate ABI encoding and
+decoding to `EmitResults`. `EmitFunctions` keeps receiver checks, written-order
+argument evaluation, snapshots and the declaration-order default prelude.
+[Callable layout](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmittedCallable.kt) ·
+[Function emitter](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
+
+Startup uses the shared packer for the call to Cloth `main`. Enum payload and
+text readers, generated destructor and class formatter dispatch, and comparison
+overrides use it for their calls to Cloth symbols. The startup adapter converts
+arguments, owns its result arena and normalizes the exit status after the call.
+[Entry adapter](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitEntryPoint.kt) ·
+[Optional arguments example](../../../../examples/OptionalArguments.co)
+
+The focused run passed 125 tests in 14 suites. The wide-main fixture covers a
+present optional argument, caller-owned wide result and native status
+normalization together. Struct, class and operator publication suites verify
+IR and emit objects for all nine supported profiles, with native execution on
+Windows x64 and x86.
+[Wide-main test](../../../../Compiler/src/test/kotlin/cloth/ArbitraryIntegerStorageTest.kt) ·
+[Operator publication](../../../../Compiler/src/test/kotlin/cloth/OperatorPublicationTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,435 tests in 127 suites with zero failures, errors or skips.
+Skill metadata and links passed direct checks. The bundled validator requires
+PyYAML, which was unavailable in the test environment.
+
+### Compiler API audit closeout (2026-11-06)
+
+Executable emission validates the semantic target and callable ABI before
+discovering the linker or creating output. Executable IR and native binaries
+share startup emission and final module verification. Both IR text paths use
+one helper that releases the LLVM message. The target regression supplies a
+mismatched model and a missing linker and checks the target diagnostic and
+the absence of an output directory.
+[LLVM emitter](../../../../Compiler/src/main/kotlin/cloth/emitter/LLVM.kt) ·
+[Target regression](../../../../Compiler/src/test/kotlin/cloth/TargetLayoutTest.kt)
+
+The test-only `ArrayExtent` recipe and its raw 64-bit sentinel are retired.
+The source-size tests exercise `ArraySize` for runtime and fixed outer
+counts and check fixed receiver effects. Descriptor tests check the inner
+known flag across native calls and distinguish unknown, zero and maximum
+extents. A projected row exposes the preserved maximum through `ArraySize`
+at both 32 and 64 bits.
+[Size contract](../../cloth-compiler-data/SKILL.md) ·
+[Buffer counts](../../../../Compiler/src/test/kotlin/cloth/BufferCountsTest.kt)
+
+C4030 identifies the rejected Cloth callable type at its annotation.
+Declaration resolution owns the C3053 check for grouped deferred blocks.
+The focused run passed 99 tests in 10 suites, including the diagnostic,
+target, array descriptor and provider checks.
+[Diagnostics](../../cloth-diagnostics/SKILL.md) ·
+[Result boundaries](../../cloth-multiple-results/SKILL.md)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,436 tests in 127 suites with zero failures, errors or skips.
+The publication suites verified IR and emitted objects for all nine supported
+targets and exercised native Windows x64 and x86 binaries. Skill headers and
+links passed direct checks because the bundled validator requires PyYAML.
+[Operator publication](../../../../Compiler/src/test/kotlin/cloth/OperatorPublicationTest.kt)
+
+### Enum case name provider (2026-11-06)
+
+Enum value `::name` returns the selected case's exact declared spelling as
+non-nullable `string`. A nullable receiver requires a presence proof.
+The provider evaluates its receiver once and uses the generated case-name
+reader, which also supplies default enum text. A custom `operator ::str()`
+owns presentation text, and payload `.name` access uses the declared field.
+[Enum contract](value-operators.md#enum-values-and-formatting)
+
+`CEnum` registers an `EnumName` recipe with value-receiver access.
+`DeclarationAnalyzer` creates the name reader for every enum.
+`DeclarationModel` selects the reader for name access and default text,
+while formatter effects follow the selected user override. Reader calls use
+the shared Cloth callable ABI and caller-owned text storage.
+[Enum model](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/EnumModel.kt) ·
+[Provider recipe](../../../../Compiler/src/main/kotlin/cloth/data/ProviderResult.kt)
+
+The edited main and test sources compiled with cached Kotlin 2.4.20 and JDK 25.
+The 64-test focused run passed through the JUnit launcher, including
+`EnumNameTest`, value operators, operator publication and contexts, class
+formatting, optional arguments, provider syntax and provider results.
+The new fixture executed on Windows x64 and x86 and verified IR and objects
+for all nine supported targets. Gradle's daemon connection was unavailable
+in the execution sandbox.
+[Case-name tests](../../../../Compiler/src/test/kotlin/cloth/EnumNameTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,440 tests in 128 suites with zero failures, errors or skips after
+granting the local cache, daemon and native filesystem access required by the
+test environment. CLI `run` checks on Windows x64 and x86 printed `READY`
+for `State.READY::name` and `ready to work` for its custom `::str`,
+then completed with status zero. Updated skill headers and links passed direct
+checks because the bundled validator requires unavailable PyYAML.
+
+### Nullable array conditional contexts (2026-11-06)
+
+The user confirmed keeping both enum `::name` and `::str` and requested fixing
+the audit's nullable array payload defect. Explicit `int?[2]` payloads now work
+with multiple cases and header defaults, as do ordinary function conditionals
+whose declared destinations contain nullable elements or rows.
+[Enum payload contract](value-operators.md#enum-values-and-formatting) ·
+[Nullable buffers](../../cloth-nullability/references/buffers.md)
+
+`ExpressionTyping.conditionalResults` uses `ValueType.containsNullability` for
+the explicit destination as well as each branch value. An array's nullable
+element or row annotation supplies the context without an outer `CNullable`
+wrapper. The shared rule serves generated enum readers, returns, arguments,
+bindings, assignments, broadcast and positional results. Missing nullable
+annotations, incompatible element layouts/types and invalid dimensions still
+fail through the existing first-error checks.
+[Conditional typing](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
+
+Before the fix, the new ordinary-return regression and both enum payload tests
+failed with the audit's C3061. After the fix, the focused Gradle run passed
+80 tests in 10 suites with no failures, errors or skips: `EnumPayloadTest`,
+`EnumNameTest`, `ValueOperatorsTest`, all `Nullability*` suites,
+`NullableBuffersTest`, `NullableRowsTest` and `ConditionalsTest`.
+The payload fixture executed on Windows x64 and x86 and verified IR and objects
+for all nine supported targets. It checks single and multiple cases, defaults,
+nullable whole arrays/elements/rows, Unicode, varying unsized dimensions and
+independent payload reads. The typing regressions cover explicit contexts and
+preserve rejection of inferred nullability and invalid element types/shapes.
+[Payload tests](../../../../Compiler/src/test/kotlin/cloth/EnumPayloadTest.kt) ·
+[Typing tests](../../../../Compiler/src/test/kotlin/cloth/NullabilityTypingTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,444 tests in 129 suites with zero failures, errors or skips.
+Two skill headers and 32 added relative links and anchors passed direct checks;
+the bundled skill validator could not run because PyYAML is unavailable.
+
+### Enum case enumeration provider (2026-11-06)
+
+The user requested enum-specific `EnumType::values` after confirming type-only
+access, a fixed-size array of all cases in declaration order, and ordinary
+independent array semantics. The result contains nominal enum values, with the
+exact enum element type and declared case count. Custom equality does not merge
+cases, and enumeration does not execute custom formatting.
+[Enum contract](value-operators.md#enum-values-and-formatting)
+
+`CEnum` registers `ProviderResult.EnumValues` under the contextual `values`
+spelling. The typed recipe permits type receivers and materializes the declared
+case ordinals through `ProviderEmissionContext.arrayLiteral` and the existing
+`EmitArray.literal`. Shared provider validation handles receiver forms; ordinary
+array copying, argument/result transport and foreach snapshots handle the result.
+Enum instances and non-enum types reject the provider. The provider is read-only
+and cannot be overridden; ordinary payload `.values` access remains distinct.
+[Provider recipe](../../../../Compiler/src/main/kotlin/cloth/data/ProviderResult.kt) ·
+[Array service](../../../../Compiler/src/main/kotlin/cloth/emitter/text/ProviderEmissionContext.kt)
+
+The focused Gradle run passed 49 tests across seven suites: `EnumValuesTest`,
+`EnumNameTest`, `EnumPayloadTest`, `ValueOperatorsTest`, `ProviderResultsTest`,
+`ProviderSyntaxTest` and `BufferProvidersTest`. The four new tests check exact
+typing, declaration order, independent reads/copies, foreach snapshots under
+source mutation, returned/defaulted/forwarded arrays, multiple results, metadata,
+single-case enums, custom equality/formatting, payload naming and 18 rejection
+cases with located first-error diagnostics. The fixture executed on Windows
+x64 and x86 and verified IR and objects for all nine supported profiles.
+[Enumeration tests](../../../../Compiler/src/test/kotlin/cloth/EnumValuesTest.kt)
+
+The follow-up focused run including the current `StringSplitTest` passed
+59 tests across eight suites. The full
+`.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon` run passed
+1,459 tests in 131 suites with zero failures, errors or skips. Three updated
+skill headers, 49 added relative links and anchors, and the provider-plan link
+passed direct checks. The bundled skill validator requires unavailable PyYAML.
+
+### Enum payload diagnostic preflight (2026-11-06)
+
+The user requested consistent payload diagnostics regardless of enum case count.
+Payload field-type mismatches now report C3095 with the original value, field
+annotation and applicable case locations. Header-default mismatches identify
+the default and its field without attributing it to a synthetic case. Specific
+literal, cast, array and struct errors retain their shared checker diagnostics.
+[Enum contract](value-operators.md#enum-values-and-formatting)
+
+`FunctionAnalyzer` invokes `checkEnumPayloads` after binding/presence setup and
+before checking callable defaults and bodies. The focused typing helper checks
+header defaults in field order, then supplied values in case/argument order,
+using `BodyTyping` and each field's declared type. It validates defaults even
+when every case overrides them. Generated readers continue through the ordinary
+body checker. Constant-form restrictions and numeric cast evaluation policy
+remain under the separate open enum audit question.
+[Payload typing](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/EnumPayloadTyping.kt) ·
+[Structured diagnostic](../../../../Compiler/src/main/kotlin/cloth/diagnostics/SemanticErrors.kt)
+
+Before the fix, payload mismatches could report C3032 for a single-value reader
+or C3016 for a conditional reader. Five of the seven new tests reproduced the
+reader-dependent failures; valid contextual payloads and intrinsic failures
+already passed. After the fix, the focused Gradle run passed
+49 tests across eight suites: `EnumPayloadDiagnosticsTest`, `EnumPayloadTest`,
+`EnumNameTest`, `EnumValuesTest`, `ValueOperatorsTest`, `DiagnosticsTest`,
+`StructSemanticsTest` and `NullabilityTypingTest`. The new regressions cover
+single/multiple cases, defaults, exact types, original Unicode/CRLF labels,
+first-error ordering, and intrinsic literal/cast/shape/struct errors. Valid
+numeric, nullable array and aggregate payloads type-check for Windows x64/x86.
+The 18 CLI rejection checks select all nine supported targets and stop before
+output creation or linker discovery. Existing enum fixtures executed on native
+Windows x64/x86 and verified IR and objects for all nine target profiles.
+[Diagnostic tests](../../../../Compiler/src/test/kotlin/cloth/EnumPayloadDiagnosticsTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,470 tests in 132 suites with zero failures, errors or skips. Two
+skill headers and 55 added relative links and anchors passed direct checks;
+the bundled validator requires unavailable PyYAML.
+
+### Enum constant cast validation (2026-11-07)
+
+The user requested compile-time rejection of invalid enum payload casts.
+The existing literal, literal-unary, cast, array and struct forms now validate
+their closed numeric conversions before emission, including unread cases and
+defaults overridden by every case. C3005 labels the original failing cast,
+field annotation and applicable case. Broader arithmetic/reference/call payload
+forms remain outside this integration.
+[Enum contract](value-operators.md#enum-values-and-formatting)
+
+`EnumPayloadTyping` checks typed constant values before final field compatibility.
+`EnumConstantExpressions` visits admitted forms in shared `eagerOperands` order;
+`EnumModel` reuses that traversal for its form check. Numeric facts live in the
+reusable `NumericConstants` evaluator, extracted from `RangeConstants`. The
+range/attachment facade retains ordinary non-nullable result boundaries.
+Constant evaluation never executes calls or infers bindings. Generated readers
+continue through ordinary emission, copying and runtime guard lowering.
+[Enum validation](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/EnumConstantExpressions.kt) ·
+[Numeric evaluator](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/NumericConstants.kt)
+
+Float-to-integer checks require a finite value whose exact truncated result fits
+the selected integer type, including widths through 65536 and target-sized
+identities. Evaluation rounds each intermediate float conversion, preserves
+integer wrapping/source-signedness widening and uses exact binary-to-decimal
+conversion for wide integer results. Nullable absence skips conversion; known
+present nullable values receive the same checks. Floating overflow to infinity
+remains a valid floating result; a later integer conversion rejects it.
+[Numeric contract](../../cloth-numerics/references/semantics.md#explicit-numeric-casts)
+
+Focused runs passed 70 tests in the enum constant, payload diagnostic, cast,
+range and float-attachment suites, then 14 tests in the new numeric evaluator
+and integer-attachment suites. After sharing operand traversal, the final
+20-test enum/evaluator/payload-diagnostic run also passed. Nine enum integration
+tests cover invalid casts in unread cases, nested/default payloads, original
+spans, nullable conversion, 32/64-bit target bounds, valid native results and
+ordinary dynamic failure guards. Four evaluator tests cover exact wide results,
+NaN/both infinities, signed zero, half decimal ties versus cast-source rounding,
+and unknown/nullable range boundaries. Native fixtures execute on Windows x64/x86;
+valid payload IR/objects verify across all nine supported profiles. The nine CLI
+rejection checks stop before output creation or linker discovery.
+[Enum constant tests](../../../../Compiler/src/test/kotlin/cloth/EnumConstantExpressionsTest.kt) ·
+[Evaluator tests](../../../../Compiler/src/test/kotlin/cloth/NumericConstantsTest.kt)
+
+The full `.\gradlew.bat :Compiler:test --offline --console=plain --no-daemon`
+run passed 1,483 tests in 134 suites with zero failures, errors or skips. Three
+updated skill headers and 74 added relative links and anchors passed direct
+checks. The bundled skill validator requires unavailable PyYAML.
 
 ### While loops (2026-11-02)
 

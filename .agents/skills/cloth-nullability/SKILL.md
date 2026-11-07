@@ -103,7 +103,11 @@ and [NullableRules.co](../../../examples/NullableRules.co).
   explicit type, even for a known nullable copy, function result, named result
   reception or nullable element type. Nullable conditional results also need an
   explicit nullable destination; bindings, declared returns and declared
-  parameters can supply it. Discards create no binding. `def x = null` and
+  parameters can supply it. Check that context recursively: `int?[2]` and arrays
+  with nullable rows supply explicit nullability without an outer `?`. This also
+  applies to generated enum payload readers and positional result contexts.
+  [Nullable array conditional integration](../cloth-language/references/development.md#nullable-array-conditional-contexts-2026-11-06)
+  Discards create no binding. `def x = null` and
   inferred nullable copies are rejected; `void?` is invalid everywhere.
 - Presence proofs change individual ordinary reads to their payload type, while
   the binding keeps its declared nullable type. An inferred proven-present copy
@@ -179,6 +183,9 @@ and [NullableRules.co](../../../examples/NullableRules.co).
 
 Relevant suites are `NullabilityParsingTest`, `NullabilityTypingTest`,
 `NullabilityEmissionTest`, `NullabilityRulesTest`, `NullableBuffersTest` and `NullableRowsTest`.
+`EnumPayloadTest` covers nullable array payloads, header defaults and nested
+elements/rows through the same conditional checker, with native Windows x64/x86
+execution and IR/object verification across all nine supported targets.
 The [buffer record](references/buffers.md) owns current buffer evidence and routing.
 Run from the repository root:
 

@@ -1,0 +1,12 @@
+[project]
+name = "Cloth"
+version = "0.0.1"
+entryPoint = "Frontend.Main.main"
+
+[modules]
+Frontend = "Frontend"
+Compiler = "Compiler"
+Backend = "Backend"
+
+[output]
+directory = "build"

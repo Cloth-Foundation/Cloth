@@ -1097,6 +1097,59 @@ class ArrayTemporaryCleanupTest {
 	}
 
 	@Test
+	fun `split strings outlive poisoned source frames array copies and captured publication`(@TempDir directory: Path) {
+		probe(directory, "string_split_results", """
+			fn<string> text() = "A😀0," + "B,,Z"
+			fn<string[]> pieces() = text().split(',')
+			fn<string[], string> pair() = pieces(), pieces()[0]
+			fn<int> sample() {
+			    def saved, first = pair()
+			    def independent = saved
+			    independent[1] = "changed"
+			    pair() -> void
+			    if (saved[0] != "A😀0" || saved[1] != "B" || saved[2] != "" || saved[3] != "Z" || first != "A😀0" || independent[1] != "changed") return 1
+			    def published = pieces()
+			    def<char> publish = { published = "new,new,new,new".split(','); return ',' }
+			    def received = published[0].split(publish)
+			    if (received[0] != "A😀0" || published[0] != "new") return 2
+			    def<string[]> deferred = { return pieces() }
+			    if (deferred[2] != "" || deferred[3] != "Z") return 3
+			    for (def i <- 0..1000) { if (pieces()[1] != "B") return 4 }
+			    if (saved[0] != "A😀0" || published[0] != "new") return 5
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `string split delimiters and empty boundaries survive poisoned frames`(@TempDir directory: Path) {
+		probe(directory, "string_split_delimiter_results", """
+			fn<string> text() = "A😀0::" + "B::::Z"
+			fn<string> delimiter() = ":" + ":"
+			fn<string[]> pieces() = text().split(delimiter())
+			fn<string[]> scalars() = ("A" + "😀B").split("")
+			fn<string[], string[]> pair() = pieces(), scalars()
+			fn<int> sample() {
+			    def saved, characters = pair()
+			    def independent = saved
+			    independent[1] = "changed"
+			    pair() -> void
+			    if (saved[0] != "A😀0" || saved[1] != "B" || saved[2] != "" || saved[3] != "Z" || independent[1] != "changed") return 1
+			    if (characters::size != 5 || characters[0] != "" || characters[2] != "😀" || characters[4] != "") return 2
+			    def published = pieces()
+			    def<string> publish = { published = "new::new::new::new".split(delimiter()); return delimiter() }
+			    def received = published[0].split(publish)
+			    if (received[0] != "A😀0" || published[0] != "new") return 3
+			    def<string[]> deferred = { return pieces() }
+			    if (deferred[2] != "" || deferred[3] != "Z") return 4
+			    for (def i <- 0..1000) { if (pieces()[1] != "B" || scalars()[2] != "😀") return 5 }
+			    if (saved[0] != "A😀0" || published[0] != "new") return 6
+			    return 0
+			}
+		""")
+	}
+
+	@Test
 	fun `trimmed strings outlive poisoned source frames ordered returns and captured publication`(@TempDir directory: Path) {
 		probe(directory, "string_whitespace_results", """
 			fn<string> text() = " \t" + "😀X　"

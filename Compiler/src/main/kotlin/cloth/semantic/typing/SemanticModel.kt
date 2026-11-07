@@ -5,21 +5,14 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.ClassComparisonPlan
-import cloth.semantic.FieldWritePlan
-import cloth.semantic.ForLoopPlan
-import cloth.semantic.InstancePlace
-import cloth.semantic.ProviderAccess
-import cloth.semantic.ReceptionPlan
-import cloth.semantic.ResultShape
-import cloth.semantic.StoredPlace
+import cloth.semantic.*
 import cloth.semantic.declarations.TypeResolver
 import cloth.target.TargetLayout
 
 /** Identity keys distinguish equal-looking syntax used in different type contexts. */
 class SemanticModel internal constructor(internal val typeResolver: TypeResolver) {
-	constructor(target: TargetLayout, namedTypes: Map<String, CMemberType> = emptyMap(), operatorWidth: Int? = null) :
-		this(TypeResolver(target, operatorWidth, namedTypes::get))
+
+	constructor(target: TargetLayout, namedTypes: Map<String, CMemberType> = emptyMap(), operatorWidth: Int? = null) : this(TypeResolver(target, operatorWidth, namedTypes::get))
 
 	val target get() = typeResolver.target
 
@@ -82,6 +75,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal fun recordValueCheck(expression: TypeCheckExpression, application: BinaryExpression) {
 		valueChecks[expression] = BoundValueCheck(application, operatorCalls.getValue(application))
 	}
+
 	internal fun providerAccess(receiver: Expression, spelling: String): ProviderAccess? = typeOf(receiver).provider(spelling, target)?.let { ProviderAccess(receiver, it) }
 	internal fun providerAccess(expression: ProviderAccessExpression): ProviderAccess = providers.getValue(expression)
 	internal fun interpolationTextOf(part: Expression): ProviderResult<*>? = interpolationText[part]

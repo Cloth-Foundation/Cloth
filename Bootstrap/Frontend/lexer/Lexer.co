@@ -1,0 +1,14 @@
+using token.Token: *
+
+pub typedef<class> Lexer (def<string> text) {
+
+    pub mt<isize> lexTokens() {
+        if (text.isEmpty()) return 2
+        for(def s <- text.split(' ')) {
+            println(s)
+        }
+
+        return 0
+    }
+
+}

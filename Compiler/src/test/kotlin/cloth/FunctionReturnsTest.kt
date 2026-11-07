@@ -14,7 +14,7 @@ import cloth.parser.expression.IfExpression
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ReturnStatement
-import cloth.semantic.*
+import cloth.semantic.SemanticException
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.flow.ControlFlow
 import cloth.semantic.typing.FunctionAnalyzer

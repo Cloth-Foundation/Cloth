@@ -6,8 +6,7 @@ import cloth.parser.expression.FieldAccessExpression
 import cloth.parser.expression.MemberCallExpression
 import cloth.parser.expression.NameExpression
 import cloth.parser.statement.UpdateStatement
-import java.util.Collections
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Written by the pre-typing flow pass and shared by body trials. */
 internal class PresenceFacts {

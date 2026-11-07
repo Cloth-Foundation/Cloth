@@ -8,6 +8,9 @@ The [literal editing extension](editing-methods.md) adds `replace`, `replaceFirs
 `removePrefix` and `removeSuffix` with checked independent string results.
 The [Unicode whitespace extension](whitespace-methods.md) adds `trim`, `trimStart`,
 `trimEnd` and `isBlank`, with pinned classification across every target.
+The [delimiter splitting extension](split-method.md) adds exact `split(char)` and
+`split(string)` overloads returning independent `string[]`, including every
+leading, repeated and trailing empty piece and scalar-boundary empty delimiters.
 The [storage cleanup](../../cloth-buffer-lifetimes/references/string-member-storage.md)
 preserves the contracts below while eliding immutable operand byte copies and
 admitting opted-in calls to closed arena/stack cleanup proofs.
@@ -51,8 +54,10 @@ Lookup uses the receiver type and method name; lexical names do not shadow
 members. These methods are not unqualified global functions. `string.isEmpty()`
 does not call a static method. `text::contains(...)` retains the separate,
 currently unsupported state-call meaning. Bare field access/method values,
-named method arguments, optional method parameters, member overloads and class
-methods remain deferred. Integer methods are now covered by the
+named/optional primitive method arguments and additional primitive APIs remain
+outside this foundation. Split's exact char/string overload group is covered by
+the extension. Source methods have their own [method contract](../../cloth-functions/references/semantics.md#user-defined-methods).
+Integer methods are now covered by the
 [integer attachment extension](../../cloth-numerics/references/integer-attachments.md).
 
 Arguments must have the exact required string type. No implicit text adaptation
@@ -73,14 +78,16 @@ error; do not accumulate errors or proceed to output/linker work after failure.
 - [PrimitiveAttachment](../../../../Compiler/src/main/kotlin/cloth/builtin/attachments/PrimitiveAttachment.kt)
   owns typed per-receiver registration and the `PrimitiveAttachments` lookup.
   Declaring a named entry registers it; there is no second hand-maintained method
-  list. Duplicate names for one receiver are rejected. Published lookup lists
-  are read-only. Registrations use exact receiver types and one signature per
-  method; integer families now specialize lazily, while overloads remain deferred. Definitions
+  list. Duplicate names for one receiver are rejected; a single named registration
+  may declare several distinct overload signatures. Published lookup/overload lists
+  are read-only. Registrations use exact receiver types; integer families specialize
+  lazily. Split's char/string group is the first overloaded primitive method. Definitions
   are specialized by native count width and selected using the compilation target.
   Primitive providers share inherited `valueMethod(name, parameters,
   returns) { context, values -> ... }`, which explicitly opts into the read-only,
   independent-result contract. Keep method names, signatures and bodies together
-  in named registrations; `register` retains unknown storage as its default.
+  in named registrations; the overload-list `valueMethod` form applies that same
+  opt-in to each body. `register` retains unknown storage as its default.
 - [StringAttachments](../../../../Compiler/src/main/kotlin/cloth/builtin/attachments/StringAttachments.kt)
   owns the original four queries and the linked method extensions. Each definition builds on `BuiltinParameter`,
   `BuiltinOverload`, `BuiltinDefinition` and `BoundBuiltinCall`; the hidden receiver
@@ -99,7 +106,8 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   and `ExpressionParser.parseUnary` own ordinary dot-call syntax. Preserve receiver,
   supplied argument order/labels and original spans independently of lexical
   calls, provider access and state calls.
-- `ExpressionTyping.memberCallType` binds the receiver and explicit arguments,
+- `ExpressionTyping.memberCallResults` binds the receiver and explicit arguments,
+  narrowing exact overload candidates and supplying shared argument context,
   keeping errors intrinsic during enclosing overload probes. `SemanticModel.memberCalls`
   retains committed bound calls; `FunctionSemanticModel.commit` copies these
   facts with other trial facts.
@@ -107,7 +115,7 @@ error; do not accumulate errors or proceed to output/linker work after failure.
   `MetadataAnalysis` traverse the receiver before arguments. Preserve captured
   write invalidation, presence proofs and non-fallthrough completion. Pre-typing
   presence analysis proves a member result present only when every registered
-  method with that name returns a non-nullable value.
+  overload with that name returns a non-nullable value.
 - `EmitExpression.emitMemberCall` captures each received value before the next
   operand and protects temporary storage until the operation consumes it. Opted-in
   read-only methods use immutable string descriptors without redundant byte copies.

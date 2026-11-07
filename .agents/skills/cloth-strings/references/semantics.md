@@ -69,6 +69,12 @@ and locale overloads remain outside this feature.
 
 ## Strings
 
+- On 2026-11-06 the user requested `split(char)` returning `string[]`.
+  The user then requested `split(string)` for multi-character delimiters.
+  [The split contract](split-method.md) owns literal non-overlapping matching,
+  scalar-boundary empty delimiters, retained empty pieces and independent results, including
+  the distinction between the requested API and its implementation policies.
+
 - On 2026-11-04 the user approved `trim`, `trimStart`, `trimEnd` and `isBlank`,
   and explicitly selected a pinned Unicode White_Space property. The
   [whitespace contract](whitespace-methods.md) pins Unicode 17.0.0, defines empty

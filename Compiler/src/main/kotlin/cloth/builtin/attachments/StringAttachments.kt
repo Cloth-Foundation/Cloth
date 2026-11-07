@@ -1,5 +1,6 @@
 package cloth.builtin.attachments
 
+import cloth.builtin.BuiltinOverload
 import cloth.builtin.BuiltinParameter
 import cloth.data.CArray
 import cloth.data.CNullable
@@ -24,6 +25,11 @@ internal class StringAttachments(sizeBits: Int) : PrimitiveAttachment(ValueType.
 	val INDEX_OF = valueMethod("indexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = false) }
 	val LAST_INDEX_OF = valueMethod("lastIndexOf", listOf(BuiltinParameter.Exact(ValueType.STRING)), CNullable(CUSize(sizeBits))) { context, values -> context.stringFind(values[0], values[1], last = true) }
 	val TO_CHARS = valueMethod("toChars", emptyList(), CArray(ValueType.CHAR)) { context, values -> context.stringChars(values[0]) }
+	val SPLIT = valueMethod(
+		"split",
+		BuiltinOverload(listOf(BuiltinParameter.Exact(ValueType.CHAR)), CArray(ValueType.STRING), { context, values -> context.stringSplit(values[0], values[1]) }),
+		BuiltinOverload(listOf(BuiltinParameter.Exact(ValueType.STRING)), CArray(ValueType.STRING), { context, values -> context.stringSplit(values[0], values[1], stringDelimiter = true) }),
+	)
 	val REPLACE = replacement("replace", firstOnly = false)
 	val REPLACE_FIRST = replacement("replaceFirst", firstOnly = true)
 	val REMOVE_PREFIX = removal("removePrefix", suffix = false)

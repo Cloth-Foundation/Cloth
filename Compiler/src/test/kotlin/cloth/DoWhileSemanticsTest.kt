@@ -10,7 +10,7 @@ import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.*
+import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel

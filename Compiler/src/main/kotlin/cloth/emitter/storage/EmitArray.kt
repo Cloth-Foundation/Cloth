@@ -18,7 +18,10 @@ internal const val rectangularShapeError = "Array shape mismatch: rectangular ar
 
 /** A live descriptor may refer to shared row extents. A witness keeps only the extents. */
 internal data class RetainedArrayShape(val value: LLVMValueRef, val storage: Storage = Storage.LIVE) {
-	enum class Storage { LIVE, WITNESS }
+
+	enum class Storage { LIVE,
+		WITNESS
+	}
 }
 
 /** Array descriptors carry a data address and every dimension's extent, even after an empty axis. */

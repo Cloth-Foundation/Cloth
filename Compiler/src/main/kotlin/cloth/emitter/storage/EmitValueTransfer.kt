@@ -1,10 +1,6 @@
 package cloth.emitter.storage
 
-import cloth.data.CArray
-import cloth.data.CInteger
-import cloth.data.CNullable
-import cloth.data.ValueType
-import cloth.data.isStructValue
+import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.callables.EmitFunctionFrame
@@ -69,12 +65,12 @@ internal class EmitValueTransfer(context: LLVMContextRef, private val builder: L
 
 	/** Capture buffered values before later source effects can replace their storage. */
 	fun snapshot(value: LLVMValueRef, type: ValueType, ownerArena: LLVMValueRef? = null): LLVMValueRef = when {
-		ownerArena != null && type.buffered                              -> transfer(value, type, ownerArena = ownerArena)
+		ownerArena != null && type.buffered                               -> transfer(value, type, ownerArena = ownerArena)
 		type is CInteger || type is CNullable && type.payload is CInteger -> value
-		type.isStructValue || type is CNullable && type.buffered         -> frame.copyValue(value, type)
-		type is CArray                                                   -> transfer(value, type)
-		type == ValueType.STRING                                         -> frame.copyValue(value, type)
-		else                                                             -> value
+		type.isStructValue || type is CNullable && type.buffered          -> frame.copyValue(value, type)
+		type is CArray                                                    -> transfer(value, type)
+		type == ValueType.STRING                                          -> frame.copyValue(value, type)
+		else                                                              -> value
 	}
 
 	/** Adopt a frame-owned array once. Every arena crossing takes an independent copy. */
@@ -131,6 +127,7 @@ internal class EmitValueTransfer(context: LLVMContextRef, private val builder: L
 	}
 
 	private companion object {
+
 		const val bindingShapeError = "Array shape mismatch: assignment must preserve the binding's initial shape"
 	}
 }

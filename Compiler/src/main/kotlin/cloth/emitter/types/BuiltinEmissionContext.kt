@@ -8,12 +8,11 @@ import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
-import cloth.emitter.text.EmitString
-import cloth.emitter.text.EmitStringAccess
-import cloth.emitter.text.EmitStringEdit
-import cloth.emitter.text.EmitStringWhitespace
-import cloth.emitter.text.ProviderEmissionContext
-import cloth.emitter.types.primitives.*
+import cloth.emitter.text.*
+import cloth.emitter.types.primitives.EmitCharCase
+import cloth.emitter.types.primitives.EmitCharMember
+import cloth.emitter.types.primitives.EmitFloatMember
+import cloth.emitter.types.primitives.EmitIntegerMember
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
@@ -33,6 +32,7 @@ internal class BuiltinEmissionContext(
 
 	private val stringAccess by lazy { EmitStringAccess(context, builder, abi, strings, location) }
 	private val stringEdit by lazy { EmitStringEdit(context, builder, abi, strings, location) }
+	private val stringSplit by lazy { EmitStringSplit(context, builder, abi, strings, location) }
 	private val stringWhitespace by lazy { EmitStringWhitespace(context, builder, abi, strings, location) }
 
 	fun writeStdout(text: LLVMValueRef) = strings.write(module, text)
@@ -43,6 +43,7 @@ internal class BuiltinEmissionContext(
 	fun stringSubstring(value: LLVMValueRef, start: LLVMValueRef, end: LLVMValueRef) = stringAccess.substring(value, start, end)
 	fun stringFind(value: LLVMValueRef, needle: LLVMValueRef, last: Boolean) = stringAccess.find(value, needle, last)
 	fun stringChars(value: LLVMValueRef) = stringAccess.toChars(value)
+	fun stringSplit(value: LLVMValueRef, delimiter: LLVMValueRef, stringDelimiter: Boolean = false) = stringSplit.split(value, delimiter, stringDelimiter)
 	fun stringReplace(value: LLVMValueRef, needle: LLVMValueRef, replacement: LLVMValueRef, firstOnly: Boolean) = stringEdit.replace(value, needle, replacement, firstOnly)
 	fun stringRemoveAffix(value: LLVMValueRef, affix: LLVMValueRef, suffix: Boolean) = stringEdit.removeAffix(value, affix, suffix)
 	fun stringTrim(value: LLVMValueRef, start: Boolean, end: Boolean) = stringWhitespace.trim(value, start, end)

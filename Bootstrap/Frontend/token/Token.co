@@ -1,0 +1,37 @@
+pub typedef<class> TokenSpan (def<int> startLine, def<int> startColumn, def<int> endLine, def<int> endColumn, def<SourceFile?> source = null) {
+
+    pub mt<TokenSpan> through(TokenSpan end) {
+        return TokenSpan::new(startLine, startColumn, end.endLine, end.endColumn, source)
+    }
+
+    operator ::str() = #"{startLine}:{startColumn}-{endLine}:{endColumn}"
+
+}
+
+pub typedef<class> Token(def<TokenType> type, def<TokenSpan> span, def<string> lexeme) {}
+
+pub typedef<enum> TokenType {
+
+    EOF,
+    Unknown,
+    NewLine,
+
+    Identifier,
+    Keyword,
+    Operator,
+
+    FloatingPointLiteral,
+    IntegerLiteral,
+    StringLiteral,
+    RawStringLiteral,
+    CharacterLiteral,
+    InterpolationStart,
+    StringSegment,
+    InterpolationOpen,
+    InterpolationClose,
+    InterpolationEnd;
+
+    operator ::str() = self::name
+    operator<string> ==() = self::name.toLower()
+
+}

@@ -2,7 +2,10 @@ package cloth.semantic.declarations
 
 import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.CEnum
+import cloth.data.ClassField
+import cloth.data.EnumField
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
@@ -41,11 +44,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			groups.getOrPut(function.name.lexeme) { mutableListOf() }.add(function)
 		}
 		for (overloads in groups.values) fileScope.declare(FunctionGroupSymbol(overloads.toList()))
-		val enumDefaults = types.enums.values.filterNot { owner ->
-			owner.declaration.operators.any { it.operator?.provider == true && it.name.lexeme == CompilerDataProviders.STR.toString() }
-		}.associateWith(EnumModel::defaultFormatter)
+		val enumNames = types.enums.values.associateWith(EnumModel::nameReader)
 		val enumMembers = types.enums.values.map { owner ->
-			owner to (owner.declaration.operators + owner.fields.map { it.reader } + listOfNotNull(enumDefaults[owner]))
+			owner to (owner.declaration.operators + owner.fields.map { it.reader } + enumNames.getValue(owner))
 		}
 		val methods = (structs.values.map { it to it.declaration.methods } + types.classes.values.map { it to it.declaration.members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
 			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean, Pair<SignatureType, Boolean>?>, MethodSymbol>()
@@ -60,7 +61,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				method
 			}
 		}
-		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods, classes, types.root, types.enums, enumDefaults)
+		val model = DeclarationModel(fileScope, functions.toList(), target, structs, methods, classes, types.root, types.enums, enumNames)
 		for (callable in model.callables) {
 			val scope = LexicalScope(fileScope)
 			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable

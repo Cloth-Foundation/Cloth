@@ -14,8 +14,9 @@ API, object lifetime change, reference counting or GC.
 `READ_ONLY_INDEPENDENT_RESULT` explicitly promises that both the body and argument
 adapters read operands without modifying/publishing/retaining them, and that
 buffered results own independent storage. This concerns storage, not IO purity.
-`PrimitiveAttachment.register` defaults to unknown. The 17 implemented string
-methods use inherited `PrimitiveAttachment.valueMethod` to opt in, sharing the
+`PrimitiveAttachment.register` defaults to unknown. Implemented string methods,
+including [split](../../cloth-strings/references/split-method.md), use inherited
+`PrimitiveAttachment.valueMethod` to opt in, sharing the
 same registration helper with the other primitive attachments. Future mutating, retaining,
 borrowed-result or otherwise unproven methods must not use that helper.
 

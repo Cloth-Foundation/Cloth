@@ -123,7 +123,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		fun unknownCouldCarryReceiver(operand: Expression) = when (operand) {
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral,
 			is ArrayLiteral, is InterpolatedString, is NullLiteral, is TypeCheckExpression,
-				-> false
+				                                    -> false
 
 			is UnaryExpression, is BinaryExpression -> operatorMayCall(operand)
 			else                                    -> true
@@ -159,7 +159,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			null           -> when (value) {
 				is NumberLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is InterpolatedString,
 				is NullLiteral, is ArrayLiteral, is TypeCheckExpression,
-					-> return false
+					                                    -> return false
 
 				is UnaryExpression, is BinaryExpression -> if (!operatorMayCall(value)) return false else null
 				else                                    -> null
@@ -195,7 +195,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return when (value) {
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral,
 			is NullLiteral, is InterpolatedString, is TypeCheckExpression,
-				-> false
+				            -> false
 
 			is ArrayLiteral -> value.elements.any(::formattingMayCall)
 			else            -> true
@@ -358,7 +358,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun expression(value: Expression, initial: Set<Place>, sourceType: Boolean = false): Outcome {
 		val result = when (value) {
-			is NameExpression                          -> {
+			is NameExpression                                          -> {
 				val symbol = binding(value)
 				val deferred = block(symbol)
 				if (deferred != null) {
@@ -375,7 +375,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				}
 			}
 
-			is FieldAccessExpression                   -> {
+			is FieldAccessExpression                                   -> {
 				val after = expression(value.receiver, initial).after
 				if (stable(value) in after) {
 					if (!sourceType) model.presence.fields.add(value)
@@ -384,9 +384,9 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(after)
 			}
 
-			is NullLiteral, is FunctionBlockExpression -> Outcome(initial)
-			is UnaryExpression                         -> expression(value.operand, initial).let { if (value.operator.lexeme == Operators.NOT.toString()) Outcome(it.after, it.no, it.yes) else it }
-			is BinaryExpression                        -> {
+			is NullLiteral, is FunctionBlockExpression                 -> Outcome(initial)
+			is UnaryExpression                                         -> expression(value.operand, initial).let { if (value.operator.lexeme == Operators.NOT.toString()) Outcome(it.after, it.no, it.yes) else it }
+			is BinaryExpression                                        -> {
 				val op = value.operator.lexeme
 				val test = Operators.fromCharacter(op) in OperatorRules.classComparisons && (value.left is NullLiteral || value.right is NullLiteral)
 				val left = expression(value.left, initial, sourceType = test)
@@ -419,7 +419,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				}
 			}
 
-			is ElvisExpression                         -> {
+			is ElvisExpression                                         -> {
 				val left = expression(value.left, initial, sourceType = true)
 				val symbol = stable(value.left)
 				val present = if (symbol == null) left.after else left.after + symbol
@@ -435,7 +435,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(after)
 			}
 
-			is IfExpression                            -> {
+			is IfExpression                                            -> {
 				var remaining = initial
 				var reachable = true
 				val continuing = mutableListOf<Set<Place>>()
@@ -452,16 +452,16 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(common(continuing, initial))
 			}
 
-			is ProviderAccessExpression                -> {
+			is ProviderAccessExpression                                -> {
 				val annotation = stable(value.receiver)?.takeIf { it.path.isEmpty() }?.root?.declaredType
 				val scalarSize = value.name.lexeme == CompilerDataProviders.SIZE.toString() && annotation?.hasNullability == true && annotation.arraySuffixes.isEmpty() && annotation.name.lexeme != Keywords.STRING.toString()
 				val outcome = expression(value.receiver, initial, sourceType = value.name.lexeme == CompilerDataProviders.TYPE.toString() || scalarSize)
 				if (value.name.lexeme == CompilerDataProviders.STR.toString() && formattingMayCall(value.receiver)) Outcome(forgetAliases(outcome.after)) else outcome
 			}
 
-			is TypeReceiverExpression                  -> Outcome(initial)
-			is CastExpression                          -> expression(value.operand, initial)
-			is TypeCheckExpression                     -> {
+			is TypeReceiverExpression                                  -> Outcome(initial)
+			is CastExpression                                          -> expression(value.operand, initial)
+			is TypeCheckExpression                                     -> {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
 				val subject = stable(value.operand)?.takeIf { it.path.isEmpty() && value.operand is NameExpression }
@@ -470,7 +470,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				else Outcome(after, after + subject + subject.copy(narrowed = target), after)
 			}
 
-			is CallExpression                          -> {
+			is CallExpression                                          -> {
 				val after = value.arguments.fold(initial) { facts, arg -> expression(arg, facts).after }
 				val remaining = forget(after, implicitMethodWrites(value))
 				val group = model.declarations.candidatesOf(value)
@@ -478,7 +478,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(if (group is BuiltinGroupSymbol && !(formats && value.arguments.any(::formattingMayCall))) remaining else forgetAliases(remaining))
 			}
 
-			is MemberCallExpression                    -> {
+			is MemberCallExpression                                    -> {
 				val before = expression(value.receiver, initial).after
 				val after = value.arguments.fold(before) { facts, arg -> expression(arg, facts).after }
 				val candidates = methods(value)
@@ -497,17 +497,17 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(if (candidates.isEmpty()) remaining else forgetAliases(remaining))
 			}
 
-			is ClassCreationExpression                 -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
-			is ClassDeletionExpression                 -> Outcome(forgetAliases(expression(value.receiver, initial).after))
-			is StateCallExpression                     -> Outcome(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after })
+			is ClassCreationExpression                                 -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
+			is ClassDeletionExpression                                 -> Outcome(forgetAliases(expression(value.receiver, initial).after))
+			is StateCallExpression                                     -> Outcome(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after })
 			is ResultListExpression, is ArrayLiteral, is StructLiteral -> Outcome(value.eagerOperands().fold(initial) { facts, item -> expression(item, facts).after })
-			is IndexExpression -> expression(value.index, expression(value.array, initial).after)
-			is InterpolatedString                      -> Outcome(value.parts.fold(initial) { facts, part ->
+			is IndexExpression                                         -> expression(value.index, expression(value.array, initial).after)
+			is InterpolatedString                                      -> Outcome(value.parts.fold(initial) { facts, part ->
 				val after = expression(part, facts).after
 				if (formattingMayCall(part)) forgetAliases(after) else after
 			})
 
-			else                                       -> Outcome(initial)
+			else                                                       -> Outcome(initial)
 		}
 		if (operatorMayCall(value)) return Outcome(forgetAliases(result.after))
 		when (value) {
@@ -527,7 +527,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val hint = receiverHint(value.receiver)
 				val sources = methods(value, hint)
 				val primitives = if (hint is CMemberType) emptyList() else PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
-				if ((sources.isNotEmpty() || primitives.isNotEmpty()) && presentReturns(sources) && primitives.all { it.overload.returns !is CNullable && it.overload.returns != ValueType.VOID }) presentResults.add(value)
+				if ((sources.isNotEmpty() || primitives.isNotEmpty()) && presentReturns(sources) && primitives.all { member -> member.overloads.all { it.returns !is CNullable && it.returns != ValueType.VOID } }) presentResults.add(value)
 			}
 
 			else                                                                                                                                                                                                                                                         -> Unit

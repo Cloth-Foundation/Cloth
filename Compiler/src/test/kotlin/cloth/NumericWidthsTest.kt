@@ -10,11 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.assertContains
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class NumericWidthsTest {
 
