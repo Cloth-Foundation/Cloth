@@ -18,8 +18,7 @@ import kotlin.test.assertTrue
 
 internal val nativeTestLayout by lazy { NativeCABI.native().layout }
 
-private fun mainSource(body: String): String =
-	"${Keywords.FUNCTION} main${Operators.PAREN_OPEN}${Operators.PAREN_CLOSE} ${Operators.BRACE_OPEN}\n$body\n${Operators.BRACE_CLOSE}"
+private fun mainSource(body: String): String = "${Keywords.FUNCTION} main${Operators.PAREN_OPEN}${Operators.PAREN_CLOSE} ${Operators.BRACE_OPEN}\n$body\n${Operators.BRACE_CLOSE}"
 
 internal fun parseMain(body: String, name: String = "<input>"): SourceUnit = parseMain(SourceFile(name, body.trimIndent()))
 

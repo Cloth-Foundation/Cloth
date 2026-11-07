@@ -62,6 +62,15 @@ mutable fields and positional reception of the returned struct and a scalar.
 
 ## Boundaries, source, and verification
 
+`EmittedCallable` owns each declared callable's private LLVM signature and
+argument slots. The body and callers share its layout for receiver or
+constructor fields, explicit arguments, result arena and omission flags.
+Source calls evaluate and snapshot operands in written order. Startup, enum
+readers and generated class dispatch pass evaluated values through the same
+packer.
+[Callable layout](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmittedCallable.kt) ·
+[Integration record](../cloth-language/references/development.md#shared-private-call-abi-2026-11-06)
+
 Both `=` and `:=` block declarations work without memoization. Block binding
 assignment/updates are currently rejected (C3042); future replacement and escaping
 capture contracts remain unresolved. `opt<T>` / `final opt<T>`, named arguments and runtime defaults
@@ -69,7 +78,10 @@ are implemented for ordinary functions; read [optional arguments](../cloth-optio
 for binding, declaration scope, evaluation, ranking and ABI invariants.
 [Primitive string member calls](../cloth-strings/references/member-calls.md)
 implement ordinary value receivers with separate typed lookup and shared built-in
-call contracts. The [user-defined method contract](references/semantics.md#user-defined-methods)
+call contracts. [Split's primitive overload group](../cloth-strings/references/split-method.md)
+binds exact char/string arguments and records the chosen body/conversions in
+`BoundBuiltinCall`; it does not alter source-function or numeric overload ranking.
+The [user-defined method contract](references/semantics.md#user-defined-methods)
 records the shared `mt` rules and implicit receiver. The
 [struct methods plan](../../../todo/struct-methods-plan.md) stages the shared
 source callable API and ordinary struct methods. Stage 1 routes source functions

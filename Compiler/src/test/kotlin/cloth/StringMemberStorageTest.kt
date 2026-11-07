@@ -31,7 +31,7 @@ class StringMemberStorageTest {
 	@Test
 	fun `only explicit independent read only contracts permit member reclamation`() {
 		assertEquals(BuiltinStorageContract.UNKNOWN, BuiltinOverload(emptyList(), ValueType.VOID, BuiltinBody { _, _ -> null }).storage)
-		assertTrue(PrimitiveAttachments.all(nativeTestLayout).all { it.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT })
+		assertTrue(PrimitiveAttachments.all(nativeTestLayout).all { member -> member.overloads.all { it.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT } })
 		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<bool> query(string text) = text.isEmpty()"))
 		val (expression, call) = model.types.memberCalls.entries.single()
 		assertTrue(ArrayTemporaryAnalysis(model).canReclaim(expression))

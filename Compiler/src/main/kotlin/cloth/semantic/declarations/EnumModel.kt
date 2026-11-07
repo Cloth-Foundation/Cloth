@@ -10,6 +10,7 @@ import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.type.TypeReference
+import cloth.semantic.flow.eagerOperands
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -41,10 +42,10 @@ internal object EnumModel {
 		})
 	}
 
-	fun defaultFormatter(owner: CEnum): MethodDeclaration {
+	fun nameReader(owner: CEnum): MethodDeclaration {
 		val type = TypeReference(Token(TokenType.Keyword, owner.name.span, Keywords.STRING.toString()))
 		val names = owner.declaration.cases.map { StringLiteral(it.name.lexeme, it.name.span) }
-		return reader(owner, "<${CompilerDataProviders.STR}>", type, names)
+		return reader(owner, "<${CompilerDataProviders.NAME}>", type, names)
 	}
 
 	private fun reader(owner: CEnum, name: String, type: TypeReference, entries: List<Expression>, default: Expression? = null): MethodDeclaration {
@@ -68,12 +69,11 @@ internal object EnumModel {
 	private fun requireConstant(expression: Expression) {
 		when (expression) {
 			is NumberLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is NullLiteral -> Unit
-			is CastExpression                                                                          -> requireConstant(expression.operand)
+			is CastExpression, is ArrayLiteral, is StructLiteral                                       -> Unit
 			is UnaryExpression                                                                         -> if (expression.operand !is NumberLiteral && expression.operand !is BooleanLiteral) invalidConstant(expression)
-			is ArrayLiteral                                                                            -> expression.elements.forEach(::requireConstant)
-			is StructLiteral                                                                           -> expression.fields.forEach(::requireConstant)
 			else                                                                                       -> invalidConstant(expression)
 		}
+		expression.eagerOperands().forEach(::requireConstant)
 	}
 
 	private fun invalidConstant(expression: Expression): Nothing = throw SemanticErrors.enumMember("An enum payload requires a constant literal or explicit cast", expression.span)

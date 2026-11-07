@@ -31,8 +31,7 @@ internal fun structRunners(): List<NativeCABI> = NativeCABI.native().let { abi -
 	if (abi.windows) listOf(abi, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(abi)
 }
 
-internal fun runStructProgram(abi: NativeCABI, source: String, output: Path, status: Int = 0): String =
-	runExecutable(LLVMEmitter(abi).compile(structUnit(source), output), status).replace("\r\n", "\n")
+internal fun runStructProgram(abi: NativeCABI, source: String, output: Path, status: Int = 0): String = runExecutable(LLVMEmitter(abi).compile(structUnit(source), output), status).replace("\r\n", "\n")
 
 class StructEmissionTest {
 

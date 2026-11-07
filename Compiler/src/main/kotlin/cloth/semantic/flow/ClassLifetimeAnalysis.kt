@@ -1,7 +1,6 @@
 package cloth.semantic.flow
 
 import cloth.data.*
-import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
@@ -267,7 +266,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		}
 		model.types.operatorOf(value)?.let { return operatorCall(value, it, value.eagerOperands(), state) }
 		when (value) {
-			is NameExpression           -> {
+			is NameExpression                                                                                  -> {
 				val binding = declarations.names[value] as? BindingSymbol ?: return null
 				fieldBinding(binding, state, value.span)
 				val block = (binding as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
@@ -277,18 +276,18 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (handle != null) return if (model.types.scalarTypeOrNull(value) is CClass) handle.copy(present = true) else handle
 			}
 
-			is FieldAccessExpression    -> {
+			is FieldAccessExpression                                                                           -> {
 				val handle = expression(value.receiver, state)
 				if (model.types.fields[value] is ClassField) check(handle, state, value.span, directSelf(value.receiver))
 			}
 
-			is ClassDeletionExpression  -> {
+			is ClassDeletionExpression                                                                         -> {
 				val handle = expression(value.receiver, state)
 				check(handle, state, value.span)
 				if (handle?.present == true) state.dead.add(handle.identity)
 			}
 
-			is MemberCallExpression     -> {
+			is MemberCallExpression                                                                            -> {
 				val handle = expression(value.receiver, state)
 				val instance = model.selectedMemberCall(value)?.receiver is MethodReceiver.Instance
 				if (instance) check(handle, state, value.receiver.span, directSelf(value.receiver))
@@ -296,7 +295,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (instance && value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.receiver.span, directSelf(value.receiver))
 			}
 
-			is CallExpression           -> {
+			is CallExpression                                                                                  -> {
 				val receiver = declarations.implicitReceivers[value]
 				val handle = receiver?.let { state.bindings[it] }
 				check(handle, state, value.name.span, permitDestruction = true)
@@ -306,16 +305,16 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.name.span, permitDestruction = true)
 			}
 
-			is CallSite                 -> arguments(value.eagerOperands(), state)
-			is ProviderAccessExpression -> {
+			is CallSite                                                                                        -> arguments(value.eagerOperands(), state)
+			is ProviderAccessExpression                                                                        -> {
 				val provider = model.types.providers[value]
 				if (provider?.result is ProviderResult.ClassText) format(value.receiver, state)
 				else if (provider?.receiverForm != cloth.data.ProviderReceiverForm.TYPE) expression(value.receiver, state)
 			}
 
-			is StateCallExpression      -> arguments(value.eagerOperands(), state)
-			is IfExpression             -> return conditional(value, state)
-			is BinaryExpression         -> {
+			is StateCallExpression                                                                             -> arguments(value.eagerOperands(), state)
+			is IfExpression                                                                                    -> return conditional(value, state)
+			is BinaryExpression                                                                                -> {
 				expression(value.left, state)
 				if (!flow.of(value.left).canFallThrough) return null
 				val operator = Operators.fromCharacterRequired(value.operator.lexeme)
@@ -327,15 +326,15 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				else if (truth == null) optional(value.right, state)
 			}
 
-			is ElvisExpression          -> {
+			is ElvisExpression                                                                                 -> {
 				val left = expression(value.left, state)
 				if (!flow.of(value.left).canFallThrough || left?.present == true) return left
 				if (value.left is NullLiteral) return expression(value.fallback, state)
 				optional(value.fallback, state)
 			}
 
-			is CastExpression           -> return expression(value.operand, state).takeIf { newHandle(model.types.scalarTypeOrNull(value)) != null }
-			is TypeCheckExpression      -> {
+			is CastExpression                                                                                  -> return expression(value.operand, state).takeIf { newHandle(model.types.scalarTypeOrNull(value)) != null }
+			is TypeCheckExpression                                                                             -> {
 				model.types.valueCheckOf(value)?.let { return operatorCall(value, it.operator, it.application.eagerOperands(), state) }
 				val handle = expression(value.operand, state)
 				if (model.types.typeChecks[value] is CClass) {
@@ -345,7 +344,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			}
 
 			is UnaryExpression, is IndexExpression, is ArrayLiteral, is StructLiteral, is ResultListExpression -> arguments(value.eagerOperands(), state)
-			is InterpolatedString       -> for (part in value.parts) {
+			is InterpolatedString                                                                              -> for (part in value.parts) {
 				format(part, state)
 				if (!flow.of(part).canFallThrough) break
 			}

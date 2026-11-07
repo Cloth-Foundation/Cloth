@@ -3,6 +3,7 @@ package cloth.emitter.text
 import cloth.data.*
 import cloth.emitter.LLVMTypes
 import cloth.emitter.callables.EmitFunctions
+import cloth.emitter.storage.EmitArray
 import cloth.emitter.storage.EmitNullable
 import cloth.emitter.storage.ObjectAccess
 import cloth.emitter.types.EmitCast
@@ -27,6 +28,7 @@ internal class ProviderEmissionContext(
 ) {
 
 	val target get() = strings.target
+	fun arrayLiteral(element: ValueType, elements: List<() -> LLVMValueRef>): LLVMValueRef = EmitArray(context, builder, strings.abi, target).literal(element, elements)
 	fun integerConstant(value: java.math.BigInteger, type: cloth.data.CInteger): LLVMValueRef = if (type.bits > 64) EmitWideInteger(context, builder, strings.abi).constant(value, type.bits)
 	else LLVM.LLVMConstIntOfString(type.llvmValue(context, target), value.toString(), 10.toByte())
 
@@ -37,14 +39,13 @@ internal class ProviderEmissionContext(
 		return emitter.formatClass(builder, access, checkNotNull(returnArena)())
 	}
 
+	fun enumName(value: LLVMValueRef, type: CEnum): LLVMValueRef = checkNotNull(functions).enumName(builder, value, type, checkNotNull(returnArena))
 	fun formatEnum(value: LLVMValueRef, type: CEnum): LLVMValueRef = checkNotNull(functions).formatEnum(builder, value, type, checkNotNull(returnArena))
 	fun textStorage() = checkNotNull(functions).stringStorage
 	fun withTextArena(arena: LLVMValueRef) = ProviderEmissionContext(context, builder, strings, casts, location, functions, { arena })
 	fun formatArray(value: LLVMValueRef, recipe: ProviderResult.ArrayText): LLVMValueRef = strings.formatArray(value, recipe, this, location)
 	fun nullText(): LLVMValueRef = strings.literal(Keywords.NULL.toString())
-	fun formatNullable(value: LLVMValueRef, recipe: ProviderResult.NullableText): LLVMValueRef =
-		visitNullableText(value, recipe, LLVMTypes(context, target).value(ValueType.STRING),
-			present = { recipe.payloadText.emit(this, it) }, absent = { it })
+	fun formatNullable(value: LLVMValueRef, recipe: ProviderResult.NullableText): LLVMValueRef = visitNullableText(value, recipe, LLVMTypes(context, target).value(ValueType.STRING), present = { recipe.payloadText.emit(this, it) }, absent = { it })
 
 	/** A nested row can consume this recipe directly into its parent's output buffer. */
 	fun visitNullableText(

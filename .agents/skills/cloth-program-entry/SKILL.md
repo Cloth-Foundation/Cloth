@@ -35,6 +35,10 @@ Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 - Windows uses wide UTF-16 startup; Linux/macOS validate native UTF-8. Keep each
   platform adapter behind the shared Cloth interface. Startup owns its buffers;
   cleanup and copies must preserve returned/captured array/string lifetimes.
+- Use the declared callable's layout for startup's call to Cloth `main`. Supply
+  its converted arguments and any caller-owned result arena through the shared
+  packer. The startup adapter owns the native entry signature and cleanup.
+  [Callable layout](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmittedCallable.kt)
 - Normalize main's result to native C int using sign extension or low-bit truncation.
   Void completion is zero. Emit a newline, `PEC: N`, and a newline after the
   entry call returns, then return that same normalized status. An ordinary Cloth

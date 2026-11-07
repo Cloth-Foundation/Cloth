@@ -7,6 +7,17 @@ the parent skill for current implementation boundaries and source/test routing.
 
 ## Compiler data access (phase 3 implemented for supported types)
 
+Enum values expose `::name` for their selected case's declared spelling,
+with ordinary value-receiver and presence rules. This addition was requested
+on 2026-11-06.
+[Enum case-name contract](../../cloth-language/references/value-operators.md#enum-values-and-formatting)
+
+On 2026-11-06 the user also confirmed enum type-only `::values`: a fixed-size
+array of every case once in declaration order, with ordinary independent array
+semantics. Enumeration preserves nominal case identity and does not invoke
+custom equality or formatting.
+[Enum enumeration contract](../../cloth-language/references/value-operators.md#enum-values-and-formatting)
+
 Nullable type receivers now expose the payload's instance-independent providers
 under the [nullable provider contract](nullable-providers.md). Numeric bounds
 return the exact plain payload type; fixed-outer-extent nullable arrays expose

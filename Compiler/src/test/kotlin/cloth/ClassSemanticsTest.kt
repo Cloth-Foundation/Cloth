@@ -1,6 +1,5 @@
 package cloth
 
-import cloth.data.CClass
 import cloth.data.CNullable
 import cloth.data.ValueType
 import cloth.diagnostics.DiagnosticCode
@@ -14,7 +13,10 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.*
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.FieldWriteStatement
-import cloth.semantic.*
+import cloth.semantic.MethodReceiver
+import cloth.semantic.ObjectReceiver
+import cloth.semantic.PlaceStep
+import cloth.semantic.SemanticException
 import cloth.semantic.symbols.ParameterSymbol
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel

@@ -79,9 +79,7 @@ internal class EmitArrayText(
 		val elementText = recipe.elementText
 		val nextPosition = if (elementText is ProviderResult.ArrayText) walk(element, elementText, separated, destination, cache)
 		else if (elementText is ProviderResult.NullableText && elementText.payloadText is ProviderResult.ArrayText) {
-			providers.visitNullableText(element, elementText, memory.size,
-				present = { walk(it.value, elementText.payloadText, separated, destination, cache) },
-				absent = { append(it, separated, destination) })
+			providers.visitNullableText(element, elementText, memory.size, present = { walk(it.value, elementText.payloadText, separated, destination, cache) }, absent = { append(it, separated, destination) })
 		} else {
 			// Formatting may allocate numeric or UTF-8 scratch. Consume it before
 			// restoring the stack; only the integer offset survives the checkpoint.

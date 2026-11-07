@@ -1,6 +1,6 @@
 ---
 name: cloth-strings
-description: Design, explain, or extend Cloth characters, strings, Unicode validation, character and string attachments, interpolation, scalar-indexed methods, literal editing, whitespace methods, typed member calls, and string function boundaries.
+description: Design, explain, or extend Cloth characters, strings, Unicode validation, character and string attachments, interpolation, scalar-indexed methods, literal delimiter splitting, literal editing, whitespace methods, typed member calls, and string function boundaries.
 ---
 
 # Cloth strings and characters
@@ -33,6 +33,10 @@ results; unproven bodies retain `register`'s unknown storage default.
 Read [scalar-indexed string methods](references/scalar-methods.md) for `charAt`,
 `substring`, `indexOf`, `lastIndexOf` and `toChars`, target count specialization,
 UTF-8 traversal, nullable searches and independent buffered results.
+Read [literal delimiter splitting](references/split-method.md) for
+`split(char)` and `split(string)` returning `string[]`, exact primitive overload
+groups, preserved empty pieces, scalar-boundary empty delimiters, checked
+descriptor allocation and independent nested string storage.
 Read [literal string editing](references/editing-methods.md) for `replace`,
 `replaceFirst`, `removePrefix` and `removeSuffix`, scalar-boundary empty matches,
 non-overlapping literal matching, checked measure/fill and independent results.
@@ -57,8 +61,9 @@ returned text, interpolation buffers, or nested string arrays; use
   matching; empty search strings match. Resolve dot calls by receiver type,
   preserve once-only receiver-before-argument value capture and ordinary nullable
   proofs, and reuse bound built-in emission without global LLVM handles.
-  Other unregistered string/integer methods, static/class methods and member overloads remain
-  deferred. Read-only member bodies opt into independent-result storage contracts;
+  Additional primitive APIs remain feature-specific. Split's char/string
+  overload group is implemented through exact typed binding. Read-only member
+  bodies opt into independent-result storage contracts;
   immutable string operands avoid redundant byte copies. Cleanup proofs include
   safe member regions while unknown/captured publication retains frame storage.
 - Scalar position methods use zero-based Unicode scalar indices and exact target
@@ -73,6 +78,14 @@ returned text, interpolation buffers, or nested string arrays; use
   inserts at the start. Affix removal strips one matching boundary or preserves
   contents. Measure output with checked target-byte additions, allocate once,
   then fill from the same stable operand values. Retain unproven frame lifetimes.
+- `split` takes exactly one positional `char` or `string`, returning independent
+  `string[]`. String delimiters match literally, left to right without overlap;
+  an empty delimiter matches every Unicode scalar boundary, preserving leading
+  and trailing empty pieces. Empty input yields one empty string for nonempty
+  delimiters, two for an empty delimiter. Count with checked target arithmetic
+  before allocating descriptors, then fill from private UTF-8 bytes. Preserve
+  fresh-array adoption, fixed receiving shapes and recursive outgoing string
+  copies. Regexes, limits and remove-empty options are not introduced.
 - Whitespace methods use Unicode 17.0.0 White_Space, independent of host locale
   or JVM/C predicates. `isBlank` is true for empty text. Trim variants remove only
   the requested boundaries and return independent strings; internal whitespace,
@@ -101,8 +114,9 @@ and [EmitOutput](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitOutput
 Examples: [Strings.co](../../../examples/Strings.co),
 [Characters.co](../../../examples/Characters.co), and
 [StringFunctions.co](../../../examples/StringFunctions.co).
+[StringAttachments.co](../../../examples/StringAttachments.co) includes delimiter splitting.
 
-Relevant suites are `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
+Relevant suites are `StringSplitTest`, `StringMemberStorageTest`, `StringWhitespaceTest`, `StringEditingTest`, `StringScalarMethodsTest`, `StringAttachmentsTest`, `CharactersTest`, `StringsTest`, `StringInterpolationTest`, `ArrayTextTest`,
 and `StringFunctionTest`. Their existing cases cover Unicode boundaries, raw and
 quoted literals, NULs, formatting, source spans, skipped holes, independent copies,
 recursion and balanced cleanup. Native literal and interpolation fixtures

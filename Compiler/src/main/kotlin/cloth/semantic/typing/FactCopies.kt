@@ -1,6 +1,6 @@
 package cloth.semantic.typing
 
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Registers each table with its owner so snapshots follow the declared facts. */
 internal class FactCopies<Owner> {

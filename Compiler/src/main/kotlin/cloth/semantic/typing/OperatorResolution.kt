@@ -23,21 +23,28 @@ internal class OperatorResolution(
 	private val probe: Boolean,
 ) {
 
-	private enum class FullRank { EXACT, COMPATIBLE, CONTEXTUAL }
-	private enum class ContextRank { EXACT, CAPTURED_WIDTH, COMPATIBLE }
+	private enum class FullRank { EXACT,
+		COMPATIBLE,
+		CONTEXTUAL
+	}
+
+	private enum class ContextRank { EXACT,
+		CAPTURED_WIDTH,
+		COMPATIBLE
+	}
+
 	private data class Candidate(val method: MethodSymbol, val receiver: Int, val types: List<ValueType>)
 
 	private val model = facts.types
 
-	private fun candidates(operator: String, operands: List<ValueType?>): List<Candidate> =
-		operands.flatMapIndexed { index, type ->
-			val owner = type as? CMemberType ?: return@flatMapIndexed emptyList()
-			facts.declarations.operators(owner, operator, index == 1, operands.size - 1).map { method ->
-				val parameters = facts.declaredTypeOf(method).parameters
-				val types = if (index == 0) listOf<ValueType>(method.owner) + parameters else parameters + method.owner
-				Candidate(method, index, types)
-			}
+	private fun candidates(operator: String, operands: List<ValueType?>): List<Candidate> = operands.flatMapIndexed { index, type ->
+		val owner = type as? CMemberType ?: return@flatMapIndexed emptyList()
+		facts.declarations.operators(owner, operator, index == 1, operands.size - 1).map { method ->
+			val parameters = facts.declaredTypeOf(method).parameters
+			val types = if (index == 0) listOf<ValueType>(method.owner) + parameters else parameters + method.owner
+			Candidate(method, index, types)
 		}
+	}
 
 	fun resolve(expression: Expression, operator: Token, operands: List<Expression>): ValueType? {
 		val operation = Operators.fromCharacter(operator.lexeme)
@@ -54,6 +61,7 @@ internal class OperatorResolution(
 			reject { SemanticErrors.operatorMatch(operator, expression.span, emptyList(), ambiguous = false) }
 		}
 		val candidates = candidates(operator.lexeme, ordinary)
+
 		data class Match(val candidate: Candidate, val rank: FullRank, val trial: FunctionSemanticModel.Trial)
 
 		val matches = candidates.mapNotNull { candidate ->
@@ -153,8 +161,7 @@ internal class OperatorResolution(
 		return ResolvedOperator(call, 0)
 	}
 
-	private fun <T> mostSpecific(tier: List<T>, types: (T) -> List<ValueType>): List<T> =
-		tier.filter { match -> tier.none { moreSpecific(types(it), types(match)) } }
+	private fun <T> mostSpecific(tier: List<T>, types: (T) -> List<ValueType>): List<T> = tier.filter { match -> tier.none { moreSpecific(types(it), types(match)) } }
 
 	private fun moreSpecific(left: List<ValueType>, right: List<ValueType>): Boolean {
 		val pairs = left.zip(right)

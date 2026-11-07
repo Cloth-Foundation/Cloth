@@ -21,9 +21,11 @@ strings, whole arrays and scalar/string elements. See the
 [nullable buffer contract](../cloth-nullability/references/buffers.md) for snapshots,
 shape retention, startup and `opt<string[]?> args ?: null`. Nullable rectangular
 rows also work under their [row contract](../cloth-arrays/references/nullable-rows.md).
-Methods, state
-dispatch, constructors and foreign default ABIs remain deferred. Built-ins reject
-named labels until their public labels are defined.
+Struct and class methods and class constructors use the shared optional
+argument transport. Built-ins reject named labels until their public labels
+are defined.
+[Struct method execution](../cloth-functions/references/method-execution.md) ·
+[Class inheritance](../cloth-language/references/class-inheritance.md)
 
 ```cloth
 fn<string, int> nameAndAge(opt<string> name ?: "Jack", int age) = name, age
@@ -63,14 +65,17 @@ qualifiers do not supersede the subsequently accepted ordinary-function contract
   captured writes. Default-local copies remain ordinary independent values.
   Returns may belong to an explicitly nested deferred block, never escape the
   default. Every default is typed and metadata-checked even without omitted calls.
-- [EmitFunctions](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
-  appends one internal i1 omission flag per optional parameter after ordinary
-  parameters and any return arena. The definition-owned prelude branches before
+- The shared callable layout appends one internal i1 omission flag per optional
+  parameter after ordinary parameters and any return arena. Source calls use
+  the resolved omission list, and startup marks its arguments supplied.
+  The definition-owned prelude branches before
   decoding an optional payload, evaluates missing values in declaration order,
   and binds each complete parameter before the next default. Zero placeholders
   are never decoded, shape-checked, copied or freed as supplied values. Presence
-  flags for nullable payloads remain separate. ABI decode/default expressions may
-  branch; phis use their actual continuing predecessor blocks.
+  flags for nullable payloads remain separate. ABI decoding and default
+  expressions may branch. Phis use the actual continuing predecessor blocks.
+  [Callable layout](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmittedCallable.kt) ·
+  [Callee prelude](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
 - Supplied arguments snapshot arrays in written order before entering the callee.
   Defaults use the callee frame's ordinary arena/copy/transfer rules; returned
   buffers copy to the caller arena before frame release. Recursive defaults call

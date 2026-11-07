@@ -30,6 +30,10 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
   runtime linkage, GUI/console startup, sysroots, and ordered user libraries.
   Preserve paths with spaces as arguments; resolve dependencies before creating
   output artifacts. Static system CRT linking on macOS is rejected.
+- The emitter checks the semantic target and callable signatures once before
+  executable linker discovery. Executable IR and binary emission share startup
+  generation and verify the module after startup is added.
+  [LLVM emitter](../../../Compiler/src/main/kotlin/cloth/emitter/LLVM.kt)
 - Keep compilation separate from launch. The shared driver returns the emitted
   path. Build mode reports compilation status and `run` reports the child
   process status after a successful build and launch.
@@ -38,6 +42,15 @@ target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavio
   tests; verify explicit source/output arguments and supported CLI options.
 
 ## Build and run commands
+
+Shuttle is Cloth's project build system. TOML manifest loading, schema validation,
+project/module discovery and project build orchestration belong in the repository's
+`Shuttle` module. Source imports, semantic checking, ABI selection and native
+emission belong to Compiler. The [Shuttle and imports plan](../../../todo/shuttle-and-imports-plan.md)
+proposes a one-way `Shuttle -> Compiler` dependency through an explicit compiler
+request API; Compiler must remain independent of TOML and Shuttle. This is
+planned scope, not implemented project commands. The direct single-source CLI
+below is the current supported interface.
 
 `cloth run examples/Functions.co build/functions` builds and launches a program.
 The first `--` in `run` separates build options from program arguments. The

@@ -3,19 +3,13 @@ package cloth.semantic.typing
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.CallableDeclaration
+import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.semantic.ClassDeletionPlan
-import cloth.semantic.FieldWritePlan
-import cloth.semantic.InstancePlace
-import cloth.semantic.MethodReceiver
-import cloth.semantic.ObjectReceiver
-import cloth.semantic.PlaceStep
-import cloth.semantic.ResultShape
-import cloth.semantic.StoredPlace
+import cloth.semantic.*
 import cloth.semantic.flow.ControlFlow
-import cloth.semantic.storedRoot
 import cloth.semantic.symbols.*
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -70,7 +64,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	fun checkBody() {
 		when (val body = function.body) {
-			is BlockBody -> {
+			is BlockBody      -> {
 				check(body.statements)
 				if (hasReturnContract && returnResults != ResultShape.Empty && facts.controlFlow.of(body).canFallThrough) {
 					throw SemanticErrors.missingReturn(function, body)
@@ -289,14 +283,11 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	override fun callType(expression: CallExpression): ValueType = callResults(expression).let { it.scalarOrNull() ?: throw SemanticErrors.scalarResults(it, expression.span) }
 
-	override fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? =
-		operators.resolve(expression, operator, operands)
+	override fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? = operators.resolve(expression, operator, operands)
 
-	override fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? =
-		operators.classComparison(expression, operation, left, right)
+	override fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? = operators.classComparison(expression, operation, left, right)
 
-	override fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? =
-		operators.valueComparison(expression, operation, owner)
+	override fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = operators.valueComparison(expression, operation, owner)
 
 	override fun validateFormatter(receiver: Expression, result: ProviderResult<*>) {
 		val declarations = facts.declarations

@@ -9,18 +9,8 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
-import cloth.semantic.ClassComparisonPlan
-import cloth.semantic.ForLoopPlan
-import cloth.semantic.OperatorRules
-import cloth.semantic.ProviderAccess
-import cloth.semantic.ReceptionContext
-import cloth.semantic.ReceptionKind
-import cloth.semantic.ReceptionPlan
-import cloth.semantic.ReceptionSlot
-import cloth.semantic.ResultShape
-import cloth.semantic.SemanticException
+import cloth.semantic.*
 import cloth.semantic.flow.ControlFlow
-import cloth.semantic.scalar
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -264,9 +254,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	fun resultOf(expression: Expression, expected: ResultShape? = null, requireValue: Boolean = true, contextualFloat: Boolean = expected?.values?.any { it.suppliesFloatingContext() } == true, allowVoidResult: Boolean = false, receptionContext: ReceptionContext? = null, floatingLiteralType: CFloat? = null): ResultShape {
 		model.metadata.remove(expression)
 		val result = when (expression) {
-			is CallExpression                                                                     -> callResults(expression)
-			is MemberCallExpression                                                               -> intrinsic { memberCallResults(expression, typeOf(expression.receiver)) }
-			is ResultListExpression                                                               -> {
+			is CallExpression                                                     -> callResults(expression)
+			is MemberCallExpression                                               -> intrinsic { memberCallResults(expression, typeOf(expression.receiver)) }
+			is ResultListExpression                                               -> {
 				val values = expression.values.mapIndexed { index, value ->
 					val context = receptionContext?.positional?.getOrNull(index) ?: expected?.values?.getOrNull(index)
 					val floating = contextualFloat && (context == null || context.suppliesFloatingContext())
@@ -275,13 +265,13 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (values.any { it == ValueType.NEVER }) ResultShape.Never else ResultShape.of(values)
 			}
 
-			is IfExpression                                                                       -> conditionalResults(expression, expected, requireValue, contextualFloat, allowVoidResult, receptionContext, floatingLiteralType)
+			is IfExpression                                                       -> conditionalResults(expression, expected, requireValue, contextualFloat, allowVoidResult, receptionContext, floatingLiteralType)
 			is CastExpression if resolveType(expression.target) == ValueType.VOID -> {
 				resultOf(expression.operand, requireValue = false)
 				ResultShape.Empty
 			}
 
-			else                                                                                  -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), contextualFloat, floatingLiteralType))
+			else                                                                  -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), contextualFloat, floatingLiteralType))
 		}
 		val completed = if (completion(expression).canFallThrough) result else ResultShape.Never
 		if (requireValue && !allowVoidResult && completed == ResultShape.Empty) reject { SemanticErrors.voidValue(expression.span) }
@@ -307,7 +297,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 						val next = resultOf((item as ExpressionStatement).expression, expected, contextualFloat = contextualFloat, allowVoidResult = allowVoidResult, receptionContext = receptionContext, floatingLiteralType = floatingLiteralType)
 						for ((position, type) in next.values.withIndex()) if (type.containsNullability) {
 							val context = receptionContext?.positional?.getOrNull(position) ?: receptionContext?.broadcast ?: expected?.values?.getOrNull(position)
-							if (context !is CNullable) reject { SemanticErrors.nullableContext(item.span) }
+							if (context?.containsNullability != true) reject { SemanticErrors.nullableContext(item.span) }
 						}
 						model.recordResult(item, next)
 						if (next != ResultShape.Never) {
@@ -333,7 +323,6 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	fun definitionPlan(group: BindingGroupDeclaration): ReceptionPlan {
-		if (group.initializer is FunctionBlockExpression) throw SemanticErrors.blockReception(group.span)
 		val annotations = group.types.map { annotation ->
 			resolveType(annotation).also { if (it == ValueType.VOID) reject { SemanticErrors.voidType(annotation.span) } }
 		}
@@ -396,7 +385,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val candidates = PrimitiveAttachments.all(model.target).filter { it.definition.name == expression.name.lexeme }
 		if (candidates.size <= 1) return candidates.singleOrNull()
 		// Preserve label/arity priority before inspecting arguments for family hints.
-		if (expression.suppliedArguments.any { it.label != null } || candidates.all { it.parameters.size != expression.arguments.size }) return candidates.first()
+		if (expression.suppliedArguments.any { it.label != null } || candidates.all { member -> member.overloads.none { it.parameters.size == expression.arguments.size + 1 } }) return candidates.first()
 		val hint = expression.arguments.firstNotNullOfOrNull { arrayElementHint(it, contextualFloat = true)?.takeUnless { type -> type == ValueType.NEVER } } ?: expression.arguments.firstNotNullOfOrNull { arrayElementHint(it, contextualFloat = false)?.takeUnless { type -> type == ValueType.NEVER } }
 		return hint?.let { PrimitiveAttachments[it, expression.name.lexeme, model.target] } ?: candidates.first()
 	}
@@ -405,12 +394,20 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) nonReturningMember(expression) else null
 		val selected = attachment ?: throw SemanticErrors.unknownMember(receiver, expression.name)
 		if (expression.suppliedArguments.any { it.label != null }) throw SemanticErrors.argumentBinding("Built-in member methods do not publish named argument labels yet", expression.span)
-		if (expression.arguments.size != selected.parameters.size) throw SemanticErrors.memberArity(expression.name, expression.arguments.size, selected.parameters.size)
-		val arguments = listOf(BuiltinArgument(receiver, selected.receiver)) + expression.arguments.mapIndexed { index, argument ->
-			val parameter = selected.parameters[index]
-			val actual = typeOf(argument, parameter.expectedType, contextualFloat = parameter.expectedType != null)
-			parameter.bind(actual, model.target) ?: throw SemanticErrors.memberArgument(expression.name, argument, actual, parameter)
+		var candidates = selected.overloads.filter { it.parameters.size == expression.arguments.size + 1 }
+		if (candidates.isEmpty()) throw SemanticErrors.memberArity(expression.name, expression.arguments.size, selected.overloads.first().parameters.size - 1)
+		val actualTypes = expression.arguments.mapIndexed { index, argument ->
+			val parameters = candidates.map { it.parameters[index + 1] }.distinct()
+			val expected = parameters.map { it.expectedType }.distinct().singleOrNull()
+			val actual = typeOf(argument, expected, contextualFloat = expected != null)
+			candidates = candidates.filter { it.parameters[index + 1].bind(actual, model.target) != null }
+			if (candidates.isEmpty()) throw SemanticErrors.memberArgument(expression.name, argument, actual, parameters)
+			actual
 		}
+		// A non-continuing operand cannot invoke a body; still check every written argument.
+		if (candidates.size > 1 && actualTypes.none { it == ValueType.NEVER }) throw SemanticErrors.memberAmbiguous(expression.name, expression.span)
+		val overload = candidates.first()
+		val arguments = listOf(BuiltinArgument(receiver, selected.receiver)) + actualTypes.mapIndexed { index, actual -> checkNotNull(overload.parameters[index + 1].bind(actual, model.target)) }
 		if (receiver is CInteger) {
 			val constants = RangeConstants(model)
 			val methods = PrimitiveAttachments.integer(receiver, model.target)
@@ -440,8 +437,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 			}
 		}
-		model.memberCalls[expression] = BoundBuiltinCall(selected.definition, selected.overload, arguments)
-		return ResultShape.of(selected.overload.returns)
+		model.memberCalls[expression] = BoundBuiltinCall(selected.definition, overload, arguments)
+		return ResultShape.of(overload.returns)
 	}
 
 	private fun scalarTypeOf(expression: Expression, expected: ValueType?, contextualFloat: Boolean, floatingLiteralType: CFloat?): ValueType {

@@ -146,6 +146,11 @@ using ordinary comparisons and the existing update/stalled-counter rules.
   NaN/infinity and out-of-range values must follow controlled failure paths.
   [Nullable-target casts](../cloth-nullability/SKILL.md)
   use these same conversions only on the present path; absence stays absent.
+  Enum payloads validate closed numeric casts before emission through the shared
+  `NumericConstants` evaluator. Preserve source-format rounding at every cast,
+  integer wrapping, exact wide truncated values and nullable absence. Ordinary
+  dynamic casts keep their runtime guards.
+  [Enum constant contract](../cloth-language/references/value-operators.md#enum-values-and-formatting)
   A non-nullable target still requires proof or a non-null fallback.
 - Integer powers use wrapping exponentiation by squaring, preserve integer type,
   and reject negative integer exponents. Floating/mixed powers use established
@@ -159,8 +164,11 @@ using ordinary comparisons and the existing update/stalled-counter rules.
 
 ## Source and verification
 
-Range execution/closed constant validation lives in EmitRangeLoop and
-RangeConstants; [source invariants and verification](../cloth-control-flow/references/for-implementation.md#stage-3-numeric-range-execution-2026-11-02)
+Range execution lives in EmitRangeLoop; RangeConstants delegates closed numeric
+facts to [NumericConstants](../../../Compiler/src/main/kotlin/cloth/semantic/typing/NumericConstants.kt).
+The range/attachment facade accepts ordinary non-nullable numeric results, while
+enum validation also evaluates known nullable payloads. Never execute calls or
+infer mutable bindings as constants. [Source invariants and verification](../cloth-control-flow/references/for-implementation.md#stage-3-numeric-range-execution-2026-11-02)
 cover all admitted formats/identities, finite failures and unchanged updates.
 Use `ForRangeTest` when changing numeric emission shared with loops.
 
@@ -183,3 +191,7 @@ Relevant suites: `NumericLiteralsTest`, `NumericLiteralsIntegrationTest`,
 powers, runtime failures and short-circuit guards. Recorded verification lives in
 [development history](../cloth-language/references/development.md#integer-division-and-remainder-guards-2026-10-31);
 run relevant suites for fresh claims and preserve target-specific ABI validation.
+`NumericConstantsTest` verifies exact conversion facts and unknown/nullable
+boundaries. `EnumConstantExpressionsTest` checks compile-time rejection plus
+native x64/x86 and nine-profile IR/object agreement with ordinary cast lowering.
+[Constant-cast integration](../cloth-language/references/development.md#enum-constant-cast-validation-2026-11-07)

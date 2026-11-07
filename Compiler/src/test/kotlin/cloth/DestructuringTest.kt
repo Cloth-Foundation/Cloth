@@ -17,7 +17,8 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.MultiAssignmentStatement
 import cloth.parser.statement.ReturnStatement
-import cloth.semantic.*
+import cloth.semantic.ReceptionKind
+import cloth.semantic.ResultShape
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel
 import org.junit.jupiter.api.Test

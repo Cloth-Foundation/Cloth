@@ -1,6 +1,9 @@
 package cloth.builtin
 
-import cloth.data.*
+import cloth.data.ProviderReceiver
+import cloth.data.ProviderResult
+import cloth.data.ValueType
+import cloth.data.implicitText
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.BuiltinEmissionContext
 import cloth.target.TargetLayout
@@ -69,8 +72,7 @@ internal sealed interface BuiltinParameter {
 
 internal data class BuiltinArgument(val sourceType: ValueType, val parameterType: ValueType, val text: ProviderResult<*>? = null) {
 
-	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef =
-		text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
+	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
 }
 
 /** Contains committed argument conversions, never AST evaluation or name lookup. */

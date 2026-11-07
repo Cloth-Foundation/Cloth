@@ -25,6 +25,16 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   state-call syntax; `int::max()` is not an alternate provider invocation.
 - Value receivers evaluate once even for type-dependent constant results. Type
   receivers require no instance. Do not erase effects during constant emission.
+- Enum value `::name` returns the case's declared spelling as `string`.
+  Use a presence proof for a nullable value. The compiler-owned name reader
+  also supplies default enum formatting.
+  [Enum names](../cloth-language/references/value-operators.md#enum-values-and-formatting)
+- Enum type `::values` returns a fixed-size array of every case in declaration
+  order. Use the `EnumValues` recipe and shared array literal emission; preserve
+  the exact nominal element type, case count and independent array semantics.
+  Enum instances and non-enum types reject this provider. Enumeration invokes
+  no user equality or formatter.
+  [Enum enumeration](../cloth-language/references/value-operators.md#enum-values-and-formatting)
 - Bounds retain the receiver's exact numeric identity. Floating `min` is the
   most negative finite value. Counts, storage sizes, rank, extent and width yield
   exact target `usize`, including on equal-width integer targets.
@@ -35,6 +45,11 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   includes presence and ABI padding, retaining declared binding storage after
   narrowing. Nullable metadata queries expose payload properties while canonical
   text/equality retain nullable identity; keep ordinary capability checks.
+- `ArraySize` reads the target-sized outer count from the value descriptor
+  when the static extent is unknown. Inner extents carry a count and a separate
+  known flag. Tests exercise that layout with zero, maximum and unknown extents.
+  [Buffer counts](../../../Compiler/src/test/kotlin/cloth/BufferCountsTest.kt) ·
+  [Provider results](../../../Compiler/src/test/kotlin/cloth/ProviderResultsTest.kt)
 - `typeinfo` is one built-in value type. Preserve canonical type spelling and
   capability/provenance facts across copies, conditional continuations, captures,
   calls and results. Static known failures stay compile-time errors; unknown
@@ -90,6 +105,9 @@ and [EmitTypeInfo](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitType
 Relevant suites: `PrimitiveTypesTest`, `ProviderResultsTest`, `ProviderSyntaxTest`,
 `ScalarProvidersTest`, `BufferProvidersTest`, `TypeInfoTest`,
 `ProviderIntegrationTest`, and `BufferCountsTest`.
+`EnumValuesTest` verifies type-only enum enumeration, array independence,
+returns/defaults, foreach and receiver/type rejection, with native x64/x86
+execution and verified IR/objects across all nine targets.
 `NullableTypeProvidersTest` additionally checks nullable type bounds/counts,
 receiver rejection, defaults/overloads, native x64/x86 and nine-profile IR/objects.
 The suites exercise exact values, source forms, skipped-code checks, effects,

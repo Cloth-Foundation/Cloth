@@ -119,6 +119,15 @@ member copy elision and proven arena/stack reclamation.
   the poisoned whitespace-result probe covers source frame release and ordered
   outputs. `isBlank` adds no result buffer, while receiver snapshots retain the
   ordinary protected operand lifetime policy and closed cleanup proof.
+- [String splitting](../cloth-strings/references/split-method.md) returns fresh
+  descriptor storage and private copied UTF-8 bytes, including empty pieces.
+  No descriptor may borrow receiver bytes. Preserve recursive outgoing string
+  copies, one-use array adoption and existing closed temporary reclamation.
+  `ArrayTemporaryCleanupTest` poisons returned source frames and checks copied
+  arrays, captured publication, deferred results and repeated split consumers.
+  The string-delimiter overload protects both received descriptors while walking;
+  no result retains delimiter storage. Its separate poisoned-free probe covers
+  dynamic source/delimiter returns and scalar-boundary empty-delimiter arrays.
 
 - Buffered arguments snapshot or transfer their values before later arguments
   execute. Later captured writes must not change a previously received value.

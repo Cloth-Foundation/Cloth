@@ -10,10 +10,11 @@ import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.*
+import cloth.semantic.ProgramAnalyzer
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.settings.CompilerSettings
+import cloth.settings.LinkOptions
 import cloth.target.TargetLayout
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
@@ -155,6 +156,19 @@ class TargetLayoutTest {
 				assertContains(ir, "target datalayout = \"")
 			}
 		}
+	}
+
+	@Test
+	fun `executable validates the model target before linker discovery`(@TempDir directory: Path) {
+		val abi = NativeCABI.forTarget("x86_64-pc-windows-msvc")
+		val program = ProgramAnalyzer(synthetic32()).analyze(unit("fn main() {}"))
+		val emitter = LLVMEmitter(abi, LinkOptions(linker = directory.resolve("missing-linker")))
+		val output = directory.resolve("output/program")
+
+		val error = assertFailsWith<ClothDiagnostic> { emitter.compile(program, output) }
+		assertEquals(DiagnosticCode.INTERNAL, error.diagnosticCode)
+		assertContains(error.summary, "Semantic and emission targets differ")
+		assertFalse(Files.exists(output.parent))
 	}
 
 	@Test

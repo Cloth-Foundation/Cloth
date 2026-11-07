@@ -19,6 +19,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class CastsTest {
+
 	private fun expression(source: String) = assertIs<ExpressionStatement>(parseMain(source).mainStatements.single()).expression
 
 	@Test

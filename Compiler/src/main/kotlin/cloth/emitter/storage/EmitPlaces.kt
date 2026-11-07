@@ -2,6 +2,7 @@ package cloth.emitter.storage
 
 import cloth.data.CNullable
 import cloth.data.CStruct
+import cloth.data.ClassField
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
@@ -10,14 +11,15 @@ import cloth.emitter.callables.EmitFunctions
 import cloth.emitter.types.EmitExpression
 import cloth.semantic.InstancePlace
 import cloth.semantic.MethodReceiver
-import cloth.semantic.ObjectReceiver
 import cloth.semantic.PlaceStep
 import cloth.semantic.StoredPlace
 import cloth.semantic.symbols.BindingSymbol
-import cloth.data.ClassField
 import cloth.semantic.typing.FunctionSemanticModel
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Captures indices in source order and replays destinations whose storage can move. */

@@ -1,6 +1,9 @@
 package cloth
 
-import cloth.diagnostics.*
+import cloth.diagnostics.CliErrors
+import cloth.diagnostics.ClothDiagnostic
+import cloth.diagnostics.DiagnosticReporter
+import cloth.diagnostics.InternalErrors
 import cloth.settings.CompilerSettings
 import cloth.settings.OutputKind
 import cloth.util.ExecutableFormat

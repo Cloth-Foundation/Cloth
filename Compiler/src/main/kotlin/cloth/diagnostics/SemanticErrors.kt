@@ -4,6 +4,7 @@ import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinParameter
 import cloth.data.CFloat
 import cloth.data.CInteger
+import cloth.data.EnumField
 import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.CallableDeclaration
@@ -31,6 +32,19 @@ object SemanticErrors {
 	fun deletedClassAccess(span: TokenSpan) = issue(DiagnosticCode.DELETED_CLASS_ACCESS, "This class object is no longer live for this access", span)
 	fun operatorDeclaration(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_OPERATOR_DECLARATION, message, span)
 	fun enumMember(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ENUM_MEMBER, message, span)
+	private fun enumPayloadSubject(field: EnumField, caseName: Token?): String {
+		val name = "${field.owner.spelling}.${field.name.lexeme}"
+		return if (caseName == null) "Default for enum payload '$name'" else "Enum payload '$name' for case '${caseName.lexeme}'"
+	}
+
+	private fun enumPayloadLabels(field: EnumField, span: TokenSpan, text: String, caseName: Token?) = listOfNotNull(
+		SourceLabel(span, text),
+		SourceLabel(field.declaration.type.span, "field '${field.name.lexeme}' requires '${field.type.spelling}'"),
+		caseName?.let { SourceLabel(it.span, "case '${it.lexeme}' declared here") },
+	)
+
+	fun enumPayloadType(field: EnumField, actual: ValueType, span: TokenSpan, caseName: Token? = null) = SemanticException(DiagnosticCode.INVALID_ENUM_MEMBER, "${enumPayloadSubject(field, caseName)} requires '${field.type.spelling}', got '${actual.spelling}'", enumPayloadLabels(field, span, "has type '${actual.spelling}'", caseName), "Enum payloads must match their field types exactly; numeric type changes require explicit casts.")
+	fun enumPayloadCast(field: EnumField, source: ValueType, target: ValueType, span: TokenSpan, caseName: Token? = null) = SemanticException(DiagnosticCode.INVALID_CAST, "${enumPayloadSubject(field, caseName)} contains an invalid constant numeric cast from '${source.spelling}' to '${target.spelling}'", enumPayloadLabels(field, span, "this numeric conversion would fail", caseName), "Float-to-integer casts require a finite value whose truncated result fits the destination type.")
 	fun operatorMatch(operator: Token, span: TokenSpan, candidates: List<CallableSymbol>, ambiguous: Boolean) = SemanticException(
 		DiagnosticCode.OPERATOR_MATCH,
 		if (ambiguous) "Operator '${operator.lexeme}' is ambiguous" else "No matching overload for operator '${operator.lexeme}'",
@@ -93,7 +107,8 @@ object SemanticErrors {
 	fun immutableParameter(name: Token, declaration: Token) = SemanticException(DiagnosticCode.IMMUTABLE_BINDING, "Cannot reassign ${Keywords.FINAL} parameter '${name.lexeme}'", listOf(SourceLabel(declaration.span, "${Keywords.FINAL} parameter declared here"), SourceLabel(name.span, "reassigned here")), "Remove '${Keywords.FINAL}' from the parameter if it needs reassignment.")
 	fun unknownMember(receiver: ValueType, name: Token) = issue(DiagnosticCode.UNKNOWN_MEMBER, "Type '${receiver.spelling}' has no member method '${name.lexeme}'", name.span, "Use a method registered for this value type.")
 	fun memberArity(name: Token, count: Int, expected: Int) = issue(DiagnosticCode.CALL_ARITY, "Member '${name.lexeme}' takes $expected arguments, got $count", name.span, "The receiver is supplied before ${Operators.DOT}; it is not an explicit argument.")
-	internal fun memberArgument(name: Token, argument: Expression, actual: ValueType, parameter: BuiltinParameter) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Member '${name.lexeme}' requires ${parameter.spelling}, got '${actual.spelling}'", argument.span, "Argument types must match exactly.")
+	internal fun memberArgument(name: Token, argument: Expression, actual: ValueType, parameters: List<BuiltinParameter>) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Member '${name.lexeme}' requires ${parameters.joinToString(" or ") { it.spelling }}, got '${actual.spelling}'", argument.span, "Argument types must match exactly.")
+	internal fun memberAmbiguous(name: Token, span: TokenSpan) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Member call '${name.lexeme}' is ambiguous", span, "Use explicit argument types to select one overload.")
 	private fun callIssue(code: DiagnosticCode, call: CallSite, candidates: List<CallableSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, it.signature.spelling) }, help)
 	fun callArity(call: CallSite, candidates: List<CallableSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
 	fun noMatchingCall(call: CallSite, candidates: List<CallableSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")

@@ -45,6 +45,13 @@ source or creating output. **C0016 / PROGRAM_LAUNCH_FAILED** reports a failure
 to launch the emitted artifact or an interrupted wait. Both return 1. A child
 that completes supplies its own status. [Build and run commands](../cloth-toolchains/SKILL.md#build-and-run-commands)
 
+**C4030 / UNSUPPORTED_FUNCTION_ABI** identifies the rejected type at the
+parameter or result annotation. `EmitFunctions.validate` owns the callable ABI
+capability check. Executable emission checks the target and callable signatures
+before linker discovery.
+[ABI validation](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt) ·
+[Diagnostic](../../../Compiler/src/main/kotlin/cloth/diagnostics/BackendErrors.kt)
+
 **C2007 / FUNCTION_IN_TYPE** rejects `fn` inside a parsed struct body at its
 keyword. C3078–C3082 diagnose duplicate
 types, invalid fields, recursive dependencies, invalid literals and invalid
@@ -61,7 +68,25 @@ C3060, C3077 and C3086 are reserved after removal of the snippet checker.
 **C3083 / DUPLICATE_METHOD** labels matching signatures in one nominal owner.
 **C3084 / RECEIVER_OUTSIDE_METHOD** locates a use of `self` outside method scope.
 **C3095 / INVALID_ENUM_MEMBER** locates invalid enum cases, payload
-declarations, and payload access. [Struct and enum operators](../cloth-language/references/value-operators.md)
+declarations, and payload access. Payload field-type mismatches use this code
+for single and multiple cases and for header defaults, with original value,
+field annotation and applicable case labels. `EnumPayloadTyping` checks defaults
+then supplied case values through the shared checker before generated reader
+bodies; intrinsic literal/cast/array/struct failures retain their own codes.
+`EnumPayloadDiagnosticsTest` covers source labels, first-error ordering and CLI
+failure before output/linker work across all nine target selections.
+[Struct and enum operators](../cloth-language/references/value-operators.md) ·
+[Diagnostic integration](../cloth-language/references/development.md#enum-payload-diagnostic-preflight-2026-11-06)
+
+**C3005 / INVALID_CAST** also rejects an enum payload's closed numeric conversion
+when its rounded source is non-finite or its truncated integer result is out of
+range. It identifies the first failing cast inside nested payload/default values
+with original cast, field annotation and applicable case labels. Numeric constant
+validation preserves wrapping integer casts and skips absent nullable payloads.
+`EnumConstantExpressionsTest` covers first-error source labels and CLI rejection
+before output/linker work for all nine target selections.
+[Constant-cast integration](../cloth-language/references/development.md#enum-constant-cast-validation-2026-11-07)
+
 C3062 rejects lost receiver presence proofs before emission. C3085 was
 retired when [Stage 4 method execution](../cloth-functions/references/method-execution.md)
 was integrated. Runtime bounds and field shape guards still stop at the
@@ -93,6 +118,10 @@ for argument types and C3065 for unsupported named arguments. Preserve intrinsic
 operand/member diagnostics during enclosing overload probes. `StringAttachmentsTest`
 checks source labels and first-error CLI failure before output/linker work; see
 [the member-call record](../cloth-strings/references/member-calls.md).
+Split's exact char/string overload group reports both accepted types in C3049,
+retaining ordinary arity/label priority, original argument spans and intrinsic
+errors inside outer overload trials. `StringSplitTest` checks first-error CLI
+rejection and both selected signatures; see [split](../cloth-strings/references/split-method.md).
 
 **C3070 / INVALID_RANGE_MEMBERSHIP** rejects nonnumeric or incompatible typed
 operands, standalone/stored range values, range-to-range comparisons and known

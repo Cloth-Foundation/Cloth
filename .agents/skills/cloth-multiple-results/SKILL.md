@@ -33,6 +33,10 @@ boundaries. All five stages are complete for implemented value types.
   runtime validation/write order; a discard cannot bypass an array shape guard.
 - Multi-result conditionals use the same continuing-flow rules as
   [control flow](../cloth-control-flow/SKILL.md); unannotated functions still mean void.
+- Declaration resolution reports C3053 for grouped deferred-block
+  initializers before reception typing.
+  [Declaration check](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/DeclarationAnalyzer.kt) ·
+  [Rejection fixtures](../../../Compiler/src/test/kotlin/cloth/MultiReturnParsingTest.kt)
 
 ## Source, evidence, and boundaries
 

@@ -57,6 +57,9 @@ context for an empty literal, use C dimension order (`int[2][3]`), accept suppor
 integer indices, and terminate on invalid executed bounds. Recursive array value
 formatting is implemented for print, interpolation and `::str`; read the
 [output skill](../cloth-output/SKILL.md#recursive-array-text) and its contract.
+Enum type `::values` produces an ordinary fixed-size array of nominal enum cases;
+preserve the same independent copies, return snapshots and foreach traversal.
+[Enum enumeration](../cloth-language/references/value-operators.md#enum-values-and-formatting)
 Snapshot foreach is implemented through Stage 4. Indexed compound updates and
 array equality are not implemented.
 These implementation policies do not settle the remaining language decisions.

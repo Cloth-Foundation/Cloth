@@ -125,7 +125,7 @@ captures implementation scope and regression evidence.
 | --- | --- |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
-| Enum cases and payloads, enum formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
+| Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
 | Bindings, inference, broadcast assignment, updates | [cloth-bindings](../cloth-bindings/SKILL.md) |
 | Numeric literal prefixes/suffixes, integers, floats, booleans, arithmetic, casts | [cloth-numerics](../cloth-numerics/SKILL.md) |
@@ -145,6 +145,7 @@ captures implementation scope and regression evidence.
 | Character simple uppercase/lowercase mappings, char results and unchanged unmapped scalars | [character casing](../cloth-strings/references/character-case.md) |
 | String attachments, typed primitive registry and ordinary value member calls | [string member calls](../cloth-strings/references/member-calls.md) |
 | Scalar string positions, extraction, searches and character-array conversion | [scalar string methods](../cloth-strings/references/scalar-methods.md) |
+| Char/string delimiter overloads, empty pieces and independent string arrays | [string splitting](../cloth-strings/references/split-method.md) |
 | Literal replacement and prefix/suffix removal | [string editing](../cloth-strings/references/editing-methods.md) |
 | Unicode White_Space trimming and blank-string checks | [whitespace methods](../cloth-strings/references/whitespace-methods.md) |
 | Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
@@ -159,6 +160,23 @@ captures implementation scope and regression evidence.
 | Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
+
+- Imports use `using file.path : TypeName, functionName` or `using file.path : *`.
+  The path identifies the actual `.co` file within a configured module; names
+  enter the importing file's scope directly. Types and functions can be listed
+  in any order. Module context comes from Shuttle's `build.toml`; import paths
+  omit module names. This supersedes the earlier mandatory module-prefix decision and
+  dotted per-declaration/wildcard examples. The [import design](references/semantics.md#imports)
+  records the confirmed syntax, allowed circular source imports, ambiguity error
+  for duplicate source-file paths, Shuttle's confirmed TOML ownership, proposed project/module roots, and
+  unresolved discovery and imported-name conflict rules. The
+  [Shuttle and compiler imports plan](../../../todo/shuttle-and-imports-plan.md)
+  separates manifest/build orchestration in `Shuttle` from the compiler's
+  manifest-independent API, source graph and file scopes. Implementation is
+  pending; future stages must add focused imports and Shuttle skills.
+  The compiler currently processes one source unit and has no import parsing
+  or resolution. The legacy `Keywords.USE` spelling does not establish the
+  intended import keyword.
 
 - Basic structs are complete. [Structs.co](../../../examples/Structs.co)
   demonstrates contextual construction, nested writes, independent copies,

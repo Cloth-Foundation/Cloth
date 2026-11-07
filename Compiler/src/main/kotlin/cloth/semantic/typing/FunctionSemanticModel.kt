@@ -38,11 +38,9 @@ class FunctionSemanticModel internal constructor(
 	internal val classDeletions: MutableMap<ClassDeletionExpression, ClassDeletionPlan> = facts.identityMap { it.classDeletions }
 
 	internal val callableBodies get() = declarations.concreteCallables + callables.publishedMethods()
-	internal fun bodyOf(callable: CallableSymbol): FunctionSemanticModel =
-		(callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
+	internal fun bodyOf(callable: CallableSymbol): FunctionSemanticModel = (callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
 
-	internal fun allBodyModels(): Sequence<FunctionSemanticModel> =
-		sequenceOf(this) + callables.publishedMethods().asSequence().map(::bodyOf)
+	internal fun allBodyModels(): Sequence<FunctionSemanticModel> = sequenceOf(this) + callables.publishedMethods().asSequence().map(::bodyOf)
 
 	fun typeOf(expression: Expression) = types.typeOf(expression)
 	fun resultOf(expression: Expression) = types.resultOf(expression)
@@ -72,11 +70,9 @@ class FunctionSemanticModel internal constructor(
 	internal fun selectedConstructor(call: CallSite): ResolvedCall.Source = constructorCalls.getValue(call)
 	internal fun deletionOf(expression: ClassDeletionExpression): ClassDeletionPlan = classDeletions.getValue(expression)
 
-	internal fun specialize(template: MethodSymbol, width: Int): MethodSymbol =
-		callables.specialization(template, width) ?: operatorBodies.specialize(this, template, width)
+	internal fun specialize(template: MethodSymbol, width: Int): MethodSymbol = callables.specialization(template, width) ?: operatorBodies.specialize(this, template, width)
 
-	internal fun reserveSpecialization(template: MethodSymbol, width: Int, signature: FunctionType): MethodSymbol =
-		callables.reserve(template, width, signature)
+	internal fun reserveSpecialization(template: MethodSymbol, width: Int, signature: FunctionType): MethodSymbol = callables.reserve(template, width, signature)
 
 	internal fun publishSpecialization(method: MethodSymbol, body: FunctionSemanticModel) {
 		callables.copyFrom(body.callables)
@@ -103,6 +99,7 @@ class FunctionSemanticModel internal constructor(
 	internal fun trial() = Trial()
 
 	internal inner class Trial {
+
 		val model = fresh(operatorWidth).also { it.copyFrom(this@FunctionSemanticModel) }
 		private var committed = false
 

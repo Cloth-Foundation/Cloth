@@ -19,7 +19,7 @@ class DeclarationModel internal constructor(
 	internal val classes: Map<String, ClassDefinition>,
 	internal val objectRoot: CClass,
 	internal val enums: Map<String, CEnum>,
-	private val enumDefaults: Map<CEnum, MethodDeclaration>,
+	private val enumNames: Map<CEnum, MethodDeclaration>,
 ) {
 
 	internal val callables: List<CallableSymbol> = functions + methods + classes.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
@@ -39,6 +39,7 @@ class DeclarationModel internal constructor(
 	internal fun recordValueTarget(expression: TypeCheckExpression, application: BinaryExpression) {
 		valueTargets[expression] = application
 	}
+
 	internal val classOwners = IdentityHashMap<CallableDeclaration, CClass>().apply {
 		for (callable in callables) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
 	}
@@ -70,15 +71,17 @@ class DeclarationModel internal constructor(
 
 	internal fun equalityOverride(owner: CClass, operation: Operators): MethodSymbol? = operators(owner, operation.toString(), right = false, arity = 1).firstOrNull() ?: if (operation == Operators.NOT_EQUAL) operators(owner, Operators.EQUAL.toString(), right = false, arity = 1).firstOrNull() else null
 
-	internal fun classFormatter(owner: CClass): MethodSymbol? = operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull()
+	internal fun formatterOverride(owner: CMemberType): MethodSymbol? = operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull()
 
-	internal fun enumFormatter(owner: CEnum): MethodSymbol = operators(owner, CompilerDataProviders.STR.toString(), right = false, arity = 0).firstOrNull() ?: symbolOf(enumDefaults.getValue(owner))
+	internal fun enumNameReader(owner: CEnum): MethodSymbol = symbolOf(enumNames.getValue(owner))
+
+	internal fun enumFormatter(owner: CEnum): MethodSymbol = formatterOverride(owner) ?: enumNameReader(owner)
 
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
 		is CArray    -> formattingMayCallUserCode(type.element)
-		is CClass    -> classes.values.any { type.accepts(it.owner) && classFormatter(it.owner) != null }
-		is CEnum     -> type !in enumDefaults
+		is CClass    -> classes.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
+		is CEnum     -> formatterOverride(type) != null
 		else         -> false
 	}
 

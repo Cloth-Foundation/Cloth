@@ -6,7 +6,7 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.semantic.*
+import cloth.semantic.SemanticException
 import cloth.semantic.typing.FunctionAnalyzer
 import com.opencastsoftware.yvette.handlers.graphical.GraphicalReportHandler
 import org.junit.jupiter.api.Test

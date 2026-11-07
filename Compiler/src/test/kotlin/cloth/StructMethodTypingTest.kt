@@ -11,7 +11,9 @@ import cloth.parser.expression.StructLiteral
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ExpressionStatement
-import cloth.semantic.*
+import cloth.semantic.MethodReceiver
+import cloth.semantic.PlaceStep
+import cloth.semantic.SemanticException
 import cloth.semantic.symbols.MethodSymbol
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.ResolvedCall

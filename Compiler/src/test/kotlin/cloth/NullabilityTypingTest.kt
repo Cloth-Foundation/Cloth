@@ -72,6 +72,37 @@ class NullabilityTypingTest {
 	}
 
 	@Test
+	fun `conditional array results receive explicit nullable element and row contexts`() {
+		valid("""
+			fn<int?[2]> literal(bool flag) = if (flag) { [1, null] } else { [null, 2] }
+			fn<int?[2]> typed(bool flag, int?[2] left, int?[2] right) = if (flag) { left } else { right }
+			fn<int?[][]> matrix(bool flag) = if (flag) { [[1, null]] } else { [[null, 2], [3, null]] }
+			fn<int[2]?[2]> rows(bool flag) = if (flag) { [null, [1, 2]] } else { [[3, 4], null] }
+			fn<int?[2], string?[1]> results(bool flag) = if (flag) { [1, null], ["first"] } else { [null, 2], [null] }
+			fn consume(int?[2] input) {}
+			fn test(bool flag, int?[2] existing) {
+				def<int?[2]> value = if (flag) { existing } else { [null, 2] }
+				value = if (flag) { [1, null] } else { existing }
+				consume(if (flag) { existing } else { [null, 2] })
+				def<int?[2]> first, second = if (flag) { existing } else { [null, 2] }
+				def<int?[2], string?[1]> values, names = if (flag) { existing, [null] } else { [null, 2], ["last"] }
+				values, names = if (flag) { [1, null], ["first"] } else { existing, [null] }
+			}
+		""")
+	}
+
+	@Test
+	fun `conditional array contexts preserve explicit nullability strict elements and dimensions`() {
+		for (branches in listOf("{ left } else { right }", "{ right } else { left }", "{ left } else { left }")) {
+			failure("fn test(bool flag, int?[2] left, int?[2] right) { def inferred = if (flag) $branches }", DiagnosticCode.EXPLICIT_NULLABLE_TYPE)
+		}
+		failure("fn test(bool flag, int?[2] input) { def<int[2]> result = if (flag) { input } else { input } }", DiagnosticCode.EXPLICIT_NULLABLE_TYPE)
+		failure("fn<int?[2]> wrong(bool flag, string?[2] input) = if (flag) { input } else { input }", DiagnosticCode.RETURN_TYPE)
+		failure("fn<int?[2]> wrong(bool flag, int[2] input) = if (flag) { input } else { input }", DiagnosticCode.RETURN_TYPE)
+		failure("fn<int?[2]> wrong(bool flag) = if (flag) { [1, null] } else { [null, 2, 3] }", DiagnosticCode.INVALID_ARRAY)
+	}
+
+	@Test
 	fun `proofs narrow individual reads and copies but preserve source metadata`() {
 		val ast = parse("""
 			fn test(int? input) {
