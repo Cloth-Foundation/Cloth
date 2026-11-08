@@ -43,7 +43,7 @@ class ArraysTest {
 	}
 
 	@Test
-	fun `user declarations infer and retain sizes`() {
+	fun `explicit growable declarations retain their type while literals infer fixed sizes`() {
 		val model = check("""
 			fn values() {
 			    def<int[]> unsized = [ 1, 2, 3 ]
@@ -53,7 +53,7 @@ class ArraysTest {
 			}
 		""")
 		val declarations = model.declarations.functions.single().declaration.body as cloth.parser.declaration.BlockBody
-		assertEquals(listOf("int[3]", "float[5]", "bool[3]", "string[2]"), declarations.statements.map { model.types.typeOf(it).spelling })
+		assertEquals(listOf("int[]", "float[5]", "bool[3]", "string[]"), declarations.statements.map { model.types.typeOf(it).spelling })
 		assertFalse((declarations.statements.last() as BindingDeclaration).mutable)
 	}
 

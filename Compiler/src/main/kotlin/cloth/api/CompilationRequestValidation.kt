@@ -20,11 +20,21 @@ internal fun validateCompilationRequest(request: CompilationRequest): List<Sourc
 	options.sysroot?.let { absolute(it, "linkOptions.sysroot") }
 	options.msvcTools?.let { absolute(it, "linkOptions.msvcTools") }
 	options.windowsSDK?.let { absolute(it, "linkOptions.windowsSDK") }
+	return validateSourceModules(request.modules)
+}
+
+/** Canonicalize roots without losing explicit roles or consulting an installation. */
+internal fun validateSourceModules(modules: List<SourceModule>): List<SourceModule> {
 	val ids = mutableSetOf<String>()
 	val roots = mutableListOf<SourceModule>()
-	for (module in request.modules) {
+	var standardLibrary: SourceModule? = null
+	for (module in modules) {
 		if (module.id.isBlank()) throw CompilationErrors.invalid("A source module must have a nonempty id")
 		if (!ids.add(module.id)) throw CompilationErrors.invalid("Duplicate source module id '${module.id}'")
+		if (module.role == SourceModuleRole.STANDARD_LIBRARY) {
+			if (standardLibrary != null) throw CompilationErrors.invalid("At most one source module may have the standard-library role")
+			standardLibrary = module
+		}
 		absolute(module.sourceRoot, "Source root for module '${module.id}'")
 		try {
 			val root = module.sourceRoot.toRealPath()
@@ -32,7 +42,7 @@ internal fun validateCompilationRequest(request: CompilationRequest): List<Sourc
 			for (previous in roots) {
 				if (Files.isSameFile(root, previous.sourceRoot)) throw CompilationErrors.invalid("Source root for module '${module.id}' duplicates module '${previous.id}': ${module.sourceRoot}")
 			}
-			roots.add(SourceModule(module.id, root))
+			roots.add(module.copy(sourceRoot = root))
 		} catch (failure: IOException) {
 			throw CompilationErrors.invalid("Unable to access source root for module '${module.id}': ${module.sourceRoot}", failure)
 		}

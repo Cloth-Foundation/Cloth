@@ -33,8 +33,32 @@ emits the complete model and selects the primary file's own main.
 [Stage 7](../cloth-imports/references/stage-7.md) completes the
 [plan](../../../todo/shuttle-and-imports-plan.md) with a
 [maintained nested project](../../../examples/Shuttle/README.md), Bootstrap's
-current lexer scaffold and available native/foreign-object checks. Ordinary module
+lexer port and available native/foreign-object checks. Ordinary module
 subfolders need no additional manifests, including for nested entry files.
+The [Bootstrap lexer skill](../cloth-bootstrap-lexer/SKILL.md) owns the scanner,
+string-input driver, ownership conventions and current library boundaries.
+
+The [standard-library scaffold](references/standard-library.md) owns the
+`Standard-Library/` submodule layout, repository-root source module, `cloth/`
+source paths and current object-build validation command.
+The [bundled-library Stage 0 contract](../cloth-toolchains/references/standard-library.md)
+owns shared installation/development discovery, options, module attachment and
+reservation rules. [Bundling Stage 2](../cloth-toolchains/references/standard-library-stage-2.md)
+implements shared default selection, command-layer attachment/promotion and
+namespace checks. [Bundling Stage 3](../cloth-toolchains/references/standard-library-stage-3.md)
+adds shared `--stdlib PATH` and `--no-stdlib` selection before project loading,
+including cwd-relative overrides and bypass of broken defaults. Keep installation
+discovery outside the TOML project model and compilation API.
+[Bundling Stage 1](../cloth-toolchains/references/standard-library-stage-1.md)
+implements the build-only Shuttle exporter, reusing ManifestLoader for the pinned
+module, and root Gradle distribution/launcher wiring. It adds no runtime TOML/Git
+discovery to the compilation API. Stage 2 makes sources available automatically
+while preserving explicit imports.
+[Bundling publication](../cloth-toolchains/references/standard-library-stage-5.md)
+adds a maintained project with only an App module, real packaged external-cwd
+builds, target objects and native execution after removing disposable toolchain
+and source copies. The [toolchain guide](../../../docs/standard-library.md)
+documents release layout, overrides, provenance and current scope.
 
 ## Development rules
 

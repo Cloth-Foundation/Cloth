@@ -3,6 +3,7 @@ package cloth.emitter.storage
 import cloth.data.CNullable
 import cloth.data.CStruct
 import cloth.data.ClassField
+import cloth.data.StructField
 import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
@@ -39,7 +40,7 @@ internal class EmitPlaces(
 	private val nullable = EmitNullable(context, builder, abi.layout)
 	private val transfer = expressions.valueTransfer
 
-	internal data class PlaceAddress(val address: LLVMValueRef, val type: ValueType, val parent: ArrayParent? = null)
+	internal data class PlaceAddress(val address: LLVMValueRef, val type: ValueType, val parent: ArrayParent? = null, val struct: StructParent? = null)
 	private data class SavedStep(val step: PlaceStep, val indexType: ValueType? = null, val index: LLVMValueRef? = null)
 	private data class CapturedPath(val steps: List<SavedStep>, val initial: PlaceAddress)
 	private data class CapturedInstance(val access: ObjectAccess, val field: ClassField, val path: CapturedPath)
@@ -61,8 +62,9 @@ internal class EmitPlaces(
 			is PlaceStep.Field -> {
 				val wrapper = location.type as? CNullable
 				val parent = if (wrapper == null) location.address else stored.payloadAddress(location.address, wrapper)
-				val address = stored.fieldAddress(parent, (wrapper?.payload ?: location.type) as CStruct, step.field)
-				PlaceAddress(address, step.field.type)
+				val owner = (wrapper?.payload ?: location.type) as CStruct
+				val address = stored.fieldAddress(parent, owner, step.field)
+				PlaceAddress(address, step.field.type, struct = StructParent(parent, owner, step.field as StructField))
 			}
 
 			is PlaceStep.Index -> {
@@ -70,7 +72,7 @@ internal class EmitPlaces(
 				val array = if (location.type is CNullable) nullable.payload(raw) else raw
 				val index = expressions.emitValue(step.index)
 				val address = arrays.checkedAddress(array, step.array.element, index, expressions.typeOf(step.index))
-				PlaceAddress(address, step.array.element, ArrayParent(array, step.array))
+				PlaceAddress(address, step.array.element, ArrayParent(array, step.array, arrays.checkedIndex(index, expressions.typeOf(step.index))))
 			}
 		}
 		return location
@@ -94,15 +96,17 @@ internal class EmitPlaces(
 			location = when (step) {
 				is PlaceStep.Field -> {
 					val address = if (wrapper == null) location.address else values.payloadAddress(location.address, wrapper)
-					PlaceAddress(values.fieldAddress(address, (wrapper?.payload ?: location.type) as CStruct, step.field), step.field.type)
+					val owner = (wrapper?.payload ?: location.type) as CStruct
+					PlaceAddress(values.fieldAddress(address, owner, step.field), step.field.type, struct = StructParent(address, owner, step.field as StructField))
 				}
 
 				is PlaceStep.Index -> {
 					val raw = values.load(location.address, location.type)
 					val child = location.parent?.let { arrayOps.readChild(raw, it.value, it.type) } ?: raw
 					val array = if (wrapper == null) child else optional.payload(child)
-					val address = arrayOps.checkedAddress(array, step.array.element, savedIndices.next(), checkNotNull(indexType))
-					PlaceAddress(address, step.array.element, ArrayParent(array, step.array))
+					val index = savedIndices.next()
+					val address = arrayOps.checkedAddress(array, step.array.element, index, checkNotNull(indexType))
+					PlaceAddress(address, step.array.element, ArrayParent(array, step.array, arrayOps.checkedIndex(index, checkNotNull(indexType))))
 				}
 			}
 		}
@@ -141,9 +145,9 @@ internal class EmitPlaces(
 
 						val selected = checkNotNull(nullable.choose(dynamic, carrier, { pack(replay(builder, root(), saved)) }, {
 							val array = checkNotNull(before)
-							pack(PlaceAddress(arrays.checkedAddress(array, step.array.element, index, indexType), step.array.element, ArrayParent(array, step.array)))
+							pack(PlaceAddress(arrays.checkedAddress(array, step.array.element, index, indexType), step.array.element, ArrayParent(array, step.array, arrays.checkedIndex(index, indexType))))
 						}))
-						PlaceAddress(LLVMBuildExtractValue(builder, selected, 0, "selected_element"), step.array.element, ArrayParent(LLVMBuildExtractValue(builder, selected, 1, "selected_array"), step.array))
+						PlaceAddress(LLVMBuildExtractValue(builder, selected, 0, "selected_element"), step.array.element, ArrayParent(LLVMBuildExtractValue(builder, selected, 1, "selected_array"), step.array, arrays.checkedIndex(index, indexType)))
 					}
 				}
 			}
@@ -233,8 +237,10 @@ internal class EmitPlaces(
 	fun commit(target: CapturedWrite, value: LLVMValueRef, type: ValueType): LLVMValueRef {
 		fun write(location: PlaceAddress, arena: LLVMValueRef?): LLVMValueRef {
 			location.parent?.let { return transfer.storeElement(location.address, it, value, arena, snapshotBorrowed = true) }
-			val snapshot = transfer.snapshot(value, type, arena)
+			val prepared = location.struct?.let { EmitStructFields(context, builder, abi).prepare(it, value) } ?: value
+			val snapshot = transfer.snapshot(prepared, type, arena)
 			stored.store(location.address, snapshot, type)
+			location.struct?.let { EmitStructFields(context, builder, abi).remember(it, snapshot) }
 			return snapshot
 		}
 

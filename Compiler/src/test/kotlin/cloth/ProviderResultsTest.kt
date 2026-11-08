@@ -324,7 +324,7 @@ class ProviderResultsTest {
 		init {
 			LLVMPositionBuilderAtEnd(builder, entry)
 			frame = EmitFunctionFrame(context, builder, entry, returnType, returnType.llvmValue(context, nativeTestLayout), EmitStringArena(context, module, abi), callerArena)
-			bindings = EmitBindings(context, builder, entry, abi.layout)
+			bindings = EmitBindings(context, builder, entry, abi)
 			strings = EmitString(context, builder, abi)
 			val casts = EmitCast(context, builder, semantics.types, abi)
 			expressions = EmitExpression(context, builder, bindings, casts, strings, EmitPower(context, builder, abi), abi, functions, semantics, cloth.semantic.ResultShape.of(returnType), frame)

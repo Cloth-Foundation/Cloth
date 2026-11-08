@@ -39,7 +39,7 @@ class ImportPublicationTest {
 		for (project in listOf(example, bootstrap)) {
 			val graph = SourceGraphLoader.load(request(project, directory.resolve("not-created/out.o"), kind = OutputKind.OBJECT))
 			val relative = graph.sources.map { project.relativize(it.path).toString().replace('\\', '/') }.toSet()
-			val expected = if (project == example) setOf("app/cli/Main.co", "app/token/Token.co", "support/report/Report.co", "support/math/Even.co", "app/math/Odd.co") else setOf("Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/token/Token.co", "Frontend/source/SourceFile.co")
+			val expected = if (project == example) setOf("app/cli/Main.co", "app/token/Token.co", "support/report/Report.co", "support/math/Even.co", "app/math/Odd.co") else setOf("Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/lexer/LexerError.co", "Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co", "Frontend/token/Operators.co", "Frontend/source/SourceFile.co")
 			assertEquals(expected, relative)
 			if (project == example) assertTrue(graph.edges.any { it.backEdge })
 		}

@@ -17,7 +17,7 @@ import java.math.BigInteger
 internal const val rectangularShapeError = "Array shape mismatch: rectangular arrays require matching dimensions"
 
 /** A live descriptor may refer to shared row extents. A witness keeps only the extents. */
-internal data class RetainedArrayShape(val value: LLVMValueRef, val storage: Storage = Storage.LIVE) {
+internal data class RetainedArrayShape(val value: LLVMValueRef, val storage: Storage = Storage.LIVE, val binding: Boolean = false) {
 
 	enum class Storage { LIVE,
 		WITNESS
@@ -61,7 +61,16 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 			result = withShapePointer(result, type, shape)
 			remember(result, type, shape)
 		}
-		return result
+		result = LLVMBuildInsertValue(builder, result, length, type.capacityIndex, "array_capacity")
+		return LLVMBuildInsertValue(builder, result, LLVMConstNull(LLVMPointerTypeInContext(context, 0)), type.ownerIndex, "borrowed_array")
+	}
+
+	fun capacity(value: LLVMValueRef, type: CArray): LLVMValueRef = LLVMBuildExtractValue(builder, value, type.capacityIndex, "array_capacity")
+	fun owner(value: LLVMValueRef, type: CArray): LLVMValueRef = LLVMBuildExtractValue(builder, value, type.ownerIndex, "array_owner")
+	fun withStorage(value: LLVMValueRef, type: CArray, data: LLVMValueRef, capacity: LLVMValueRef, owner: LLVMValueRef): LLVMValueRef {
+		var result = LLVMBuildInsertValue(builder, value, data, 0, "owned_array_data")
+		result = LLVMBuildInsertValue(builder, result, capacity, type.capacityIndex, "owned_array_capacity")
+		return LLVMBuildInsertValue(builder, result, owner, type.ownerIndex, "owned_array")
 	}
 
 	fun shapePointer(value: LLVMValueRef, type: CArray): LLVMValueRef = LLVMBuildExtractValue(builder, value, type.arrayDimensions.size + 1, "row_shape_pointer")
@@ -91,14 +100,14 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	/** Descriptors can predate a later row write. Merge their inline witnesses with
 	 * the live shared constraints without publishing into a borrowed value.
 	 */
-	fun current(value: LLVMValueRef, type: CArray): LLVMValueRef = if (!type.hasNullableRows) value else mergeShape(value, shapeReference(value, type, shapePointer(value, type)), type, rectangularShapeError)
+	fun current(value: LLVMValueRef, type: CArray, binding: Boolean = false): LLVMValueRef = if (!type.hasNullableRows) value else mergeShape(value, shapeReference(value, type, shapePointer(value, type)), type, rectangularShapeError, binding)
 
 	/** Attach an owned subtree to its receiving value's shared constraints. Never
 	 * use this on borrowed storage: copies need independent shape cells as well as data.
 	 */
-	fun share(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef): LLVMValueRef {
+	fun share(value: LLVMValueRef, type: CArray, pointer: LLVMValueRef, binding: Boolean = false): LLVMValueRef {
 		val actual = current(value, type)
-		val matched = mergeShape(actual, shapeReference(actual, type, pointer), type, rectangularShapeError)
+		val matched = mergeShape(actual, shapeReference(actual, type, pointer), type, rectangularShapeError, binding)
 		remember(matched, type, pointer)
 		if (!type.hasNullableRows) return matched
 		val linked = withShapePointer(matched, type, pointer)
@@ -164,14 +173,17 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	fun shapeWitness(value: LLVMValueRef, type: CArray): LLVMValueRef {
 		val pointer = LLVMPointerTypeInContext(context, 0)
 		var shape = LLVMBuildInsertValue(builder, current(value, type), LLVMConstNull(pointer), 0, "witness_data")
+		shape = LLVMBuildInsertValue(builder, shape, count(0), type.capacityIndex, "witness_capacity")
+		shape = LLVMBuildInsertValue(builder, shape, LLVMConstNull(pointer), type.ownerIndex, "witness_owner")
 		if (type.hasNullableRows) shape = withShapePointer(shape, type, LLVMConstNull(pointer))
 		return shape
 	}
 
 	/** A separate known flag preserves every valid native count, including its maximum. */
-	private fun mergeShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, message: String): LLVMValueRef {
+	private fun mergeShape(value: LLVMValueRef, reference: LLVMValueRef, type: CArray, message: String, binding: Boolean = false): LLVMValueRef {
 		var result = value
 		for (dimension in type.arrayDimensions.indices) {
+			if (binding && dimension == 0 && type.size == null) continue
 			val actual = LLVMBuildExtractValue(builder, value, dimension + 1, "actual_extent")
 			val expected = LLVMBuildExtractValue(builder, reference, dimension + 1, "expected_extent")
 			val actualUnknown = unknown(actual, dimension)
@@ -188,10 +200,10 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		val actual = current(value, type)
 		if (retained != null) {
 			val reference = when (retained.storage) {
-				RetainedArrayShape.Storage.LIVE    -> current(retained.value, type)
+				RetainedArrayShape.Storage.LIVE    -> current(retained.value, type, retained.binding)
 				RetainedArrayShape.Storage.WITNESS -> retained.value
 			}
-			return mergeShape(actual, reference, type, message)
+			return mergeShape(actual, reference, type, message, retained.binding)
 		}
 		var result = actual
 		for ((dimension, expected) in type.arrayDimensions.withIndex()) {
@@ -290,6 +302,9 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		LLVMPositionBuilderAtEnd(builder, ok)
 		return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, memory.resize(converted))
 	}
+
+	/** Narrow only after checkedAddress has validated every original index bit. */
+	fun checkedIndex(index: LLVMValueRef, type: ValueType): LLVMValueRef = if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).loadScalar(index, CUSize(target.sizeBits)) else memory.resize(index)
 
 	fun index(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
 		val value = EmitStoredValue(context, builder, target).load(checkedAddress(array, element, index, indexType), element)

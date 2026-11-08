@@ -23,6 +23,15 @@ and body checking, ABI selection, LLVM verification, linking and output naming.
 The facade performs compilation only: no console reporting, process exit,
 program launch, TOML loading or project discovery.
 
+The [bundled-library contract](../../cloth-toolchains/references/standard-library.md)
+and [Stage 2 record](../../cloth-toolchains/references/standard-library-stage-2.md)
+define implemented `SourceModule.role` values. They convey namespace ownership
+through explicit input while keeping installation lookup in shared command support.
+The public facade still discovers no installation or project configuration.
+[Selection Stage 3](../../cloth-toolchains/references/standard-library-stage-3.md)
+adds command-only override/disable modes; these do not add discovery or selection
+flags to CompilationRequest. Disabled adapters pass their explicitly prepared roots.
+
 ## Request and result
 
 The immutable public types live in `cloth.api`; CompilationRequest defensively
@@ -33,9 +42,10 @@ adapters resolve relative user inputs before constructing requests.
 | --- | --- |
 | `SourceModule.id: String` | Nonblank unique logical identity for configuration and diagnostics; never a required source import prefix. |
 | `SourceModule.sourceRoot: Path` | Existing source directory. Reject duplicate physical roots and IDs, including for direct API callers. |
+| `SourceModule.role: SourceModuleRole` | Defaults to REGULAR. At most one STANDARD_LIBRARY module reserves reached cloth paths; canonicalization retains this role. Two-argument Kotlin/Java constructors remain available. |
 | `CompilationRequest.sourceFile: Path` | Primary source file and beginning of source-graph discovery. Standalone requests can have no configured modules. |
 | `CompilationRequest.outputFile: Path` | Requested artifact path; Compiler computes the actual target-specific final filename. |
-| `CompilationRequest.modules: List<SourceModule>` | Available import roots, default empty. No import root priority. |
+| `CompilationRequest.modules: List<SourceModule>` | Available roots, default empty. Ordinary paths retain ambiguity checks; an explicit standard-library role adds the documented cloth reservation. |
 | `CompilationRequest.outputKind: cloth.settings.OutputKind` | Existing EXECUTABLE or OBJECT identity; default EXECUTABLE. Do not introduce another copy of this enum. |
 | `CompilationRequest.entryFunction: String?` | EXECUTABLE requires `main` in the primary file; default `main`. OBJECT requires null; default null for that kind. |
 | `CompilationRequest.targetTriple: String?` | Existing target selection contract; null selects the native ABI. Compiler chooses and verifies its TargetLayout. |

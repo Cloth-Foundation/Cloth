@@ -4,6 +4,14 @@ Integrated 2026-11-04. The [accepted contract](semantics.md) defines the
 language behavior. Stage 2 checks programs and records plans for lowering.
 The [Stage 3 storage record](local-storage.md) owns the current runtime scope.
 
+[Growable arrays Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md)
+supersedes the original omitted-field-extent rejection described below. Unsized
+struct array fields now type-check.
+[Growable arrays Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md)
+implements their native retained-shape storage and retires that field gate.
+The original basic-struct Stage 2 verification
+remains historical evidence for its published slice.
+
 ```cloth
 pub typedef<struct> Point { int x, int y }
 typedef<struct> Cell { Point? position, int[2] samples }

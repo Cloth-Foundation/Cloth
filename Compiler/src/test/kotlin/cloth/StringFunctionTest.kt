@@ -439,11 +439,15 @@ class StringFunctionTest {
 				val size = LLVMTypes(context, abi.layout).value(abi.sizeType)
 				if (oversizedResult) {
 					// Exercise the internal size guard with an unrepresentable byte-buffer length.
-					val invalid = PointerPointer<LLVMValueRef>(2L).use {
+					val fields = if (oversizedArray) 4 else 2
+					val invalid = PointerPointer<LLVMValueRef>(fields.toLong()).use {
 						it.put(0, LLVMConstNull(pointer)); it.put(1, LLVMConstInt(size, -1, 0))
-						LLVMConstStructInContext(context, it, 2, 0)
+						if (oversizedArray) { it.put(2, LLVMConstInt(size, -1, 0)); it.put(3, LLVMConstNull(pointer)) }
+						LLVMConstStructInContext(context, it, fields, 0)
 					}
-					LLVMReplaceAllUsesWith(LLVMGetParam(LLVMGetNamedFunction(module, if (oversizedArray) "cloth.rt.array.copy.0" else "cloth.rt.string.copy"), 1), invalid)
+					val copy = LLVMGetNamedFunction(module, if (oversizedArray) "cloth.rt.array.copy.0" else "cloth.rt.string.copy")
+					assertFalse(copy == null || copy.isNull, "Missing copy helper")
+					LLVMReplaceAllUsesWith(LLVMGetParam(copy, 1), invalid)
 				}
 				val zero = LLVMConstInt(integer, 0, 0)
 				val one = LLVMConstInt(integer, 1, 0)
@@ -523,7 +527,7 @@ class StringFunctionTest {
 		} finally {
 			Files.deleteIfExists(objectFile)
 		}
-		if (failAllocation || oversizedResult) assertProgram(executable, 1, "Unable to allocate returned ${if (oversizedArray) "array" else "string"} storage" + System.lineSeparator()) else assertProgram(executable)
+		if (failAllocation || oversizedResult) assertProgram(executable, 1, "Unable to allocate ${if (oversizedArray) "array" else "returned string"} storage" + System.lineSeparator()) else assertProgram(executable)
 	}
 
 	private fun native(directory: Path, name: String, source: String, options: LinkOptions = LinkOptions()) {

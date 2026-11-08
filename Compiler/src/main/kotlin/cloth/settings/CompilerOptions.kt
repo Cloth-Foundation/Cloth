@@ -2,6 +2,7 @@ package cloth.settings
 
 import cloth.diagnostics.CliErrors
 import cloth.diagnostics.InternalErrors
+import cloth.diagnostics.StandardLibraryErrors
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
@@ -12,6 +13,7 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 	val linkOptions: LinkOptions
 	val outputKind: OutputKind
 	val targetTriple: String?
+	val standardLibrary: StandardLibrarySelection
 	var debug: Boolean = false
 		private set
 
@@ -20,6 +22,7 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 		var options = LinkOptions()
 		var emission = OutputKind.EXECUTABLE
 		var selectedTarget: String? = null
+		var library: StandardLibrarySelection = StandardLibrarySelection.Default
 		var index = 0
 		var literalArguments = false
 		while (index < args.size) {
@@ -30,6 +33,10 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 			if (!literalArguments && argument == "--debug") {
 				debug = true; continue
 			}
+			if (!literalArguments && argument == "--no-stdlib") {
+				if (library is StandardLibrarySelection.Explicit) throw StandardLibraryErrors.conflictingOptions(usage)
+				library = StandardLibrarySelection.Disabled; continue
+			}
 			if (literalArguments || !argument.startsWith("-")) {
 				positional.add(argument); continue
 			}
@@ -38,6 +45,7 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 				argument.startsWith("-l") -> "-l"
 				else                      -> argument.substringBefore('=')
 			}
+			if (name == "--no-stdlib") throw CliErrors.value(name, argument.substringAfter('='), "no attached value")
 			if (name !in optionNames) throw CliErrors.unknown(argument, usage)
 			val attached = when {
 				name in setOf("-L", "-l") && argument.length > 2 -> argument.substring(2)
@@ -46,6 +54,11 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 			}
 			val value = attached ?: args.getOrNull(index)?.takeUnless { it.startsWith("-") }?.also { index++ }
 			if (value.isNullOrBlank()) throw CliErrors.missing(name, usage)
+			if (name == "--stdlib") {
+				val selected = StandardLibrarySelection.Explicit(path(value))
+				if (library == StandardLibrarySelection.Disabled) throw StandardLibraryErrors.conflictingOptions(usage)
+				library = selected; continue
+			}
 			if (name == "--target") {
 				selectedTarget = value; continue
 			}
@@ -87,11 +100,12 @@ class CompilerOptions(args: List<String>, private val usage: String) {
 		linkOptions = options
 		outputKind = emission
 		targetTriple = selectedTarget
+		standardLibrary = library
 	}
 
 	companion object {
 
-		private val optionNames = setOf("--target", "--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
+		private val optionNames = setOf("--stdlib", "--target", "--emit", "--linker", "--linker-driver", "--runtime", "--subsystem", "-L", "-l", "--library-path", "--library", "--sysroot", "--msvc-tools", "--windows-sdk", "--windows-sdk-version")
 		private fun errorValue(name: String, value: String, expected: String): Nothing = throw CliErrors.value(name, value, expected)
 		private fun path(value: String): Path = try {
 			Path.of(value)

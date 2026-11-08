@@ -60,13 +60,24 @@ multiline block comment produces no newline token. The keyword is Keywords.USING
 The compiler receives explicit SourceModule roots through the
 [compiler request](compiler-api.md). Shuttle supplies those roots from its
 [manifest model](../../shuttle-build/references/semantics.md). The compiler does
-not discover or parse project manifests. The standalone one-file adapter supplies
-no module roots by default; it never guesses roots from the process directory.
+not discover or parse project manifests. The standalone command supplies its
+selected standard-library root by default; it never guesses project roots from
+the source or process directory. Explicit API requests receive only their supplied roots.
+
+The [bundled-library contract](../../cloth-toolchains/references/standard-library.md)
+and [Stage 2 record](../../cloth-toolchains/references/standard-library-stage-2.md)
+own implemented command attachment and the role-based reservation of `cloth.*`.
+For a reached path beginning with exact lowercase `cloth`, a regular-root candidate
+is C3106 even if the selected library lacks the file. All-regular requests retain
+ordinary resolution, including cloth paths. [Selection Stage 3](../../cloth-toolchains/references/standard-library-stage-3.md)
+implements `--no-stdlib`, preserving explicit roots as regular modules, and
+`--stdlib PATH` for a structurally valid replacement library.
 
 For each import, append the relative dotted file path plus `.co` to every
 supplied source root. Require exact case for relative path components and the
 extension on every supported OS. A case-insensitive host must not silently accept
-a spelling that would fail on another target's filesystem.
+a spelling that would fail on another target's filesystem. Apply the following
+candidate rules outside the reservation exception above:
 
 - No candidate is a missing-source diagnostic at the import path. Without any
   roots, an import reports missing module context.

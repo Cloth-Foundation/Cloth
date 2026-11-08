@@ -5,6 +5,23 @@ User-confirmed rules govern intended behavior; historical implementation
 notes and unresolved choices retain their original qualifications. Read
 the parent skill for current implementation boundaries and source/test routing.
 
+## Growable-array revision (2026-11-07)
+
+The user confirmed the [growable-array contract](growable-arrays.md): `T[]`
+will have a resizable outer length, `T[N]` stays fixed, and unannotated literals
+continue to infer sized arrays. Binding-only immutability, rectangular inner
+shape, independent values and foreach snapshots are retained. The contract owns
+the initial mutation API and stored/temporary receiver rules.
+
+This supersedes the historical fixed-initial-outer-shape rules for `[]` below.
+[Stage 0](growable-arrays-stage-0.md) published the contract and baseline.
+[Stage 1](growable-arrays-stage-1.md) implements the type distinction, separate
+count/witness facts, receiver plans/effects and native whole-array replacement
+with different outer counts. [Stage 2](growable-arrays-stage-2.md) adds owned
+capacity, private typed storage operations and executable unsized struct fields,
+including nullable-field witnesses. Public mutator execution remains guarded by
+C4032. Explicit extents and inner shape still constrain receiving values.
+
 ## Array construction and value semantics
 
 Recursive array contents for print, interpolation and `::str` were confirmed on
@@ -45,20 +62,26 @@ Array syntax and construction were confirmed on 2026-10-30:
   error. Function-produced rows with those mismatched lengths are also errors.
 - Replacing a row or a higher-dimensional subarray must preserve that subarray's
   shape so element assignment cannot turn a rectangular array into a jagged one.
-- On 2026-10-31 the user confirmed that `[]` infers and preserves the initial
+- Historically, on 2026-10-31 the user confirmed that `[]` infers and preserves the initial
   shape of an array-valued binding, whether initialized from a literal, a
   function result or another array value. Every dimension remains fixed for
   that binding; whole-array replacement is permitted only with the same shape.
   Known mismatches fail at compile time. Dimensions unknown to the compiler
-  are captured at initialization and checked on assignment at runtime.
+  are captured at initialization and checked on assignment at runtime. The
+  growable revision supersedes permanent capture of a standalone `[]` outer
+  count; this paragraph still describes the Stage 0 compiler implementation.
 - `[]` in a function parameter or return signature leaves that dimension
   unspecified across calls. Each array parameter binding preserves the shape
   it receives for that invocation. Separate calls may receive or return
-  different shapes; storing a result fixes the receiving binding's shape.
+  different shapes; storing a result fixes the receiving binding's shape under
+  the historical implementation. The growable revision permits a `T[]` parameter
+  or stored result to change outer count while preserving its type and inner shape.
 - A function-block declaration such as `def<int[]> compute = { ... }` names
   a computation rather than an initialized array value. Its results may have
   different lengths on different reads. `def a = compute` evaluates it once
-  and preserves the shape of that stored result, without caching future reads.
+  and preserves the shape of that stored result under the historical rule,
+  without caching future reads. Under the growable revision, a result declared
+  `T[]` retains that growable type when stored; known current count does not fix it.
 - On 2026-10-30 the user requested element assignment, including nested indices:
   `arr[0] = 10` and `matrix[1][2] = 10`.
 - The user then confirmed independent array values when copied or passed as

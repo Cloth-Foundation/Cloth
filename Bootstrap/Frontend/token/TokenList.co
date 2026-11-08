@@ -1,0 +1,42 @@
+using token.Token: Token
+
+typedef<class> TokenNode (pub def<Token> token, pub def<TokenNode?> next ?: null)
+
+// A concrete owning collection until ordinary generic collections are available.
+pub typedef<class> TokenList {
+    def<TokenNode?> head = null
+    def<TokenNode?> tail = null
+    def<usize> count = 0
+
+    pub mt append(Token token) {
+        def node = TokenNode::new(token)
+        def<TokenNode?> previous := tail
+        if (previous != null) previous.next = node
+        else head = node
+        tail = node
+        count++
+    }
+
+    pub mt<usize> size() = count
+    pub mt<TokenCursor> cursor() = TokenCursor::new(head)
+
+    ~TokenList {
+        def<TokenNode?> node = head
+        while (node != null) {
+            def<TokenNode?> next := node.next
+            node.token::delete
+            node::delete
+            node = next
+        }
+    }
+}
+
+pub typedef<class> TokenCursor (def<TokenNode?> node) {
+    // Returned tokens are owned by the list. Delete the cursor before its list.
+    pub mt<Token?> next() {
+        def<TokenNode?> current := node
+        if (current == null) return null
+        node = current.next
+        return current.token
+    }
+}

@@ -115,7 +115,7 @@ class NullableRowsTest {
 	fun `first present row constraints survive all null rows copies returns and nested writes`(@TempDir directory: Path) {
 		val cases = listOf("def<int[]?[]> rows = [null, null]; rows[0] = [1, 2]; rows[1] = [3]", "def<int[]?[]> rows = [null, null]; rows[0] = [1, 2]; rows[0] = null; rows[1] = [3]", "def<int[]?[]> rows = [null, null]; rows[0] = [1, 2]; rows[0] = null; def<int[]?[]> copy = rows; copy[1] = [3]", "def<int[]?[]> rows = [null, null]; rows[0] = [1, 2]; rows = [null, null]; rows[1] = [3]", "def<int[]?[]?> rows = null; rows = [null, null]; if (rows != null) { rows[0] = [1, 2]; rows[0] = null }; rows = null; rows = [null, null]; if (rows != null) { rows[1] = [3] }", "def<int[]?[][]> cube = [[null, null], [null, null]]; cube[0][0] = [1, 2]; cube[0][0] = null; cube[1][1] = [3]", "def<int[]?[]> rows = [null, null]; rows[0] = []; rows[0] = null; rows[1] = [3]", "def<int[2]?[3]> rows = [null, null]; rows[0] = dynamic()")
 		for (abi in targets()) for ((index, body) in cases.withIndex()) {
-			val source = "fn<int[]> dynamic() = [1, 2]\nfn main() { $body; println(\"unreachable\") }"
+			val source = "fn<int[]> dynamic() = [1, 2]\nfn<int[]> short() = [3]\nfn main() { ${body.replace("= [3]", "= short()")}; println(\"unreachable\") }"
 			val output = run(LLVMEmitter(abi).compile(parse(source), directory.resolve("bad_${abi.layout.sizeBits}_$index")), 1)
 			assertTrue(output.contains("Array shape mismatch") || output.contains("Array size mismatch"), output)
 			assertFalse(output.contains("unreachable"), output)

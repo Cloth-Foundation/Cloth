@@ -28,6 +28,10 @@ fun main(args: Array<String>) {
 
 /** Build status, or the child process status after a successful `run`. */
 fun runCompiler(args: Array<String>, reporter: DiagnosticReporter = DiagnosticReporter()): Int {
+	if (args.toList() in listOf(listOf("--help"), listOf("-h"), listOf("run", "--help"), listOf("run", "-h"))) {
+		println(CompilerSettings.usage)
+		return 0
+	}
 	val run = args.firstOrNull() == "run"
 	val separator = args.indexOf("--").takeIf { it >= 0 } ?: args.size
 	val debug = "--debug" in args.take(separator)

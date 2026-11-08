@@ -32,6 +32,8 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val providers: MutableMap<ProviderAccessExpression, ProviderAccess> = facts.identityMap { it.providers }
 	private val interpolationText: MutableMap<Expression, ProviderResult<*>> = facts.identityMap { it.interpolationText }
 	internal val memberCalls: MutableMap<MemberCallExpression, BoundBuiltinCall> = facts.identityMap { it.memberCalls }
+	internal val arrayMutations: MutableMap<MemberCallExpression, ArrayMutationPlan> = facts.identityMap { it.arrayMutations }
+	internal val arrayShapes: MutableMap<Expression, List<java.math.BigInteger?>> = facts.identityMap { it.arrayShapes }
 	internal val operatorCalls: MutableMap<Expression, ResolvedOperator> = facts.identityMap { it.operatorCalls }
 	internal val projectedOperands: MutableMap<NameExpression, ProjectedOperand> = facts.identityMap { it.projectedOperands }
 	internal val operatorContexts: MutableMap<Expression, ResolvedOperatorContext> = facts.identityMap { it.operatorContexts }

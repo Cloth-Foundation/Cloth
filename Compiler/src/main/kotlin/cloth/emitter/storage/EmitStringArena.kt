@@ -10,7 +10,8 @@ import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Invocation-owned return buffers. This is temporary value storage, not object ownership or GC.
- * Each allocation contains a next pointer, alignment padding and bytes; releasing a frame frees the list.
+ * Each allocation contains a next pointer, optional resource cleanup, padding and bytes.
+ * Resource cleanup releases owned descendants before the allocation itself is freed.
  * The private copy ABI takes a caller's head slot and always copies before the callee exits.
  */
 internal class EmitStringArena(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val target: TargetLayout = abi.layout) {
@@ -21,7 +22,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	private val text = types.value(ValueType.STRING)
 	private val byte = LLVMInt8TypeInContext(context)
 	private val nullPointer get() = LLVMConstNull(pointer)
-	private val arrayCopies = mutableMapOf<CArray, Pair<LLVMTypeRef, LLVMValueRef>>()
+	internal val arrays by lazy { EmitArrayStorage(context, module, abi, this, target) }
 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
@@ -33,90 +34,27 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val memory = EmitMemory(context, builder, abi, target)
 				memory.elementBytes(memory.count(1), storage, "Unable to allocate struct storage")
 			} else LLVMConstInt(size, LLVMABISizeOfType(layout, storage), 0)
-			val raw = EmitArray(context, builder, abi, target).descriptor(value, bytes)
+			val raw = EmitMemory(context, builder, abi, target).bytes(value, bytes)
 			val copied = LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, if (valueType is CStruct) "copied_struct" else "returned_integer")
 			if (valueType is CStruct) copyStructBuffers(builder, destination, copied, valueType)
 			return copied
 		}
 		if (valueType == ValueType.STRING) return copy(builder, destination, value)
 		if (valueType !is CArray) return value
-		val (type, function) = arrayCopies[valueType] ?: run {
-			val arrayType = types.value(valueType)
-			val type = signature(arrayType, pointer, arrayType)
-			val function = LLVMAddFunction(module, "cloth.rt.array.copy.${arrayCopies.size}", type)
-			LLVMSetLinkage(function, LLVMInternalLinkage)
-			arrayCopies[valueType] = type to function
-			val body = LLVMCreateBuilderInContext(context)
-			try {
-				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
-				LLVMPositionBuilderAtEnd(body, entry)
-				val arena = LLVMGetParam(function, 0)
-				val arrays = EmitArray(context, body, abi, target)
-				val input = arrays.constrain(LLVMGetParam(function, 1), valueType)
-				val length = LLVMBuildExtractValue(body, input, 1, "element_count")
-				val memory = EmitMemory(context, body, abi, target)
-				val bytes = memory.elementBytes(length, types.storage(valueType.element), "Unable to allocate returned array storage")
-				val raw = arrays.descriptor(LLVMBuildExtractValue(body, input, 0, "source"), bytes)
-				val alignment = LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), types.storage(valueType.element))
-				val copied = copyAligned(body, arena, raw, alignment)
-				var result = LLVMBuildInsertValue(body, input, LLVMBuildExtractValue(body, copied, 0, "copied_elements"), 0, "copied_array")
-				if (valueType.hasNullableRows) {
-					val shapeType = BufferLayout.extent(context, target)
-					val shapeBytes = memory.elementBytes(arrays.count(valueType.arrayDimensions.size.toLong()), shapeType, "Unable to allocate returned array shape storage")
-					val shape = copyAligned(body, arena, arrays.descriptor(arrays.shapePointer(input, valueType), shapeBytes), LLVMABIAlignmentOfType(LLVMGetModuleDataLayout(module), shapeType))
-					val pointer = LLVMBuildExtractValue(body, shape, 0, "copied_shape")
-					result = arrays.withShapePointer(result, valueType, pointer)
-					arrays.remember(result, valueType, pointer)
-				}
-				// Wide integer bytes (also nullable payloads) were already copied inline.
-				val payload = (valueType.element as? CNullable)?.payload ?: valueType.element
-				if (valueType.element.buffered && payload !is CInteger) {
-					val allocate = LLVMGetInsertBlock(body)
-					val check = LLVMAppendBasicBlockInContext(context, function, "check")
-					val item = LLVMAppendBasicBlockInContext(context, function, "element")
-					val done = LLVMAppendBasicBlockInContext(context, function, "done")
-					LLVMBuildBr(body, check)
-					LLVMPositionBuilderAtEnd(body, check)
-					val index = LLVMBuildPhi(body, size, "index")
-					LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntULT, index, length, "has_element"), item, done)
-					LLVMPositionBuilderAtEnd(body, item)
-					val address = arrays.address(LLVMBuildExtractValue(body, result, 0, "elements"), valueType.element, index)
-					if (valueType.element.isStructValue) copyStructBuffers(body, arena, address, valueType.element)
-					else {
-						val element = EmitStoredValue(context, body, target).load(address, valueType.element)
-						arrays.storeAt(address, valueType.element, copyValue(body, arena, arrays.readChild(element, input, valueType), valueType.element))
-					}
-					val next = LLVMBuildAdd(body, index, LLVMConstInt(size, 1, 0), "next")
-					val end = LLVMGetInsertBlock(body)
-					LLVMBuildBr(body, check)
-					PointerPointer<LLVMValueRef>(2L).use { values ->
-						PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-							values.put(0, LLVMConstInt(size, 0, 0)); values.put(1, next)
-							blocks.put(0, allocate); blocks.put(1, end)
-							LLVMAddIncoming(index, values, blocks, 2)
-						}
-					}
-					LLVMPositionBuilderAtEnd(body, done)
-				}
-				LLVMBuildRet(body, if (valueType.hasNullableRows) arrays.share(result, valueType, arrays.shapePointer(result, valueType)) else result)
-			} finally {
-				LLVMDisposeBuilder(body)
-			}
-			type to function
-		}
-		return call(builder, type, function, "returned_array", destination, value)
+		return arrays.copy(builder, destination, value, valueType)
 	}
 
 	/** The destination owns its inline bytes already. Replace borrowed buffer
 	 * descriptors before publishing the copy. An absent struct has no live fields.
 	 */
-	private fun copyStructBuffers(builder: LLVMBuilderRef, arena: LLVMValueRef, address: LLVMValueRef, type: ValueType) {
+	internal fun copyStructBuffers(builder: LLVMBuilderRef, arena: LLVMValueRef, address: LLVMValueRef, type: ValueType) {
 		if (!type.buffered) return
 		val stored = EmitStoredValue(context, builder, target)
 		when {
 			type is CStruct                              -> for (field in type.fields) if (field.type.buffered) {
 				val child = stored.fieldAddress(address, type, field)
 				copyStructBuffers(builder, arena, child, field.type)
+				EmitStructFields(context, builder, abi, target).remember(StructParent(address, type, field), stored.load(child, field.type))
 			}
 
 			type is CNullable && type.payload is CStruct -> {
@@ -161,10 +99,71 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 
 	fun copy(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef): LLVMValueRef = copyAligned(builder, destination, value, 1)
 
+	/** Allocate bytes in a reclaimable arena rather than the native call stack. */
+	fun allocate(builder: LLVMBuilderRef, destination: LLVMValueRef, length: LLVMValueRef, alignment: Int = 1): LLVMValueRef = allocate(builder, destination, length, alignment, null)
+
+	internal fun headerBytes(alignment: Int): Int = (target.pointerBits / 8 * 2 + alignment - 1) / alignment * alignment
+	internal fun resourcePayload(builder: LLVMBuilderRef, node: LLVMValueRef, alignment: Int): LLVMValueRef = offset(builder, node, headerBytes(alignment).toLong())
+	private fun offset(builder: LLVMBuilderRef, value: LLVMValueRef, amount: Long): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use { indices ->
+		indices.put(0, LLVMConstInt(size, amount, 1))
+		LLVMBuildInBoundsGEP2(builder, byte, value, indices, 1, "allocation_bytes")
+	}
+	private fun cleanupAddress(builder: LLVMBuilderRef, node: LLVMValueRef) = offset(builder, node, (target.pointerBits / 8).toLong())
+
+	/** The callback receives the node and either a new arena head, or null to destroy it. */
+	internal fun allocate(builder: LLVMBuilderRef, destination: LLVMValueRef, length: LLVMValueRef, alignment: Int, cleanup: LLVMValueRef?): LLVMValueRef {
+		val headerBytes = headerBytes(alignment)
+		val name = "cloth.rt.buffer.allocate.${if (cleanup == null) "align" else "resource.align"}$alignment"
+		val type = if (cleanup == null) signature(pointer, pointer, size) else signature(pointer, pointer, size, pointer)
+		var function = LLVMGetNamedFunction(module, name)
+		if (function == null || function.isNull) {
+			function = LLVMAddFunction(module, name, type)
+			LLVMSetLinkage(function, LLVMInternalLinkage)
+			val body = LLVMCreateBuilderInContext(context)
+			try {
+				LLVMPositionBuilderAtEnd(body, LLVMAppendBasicBlockInContext(context, function, "entry"))
+				val arena = LLVMGetParam(function, 0)
+				val length = LLVMGetParam(function, 1)
+				val nonempty = LLVMBuildSelect(body, LLVMBuildICmp(body, LLVMIntEQ, length, LLVMConstInt(size, 0, 0), "empty"), LLVMConstInt(size, 1, 0), length, "byte_capacity")
+				val header = LLVMConstInt(size, headerBytes.toLong(), 0)
+				val capacity = EmitMemory(context, body, abi, target).add(nonempty, header, "Unable to allocate returned string storage")
+				val mallocType = signature(pointer, size)
+				val node = call(body, mallocType, external("malloc", mallocType), "allocation", capacity)
+				val save = LLVMAppendBasicBlockInContext(context, function, "save")
+				val invalid = LLVMAppendBasicBlockInContext(context, function, "invalid")
+				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntNE, node, nullPointer, "allocated"), save, invalid)
+				LLVMPositionBuilderAtEnd(body, invalid)
+				EmitRuntimeError(context, body, abi).emit("Unable to allocate returned string storage")
+				LLVMPositionBuilderAtEnd(body, save)
+				LLVMBuildStore(body, LLVMBuildLoad2(body, pointer, arena, "previous"), node)
+				LLVMBuildStore(body, if (cleanup == null) nullPointer else LLVMGetParam(function, 2), cleanupAddress(body, node))
+				LLVMBuildStore(body, node, arena)
+				val data = PointerPointer<LLVMValueRef>(1L).use { indices ->
+					indices.put(0, header)
+					LLVMBuildInBoundsGEP2(body, byte, node, indices, 1, "bytes")
+				}
+				LLVMBuildRet(body, data)
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
+		}
+		return if (cleanup == null) call(builder, type, function, "arena_bytes", destination, length)
+		else call(builder, type, function, "arena_resource", destination, length, cleanup)
+	}
+
+	/** Copy before freeing the previous value, including self-assignment. */
+	fun replaceValue(builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, destination: LLVMValueRef, value: LLVMValueRef, type: ValueType): LLVMValueRef {
+		val previous = create(entry)
+		LLVMBuildStore(builder, LLVMBuildLoad2(builder, pointer, destination, "superseded_string"), previous)
+		LLVMBuildStore(builder, nullPointer, destination)
+		val copied = copyValue(builder, destination, value, type)
+		release(builder, previous)
+		return copied
+	}
+
 	fun copyAligned(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, alignment: Int): LLVMValueRef {
 		val pointerBytes = target.pointerBits / 8
-		val headerBytes = (pointerBytes + alignment - 1) / alignment * alignment
-		val name = if (headerBytes == pointerBytes) "cloth.rt.string.copy" else "cloth.rt.buffer.copy.align$alignment"
+		val name = if (alignment <= pointerBytes) "cloth.rt.string.copy" else "cloth.rt.buffer.copy.align$alignment"
 		val type = signature(text, pointer, text)
 		var function = LLVMGetNamedFunction(module, name)
 		if (function == null || function.isNull) {
@@ -173,31 +172,11 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 			val body = LLVMCreateBuilderInContext(context)
 			try {
 				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
-				val allocate = LLVMAppendBasicBlockInContext(context, function, "allocate")
-				val save = LLVMAppendBasicBlockInContext(context, function, "save")
-				val invalid = LLVMAppendBasicBlockInContext(context, function, "invalid")
 				LLVMPositionBuilderAtEnd(body, entry)
 				val arena = LLVMGetParam(function, 0)
 				val input = LLVMGetParam(function, 1)
 				val length = LLVMBuildExtractValue(body, input, 1, "length")
-				val nonempty = LLVMBuildSelect(body, LLVMBuildICmp(body, LLVMIntEQ, length, LLVMConstInt(size, 0, 0), "empty"), LLVMConstInt(size, 1, 0), length, "byte_capacity")
-				val header = LLVMConstInt(size, headerBytes.toLong(), 0)
-				val capacity = EmitMemory(context, body, abi, target).add(nonempty, header, "Unable to allocate returned string storage")
-				LLVMBuildBr(body, allocate)
-				LLVMPositionBuilderAtEnd(body, allocate)
-				val mallocType = signature(pointer, size)
-				val node = call(body, mallocType, external("malloc", mallocType), "allocation", capacity)
-				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntNE, node, nullPointer, "allocated"), save, invalid)
-				LLVMPositionBuilderAtEnd(body, invalid)
-				EmitRuntimeError(context, body, abi).emit("Unable to allocate returned string storage")
-				LLVMPositionBuilderAtEnd(body, save)
-				val previous = LLVMBuildLoad2(body, pointer, arena, "previous")
-				LLVMBuildStore(body, previous, node)
-				LLVMBuildStore(body, node, arena)
-				val data = PointerPointer<LLVMValueRef>(1L).use { indices ->
-					indices.put(0, header)
-					LLVMBuildInBoundsGEP2(body, byte, node, indices, 1, "bytes")
-				}
+				val data = allocate(body, arena, length, alignment)
 				LLVMBuildMemCpy(body, data, 1, LLVMBuildExtractValue(body, input, 0, "source"), 1, length)
 				val result = LLVMBuildInsertValue(body, LLVMGetUndef(text), data, 0, "copied_data")
 				LLVMBuildRet(body, LLVMBuildInsertValue(body, result, length, 1, "copied_string"))
@@ -217,6 +196,130 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	 */
 	fun releaseTo(builder: LLVMBuilderRef, arena: LLVMValueRef, checkpoint: LLVMValueRef) {
 		release(builder, arena, checkpoint)
+	}
+
+	private fun dispose(): LLVMValueRef {
+		val type = signature(LLVMVoidTypeInContext(context), pointer)
+		val name = "cloth.rt.buffer.dispose"
+		val existing = LLVMGetNamedFunction(module, name)
+		if (existing != null && !existing.isNull) return existing
+		val function = LLVMAddFunction(module, name, type)
+		LLVMSetLinkage(function, LLVMInternalLinkage)
+		val body = LLVMCreateBuilderInContext(context)
+		try {
+			LLVMPositionBuilderAtEnd(body, LLVMAppendBasicBlockInContext(context, function, "entry"))
+			val node = LLVMGetParam(function, 0)
+			val cleanup = LLVMBuildLoad2(body, pointer, cleanupAddress(body, node), "resource_cleanup")
+			val clean = LLVMAppendBasicBlockInContext(context, function, "cleanup")
+			val free = LLVMAppendBasicBlockInContext(context, function, "free")
+			LLVMBuildCondBr(body, LLVMBuildIsNotNull(body, cleanup, "owns_resource"), clean, free)
+			LLVMPositionBuilderAtEnd(body, clean)
+			call(body, signature(LLVMVoidTypeInContext(context), pointer, pointer), cleanup, "", node, nullPointer)
+			LLVMBuildBr(body, free)
+			LLVMPositionBuilderAtEnd(body, free)
+			call(body, type, external("free", type), "", node)
+			LLVMBuildRetVoid(body)
+		} finally { LLVMDisposeBuilder(body) }
+		return function
+	}
+
+	/** Prepend a slot's chain and update resource owners whose head cell moved. */
+	internal fun moveHead(builder: LLVMBuilderRef, destination: LLVMValueRef, source: LLVMValueRef) {
+		val type = signature(LLVMVoidTypeInContext(context), pointer, pointer)
+		val name = "cloth.rt.buffer.move"
+		var function = LLVMGetNamedFunction(module, name)
+		if (function == null || function.isNull) {
+			function = LLVMAddFunction(module, name, type)
+			LLVMSetLinkage(function, LLVMInternalLinkage)
+			val body = LLVMCreateBuilderInContext(context)
+			try {
+				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
+				val check = LLVMAppendBasicBlockInContext(context, function, "check")
+				val visit = LLVMAppendBasicBlockInContext(context, function, "visit")
+				val rehome = LLVMAppendBasicBlockInContext(context, function, "rehome")
+				val next = LLVMAppendBasicBlockInContext(context, function, "next")
+				val done = LLVMAppendBasicBlockInContext(context, function, "done")
+				LLVMPositionBuilderAtEnd(body, entry)
+				val destination = LLVMGetParam(function, 0)
+				val source = LLVMGetParam(function, 1)
+				val head = LLVMBuildLoad2(body, pointer, source, "moved_head")
+				val previous = LLVMBuildLoad2(body, pointer, destination, "previous_head")
+				LLVMBuildStore(body, LLVMBuildSelect(body, LLVMBuildIsNotNull(body, head, "has_moved_head"), head, previous, "combined_head"), destination)
+				LLVMBuildStore(body, nullPointer, source)
+				LLVMBuildBr(body, check)
+				LLVMPositionBuilderAtEnd(body, check)
+				val node = LLVMBuildPhi(body, pointer, "node")
+				LLVMBuildCondBr(body, LLVMBuildIsNotNull(body, node, "has_allocation"), visit, done)
+				LLVMPositionBuilderAtEnd(body, visit)
+				val callback = LLVMBuildLoad2(body, pointer, cleanupAddress(body, node), "resource_callback")
+				LLVMBuildCondBr(body, LLVMBuildIsNotNull(body, callback, "owns_resource"), rehome, next)
+				LLVMPositionBuilderAtEnd(body, rehome)
+				call(body, type, callback, "", node, destination)
+				LLVMBuildBr(body, next)
+				LLVMPositionBuilderAtEnd(body, next)
+				val following = LLVMBuildLoad2(body, pointer, node, "next_allocation")
+				LLVMBuildStore(body, LLVMBuildSelect(body, LLVMBuildIsNull(body, following, "last_moved_node"), previous, following, "combined_next"), node)
+				LLVMBuildBr(body, check)
+				PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+					values.put(0, head); values.put(1, following); blocks.put(0, entry); blocks.put(1, next)
+					LLVMAddIncoming(node, values, blocks, 2)
+				} }
+				LLVMPositionBuilderAtEnd(body, done)
+				LLVMBuildRetVoid(body)
+			} finally { LLVMDisposeBuilder(body) }
+		}
+		call(builder, type, function, "", destination, source)
+	}
+
+	/** Detach one owned allocation without invalidating any other live arena node.
+	 * Callers may not detach an ancestor of a proven temporary checkpoint.
+	 */
+	private fun detach(builder: LLVMBuilderRef, arena: LLVMValueRef, payload: LLVMValueRef, alignment: Int): LLVMValueRef {
+		val type = signature(pointer, pointer, pointer)
+		val name = "cloth.rt.buffer.detach"
+		var function = LLVMGetNamedFunction(module, name)
+		if (function == null || function.isNull) {
+			function = LLVMAddFunction(module, name, type)
+			LLVMSetLinkage(function, LLVMInternalLinkage)
+			val body = LLVMCreateBuilderInContext(context)
+			try {
+				val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
+				val check = LLVMAppendBasicBlockInContext(context, function, "check")
+				val next = LLVMAppendBasicBlockInContext(context, function, "next")
+				val found = LLVMAppendBasicBlockInContext(context, function, "found")
+				LLVMPositionBuilderAtEnd(body, entry)
+				LLVMBuildBr(body, check)
+				LLVMPositionBuilderAtEnd(body, check)
+				val link = LLVMBuildPhi(body, pointer, "allocation_link")
+				val node = LLVMBuildLoad2(body, pointer, link, "allocation")
+				EmitMemory(context, body, abi, target).guard(LLVMBuildIsNotNull(body, node, "registered_allocation"), "Array storage owner is no longer registered")
+				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntEQ, node, LLVMGetParam(function, 1), "selected_allocation"), found, next)
+				LLVMPositionBuilderAtEnd(body, next)
+				LLVMBuildBr(body, check)
+				PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+					values.put(0, LLVMGetParam(function, 0)); values.put(1, node)
+					blocks.put(0, entry); blocks.put(1, next)
+					LLVMAddIncoming(link, values, blocks, 2)
+				} }
+				LLVMPositionBuilderAtEnd(body, found)
+				LLVMBuildStore(body, LLVMBuildLoad2(body, pointer, node, "next_allocation"), link)
+				LLVMBuildRet(body, node)
+			} finally { LLVMDisposeBuilder(body) }
+		}
+		return call(builder, type, function, "detached_allocation", arena, offset(builder, payload, -headerBytes(alignment).toLong()))
+	}
+
+	internal fun releaseAllocation(builder: LLVMBuilderRef, arena: LLVMValueRef, payload: LLVMValueRef, alignment: Int) {
+		val node = detach(builder, arena, payload, alignment)
+		call(builder, signature(LLVMVoidTypeInContext(context), pointer), dispose(), "", node)
+	}
+
+	internal fun transferAllocation(builder: LLVMBuilderRef, destination: LLVMValueRef, source: LLVMValueRef, payload: LLVMValueRef, alignment: Int) {
+		val node = detach(builder, source, payload, alignment)
+		LLVMBuildStore(builder, LLVMBuildLoad2(builder, pointer, destination, "previous_allocation"), node)
+		LLVMBuildStore(builder, node, destination)
+		val callback = LLVMBuildLoad2(builder, pointer, cleanupAddress(builder, node), "resource_callback")
+		call(builder, signature(LLVMVoidTypeInContext(context), pointer, pointer), callback, "", node, destination)
 	}
 
 	private fun release(builder: LLVMBuilderRef, arena: LLVMValueRef, checkpoint: LLVMValueRef?) {
@@ -243,7 +346,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				LLVMPositionBuilderAtEnd(body, free)
 				val next = LLVMBuildLoad2(body, pointer, node, "next")
 				val freeType = signature(LLVMVoidTypeInContext(context), pointer)
-				call(body, freeType, external("free", freeType), "", node)
+				call(body, freeType, dispose(), "", node)
 				LLVMBuildBr(body, check)
 				PointerPointer<LLVMValueRef>(2L).use { values ->
 					PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->

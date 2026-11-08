@@ -78,9 +78,9 @@ class BufferCountsTest {
 			val countType = CUSize(bits)
 			val row = CArray(CInt(), countType.maximum)
 			val type = CArray(row, 0)
-			assertEquals("{ ptr, i$bits, { i$bits, i1 } }", LLVMPrintTypeToString(type.llvmValue(context, target)).string)
+			assertEquals("{ ptr, i$bits, { i$bits, i1 }, i$bits, ptr }", LLVMPrintTypeToString(type.llvmValue(context, target)).string)
 			assertEquals((bits / 8 * 2).toLong(), LLVMABISizeOfType(LLVMGetModuleDataLayout(module), CString.llvmValue(context, target)))
-			assertEquals((bits / 8 * 4).toLong(), LLVMABISizeOfType(LLVMGetModuleDataLayout(module), type.llvmValue(context, target)))
+			assertEquals((bits / 8 * 6).toLong(), LLVMABISizeOfType(LLVMGetModuleDataLayout(module), type.llvmValue(context, target)))
 			val erased = CArray(CArray(CInt()))
 			val unknown = arrays.descriptor(nullPointer, memory.count(0), erased)
 			val maximum = arrays.descriptor(nullPointer, memory.count(0), type)
@@ -110,7 +110,7 @@ class BufferCountsTest {
 		for (bits in listOf(32, 64)) {
 			val ir = fixture(layout(bits)) {
 				val input = arrays.descriptor(pointer, count)
-				assertEquals(bits, LLVMGetIntTypeWidth(LLVMTypeOf(ProviderResult.StringSize(CUSize(bits)).emit(providers, ProviderReceiver.Value(CString, input)))))
+				assertEquals(bits, LLVMGetIntTypeWidth(LLVMTypeOf(ProviderResult.StringSize(CUSize(bits)).emit(providers, ProviderReceiver.Value(CString, memory.bytes(pointer, count))))))
 				assertEquals(bits, LLVMGetIntTypeWidth(LLVMTypeOf(ProviderResult.ArraySize(CArray(CInt()), CUSize(bits)).emit(providers, ProviderReceiver.Value(CArray(CInt()), input)))))
 				val formatted = strings.interpolate(wide, CInt(64), casts, "test")
 				val character = strings.interpolate(LLVMConstInt(CChar.llvmValue(context, target), 0x1f600, 0), CChar, casts, "test")
@@ -141,9 +141,9 @@ class BufferCountsTest {
 				assertContains(ir, "declare i32 @snprintf(ptr, i32, ptr, ...)")
 				assertContains(ir, "declare i32 @memcmp(ptr, ptr, i32)")
 				// This fixture deliberately gives i64 8-byte alignment with 4-byte pointers.
-				assertContains(ir, "define internal { ptr, i32 } @cloth.rt.buffer.copy.align8")
-				val alignedHelper = ir.substringAfter("define internal { ptr, i32 } @cloth.rt.buffer.copy.align8").substringBefore("\n}")
-				assertContains(alignedHelper, "getelementptr inbounds i8, ptr %allocation, i32 8")
+				assertContains(ir, "call ptr @cloth.rt.buffer.allocate.resource.align8")
+				val alignedAllocation = ir.substringAfter("define internal ptr @cloth.rt.buffer.allocate.resource.align8").substringBefore("\n}")
+				assertContains(alignedAllocation, "getelementptr inbounds i8, ptr %allocation, i32 8")
 			}
 		}
 	}
@@ -253,10 +253,10 @@ class BufferCountsTest {
 						1        -> {
 							val arena = EmitStringArena(context, module, abi)
 							val destination = arena.create(cases[index])
-							arena.copy(builder, destination, arrays.descriptor(nullPointer, memory.constant(memory.maximumBytes)))
+							arena.copy(builder, destination, memory.bytes(nullPointer, memory.constant(memory.maximumBytes)))
 						}
 
-						2        -> strings.concatenate(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
+						2        -> strings.concatenate(memory.bytes(nullPointer, memory.constant(memory.maximum)), strings.literal("x"), "guard test")
 						3        -> arrays.checkedAddress(arrays.descriptor(nullPointer, memory.constant(memory.maximum)), CInt(), LLVMConstInt(LLVMInt64TypeInContext(context), -2, 1), CInt(64))
 						4        -> {
 							val arena = EmitStringArena(context, module, abi)
@@ -275,7 +275,7 @@ class BufferCountsTest {
 							// A synthetic string descriptor exercises only the measure pass;
 							// overflow must terminate before any access to its fake payload.
 							val bytes = if (index == 6) memory.maximumBytes else memory.maximumBytes - BigInteger.ONE
-							val input = arrays.literal(CString, listOf({ arrays.descriptor(nullPointer, memory.constant(bytes)) }))
+							val input = arrays.literal(CString, listOf({ memory.bytes(nullPointer, memory.constant(bytes)) }))
 							val recipe = assertIs<ProviderResult.ArrayText>(CArray(CString).provider("str", abi.layout))
 							val casts = EmitCast(context, builder, SemanticModel(abi.layout), abi)
 							val providers = ProviderEmissionContext(context, builder, strings, casts, "guard test")
@@ -286,7 +286,7 @@ class BufferCountsTest {
 							// Replacement bytes are deliberately inaccessible. Measuring must
 							// reject output growth before allocation or the first payload copy.
 							val replacementSize = if (index == 9) memory.maximumBytes else memory.maximumBytes / BigInteger.TWO + BigInteger.ONE
-							val replacement = arrays.descriptor(nullPointer, memory.constant(replacementSize))
+							val replacement = memory.bytes(nullPointer, memory.constant(replacementSize))
 							EmitStringEdit(context, builder, abi, strings, "guard test").replace(strings.literal("xx"), strings.literal(if (index == 10) "" else "x"), replacement, firstOnly = index == 9)
 						}
 					}
@@ -299,7 +299,7 @@ class BufferCountsTest {
 			}
 		}
 		NativeLinker.link(objectFile, executable, ToolchainResolver.native(abi, LinkOptions()))
-		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate returned array storage", "", "Array text is too large", "Array text is too large", "String replace result is too large", "String replaceFirst result is too large", "String replace result is too large")
+		val messages = listOf("stride overflow rejected", "Unable to allocate returned string storage", "String concatenation is too large", "Array index out of bounds", "Unable to allocate array storage", "", "Array text is too large", "Array text is too large", "String replace result is too large", "String replaceFirst result is too large", "String replace result is too large")
 		for ((index, message) in messages.withIndex()) {
 			val process = ProcessBuilder(executable.toString(), index.toString()).redirectErrorStream(true).start()
 			try {

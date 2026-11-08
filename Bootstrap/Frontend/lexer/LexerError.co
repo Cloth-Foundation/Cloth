@@ -1,0 +1,7 @@
+using token.Token: TokenSpan, jsonQuoted
+
+pub typedef<class> LexerFailure (pub def<string> code, pub def<string> message, pub def<TokenSpan> span) {
+    ~LexerFailure { span::delete }
+
+    operator ::str() = "{\n  \"code\": " + jsonQuoted(code) + ",\n  \"span\": " + jsonQuoted(span::str) + ",\n  \"message\": " + jsonQuoted(message) + "\n}"
+}

@@ -16,9 +16,15 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   can replace the field or delete the instance. Deletion releases the field
   allocations after the destructor. [Class storage](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassStorage.kt) ·
   [Recursive copies](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitStringArena.kt)
-- Array fields keep their initialized dimensions. A nullable field first
-  establishes dimensions when a present value is assigned and retains known
-  dimensions across absence. The retained witness stores extents separately
+  [Growable arrays Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md)
+  routes array field copies through typed owned capacity and live element arenas,
+  including unsized array fields inside stored structs. Existing nested buffered
+  writes still repack the root field; efficient class-field growth remains later work.
+- Array fields keep explicit extents and initialized inner dimensions. A nullable
+  field first establishes inner dimensions when a present value is assigned and
+  retains them across absence. [Growable arrays Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md)
+  permits whole replacement of `T[]` with another outer count. The retained witness
+  stores extents separately
   from live element and shape allocations. Nullable rows can establish a
   previously unknown inner extent. [Array lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt)
 - A nested write saves its receiver identity and evaluates each index once

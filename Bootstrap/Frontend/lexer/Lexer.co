@@ -1,14 +1,441 @@
-using token.Token: *
+using source.SourceFile: SourceFile
+using token.Token: Token, TokenType, TokenSpan
+using token.TokenList: TokenList
+using token.Keywords: Keywords
+using token.Operators: Operators
+using lexer.LexerError: LexerFailure
 
-pub typedef<class> Lexer (def<string> text) {
+pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
+    def<char[]> characters = text.toChars()
+    def<Keywords[]> keywords = Keywords::values
+    def<Operators[]> operators = Operators::values
+    def<usize> start = 0
+    def<usize> current = 0
+    def<int> startLine = 1
+    def<int> startColumn = 1
+    def<int> line = 1
+    def<int> column = 1
+    def<TokenList?> activeTokens = null
+    pub def<LexerFailure?> failure = null
 
-    pub mt<isize> lexTokens() {
-        if (text.isEmpty()) return 2
-        for(def s <- text.split(' ')) {
-            println(s)
+    // One scan per instance. Success transfers the list to the caller.
+    // Failure destroys the partial list and retains exactly one owned failure.
+    pub mt<TokenList?> scanTokens() {
+        def tokens = TokenList::new
+        activeTokens = tokens
+        while (!isAtEnd() && failure == null) {
+            mark()
+            scanToken()
         }
+        if (failure != null) {
+            activeTokens = null
+            tokens::delete
+            return null
+        }
+        mark()
+        addToken(TokenType.EOF)
+        activeTokens = null
+        return tokens
+    }
 
+    // Developer driver; scanning itself neither prints nor renders diagnostics.
+    pub mt<isize> lexTokens() {
+        def<TokenList?> tokens := scanTokens()
+        if (tokens == null) {
+            if (failure != null) println(failure)
+            return 1
+        }
+        def cursor = tokens.cursor()
+        def<Token?> token = cursor.next()
+        while (token != null) {
+            println(token)
+            token = cursor.next()
+        }
+        cursor::delete
+        tokens::delete
         return 0
     }
 
+    ~Lexer {
+        if (activeTokens != null) activeTokens::delete
+        if (failure != null) failure::delete
+    }
+
+    mt<bool> isAtEnd() = current >= characters::size
+
+    mt<char> peek(opt<usize> offset ?: 0) {
+        if (offset >= characters::size - current) return '\0'
+        return characters[current + offset]
+    }
+
+    mt<char> advance() {
+        def character = characters[current]
+        current++
+        if (character == '\n') {
+            line++
+            column = 1
+        } else if (character.toInt() > 65535) column += 2
+        else column++
+        return character
+    }
+
+    mt mark() {
+        start = current
+        startLine = line
+        startColumn = column
+    }
+
+    mt<bool> starts(string pattern) {
+        def<usize> offset = 0
+        for (def character <- pattern.toChars()) {
+            if (offset >= characters::size - current || peek(offset) != character) return false
+            offset++
+        }
+        return true
+    }
+
+    mt<TokenSpan> span() = TokenSpan::new(startLine, startColumn, line, column, source)
+
+    mt addToken(TokenType type) {
+        def<TokenList?> tokens := activeTokens
+        if (tokens != null) {
+            def token = Token::new(type, span(), text.substring(start, current))
+            tokens.append(token)
+        }
+    }
+
+    mt failAt(string code, string message, int firstLine, int firstColumn, int lastLine, int lastColumn) {
+        if (failure == null) {
+            failure = LexerFailure::new(code, message, TokenSpan::new(firstLine, firstColumn, lastLine, lastColumn, source))
+        }
+    }
+
+    mt fail(string code, string message) = failAt(code, message, startLine, startColumn, line, column)
+    mt failCursor(string code, string message) = failAt(code, message, line, column, line, column + 1)
+
+    // The Kotlin lexer classifies UTF-16 Char values rather than surrogate pairs.
+    mt<bool> letter(char character) = character.toInt() <= 65535 && character.isLetter()
+    mt<bool> decimal(char character) = character.toInt() <= 65535 && character.isDigit()
+    mt<bool> identifierPart(char character) = letter(character) || decimal(character) || character == '_'
+
+    mt<bool> escape(char character) = character == 'n' || character == 'r' || character == 't' || character == '0' || character == '\\' || character == '\'' || character == '"'
+
+    mt scanToken() {
+        if (starts("#\"")) {
+            advance()
+            advance()
+            addToken(TokenType.InterpolationStart)
+            interpolatedString()
+            return
+        }
+        if (starts("\"\"\"")) {
+            advance()
+            advance()
+            advance()
+            rawString()
+            return
+        }
+        if (peek() == '"') {
+            advance()
+            scanString()
+            return
+        }
+        if (peek() == '\'') {
+            advance()
+            character()
+            return
+        }
+        if (skipComments()) return
+        def<Operators?> matched := matchOperator()
+        if (matched != null) {
+            addToken(TokenType.Operator)
+            return
+        }
+        def character = advance()
+        if (character == ' ' || character == '\r' || character == '\t') return
+        if (character == '\n') {
+            addToken(TokenType.NewLine)
+            return
+        }
+        if (decimal(character)) number()
+        else if (letter(character) || character == '_') identifier()
+        else if (character.toInt() > 65535) {
+            failAt("C1000", #"Unexpected character '{character}'", startLine, startColumn, startLine, startColumn + 1)
+        } else fail("C1000", #"Unexpected character '{character}'")
+    }
+
+    mt<Operators?> matchOperator() {
+        def<Operators?> result = null
+        def<usize> width = 0
+        for (def op <- operators) {
+            if (op == Operators.ELVIS && starts("?::")) continue
+            def spelling := op.spelling
+            def length := spelling::size
+            if (length <= width || !starts(spelling)) continue
+            def last := spelling.charAt(length - 1)
+            if ((letter(last) || op == Operators.UNDERSCORE) && identifierPart(peek(length))) continue
+            result = op
+            width = length
+        }
+        for (def i <- 0..width) advance()
+        return result
+    }
+
+    mt<bool> skipComments() {
+        if (peek() != '/') return false
+        if (peek(1) == '/') {
+            advance()
+            advance()
+            while (!isAtEnd() && peek() != '\n') advance()
+            return true
+        }
+        if (peek(1) == '*') {
+            advance()
+            advance()
+            while (!isAtEnd()) {
+                if (starts("*/")) {
+                    advance()
+                    advance()
+                    return true
+                }
+                advance()
+            }
+            fail("C1001", "Unterminated block comment")
+            return true
+        }
+        return false
+    }
+
+    mt<bool> digit(char character, int radix) {
+        if (radix == 10) return decimal(character)
+        def code := character.toInt()
+        if (code == 48..=57) return code - 48 < radix
+        return radix == 16 && (code == 65..=70 || code == 97..=102)
+    }
+
+    mt<bool> completeSuffix(usize offset, char lower, char upper) = (peek(offset) == lower || peek(offset) == upper) && !identifierPart(peek(offset + 1))
+
+    mt invalidNumber(string reason) {
+        while (identifierPart(peek())) advance()
+        fail("C1013", "Invalid numeric literal '" + text.substring(start, current) + "': " + reason)
+    }
+
+    mt consumeDigits(int radix) {
+        while (digit(peek(), radix) || peek() == '_') {
+            if (peek() == '_' && (!digit(characters[current - 1], radix) || !digit(peek(1), radix))) {
+                failCursor("C1002", "Underscores must appear between digits")
+                return
+            }
+            advance()
+        }
+    }
+
+    mt number() {
+        def isFloat = false
+        def radix = 10
+        if (characters[start] == '0') {
+            if (peek() == 'x') radix = 16
+            else if (peek() == 'b') radix = 2
+            else if (peek() == 'o') radix = 8
+        }
+        if (radix != 10) {
+            advance()
+            if (peek() == '_') {
+                failCursor("C1002", "Underscores must appear between digits")
+                return
+            }
+            if (!digit(peek(), radix)) {
+                invalidNumber(#"Expected a base-{radix} digit after the prefix")
+                return
+            }
+        }
+        consumeDigits(radix)
+        if (failure != null) return
+        if (peek() == '.') {
+            def fractional := decimal(peek(1))
+            def trailingFloat := completeSuffix(1, 'f', 'F')
+            def trailingInteger := completeSuffix(1, 'i', 'I')
+            if (fractional || trailingFloat || trailingInteger || peek(1) == '_') {
+                advance()
+                if (radix != 10) {
+                    invalidNumber("Base-prefixed literals cannot have a decimal point or suffix")
+                    return
+                }
+                if (trailingInteger) {
+                    invalidNumber("An integer suffix cannot follow a decimal point")
+                    return
+                }
+                if (peek() == '_') {
+                    failCursor("C1002", "Underscores must appear between digits")
+                    return
+                }
+                isFloat = true
+                consumeDigits(radix)
+                if (failure != null) return
+            }
+        }
+        if (radix == 10 && (peek() == 'f' || peek() == 'F' || peek() == 'i' || peek() == 'I')) {
+            def suffix := advance()
+            if (isFloat && (suffix == 'i' || suffix == 'I')) {
+                invalidNumber("An integer suffix cannot follow a decimal point")
+                return
+            }
+            isFloat = isFloat || suffix == 'f' || suffix == 'F'
+        }
+        if (identifierPart(peek())) {
+            invalidNumber(if (radix == 10) { "Invalid numeric suffix" } else { "Invalid base-" + radix::str + " digit or forbidden suffix" })
+            return
+        }
+        addToken(if (isFloat) { TokenType.FloatingPointLiteral } else { TokenType.IntegerLiteral })
+    }
+
+    mt identifier() {
+        while (identifierPart(peek())) advance()
+        def name := text.substring(start, current)
+        def type = TokenType.Identifier
+        for (def keyword <- keywords) {
+            if (keyword != Keywords.AUTO && keyword.spelling == name) {
+                type = TokenType.Keyword
+                break
+            }
+        }
+        addToken(type)
+    }
+
+    mt scanString() {
+        while (!isAtEnd()) {
+            if (peek() == '"') {
+                advance()
+                addToken(TokenType.StringLiteral)
+                return
+            }
+            if (peek() == '\\') {
+                advance()
+                if (isAtEnd()) break
+                if (peek() == '\n' || peek() == '\r') {
+                    fail("C1006", "Strings cannot span multiple lines")
+                    return
+                }
+                def escaped := advance()
+                if (!escape(escaped)) {
+                    fail("C1005", "Invalid string escape: \\" + escaped::str)
+                    return
+                }
+            } else if (peek() == '\n' || peek() == '\r') {
+                fail("C1006", "Strings cannot span multiple lines")
+                return
+            } else advance()
+        }
+        fail("C1003", "Unterminated string")
+    }
+
+    mt rawString() {
+        while (!isAtEnd()) {
+            if (starts("\"\"\"")) {
+                advance()
+                advance()
+                advance()
+                addToken(TokenType.RawStringLiteral)
+                return
+            }
+            advance()
+        }
+        fail("C1004", "Unterminated raw string")
+    }
+
+    mt character() {
+        if (isAtEnd() || peek() == '\n' || peek() == '\r') {
+            fail("C1008", "Unterminated character literal")
+            return
+        }
+        def first := advance()
+        if (first == '\'') {
+            fail("C1009", "Empty character literal")
+            return
+        }
+        if (first == '\\') {
+            if (isAtEnd()) {
+                fail("C1008", "Unterminated character literal")
+                return
+            }
+            def escaped := advance()
+            if (!escape(escaped)) {
+                fail("C1005", "Invalid character escape: \\" + escaped::str)
+                return
+            }
+        }
+        if (isAtEnd() || peek() != '\'') {
+            fail("C1010", "Expected closing quote after one character")
+            return
+        }
+        advance()
+        addToken(TokenType.CharacterLiteral)
+    }
+
+    mt interpolatedString() {
+        def openingLine := startLine
+        def openingColumn := startColumn
+        mark()
+        while (!isAtEnd() && failure == null) {
+            if (peek() == '"') {
+                addToken(TokenType.StringSegment)
+                mark()
+                advance()
+                addToken(TokenType.InterpolationEnd)
+                return
+            }
+            if (peek() == '{' || peek() == '}') {
+                def brace := peek()
+                if (peek(1) == brace) {
+                    advance()
+                    advance()
+                } else if (brace == '}') {
+                    failCursor("C1012", "Unmatched '}' in interpolated string")
+                    return
+                } else {
+                    addToken(TokenType.StringSegment)
+                    mark()
+                    advance()
+                    addToken(TokenType.InterpolationOpen)
+                    def holeLine := startLine
+                    def holeColumn := startColumn
+                    def holeEndLine := line
+                    def holeEndColumn := column
+                    def depth = 0
+                    while (failure == null) {
+                        if (isAtEnd()) {
+                            failAt("C1011", "Unterminated string interpolation", holeLine, holeColumn, holeEndLine, holeEndColumn)
+                            return
+                        }
+                        mark()
+                        if (peek() == '}' && depth == 0) {
+                            advance()
+                            addToken(TokenType.InterpolationClose)
+                            break
+                        }
+                        if (peek() == '{') depth++
+                        if (peek() == '}') depth--
+                        scanToken()
+                    }
+                    mark()
+                }
+            } else if (peek() == '\\') {
+                advance()
+                if (isAtEnd()) break
+                if (peek() == '\n' || peek() == '\r') {
+                    fail("C1006", "Strings cannot span multiple lines")
+                    return
+                }
+                def escaped := advance()
+                if (!escape(escaped)) {
+                    fail("C1005", "Invalid string escape: \\" + escaped::str)
+                    return
+                }
+            } else if (peek() == '\n' || peek() == '\r') {
+                fail("C1006", "Strings cannot span multiple lines")
+                return
+            } else advance()
+        }
+        if (failure == null) failAt("C1003", "Unterminated string", openingLine, openingColumn, line, column)
+    }
 }

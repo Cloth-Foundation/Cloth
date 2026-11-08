@@ -1,5 +1,14 @@
 # Nullable rectangular rows (2026-11-03)
 
+[Growable arrays Stage 1](growable-arrays-stage-1.md) adds an explicit binding
+constraint mode: whole replacement may change an unsized outer count while
+retaining inner witnesses, including through empty/null states. Row constraints
+still match every dimension. The pointer layout described below is unchanged;
+no capacity field or native mutator execution is added in that stage.
+[Stage 2](growable-arrays-stage-2.md) appends array-only capacity/owner fields,
+introduces typed element arenas and executes unsized struct array fields with
+independent inline witnesses surviving absence. Public mutators remain gated.
+
 The [confirmed row contract](semantics.md#nullable-rectangular-rows) is executable.
 C# marker placement composes nullable arrays at every level while Cloth retains
 outer-to-inner extent order, rectangularity and independent values.
@@ -27,7 +36,8 @@ array equality remain unsupported.
   positions without losing widths or duplicating dimensions.
 - `CArray.hasNullableRows` identifies trees needing live inner-shape witnesses.
   Only these array descriptors gain an internal shape pointer after their
-  existing data/count/extent fields. Ordinary array descriptors stay unchanged.
+  existing data/count/extent fields. Stage 2 appends capacity and owner after
+  those fields in every array descriptor, leaving string descriptors unchanged.
   The pointed-to vector stores target-sized counts and separate known flags.
 - `EmitArray.descriptor` initializes literal shape storage; `current` merges
   descriptor witnesses with live constraints. Reading/validating borrowed values
@@ -39,7 +49,8 @@ array equality remain unsupported.
   replacements retain the original constraint vector; whole-array null assigns
   retain the existing separate nullable binding shape state. Null row assignments
   skip payload/shape operations and never clear witnesses.
-- `EmitStringArena` independently copies shape vectors into the destination
+- `EmitStringArena` delegates typed copies to `EmitArrayStorage`, which independently
+  copies shape vectors into the destination
   arena along with recursive array/string storage, then links copied descendants
   to the copied vector. Outgoing metadata must outlive the callee. Copy-loop phis
   use the actual block after all allocation guards. Fresh independent arrays may

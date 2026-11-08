@@ -29,10 +29,13 @@ internal abstract class BuiltinFunction(val properties: BuiltinProperties) {
 /** UNKNOWN is deliberately the default. The opt-in contract covers both body and
  * adapters: operands are read-only, nothing is published/retained, and buffered
  * results own independent storage. It is a storage promise, not an IO purity flag.
+ * MUTATING_RECEIVER instead requires a separately resolved place/temporary owner;
+ * it never qualifies for read-only member copy elision or early cleanup.
  */
 internal enum class BuiltinStorageContract {
 
 	UNKNOWN,
+	MUTATING_RECEIVER,
 	READ_ONLY_INDEPENDENT_RESULT
 }
 

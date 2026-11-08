@@ -59,6 +59,15 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   known flag. Tests exercise that layout with zero, maximum and unknown extents.
   [Buffer counts](../../../Compiler/src/test/kotlin/cloth/BufferCountsTest.kt) ·
   [Provider results](../../../Compiler/src/test/kotlin/cloth/ProviderResultsTest.kt)
+- [Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
+  preserves declared `T[]` identity even when separate shape facts know a current
+  count. `value::size` therefore reads the descriptor; `value::type` remains
+  growable. Do not turn current count facts into fixed type extents or stale
+  provider constants across mutations, branches, repeated loops or captures.
+  [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) appends private
+  capacity/owner fields after the existing shape fields. Providers keep reading
+  live length and extents; capacity never becomes a language size or type fact.
+  Enum values, formatting and foreach use the shared array-only layout.
 - `typeinfo` is one built-in value type. Preserve canonical type spelling and
   capability/provenance facts across copies, conditional continuations, captures,
   calls and results. Static known failures stay compile-time errors; unknown

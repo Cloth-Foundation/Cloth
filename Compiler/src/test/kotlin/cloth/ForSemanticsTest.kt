@@ -122,7 +122,7 @@ class ForSemanticsTest {
 		assertEquals(ValueType.CHAR, bindingType("fn main() { for (def value <- ['a', 'b']) println(value) }", "value"))
 		assertEquals(ValueType.STRING, bindingType("fn main() { for (def value <- [\"a\", \"b\"]) println(value) }", "value"))
 		val row = bindingType("fn main() { for (def<int[]> row <- [[1, 2], [3, 4]]) row[0] = 9 }", "row")
-		assertEquals(CArray(ValueType.INT, 2), row)
+		assertEquals(CArray(ValueType.INT), row)
 		assertEquals(CArray(CArray(ValueType.INT, 2), 1), bindingType("fn main() { for (def row <- [[[1, 2]], [[3, 4]]]) println(row) }", "row"))
 	}
 
@@ -142,6 +142,7 @@ class ForSemanticsTest {
 	fun `foreach bindings are mutable and retain received row shape`() {
 		valid("fn main() { for (def value <- [1, 2]) value = 9 }")
 		valid("fn main() { for (def row <- [[1, 2]]) { row[0] = 9; row = [3, 4] } }")
+		valid("fn main() { for (def<int[]> row <- [[1, 2]]) row = [1] }")
 		invalid("fn main() { for (def row <- [[1, 2]]) row = [1] }", DiagnosticCode.INVALID_ARRAY)
 	}
 

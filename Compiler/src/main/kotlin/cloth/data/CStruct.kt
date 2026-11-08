@@ -30,6 +30,9 @@ class CStruct internal constructor(val declaration: StructDeclaration, fields: L
 	}
 
 	internal override fun field(name: String): StructField? = fieldsByName[name]
+	/** Inline, pointer-free witnesses outlive a nullable array field's presence. */
+	internal val nullableArrayFields get() = fields.filter { (it.type as? CNullable)?.payload is CArray }
+	internal fun shapeIndex(field: StructField): Int = fields.size + nullableArrayFields.indexOf(field).also { require(it >= 0) }
 
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = LLVMPointerTypeInContext(context, 0)
 
@@ -37,7 +40,8 @@ class CStruct internal constructor(val declaration: StructDeclaration, fields: L
 
 	private fun storage(context: LLVMContextRef, target: TargetLayout, layouts: MutableMap<CStruct, LLVMTypeRef>): LLVMTypeRef = layouts.getOrPut(this) {
 		// Even an empty value needs a positive stride when stored in an array.
-		val count = maxOf(1, fields.size)
+		val witnesses = nullableArrayFields
+		val count = maxOf(1, fields.size + witnesses.size)
 		PointerPointer<LLVMTypeRef>(count.toLong()).use { members ->
 			if (fields.isEmpty()) members.put(0, LLVMInt8TypeInContext(context))
 			else fields.forEach { field ->
@@ -49,6 +53,7 @@ class CStruct internal constructor(val declaration: StructDeclaration, fields: L
 				}
 				members.put(field.index.toLong(), member)
 			}
+			witnesses.forEach { field -> members.put(shapeIndex(field).toLong(), field.type.llvmStorage(context, target)) }
 			LLVMStructTypeInContext(context, members, count, 0)
 		}
 	}

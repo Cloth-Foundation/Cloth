@@ -1,11 +1,14 @@
 using lexer.Lexer: *
+using source.SourceFile: SourceFile
 
 pub fn<isize> main (string[] args) {
     println("Cloth Dogfooding")
-    def input := "pub fn main(string[] args) { }"
-    def lexer = Lexer::new(input)
+    def input := if (args::size == 0) { "pub fn main(string[] args) { }" } else { args[0] }
+    def source := SourceFile::new("<string>", input)
+    def lexer := Lexer::new(input, source)
 
     def status := lexer.lexTokens()
     lexer::delete
+    source::delete
     return status
 }

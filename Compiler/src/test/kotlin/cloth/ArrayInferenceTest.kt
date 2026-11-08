@@ -67,7 +67,7 @@ class ArrayInferenceTest {
 	@Test
 	fun `explicit element annotations take precedence over discovery`() {
 		failure("fn main() {\n def<int> n = 1\n def<int<64>[]> a = [1, n]\n}")
-		assertEquals("int<64>[2]", types("def<int<64>[]> a = [1, 2]")["a"])
+		assertEquals("int<64>[]", types("def<int<64>[]> a = [1, 2]")["a"])
 	}
 
 	@Test

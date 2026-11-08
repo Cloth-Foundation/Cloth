@@ -1,6 +1,7 @@
 package cloth.semantic.typing
 
 import cloth.data.*
+import cloth.builtin.attachments.ArrayMutation
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
@@ -331,6 +332,8 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	override fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape {
 		facts.sourceMemberCalls[expression]?.let { return it.type.results }
+		if (receiver is CNullable && receiver.payload is CArray) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
+		if (receiver is CArray && ArrayMutation.named(expression.name.lexeme) != null) return arrayMutation(expression, receiver)
 		if (receiver is CNullable && receiver.payload is CMemberType) {
 			throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		}
@@ -359,6 +362,30 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val selected = overloads.source(expression, candidates, source)
 		facts.sourceMemberCalls[expression] = selected
 		return selected.type.results
+	}
+
+	private fun arrayMutation(expression: MemberCallExpression, type: CArray): ResultShape {
+		val operation = checkNotNull(ArrayMutation.named(expression.name.lexeme))
+		if (type.size != null) throw SemanticErrors.arrayMutation("Method '${operation.spelling}' requires a growable array, got '${type.spelling}'", expression.name.span)
+		if (operation.changesLength && expression.receiver is IndexExpression) throw SemanticErrors.arrayMutation("An embedded rectangular row cannot change its shape; copy it to an independent growable binding first", expression.receiver.span)
+		if (expression in facts.declarations.readOnlyDefaultReceivers) throw SemanticErrors.parameterDefault("A default cannot mutate an array through a read-only receiver", expression.name.span)
+		checkWritablePayload(expression.receiver)
+		val result = super.memberCallResults(expression, type)
+		for (part in facts.presence.lostReceiverProofs[expression].orEmpty()) {
+			val declared = model.payloadReads[part] ?: continue
+			throw SemanticErrors.receiverProofLost(declared, part.span)
+		}
+		val instance = instancePlace(expression.receiver)
+		if (instance != null && expression in facts.declarations.fieldInitializerCalls && instance.receiver.isSelf()) throw SemanticErrors.partialClassInstance("A stored field receiver requires a fully initialized instance", expression.receiver.span)
+		val place = if (instance == null) storedPlace(expression.receiver) else null
+		val source = when {
+			instance != null -> MethodReceiver.StoredInInstance(instance)
+			place != null -> MethodReceiver.Stored(place)
+			else -> MethodReceiver.Temporary(expression.receiver)
+		}
+		val bound = model.memberCalls.getValue(expression)
+		model.arrayMutations[expression] = ArrayMutationPlan(operation, type, source, bound.arguments.drop(1), bound.overload.returns)
+		return result
 	}
 
 	private fun ObjectReceiver.isSelf(): Boolean = when (this) {

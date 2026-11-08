@@ -2,10 +2,11 @@ package cloth.emitter.storage
 
 import cloth.data.*
 import cloth.emitter.LLVMTypes
+import cloth.emitter.NativeCABI
+import cloth.emitter.callables.EmitFunctionFrame
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.symbols.ReceiverSymbol
-import cloth.target.TargetLayout
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -13,9 +14,10 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for resolved binding symbols in the current function. */
-internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val target: TargetLayout, private val classes: EmitClassStorage? = null, private val receivers: EmitReceiverAccess? = null) {
+internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val abi: NativeCABI, private val classes: EmitClassStorage? = null, private val receivers: EmitReceiverAccess? = null, private val frame: EmitFunctionFrame? = null, val managedStrings: Set<BindingSymbol> = emptySet()) {
+	private val target = abi.layout
 
-	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val initialShape: LLVMValueRef?, val nullableShape: LLVMValueRef?, val ownerArena: LLVMValueRef? = null, val receiver: ReceiverLocation? = null)
+	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val initialShape: LLVMValueRef?, val nullableShape: LLVMValueRef?, val ownerArena: LLVMValueRef? = null, val receiver: ReceiverLocation? = null, val stringArena: LLVMValueRef? = null, val struct: StructParent? = null)
 
 	private val bindings = mutableMapOf<BindingSymbol, Storage>()
 	private val objects = mutableMapOf<ReceiverSymbol, ObjectAccess>()
@@ -40,9 +42,13 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		val address = allocate(type, name)
 		val shape = if (type is CNullable && type.payload is CArray) allocate(type, "${name}_shape").also { LLVMBuildStore(builder, nullable.store(value, type), it) } else null
 		// Shape storage is independent of presence in the mutable value slot.
-		bindings[key] = Storage(name, type, address, value.takeIf { type is CArray }, shape)
+		val arena = if (managesString(key, type)) checkNotNull(frame).storedArena() else null
+		bindings[key] = Storage(name, type, address, value.takeIf { type is CArray }, shape, stringArena = arena)
 		assign(key, value)
 	}
+
+	fun managesString(key: BindingSymbol, type: ValueType): Boolean = key in managedStrings && ((type as? CNullable)?.payload ?: type) == ValueType.STRING
+	fun ownsString(key: BindingSymbol): Boolean = bindings[key]?.stringArena != null
 
 	fun bindReceiver(receiver: ReceiverSymbol, access: ReceiverAccess) {
 		bindings[receiver] = Storage(receiver.name.lexeme, receiver.owner, access.address, null, null, access.arena)
@@ -79,8 +85,10 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 			return Storage(key.name.lexeme, field.type, address, null, null)
 		}
 		val receiver = storage(key.receiver)
-		val address = stored.fieldAddress(receiver.address, key.receiver.owner as CStruct, key.field)
-		return Storage(key.name.lexeme, key.field.type, address, null, null, receiver.ownerArena, receiver.receiver)
+		val owner = key.receiver.owner as CStruct
+		val member = key.field as StructField
+		val address = stored.fieldAddress(receiver.address, owner, member)
+		return Storage(key.name.lexeme, member.type, address, null, null, receiver.ownerArena, receiver.receiver, struct = StructParent(receiver.address, owner, member))
 	}
 
 	fun ownerArena(key: BindingSymbol): LLVMValueRef? {
@@ -121,11 +129,16 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		}
 		val storage = storage(key)
 		val receiver = storage.receiver
-		if (receiver != null && storage.type.buffered) {
+		val fields = storage.struct?.let { EmitStructFields(context, builder, abi) }
+		val prepared = storage.struct?.let { checkNotNull(fields).prepare(it, value) } ?: value
+		if (storage.stringArena != null) {
+			val owned = checkNotNull(frame).replaceStored(storage.stringArena, prepared, storage.type)
+			stored.store(storage.address, owned, storage.type)
+		} else if (receiver != null && storage.type.buffered) {
 			// Publish at this store. A previous target in a positional write may repack the same owner.
-			val owned = checkNotNull(classes).copyInto(builder, receiver.arena, value, storage.type)
+			val owned = checkNotNull(classes).copyInto(builder, receiver.arena, prepared, storage.type)
 			stored.store(storage.address, owned, storage.type)
 			checkNotNull(receivers).compact(builder, receiver)
-		} else stored.store(storage.address, value, storage.type)
+		} else stored.store(storage.address, prepared, storage.type)
 	}
 }

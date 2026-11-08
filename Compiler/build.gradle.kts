@@ -56,6 +56,10 @@ tasks.register<JavaExec>("runExample") {
 tasks.test {
 	useJUnitPlatform()
 	workingDir(rootProject.projectDir)
+	// Native Bootstrap fixtures live outside this project's source set.
+	inputs.files(rootProject.fileTree("Bootstrap") { include("**/*.co") })
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
 	systemProperty("cloth.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
 }
 
@@ -87,6 +91,11 @@ tasks.register<Test>("importResolutionTest") {
 	}
 	useJUnitPlatform()
 	filter { includeTestsMatching("cloth.ImportResolutionTest") }
+	filter {
+		includeTestsMatching("cloth.StandardLibraryTest")
+		includeTestsMatching("cloth.StandardLibraryGraphTest")
+		includeTestsMatching("cloth.StandardLibrarySelectionTest")
+	}
 }
 
 tasks.register<Test>("importSemanticsTest") {

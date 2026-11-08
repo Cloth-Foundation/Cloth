@@ -1,6 +1,6 @@
 ---
 name: cloth-toolchains
-description: Extend or troubleshoot Cloth build and run commands, target layouts, native C ABI profiles, object emission, linker and CRT discovery, or target-specific validation.
+description: Extend or troubleshoot Cloth build and run commands, bundled standard-library selection, target layouts, native C ABI profiles, object emission, linker and CRT discovery, or target-specific validation.
 ---
 
 # Cloth targets and toolchains
@@ -10,6 +10,33 @@ settings before prescribing commands. The shared
 [portability requirement](../cloth-language/references/semantics.md#portability)
 requires Windows, Linux and macOS contracts; implementation evidence varies by
 target. Use [program entry](../cloth-program-entry/SKILL.md) for startup behavior.
+
+Read the [bundled standard-library contract](references/standard-library.md)
+before implementing library packaging, shared command discovery, overrides or
+reserved `cloth.*` paths. Its Stage 0 selects those rules and an explicit module
+role. [Stage 1](references/standard-library-stage-1.md) implements combined and
+per-command distributions, pinned sources/provenance and launcher context.
+[Stage 2](references/standard-library-stage-2.md) adds shared default selection,
+automatic attachment, explicit module roles and reserved-path diagnostics.
+[Stage 3](references/standard-library-stage-3.md) implements `--stdlib PATH` and
+`--no-stdlib`, shared validation, default bypass and command diagnostics. Preserve the documented
+Windows Unicode installation-path limit. Keep source-library selection separate
+from the existing `--runtime` C runtime option.
+
+[Stage 4 allocation boundary](references/standard-library-stage-4.md) records the
+user-selected owning-collection consumer and verifies existing typed class
+`::new`/`::delete`, private target-aware helpers, owned field cleanup and fatal
+allocation behavior. Portable collection logic remains in Cloth. Its fixture is
+not a shipped collection API; later buffer/I/O/clock/thread services retain their
+own design prerequisites. Use `StandardLibraryRuntimeTest` for this boundary.
+
+[Stage 5 publication](references/standard-library-stage-5.md) adds the
+[maintained bundling example](../../../examples/StandardLibrary/README.md) and
+[toolchain guide](../../../docs/standard-library.md), with packaged external-cwd
+builds and native execution after deleting disposable compiler/source trees.
+ToolchainDistributionTest verifies both commands' nine-profile object matrix;
+StandardLibraryPublicationTest owns the exact example graph and executable IR.
+Keep native Windows/GNU execution distinct from other profiles' object evidence.
 
 ## Development rules and supported scope
 

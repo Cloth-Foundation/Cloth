@@ -23,4 +23,18 @@ internal object BufferLayout {
 		if (sharedShape) fields.put((dimensions + 1).toLong(), LLVMPointerTypeInContext(context, 0))
 		LLVMStructTypeInContext(context, fields, dimensions + 1 + if (sharedShape) 1 else 0, 0)
 	}
+
+	/** Array-only storage facts follow the shape fields. Strings keep their two-field ABI. */
+	fun arrayDescriptor(context: LLVMContextRef, target: TargetLayout, dimensions: Int, sharedShape: Boolean): LLVMTypeRef {
+		val capacity = dimensions + 1 + if (sharedShape) 1 else 0
+		return PointerPointer<LLVMTypeRef>((capacity + 2).toLong()).use { fields ->
+			fields.put(0, LLVMPointerTypeInContext(context, 0))
+			fields.put(1, count(context, target))
+			for (index in 2..dimensions) fields.put(index.toLong(), extent(context, target))
+			if (sharedShape) fields.put((dimensions + 1).toLong(), LLVMPointerTypeInContext(context, 0))
+			fields.put(capacity.toLong(), count(context, target))
+			fields.put((capacity + 1).toLong(), LLVMPointerTypeInContext(context, 0))
+			LLVMStructTypeInContext(context, fields, capacity + 2, 0)
+		}
+	}
 }

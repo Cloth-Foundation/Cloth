@@ -1,5 +1,6 @@
 package shuttle.command
 
+import cloth.diagnostics.CliErrors
 import cloth.settings.CompilerOptions
 import cloth.settings.OutputKind
 import shuttle.diagnostics.ShuttleErrors
@@ -30,6 +31,15 @@ internal class ShuttleSettings(args: Array<String>) {
 		while (index < separator) {
 			val argument = args[index++]
 			val name = argument.substringBefore('=')
+			if (argument == "--stdlib") {
+				// Preserve this value boundary before removing Shuttle's own options.
+				val value = args.getOrNull(index)?.takeIf { index < separator && !it.startsWith("-") }
+				if (value.isNullOrBlank()) throw CliErrors.missing(name, usage)
+				forwarded.add(argument)
+				forwarded.add(value)
+				index++
+				continue
+			}
 			if (name !in setOf("--project", "--output", "-o")) {
 				forwarded.add(argument)
 				continue
@@ -52,7 +62,7 @@ internal class ShuttleSettings(args: Array<String>) {
 	companion object {
 		const val usage = "Usage: shuttle build [--project PATH] [-o PATH] [build options]\n" +
 			"       shuttle run [--project PATH] [-o PATH] [build options] [-- program arguments]\n" +
-			"Build options: --target TRIPLE, --emit executable|object, --debug, --linker PATH, " +
+			"Build options: --stdlib PATH | --no-stdlib, --target TRIPLE, --emit executable|object, --debug, --linker PATH, " +
 			"--linker-driver lld|msvc|cc, --runtime default|static|dynamic, --subsystem console|windows, " +
 			"-L DIR, -l NAME, --sysroot DIR, --msvc-tools DIR, --windows-sdk DIR, --windows-sdk-version VERSION"
 	}

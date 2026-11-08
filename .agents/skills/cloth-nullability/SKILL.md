@@ -42,6 +42,15 @@ its containing value invalidates the proof. Copies skip absent payloads.
 [Struct method typing](../cloth-functions/references/method-typing.md) checks
 nullable receiver paths after explicit argument evaluation and invalidates
 proofs for fields a method may write. Proofs on independent paths still apply.
+[Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
+extends receiver-proof checks to typed array mutators. Length changes invalidate
+indexed descendant proofs, including possible class aliases and repeated/captured
+writes; reserve preserves logical element proofs. Nullable removeAt results
+remain nullable. Native mutator execution is still guarded by C4032.
+[Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) executes nullable
+unsized struct array fields. Their inline pointer-free witnesses survive absence,
+copy independently and receive the incoming witnesses on whole-struct replacement.
+Typed element cleanup skips absent payloads and inactive slots.
 Class lifetime and unsafe handles have separate work. Ordinary
 optional arguments are implemented under [their own skill](../cloth-optional-arguments/SKILL.md),
 including nullable string/array defaults such as `opt<string[]?> args ?: null`.

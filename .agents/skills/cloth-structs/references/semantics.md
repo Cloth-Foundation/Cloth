@@ -296,15 +296,22 @@ source labels needed to explain the cycle.
 
 ## Explicit array field dimensions (confirmed 2026-11-04)
 
-Every dimension of an array in a struct field declaration must have an explicit
-extent. This includes arrays within nullable field types. `int[2][3] grid` is
-valid. `int[] values` and `int[2][] grid` are compile-time errors.
+The original basic-struct contract required an explicit extent at every array
+dimension, including under nullable wrappers. The 2026-11-07
+[growable-array revision](../../cloth-arrays/references/growable-arrays.md)
+supersedes that restriction: `int[] values` and `int[2][] grid` are valid type
+declarations. [Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md)
+accepts them in semantic analysis.
+[Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md) executes them,
+including independent inline nullable-field witnesses retained through absence.
+Only an unsized outer count can change on whole-field reception; explicit extents
+and established inner shape remain constraints. Public array mutators retain C4032.
 
 The field's declared shape constrains every instance. Construction, direct
 field assignment and whole-struct replacement all respect that shape. Apply
 the existing [array shape checks](../../cloth-arrays/references/semantics.md#array-construction-and-value-semantics).
 Reject a known mismatch at compile time and check an unknown source dimension
-at runtime. The explicit dimension requirement applies to struct field declarations.
+at runtime. The example below keeps the original fixed-field behavior.
 
 ```cloth
 pub typedef<struct> Series {

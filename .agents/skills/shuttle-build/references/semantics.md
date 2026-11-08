@@ -16,6 +16,21 @@ LLVM emission and native linking. Use only the
 [plain compiler request API](../../cloth-imports/references/compiler-api.md) across
 the one-way `Shuttle -> Compiler` dependency.
 
+The [bundled-library contract](../../cloth-toolchains/references/standard-library.md)
+and [Stage 2 record](../../cloth-toolchains/references/standard-library-stage-2.md)
+own implemented shared command selection and explicit module attachment. This
+requires no mandatory library manifest entry. ProjectLoader and the project model
+remain independent of installations; the command adapter augments the prepared
+request and promotes an already configured matching root without duplication.
+[Selection Stage 3](../../cloth-toolchains/references/standard-library-stage-3.md)
+implements shared `--stdlib PATH`/`--stdlib=PATH` and `--no-stdlib` command options.
+The override resolves from invocation cwd; both modes bypass default discovery.
+Disabled selection retains all configured modules as regular roots, including
+project replacements for `cloth.*`, without promotion or reservation.
+[Bundling Stage 5](../../cloth-toolchains/references/standard-library-stage-5.md)
+verifies the maintained App-only project through real packaged commands from an
+external cwd, including native execution after its bundle/source copies are removed.
+
 The first milestone compiles the source graph reachable from one selected primary
 file together into one executable or object. All configured project module roots
 are available to import resolution. Empty dependency tables do not restrict those

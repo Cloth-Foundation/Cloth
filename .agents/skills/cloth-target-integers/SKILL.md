@@ -55,6 +55,10 @@ widths by using `FIXED_INTEGER_WIDTHS`. The new suite checks reused 32/64-bit AS
 - Every static extent fits target usize, including type-only queries. Buffer
   allocation also respects checked byte arithmetic and LLVM's pointer-index
   bounds. Representable dimensions do not promise an allocation will succeed.
+  [Growable array storage](../cloth-arrays/references/growable-arrays-stage-2.md)
+  checks capacity against concrete element stride, slot-head bytes, alignment
+  padding and arena/control overhead before allocation or payload access. Growth
+  saturates within those limits; it never derives counts from JVM width.
 - Signed arithmetic/division/casts retain shared integer rules. isize is allowed
   as a main result; usize and all other unsigned main results are rejected. The
   older usize-main extension is superseded. See

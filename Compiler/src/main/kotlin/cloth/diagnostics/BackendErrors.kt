@@ -5,6 +5,8 @@ import cloth.token.TokenSpan
 
 object BackendErrors {
 
+	fun arrayMutation(span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_ARRAY_MUTATION, "Array mutation is type-checked but native storage lowering is not implemented yet", listOf(SourceLabel(span, "growable-array execution requires a later implementation stage")))
+
 	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(
 		DiagnosticCode.UNSUPPORTED_FUNCTION_ABI,
 		"Type '${type.spelling}' is unsupported as a parameter or result in the Cloth callable ABI",

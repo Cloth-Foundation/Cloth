@@ -1,5 +1,6 @@
 package cloth.emitter.callables
 
+import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
@@ -24,6 +25,7 @@ import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.DestructorSymbol
 import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.ResolvedCall
 import cloth.semantic.typing.ResolvedOperator
@@ -95,7 +97,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val entry = LLVMAppendBasicBlockInContext(context, value, "entry")
 			LLVMPositionBuilderAtEnd(builder, entry)
 			val frame = EmitFunctionFrame(context, builder, entry, signature.results, LLVMGetReturnType(callable.signature), stringStorage, callable.callerArena)
-			val bindings = EmitBindings(context, builder, entry, abi.layout, if (hasClasses) classStorage else null, if (hasClasses) receivers else null)
+			val rebindings = (semantics.declarations.assignments.values + semantics.declarations.multiAssignments.values.flatMap { it.filterNotNull() })
+				.filterNot { it is ReceiverFieldSymbol }
+				.filter { ((semantics.bindings[it] as? CNullable)?.payload ?: semantics.bindings[it]) == ValueType.STRING }.toSet()
+			val bindings = EmitBindings(context, builder, entry, abi, if (hasClasses) classStorage else null, if (hasClasses) receivers else null, frame, rebindings)
 			val objectAccess = callable.objectAccess()
 			if (objectAccess != null) {
 				bindings.bindObject(checkNotNull(function.receiver), objectAccess)
@@ -107,7 +112,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				bindings.checkDestination(function.receiver)
 			}
 			val casts = EmitCast(context, builder, semantics.types, abi)
-			val strings = EmitString(context, builder, abi)
+			val strings = EmitString(context, builder, abi, arena = { frame.stringReturnArena() })
 			val expressions = EmitExpression(context, builder, bindings, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.results, frame)
 			function.parameters.forEachIndexed { index, parameter ->
 				val type = signature.parameters[index]
@@ -409,6 +414,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	companion object {
 
 		fun validate(semantics: FunctionSemanticModel) {
+			for (body in semantics.allBodyModels()) {
+				val calls = body.types.memberCalls.entries.sortedWith(compareBy({ it.key.span.source?.name.orEmpty() }, { it.key.span.startLine }, { it.key.span.startColumn }))
+				for ((call, bound) in calls) if (bound.overload.storage == BuiltinStorageContract.MUTATING_RECEIVER) throw BackendErrors.arrayMutation(call.name.span)
+			}
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray    -> type.element != ValueType.VOID && supported(type.element)
 				is CNullable -> supported(type.payload)

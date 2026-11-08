@@ -1,6 +1,6 @@
 ---
 name: cloth-arrays
-description: Design, explain, or extend Cloth arrays, including element inference, rectangular dimensions, fixed binding shapes, indexed reads and writes, independent values and snapshot foreach traversal.
+description: Design, explain, or extend Cloth arrays, including element inference, rectangular dimensions, fixed and growable shape contracts, indexed mutation, independent values and snapshot foreach traversal.
 ---
 
 # Cloth arrays
@@ -15,31 +15,55 @@ wide decimal array text and reclaims leaf snapshots/scratch in both passes.
 Ordinary array shape/count/allocation limits are unchanged.
 
 [Basic structs](../cloth-structs/references/publication.md) can be array elements
-and can hold fixed-shape arrays. Stored field/index writes address the original
+and can hold fixed or growable arrays. Stored field/index writes address the original
 element. Copies and foreach receivers preserve recursive independence, including
 nullable row shape witnesses. See [Structs.co](../../../examples/Structs.co).
 
 Arrays and foreach snapshots copy class identities along with their element
-slots. Class-owned arrays use the same rectangular shape checks and retain
-their initialized dimensions. [Class values](../cloth-language/references/class-values.md)
+slots. Class-owned arrays retain explicit extents and initialized inner shape;
+growable outer counts may change on whole replacement.
+[Class values](../cloth-language/references/class-values.md)
 
 Read [confirmed array semantics](references/semantics.md) for the language contract.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,
 argument snapshots, returned storage, or cleanup.
 
-## Development rules
+The [growable-array contract](references/growable-arrays.md) confirms:
+`T[]` grows, `T[N]` stays fixed, literal inference stays sized, `:=`/`final`
+permit length mutation, and temporary receivers follow ordinary method rules.
+The initial API is append/insert/removeAt/clear/reserve; rectangular inner shape
+survives empty/null states. [Stage 1](references/growable-arrays-stage-1.md)
+implements the type distinction, separate current-count/inner-shape facts, all
+five signatures, stored/temporary receiver plans and flow effects. Whole-array
+replacement with a different growable outer count executes.
+[Stage 2](references/growable-arrays-stage-2.md) adds owned capacity, concrete
+copy/reserve/relocation/release helpers and executable unsized struct array fields,
+including retained nullable-field witnesses. Public mutator calls still stop at
+C4032; private helper probes do not establish source-level growth support.
+
+The [Stage 0 record](references/growable-arrays-stage-0.md) publishes a passing
+322-test/24-suite baseline, native Windows x64/x86 coverage and all-nine-profile
+IR/object evidence. The [plan](../../../todo/growable-arrays-and-lists-plan.md)
+stages implementation and the collection proof. Generic `List<T>` additionally
+requires separate generic-type support.
+
+## Current implementation rules
 
 - Infer element types across all typed elements before contextual integer literals;
   preserve exact element identity. Do not add widest-type inference or implicit
   conversions between typed values. Floating literal context remains dependent
   on the existing binding/call rules.
-- Preserve rectangular shape recursively. A stored binding fixes every initial
-  dimension; an unsized signature permits differing shapes across invocations.
-  Function-block results may vary between reads until stored in a binding.
+- Preserve rectangular shape recursively. Explicit `[]` remains growable rather
+  than inferring a fixed type from a known current count. Literal-only inference
+  stays sized; growable copies and stored `T[]` function/block results stay
+  growable. Explicit extents and established inner-shape constraints remain.
 - Use `EmitArray.constrain` for declared extents and retained destination
   shapes. Binding and row writes can retain live descriptors. Nullable class fields
   retain a witness across null and arena replacement. Use `constrainPresent`
   when a nullable destination can still be establishing its first shape.
+  `RetainedArrayShape.binding` omits only an unsized binding's outer count;
+  embedded-row constraints keep every axis. Owned nullable-row root sharing uses
+  the same binding distinction when replacing a value with another outer length.
   [Shared shape operations](../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitArray.kt)
 - Keep known shape failures at compile time and unknown shape checks at runtime.
   A zero outer count does not erase inner-axis shape metadata.
@@ -48,6 +72,17 @@ argument snapshots, returned storage, or cleanup.
 - Preserve recursive value independence for binding copies, parameters, extracted
   rows, and replacements. `:=` and `final` forbid rebinding while permitting
   element writes. Object field semantics are a separate design concern.
+- Keep mutators' `MUTATING_RECEIVER` contract distinct from read-only attachments.
+  Use the committed `ArrayMutationPlan` receiver/owner instead of copying a
+  receiver as an explicit value argument. Reject fixed/embedded length changes,
+  read-only defaults and lost receiver proofs before native emission. C4032 still
+  guards public mutator execution; it no longer gates unsized struct fields.
+- Array descriptors append target-sized capacity and an owner after the existing
+  shape fields. Strings keep their two-field layout. Use `EmitMemory.bytes` for
+  raw byte spans and `EmitArrayStorage` for typed array copies and private growth.
+  Borrowed arrays have null owner; reserve copies them before moving storage.
+  Relocation transfers live element arenas and reparents moved head cells.
+  [Storage invariants and measured probes](references/growable-arrays-stage-2.md)
 
 ## Implemented boundaries
 

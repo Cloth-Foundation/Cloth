@@ -190,13 +190,13 @@ class MultiAssignmentTest {
 	}
 
 	@Test
-	fun `native each target preserves its initially unknown array shape`(@TempDir directory: Path) {
+	fun `native each target preserves its independently retained inner shape`(@TempDir directory: Path) {
 		val output = native(directory, "shape-error", """
-			fn<int[]> pair() = [1, 2]
-			fn<int[]> triple() = [1, 2, 3]
+			fn<int[][]> pair() = [[1, 2]]
+			fn<int[][]> triple() = [[1, 2, 3]]
 			fn main() {
-				def<int[]> x = pair()
-				def<int[]> y = triple()
+				def<int[][]> x = pair()
+				def<int[][]> y = triple()
 				x, y = pair()
 				print("unreachable")
 			}

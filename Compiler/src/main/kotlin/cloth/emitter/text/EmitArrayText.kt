@@ -139,7 +139,7 @@ internal class EmitArrayText(
 			val scratch = memory.stack(nodeType, memory.count(1), "text_cache_scratch", overflow)
 			LLVMBuildStore(builder, LLVMConstNull(pointer), field(scratch, 0))
 			LLVMBuildStore(builder, text, field(scratch, 1))
-			val copied = storage.copyAligned(builder, arena, arrays.descriptor(scratch, nodeBytes), nodeAlignment)
+			val copied = storage.copyAligned(builder, arena, memory.bytes(scratch, nodeBytes), nodeAlignment)
 			val node = LLVMBuildExtractValue(builder, copied, 0, "captured_text_node")
 			LLVMBuildStore(builder, node, LLVMBuildLoad2(builder, pointer, tail, "captured_text_tail"))
 			LLVMBuildStore(builder, field(node, 0), tail)

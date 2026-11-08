@@ -1,6 +1,7 @@
 package cloth.emitter.callables
 
 import cloth.data.ValueType
+import cloth.data.CArray
 import cloth.emitter.storage.EmitStringArena
 import cloth.semantic.ResultShape
 import org.bytedeco.javacpp.PointerPointer
@@ -17,6 +18,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 	private val exit = LLVMAppendBasicBlockInContext(context, LLVMGetBasicBlockParent(entry), "return")
 	private val predecessors = mutableListOf<Pair<LLVMBasicBlockRef, LLVMValueRef?>>()
 	private var arena: LLVMValueRef? = null
+	private val storedArenas = mutableListOf<LLVMValueRef>()
 
 	fun stringReturnArena(): LLVMValueRef = arena ?: strings.create(entry).also { arena = it }
 
@@ -26,6 +28,12 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 	}
 
 	fun copyValue(value: LLVMValueRef, type: ValueType, destination: LLVMValueRef = stringReturnArena()): LLVMValueRef = strings.copyValue(builder, destination, value, type)
+
+	/** Rebound strings own replaceable storage, separate from expression scratch. */
+	fun storedArena(): LLVMValueRef = strings.create(entry).also(storedArenas::add)
+	fun replaceStored(arena: LLVMValueRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.replaceValue(builder, entry, arena, value, type)
+	fun replaceArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.replaceElement(builder, array, type, index, value, fallback)
+	fun adoptArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, element: CArray, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.adoptElement(builder, array, type, index, value, element, fallback)
 
 	fun emitReturn(value: LLVMValueRef?) {
 		predecessors.add(LLVMGetInsertBlock(builder) to value)
@@ -62,6 +70,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 			result = LLVMBuildInsertValue(builder, checkNotNull(result), copied, index, "outgoing_results")
 		}
 		arena?.let { strings.release(builder, it) }
+		storedArenas.forEach { strings.release(builder, it) }
 		if (result == null) LLVMBuildRetVoid(builder) else LLVMBuildRet(builder, result)
 	}
 }

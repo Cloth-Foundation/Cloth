@@ -2,3 +2,7 @@
 	path = Shuttle
 	url = https://github.com/Cloth-Foundation/Shuttle.git
 	branch = main
+[submodule "stdlib"]
+	path = Standard-Library
+	url = https://github.com/Cloth-Foundation/Standard-Library.git
+	branch = main

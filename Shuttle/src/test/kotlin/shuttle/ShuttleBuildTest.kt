@@ -5,6 +5,7 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
 import cloth.settings.LinkerDriver
 import cloth.settings.RuntimeLinkage
+import cloth.settings.StandardLibrarySelection
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -15,6 +16,20 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class ShuttleBuildTest {
+	@Test
+	fun `library flags share parsing while run arguments remain literal`() {
+		val settings = ShuttleSettings(arrayOf("run", "--stdlib=first", "--project=project", "--stdlib", "last with spaces", "--", "--no-stdlib", "--stdlib=program"))
+		assertEquals(StandardLibrarySelection.Explicit(Path.of("last with spaces")), settings.compiler.standardLibrary)
+		assertEquals(listOf("--no-stdlib", "--stdlib=program"), settings.arguments)
+		assertEquals(StandardLibrarySelection.Disabled, ShuttleSettings(arrayOf("build", "--no-stdlib", "--no-stdlib")).compiler.standardLibrary)
+		for (args in listOf(arrayOf("build", "--no-stdlib", "--stdlib=checkout"), arrayOf("build", "--stdlib=checkout", "--no-stdlib"), arrayOf("build", "--no-stdlib=true"))) {
+			assertEquals(DiagnosticCode.INVALID_OPTION_VALUE, assertFailsWith<ClothDiagnostic> { ShuttleSettings(args) }.diagnosticCode)
+		}
+		assertEquals(DiagnosticCode.MISSING_OPTION_VALUE, assertFailsWith<ClothDiagnostic> {
+			ShuttleSettings(arrayOf("build", "--stdlib", "--project=project", "later-path"))
+		}.diagnosticCode)
+	}
+
 	@Test
 	fun `build returns the actual executable filename for a multi module project`(@TempDir directory: Path) {
 		val project = importedProject(directory.resolve("project with spaces λ"))

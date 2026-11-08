@@ -220,7 +220,7 @@ class StringSplitTest {
 	}
 
 	@Test
-	fun `split results obey declared and retained array shapes`(@TempDir directory: Path) {
+	fun `split results obey fixed extents and permit growable outer replacements`(@TempDir directory: Path) {
 		native(directory, "shape", """
 			fn main() {
 			    def<string[2]> pieces = "a,b".split(',')
@@ -228,9 +228,10 @@ class StringSplitTest {
 			    println(pieces)
 			}
 		""", "[c, d]\n")
-		val source = Files.writeString(directory.resolve("shape_error.co"), "fn main() { def pieces = \"a,b\".split(','); pieces = \"a,b,c\".split(','); println(\"BAD\") }")
+		native(directory, "growable_shape", "fn main() { def pieces = \"a,b\".split(','); pieces = \"a,b,c\".split(','); println(pieces) }", "[a, b, c]\n")
+		val source = Files.writeString(directory.resolve("shape_error.co"), "fn main() { def<string[2]> pieces = \"a,b\".split(','); pieces = \"a,b,c\".split(','); println(\"BAD\") }")
 		val output = runExecutable(compileArtifact(CompilerSettings(arrayOf(source.toString(), directory.resolve("shape_error").toString()))), 1)
-		assertContains(output, "Array shape mismatch")
+		assertContains(output, "Array size mismatch")
 		assertFalse(output.contains("BAD"))
 		assertFalse(output.contains(processCompletion().trim()))
 	}

@@ -34,6 +34,20 @@ Stage 2 implements [Shuttle manifest/model loading](../shuttle-build/references/
 and converts it into this same request. This adds no compiler import support;
 Compiler still has no TOML or Shuttle dependency.
 
+The [bundled-library contract](../cloth-toolchains/references/standard-library.md)
+and [Stage 2 record](../cloth-toolchains/references/standard-library-stage-2.md)
+own default command attachment and explicit source-module roles. A marked library
+reserves reached `cloth.*` paths; regular-root candidates produce C3106. All-regular
+requests keep ordinary ambiguity rules and do not discover an installation.
+Canonicalization must retain each module's role.
+[Selection controls](../cloth-toolchains/references/standard-library-stage-3.md)
+allow another library root or `--no-stdlib`; disabled commands preserve configured
+roots as regular modules, permitting replacements with ordinary ambiguity checks.
+[Bundling publication](../cloth-toolchains/references/standard-library-stage-5.md)
+verifies the maintained transitive library graph, explicit visibility and real
+packaged builds whose executables survive removal of compiler/source copies.
+StandardLibraryPublicationTest covers the exact graph and all-profile startup objects.
+
 ```cloth
 using token.Token : Token, TokenType, TokenSpan
 using token.Token : *

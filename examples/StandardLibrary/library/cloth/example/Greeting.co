@@ -1,0 +1,12 @@
+using cloth.example.Words : message
+
+typedef<class> OwnedGreeting (def<string> text) {
+    pub mt<string> read() = text
+}
+
+pub fn<string> greeting() {
+    def value = OwnedGreeting::new(message())
+    def saved = value.read()
+    value::delete
+    return saved
+}

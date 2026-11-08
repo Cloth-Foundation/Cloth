@@ -152,7 +152,7 @@ class ClassValueIntegrationTest {
 	}
 
 	@Test
-	fun `class array fields retain the first present shape across null`(@TempDir directory: Path) {
+	fun `class array fields enforce fixed extents and allow growable outer counts across null`(@TempDir directory: Path) {
 		val knownMismatch = """
 			pub typedef<class> Fixed (pub def<int[2]> data)
 			fn main() {
@@ -176,7 +176,7 @@ class ClassValueIntegrationTest {
 			    box.data = [5]
 			}
 		"""
-		assertEquals("4\nArray shape mismatch: assignment must preserve the field's initial shape\n", runStructProgram(NativeCABI.native(), source, directory.resolve("shape"), 1))
+		assertEquals("4\n" + processCompletion().replace("\r\n", "\n"), runStructProgram(NativeCABI.native(), source, directory.resolve("shape")))
 	}
 
 	@Test

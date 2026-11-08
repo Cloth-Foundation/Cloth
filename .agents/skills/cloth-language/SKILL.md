@@ -125,6 +125,8 @@ captures implementation scope and regression evidence.
 | --- | --- |
 | Source imports, selected/wildcard exports, circular graphs, file scopes and compiler requests | [cloth-imports](../cloth-imports/SKILL.md) |
 | Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md) |
+| Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
+| Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
@@ -141,6 +143,7 @@ captures implementation scope and regression evidence.
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, inference, rectangular and fixed shapes, indexing | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
+| Concatenation arenas, replaceable string owners, safe reads/stores and bounded prefix storage | [string storage](../cloth-buffer-lifetimes/references/string-concatenation-storage.md) |
 | String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |
 | Characters, strings, interpolation, concatenation | [cloth-strings](../cloth-strings/SKILL.md) |
 | Character Unicode classification, code-point toInt, pinned tables and generation | [character attachments](../cloth-strings/references/character-attachments.md) |
@@ -163,6 +166,23 @@ captures implementation scope and regression evidence.
 | Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
 
 ## Existing and deferred design records
+
+- Growable arrays and array-backed lists: Stage 0 confirms the
+  [language contract](../cloth-arrays/references/growable-arrays.md), including
+  explicit growable `T[]`, fixed literal inference, binding-only immutability,
+  retained rectangular inner shape, five mutators and temporary receivers.
+  The [baseline](../cloth-arrays/references/growable-arrays-stage-0.md) passes
+  322 tests across 24 suites on the existing compiler, with Windows x64/x86
+  execution and all-nine-profile IR/objects.
+  [Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md) implements
+  growable typing, separate count/witness facts, mutation receiver plans/effects
+  and native whole-array reception with different outer counts.
+  [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) adds owned
+  capacity, private typed relocation/release and executable unsized struct
+  array fields with retained nullable witnesses. Public mutators retain C4032.
+  The [plan](../../../todo/growable-arrays-and-lists-plan.md) retains later
+  source execution work. Generic `List<T>` additionally requires generic-type
+  support. Use [cloth-arrays](../cloth-arrays/SKILL.md) for current scope.
 
 - Imports and Shuttle: Stage 0 publishes the
   [import contract](../cloth-imports/references/semantics.md),

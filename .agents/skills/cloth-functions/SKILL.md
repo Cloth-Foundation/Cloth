@@ -15,6 +15,11 @@ without treating integers as string/array buffers. No public integer ABI is adde
 Read [confirmed function semantics](references/semantics.md). For ordered result
 lists and positional reception, also use [multiple results](../cloth-multiple-results/SKILL.md).
 For buffered parameters/results use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md).
+[Growable arrays Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md)
+extends private array transport with capacity and owner fields. Callers, nullable
+carriers, ordered results and callees consume the same `CArray` layout; string
+transport stays two-field. Outgoing arrays copy live slots and their buffers into
+the caller's arena before frame release. Spare capacity is not copied.
 [Struct Stage 4](../cloth-structs/references/function-integration.md) integrates
 recursive, named and defaulted calls, ordered results and deferred struct reads.
 Struct parameters receive independent snapshots and outgoing structs copy to

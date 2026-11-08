@@ -11,11 +11,14 @@ import cloth.settings.CompilerSettings
 import cloth.settings.OutputKind
 import cloth.settings.resolvePaths
 import cloth.source.SourceGraphLoader
+import cloth.toolchain.StandardLibrary
 import cloth.util.ExecutableFormat
 import java.nio.file.Path
 
 /** Existing CLI/test adapter; the public facade owns the compilation boundary. */
 internal fun compileArtifact(settings: CompilerSettings): Path {
+	val invocationDirectory = Path.of("").toAbsolutePath()
+	val library = StandardLibrary.select(settings.standardLibrary, invocationDirectory)
 	val source = settings.getSourceFile()
 	val sourcePath = source.toPath().toAbsolutePath()
 	val output = settings.getOutputFile()?.toPath() ?: sourcePath.resolveSibling(source.nameWithoutExtension + if (settings.outputKind == OutputKind.OBJECT) ".o" else "")
@@ -24,9 +27,9 @@ internal fun compileArtifact(settings: CompilerSettings): Path {
 		outputFile = output.toAbsolutePath(),
 		outputKind = settings.outputKind,
 		targetTriple = settings.targetTriple,
-		linkOptions = settings.linkOptions.resolvePaths(Path.of("").toAbsolutePath()),
+		linkOptions = settings.linkOptions.resolvePaths(invocationDirectory),
 	)
-	return ClothCompiler.compile(request).artifact
+	return ClothCompiler.compile(library?.attachTo(request) ?: request).artifact
 }
 
 /** Bind and emit one reachable graph, retaining original per-file identities. */

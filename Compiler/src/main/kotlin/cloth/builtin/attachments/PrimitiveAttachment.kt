@@ -3,6 +3,7 @@ package cloth.builtin.attachments
 import cloth.builtin.*
 import cloth.data.CFloat
 import cloth.data.CInteger
+import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.target.TargetLayout
 import cloth.token.Operators
@@ -53,12 +54,14 @@ internal object PrimitiveAttachments {
 	val BOOL = BoolAttachments()
 	val CHAR = CharAttachments()
 	private val integers = ConcurrentHashMap<Pair<CInteger, Int>, IntegerAttachments>()
+	// Nominal array elements must not keep source graphs alive in a global cache.
+	private fun arrays(type: CArray, sizeBits: Int) = ArrayAttachments(type, sizeBits)
 	private fun integers(type: CInteger, sizeBits: Int) = integers.computeIfAbsent(type to sizeBits) { IntegerAttachments(type, sizeBits) }
 
 	// Name/result catalog for pre-typing presence and non-continuing receivers.
 	// Integer families have identical names and nullability; one representative
 	// avoids eagerly materializing 131,072 fixed receiver types for these passes.
-	private val definitions = strings.mapValues { (sizeBits, provider) -> Collections.unmodifiableList(provider.all.toList() + integers(ValueType.INT, sizeBits).all + floats.values.flatMap { it.all } + BOOL.all + CHAR.all) }
+	private val definitions = strings.mapValues { (sizeBits, provider) -> Collections.unmodifiableList(provider.all.toList() + integers(ValueType.INT, sizeBits).all + floats.values.flatMap { it.all } + BOOL.all + CHAR.all + arrays(CArray(ValueType.INT), sizeBits).all) }
 	fun all(target: TargetLayout): List<Attachment> = definitions.getValue(target.sizeBits)
 	fun string(target: TargetLayout): StringAttachments = strings.getValue(target.sizeBits)
 	fun integer(type: CInteger, target: TargetLayout): IntegerAttachments = integers(type, target.sizeBits)
@@ -69,6 +72,7 @@ internal object PrimitiveAttachments {
 		ValueType.CHAR   -> CHAR[name]
 		is CInteger      -> integer(receiver, target)[name]
 		is CFloat        -> floating(receiver)[name]
+		is CArray        -> arrays(receiver, target.sizeBits)[name]
 		else             -> null
 	}
 }

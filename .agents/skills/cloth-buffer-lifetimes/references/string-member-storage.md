@@ -42,19 +42,29 @@ The proof relies on current string invariants:
   cleanup before the method consumes its values. Any later operand's independent
   temporary region checkpoints storage after the earlier value was produced.
 - Existing storage stays live until a proven temporary-region release or physical
-  frame exit. Rebinding does not free an old string buffer. Callee string results
-  are copied into caller storage before callee cleanup. A return/jump that releases
-  crossed storage also stops operand evaluation, so the method does not consume it.
+  frame exit. Rebound strings now have separate replaceable owners under the
+  [string storage correction](string-concatenation-storage.md). Their reads take
+  independent snapshots unless later operands are proven not to publish/rebind.
+  A descriptor borrowed for a read-only call therefore cannot be freed before
+  consumption. Callee results copy before callee cleanup. A crossed-region
+  return/jump also stops evaluation before any consumer could use released storage.
 - The opted-in body consumes these values synchronously and returns independent
   buffers. Adding string mutation, user-controlled string destruction or retaining
   callbacks requires revisiting this proof, not silently inheriting elision.
 
 Thus `text.isEmpty()` no longer copies all text bytes. The same applies to string
-arguments, including captured writes that replace the source binding or array
-element after the earlier value was loaded. Captured publication can still block
-early cleanup without requiring redundant copies of immutable bytes.
+arguments with no later publication. Captured writes require an independent
+operand snapshot before replacement. Captured publication can still block early
+cleanup; immutable frame-backed operands retain their existing copy elision.
 
 ## Proven temporary regions
+
+[Growable arrays Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md)
+adds independent stored-index string snapshots and permits borrowing indexed
+operands for read-only consumers when later operands have no publication.
+Potential snapshot allocation participates in this same closed proof. Arena
+allocation headers now include a resource callback word; historical byte metrics
+below describe their original layout. Current probes use the updated header size.
 
 `ArrayTemporaryAnalysis` admits opted-in members only when every receiver/argument
 passes the existing closed non-publication proof. Unknown contracts, providers,

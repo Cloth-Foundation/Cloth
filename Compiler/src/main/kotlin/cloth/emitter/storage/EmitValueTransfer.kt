@@ -12,7 +12,7 @@ import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 
-internal data class ArrayParent(val value: LLVMValueRef, val type: CArray)
+internal data class ArrayParent(val value: LLVMValueRef, val type: CArray, val index: LLVMValueRef)
 
 /** Owns one-use freshness and the snapshots made in a physical function frame. */
 internal class EmitValueTransfer(context: LLVMContextRef, private val builder: LLVMBuilderRef, abi: NativeCABI, private val frame: EmitFunctionFrame) {
@@ -93,17 +93,17 @@ internal class EmitValueTransfer(context: LLVMContextRef, private val builder: L
 		if (target is ReceiverFieldSymbol) return if (bindings.mayBorrowInstance(target)) value else snapshot(value, type, bindings.ownerArena(target))
 		if (type is CNullable && type.payload is CArray) return nullable.map(value, types.value(type)) { payload ->
 			val previous = bindings.nullableArrayShape(target, type)
-			val checked = arrays.constrainPresent(payload, type, RetainedArrayShape(previous), bindingShapeError)
+			val checked = arrays.constrainPresent(payload, type, RetainedArrayShape(previous, binding = true), bindingShapeError)
 			val snapshot = transfer(checked, type.payload)
 			val retained = if (!type.payload.hasNullableRows) snapshot else checkNotNull(nullable.choose(nullable.present(previous), types.value(type.payload), {
-				arrays.share(snapshot, type.payload, arrays.shapePointer(nullable.payload(previous), type.payload))
+				arrays.share(snapshot, type.payload, arrays.shapePointer(nullable.payload(previous), type.payload), binding = true)
 			}, { snapshot }))
 			bindings.saveNullableArrayShape(target, nullable.wrap(retained, type), type)
 			retained
 		}
 		val shape = if (type is CArray && (type.hasNullableRows || type.arrayDimensions.any { it == null })) bindings.initialArrayShape(target) else null
-		val snapshot = transfer(value, type, shape?.let { RetainedArrayShape(it) }, bindingShapeError)
-		return if (type is CArray && type.hasNullableRows) arrays.share(snapshot, type, arrays.shapePointer(checkNotNull(shape), type)) else snapshot
+		val snapshot = transfer(value, type, shape?.let { RetainedArrayShape(it, binding = true) }, bindingShapeError)
+		return if (type is CArray && type.hasNullableRows) arrays.share(snapshot, type, arrays.shapePointer(checkNotNull(shape), type), binding = true) else snapshot
 	}
 
 	fun storeElement(address: LLVMValueRef, parent: ArrayParent, value: LLVMValueRef, ownerArena: LLVMValueRef?, snapshotBorrowed: Boolean = false): LLVMValueRef {
@@ -112,8 +112,11 @@ internal class EmitValueTransfer(context: LLVMContextRef, private val builder: L
 			val previous = stored.load(address, type, "replaced_array")
 			RetainedArrayShape(arrays.childShape(previous, parent.value, type))
 		} else null
-		val prepared = if (snapshotBorrowed && type !is CArray) snapshot(value, type, ownerArena)
-		else transfer(value, type, retained, ownerArena = ownerArena)
+		val checked = if (type is CArray && retained != null) arrays.constrain(value, type, retained) else value
+		val adopt = type is CArray && !type.hasNullableRows && ownerArena == null && consumeFreshArray(value)
+		val prepared = if (adopt) frame.adoptArrayElement(parent.value, parent.type, parent.index, checked, type, frame.stringReturnArena())
+		else if (type.buffered) frame.replaceArrayElement(parent.value, parent.type, parent.index, checked, ownerArena ?: frame.stringReturnArena())
+		else if (snapshotBorrowed) snapshot(checked, type, ownerArena) else transfer(checked, type, ownerArena = ownerArena)
 		val received = if (parent.type.hasNullableRows) arrays.shareChild(prepared, parent.value, parent.type) else prepared
 		stored.store(address, received, type)
 		return received

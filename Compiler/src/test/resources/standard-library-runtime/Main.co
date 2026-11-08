@@ -1,0 +1,27 @@
+using cloth.collections.OwnedTextChain : OwnedTextChain
+
+fn<int> exercise() {
+    def chain = OwnedTextChain::new
+    for (def i <- 0..64) chain.prepend(#"value-{i}")
+    if (chain.size() != 64) return 1
+    def saved = chain.front()
+    chain.clear()
+    if (saved != "value-63" || chain.size() != 0) return 2
+    chain.prepend("雪🧵")
+    def alias := chain
+    alias.prepend("last")
+    if (chain.size() != 2) return 3
+    def last = chain.front()
+    chain::delete
+    if (saved != "value-63" || last != "last") return 4
+
+    for (def round <- 0..40) {
+        def reused = OwnedTextChain::new
+        for (def i <- 0..24) reused.prepend("owned")
+        if (reused.size() != 24) return 5
+        reused::delete
+    }
+    return 0
+}
+
+fn<int> main() = exercise()

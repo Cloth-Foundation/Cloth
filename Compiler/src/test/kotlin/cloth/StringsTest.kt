@@ -74,7 +74,8 @@ class StringsTest {
 		assertContains(ir, "private constant")
 		assertContains(ir, "load { ptr, i64 }, ptr %original")
 		assertContains(ir, "define internal void @cloth.runtime.write.stdout(")
-		assertFalse(ir.contains("@malloc"))
+		assertContains(ir, "declare ptr @malloc")
+		assertContains(ir, "cloth.rt.string.release")
 	}
 
 	@Test
@@ -208,10 +209,12 @@ class StringsTest {
 		assertContains(ir, "memory_invalid")
 		assertContains(ir, "@llvm.memcpy")
 		assertContains(ir, "declare i32 @memcmp(ptr, ptr, i64)")
-		assertTrue(ir.indexOf("logic_rhs:") < ir.indexOf("%concat_bytes = alloca"))
+		assertContains(ir, "call ptr @cloth.rt.buffer.allocate.align1")
+		assertTrue(ir.indexOf("logic_rhs:") < ir.indexOf("call ptr @cloth.rt.buffer.allocate.align1"))
 		assertTrue(ir.indexOf("%string_same_length") < ir.indexOf("call i32 @memcmp"))
 		assertFalse(ir.contains("@strcmp"))
-		assertFalse(ir.contains("@malloc"))
+		assertContains(ir, "declare ptr @malloc")
+		assertContains(ir, "cloth.rt.string.release")
 	}
 
 	@Test

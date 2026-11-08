@@ -230,10 +230,8 @@ class ForEachTest {
 	}
 
 	@Test
-	fun `received rows keep initial shape under runtime computed replacement`(@TempDir dir: Path) {
-		val output = run(dir.resolve("shape"), "fn<int[][]> source() = [[1]]\nfn<int[]> replacement() = [7, 8]\nfn main() { for (def row <- source()) row = replacement() }", 1)
-		assertContains(output, "Array shape mismatch")
-		assertFalse(output.contains("PEC:"))
+	fun `received growable rows can change length independently of their traversal source`(@TempDir dir: Path) {
+		success(dir.resolve("shape"), "fn<int[][]> source() = [[1]]\nfn<int[]> replacement() = [7, 8]\nfn<int> main() { def rows = source(); for (def row <- rows) { row = replacement(); if (row::size != 2) return 1 }; return (rows[0]::size -> int) - 1 }")
 	}
 
 	@Test

@@ -1,0 +1,3 @@
+using cloth.example.Greeting : greeting
+
+fn main() { println(greeting()) }

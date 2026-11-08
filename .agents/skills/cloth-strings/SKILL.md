@@ -49,6 +49,9 @@ Read [Unicode whitespace methods](references/whitespace-methods.md) for `trim`,
 independent UTF-8 boundary copies.
 Read [string member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md)
 before changing operand copies, callable storage contracts or member temporary regions.
+Read [concatenation and rebinding storage](../cloth-buffer-lifetimes/references/string-concatenation-storage.md)
+for arena-backed concatenation, replaceable local string owners, snapshot reads
+and safe store/loop cleanup. A builder is not required to avoid prefix stack growth.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) for string parameters,
 returned text, interpolation buffers, or nested string arrays; use
 [output](../cloth-output/SKILL.md) for built-in printing.

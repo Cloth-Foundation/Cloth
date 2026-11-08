@@ -202,7 +202,7 @@ class MultiReturnIntegrationTest {
 		""", "first", "Array index out of bounds"), Triple("""
 			fn<int> marker() { println("rhs")
 			    return 1 }
-			fn<int[], int[], int> values(bool bad) = if (bad) { [1], [2, 3], marker() } else { [1], [2], 0 }
+			fn<int[], int[][], int> values(bool bad) = if (bad) { [1], [[2, 3]], marker() } else { [1], [[2]], 0 }
 			fn<isize> main() { def a, b, n = values(false)
 			    a, b, n = values(true)
 			    println("later")

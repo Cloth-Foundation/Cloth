@@ -42,20 +42,14 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 			is BindingDeclaration         -> {
 				// The declaration carries code, not an eagerly computed storage value.
 				if (statement.initializer is FunctionBlockExpression) return null
-				val value = expressionEmitter.emit(statement.initializer)
-				if (expressionEmitter.terminated()) return null
-				val snapshot = transfer.transfer(expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.initializer), semantics.typeOf(statement)), semantics.typeOf(statement))
-				bindings.declare(declarations.symbolOf(statement), semantics.typeOf(statement), snapshot)
-				value
+				if (discardResult && bindings.managesString(declarations.symbolOf(statement), semantics.typeOf(statement))) expressionEmitter.storeStringTemporary(statement.initializer) { declare(statement); null }
+				else declare(statement)
 			}
 
 			is AssignmentStatement        -> {
 				val target = declarations.targetOf(statement)
-				bindings.checkDestination(target)
-				val value = expressionEmitter.emit(statement.value)
-				if (expressionEmitter.terminated()) return null
-				bindings.assign(target, transfer.prepareBindingAssignment(bindings, target, expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.value), semantics.typeOf(statement)), semantics.typeOf(statement)))
-				value
+				if (discardResult && bindings.ownsString(target)) expressionEmitter.storeStringTemporary(statement.value) { assign(statement); null }
+				else assign(statement)
 			}
 
 			is MultiAssignmentStatement   -> emitReception(semantics.receptionOf(statement), declarations.targetsOf(statement), defining = false)
@@ -80,6 +74,23 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 
 			else                          -> throw InternalErrors.invariant("Unsupported statement: $statement")
 		}
+	}
+
+	private fun declare(statement: BindingDeclaration): LLVMValueRef? {
+		val value = expressionEmitter.emit(statement.initializer)
+		if (expressionEmitter.terminated()) return null
+		val snapshot = transfer.transfer(expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.initializer), semantics.typeOf(statement)), semantics.typeOf(statement))
+		bindings.declare(declarations.symbolOf(statement), semantics.typeOf(statement), snapshot)
+		return value
+	}
+
+	private fun assign(statement: AssignmentStatement): LLVMValueRef? {
+		val target = declarations.targetOf(statement)
+		bindings.checkDestination(target)
+		val value = expressionEmitter.emit(statement.value)
+		if (expressionEmitter.terminated()) return null
+		bindings.assign(target, transfer.prepareBindingAssignment(bindings, target, expressionEmitter.adaptValue(checkNotNull(value), semantics.typeOf(statement.value), semantics.typeOf(statement)), semantics.typeOf(statement)))
+		return value
 	}
 
 	private fun emitReception(plan: ReceptionPlan, targets: List<BindingSymbol?>, defining: Boolean): LLVMValueRef? {

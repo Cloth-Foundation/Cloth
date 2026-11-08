@@ -37,6 +37,11 @@ the parent skill for current implementation boundaries and source/test routing.
   it does not freeze the object or its fields.
 - Arrays follow the same binding-only rule: `:=`/`final` permit element mutation
   while prohibiting rebinding, subject to ordinary element type and shape checks.
+  The [growable-array revision](../../cloth-arrays/references/growable-arrays.md)
+  confirms that length changes of `T[]` follow this rule too, without changing
+  the binding's type. It supersedes retained initial outer shape for growable
+  bindings, including broadcast targets. Stage 1 implements growable typing and
+  whole-array replacement; mutator storage/execution remains guarded by C4032.
 - An immutable binding can call methods that mutate its object's fields, such as
   `player.applyDamage(...)` when that method is accessible.
 - There is no separate `mut` qualifier.

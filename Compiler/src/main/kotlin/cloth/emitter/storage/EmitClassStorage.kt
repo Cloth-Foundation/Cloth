@@ -47,14 +47,14 @@ internal class EmitClassStorage(private val context: LLVMContextRef, private val
 					null
 				}, { null })
 				nullable.map(value, wrapper.llvmValue(context, abi.layout)) { payload ->
-					val witness = RetainedArrayShape(stored.load(shape, wrapper), RetainedArrayShape.Storage.WITNESS)
+					val witness = RetainedArrayShape(stored.load(shape, wrapper), RetainedArrayShape.Storage.WITNESS, binding = true)
 					val checked = arrays.constrainPresent(payload, wrapper, witness, shapeError)
 					stored.store(shape, nullable.wrap(arrays.shapeWitness(checked, array), wrapper), wrapper)
 					checked
 				}
 			}
 
-			type is CArray && !initializing -> arrays.constrain(value, type, RetainedArrayShape(stored.load(location.address, type)), shapeError)
+			type is CArray && !initializing -> arrays.constrain(value, type, RetainedArrayShape(stored.load(location.address, type), binding = true), shapeError)
 			else                            -> value
 		}
 		val arena = location.arena

@@ -66,9 +66,6 @@ internal class NamedTypes(private val bindings: FileBindings, target: TargetLayo
 		val seen = mutableMapOf<String, StructFieldDeclaration>()
 		val fields = declaration.fields.mapIndexed { index, field ->
 			seen.putIfAbsent(field.name.lexeme, field)?.let { throw SemanticErrors.duplicate(field.name, it.name) }
-			field.type.arraySizes.indexOfFirst { it == null }.takeIf { it >= 0 }?.let {
-				throw SemanticErrors.structField("A struct array field requires an explicit extent at every dimension", field.type.arraySuffixes[it])
-			}
 			active[owner] = field
 			val type = resolver.resolve(field.type)
 			if (type == ValueType.VOID) throw SemanticErrors.voidType(field.type.span)

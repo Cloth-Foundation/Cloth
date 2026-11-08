@@ -31,6 +31,14 @@ result list; use [arrays](../cloth-arrays/SKILL.md) for shape and copy rules.
   class objects are frozen. A deferred function-block binding is not an ordinary
   stored result; use the [function skill](../cloth-functions/SKILL.md).
 
+The confirmed [growable-array contract](../cloth-arrays/references/growable-arrays.md)
+extends binding-only immutability to length mutation of `T[]`. Explicit growable
+annotations and inferred growable copies retain that type rather than capturing
+their current count as a fixed extent.
+[Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md) implements that
+typing and whole-array reception, including broadcast and positional results.
+Mutator signatures type-check, with native execution guarded by C4032.
+
 Stage 3 executes range headers with one existing assignment/update to their declared
 counter. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)
 owns the source/type and implemented integer overflow-exit rules.

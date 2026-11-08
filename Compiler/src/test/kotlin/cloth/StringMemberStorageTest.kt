@@ -5,6 +5,7 @@ import cloth.builtin.BuiltinOverload
 import cloth.builtin.BuiltinStorageContract
 import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.data.ValueType
+import cloth.data.CArray
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
@@ -31,13 +32,15 @@ class StringMemberStorageTest {
 	@Test
 	fun `only explicit independent read only contracts permit member reclamation`() {
 		assertEquals(BuiltinStorageContract.UNKNOWN, BuiltinOverload(emptyList(), ValueType.VOID, BuiltinBody { _, _ -> null }).storage)
-		assertTrue(PrimitiveAttachments.all(nativeTestLayout).all { member -> member.overloads.all { it.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT } })
+		assertTrue(PrimitiveAttachments.all(nativeTestLayout).all { member -> member.overloads.all { it.storage == if (member.receiver is CArray) BuiltinStorageContract.MUTATING_RECEIVER else BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT } })
 		val model = FunctionAnalyzer(nativeTestLayout).analyze(unit("fn<bool> query(string text) = text.isEmpty()"))
 		val (expression, call) = model.types.memberCalls.entries.single()
 		assertTrue(ArrayTemporaryAnalysis(model).canReclaim(expression))
 		// Model a future member with an unproven body without mutating global registrations.
 		model.types.memberCalls[expression] = call.copy(overload = call.overload.copy(storage = BuiltinStorageContract.UNKNOWN))
 		assertFalse(ArrayTemporaryAnalysis(model).canReclaim(expression))
+		val mutating = FunctionAnalyzer(nativeTestLayout).analyze(unit("fn work(int[] values) { values.reserve(8) }"))
+		assertFalse(ArrayTemporaryAnalysis(mutating).canReclaim(mutating.types.memberCalls.keys.single()))
 	}
 
 	@Test

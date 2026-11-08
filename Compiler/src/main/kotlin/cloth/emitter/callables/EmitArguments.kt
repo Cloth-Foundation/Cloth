@@ -88,7 +88,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		} else {
 			val bytes = call(builder, signature(size, pointer), utf8Length(), "utf8_length", input)
 			guard(builder, LLVMBuildICmp(builder, LLVMIntNE, bytes, count(-1), "valid_utf8"), next, "UTF-8")
-			if (withValues) arrays.descriptor(input, bytes) else null
+			if (withValues) memory.bytes(input, bytes) else null
 		}
 		if (data != null) arrays.store(data, ValueType.STRING, index, checkNotNull(value))
 		val end = LLVMGetInsertBlock(builder)
@@ -101,7 +101,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			}
 		}
 		LLVMPositionBuilderAtEnd(builder, done)
-		return data?.let { arrays.descriptor(it, length) }
+		return data?.let { arrays.descriptor(it, length, cloth.data.CArray(ValueType.STRING)) }
 	}
 
 	fun release(builder: LLVMBuilderRef) {
@@ -143,7 +143,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 			val written = wideCall(builder, input, buffer, capacity)
 			guard(builder, LLVMBuildICmp(builder, LLVMIntEQ, written, capacity, "conversion_complete"), index, "UTF-16")
 			val length = memory.resize(LLVMBuildSub(builder, capacity, int(1), "without_terminator"))
-			val value = EmitArray(context, builder, abi, target).descriptor(buffer, length)
+			val value = memory.bytes(buffer, length)
 			LLVMBuildRet(builder, strings.copy(builder, LLVMGetParam(function, 1), value))
 		} finally {
 			LLVMDisposeBuilder(builder)

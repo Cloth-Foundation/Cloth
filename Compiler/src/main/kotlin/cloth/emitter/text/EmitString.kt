@@ -9,6 +9,7 @@ import cloth.diagnostics.BackendErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.storage.EmitMemory
+import cloth.emitter.storage.EmitStringArena
 import cloth.emitter.types.EmitCast
 import cloth.emitter.types.EmitRuntimeError
 import cloth.emitter.types.primitives.EmitHalf
@@ -22,10 +23,10 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
 
 /** UTF-8 bytes plus a byte length, including embedded NULs. Literals have constant storage;
- * local buffers stay valid throughout the creating invocation. Function returns copy
- * their bytes into caller-owned storage before that invocation exits.
+ * generated concatenations belong to a reclaimable function arena. Escaping values copy
+ * into binding or caller storage before their expression/invocation is released.
  */
-internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, val abi: NativeCABI, val target: TargetLayout = abi.layout) {
+internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, val abi: NativeCABI, val target: TargetLayout = abi.layout, private val arena: (() -> LLVMValueRef)? = null) {
 
 	val metadata by lazy { EmitTypeInfo(context, builder, abi, this) }
 
@@ -194,7 +195,11 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 
 		// A valid address even for empty strings; no terminator is needed with a stored length.
 		val allocationLength = LLVMBuildSelect(builder, LLVMBuildICmp(builder, LLVMIntEQ, length, LLVMConstInt(lengthType, 0, 0), "concat_empty"), LLVMConstInt(lengthType, 1, 0), length, "concat_storage_length")
-		val bytes = memory.stack(LLVMInt8TypeInContext(context), allocationLength, "concat_bytes", "String concatenation is too large at $location")
+		val bytes = if (arena == null) memory.stack(LLVMInt8TypeInContext(context), allocationLength, "concat_bytes", "String concatenation is too large at $location")
+		else {
+			val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
+			EmitStringArena(context, module, abi, target).allocate(builder, arena.invoke(), allocationLength)
+		}
 		LLVMBuildMemCpy(builder, bytes, 1, LLVMBuildExtractValue(builder, left, 0, "concat_left_bytes"), 1, leftLength)
 		val tail = PointerPointer<LLVMValueRef>(1L).use { indices ->
 			indices.put(0, leftLength)

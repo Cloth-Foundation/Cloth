@@ -486,8 +486,10 @@ class ForRangeTest {
 			assertContains(ir, "range_test")
 			assertContains(ir, "range_overflow")
 			assertContains(ir, "range_stalled")
-			val sample = ir.substringAfter("define i32 @sample")
-			assertFalse(sample.substringAfter("range_body:").contains("alloca"), ir)
+			val declaration = "define internal i32 @cloth.fn.0.sample"
+			assertContains(ir, declaration)
+			val sample = ir.substringAfter(declaration).substringBefore("\n}")
+			assertFalse(Regex("\\balloca\\b").containsMatchIn(sample.substringAfter("range_body:")), ir)
 		}
 	}
 

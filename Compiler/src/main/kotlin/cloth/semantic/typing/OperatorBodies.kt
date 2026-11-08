@@ -7,6 +7,7 @@ import cloth.parser.declaration.MethodDeclaration
 import cloth.semantic.ResultShape
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.checkCallableMetadata
+import cloth.semantic.flow.checkArrayShapes
 import cloth.semantic.symbols.MethodSymbol
 
 /** Checks operator bodies in the requesting analysis and guards active recursion. */
@@ -38,6 +39,7 @@ internal class OperatorBodies {
 			// Annotated recursion can see the signature inside this body while it is checked.
 			val method = body.reserveSpecialization(template, width, signature)
 			BodyTyping(body, declaration, signature.results).checkBody()
+			checkArrayShapes(method, body)
 			checkCallableMetadata(method, body)
 			if (body.declarations.classDefinitions.isNotEmpty()) ClassLifetimeAnalysis(body).analyze(listOf(method))
 			facts.publishSpecialization(method, body)

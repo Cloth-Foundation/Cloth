@@ -69,9 +69,9 @@ class ImportStageBoundaryTest {
 				assertEquals(1, status)
 			}
 			val rendered = bytes.toString(Charsets.UTF_8)
-			assertEquals(1, Regex("C3097").findAll(rendered).count())
-			assertContains(rendered, "No module context")
-			assertContains(rendered, "Build the project through Shuttle")
+			assertEquals(1, Regex("C3098").findAll(rendered).count())
+			assertContains(rendered, "Source not found with this exact case")
+			assertContains(rendered, "supplied module roots")
 			assertEquals("preserve", Files.readString(output))
 		}
 	}

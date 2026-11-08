@@ -20,6 +20,13 @@ object ImportErrors {
 
 	fun ambiguousSource(declaration: ImportDeclaration, candidates: List<Pair<String, Path>>) = ClothDiagnostic(DiagnosticCode.AMBIGUOUS_IMPORT_SOURCE, "Source import '${declaration.path.spelling}' matches more than one module", listOf(SourceLabel(declaration.path.span, "Ambiguous source path")), guidance = candidates.joinToString("\n") { (module, path) -> "$module: $path" })
 
+	fun reservedStandardLibraryPath(declaration: ImportDeclaration, root: Path, candidates: List<Pair<String, Path>>) = ClothDiagnostic(
+		DiagnosticCode.RESERVED_STANDARD_LIBRARY_PATH,
+		"Source import '${declaration.path.spelling}' belongs to the selected standard library",
+		listOf(SourceLabel(declaration.path.span, "Reserved standard-library source path")),
+		guidance = "Selected standard-library root: $root\n" + candidates.joinToString("\n") { (module, path) -> "$module: $path" },
+	)
+
 	fun sourceAccess(declaration: ImportDeclaration, path: Path, cause: Throwable) = ClothDiagnostic(DiagnosticCode.IMPORT_SOURCE_ACCESS, "Unable to inspect source import '${declaration.path.spelling}' at '$path'", listOf(SourceLabel(declaration.path.span, "Source access failed")), guidance = cause.message, cause = cause)
 
 	fun sourceRead(declaration: ImportDeclaration, path: Path, cause: Throwable) = ClothDiagnostic(DiagnosticCode.SOURCE_READ, "Unable to read source file '$path'", listOf(SourceLabel(declaration.path.span, "Imported here")), guidance = cause.message, cause = cause)

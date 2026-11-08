@@ -31,6 +31,11 @@ boundaries. All five stages are complete for implemented value types.
 - Keep result-shape typing separate from ordinary scalar expression typing and
   complete semantic reception plans before emission. Preserve the implemented
   runtime validation/write order; a discard cannot bypass an array shape guard.
+- [Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
+  preserves explicit `T[]` in each received slot, separately from current-count
+  facts. Whole replacement may change a growable outer count; explicit extents
+  and independently retained inner witnesses still guard each destination after
+  complete producer evaluation. Broadcast and positional copies stay independent.
 - Multi-result conditionals use the same continuing-flow rules as
   [control flow](../cloth-control-flow/SKILL.md); unannotated functions still mean void.
 - Declaration resolution reports C3053 for grouped deferred-block

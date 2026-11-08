@@ -2,6 +2,7 @@ package cloth.semantic.flow
 
 import cloth.builtin.BuiltinFunctions
 import cloth.builtin.attachments.PrimitiveAttachments
+import cloth.builtin.attachments.ArrayMutation
 import cloth.data.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.CallableDeclaration
@@ -38,6 +39,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private val presentResults = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
 	private val effects = IdentityHashMap<FunctionBlockExpression, Set<Place>>()
+	private val hinting = Collections.newSetFromMap(IdentityHashMap<LocalSymbol, Boolean>())
 	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<Place>>()
 	private val methodsByName = model.declarations.methods.groupBy { it.name.lexeme }
 	private val hasClasses = model.declarations.classDefinitions.isNotEmpty()
@@ -88,16 +90,19 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	 */
 	private fun receiverHint(expression: Expression, unwrapNullable: Boolean = true): ValueType? {
 		val declared = when (expression) {
+			is StringLiteral, is InterpolatedString -> ValueType.STRING
 			is ClassCreationExpression -> model.declarations.classCreations[expression]?.owner
 			is NameExpression          -> binding(expression)?.let { symbol ->
 				when (symbol) {
 					is ReceiverSymbol, is ReceiverFieldSymbol -> model.typeOf(symbol)
-					else                                      -> model.bindings[symbol]
+					else                                      -> model.bindings[symbol] ?: (symbol as? LocalSymbol)?.let(::localHint)
 				}
 			}
 
 			is FieldAccessExpression   -> model.declarations.enumCases[expression]?.owner ?: (receiverHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
 			is IndexExpression         -> (receiverHint(expression.array) as? CArray)?.element
+			is CallExpression          -> callHints(expression).distinct().singleOrNull()
+			is MemberCallExpression    -> memberHints(expression).distinct().singleOrNull()
 			else                       -> null
 		}
 		if (!unwrapNullable) return declared
@@ -106,11 +111,63 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return if (payload is CClass && narrowed != null && payload.accepts(narrowed)) narrowed else payload
 	}
 
+	private fun callHints(call: CallExpression): List<ValueType> {
+		val candidates = when (val group = model.declarations.candidatesOf(call)) {
+			is FunctionGroupSymbol -> group.overloads
+			is MethodGroupSymbol -> group.overloads
+			else -> emptyList()
+		}
+		return candidates.mapNotNull { model.declaredTypeOf(it).results.values.singleOrNull() }
+	}
+	private fun memberHints(call: MemberCallExpression): List<ValueType> {
+		val hint = receiverHint(call.receiver)
+		if (hint != null && hint !is CMemberType) return PrimitiveAttachments[hint, call.name.lexeme, model.target]?.overloads.orEmpty().map { it.returns }
+		if (hint == null && !nominalReceiver(call.receiver)) return emptyList()
+		return methods(call, hint).mapNotNull { model.declaredTypeOf(it).results.values.singleOrNull() }
+	}
+
+	private fun localHint(local: LocalSymbol): ValueType? {
+		if (!hinting.add(local)) return null
+		return try {
+			val annotation = local.declaredType
+			if (annotation != null) {
+				if (annotation.arraySuffixes.isNotEmpty()) return if (annotation.capturesWidth) null else model.types.typeResolver.resolve(annotation)
+				if (annotation.name.lexeme == Keywords.STRING.toString()) return if (annotation.hasNullability) CNullable(ValueType.STRING) else ValueType.STRING
+				model.declarations.namedType(annotation.name)?.let { return if (annotation.hasNullability) CNullable(it) else it }
+			}
+			when (val initializer = local.declaration.initializer) {
+				is ClassCreationExpression, is NameExpression, is CallExpression, is MemberCallExpression, is StringLiteral, is InterpolatedString -> receiverHint(initializer, unwrapNullable = false)
+				else -> null
+			}
+		} finally { hinting.remove(local) }
+	}
+
+	private fun nominalReceiver(value: Expression): Boolean {
+		if (receiverHint(value) is CMemberType) return true
+		val source = (binding(value) as? LocalSymbol)?.declaration?.initializer ?: value
+		val hints = when (source) {
+			is NameExpression -> return source !== value && nominalReceiver(source)
+			is CallExpression -> callHints(source)
+			is MemberCallExpression -> memberHints(source)
+			else -> return false
+		}
+		return hints.isNotEmpty() && hints.all { ((it as? CNullable)?.payload ?: it) is CMemberType }
+	}
+
 	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<MethodSymbol> = when (hint) {
 		is CMemberType -> model.declarations.methodGroup(hint, call.name.lexeme)?.overloads.orEmpty()
 		null           -> methodsByName[call.name.lexeme].orEmpty()
 		else           -> emptyList()
 	}
+
+	private fun arrayMutation(call: MemberCallExpression): ArrayMutation? = ArrayMutation.named(call.name.lexeme)?.takeIf {
+		val hint = receiverHint(call.receiver)
+		hint is CArray || hint == null && !nominalReceiver(call.receiver)
+	}
+
+	private fun arrayWrites(call: MemberCallExpression): List<Place> = if (arrayMutation(call)?.changesLength == true) {
+		listOfNotNull(place(call.receiver)?.let { it.copy(path = it.path + Segment.Index(null)) })
+	} else emptyList()
 
 	private fun operatorMayCall(value: Expression): Boolean {
 		val (operator, operands) = when (value) {
@@ -490,7 +547,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val before = expression(value.receiver, initial).after
 				val after = value.arguments.fold(before) { facts, arg -> expression(arg, facts).after }
 				val candidates = methods(value)
-				if (candidates.isNotEmpty() && before != after) {
+				val mutation = arrayMutation(value)
+				if ((candidates.isNotEmpty() || mutation != null) && before != after) {
 					val path = generateSequence(value.receiver) {
 						when (it) {
 							is FieldAccessExpression -> it.receiver
@@ -501,8 +559,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					val lost = path.filter { part -> stable(part)?.let { it in before && it !in after } == true }
 					if (lost.isNotEmpty()) model.presence.lostReceiverProofs[value] = lost
 				}
-				val remaining = forget(after, methodWrites(place(value.receiver), candidates))
-				Outcome(if (candidates.isEmpty()) remaining else forgetAliases(remaining))
+				val remaining = forget(after, methodWrites(place(value.receiver), candidates) + arrayWrites(value))
+				val aliases = mutation?.changesLength == true && (place(value.receiver)?.let(::canAlias) != false)
+				Outcome(when {
+					candidates.isNotEmpty() -> forgetAliases(remaining)
+					aliases -> remaining.filterNot { canAlias(it) && it.path.any { segment -> segment is Segment.Index } }.toSet()
+					else -> remaining
+				})
 			}
 
 			is ClassCreationExpression                                 -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
@@ -533,8 +596,12 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 			is MemberCallExpression                                                                                                                                                                                                                                      -> {
 				val hint = receiverHint(value.receiver)
+				if (arrayMutation(value) != null) {
+					if (ArrayMutation.named(value.name.lexeme) == ArrayMutation.REMOVE_AT && hint is CArray && hint.element !is CNullable) presentResults.add(value)
+					return result
+				}
 				val sources = methods(value, hint)
-				val primitives = if (hint is CMemberType) emptyList() else PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
+				val primitives = if (hint is CMemberType || nominalReceiver(value.receiver)) emptyList() else PrimitiveAttachments.all(model.target).filter { it.definition.name == value.name.lexeme }
 				if ((sources.isNotEmpty() || primitives.isNotEmpty()) && presentReturns(sources) && primitives.all { member -> member.overloads.all { it.returns !is CNullable && it.returns != ValueType.VOID } }) presentResults.add(value)
 			}
 
@@ -572,7 +639,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 				is MemberCallExpression     -> {
 					visit(value.receiver); value.arguments.forEach(::visit)
-					result.addAll(methodWrites(place(value.receiver), methods(value)))
+					result.addAll(methodWrites(place(value.receiver), methods(value)) + arrayWrites(value))
 				}
 
 				is ClassCreationExpression  -> value.arguments.forEach(::visit)

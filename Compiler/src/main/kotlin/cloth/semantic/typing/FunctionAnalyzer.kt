@@ -17,6 +17,7 @@ import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
 import cloth.semantic.flow.checkCallableMetadata
+import cloth.semantic.flow.checkArrayShapes
 import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.MethodSymbol
@@ -119,7 +120,10 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			}
 			checker.checkBody()
 		}
-		for (function in declarations.concreteCallables) checkCallableMetadata(function, model)
+		for (function in declarations.concreteCallables) {
+			checkArrayShapes(function, model)
+			checkCallableMetadata(function, model)
+		}
 		if (declarations.classDefinitions.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
 		return model
 	}

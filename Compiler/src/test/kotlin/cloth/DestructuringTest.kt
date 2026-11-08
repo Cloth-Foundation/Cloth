@@ -212,9 +212,9 @@ class DestructuringTest {
 	}
 
 	@Test
-	fun `array result positions infer extents without weakening fixed assignment shapes`() {
+	fun `array result positions preserve growable annotations without weakening fixed assignments`() {
 		val model = analyze("fn values() { def<int[], string[]> a, b = [1, 2], [\"x\"] }")
-		assertEquals(listOf(CArray(CInt(), 2), CArray(CString, 1)), model.declarations.symbolsOf(group(model)).filterNotNull().map { model.typeOf(it) })
+		assertEquals(listOf(CArray(CInt()), CArray(CString)), model.declarations.symbolsOf(group(model)).filterNotNull().map { model.typeOf(it) })
 		analyze("fn values(bool flag) { def<int[], string[]> a, b = if (flag) { [1], [\"x\"] } else { [1, 2], [\"x\", \"y\"] } }")
 		failure("fn values() { def a, b = [1, 2], [3]\n a, b = [1], [2] }", DiagnosticCode.INVALID_ARRAY)
 		failure("fn values() { def<int[2], bool> a, b = [1], true }", DiagnosticCode.INVALID_ARRAY)

@@ -50,7 +50,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private val boolType = types.value(ValueType.BOOL)
 	private val places by lazy { EmitPlaces(context, builder, abi, bindings, functions, functionSemantics, this) }
 	private val statements by lazy { EmitStatement(this, bindings, functionSemantics) }
-	private val temporaryAnalysis = ArrayTemporaryAnalysis(functionSemantics)
+	private val temporaryAnalysis = ArrayTemporaryAnalysis(functionSemantics, bindings.managedStrings)
 	private var temporaryDepth = 0
 	private var constructorResult: LLVMValueRef? = null
 
@@ -129,7 +129,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		temporaryDepth++
 		return try {
 			val receiver = if (access.receiverForm == ProviderReceiverForm.TYPE) ProviderReceiver.Type(receiverType)
-			else ProviderReceiver.Value(receiverType, emitValue(access.receiver))
+			else ProviderReceiver.Value(receiverType, emitRead(access.receiver, borrowString = !access.result.callsFormatter && !access.result.type.indirect))
 			val location = access.span.source?.let { "${it.name}:${access.span}" } ?: access.span.toString()
 			val services = providerServices(location, access.receiver)
 			access.result.emit(services, receiver)
@@ -207,11 +207,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		temporaryDepth++
 		try {
 			val values = (listOf(call.receiver) + call.arguments).mapIndexed { index, expression ->
-				val value = emitValue(expression)
 				val type = selected.arguments[index].parameterType
-				// Loading an immutable string descriptor already snapshots its value.
-				// Rebinding/array replacement cannot mutate those bytes. The protected
-				// operand region keeps storage live until this read-only call consumes it.
+				val borrow = type == ValueType.STRING && selected.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT && call.arguments.drop(index).all(temporaryAnalysis::hasNoPublication)
+				val value = emitRead(expression, borrowString = borrow)
+				// A rebound string may be borrowed only when later operands cannot
+				// replace its storage. Other reads snapshot before those effects.
 				if (type == ValueType.STRING && selected.overload.storage == BuiltinStorageContract.READ_ONLY_INDEPENDENT_RESULT) value
 				else valueTransfer.snapshot(value, type)
 			}
@@ -266,7 +266,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
 		val ownerArena = functionSemantics.declarations.storedRoot(statement.target)?.let(bindings::ownerArena)
 		val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
-		return valueTransfer.storeElement(address, ArrayParent(array, parentType), value, ownerArena)
+		return valueTransfer.storeElement(address, ArrayParent(array, parentType, arrays.checkedIndex(index, semantics.typeOf(statement.target.index))), value, ownerArena)
 	}
 
 	private fun emitStructLiteral(expression: StructLiteral): LLVMValueRef {
@@ -274,12 +274,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val memory = EmitMemory(context, builder, abi)
 		val storage = types.storage(type)
 		val address = memory.stack(storage, memory.count(1), "struct_literal", "Unable to allocate struct literal storage")
-		if (type.fields.isEmpty()) LLVMBuildStore(builder, LLVMConstNull(storage), address)
+		LLVMBuildStore(builder, LLVMConstNull(storage), address)
 		for ((index, source) in expression.fields.withIndex()) {
 			val field = type.fields[index]
 			val value = adaptValue(emitValue(source), semantics.typeOf(source), field.type)
 			// Finish the field's snapshot before the next expression can mutate its source.
-			stored.store(stored.fieldAddress(address, type, field), valueTransfer.snapshot(value, field.type), field.type)
+			val snapshot = valueTransfer.snapshot(value, field.type)
+			stored.store(stored.fieldAddress(address, type, field), snapshot, field.type)
+			EmitStructFields(context, builder, abi).remember(StructParent(address, type, field), snapshot)
 		}
 		return address
 	}
@@ -432,6 +434,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	/** Only scalar results may cross this checkpoint; wide value bytes stay inside. */
 	fun scalarTemporary(action: () -> LLVMValueRef): LLVMValueRef = temporaryRegion(true, action)
 
+	/** The destination copies into its own arena before expression scratch is released. */
+	fun <T> storeStringTemporary(source: Expression, action: () -> T): T = temporaryRegion(temporaryAnalysis.hasNoPublication(source), action)
+
 	/** Closed non-escape proof, independent of an enclosing expression's checkpoint.
 	 * Return paths bypass these releases and retain the ordinary owning-frame path.
 	 */
@@ -512,13 +517,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				} else arrays.literal(type.element, expression.elements.map { item -> { valueTransfer.transfer(adaptValue(emitValue(item), semantics.typeOf(item), type.element), type.element) } })
 			}
 
-			is IndexExpression          -> {
-				val array = emitValue(expression.array)
-				val fresh = valueTransfer.consumeFreshArray(array)
-				val index = emitValue(expression.index)
-				val value = arrays.index(array, semantics.typeOf(expression), index, semantics.typeOf(expression.index))
-				if (fresh) valueTransfer.freshArray(value, semantics.typeOf(expression)) else value
-			}
+			is IndexExpression          -> emitIndex(expression)
 
 			is IfExpression             -> emitConditional(expression, requireValue = semantics.resultOf(expression) !in setOf(ResultShape.Empty, ResultShape.Never))
 			is TypeCheckExpression      -> {
@@ -538,18 +537,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				} else LLVMConstInt(boolType, if (source == target) 1L else 0L, 0)
 			}
 
-			is NameExpression           -> {
-				projectedValues[expression]?.let { return it }
-				val symbol = functionSemantics.declarations.symbolOf(expression) as? BindingSymbol ?: throw InternalErrors.invariant("Value name has no binding symbol")
-				val field = (symbol as? ReceiverFieldSymbol)?.field
-				if (field is EnumField) return emitEnumPayload(bindings.read(symbol.receiver), field, expression)
-				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				if (block != null) emitBlock(block) else {
-					val stored = bindings.read(symbol)
-					val read = if (semantics.payloadReads.containsKey(expression)) nullable.payload(stored) else stored
-					if (bindings.mayBorrowInstance(symbol)) valueTransfer.snapshot(read, semantics.typeOf(expression)) else read
-				}
-			}
+			is NameExpression           -> emitName(expression)
 
 			is MemberCallExpression     -> emitMemberCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
 			is CallExpression           -> emitCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
@@ -613,13 +601,47 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					return emitLogical(expression)
 				}
-				val left = emitValue(expression.left)
-				val right = emitValue(expression.right)
+				val left = emitRead(expression.left, borrowString = temporaryAnalysis.hasNoPublication(expression.right))
+				val right = emitRead(expression.right, borrowString = true)
 				emitBinaryOperands(expression.operator, left, right, semantics.typeOf(expression.left), semantics.typeOf(expression.right))
 			}
 
 			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
+	}
+
+	private fun emitName(expression: NameExpression, borrowString: Boolean = false): LLVMValueRef? {
+		projectedValues[expression]?.let { return it }
+		val symbol = functionSemantics.declarations.symbolOf(expression) as? BindingSymbol ?: throw InternalErrors.invariant("Value name has no binding symbol")
+		val field = (symbol as? ReceiverFieldSymbol)?.field
+		if (field is EnumField) return emitEnumPayload(bindings.read(symbol.receiver), field, expression)
+		val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
+		if (block != null) return emitBlock(block)
+		val stored = bindings.read(symbol)
+		val read = if (semantics.payloadReads.containsKey(expression)) nullable.payload(stored) else stored
+		return if (bindings.mayBorrowInstance(symbol) || bindings.ownsString(symbol) && !borrowString) valueTransfer.snapshot(read, semantics.typeOf(expression)) else read
+	}
+
+	private fun emitRead(expression: Expression, borrowString: Boolean): LLVMValueRef {
+		if (!borrowString) return emitValue(expression)
+		val value = when (expression) {
+			is NameExpression -> emitName(expression, borrowString = true)
+			is IndexExpression -> emitIndex(expression, borrowString = true)
+			else -> return emitValue(expression)
+		}
+		if (terminated()) throw Terminated()
+		return checkNotNull(value)
+	}
+
+	private fun emitIndex(expression: IndexExpression, borrowString: Boolean = false): LLVMValueRef {
+		val array = emitValue(expression.array)
+		val fresh = valueTransfer.consumeFreshArray(array)
+		val index = emitValue(expression.index)
+		val type = semantics.typeOf(expression)
+		val value = arrays.index(array, type, index, semantics.typeOf(expression.index))
+		return if (fresh) valueTransfer.freshArray(value, type)
+		else if (!borrowString && ((type as? CNullable)?.payload ?: type) == ValueType.STRING) valueTransfer.snapshot(value, type)
+		else value
 	}
 
 	private fun emitOperator(operator: ResolvedOperator, operands: List<Expression>): LLVMValueRef? = functions.emitCall(operator.call, operands, this, builder, operatorReceiver = operator.receiverIndex)?.let { valueTransfer.freshResults(it, operator.call.type.results) }

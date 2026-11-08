@@ -51,12 +51,12 @@ class StructSemanticsTest {
 	}
 
 	@Test
-	fun `field declarations fail for duplicate names unknown types void missing extents and cycles`() {
+	fun `field declarations accept unsized arrays and reject duplicate names invalid types and cycles`() {
 		failure("typedef<struct> S {}\ntypedef<struct> S {}", DiagnosticCode.DUPLICATE_STRUCT)
 		failure("typedef<struct> S { int x, bool x }", DiagnosticCode.DUPLICATE_BINDING)
 		failure("typedef<struct> S { Missing child }", DiagnosticCode.UNSUPPORTED_TYPE)
 		failure("typedef<struct> S { void value }", DiagnosticCode.VOID_TYPE)
-		failure("typedef<struct> S { int[2][]? values }", DiagnosticCode.INVALID_STRUCT_FIELD)
+		assertEquals("int[2][]?", analyze("typedef<struct> S { int[2][]? values }").declarations.structs.getValue("S").fields.single().type.spelling)
 		failure("typedef<struct> Node { Node child }", DiagnosticCode.RECURSIVE_STRUCT)
 		val cycle = failure("typedef<struct> A { B[2]? child }\ntypedef<struct> B { A? back }", DiagnosticCode.RECURSIVE_STRUCT)
 		assertEquals(listOf(1, 2), cycle.sourceLabels.map { it.span.startLine })

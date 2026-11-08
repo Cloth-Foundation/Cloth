@@ -39,7 +39,7 @@ internal class StructStorageLayout(private val context: LLVMContextRef, module: 
 
 	private fun shape(type: ValueType): Shape = memo.getOrPut(type) {
 		val result = when {
-			type is CStruct                              -> aggregate(if (type.fields.isEmpty()) listOf(Shape(BigInteger.ONE, 1)) else type.fields.map { shape(it.type) })
+			type is CStruct                              -> aggregate(if (type.fields.isEmpty()) listOf(Shape(BigInteger.ONE, 1)) else (type.fields + type.nullableArrayFields).map { shape(it.type) })
 			type is CNullable && type.payload is CStruct -> aggregate(listOf(Shape(BigInteger.ONE, 1), shape(type.payload)))
 			else                                         -> {
 				val storage = type.llvmStorage(context, semantics.target)

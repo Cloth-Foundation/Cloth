@@ -1,0 +1,33 @@
+// Verification fixture, not a public standard-library collection API.
+typedef<class> TextNode (pub def<string> text, pub def<TextNode?> next)
+
+pub typedef<class> OwnedTextChain {
+    def<TextNode?> head = null
+    def<usize> count = 0
+
+    pub mt prepend(string text) {
+        head = TextNode::new(text, head)
+        count++
+    }
+
+    pub mt<usize> size() = count
+
+    pub mt<string> front() {
+        def<TextNode?> current := head
+        if (current == null) return ""
+        return current.text
+    }
+
+    pub mt clear() {
+        def<TextNode?> current = head
+        head = null
+        count = 0
+        while (current != null) {
+            def<TextNode?> next := current.next
+            current::delete
+            current = next
+        }
+    }
+
+    ~OwnedTextChain { clear() }
+}

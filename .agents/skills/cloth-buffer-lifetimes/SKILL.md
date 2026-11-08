@@ -5,6 +5,24 @@ description: Preserve Cloth compiler buffer lifetimes, recursive value copies, a
 
 # Cloth buffer lifetimes
 
+[Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
+separates binding shape constraints from rectangular row constraints. Only an
+unsized binding's outer count may change on whole replacement; retained inner
+witnesses and independent copied vectors survive empty/null states. Array
+mutators use `MUTATING_RECEIVER`, so they cannot enter read-only member cleanup
+or copy-elision proofs. [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md)
+adds array-only capacity/owner fields, typed copies and private relocation/release
+helpers, and executable unsized struct fields with pointer-free nullable witnesses.
+Relocation transfers live slot arenas and reparents their owners; ordinary copies
+remain independent. Existing unproven indexed writes retain superseded payloads
+in the enclosing owner. Public mutator lowering remains guarded by C4032.
+
+Read [string concatenation and rebinding storage](references/string-concatenation-storage.md)
+for the 2026-11-07 compiler fix: arena-backed concatenation, replaceable owned
+string bindings, snapshot/borrow boundaries and safe store/loop cleanup.
+Bootstrap uses ordinary growing concatenation again; stack size and formatting
+chunk workarounds are not the storage contract.
+
 [Arbitrary integer Stage 3](../cloth-numerics/references/arbitrary-width-arithmetic.md)
 introduces production wide-operation buffers as stable independent values.
 Kernels reclaim bounded scratch on return; caller buffers currently use stack
@@ -31,6 +49,11 @@ Use this skill for the compiler's internal string/array storage. Read the
 [array contract](../cloth-arrays/references/semantics.md) for confirmed copy and
 optimization decisions. Ordinary class construction/destruction remains governed
 by the [shared language semantics](../cloth-language/references/semantics.md).
+The [standard-library allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md)
+verifies an owning collection through existing class operations, including owned
+string fields, snapshots after deletion, poisoned frees and allocation failures.
+The process-lifetime class table is measured separately from balanced payload
+and field-buffer allocations; source-library selection does not gate allocation.
 Read [string member storage cleanup](references/string-member-storage.md) for
 opt-in read-only/independent-result contracts, immutable descriptor snapshots,
 member copy elision and proven arena/stack reclamation.
@@ -151,8 +174,9 @@ member copy elision and proven arena/stack reclamation.
 - Keep checked allocation/count arithmetic target-sized. Preserve source failures,
   evaluation order, surviving aliases, and independent arrays. This mechanism
   introduces neither GC, reference counting, nor automatic class destruction.
-- Stage 4 loop body, stepper and whole-loop proofs permit safe local definitions
-  and scalar writes, but reject buffered/indexed stores, unknown operations and
+- Loop body, stepper and whole-loop proofs permit safe local definitions,
+  scalar writes and proven replaceable-string stores, but reject other
+  buffered/indexed stores, unknown operations and
   captured publication. Reclaim only proven regions: arena suffix first, then
   stackrestore dynamic literals. Foreach body checkpoints precede receiver copying;
   source snapshots remain alive throughout traversal. Buffered/unknown effects

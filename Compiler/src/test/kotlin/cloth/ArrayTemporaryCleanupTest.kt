@@ -24,6 +24,44 @@ class ArrayTemporaryCleanupTest {
 	private val make = "fn<int[]> make(int n) = [n, n]"
 	private val read = "fn<int> read(int[] a) = a[0]"
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
+	// Two arena-header words and the three-word array control precede live slots.
+	private val pairBytes = NativeCABI.native().pointerBits / 8 * 5L + 8
+	private val blockBytes = NativeCABI.native().pointerBits / 8 * 5L + 256
+
+	@Test
+	fun `growing string prefixes use bounded live storage and preserve saved values across poisoned frees`(@TempDir directory: Path) {
+		probe(directory, "growing_string_storage", """
+			fn<int> sample() {
+			    def result = "start"
+			    def saved = result
+			    def values = [result]
+			    for (def i <- 0..4096) {
+			        result = result + "é\0"
+			        if (liveBytes() > 131072) return 1
+			    }
+			    if (result::size != 8197 || saved != "start" || values[0] != "start") return 2
+			    return 0
+			}
+		""")
+	}
+
+	@Test
+	fun `separate string stores reclaim scratch even when an outer loop publishes buffers`(@TempDir directory: Path) {
+		probe(directory, "string_store_regions", """
+			fn<int[]> make(int n) = [n]
+			fn<int> sample() {
+			    def result = ""
+			    def saved = [0]
+			    for (def i <- 0..2048) {
+			        saved = make(i)
+			        result = result + "x"
+			        if (liveBytes() > 196608) return 1
+			    }
+			    if (saved[0] != 2047 || result::size != 2048) return 2
+			    return 0
+			}
+		""")
+	}
 
 	@Test
 	fun `class fields reclaim superseded buffers and publish snapshots across poisoned frees`(@TempDir directory: Path) {
@@ -199,7 +237,7 @@ class ArrayTemporaryCleanupTest {
 	@Test
 	fun `discarded results release all bytes before the next statement and bound peak memory`(@TempDir directory: Path) {
 		val source = "fn<int[]> make() = [${(0 until 64).joinToString(", ")}]\nfn<int> sample() {\n" + List(8) { "make()\nif (liveBytes() != 0) { return 1 }" }.joinToString("\n") + "\nreturn 0\n}"
-		probe(directory, "discarded", source, allocations = 8, peak = 264)
+		probe(directory, "discarded", source, allocations = 8, peak = blockBytes)
 	}
 
 	@Test
@@ -216,7 +254,7 @@ class ArrayTemporaryCleanupTest {
 			    if (second != 2 || liveBytes() != baseline || a[0] != 1) { return 2 }
 			    return 0
 			}
-		""", allocations = 3, peak = 32)
+		""", allocations = 3, peak = pairBytes * 2)
 	}
 
 	@Test
@@ -233,17 +271,17 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != baseline) { return 2 }
 			    return 0
 			}
-		""", allocations = 3, peak = 32)
+		""", allocations = 3, peak = pairBytes * 2)
 	}
 
 	@Test
 	fun `primitive indexing frees its producer after loading the scalar value`(@TempDir directory: Path) {
-		probe(directory, "index", "$make\nfn<int> sample() {\n def n = make(7)[1]\n if (liveBytes() != 0) { return 1 }\n return n - 7\n}", allocations = 1, peak = 16)
+		probe(directory, "index", "$make\nfn<int> sample() {\n def n = make(7)[1]\n if (liveBytes() != 0) { return 1 }\n return n - 7\n}", allocations = 1, peak = pairBytes)
 	}
 
 	@Test
 	fun `nested literal temporaries release copied rows after scalar indexing`(@TempDir directory: Path) {
-		probe(directory, "literal_rows", "fn<int> sample() {\n def n = [[1, 2], [3, 4]][0][1]\n if (liveBytes() != 0) { return 1 }\n return n - 2\n}", allocations = 2, peak = 32)
+		probe(directory, "literal_rows", "fn<int> sample() {\n def n = [[1, 2], [3, 4]][0][1]\n if (liveBytes() != 0) { return 1 }\n return n - 2\n}", allocations = 2, peak = pairBytes * 2)
 	}
 
 	@Test
@@ -332,7 +370,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() <= beforeScope) { return 2 }
 			    return 0
 			}
-		""", allocations = 3, peak = 48)
+		""", allocations = 3, peak = pairBytes * 3)
 	}
 
 	@Test
@@ -349,7 +387,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() == 0 || a[0] != 7) { return 3 }
 			    return 0
 			}
-		""", allocations = 3, peak = 16)
+		""", allocations = 3, peak = pairBytes)
 	}
 
 	@Test
@@ -369,7 +407,7 @@ class ArrayTemporaryCleanupTest {
 				    if (liveBytes() != 0) { return 3 }
 				    return 0
 				}
-			""", allocations = 2, peak = 16)
+			""", allocations = 2, peak = pairBytes)
 		}
 	}
 
@@ -403,7 +441,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != 0 || n != 2) { return 2 }
 			    return 0
 			}
-		""", allocations = 2, peak = 16)
+		""", allocations = 2, peak = pairBytes)
 	}
 
 	@Test
@@ -459,7 +497,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != 0) { return 1 }
 			    return sum - 3
 			}
-		""", allocations = 1, peak = 16)
+		""", allocations = 1, peak = pairBytes)
 	}
 
 	@Test
@@ -474,7 +512,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != baseline || values[1] != 2) { return 1 }
 			    return sum - 3
 			}
-		""", allocations = 2, peak = 32)
+		""", allocations = 2, peak = pairBytes * 2)
 	}
 
 	@Test
@@ -542,13 +580,13 @@ class ArrayTemporaryCleanupTest {
 			    def total = 0
 			    for (def i <- 0..20000) {
 			        def local = [${(1..64).joinToString(", ")}]
-			        if (liveBytes() != 264) { return 1 }
+			        if (liveBytes() != $blockBytes) { return 1 }
 			        total += local[0]
 			    }
 			    if (liveBytes() != 0) { return 2 }
 			    return total - 20000
 			}
-		""", allocations = 20000, peak = 264)
+		""", allocations = 20000, peak = blockBytes)
 	}
 
 	@Test
@@ -564,7 +602,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != 0) { return 2 }
 			    return count - 20000
 			}
-		""", allocations = 20000, peak = 264)
+		""", allocations = 20000, peak = blockBytes)
 	}
 
 	@Test
@@ -646,14 +684,14 @@ class ArrayTemporaryCleanupTest {
 			    def count = 0
 			    for (def i <- 0..20000) {
 			        def local = [${(1..64).joinToString(", ")}]
-			        if (liveBytes() != 264) { return 1 }
+			        if (liveBytes() != $blockBytes) { return 1 }
 			        count += local[0]
 			        continue
 			    }
 			    if (liveBytes() != 0) { return 2 }
 			    return count - 20000
 			}
-		""", allocations = 20000, peak = 264)
+		""", allocations = 20000, peak = blockBytes)
 	}
 
 	@Test
@@ -748,12 +786,12 @@ class ArrayTemporaryCleanupTest {
 			        i++
 			        if (i % 2 == 0) { continue }
 			        def local = [${(1..64).joinToString(", ")}]
-			        if (local[0] != 1 || liveBytes() != 264) { return 2 }
+			        if (local[0] != 1 || liveBytes() != $blockBytes) { return 2 }
 			    }
 			    if (liveBytes() != 0) { return 3 }
 			    return i - 20000
 			}
-		""", allocations = 30001, peak = 264)
+		""", allocations = 30001, peak = blockBytes)
 	}
 
 	@Test
@@ -826,12 +864,12 @@ class ArrayTemporaryCleanupTest {
 			        i++
 			        if (i % 2 == 0) continue
 			        def local = [${(1..64).joinToString(", ")}]
-			        if (local[0] != 1 || liveBytes() != 264) return 2
+			        if (local[0] != 1 || liveBytes() != $blockBytes) return 2
 			    } while (again([i, ${(1..63).joinToString(", ")}], 20000))
 			    if (liveBytes() != 0) return 3
 			    return i - 20000
 			}
-		""", allocations = 30000, peak = 264)
+		""", allocations = 30000, peak = blockBytes)
 	}
 
 	@Test
@@ -923,7 +961,7 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != 0) return 6
 			    return breakOuter()
 			}
-		""", allocations = 4002, peak = 264)
+		""", allocations = 4002, peak = blockBytes)
 	}
 
 	@Test
@@ -934,10 +972,10 @@ class ArrayTemporaryCleanupTest {
 			    def<int<65536>> n = 0
 			    def iterations = 0
 			    do { n++; iterations++; continue } while (n < 2000)
-			    if (n != 2000 || iterations != 2000 || liveBytes() != 24 || anchor[0] != 1) return 1
+			    if (n != 2000 || iterations != 2000 || liveBytes() != ${pairBytes + 8} || anchor[0] != 1) return 1
 			    return 0
 			}
-		""", allocations = 1, peak = 24)
+		""", allocations = 1, peak = pairBytes + 8)
 	}
 
 	@Test
@@ -991,12 +1029,12 @@ class ArrayTemporaryCleanupTest {
 			    for (def i <- 0..20000) {
 			        def<int<129>> n = next(total)
 			        total = n
-			        if (liveBytes() != 32) return 1
+			        if (liveBytes() != 40) return 1
 			    }
 			    if (liveBytes() != 0 || total != 20000) return 2
 			    return 0
 			}
-		""", allocations = 20000, peak = 32)
+		""", allocations = 20000, peak = 40)
 	}
 
 	@Test
@@ -1012,7 +1050,7 @@ class ArrayTemporaryCleanupTest {
 			    if (count != 2000 || liveBytes() != 0) return 1
 			    return 0
 			}
-		""", allocations = 1, peak = 24)
+		""", allocations = 1, peak = 32)
 	}
 
 	@Test
@@ -1040,12 +1078,12 @@ class ArrayTemporaryCleanupTest {
 			    def n = unsigned int<129>::max
 			    for (def i <- 0..20000) {
 			        def text = render(n)
-			        if (text == "" || liveBytes() != 47) return 1
+			        if (text == "" || liveBytes() != 55) return 1
 			    }
 			    if (liveBytes() != 0) return 2
 			    return 0
 			}
-		""", allocations = 20000, peak = 47)
+		""", allocations = 20000, peak = 55)
 	}
 
 	@Test
@@ -1296,7 +1334,7 @@ class ArrayTemporaryCleanupTest {
 
 	@Test
 	fun `read only string methods add no operand copies for literals or stored strings`(@TempDir directory: Path) {
-		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		val bytes = (NativeCABI.native().pointerBits / 8 * 2 + 3).toLong()
 		probe(directory, "member_no_copies", """
 			fn<string> seed() = "abc"
 			fn<int> sample() {
@@ -1319,7 +1357,7 @@ class ArrayTemporaryCleanupTest {
 
 	@Test
 	fun `scalar member consumers release producers and preserve preexisting string storage`(@TempDir directory: Path) {
-		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		val bytes = (NativeCABI.native().pointerBits / 8 * 2 + 3).toLong()
 		probe(directory, "member_consumers", """
 			fn<string> text() = "abc"
 			fn<int> sample() {
@@ -1336,7 +1374,7 @@ class ArrayTemporaryCleanupTest {
 
 	@Test
 	fun `member condition cleanup bounds while and do while producer storage`(@TempDir directory: Path) {
-		val bytes = (NativeCABI.native().pointerBits / 8 + 3).toLong()
+		val bytes = (NativeCABI.native().pointerBits / 8 * 2 + 3).toLong()
 		probe(directory, "member_conditions", """
 			fn<string> text(int n) = if (n < 10) { "v0" } else { "v00" }
 			fn<int> sample() {
@@ -1351,7 +1389,8 @@ class ArrayTemporaryCleanupTest {
 
 	@Test
 	fun `captured string updates keep old descriptors and published buffers alive`(@TempDir directory: Path) {
-		val bytes = (NativeCABI.native().pointerBits / 8 * 3 + 14).toLong()
+		// Old received operand + old/new owners + returned replacement coexist at the store.
+		val bytes = (NativeCABI.native().pointerBits / 8 * 8 + 22).toLong()
 		probe(directory, "member_publication", """
 			fn<string> original() = "original"
 			fn<string> fresh() = "new"
@@ -1364,13 +1403,13 @@ class ArrayTemporaryCleanupTest {
 			    if (liveBytes() != baseline || text != "new") return 3
 			    return 0
 			}
-		""", allocations = 3, peak = bytes)
+		""", allocations = 6, peak = bytes)
 	}
 
 	@Test
-	fun `discarded member results restore stack inside loops with buffered publication`(@TempDir directory: Path) {
+	fun `discarded member results and rebound strings both retain bounded storage`(@TempDir directory: Path) {
 		val payload = "x".repeat(4096)
-		val bytes = (NativeCABI.native().pointerBits / 8 + 4).toLong()
+		val bytes = (NativeCABI.native().pointerBits / 8 * 2 + 4).toLong()
 		probe(directory, "member_stack", """
 			fn<string> produce() = "kept"
 			fn<int> sample() {
@@ -1379,10 +1418,10 @@ class ArrayTemporaryCleanupTest {
 			        published = produce()
 			        "$payload".removePrefix("missing")
 			    }
-			    if (published != "kept" || liveBytes() != ${bytes * 5001}) return 1
+			    if (published != "kept" || liveBytes() != $bytes) return 1
 			    return 0
 			}
-		""", allocations = 5001, peak = bytes * 5001)
+		""", allocations = 10002, peak = bytes * 3)
 	}
 
 	/** Observe actual live/peak requested bytes during Cloth execution, not just

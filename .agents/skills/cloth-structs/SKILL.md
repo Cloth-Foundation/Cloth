@@ -69,9 +69,15 @@ for stage boundaries, source routing and verification targets.
   value cannot be the implementation of a write to the original stored field.
 - Basic structs require acyclic field types. Reject direct and indirect field
   type cycles, including paths through array and nullable wrappers.
-- Every array dimension in a field type must have an explicit extent, including
-  under nullable wrappers. Construction, field writes and whole-struct replacement
-  respect the declared field shape using ordinary array checks.
+- [Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
+  accepts unsized struct array fields in typing and records their mutation
+  receivers. [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) executes
+  those fields through copies, calls, methods and nested class-backed paths.
+  Nullable array fields have separate inline pointer-free witnesses, retained
+  through absence and copied with the containing value. Only an unsized outer
+  count may change; explicit extents and established inner shape still constrain
+  reception. Whole-struct replacement receives incoming witnesses. Public array
+  mutators remain guarded by C4032.
 - A null check can prove a stored field present when later access resolves the
   same unchanged path. Assigning the field or replacing a containing struct
   invalidates the proof. Use the existing nullable payload access and metadata rules.

@@ -9,6 +9,7 @@ import cloth.parser.declaration.PrimaryConstructorDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.MethodReceiver
+import cloth.semantic.ObjectReceiver
 import cloth.semantic.ReceptionPlan
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
@@ -31,6 +32,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	private val declarations = model.declarations
 	private val flow = model.controlFlow
 	private val jumpStates = IdentityHashMap<LoopJumpStatement, State>()
+	private val observed = IdentityHashMap<Expression, Handle?>()
 	private var destroying: Identity? = null
 
 	fun analyze(callables: List<CallableSymbol> = declarations.concreteCallables) {
@@ -238,7 +240,9 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		return newHandle(model.types.scalarTypeOrNull(value))
 	}
 
-	private fun expression(value: Expression, state: State): Handle? {
+	private fun expression(value: Expression, state: State): Handle? = expressionValue(value, state).also { observed[value] = it }
+
+	private fun expressionValue(value: Expression, state: State): Handle? {
 		if (value is BinaryExpression) model.types.classComparisons[value]?.let { comparison ->
 			val left = expression(value.left, state)
 			if (!flow.of(value.left).canFallThrough) return null
@@ -289,10 +293,18 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
 			is MemberCallExpression                                                                            -> {
 				val handle = expression(value.receiver, state)
+				val owner = (model.types.arrayMutations[value]?.receiver as? MethodReceiver.StoredInInstance)?.place?.receiver
+				val ownerHandle = when (owner) {
+					is ObjectReceiver.Explicit -> observed[owner.expression]
+					is ObjectReceiver.Self -> state.bindings[owner.symbol]
+					null -> null
+				}
+				val ownerSelf = owner is ObjectReceiver.Self || owner is ObjectReceiver.Explicit && directSelf(owner.expression)
 				val instance = model.selectedMemberCall(value)?.receiver is MethodReceiver.Instance
 				if (instance) check(handle, state, value.receiver.span, directSelf(value.receiver))
 				if (flow.of(value.receiver).canFallThrough) arguments(value.arguments, state)
 				if (instance && value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.receiver.span, directSelf(value.receiver))
+				if (owner != null && value.arguments.all { flow.of(it).canFallThrough }) check(ownerHandle, state, value.receiver.span, ownerSelf)
 			}
 
 			is CallExpression                                                                                  -> {

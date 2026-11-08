@@ -16,7 +16,10 @@ internal data class ShuttleProcessResult(val status: Int, val output: String)
 internal fun shuttleProcess(directory: Path, arguments: List<String>, input: String = "", mainClass: String = "shuttle.EntryKt"): ShuttleProcessResult {
 	val classpath = System.getProperty("shuttle.test.runtimeClasspath") ?: error("Missing test runtime classpath")
 	val java = Path.of(System.getProperty("java.home"), "bin", "java").toString()
-	val all = listOf("--enable-native-access=ALL-UNNAMED", "-cp", classpath)
+	val context = listOf("cloth.toolchain.home", "cloth.toolchain.layout").map { name ->
+		"-D$name=" + (System.getProperty(name) ?: error("Missing test toolchain context: $name"))
+	}
+	val all = listOf("--enable-native-access=ALL-UNNAMED") + context + listOf("-cp", classpath)
 	// Keep the long classpath in an argfile; program arguments use the Unicode OS launcher.
 	val argfile = Files.createTempFile(directory, "shuttle-test-", ".args")
 	Files.writeString(argfile, all.joinToString("\n") { "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" }, Charset.forName(System.getProperty("native.encoding")))

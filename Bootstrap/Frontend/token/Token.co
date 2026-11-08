@@ -1,6 +1,7 @@
 using source.SourceFile: SourceFile
+using token.Operators: Operators
 
-pub typedef<class> TokenSpan (def<int> startLine, def<int> startColumn, def<int> endLine, def<int> endColumn, def<SourceFile?> source ?: null) {
+pub typedef<class> TokenSpan (pub def<int> startLine, pub def<int> startColumn, pub def<int> endLine, pub def<int> endColumn, pub def<SourceFile?> source ?: null) {
 
     pub mt<TokenSpan> through(TokenSpan end) {
         return TokenSpan::new(startLine, startColumn, end.endLine, end.endColumn, source)
@@ -10,7 +11,42 @@ pub typedef<class> TokenSpan (def<int> startLine, def<int> startColumn, def<int>
 
 }
 
-pub typedef<class> Token(def<TokenType> type, def<TokenSpan> span, def<string> lexeme) {}
+pub typedef<class> Token(pub def<TokenType> type, pub def<TokenSpan> span, pub def<string> lexeme) {
+    // A token owns its span. The span borrows the caller's optional source.
+    ~Token { span::delete }
+
+    operator ::str() {
+        def fields = "\"kind\": " + jsonQuoted(type::name) + ",\n  \"span\": " + jsonQuoted(span::str) + ",\n  \"lexeme\": " + jsonQuoted(lexeme)
+        if (type == TokenType.Operator) {
+            for (def op <- Operators::values) {
+                if (op.spelling == lexeme) {
+                    fields = fields + ",\n  \"nameOf\": " + jsonQuoted(op::name)
+                    break
+                }
+            }
+        }
+        return "{\n  " + fields + "\n}"
+    }
+}
+
+pub fn<string> jsonQuoted(string text) {
+    def result = "\""
+    for (def character <- text.toChars()) {
+        if (character == '"') result = result + "\\\""
+        else if (character == '\\') result = result + "\\\\"
+        else if (character.toInt() == 8) result = result + "\\b"
+        else if (character.toInt() == 12) result = result + "\\f"
+        else if (character == '\n') result = result + "\\n"
+        else if (character == '\r') result = result + "\\r"
+        else if (character == '\t') result = result + "\\t"
+        else if (character.toInt() < 32) {
+            def hexadecimal = character.toInt().toStringRadix(16)
+            while (hexadecimal::size < 4) hexadecimal = "0" + hexadecimal
+            result = result + "\\u" + hexadecimal
+        } else result = result + character::str
+    }
+    return result + "\""
+}
 
 pub typedef<enum> TokenType {
 

@@ -160,7 +160,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 
 	override fun commonArrayShape(other: ValueType): ValueType? = when (other) {
 		this                                                                    -> this
-		is CArray if (size == null || other.size == null || size == other.size) -> element.commonArrayShape(other.element)?.let { CArray(it, size ?: other.size) }
+		is CArray if (size == null || other.size == null || size == other.size) -> element.commonArrayShape(other.element)?.let { CArray(it, size.takeIf { size == other.size }) }
 		else                                                                    -> null
 	}
 
@@ -172,9 +172,12 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		return if (payload is CClass) element == actual.element else element.accepts(actual.element)
 	}
 
-	override fun inferArraySizes(actual: ValueType): ValueType = if (actual is CArray) CArray(element.inferArraySizes(actual.element), size ?: actual.size) else this
+	// Omitted extents are part of the declared type, not initializer-count holes.
+	override fun inferArraySizes(actual: ValueType): ValueType = this
 
-	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = BufferLayout.descriptor(context, target, arrayDimensions.size, hasNullableRows)
+	internal val capacityIndex get() = arrayDimensions.size + 1 + if (hasNullableRows) 1 else 0
+	internal val ownerIndex get() = capacityIndex + 1
+	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = BufferLayout.arrayDescriptor(context, target, arrayDimensions.size, hasNullableRows)
 }
 
 /** Scalar storage bytes are language facts, independent of native registers and C ABI widths. */

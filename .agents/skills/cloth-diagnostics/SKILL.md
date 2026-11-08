@@ -35,6 +35,14 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C3107 / INVALID_ARRAY_MUTATION** rejects fixed receivers and shape-changing
+embedded-row operations. **C4032 / UNSUPPORTED_ARRAY_MUTATION** guards otherwise
+typed public array mutators before output/linker work. Stage 2 retires its unsized
+struct array field boundary after implementing retained-shape storage. Defaults, lost nullable
+receiver proofs and provably deleted field owners retain C3066/C3062/C3092.
+[Contract and verification](../cloth-arrays/references/growable-arrays-stage-1.md)
+[Owned storage and fault probes](../cloth-arrays/references/growable-arrays-stage-2.md)
+
 **C0014 / OUTPUT_OVERWRITES_SOURCE** rejects a CLI output path that identifies
 any loaded input source. The emission path checks the final target-specific filename and covers
 filesystem aliases such as hard links. `DiagnosticsTest` covers object output,
@@ -49,11 +57,28 @@ to launch the emitted artifact or an interrupted wait. Both return 1. A child
 that completes supplies its own status. [Build and run commands](../cloth-toolchains/SKILL.md#build-and-run-commands)
 
 **C0017 / INVALID_COMPILATION_REQUEST** rejects invalid public request paths,
-entry/output combinations and module IDs/physical roots before source work.
+entry/output combinations and module IDs/physical roots before source work,
+including multiple standard-library roles.
 The public facade preserves original compiler diagnostics, maps source/output
 I/O to C0010/C0013 with causes, and performs no reporting or process launch.
 [Request tests](../../../Compiler/src/test/kotlin/cloth/CompilationRequestTest.kt) ·
 [API integration](../cloth-imports/references/stage-1.md)
+
+Bundled-library [Stage 2](../cloth-toolchains/references/standard-library-stage-2.md)
+adds **C0018 / INVALID_STANDARD_LIBRARY** for default context, structure or metadata
+failures, **C0019 / STANDARD_LIBRARY_MODULE_CONFLICT** for an occupied implicit ID,
+and **C0020 / OUTPUT_OVERWRITES_TOOLCHAIN_INPUT** for selected metadata/marker
+output aliases. Both commands render the original C error once; missing defaults
+fail before source/project loading, even without library imports.
+[Selection Stage 3](../cloth-toolchains/references/standard-library-stage-3.md)
+extends C0018 to invalid explicit roots without fallback. Conflicting selection
+flags or a value attached to `--no-stdlib` use C0003; missing/blank override paths
+use C0002 and invalid path syntax uses C0012. Overrides/disable bypass default
+checks; reached incompatible code retains its original source diagnostic.
+[Bundling Stage 5](../cloth-toolchains/references/standard-library-stage-5.md)
+rechecks these failures through both packaged launchers alongside reserved-path,
+input-alias, explicit-import and ordinary-ambiguity diagnostics. Each expected
+failure still stops before output/launch and renders its original C code once.
 
 **C2009 / IMPORT_OUTSIDE_HEADER** rejects imports after declarations and at
 function-statement boundaries. Imports in type bodies are rejected by their
@@ -67,8 +92,10 @@ IMPORT_SOURCE_ACCESS** locate discovery failures at the original import path.
 Ambiguity lists matching module/file candidates before parsing them or selecting
 symbols. Imported read/UTF-8 errors retain C0010, import context and their cause;
 syntax failures retain the imported source's original code/snapshot/location.
-C3097 now guides direct CLI users to Shuttle or explicit request module roots;
-it does not infer roots from source folders or discover manifests in Compiler.
+C3097 applies to explicit requests without roots and standalone `--no-stdlib`
+imports. The standalone command otherwise supplies its selected library root,
+so missing project files use C3098; it still
+does not infer project roots from source folders or discover manifests in Compiler.
 **C3101 is retired** after Stage 5. **C3102 / IMPORT_NAME_NOT_FOUND** locates a
 selector absent from the target file's own exports. **C3103 / IMPORT_PRIVATE_NAME**
 labels the selector and private definition. **C3104 / IMPORT_NAME_CONFLICT** labels
@@ -76,6 +103,10 @@ the conflicting import, existing/imported definitions and earlier import when
 applicable. Bindings reuse original symbols; repeated identities are idempotent.
 **C3105 is retired** after Stage 6 whole-program emission. Other
 malformed import grammar retains C2000/C2001 and exact EOF positions.
+**C3106 / RESERVED_STANDARD_LIBRARY_PATH** locates a reached cloth import supplied
+by a regular root while a marked library is selected, with the selected root and
+conflicting candidate paths. It precedes parsing those candidate sources, including
+when the library lacks that file. Unmarked requests retain ordinary ambiguity.
 [Import diagnostics](../../../Compiler/src/main/kotlin/cloth/diagnostics/ImportErrors.kt) ·
 [Stage 3 verification](../cloth-imports/references/stage-3.md)
 

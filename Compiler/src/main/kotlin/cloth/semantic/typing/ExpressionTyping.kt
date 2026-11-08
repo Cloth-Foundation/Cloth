@@ -175,6 +175,13 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		return context
 	}
 
+	/** Context fixes the element identity; literal extents remain expression facts. */
+	private fun ValueType.literalElement(actual: ValueType): ValueType = when {
+		this is CNullable -> CNullable(payload.literalElement((actual as? CNullable)?.payload ?: actual))
+		this is CArray && actual is CArray -> CArray(element.literalElement(actual.element), actual.size)
+		else -> this
+	}
+
 	/** Endpoint/element type discovery never uses the body or stepper as context. */
 	protected fun checkFor(statement: ForStatement, stepperExpression: Expression?, introduce: (ValueType) -> Unit) {
 		val annotation = statement.binding.type?.let { resolveType(it) }
@@ -512,7 +519,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					val required = elementContext ?: element
 					if (required != null && !required.accepts(actual)) reject { SemanticErrors.array("Array element requires '${required.spelling}', got '${actual.spelling}'", item.span) }
 					if (actual != ValueType.NEVER) {
-						val candidate = elementContext?.inferArraySizes(actual) ?: actual
+						val candidate = elementContext?.literalElement(actual) ?: actual
 						element = element?.commonArrayShape(candidate) ?: if (element == null) candidate
 						else reject { SemanticErrors.array("Rectangular arrays require matching element types and dimensions", item.span) }
 					}

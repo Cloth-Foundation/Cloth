@@ -24,6 +24,8 @@ import java.math.BigInteger
 
 object SemanticErrors {
 
+	fun arrayMutation(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ARRAY_MUTATION, message, span)
+
 	fun duplicateClassType(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_CLASS_TYPE, "Type '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
 	fun classMember(message: String, span: TokenSpan, previous: Token? = null) = SemanticException(DiagnosticCode.INVALID_CLASS_MEMBER, message, listOfNotNull(SourceLabel(span, "class member here"), previous?.let { SourceLabel(it.span, "first declared here") }))
 	fun privateClassMember(name: Token, declaration: Token) = SemanticException(DiagnosticCode.PRIVATE_CLASS_MEMBER, "Class member '${name.lexeme}' is private", listOf(SourceLabel(name.span, "access outside the declaring class"), SourceLabel(declaration.span, "private member declared here")))

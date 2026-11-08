@@ -36,9 +36,12 @@ nullable destinations, rectangular shapes, independent array values and lifetime
   parameter. Startup wraps the validated argument array as present, even when
   empty, and never selects an optional main parameter's omission fallback.
   Ordinary calls to main retain ordinary call/default rules.
-- Arrays capture all known dimensions at initialization, or at first presence
-  when initialized null. Runtime shape constraints live separately from value
-  presence; null never resets them. Each call has independent parameter shape
+- Arrays retain explicitly fixed dimensions and initialized rectangular inner
+  dimensions, or establish them at first presence when initialized null.
+  [Growable arrays Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md)
+  allows an unsized outer count to change on whole-array replacement. Retained
+  shape constraints live separately from value presence; null never resets them.
+  Each call has independent parameter shape
   storage. Present values still enforce explicit extents, including discarded
   results; absent values perform no payload/shape/copy operation.
 - Null tests work for whole arrays. Array-to-array equality remains unsupported.
@@ -77,6 +80,11 @@ Maintained executable example: [NullableBuffers.co](../../../../examples/Nullabl
   assignments initialize it; later present assignments validate/merge dimensions;
   absent assignments leave it intact. Shape storage is initialized at the actual
   declaration execution, including repeated loop declarations.
+  [Growable arrays Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md)
+  adds inline pointer-free witnesses for nullable struct array fields. Recursive
+  struct copies carry absent-field witnesses without retaining source allocations;
+  live fields refresh them before absence. Typed element arenas release only live,
+  present buffered values, while private truncation retains established shape.
 - Implicit print arguments, interpolation holes and array elements use
   `ProviderResult.NullableText`. Explicit nullable `::str` requires a presence
   proof. `EmitArrayText` decodes stored carriers and uses the shared presence

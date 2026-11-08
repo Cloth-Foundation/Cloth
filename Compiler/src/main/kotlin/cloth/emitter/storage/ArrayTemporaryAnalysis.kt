@@ -23,7 +23,7 @@ import java.util.*
  * The general expression proof rejects declarations/writes. Separate loop-region
  * proofs below admit safe locals/scalar stores and reject buffered publication.
  */
-internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticModel) {
+internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticModel, private val managedStrings: Set<BindingSymbol> = emptySet()) {
 
 	private data class Effects(val buffers: Boolean = false, val safe: Boolean = true) {
 
@@ -35,6 +35,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	private val active = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
 	private val unknown = Effects(buffers = true, safe = false)
 	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.buffers && it.safe }
+	fun hasNoPublication(expression: Expression): Boolean = effects(expression).safe
 	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
 	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
 	private fun transfersAggregate(type: ValueType) = type is CArray || type.containsStruct
@@ -57,8 +58,8 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 			is LoopJumpStatement          -> true
 			is BindingDeclaration         -> statement.initializer is FunctionBlockExpression || effects(statement.initializer).safe
 			is BindingGroupDeclaration    -> effects(statement.initializer).safe
-			is AssignmentStatement        -> (!publishes(types.typeOf(statement)) || ownsField(functions.declarations.targetOf(statement))) && effects(statement.value).safe
-			is MultiAssignmentStatement   -> types.receptionOf(statement).slots.none { publishes(it.type) } && effects(statement.value).safe
+			is AssignmentStatement        -> (!publishes(types.typeOf(statement)) || ownsField(functions.declarations.targetOf(statement)) || managedString(functions.declarations.targetOf(statement), types.typeOf(statement))) && effects(statement.value).safe
+			is MultiAssignmentStatement   -> types.receptionOf(statement).slots.withIndex().all { (index, slot) -> !publishes(slot.type) || functions.declarations.targetsOf(statement)[index]?.let { managedString(it, slot.type) } == true } && effects(statement.value).safe
 			is UpdateStatement            -> !publishes(types.typeOf(statement))
 			is FieldWriteStatement        -> types.fieldWrites[statement]?.let { plan ->
 				// Only inline writes without buffer publication can release this region.
@@ -88,6 +89,8 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	fun canReclaimLoop(statement: WhileStatement): Boolean = effects(statement.condition).safe && canReclaimIteration(statement.body.statements)
 	fun canReclaimLoop(statement: DoWhileStatement): Boolean = effects(statement.condition).safe && canReclaimIteration(statement.body.statements)
 
+	private fun managedString(key: BindingSymbol, type: ValueType) = key in managedStrings && ((type as? CNullable)?.payload ?: type) == ValueType.STRING
+
 	private fun statements(body: List<Statement>): Effects = body.fold(Effects()) { result, statement ->
 		result + when (statement) {
 			is LoopJumpStatement   -> Effects()
@@ -114,7 +117,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 				val symbol = functions.declarations.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol) || (symbol as? ReceiverFieldSymbol)?.field is EnumField
-				if (block == null) Effects(buffers = backed && types.resultOf(expression).values.any { it.indirect }) else effects(block)
+				if (block == null) Effects(buffers = (backed || symbol in managedStrings) && types.resultOf(expression).values.any { it.indirect }) else effects(block)
 			}
 
 			is FunctionBlockExpression                                                                             -> Effects(transfersAggregate(types.typeOf(expression))) + statements((expression.declaration.body as BlockBody).statements)
@@ -138,12 +141,21 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 			}
 
 			is StructLiteral                                                                                       -> expression.fields.fold(Effects(buffers = true)) { result, field -> result + effects(field) }
+			is ProviderAccessExpression                                                                            -> {
+				if (types.typeOf(expression) == ValueType.NEVER) effects(expression.receiver) else {
+					val provider = types.providerAccess(expression)
+					if (provider.result.callsFormatter) unknown
+					else (if (provider.receiverForm == ProviderReceiverForm.TYPE) Effects() else effects(expression.receiver)) + Effects(buffers = provider.result.type.indirect)
+				}
+			}
+			is ElvisExpression                                                                                     -> effects(expression.left) + effects(expression.fallback)
 			is FieldAccessExpression                                                                               -> {
 				val field = types.fields[expression]
 				effects(expression.receiver) + Effects(buffers = (field is ClassField || field is EnumField) && types.resultOf(expression).values.any { it.indirect })
 			}
 
-			is IndexExpression, is UnaryExpression, is BinaryExpression, is CastExpression, is TypeCheckExpression -> expression.eagerOperands().fold(Effects()) { result, operand -> result + effects(operand) }
+			is IndexExpression -> expression.eagerOperands().fold(Effects(buffers = ((types.typeOf(expression) as? CNullable)?.payload ?: types.typeOf(expression)) == ValueType.STRING)) { result, operand -> result + effects(operand) }
+			is UnaryExpression, is BinaryExpression, is CastExpression, is TypeCheckExpression -> expression.eagerOperands().fold(Effects()) { result, operand -> result + effects(operand) }
 
 			is InterpolatedString                                                                                  -> {
 				val callsFormatter = expression.parts.any { types.interpolationTextOf(it)?.callsFormatter == true }

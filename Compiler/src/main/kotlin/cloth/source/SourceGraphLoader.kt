@@ -2,6 +2,7 @@ package cloth.source
 
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
+import cloth.api.SourceModuleRole
 import cloth.api.validateCompilationRequest
 import cloth.ast.ImportDeclaration
 import cloth.diagnostics.CliErrors
@@ -76,6 +77,11 @@ private class Discovery(private val modules: List<SourceModule>) {
 		for (module in modules) {
 			val path = exactPath(module.sourceRoot, declaration) ?: continue
 			candidates.add(Candidate(module, path))
+		}
+		val standardLibrary = modules.singleOrNull { it.role == SourceModuleRole.STANDARD_LIBRARY }
+		if (standardLibrary != null && declaration.path.components.first().lexeme == "cloth") {
+			val conflicts = candidates.filter { it.module.role != SourceModuleRole.STANDARD_LIBRARY }
+			if (conflicts.isNotEmpty()) throw ImportErrors.reservedStandardLibraryPath(declaration, standardLibrary.sourceRoot, conflicts.map { it.module.id to it.path })
 		}
 		if (candidates.isEmpty()) throw ImportErrors.missingSource(declaration)
 		if (candidates.size > 1) throw ImportErrors.ambiguousSource(declaration, candidates.map { it.module.id to it.path })

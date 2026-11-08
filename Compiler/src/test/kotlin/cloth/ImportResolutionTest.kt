@@ -429,7 +429,7 @@ class ImportResolutionTest {
 		PrintStream(bytes, true, Charsets.UTF_8).use { stream ->
 			assertEquals(1, runCompiler(arrayOf("run", entry.toString(), stale.toString()), DiagnosticReporter(stream)))
 		}
-		assertEquals(1, Regex("C3097").findAll(bytes.toString(Charsets.UTF_8)).count())
+		assertEquals(1, Regex("C3098").findAll(bytes.toString(Charsets.UTF_8)).count())
 		assertEquals("preserve", Files.readString(stale))
 	}
 }

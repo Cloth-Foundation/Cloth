@@ -87,6 +87,45 @@ completes nested examples, Bootstrap's current scaffold and target verification.
 Its [equality context correction](equality-operand-contexts.md) records the user's
 confirmation that an enum can contribute its case name for a string comparison.
 
+The user's next Bootstrap goal (2026-11-07) is the existing lexer port with string
+input, stopping before parsing. The [Bootstrap lexer skill](../../cloth-bootstrap-lexer/SKILL.md)
+owns that scope and its observed library boundaries; it does not establish new
+I/O or generic collection semantics.
+
+The standard library lives in the `Standard-Library/` Git submodule, with source
+files under `cloth/` relative to that repository's root; for example,
+`cloth/collections/List.co`. The
+[scaffold record](../../shuttle-build/references/standard-library.md) owns its
+project configuration and verification. This layout does not establish a `List`
+API or implement library declarations.
+
+Bundled-library Stage 0 selects automatic source availability with explicit
+imports. The user confirmed that `cloth.*` is reserved while a standard library
+is enabled, `--no-stdlib` permits project replacements, development overrides need
+no exact version match, and a missing default bundle fails even without library
+imports. The [toolchain contract](../../cloth-toolchains/references/standard-library.md)
+owns those decisions and the selected integration details. [Stage 1 packaging](../../cloth-toolchains/references/standard-library-stage-1.md)
+now bundles the pinned sources/provenance and launcher context. [Stage 2 integration](../../cloth-toolchains/references/standard-library-stage-2.md)
+implements default source attachment, explicit module roles and namespace enforcement;
+[Stage 3 selection](../../cloth-toolchains/references/standard-library-stage-3.md)
+implements cwd-relative overrides without a version match and disabling without
+removing configured regular modules or compiler builtins. The user deferred
+full Windows Unicode installation paths while retaining Gradle launchers for this stage.
+
+[Stage 4 allocation](../../cloth-toolchains/references/standard-library-stage-4.md)
+records the user's selection of an owning collection as the first runtime consumer.
+It verifies existing class `::new`/`::delete`, recursive field ownership and
+target-sized private helpers through a maintained fixture. Collection logic stays
+in Cloth; no public collection/raw-memory API or new production runtime is added.
+Allocation remains available independently of source-library selection.
+
+[Stage 5 publication](../../cloth-toolchains/references/standard-library-stage-5.md)
+verifies both packaged commands with a maintained transitive library fixture.
+Its native programs run after the selected toolchain and source copies are
+deleted. The [toolchain guide](../../../../docs/standard-library.md) publishes
+selection/provenance rules and actual target scope. The shipped library remains
+the pinned scaffold; these checks do not add a public collection API.
+
 ## Nested type declarations
 
 Any `typedef` body may contain another `typedef` declaration. The nested type
@@ -140,6 +179,16 @@ and [output skill](../../cloth-output/SKILL.md#recursive-array-text). `::addr` r
 
 Read [Cloth arrays](../../cloth-arrays/references/semantics.md#array-construction-and-value-semantics) and its
 [feature skill](../../cloth-arrays/SKILL.md).
+
+The [growable-array revision](../../cloth-arrays/references/growable-arrays.md)
+confirms intended growable `T[]` and fixed `T[N]` behavior. It supersedes capture
+of an unsized outer count for array bindings and parameters while retaining
+independent values and rectangular inner shape.
+[Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md) implements
+that typing and native whole-array reception with different outer counts.
+[Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md) adds owned
+capacity, private typed relocation/release and executable unsized struct array
+fields, including retained nullable witnesses. Public mutator execution retains C4032.
 
 Ordinary parameter rules are in [function parameters](../../cloth-functions/references/semantics.md#function-parameters).
 
@@ -367,11 +416,15 @@ for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overl
   While a field initializer runs, `self` may only select an initialized field
   to read. Passing the instance or calling its methods requires complete
   initialization.
-- Array fields establish their shape on initialization. A nullable array
-  field establishes its shape on the first present assignment and retains
-  known dimensions across absent values. A nested field write selects the
+- Array fields retain explicit extents and initialized rectangular inner shape.
+  A nullable array field establishes inner shape on the first present assignment
+  and retains it across absent values. A nested field write selects the
   object and indices before its right-hand side, then applies the write to
   that path in the current field. [Class values](class-values.md)
+  The [growable-array revision](../../cloth-arrays/references/growable-arrays.md)
+  supersedes permanent capture of a field's `T[]` outer count. Stage 1 supports
+  whole-array replacement with another outer count; native mutator execution
+  remains a later storage stage.
 - An additional constructor uses the class name in the body. Its `: (...)`
   clause supplies arguments to the primary constructor. For example,
   `Counter(float value) : (value -> int) {}` delegates to a primary constructor

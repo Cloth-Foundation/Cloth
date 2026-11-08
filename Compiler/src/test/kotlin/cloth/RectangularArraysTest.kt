@@ -53,7 +53,7 @@ class RectangularArraysTest {
 			val source = "fn<int[]> row() = [1, 2]\nfn<int> main() {\n def a = [$elements]\n return a[0][0] + a[1][0] - 4\n}"
 			val model = FunctionAnalyzer(nativeTestLayout).analyze(parse(source))
 			val body = model.declarations.functions.last().declaration.body as BlockBody
-			assertEquals("int[2][2]", model.types.typeOf(body.statements.first() as BindingDeclaration).spelling)
+			assertEquals("int[2][]", model.types.typeOf(body.statements.first() as BindingDeclaration).spelling)
 			native(directory, "mixed_$index", source)
 		}
 		failure("def<int> narrow = 1\n def<int<64>> wide = 2\n def a = [[narrow], [wide]]")

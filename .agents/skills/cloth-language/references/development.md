@@ -7,6 +7,264 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Growable arrays Stage 2 owned capacity and typed relocation (2026-11-07)
+
+The [Stage 2 record](../../cloth-arrays/references/growable-arrays-stage-2.md)
+owns array-only capacity/owner layout, registered resource cleanup, typed live-slot
+copy/relocation/release and nullable struct-field witnesses. Fixed/growable arrays
+share the private layout; strings retain their two-field descriptor. Ordinary
+copies remain independent, moved slot arenas reparent their resource owners,
+and superseded capacity frees immediately. Existing unproven indexed writes
+retain superseded payloads in their enclosing owner. Source mutators retain C4032.
+
+Verification passes, including Windows x64/x86 native private probes and
+all-nine-profile IR/object checks. The scalar probe grows to
+4,096 live values with 13 growth allocations and moves 4,095 prior elements.
+Buffered reuse, poisoned frees, allocation failure, child-owner movement and
+independent unsized struct-field witnesses have direct fixtures. The 15 new tests
+pass in the full offline Compiler/Shuttle run: **1,694 Compiler tests across 155
+suites and 57 Shuttle tests across seven suites**, zero failures/errors/skips,
+in 8m 24s. Final XML is preserved under `build/growable-arrays-stage2/`. All nine
+changed skills pass the full validator; relative links, fences and source/test
+whitespace checks pass. Temporary validation dependencies are removed. Only
+Stages 0-2 are complete; source mutators and generic List remain later work.
+
+### Growable arrays Stage 1 typing, receiver plans and effects (2026-11-07)
+
+The [Stage 1 record](../../cloth-arrays/references/growable-arrays-stage-1.md)
+owns growable/fixed type inference, separate current-count/retained-witness
+facts, the five typed mutators, stored/temporary receiver plans, readonly and
+nullable checks, class alias/lifetime effects and metadata identity. Native
+whole-array replacement can change a growable outer count while retaining
+explicit extents and rectangular inner shape. Mutators and unsized struct array
+field storage have an explicit C4032 boundary; capacity and in-place growth are
+not implemented. Source-method name collisions retain ordinary presence behavior.
+
+The final full offline Compiler/Shuttle run passes in 7m 44s: 1,679 Compiler tests
+across 153 suites and 57 Shuttle tests across seven suites, zero failures/errors/
+skips. The 27 new tests include Windows x64/x86 native reception and all-nine-
+profile IR/objects. No new native Linux/macOS/AArch64/musl evidence is claimed.
+XML is preserved under `build/growable-arrays-stage1/`. The
+[plan](../../../../todo/growable-arrays-and-lists-plan.md) marks only Stages 0-1
+complete; generic List remains a separate dependent feature.
+
+### Growable arrays Stage 0 contract and baseline (2026-11-07)
+
+The user confirmed explicit growable `T[]`, fixed `T[N]`, sized literal inference,
+binding-only immutability for length changes, retained rectangular inner shape,
+append/insert/removeAt/clear/reserve and ordinary stored/temporary receiver rules.
+The [array-owned contract](../../cloth-arrays/references/growable-arrays.md)
+identifies the historical fixed-initial-outer-shape rule it supersedes as intended
+design. No compiler behavior changes in Stage 0; growth and generic List remain
+future implementation work in the
+[plan](../../../../todo/growable-arrays-and-lists-plan.md).
+
+The [Stage 0 record](../../cloth-arrays/references/growable-arrays-stage-0.md)
+publishes the exact offline command and 322 passing tests across 24 suites, zero
+failures/errors/skips, in 1m 46s. Existing fixtures execute on Windows x64/x86 and
+verify IR/objects across all nine profiles. WSL Ubuntu is installed; this baseline
+does not claim native Linux/macOS/AArch64/musl execution. Baseline XML is preserved
+under `build/growable-arrays-stage0/test-results/`. Only Stage 0 is complete.
+
+### Bundled standard library Stage 5 publication and runtime independence (2026-11-07)
+
+The [maintained example](../../../../examples/StandardLibrary/README.md) supplies
+a stand-in public greeting function with a transitive import and private owned
+string storage. Both packaged commands compile it from external cwd without a
+library manifest entry. Four Windows x64/x86 executables then run after their
+disposable compiler and source trees are deleted, with Java/compiler environment
+removed. An invalid unreachable source remains unloaded. Both commands emit
+objects for all nine target profiles; the compiler publication suite verifies
+the exact three-file graph and all-profile executable IR/startup objects.
+GNU Linux x64 links with Ubuntu WSL cc and runs from `/` with exact output and PEC 0.
+
+The [Stage 5 record](../../cloth-toolchains/references/standard-library-stage-5.md)
+owns source/test routing, observed verification and target limits. The
+[toolchain guide](../../../../docs/standard-library.md) publishes release layout,
+selection, provenance and preparation. The installed-Shuttle library self-build
+with an explicit override also succeeds, emitting the 306-byte scaffold object.
+Example files are tracked as root/Compiler test inputs, and Git ignore exceptions
+retain both maintained READMEs. The full offline regression/distribution command
+passes in 9m 30s: 1,652 Compiler tests across 151 suites, 57 Shuttle tests, nine
+packaged tests, 23 syntax, 54 resolution, 33 native-disabled semantic and 25
+configuration checks, with zero failures/errors/skips. Rebuilt ZIP/TAR archives
+and both per-command installations match the tested JARs and all library/provenance
+inputs by SHA-256. Publication checks cover 24 documents, 876 links, 92 anchors and
+38 source/configuration files; all five changed skills pass the full validator.
+
+All six source-bundling stages are complete. The shipped library remains the
+published/pinned 0.0.1 scaffold at ea48ad5; no public collection API or new runtime
+implementation is introduced. Full Unicode Windows installation paths, wider
+native services, generic collections and binary/package infrastructure remain
+separate future work. Unrelated Bootstrap/emitter/string changes are preserved.
+
+### Bundled standard library Stage 4 allocation service boundary (2026-11-07)
+
+The user selected an owning collection as the first runtime-service consumer.
+Its [contract and evidence](../../cloth-toolchains/references/standard-library-stage-4.md)
+specify existing class `::new`/`::delete`, private target-sized C allocation calls,
+recursive field ownership, explicit child destruction and fail-fast behavior.
+The maintained OwnedTextChain source fixture keeps collection logic in Cloth,
+without a new public collection/raw-memory API or production runtime change.
+The contract identifies later buffer, filesystem, clock and threading prerequisites
+and keeps source-library selection separate from C runtime linkage.
+
+Six StandardLibraryRuntimeTest cases pass offline in 37s with no failures/errors/
+skips. Windows x64/x86 run the source graph with selected and regular roots,
+poison freed node/field/frame payloads, balance malloc/free, observe four table
+growth allocations followed by reuse, inject fatal allocation/reallocation failure
+and verify static/runtime alias errors. All nine profiles' executable IR and
+startup objects pass. GNU Linux x64 links with cc under Ubuntu WSL and executes
+with exit 0 and PEC 0. Native ARM64/macOS/musl execution remains untested.
+The maintained fixture also passes through the existing installed compiler with
+an explicit library override. Publication checks pass for 21 documents, 834 links,
+92 anchors and 29 source/configuration files; all three changed skills pass the
+full validator. Unrelated workspace work is preserved.
+The standard-library scaffold/pin and existing release archives are unchanged.
+Stage 5 remains pending.
+
+### Bundled standard library Stage 3 selection controls (2026-11-07)
+
+Both commands now share `--stdlib PATH`/`--stdlib=PATH` and `--no-stdlib`.
+Overrides resolve from invocation cwd and accept structurally valid development
+trees without release/Git/version checks. Both explicit modes bypass default
+context and descriptor lookup, and invalid overrides never fall back. Disabled
+selection keeps configured roots regular, permits cloth replacements with ordinary
+ambiguity, and preserves builtins. Conflicts use C0003 before source/project work;
+missing/invalid paths retain C0002/C0012, and selection/input protection retain
+C0018/C0020. Help lists the flags without requiring a valid bundle.
+
+The [Stage 3 record](../../cloth-toolchains/references/standard-library-stage-3.md)
+owns source/test routing, snapshot identification, verification and limitations.
+Full offline checks pass: 1,644 Compiler tests across 149 suites, 57 Shuttle tests,
+seven packaged-command tests, 23 syntax, 54 resolution, 33 native-disabled semantic
+and 25 configuration checks, with zero failures/errors/skips. Both Windows x64
+launchers execute programs with relative/spaced/Chinese/supplementary-Unicode
+override paths, bypass broken defaults, preserve replacements/builtins and forward
+literal library flags after `run --`. Distribution/publication evidence is
+recorded there. The command passes in 8m 55s and rebuilds combined ZIP/TAR archives
+and both per-command installations; their application JARs match the tested bundle
+by SHA-256. Publication checks cover 17 documents, 750 links, 83 anchors and 24
+source/configuration files; all five owning skills pass the full validator.
+Build outputs are isolated from concurrent workspace work.
+The standard-library source/pin is unchanged; runtime-service and final publication
+work remain in Stages 4-5.
+
+### Bundled standard library Stage 2 automatic source availability (2026-11-07)
+
+Both command adapters now resolve the explicit installed/development context,
+validate the default structure/provenance, and attach its source root before
+compilation. SourceModule gains a regular/default versus standard-library role;
+canonicalization retains it, matching configured roots are promoted once, and
+regular candidates for reached cloth paths produce C3106. Plain compiler API
+requests still discover no installation and retain ordinary behavior without a
+marked root. C0018/C0019/C0020 cover selection, ID conflicts and selected-input
+output aliases. Override/disable options remain the next stage.
+
+The [Stage 2 record](../../cloth-toolchains/references/standard-library-stage-2.md)
+owns implementation and evidence. Full offline checks and rebuilt distributions
+pass in 9m 2s: 1,629 Compiler tests in 147 suites, 56 Shuttle tests, four distribution
+tests, 23 syntax, 46 resolution, 33 native-disabled semantic and 25 backend-free
+configuration checks; no failures/errors/skips. Native Windows x64 programs call
+transitive/circular library fixtures through both real packaged commands without
+manifest entries. Unreachable malformed files are ignored and declarations remain
+explicit imports. Public API requests, physical aliases, role uniqueness, early
+missing-default failures, metadata protection and namespace snapshots are verified.
+The standard-library repository's source/pin is unchanged by this stage. Full
+Windows Unicode installation paths and native-service/library API work remain pending.
+
+Concurrent emitter/string-storage edits were preserved. The full-suite counts
+describe the earlier compiled snapshot; after those unrelated changes were
+rebuilt, focused resolution/Shuttle/packaged verification passed again in 1m 26s.
+Archives are repacked from the tested JARs without recompiling changing sources.
+Publication checks pass for 16 documents, 721 local links, 83 anchors, 17 source/
+configuration files and five full skill validations. Only Stages 0-2 are complete.
+
+### Bundled standard library Stage 1 packaging (2026-11-07)
+
+Root Gradle now builds a combined compiler/Shuttle distribution and includes the
+pinned standard-library sources/provenance in existing per-command distributions.
+The build-only Shuttle exporter reuses ManifestLoader, validates clean Git state
+and the compiler index pin, and archives that revision with canonical line endings.
+The scaffold is committed/published as `ea48ad5` and the index pin matches it.
+Launchers pass relocated installation context; development JavaExec tasks pass
+the source-checkout context. Automatic source attachment and options remain pending.
+
+The [Stage 1 record](../../cloth-toolchains/references/standard-library-stage-1.md)
+owns commands, source routing and scope. Offline verification passes in 1m 35s:
+two root distribution tests, all 56 Shuttle tests and 25 backend-free configuration
+tests, with no failures/errors/skips. Both archives have the 50 expected entries;
+both per-command installs and development object builds pass. Windows x64 tests
+execute relocated launchers from a path with spaces and `é`. Unix syntax and
+argument handoff pass in Ubuntu WSL with a stub, without a Linux JVM execution claim.
+
+An initial Git archive regression converted source line endings to CRLF; disabling
+core.autocrlf for export fixes the pinned-byte assertion. The Windows JDK also
+reproduces character loss for Chinese JVM property/classpath arguments. The user
+chose Gradle launchers with that documented installation-path limit and deferred
+full Unicode launcher support. No language syntax, native ABI or library API changed.
+
+Publication checks pass for 13 documents, 638 local links, 77 anchors, fences,
+whitespace and Stage 0-1 checklist scope. Four skills pass the full bundled
+validator with temporary validation dependencies. The final two distribution tests
+pass again in 7s after making their Unicode fixture respect native encoding.
+Generated toolchain artifacts and reports remain; temporary probes are removed.
+
+### Bundled standard library Stage 0 contract (2026-11-07)
+
+The user authorized the first stage of the bundled-library TODO and resolved
+three policy questions through popup modals: reserve `cloth.*` while enabled and
+allow replacement roots with `--no-stdlib`; accept development overrides without
+an exact version match; fail early for a missing/incomplete selected default even
+when no library file is imported.
+
+The [toolchain contract](../../cloth-toolchains/references/standard-library.md)
+records shared installed/development contexts, command options, structural
+validation, an explicit future source-module role, identity/promotion rules,
+namespace collisions, metadata protection and deterministic failure order.
+The [TODO](../../../../todo/standard-library-toolchain-plan.md) marks only Stage 0
+complete. Compiler/Shuttle production sources and the standard-library scaffold
+are unchanged by this stage; bundling and runtime enforcement remain future work.
+Source/API ownership was checked against the actual command, request, project
+model and graph-loading implementations. Verification covers documentation and
+skill publication, with no new runtime or target-support claim.
+
+Publication checks pass for 12 documents, four simple skill metadata blocks,
+623 local links, 76 heading anchors, code fences, whitespace and Stage 0-only
+checklist completion. The official skill validator could not start because
+PyYAML is missing; the focused contract records that limitation and the fallback
+checks. No production-code tests or target executions were added or rerun.
+
+### Bootstrap string-input lexer port (2026-11-07)
+
+The user set Bootstrap's immediate boundary at a faithful Kotlin lexer port
+using a string, before file I/O or parsing. The scanner now produces original
+lexemes and UTF-16-compatible spans for keywords/operators, comments, numeric
+forms, quoted/raw strings, characters and recursive interpolation. It returns
+an owning concrete TokenList or one retained failure, without partial output.
+The list owns tokens/spans; cursors and optional source identities are borrowed.
+Main preserves the dogfooding banner and accepts text as its first argument.
+
+No compiler language feature or platform adapter was added. Dogfooding exposed
+growable/generic collection, file/diagnostic I/O, string builder and ownership API
+boundaries. Naive growing JSON concatenation reproduced a native stack overflow;
+bounded recursive formatting fixes the same 3,072-scalar regression using current
+function lifetimes. Binary expression line continuation remains a parser limit.
+
+The [Bootstrap lexer skill](../../cloth-bootstrap-lexer/SKILL.md) owns current
+guidance and the [port record](../../cloth-bootstrap-lexer/references/port.md)
+owns the supported slice, exact ownership, Unicode compatibility boundaries and
+verification. Differential coverage passes 124 inputs on Windows x64/x86,
+including every Bootstrap frontend source file, first errors, 2,048 list nodes,
+long lexemes and 24 nested interpolations. Four native Windows/Linux comparison
+cases also agree, including failure status and long-lexeme output. The complete
+graph still verifies executable IR/startup objects for all nine existing targets.
+Compiler test inputs now track Bootstrap source changes for correct reruns.
+Final focused verification passes in 49 seconds: four Compiler integration
+tests, 51 Shuttle tests and 25 backend-free configuration tests, all without
+failures, errors or skips. The preceding full Stage 7 Compiler check remains
+the latest full compiler-suite run; production compiler code is unchanged here.
+
 ### Shuttle and imports Stage 7 nested projects and Bootstrap (2026-11-07)
 
 The maintained [Shuttle example](../../../../examples/Shuttle/README.md) uses a

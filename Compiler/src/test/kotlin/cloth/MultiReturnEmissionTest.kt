@@ -212,7 +212,7 @@ class MultiReturnEmissionTest {
 		val output = runtimeFailure(directory, "shapes", """
 			fn<int> marker() { print("all rhs\n")
 			    return 1 }
-			fn<int[], int[], int> values(bool bad) = if (bad) { [1], [2, 3], marker() } else { [1], [2], 0 }
+			fn<int[], int[][], int> values(bool bad) = if (bad) { [1], [[2, 3]], marker() } else { [1], [[2]], 0 }
 			fn main() {
 			    def a, b, n = values(false)
 			    a, b, n = values(true)

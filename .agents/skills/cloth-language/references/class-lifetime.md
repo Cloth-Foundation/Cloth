@@ -52,6 +52,13 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
 
 ## Verification
 
+The [standard-library Stage 4 boundary](../../cloth-toolchains/references/standard-library-stage-4.md)
+reuses these operations for an imported owning-collection fixture.
+StandardLibraryRuntimeTest verifies node/field cleanup with poisoned frees, slot
+reuse, deterministic malloc/realloc failures and ordinary alias diagnostics.
+Windows x64/x86 execute those probes; all nine profiles emit verified startup
+objects, and the GNU Linux x64 fixture also links/runs under Ubuntu WSL.
+
 The final focused Windows run passed 407 tests across 36 suites with zero
 failures, errors or skips. Class programs executed on Windows x64 and x86, including
 constructor order, stale slot reuse and growth during destruction. Additional
