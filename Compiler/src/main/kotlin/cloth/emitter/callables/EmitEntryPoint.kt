@@ -12,7 +12,6 @@ import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
-import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Native startup adapter; reports the normalized process status after Cloth main returns. */
@@ -44,20 +43,11 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 					argument(0, if (parameter is CNullable) EmitNullable(context, builder, abi.layout).wrap(arguments, parameter) else arguments)
 				}
 			}
-			val status = if (result == null) LLVMConstInt(nativeType, 0, 0) else EmitProcessExit(context, builder, abi).normalize(result, type as CInteger)
+			val processExit = EmitProcessExit(context, builder, abi)
+			val status = if (result == null) LLVMConstInt(nativeType, 0, 0) else processExit.normalize(result, type as CInteger)
 			argumentsEmitter.release(builder)
 			if (resultArena != null) arenaOwner.release(builder, resultArena)
-			val outputType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
-				parameters.put(0, pointer)
-				LLVMFunctionType(nativeType, parameters, 1, 1)
-			}
-			val existing = LLVMGetNamedFunction(module, "printf")
-			val printf = if (existing == null || existing.isNull) LLVMAddFunction(module, "printf", outputType) else existing
-			PointerPointer<LLVMValueRef>(2L).use { values ->
-				values.put(0, LLVMBuildGlobalStringPtr(builder, "\nPEC: %d\n", "process_finished"))
-				values.put(1, status)
-				LLVMBuildCall2(builder, outputType, printf, values, 2, "")
-			}
+			processExit.report(status)
 			LLVMBuildRet(builder, status)
 		} finally {
 			LLVMDisposeBuilder(builder)

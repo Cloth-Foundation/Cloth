@@ -18,7 +18,7 @@ Linux x64 GNU and object/assembly evidence across all supported profiles.
 Read [confirmed entry semantics](references/semantics.md) and the shared
 [portability contract](../cloth-language/references/semantics.md#portability).
 The [explicit termination contract](references/semantics.md#explicit-process-termination)
-covers `exit(status)` and its integer argument.
+covers `exit(status)` and `exit(status, message)`.
 Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 [output](../cloth-output/SKILL.md) for explicit print/println calls.
 
@@ -35,8 +35,9 @@ policy over a complete checked source graph, preserving the startup rules below.
   supplies a present array, including for `opt<string[]?> args ?: null`.
   Valid results are void,
   signed fixed-width integers, or isize; all unsigned main results are rejected.
-- Separate library/function checking from executable entry validation. Object
-  emission needs no main and emits no startup adapter or normal completion report.
+- Separate library/function checking from executable entry validation. The
+  startup adapter and its `main` completion report belong to executable emission.
+  Explicit `exit` calls carry their own reports in both modes.
 - Convert native arguments to well-formed UTF-8 without normalization/replacement;
   preserve order and empty values, excluding the executable name. Validate in
   order before either form of Cloth main; reject the first invalid argument.
@@ -49,18 +50,21 @@ policy over a complete checked source graph, preserving the startup rules below.
   [Callable layout](../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmittedCallable.kt)
 - Normalize main's result to native C int using sign extension or low-bit truncation.
   Void completion is zero. Emit a newline, `PEC: N`, and a newline after the
-  entry call returns, then return that same normalized status. An ordinary Cloth
-  call to main does not print a second completion report. Fatal startup/runtime
-  failure before normal completion prints no PEC message.
+  entry call returns, then return that same normalized status. The startup
+  adapter owns the report for a normal return from `main`.
 - Register `exit` through [BuiltinFunctions](../../../Compiler/src/main/kotlin/cloth/builtin/BuiltinFunctions.kt).
-  Its native-int parameter keeps the argument's source type until lowering.
+  Both overloads keep the status argument's source type until lowering. The
+  two-argument overload accepts a `string` and writes it through the shared
+  stdout emitter before the report.
   [ControlFlowModel](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt)
-  recognizes the resolved built-in group as non-returning after its argument,
+  recognizes the resolved built-in group as non-returning after its arguments,
   so shadowing, argument control flow and conditional joins retain their ordinary rules.
 - [EmitProcessExit](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitProcessExit.kt)
-  shares status conversion with the entry adapter and the C `exit` declaration
-  with runtime failures. Read wide integers through their low limb storage and
-  end the calling block with LLVM `unreachable` after the C call.
+  shares status conversion and `PEC` reporting between explicit exit and the
+  entry adapter. Explicit exit reports the normalized status before passing it
+  to C `exit`, then ends the calling block with LLVM `unreachable`. Runtime
+  failures use the same termination call after their diagnostic. Read wide
+  integers through their low limb storage.
 
 ## Source, evidence, and limits
 
@@ -73,6 +77,27 @@ Relevant suites: `ProgramEntryTest`, `UnicodeArgumentsTest`, `WindowsX86Test`,
 `ISizeIntegrationTest`, `NullableBuffersTest`, and the `ProcessCompletion` test helper. Existing tests
 exercise invalid encodings, no-argument main, quoting/empty inputs, native exit
 normalization, completion timing, link variants and startup storage cleanup.
+
+The 2026-11-09 `exit` integration passed 120 tests in `BuiltinFunctionsTest`,
+`ProgramEntryTest`, `NativeCABITest`, `CastsTest`, `ConditionalsTest`,
+`FunctionBlocksTest`, `OptionalArgumentsEmissionTest`, and
+`ArbitraryIntegerStorageTest`. `BuiltinFunctionsTest` exercised fixed and
+target-sized status conversion on Windows x64 and x86, including a 65536-bit
+unsigned value. It also checked nested termination, output, shadowing and
+invalid arguments. `NativeCABITest` verified that explicit exits and runtime
+failures share one C declaration and that an explicit exit ends its LLVM block.
+
+The follow-up `PEC` change passed 73 tests in `BuiltinFunctionsTest`, `CastsTest`,
+`NativeCABITest`, `ProgramEntryTest`, and `UnicodeArgumentsTest`. The explicit
+exit cases compare exact output and native process status on Windows x64 and
+x86. A nested exit reports once after earlier output. The cast and Unicode
+startup tests cover diagnostic-only failure paths.
+
+The optional message change passed 63 tests in `BuiltinFunctionsTest`,
+`CastsTest`, `NativeCABITest`, and `ProgramEntryTest`. Native Windows x64
+execution verified left-to-right argument evaluation, UTF-8 output with NUL
+and percent bytes, and one `PEC` report after the message. Status-only exits
+were exercised on Windows x64 and x86.
 
 Read the [Unicode startup record](../../../todo/unicode-command-line-arguments.md)
 and [milestone evidence](../cloth-language/references/development.md#unicode-command-line-startup-2026-10-31).

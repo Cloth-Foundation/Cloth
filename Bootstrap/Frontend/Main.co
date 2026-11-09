@@ -10,5 +10,7 @@ pub fn<isize> main (string[] args) {
     def status := lexer.lexTokens()
     lexer::delete
     source::delete
+
+    exit(25)
     return status
 }

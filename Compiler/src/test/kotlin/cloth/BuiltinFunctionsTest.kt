@@ -122,8 +122,8 @@ class BuiltinFunctionsTest {
 	}
 
 	@Test
-	fun `exit requires one integer status`() {
-		for (call in listOf("exit()", "exit(1, 2)")) {
+	fun `exit requires an integer status and accepts an optional string message`() {
+		for (call in listOf("exit()", "exit(1, \"message\", 2)")) {
 			failure("fn main() { $call }", DiagnosticCode.CALL_ARITY)
 		}
 		for (value in listOf("true", "'a'", "1.0", "\"7\"", "[7]", "null")) {
@@ -131,17 +131,23 @@ class BuiltinFunctionsTest {
 			assertContains(diagnostic.message.orEmpty(), "requires integer")
 		}
 		failure("fn main() { def<int?> status = null; exit(status) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
+		val invalidMessage = failure("fn main() { exit(1, 2) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
+		assertContains(invalidMessage.message.orEmpty(), "requires string")
 	}
 
 	@Test
 	fun `exit stops the process from a nested function and contributes no conditional value`(@TempDir directory: Path) {
 		val executable = LLVMEmitter().compile(unit("""
-			fn<int> status() {
-			    print("status")
+			fn<int<65>> status() {
+			    print("status ")
 			    return 7
 			}
+			fn<string> message() {
+			    print("message ")
+			    return "Something went wrong. é😀\0%"
+			}
 			fn<int> stop() {
-			    println(exit(status()))
+			    println(exit(status(), message()))
 			    println("unreachable")
 			}
 			fn<int> choose(bool stopNow) = if (stopNow) { exit(stop()) } else { 5 }
@@ -151,7 +157,7 @@ class BuiltinFunctionsTest {
 			    println("unreachable")
 			}
 		"""), directory.resolve("exit-nested"))
-		assertEquals("5${System.lineSeparator()}status", runExecutable(executable, status = 7))
+		assertEquals("5${System.lineSeparator()}status message Something went wrong. é😀\u0000%${processCompletion(7)}", runExecutable(executable, status = 7))
 	}
 
 	@Test
@@ -176,7 +182,7 @@ class BuiltinFunctionsTest {
 				exit(status)
 				println("unreachable")
 			""", "--target", abi.targetTriple)
-			assertEquals("", runExecutable(executable, status = if (abi.windows) status else status and 255), type)
+			assertEquals(processCompletion(status), runExecutable(executable, status = if (abi.windows) status else status and 255), type)
 		}
 	}
 

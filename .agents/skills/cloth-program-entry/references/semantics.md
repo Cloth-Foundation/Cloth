@@ -58,27 +58,34 @@ the parent skill for current implementation boundaries and source/test routing.
 ## Explicit process termination
 
 On 2026-11-09 the user requested early process termination with an integer
-status. `exit(status)` is available without an import and accepts one signed
-or unsigned fixed-width integer of any supported width, `isize`, or `usize`.
-An integer literal uses ordinary expression typing. Invalid arity and
-non-integer arguments produce the ordinary built-in call diagnostics.
+status and an optional string message. `exit(status)` and `exit(status, message)`
+are available without an import. The status accepts signed and unsigned fixed-width
+integers of any supported width, `isize`, and `usize`. Integer literals use
+ordinary expression typing. Invalid arity, non-integer statuses and non-string
+messages produce the ordinary built-in call diagnostics.
 
 ```cloth
 fn stop(usize status) {
     exit(status)
 }
+
+fn fail() {
+    exit(1, "Something went wrong.")
+}
 ```
 
-The call evaluates its argument once and terminates the process from any
-calling function. The terminating path produces no value and contributes no
-continuing branch to a conditional. `exit` follows ordinary built-in shadowing.
+The call evaluates its arguments once in source order and terminates the process
+from any calling function. The terminating path produces no value and contributes
+no continuing branch to a conditional. `exit` follows ordinary built-in shadowing.
 
 The native status boundary sign-extends narrow signed values and zero-extends
 narrow unsigned values. Equal-width values preserve their bits and wider
 values retain their low native C int bits. The operating system interprets the
-resulting process status. Output written before the call is preserved through
-C runtime termination. The `PEC: N` report belongs to the startup adapter's
-normal completion path after `main` returns.
+resulting process status. Before terminating, `exit` writes a supplied message
+to stdout using the same length-aware UTF-8 output as `print`, then prints
+`PEC: N` once. The report uses the same signed native C int value and newline
+format as a return from `main`. Its leading newline separates it from the
+message. C runtime termination preserves output written before the call.
 
 ## Project entry selection
 
