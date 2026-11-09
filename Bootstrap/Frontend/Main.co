@@ -11,6 +11,5 @@ pub fn<isize> main (string[] args) {
     lexer::delete
     source::delete
 
-    exit(25)
     return status
 }

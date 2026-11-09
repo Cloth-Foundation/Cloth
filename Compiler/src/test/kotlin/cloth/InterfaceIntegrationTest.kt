@@ -195,6 +195,49 @@ class InterfaceIntegrationTest {
 	}
 
 	@Test
+	fun `redundant class tests leave interface membership available for narrowing`(@TempDir directory: Path) {
+		runNative(directory, "compound_membership", """
+			typedef<interface> Read<T> { mt<T> read() }
+			typedef<interface> Extended : Read<int> { mt<int> extra() = default (8) }
+			typedef<class> Base
+			typedef<class> Item<T> (def<T> value) : Base(), Read<T> {
+			    override: mt<T> read() = value
+			    pub mt<T> fromClass() = value
+			}
+			typedef<class> Child : Item<int>(7), Extended
+			fn<int> rootFirst(Object? view) {
+			    if (view is Object && view is Read<int>) return view.read()
+			    return 0
+			}
+			fn<int> rootLast(Object? view) {
+			    if (view is Read<int> && view is Object) return view.read()
+			    return 0
+			}
+			fn<int> baseFirst(Base? view) {
+			    if (view is Base && view is Read<int>) return view.read()
+			    return 0
+			}
+			fn<int> concrete(Object? view) {
+			    if (view is Read<int> && view is Item<int>) return view.fromClass()
+			    return 0
+			}
+			fn<int> keepInterface(Extended? view) {
+			    if (view is Read<int> && view is Object) return view.extra()
+			    return 0
+			}
+			fn<int> main() {
+			    def item = Child::new
+			    if (rootFirst(item) != 7 || rootLast(item) != 7 || baseFirst(item) != 7 || concrete(item) != 7) return 1
+			    if (rootFirst(null) != 0 || rootLast(null) != 0 || baseFirst(null) != 0 || concrete(null) != 0) return 2
+			    if (keepInterface(item) != 8 || keepInterface(null) != 0) return 3
+			    item::delete
+			    println("read")
+			    return 0
+			}
+		""", "read\n")
+	}
+
+	@Test
 	fun `interface proofs are invalidated by writes and user formatting and equality`() {
 		val declarations = """
 			typedef<interface> Read { mt<int> read() }

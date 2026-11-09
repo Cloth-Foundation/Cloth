@@ -68,9 +68,11 @@ choice; `opt<T>` is a parameter declaration form, not a distinct runtime type.
   including indexed writes and deferred captured writes. Local independent
   copies can be modified normally.
 - Method defaults can also read fields on `self` under the same read-only rule.
-  Implicit receiver lookup follows the same rule. A user-defined method call
-  through that receiver is a compile-time error in a default, including a
-  bare call that resolves to the receiver. See the
+  Implicit receiver lookup and identity-preserving casts of `self` or earlier
+  parameter views carry this rule through member and indexed access. A
+  user-defined method call through that receiver is a compile-time error in a
+  default, including a bare call that resolves to the receiver. Deletion and
+  writes through these views also report C3066. See the
   [method contract](../../cloth-functions/references/semantics.md#user-defined-methods).
   State payload defaults await their separate runtime.
 - A return cannot escape a default into the caller or callee. Helper calls and

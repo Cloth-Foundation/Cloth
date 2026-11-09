@@ -7,7 +7,9 @@ import cloth.parser.type.TypeReference
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.FileBindings
+import cloth.semantic.symbols.MethodSymbol
 import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import cloth.target.TargetLayout
 import cloth.token.Keywords
 
@@ -30,13 +32,11 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		// Width templates retain ordinary call-time range checks. Declaration checking
 		// uses the widest admitted format, without granting any capability to owner T.
 		for (method in templateDeclarations.widthTemplates) if (method.owner.hasTypeParameters()) {
-			val selector = checkNotNull(method.declaration.operator?.selector)
-			templates.specialize(method, if (selector.name.lexeme == Keywords.INTEGER.toString()) ValueType.MAX_INTEGER_BITS else ValueType.FLOAT_WIDTHS.max())
+			templates.widestSpecialization(method)
 		}
-		for (method in templates.callableBodies.filterIsInstance<cloth.semantic.symbols.MethodSymbol>()) {
+		for (method in templates.callableBodies.filterIsInstance<MethodSymbol>()) {
 			val declaration = method.owner.declaration
-			val parameters = templateNames.parametersOf(declaration)
-			val canonical = parameters.isNotEmpty() && method.owner.typeArguments.withIndex().all { (index, type) -> type is CTypeParameter && type.owner === declaration && type.index == index }
+			val canonical = method.owner.typeArguments.isNotEmpty() && method.owner.isCanonicalApplication()
 			val public = when (declaration) {
 				is ClassDeclaration -> declaration.visibility != null && method.declaration.visibility != null
 				is StructDeclaration -> declaration.visibility != null
@@ -46,20 +46,59 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				checkExposedTypes(method.name, templates.typeOf(method).results.values, templateFiles.objectRoot)
 			}
 		}
+		inheritedClassVisibility(templates)
 		val closed = analyzer.closed(files, names)
 		return DeclarationAnalyzer(target).prepared(files, GenericBodyViews(closed, templates))
 	}
 
 	private fun interfaceVisibility(types: ClosedTypeModel, objectRoot: CClass) {
 		for ((owner, contract) in types.interfaces.contracts) {
-			if (owner.declaration.visibility == null || !owner.typeArguments.withIndex().all { (index, type) ->
-				type is CTypeParameter && type.owner === owner.declaration && type.index == index
-			}) continue
+			if (owner.declaration.visibility == null || !owner.isCanonicalApplication()) continue
 			for (method in contract.methods.values) {
 				val exposed = method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
 				checkExposedTypes(method.declaration.name, exposed, objectRoot)
 			}
 		}
+	}
+
+	private fun inheritedClassVisibility(templates: FunctionSemanticModel) {
+		val declarations = templates.declarations
+		val methodsByOwner = declarations.methods.groupBy { it.owner }
+		for (owner in declarations.classDefinitions.keys) {
+			if (owner.declaration.visibility == null || owner.typeArguments.isEmpty() || !owner.isCanonicalApplication()) continue
+			for (base in owner.ancestry().drop(1)) {
+				for (field in base.fields) {
+					if (field.visibility != null && owner.field(field.name.lexeme) === field) {
+						checkExposedTypes(field.name, listOf(field.type), declarations.objectRoot)
+					}
+				}
+				for (method in methodsByOwner[base].orEmpty()) {
+					if (method.declaration.visibility == null) continue
+					val name = method.name.lexeme
+					val operator = method.declaration.operator
+					val effective = when {
+						operator == null          -> declarations.methodGroup(owner, name)?.overloads.orEmpty()
+						operator.selector != null -> declarations.contextOperators(owner, name)
+						else                      -> declarations.operators(owner, name, operator.rightReceiver, method.parameters.size)
+					}
+					if (method !in effective) continue
+					val checked = if (method in declarations.widthTemplates) templates.widestSpecialization(method) else method
+					val signature = templates.typeOf(checked)
+					val exposed = signature.parameters + signature.results.values + listOfNotNull(templates.contextSelectorType(method))
+					checkExposedTypes(method.name, exposed, declarations.objectRoot)
+				}
+			}
+		}
+	}
+
+	private fun CMemberType.isCanonicalApplication() = typeArguments.withIndex().all { (index, type) ->
+		type is CTypeParameter && type.owner === declaration && type.index == index
+	}
+
+	private fun FunctionSemanticModel.widestSpecialization(method: MethodSymbol): MethodSymbol {
+		val selector = checkNotNull(method.declaration.operator?.selector)
+		val width = if (selector.name.lexeme == Keywords.INTEGER.toString()) ValueType.MAX_INTEGER_BITS else ValueType.FLOAT_WIDTHS.max()
+		return specialize(method, width)
 	}
 
 	private fun checkExposedTypes(use: cloth.token.Token, exposed: List<ValueType>, objectRoot: CClass) {

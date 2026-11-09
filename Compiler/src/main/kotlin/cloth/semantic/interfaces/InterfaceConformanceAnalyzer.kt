@@ -116,6 +116,7 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		}
 		declared[owner] = own.values.toList()
 		val groups = (own.values + requirements(ancestors)).groupBy { it.signature }
+		val mergedRequirements = mutableMapOf<FunctionSignature, List<InterfaceRequirement>>()
 		val methods = buildMap {
 			for ((key, group) in groups) {
 				checkResults(owner, key, group)
@@ -127,6 +128,7 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 					}
 				}
 				checkInheritedCallContract(owner, key, candidates)
+				if (candidates.size > 1) mergedRequirements[key] = candidates
 				put(key, selected)
 			}
 		}
@@ -134,6 +136,7 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 			buildList { parents.forEach { add(it.type) } },
 			buildSet { ancestors.values.forEach { add(it.type) } },
 			methods,
+			mergedRequirements,
 		)
 	}
 
@@ -217,8 +220,16 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		classTargets[owner] = targets
 		return ClassInterfaceConformance(buildMap {
 			for (route in interfaces.values) {
+				val contract = contracts.getValue(route.type)
 				put(route.type, buildMap {
-					for (requirement in contracts.getValue(route.type).methods.values) put(requirement, targets.getValue(requirement))
+					for (requirement in contract.methods.values) {
+						// The representative determines the call contract. Any eligible
+						// class targets for this signature share the nearest class method.
+						val classTarget = contract.mergedRequirements[requirement.signature]?.firstNotNullOfOrNull {
+							targets.getValue(it) as? ClassMethod
+						}
+						put(requirement, classTarget ?: targets.getValue(requirement))
+					}
 				})
 			}
 		})

@@ -7,6 +7,36 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Interface, generic and inheritance audit fixes (2026-11-09)
+
+Merged interface slots choose eligible inherited class bodies in either parent
+order and preserve dispatch through the individual parent views.
+[Conformance](../../cloth-interfaces/references/stage-2.md#contract-and-body-selection) ·
+[Dispatch regression](../../../../Compiler/src/test/kotlin/cloth/InterfaceDefaultsTest.kt)
+
+Parameter defaults preserve read-only receiver checks through identity-preserving
+casts. The regressions cover method calls, deletion and writes through casts.
+[Default semantics](../../cloth-optional-arguments/references/semantics.md#scope-evaluation-and-lifetimes) ·
+[Default regressions](../../../../Compiler/src/test/kotlin/cloth/InterfaceTypingTest.kt)
+
+Public generic classes check their effective inherited public field, method and
+operator signatures in the symbolic template. The regressions cover private
+results, substituted field types, shadowing and caller-private arguments.
+[Generic visibility](../../cloth-generics/references/semantics.md#visibility-and-imports) ·
+[Visibility regressions](../../../../Compiler/src/test/kotlin/cloth/GenericCallableImportsTest.kt)
+
+Compound nominal guards keep a usable interface refinement alongside redundant
+class tests. They still select a more specific class when proved.
+[Object proofs](../../cloth-interfaces/references/stage-6.md#object-operations-and-proofs) ·
+[Narrowing regression](../../../../Compiler/src/test/kotlin/cloth/InterfaceIntegrationTest.kt)
+
+All seven focused tests passed after the fixes. The offline regression run
+passed 1,007 Compiler tests across 93 suites, including 61 interface tests.
+The separate generic syntax and import semantics tasks passed 90 and 36 tests.
+The new dispatch and narrowing fixtures executed on Windows x64 and x86.
+The broader interface suites also verified IR and emitted objects for all nine
+target profiles.
+
 ### Interface Stage 7 release verification (2026-11-09)
 
 The first class-backed interface slice is complete. The README documents

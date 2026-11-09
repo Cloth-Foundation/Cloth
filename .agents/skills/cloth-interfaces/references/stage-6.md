@@ -38,9 +38,13 @@ and defaults defined in another file. [Interfaces.co](../../../../examples/Inter
 - Positive interface tests establish membership in the target and its
   ancestors. Compound guards retain facts guaranteed on every continuing
   path, so `value is Left || value is Right` can narrow to their shared
-  interface. A stable field path can establish presence. Local assignments
-  and loop writes discard affected binding facts. Calls that may execute user
-  code discard proofs about class-owned or otherwise aliased fields.
+  interface. A redundant check such as `value is Object` can establish
+  presence alongside an interface proof. A test that proves a more specific
+  class takes precedence over an interface proof. A test for a parent
+  interface can establish presence for the declared child interface view.
+  A stable field path can establish presence. Local assignments and loop writes
+  discard affected binding facts. Calls that may execute user code discard
+  proofs about class-owned or otherwise aliased fields.
 - `==` and `!=` use the initialized class's `Object` equality protocol for
   two present values, including mixed interface, class and root views.
   A comparison involving an interface view uses raw identity for `===`.

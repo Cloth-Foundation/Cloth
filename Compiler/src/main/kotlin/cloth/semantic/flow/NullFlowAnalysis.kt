@@ -116,8 +116,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		if (!unwrapNullable) return declared
 		val payload = (declared as? CNullable)?.payload ?: declared
-		val narrowed = (expression as? NameExpression)?.let { model.presence.narrowedNames[it] }
-		return if (narrowed != null && payload?.classBackedType()?.canNarrowTo(narrowed) == true) narrowed else payload
+		return (expression as? NameExpression)?.let { model.presence.narrowedType(it, payload) } ?: payload
 	}
 
 	private fun callHints(call: CallExpression): List<ValueType> {
@@ -449,10 +448,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 						if (!sourceType && proven && nullable(symbol)) model.presence.names.add(value)
 						if (!sourceType) {
 							val proofs = initial.filter { it.root == symbol && it.path.isEmpty() }.mapNotNull { it.narrowed }
-							val interfaces = proofs.filterIsInstance<CInterface>()
-							val narrowed = proofs.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() }
-								?: interfaces.singleOrNull { candidate -> interfaces.all { it.accepts(candidate) } }
-							if (narrowed != null) model.presence.narrowedNames[value] = narrowed
+							if (proofs.isNotEmpty()) model.presence.narrowedNames[value] = proofs
 						}
 						if (!nullable(symbol) || proven) presentResults.add(value)
 					}

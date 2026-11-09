@@ -88,7 +88,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val symbol = facts.declarations.symbolOf(expression)
 		if (symbol !is BindingSymbol) reject { SemanticErrors.functionValue(expression.name) }
 		val declared = facts.typeOf(symbol)
-		val narrowed = facts.presence.narrowedNames[expression]?.takeIf { declared.classBackedType()?.canNarrowTo(it) == true }
+		val narrowed = facts.presence.narrowedType(expression, declared)
 		return if (declared is CNullable && (expression in facts.presence.names || narrowed != null)) {
 			model.payloadReads[expression] = declared
 			narrowed ?: declared.payload

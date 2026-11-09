@@ -64,9 +64,11 @@ identical.
   remove an inherited fallback reports C3121 while re-abstraction remains open.
 - A child interface uses its most-specific static declaration. Distinct
   inherited declarations with the same required parameter labels can share
-  a static contract. Different labels or independent omission providers
-  require a child redeclaration to choose its own contract. Each parent view
-  retains its original contract.
+  a static contract. A shared slot uses an eligible class target from any
+  contributing requirement before an interface fallback. This includes a
+  private implementation inherited through a base class. Each parent view
+  resolves its own target and call contract. Different labels or independent
+  omission providers require a child redeclaration to choose its own contract.
   [Immutable records](../../../../Compiler/src/main/kotlin/cloth/semantic/interfaces/InterfaceModel.kt) ·
   [Static call rules](design.md#static-interface-call-contracts-confirmed-2026-11-08)
 

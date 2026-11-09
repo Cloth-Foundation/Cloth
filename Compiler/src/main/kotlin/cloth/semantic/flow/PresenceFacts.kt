@@ -1,6 +1,6 @@
 package cloth.semantic.flow
 
-import cloth.data.CMemberType
+import cloth.data.*
 import cloth.parser.expression.Expression
 import cloth.parser.expression.FieldAccessExpression
 import cloth.parser.expression.MemberCallExpression
@@ -14,6 +14,19 @@ internal class PresenceFacts {
 	val names = Collections.newSetFromMap(IdentityHashMap<NameExpression, Boolean>())
 	val fields = Collections.newSetFromMap(IdentityHashMap<FieldAccessExpression, Boolean>())
 	val updates = Collections.newSetFromMap(IdentityHashMap<UpdateStatement, Boolean>())
-	val narrowedNames = IdentityHashMap<NameExpression, CMemberType>()
+	val narrowedNames = IdentityHashMap<NameExpression, List<CMemberType>>()
 	val lostReceiverProofs = IdentityHashMap<MemberCallExpression, List<Expression>>()
+
+	fun narrowedType(name: NameExpression, source: ValueType?): CMemberType? {
+		val proofs = narrowedNames[name] ?: return null
+		val declared = source?.classBackedType() ?: return null
+		val candidates = proofs.filter { target ->
+			// A class-to-interface test opens the interface's call contract.
+			val opensInterface = declared is CClass && target is CInterface
+			declared.canNarrowTo(target) && (opensInterface || !target.accepts(declared))
+		}
+		val interfaces = candidates.filterIsInstance<CInterface>()
+		return candidates.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() }
+			?: interfaces.singleOrNull { candidate -> interfaces.all { it.accepts(candidate) } }
+	}
 }

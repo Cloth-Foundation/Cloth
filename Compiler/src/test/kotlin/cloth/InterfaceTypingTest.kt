@@ -194,6 +194,45 @@ class InterfaceTypingTest {
 	}
 
 	@Test
+	fun `casts preserve read only receivers in parameter defaults`() {
+		val cases = listOf(
+			"""
+				typedef<interface> Counter {
+				    mt<int> bump()
+				    mt<int> next(opt<int> value ?: (self -> Counter).bump()) = default (value)
+				}
+			""",
+			"""
+				typedef<interface> Root {}
+				typedef<interface> Child : Root {
+				    mt<int> value(opt<int> marker ?: if (true) {
+				        (self -> Root)::delete
+				        7
+				    } else { 0 }) = default (marker)
+				}
+			""",
+			"""
+				typedef<class> Root (pub def<int[]> values)
+				typedef<class> Child : Root([0]) {
+				    mt<int> value(opt<int> marker ?: if (true) {
+				        (self -> Root).values[0] = 7
+				        0
+				    } else { 0 }) = marker
+				}
+			""",
+			"""
+				typedef<class> Root (pub def<int> value)
+				typedef<class> Child : Root(0)
+				fn use(Child input, opt<int> marker ?: if (true) {
+				    (input -> Root).value = 7
+				    0
+				} else { 0 }) {}
+			""",
+		)
+		for (source in cases) interfaceFailure(source, DiagnosticCode.INVALID_PARAMETER_DEFAULT)
+	}
+
+	@Test
 	fun `public interface contracts check inherited exposure without rejecting caller private arguments`() {
 		analyzeInterfaces("""
 			typedef<class> Local {}

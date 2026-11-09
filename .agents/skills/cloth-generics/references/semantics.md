@@ -131,10 +131,12 @@ field, constructor input, method parameter or result, including through enclosin
 array/nullable/generic types. A primary constructor parameter is part of the public
 signature even when its initialized field is private.
 
-Check declared public surfaces in the template's defining context. Owner parameters
-are valid signature types. A caller may instantiate a public template with a
-caller-private type wherever that actual type is visible. Do not reject the
-instance merely because the template's defining file cannot name the caller's type.
+Check public surfaces in the symbolic template's defining context. A public
+generic class exposes its effective inherited public fields, methods and
+operators. Check their types after substitution into each base, using the
+ordinary member lookup rules for shadowing. Owner parameters are valid
+signature types. A caller may instantiate a public template with a caller-private
+type wherever that actual type is visible.
 
 Import the original template identity with the existing selection syntax. This
 adds no import alias syntax. Repeated graph routes to the same declaration and

@@ -110,6 +110,35 @@ class InterfaceDefaultsTest {
 	}
 
 	@Test
+	fun `merged requirements prefer an inherited class implementation in either parent order`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> Required<T> { mt<T> read() }
+			typedef<interface> WithDefault { mt<int> read() = default (2) }
+			typedef<interface> RequiredFirst : Required<int>, WithDefault {}
+			typedef<interface> DefaultFirst : WithDefault, Required<int> {}
+			typedef<class> Base<T> (def<T> value) : Required<T> { override: mt<T> read() = value }
+			typedef<class> First : Base<int>(1), RequiredFirst
+			typedef<class> Second : Base<int>(1), DefaultFirst
+			fn main() {
+			    def<RequiredFirst> first = First::new
+			    def<DefaultFirst> second = Second::new
+			    def<Required<int>> required = second
+			    def<WithDefault> fallback = second
+			    println(first.read())
+			    println(second.read())
+			    println(required.read())
+			    println(fallback.read())
+			    first::delete
+			    second::delete
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("merged_${abi.layout.sizeBits}"))
+			assertEquals("1\n1\n1\n2\n" + completion, output)
+		}
+	}
+
+	@Test
 	fun `closed diamond fallbacks and recursive bodies and omissions execute`(@TempDir directory: Path) {
 		for (abi in structRunners()) {
 			val output = runStructProgram(abi, closedDefaults, directory.resolve("generic_${abi.layout.sizeBits}"))

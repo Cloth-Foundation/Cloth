@@ -19,6 +19,7 @@ class InterfaceContract internal constructor(
 	val parents: List<CInterface>,
 	val ancestors: Set<CInterface>,
 	val methods: Map<FunctionSignature, InterfaceRequirement>,
+	internal val mergedRequirements: Map<FunctionSignature, List<InterfaceRequirement>>,
 )
 
 sealed interface InterfaceImplementation {

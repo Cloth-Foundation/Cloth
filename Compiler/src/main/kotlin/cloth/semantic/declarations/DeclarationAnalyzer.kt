@@ -213,12 +213,20 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 		private fun explicitReceiver(expression: Expression) = (expression as? NameExpression)?.let { model.names[it] as? ReceiverSymbol }
 
+		// A cast can preserve the receiver's identity without creating a stored place.
+		private fun readOnlyDefaultRoot(operand: Expression): BindingSymbol? {
+			if (!defaultContext) return null
+			return when (operand) {
+				is CastExpression        -> readOnlyDefaultRoot(operand.operand)
+				is FieldAccessExpression -> readOnlyDefaultRoot(operand.receiver)
+				is IndexExpression       -> readOnlyDefaultRoot(operand.array)
+				else                     -> model.storedRoot(operand)?.takeIf { it is ParameterSymbol || it is ReceiverSymbol }
+			}
+		}
+
 		private fun receiverValue(operand: Expression, scope: LexicalScope) {
 			expression(operand, scope)
-			if (defaultContext) {
-				val root = model.storedRoot(operand)
-				if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyValueReceivers.add(operand)
-			}
+			if (readOnlyDefaultRoot(operand) != null) model.readOnlyValueReceivers.add(operand)
 		}
 
 		private fun assignmentTarget(name: Token, scope: LexicalScope): BindingSymbol {
@@ -242,8 +250,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					expression(statement.target, scope)
 					val root = statement.target.placeRoot()?.let { model.names[it] as? BindingSymbol }
 					if (model.classDefinitions.isEmpty() && model.enumTypes.isEmpty() && (root == null || root is LocalSymbol && root.declaration.initializer is FunctionBlockExpression)) throw SemanticErrors.fieldTarget(statement.target.span)
-					if (defaultContext && root is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
-					checkReceiverWrite(root, statement.target.span)
+					val defaultRoot = readOnlyDefaultRoot(statement.target)
+					if (defaultRoot is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
+					checkReceiverWrite(defaultRoot ?: root, statement.target.span)
 					if (root != null) model.fieldRoots[statement] = root
 					statement.value?.let { expression(it, scope) }
 				}
@@ -341,8 +350,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					var root: Expression = statement.target.array
 					while (root is IndexExpression) root = root.array
 					val binding = (root as? NameExpression)?.let(model::symbolOf)
-					if (defaultContext && binding is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
-					checkReceiverWrite(binding, statement.target.span)
+					val defaultRoot = readOnlyDefaultRoot(statement.target)
+					if (defaultRoot is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
+					checkReceiverWrite(defaultRoot ?: binding, statement.target.span)
 					expression(statement.value, scope)
 				}
 
@@ -402,10 +412,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is MemberCallExpression                                                                                              -> {
 					expression(expression.receiver, scope)
 					if (initializingField != null) model.fieldInitializerCalls.add(expression)
-					if (defaultContext) {
-						val root = model.storedRoot(expression.receiver)
-						if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyDefaultReceivers.add(expression)
-					}
+					if (readOnlyDefaultRoot(expression.receiver) != null) model.readOnlyDefaultReceivers.add(expression)
 					explicitReceiver(expression.receiver)?.let { self ->
 						val group = model.memberGroup(self.owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(self.owner, expression.name)
 						checkSelfCall(expression.name)
@@ -431,9 +438,8 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 				is ClassDeletionExpression                                                                                           -> {
 					expression(expression.receiver, scope)
-					if (defaultContext) when (model.storedRoot(expression.receiver)) {
-						is ParameterSymbol, is ReceiverSymbol -> throw SemanticErrors.parameterDefault("A default cannot delete an object through a read-only receiver", expression.span)
-						else                                  -> Unit
+					if (readOnlyDefaultRoot(expression.receiver) != null) {
+						throw SemanticErrors.parameterDefault("A default cannot delete an object through a read-only receiver", expression.span)
 					}
 				}
 
