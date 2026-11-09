@@ -6,6 +6,8 @@ import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericBodyViews
+import cloth.semantic.interfaces.InterfaceModel
+import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.target.TargetLayout
 import cloth.token.Operators
 import cloth.token.Token
@@ -33,13 +35,27 @@ class DeclarationModel internal constructor(
 	internal val callables: List<CallableSymbol> = functions + methods + classDefinitions.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
 	internal val widthTemplates = methods.filter { it.declaration.operator?.selector?.capturesWidth == true }.toSet()
 	internal val concreteCallables get() = callables.filterNot { it in widthTemplates }
+	internal val interfaces = genericViews?.types?.interfaces ?: InterfaceModel.Empty
+	internal val interfaceMethods = buildMap<InterfaceRequirement, InterfaceMethodSymbol> {
+		if (genericViews != null) for ((owner, contract) in interfaces.contracts) {
+			for (method in contract.methods.values) if (method.owner === owner) {
+				put(method, InterfaceMethodSymbol(method, genericViews.viewOf(method.declaration, owner) as InterfaceMethodDeclaration))
+			}
+		}
+	}
+	internal val callableContracts: List<CallableContractSymbol> = callables + interfaceMethods.values
+	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + interfaceMethods.values
+	private val interfaceGroups = interfaces.contracts.mapValues { (owner, contract) ->
+		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }
+			.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
+	}
 	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else files.primary.types[name]
 	internal fun namedType(name: Token): CMemberType? = files.nominal(name)
 	internal fun fileScopeOf(name: Token): LexicalScope = files.context(name).scope
 	internal fun signatureType(type: cloth.parser.type.TypeReference) = genericViews?.signatureType(type) ?: SignatureType.of(type, namedType(type.name))
 	internal fun typeResolver(operatorWidth: Int? = null) = TypeResolver(target, operatorWidth, contextualNamedType = ::namedType, resolvedType = genericViews?.resolvedTypes?.let { it::get })
 
-	internal fun initializationExpressions(declaration: CallableDeclaration): List<Expression> = when (declaration) {
+	internal fun initializationExpressions(declaration: CallableSignature): List<Expression> = when (declaration) {
 		is PrimaryConstructorDeclaration -> {
 			val definition = classDefinitions.getValue(classOwners.getValue(declaration))
 			definition.baseCall?.arguments.orEmpty() + definition.fieldInitializers.map { it.expression }
@@ -55,10 +71,10 @@ class DeclarationModel internal constructor(
 		valueTargets[expression] = application
 	}
 
-	internal val classOwners = IdentityHashMap<CallableDeclaration, CClass>().apply {
+	internal val classOwners = IdentityHashMap<CallableSignature, CClass>().apply {
 		for (callable in callables) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
 	}
-	internal val enumOwners = IdentityHashMap<CallableDeclaration, CEnum>().apply {
+	internal val enumOwners = IdentityHashMap<CallableSignature, CEnum>().apply {
 		for (callable in callables) (callable.receiver?.owner as? CEnum)?.let { put(callable.declaration, it) }
 	}
 	private val operatorGroups = methods.filter { it.declaration.operator != null }.groupBy { it.name.lexeme }
@@ -95,7 +111,7 @@ class DeclarationModel internal constructor(
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
 		is CArray    -> formattingMayCallUserCode(type.element)
-		is CClass    -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
+		is CClass, is CInterface -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
 		is CEnum     -> formatterOverride(type) != null
 		else         -> false
 	}
@@ -116,7 +132,7 @@ class DeclarationModel internal constructor(
 	internal val names = IdentityHashMap<NameExpression, Symbol>()
 	internal val calls = IdentityHashMap<CallExpression, CallableGroupSymbol>()
 	internal val receiverFields = IdentityHashMap<FieldAccessExpression, ReceiverFieldSymbol>()
-	internal val receiverCalls = IdentityHashMap<MemberCallExpression, MethodGroupSymbol>()
+	internal val receiverCalls = IdentityHashMap<MemberCallExpression, CallableGroupSymbol>()
 	internal val implicitReceivers = IdentityHashMap<CallExpression, ReceiverSymbol>()
 	internal val readOnlyDefaultReceivers = Collections.newSetFromMap(IdentityHashMap<MemberCallExpression, Boolean>())
 	internal val readOnlyValueReceivers = Collections.newSetFromMap(IdentityHashMap<Expression, Boolean>())
@@ -124,7 +140,7 @@ class DeclarationModel internal constructor(
 	internal val assignments = IdentityHashMap<AssignmentStatement, BindingSymbol>()
 	internal val multiAssignments = IdentityHashMap<MultiAssignmentStatement, List<BindingSymbol?>>()
 	internal val updates = IdentityHashMap<UpdateStatement, BindingSymbol>()
-	internal val callableScopes = IdentityHashMap<CallableDeclaration, LexicalScope>()
+	internal val callableScopes = IdentityHashMap<CallableSignature, LexicalScope>()
 	internal val blockScopes = IdentityHashMap<BlockBody, LexicalScope>()
 	internal val branchScopes = IdentityHashMap<ConditionalBranch, LexicalScope>()
 	internal val elseScopes = IdentityHashMap<IfExpression, LexicalScope>()
@@ -138,18 +154,26 @@ class DeclarationModel internal constructor(
 	fun scopeOf(statement: ForStatement): LexicalScope = loopScopes.getValue(statement)
 	fun bodyScopeOf(statement: LoopStatement): LexicalScope = loopBodyScopes.getValue(statement)
 	fun symbolOf(expression: NameExpression): Symbol = names.getValue(expression)
+	/** An immediate cast of self still accesses the receiver. A stored alias only has the identity. */
+	internal fun directReceiverOf(expression: Expression): ReceiverSymbol? {
+		val original = generateSequence(expression) { (it as? CastExpression)?.operand }.last()
+		return (original as? NameExpression)?.let { names[it] as? ReceiverSymbol }
+	}
 	fun candidatesOf(call: CallExpression): CallableGroupSymbol = calls.getValue(call)
 	internal fun methodGroup(owner: CMemberType, name: String): MethodGroupSymbol? {
 		if (owner !is CClass) return methodGroups[owner]?.get(name)
 		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }.distinctBy { it.signature }.toList()
 		return methods.takeIf { it.isNotEmpty() }?.let(::MethodGroupSymbol)
 	}
+	internal fun interfaceGroup(owner: CInterface, name: String): InterfaceMethodGroupSymbol? = interfaceGroups[owner]?.get(name)
+	internal fun memberGroup(owner: CMemberType, name: String): CallableGroupSymbol? =
+		if (owner is CInterface) interfaceGroup(owner, name) else methodGroup(owner, name)
 
 	fun targetOf(statement: AssignmentStatement): BindingSymbol = assignments.getValue(statement)
 	fun targetsOf(statement: MultiAssignmentStatement): List<BindingSymbol?> = multiAssignments.getValue(statement)
 	fun targetOf(statement: UpdateStatement): BindingSymbol = updates.getValue(statement)
 	fun scopeOf(function: FunctionDeclaration): LexicalScope = callableScopes.getValue(function)
-	internal fun scopeOf(callable: CallableDeclaration): LexicalScope = callableScopes.getValue(callable)
+	internal fun scopeOf(callable: CallableSignature): LexicalScope = callableScopes.getValue(callable)
 	fun scopeOf(body: BlockBody): LexicalScope = blockScopes.getValue(body)
 	fun scopeOf(branch: ConditionalBranch): LexicalScope = branchScopes.getValue(branch)
 	fun otherwiseScopeOf(expression: IfExpression): LexicalScope? = elseScopes[expression]

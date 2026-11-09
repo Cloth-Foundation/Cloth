@@ -1,0 +1,3 @@
+pub typedef<interface> Value<T> {
+    mt<T> read()
+}

@@ -1,6 +1,6 @@
 package cloth.semantic.flow
 
-import cloth.data.CClass
+import cloth.data.CMemberType
 import cloth.parser.expression.Expression
 import cloth.parser.expression.FieldAccessExpression
 import cloth.parser.expression.MemberCallExpression
@@ -14,6 +14,6 @@ internal class PresenceFacts {
 	val names = Collections.newSetFromMap(IdentityHashMap<NameExpression, Boolean>())
 	val fields = Collections.newSetFromMap(IdentityHashMap<FieldAccessExpression, Boolean>())
 	val updates = Collections.newSetFromMap(IdentityHashMap<UpdateStatement, Boolean>())
-	val narrowedNames = IdentityHashMap<NameExpression, CClass>()
+	val narrowedNames = IdentityHashMap<NameExpression, CMemberType>()
 	val lostReceiverProofs = IdentityHashMap<MemberCallExpression, List<Expression>>()
 }

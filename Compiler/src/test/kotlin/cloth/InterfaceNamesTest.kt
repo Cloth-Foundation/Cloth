@@ -79,35 +79,59 @@ class InterfaceNamesTest {
 	}
 
 	@Test
-	fun `closed type analysis and standalone override prefixes use the interface stage diagnostic`() {
+	fun `standalone override prefixes are rejected before the compilation boundary`() {
 		val standalone = assertFailsWith<ClothDiagnostic> {
 			FunctionAnalyzer(target).analyze(genericUnit("typedef<class> C { override: mt method() {} }"))
 		}
-		assertEquals(DiagnosticCode.UNSUPPORTED_INTERFACE_COMPILATION, standalone.diagnosticCode)
+		assertEquals(DiagnosticCode.INVALID_INTERFACE_OVERRIDE, standalone.diagnosticCode)
 		assertLocated(standalone)
 
-		val closed = assertFailsWith<ClothDiagnostic> {
-			ClosedTypeAnalyzer(target).analyze(genericUnit("typedef<interface> I<T> { mt<T> read() }\nfn take(I<int> value) {}"))
-		}
-		assertEquals(DiagnosticCode.UNSUPPORTED_INTERFACE_COMPILATION, closed.diagnosticCode)
-		assertLocated(closed)
+		val closed = ClosedTypeAnalyzer(target).analyze(genericUnit("typedef<interface> I<T> { mt<T> read() }\nfn take(I<int> value) {}"))
+		val type = assertIs<CInterface>(closed.parameterTypes().single())
+		assertSame(type, closed.interfaces.contracts.getValue(type).methods.values.single().owner)
 	}
 
 	@Test
-	fun `compiler requests stop at the interface stage without creating output`(@TempDir root: Path) {
+	fun `compiler requests emit required calls and keep source diagnostics before emission`(@TempDir root: Path) {
 		val source = Files.writeString(root.resolve("Main.co"), """
 			typedef<interface> I { mt<int> read() }
 			typedef<class> C : I { override: mt<int> read() = 1 }
-			fn main() {}
+			fn<int> main() { def<I> view = C::new; def answer = view.read(); view::delete; return answer - 1 }
 		""".trimIndent())
 		val output = root.resolve("output/artifact")
-		for (kind in OutputKind.entries) {
-			val failure = assertFailsWith<ClothDiagnostic> {
-				ClothCompiler.compile(CompilationRequest(source, output, outputKind = kind))
+		val objectFile = ClothCompiler.compile(CompilationRequest(source, root.resolve("supported.o"), outputKind = OutputKind.OBJECT)).artifact
+		assertTrue(Files.size(objectFile) > 0)
+		Files.writeString(source, "typedef<interface> I { mt<int> read() }\ntypedef<class> C : I\nfn main() {}")
+		val failure = assertFailsWith<ClothDiagnostic> {
+			ClothCompiler.compile(CompilationRequest(source, output, outputKind = OutputKind.OBJECT))
+		}
+		assertEquals(DiagnosticCode.MISSING_INTERFACE_IMPLEMENTATION, failure.diagnosticCode)
+		assertEquals(2, failure.sourceLabels.size)
+		assertFalse(Files.exists(output.parent))
+		Files.writeString(source, "typedef<interface> I { mt<int> read() }\nfn<int> run(I view) = view.missing()")
+		val badCall = assertFailsWith<ClothDiagnostic> {
+			ClothCompiler.compile(CompilationRequest(source, output, outputKind = OutputKind.OBJECT))
+		}
+		assertEquals(DiagnosticCode.UNKNOWN_MEMBER, badCall.diagnosticCode)
+		assertFalse(Files.exists(output.parent))
+	}
+
+	@Test
+	fun `incompatible interface array and cast uses fail before output`(@TempDir root: Path) {
+		val source = root.resolve("Main.co")
+		val output = root.resolve("output/artifact")
+		val cases = listOf(
+			"typedef<interface> I {}\ntypedef<class> C : I\nfn take(C[] values) { def<I[]> wrong = values }\nfn main() {}" to DiagnosticCode.TYPE_MISMATCH,
+			"typedef<interface> I {}\ntypedef<interface> Other {}\nfn cast(I value) { value -> Other }\nfn main() {}" to DiagnosticCode.INVALID_CAST,
+		)
+		for ((text, code) in cases) {
+			Files.writeString(source, text)
+			for (kind in OutputKind.entries) {
+				val failure = assertFailsWith<ClothDiagnostic> { ClothCompiler.compile(CompilationRequest(source, output, outputKind = kind)) }
+				assertEquals(code, failure.diagnosticCode, failure.summary)
+				assertEquals(source, Path.of(failure.sourceLabels.first().span.source!!.name))
+				assertFalse(Files.exists(output.parent))
 			}
-			assertEquals(DiagnosticCode.UNSUPPORTED_INTERFACE_COMPILATION, failure.diagnosticCode)
-			assertEquals(source, Path.of(failure.sourceLabels.single().span.source!!.name))
-			assertFalse(Files.exists(output.parent))
 		}
 	}
 }

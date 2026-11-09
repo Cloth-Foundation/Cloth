@@ -12,6 +12,7 @@ import cloth.parser.declaration.InterfaceDeclaration
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.ProviderAccessExpression
+import cloth.semantic.generics.ClosedTypeAnalyzer
 import cloth.semantic.generics.GenericAnalyzer
 import cloth.semantic.generics.NominalTypeName
 import cloth.semantic.symbols.FunctionGroupSymbol
@@ -123,6 +124,23 @@ class ImportSemanticsTest {
 			"First.co" to "pub typedef<interface> I {}",
 			"Second.co" to "pub typedef<interface> I {}",
 		))
+	}
+
+	@Test
+	fun `interface applications through cyclic imports merge or conflict by their original identity`(@TempDir root: Path) {
+		val files = mapOf(
+			"Main.co" to "using Left: Left\nusing Right: *\ntypedef<class> Box : Left, Right",
+			"Left.co" to "using Right: Right\nusing Contract: Value\npub typedef<interface> Left : Value<int> {}",
+			"Right.co" to "using Left: Left\nusing Contract: *\npub typedef<interface> Right : Value<int<32>> {}",
+			"Contract.co" to "pub typedef<interface> Value<T> {}",
+		)
+		val model = ClosedTypeAnalyzer(target).analyze(graph(root, files))
+		val interfaces = model.interfaces.classes.values.single().implementations.keys
+		assertEquals(setOf("Left", "Right", "Value<int>"), interfaces.map { it.spelling }.toSet())
+		assertEquals(3, interfaces.size)
+		val changed = files + ("Right.co" to files.getValue("Right.co").replace("Value<int<32>>", "Value<string>"))
+		val conflict = fail(DiagnosticCode.CONFLICTING_INTERFACE_APPLICATION, root, changed)
+		assertEquals(setOf("Main.co", "Left.co", "Right.co"), conflict.sourceLabels.map { fileOf(it.span.source!!.name) }.toSet())
 	}
 
 	@Test

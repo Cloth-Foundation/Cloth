@@ -13,12 +13,11 @@ import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.FileBindings
-import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
 import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.flow.checkArrayShapes
-import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.MethodSymbol
 import cloth.source.SourceGraph
@@ -36,7 +35,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
 		if (target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
 		val resolver = declarations.typeResolver()
-		val signatures = declarations.concreteCallables.associateWith { function ->
+		val signatures = declarations.concreteContracts.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
 				resolver.resolve(parameter.declaredType).also {
 					if (it == ValueType.VOID) throw SemanticErrors.voidType(parameter.declaration.type.span)
@@ -85,18 +84,18 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 		val model = FunctionSemanticModel(declarations, CallableContracts(signatures, selectors))
 		model.initializeBindings()
 		val presence = NullFlowAnalysis(model)
-		for (function in declarations.callables) {
+		for (function in declarations.callableContracts) {
 			presence.analyze(function.declaration)
 			presence.analyzeExpressions(declarations.initializationExpressions(function.declaration))
 		}
 		checkEnumPayloads(model)
-		for (function in declarations.concreteCallables) {
+		for (function in declarations.concreteContracts) {
 			val checker = BodyTyping(model, function.declaration, bodyResults(function, model))
 			function.parameters.forEachIndexed { index, parameter ->
 				parameter.declaration.defaultValue?.let { checker.checkInitializer(it, signatures.getValue(function).parameters[index], parameter.name) }
 			}
 		}
-		for (function in declarations.concreteCallables) {
+		for (function in declarations.concreteContracts) {
 			val returnResults = bodyResults(function, model)
 			val checker = BodyTyping(model, function.declaration, returnResults)
 			when (val declaration = function.declaration) {
@@ -120,13 +119,13 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			}
 			checker.checkBody()
 		}
-		for (function in declarations.concreteCallables) {
+		for (function in declarations.concreteContracts) {
 			checkArrayShapes(function, model)
 			checkCallableMetadata(function, model)
 		}
-		if (declarations.classDefinitions.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
+		if (declarations.classDefinitions.isNotEmpty() || declarations.interfaces.contracts.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
 		return model
 	}
 
-	private fun bodyResults(function: CallableSymbol, model: FunctionSemanticModel) = if (function is ConstructorSymbol) ResultShape.Empty else model.typeOf(function).results
+	private fun bodyResults(function: CallableContractSymbol, model: FunctionSemanticModel) = if (function is ConstructorSymbol) ResultShape.Empty else model.typeOf(function).results
 }

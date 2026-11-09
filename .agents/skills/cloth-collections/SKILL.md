@@ -16,9 +16,7 @@ is implemented. Start with its
 and the runnable [Collections project](../../../examples/Collections/README.md).
 [Generic Stage 5](../cloth-generics/references/stage-5.md) owns implementation and
 verification evidence, including import visibility, native execution and packaging.
-[Stage 6](../cloth-generics/references/stage-6.md) closes first-slice integration;
-the [caller audit](../cloth-generics/references/caller-audit.md) records why
-Bootstrap's owning list is preserved. Use the
+[Stage 6](../cloth-generics/references/stage-6.md) closes first-slice integration. Use the
 [generic guide](../../../docs/generics.md) for supported language syntax and the
 [follow-up record](../../../todo/generic-follow-ups.md) for deferred protocols.
 The [final growable-array record](../cloth-arrays/references/growable-arrays-stage-8.md)
@@ -47,8 +45,9 @@ and ordinary first-error bounds/allocation behavior.
   fail at the existing shape guard; do not silently add jagged arrays or relax
   receiving rules. Use get/size to traverse differently sized array elements.
 - Explicitly delete each created list and each copy. Clear/destruction release
-  stored value buffers without deleting class-valued elements. Bootstrap's owning
-  TokenList and borrowed cursor require a separate migration/lifetime decision.
+  stored value buffers. Callers manage the lifetime of class-valued elements.
+  Bootstrap's TokenList deletes its tokens before deleting its private `List<Token>`.
+  [Bootstrap lexer skill](../cloth-bootstrap-lexer/SKILL.md)
 - `:=`/`final` protect the binding and permit mutation. Generic support adds no
   class indexing, indexed assignment, direct foreach or collection `::size`.
   New collection protocols require their own design and tests.

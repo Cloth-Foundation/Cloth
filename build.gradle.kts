@@ -100,6 +100,7 @@ tasks.test {
 	dependsOn(tasks.named("installDist"))
 	inputs.dir(layout.buildDirectory.dir("install/cloth"))
 	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("examples/Interfaces") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	systemProperty("cloth.test.toolchain", layout.buildDirectory.dir("install/cloth").get().asFile.absolutePath)
 	systemProperty("cloth.test.workspace", rootDir.absolutePath)
 	systemProperty("java.io.tmpdir", rootProject.file("tmp").absolutePath)

@@ -128,7 +128,7 @@ captures implementation scope and regression evidence.
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
-| Interface declarations, generic name binding, conformance and dispatch planning | [cloth-interfaces](../cloth-interfaces/SKILL.md) |
+| Interface declarations, generic conformance, dispatch and class-backed value contexts | [cloth-interfaces](../cloth-interfaces/SKILL.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
@@ -171,10 +171,15 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
-- Interface Stage 1 parses non-generic and explicit generic interfaces, default
-  methods, parent lists and the class `override:` prefix. Imported names keep
-  their original identities. C4035 gates conformance and execution. Constraints
-  and struct or enum implementers have separate follow-ups.
+- The verified class-backed interface slice includes fields, arrays, generic
+  holders, narrowing, `Object` operations and static metadata. The interface
+  declaration supplies argument defaults before checked dispatch.
+  [Stage 7 release verification](../cloth-interfaces/references/stage-7.md) ·
+  [Stage 6](../cloth-interfaces/references/stage-6.md) ·
+  [Stage 5](../cloth-interfaces/references/stage-5.md) ·
+  [Stage 4](../cloth-interfaces/references/stage-4.md) ·
+  [Stage 3](../cloth-interfaces/references/stage-3.md) ·
+  [Stage 2](../cloth-interfaces/references/stage-2.md) ·
   [Stage 1](../cloth-interfaces/references/stage-1.md) · [Interface skill](../cloth-interfaces/SKILL.md) ·
   [Design record](../cloth-interfaces/references/design.md) ·
   [Implementation plan](../../../todo/interfaces-plan.md)
@@ -234,9 +239,9 @@ captures implementation scope and regression evidence.
   [cloth-generics](../cloth-generics/SKILL.md) for current generic scope and prerequisites.
   [Generic Stage 6](../cloth-generics/references/stage-6.md) completes the first
   slice's publication, native examples and caller audit. The interface release
-  plan owns the planned unconstrained generic interface work. Constraints,
+  record covers delivered unconstrained generic interfaces. Constraints,
   generic functions, callable-owned parameters, inference and collection
-  protocols have separate follow-ups. [Interface plan](../../../todo/interfaces-plan.md) ·
+  protocols have separate follow-ups. [Interface release](../cloth-interfaces/references/stage-7.md) ·
   [Generic follow-ups](../../../todo/generic-follow-ups.md)
 
 - Imports and Shuttle: Stage 0 publishes the

@@ -169,7 +169,7 @@ data class CArray(val element: ValueType, val size: BigInteger? = null) : CObjec
 		if (actual !is CArray || size != null && actual.size != null && size != actual.size) return false
 		if ((element is CNullable) != (actual.element is CNullable)) return false
 		val payload = (element as? CNullable)?.payload ?: element
-		return if (payload is CClass) element == actual.element else element.accepts(actual.element)
+		return if (payload is CClass || payload is CInterface) element == actual.element else element.accepts(actual.element)
 	}
 
 	// Omitted extents are part of the declared type, not initializer-count holes.

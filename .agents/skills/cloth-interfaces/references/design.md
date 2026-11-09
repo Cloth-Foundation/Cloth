@@ -28,7 +28,8 @@ The user's confirmations below settle required-method syntax, explicit
 expression/block defaults, class/interface parent lists, required `override:`
 on declared class implementations, reuse of matching inherited public methods
 and default precedence, together with static interface call-contract ownership.
-The other matching and dispatch rules below remain open.
+The Stage 2 record distinguishes the implemented matching rules from the
+remaining design decisions. [Stage 2 conformance](stage-2.md)
 
 ## Initial implementation scope (confirmed 2026-11-08)
 
@@ -41,7 +42,7 @@ Class implementers come first, with struct and enum implementers in a later slic
 ## Generic interface release scope
 
 The user asked to include generic support in the interface plan after class and
-struct generics landed. The planned release covers explicit, unconstrained
+struct generics landed. The release slice covers explicit, unconstrained
 interface parameters, concrete class conformance to a closed application,
 dependent conformance such as `ValueBox<T> : IValue<T>`, and generic interface
 parents and default methods. [Implementation plan](../../../../todo/interfaces-plan.md#generic-conformance-fixture)
@@ -54,11 +55,12 @@ parameter fallbacks in the defining scope with opaque type parameters, then
 check each required closed instance with its own facts.
 [Generic contract](../../cloth-generics/references/semantics.md)
 
-The proposed first rules use explicit, invariant applications. Keep the closed
+The first release uses explicit, invariant applications. Keep the closed
 interface and its member contract in the checked call plan, and use the closed
 class identity to resolve the runtime body. The one-application rule below
-governs declared and inherited conformance. Signature compatibility between
-different interface declarations remains open.
+governs declared and inherited conformance. Stage 2 checks exact signatures
+after substitution, including collisions between different declarations.
+[Stage 2 conformance](stage-2.md)
 
 An unconstrained generic default can return a requirement's `T` result with
 `= default (self.read())`. The intended `IHealth<T: Number>` and its
@@ -83,7 +85,7 @@ Direct duplicate-clause diagnostics belong to the header rules.
 Report conflicting applications as a single conformance error with source
 labels for the contributing clauses or inheritance paths. The class-first
 release checks this rule for class conformance and interface inheritance.
-[Conformance stage](../../../../todo/interfaces-plan.md#stage-2--resolve-interface-graphs-and-class-conformance-pending)
+[Conformance stage](stage-2.md)
 
 ## Required methods and explicit defaults (confirmed 2026-11-07)
 
@@ -116,11 +118,10 @@ class header, using a comma-separated list after `:`:
 typedef<class> Player : Entity(), IHealth, INamed
 ```
 
-The class base retains its constructor clause; interface entries name contracts.
-A class that names only interfaces retains its existing implicit Object base.
-This does not authorize multiple class bases. Alternative clause ordering,
-duplicate-interface handling and redundant interface parentheses still need
-their explicit grammar/diagnostic rules.
+The class base retains its constructor clause and may appear anywhere in the
+list. Interface entries use type names without constructor parentheses. A class
+that names only interfaces retains its implicit Object base. Stage 2 rejects
+repeated direct interface clauses after substitution. [Stage 2 conformance](stage-2.md)
 
 ## Multiple parent interfaces (confirmed 2026-11-07)
 
@@ -133,11 +134,8 @@ typedef<interface> IPlayer : IHealth, INamed {
 }
 ```
 
-The implementation plan must handle inherited requirements, shared ancestors
-and competing inherited default implementations. This confirmation establishes
-the parent-list syntax and multiple inheritance of interface contracts; it does
-not by itself settle re-abstraction or duplicate-parent handling. Default
-precedence is confirmed separately below.
+Stage 2 resolves inherited requirements and shared ancestors. Default
+precedence is confirmed separately below. [Stage 2 conformance](stage-2.md)
 
 ## Override declaration prefix (confirmed 2026-11-07)
 
@@ -181,15 +179,14 @@ typedef<class> Player : Base(), IHealth
 
 `Base.getHealth` is an ordinary base method; `Player` reuses it to satisfy
 `IHealth`. If `Player` declares its own implementation, that declaration requires
-`override:`. This reuse decision covers public inherited methods; private base
-methods and subclass replacement/dispatch still need their own rules.
+`override:`. Stage 2 carries an inherited private target for the original
+requirement it already satisfies and accepts a marked subclass replacement.
+[Stage 2 conformance](stage-2.md)
 
 The prefix is a method declaration prefix rather than a persistent section.
-Reuse ordinary block/expression body parsing. Exact signature/label/default
-matching, unmatched-prefix diagnostics, interface-to-interface redeclarations
-and subclass replacement remain to be specified. The missing-prefix rule above
-does not require a forwarding declaration for inherited public-method reuse.
-Stage 1 retains the prefix on the class method declaration. [Stage 1](stage-1.md)
+Reuse ordinary block/expression body parsing. Stage 1 retains the prefix on
+the declaration. Stage 2 diagnoses missing and unmatched prefixes, checks
+signatures, and records the selected target. [Stage 1](stage-1.md) · [Stage 2](stage-2.md)
 
 ## Default precedence (confirmed 2026-11-07)
 
@@ -205,8 +202,9 @@ The user confirmed this precedence for overlapping interface defaults:
 
 A shared ancestor default reached through both arms of a diamond remains the
 same declaration; resolve using declaration identity rather than treating each
-inheritance path as a separate body. Exact signature compatibility, re-abstraction
-and any future syntax to select an inherited default body remain separate rules.
+inheritance path as a separate body. Stage 2 records the exact signature
+compatibility rules. Re-abstraction and syntax for selecting a particular
+ancestor default remain open. [Stage 2 conformance](stage-2.md)
 
 ## Static interface call contracts (confirmed 2026-11-08)
 
@@ -235,41 +233,44 @@ continue to apply. Keep receiver capture and liveness revalidation around effect
 Parameter fallbacks introduced by `?:` are distinct from a method's
 `= default (...)` or `= default { ... }` fallback implementation. Static contract
 ownership governs argument binding even when the body selected by dispatch is an
-interface fallback. Detailed implementation signature/optionality compatibility
-and direct class-view call contracts remain separate conformance decisions.
-This contract guides the later call typing and dispatch stages.
+interface fallback. Stage 2 matches implementation parameter types and ordered
+results exactly. Class labels and optionality belong to the direct class call
+contract. Stage 5 applies that separation to native omission evaluation and
+fallback execution. [Stage 2 conformance](stage-2.md) · [Stage 5 defaults](stage-5.md)
+
+## Class-backed value contracts
+
+The first release uses the existing class object protocol for interface views.
+An interface value can widen to `Object`, including through nullable lifting.
+A successful `is` test establishes another class or interface view on a stable
+binding. Static casts use the declared class-to-interface, parent-interface and
+`Object` widenings. Compound guards retain inherited membership facts shared
+across their continuing branches.
+
+Equality and inequality use the checked class protocol for present values.
+Identity comparisons involving an interface view compare slot and generation.
+Formatting uses the initialized class formatter or name. The static view and
+its exact generic arguments determine `::type`, even inside a narrowing guard.
+Aggregate values preserve interface identities, and arrays are invariant in
+element type. [Stage 6 value contexts](stage-6.md)
 
 ## Decisions before dependent implementation
 
-All recommendations in this table are proposals. Confirm the applicable row
-before implementing behavior that depends on it.
+The table covers open design for later work. The completed records distinguish
+implemented choices from confirmed rules. [Stage 2 conformance](stage-2.md) ·
+[Stage 3 typing and calls](stage-3.md) · [Stage 4 dispatch and lifetime](stage-4.md) ·
+[Stage 5 defaults and inherited contracts](stage-5.md) ·
+[Stage 6 value contexts](stage-6.md)
 
 | Decision | Recommendation for the first release | Dependent stages |
 | --- | --- | --- |
-| Member surface | Methods only, with no instance fields, constructors, destructors, states or operators in an interface. Decide marker-only interfaces, empty-body omission and whether redundant `pub` is accepted. | 1, 2 |
-| Class header details | One class base plus multiple interfaces is confirmed above. Decide alternative clause ordering, duplicates and redundant empty interface parentheses. | 1, 2 |
-| Interface graph details | Multiple parent interfaces are confirmed above. Specify cycle/duplicate rejection and compatible inherited requirements/defaults. | 1, 2 |
-| Generic applications | Start with explicit, invariant owner arguments. The confirmed one-application rule applies after parent substitution. Resolve signature collisions between different interface declarations separately. | 1, 2, 3 |
-| Nominal conformance | Require declared/inherited conformance rather than structural matching. Match ordered parameter and result types exactly, including nullability and array contracts; return types do not distinguish overloads. | 2, 3 |
-| Private and inherited implementations | Matching inherited public methods can satisfy newly named interfaces without forwarding. Decide inherited private methods, hiding, and result/label/optionality mismatch diagnostics explicitly; direct class visibility remains independent. | 2 |
-| Subclass replacement and prefix validation | Declared class implementations require `override:`, including when a default exists. Decide inherited conformance/subclass replacement, interface redeclarations and unmatched prefixes. Interface calls should use the accepted implementation for the runtime class. General class virtual dispatch remains separate work. | 1, 2, 4 |
-| Default extensions | Class-first, most-specific-interface-next precedence and explicit class overrides for unrelated competing defaults are confirmed above. Decide re-abstraction, exact inherited signature compatibility and any future default-body selection syntax. | 2, 5 |
-| Implementation call-contract compatibility | Static interface label/default ownership is confirmed above. Define implementation signature/optionality compatibility and direct class-view contracts; implementation metadata must not redirect an interface call or run defaults twice. | 2, 3, 5 |
-| Default body scope and self | Analyze an interface fallback in its defining file with interface-typed self; calls to other requirements dispatch on the same instance. Define whether defaults appear in direct class lookup or only through an interface view. | 3, 5 |
-| Conversions and overloads | Implicitly adapt a declared implementing class to its interface and a child interface to a parent. Decide interface-to-Object adaptation, competing interface overloads, explicit casts and unrelated interface views. No unproven downcasts. | 3, 4, 6 |
-| Runtime tests and narrowing | Support class/Object-to-interface membership and interface-to-concrete-class tests using validated runtime identity. Define interface-to-interface tests, successful stable-binding narrowing and absent nullable behavior. Preserve static ::type outside narrowing. | 3, 4, 6 |
-| Lifetime and deletion | Preserve the class identity and generation through interface values; recommend deletion through a class-backed interface view with concrete destructor dispatch and nullable-absence no-op. Define Object conversion as an alternative if direct interface deletion is deferred. | 3, 4 |
-| Construction/destruction | Prevent interface conversion or calls from exposing a partially initialized derived object. Define dispatch from base constructor bodies and from destructor self using existing initialized tags and privileges; copied aliases remain ordinary aliases. | 3, 4, 5 |
-| Value contexts and arrays | Support interface identities in normal parameters/results, nullable carriers, fields and arrays; retain array invariance and ordinary snapshots. Specify contextual array element adaptation and conditional/inference joins. | 3, 6 |
-| Equality, formatting and metadata | Specify available Object behavior through an interface view, null comparison, equality/identity overload lookup, class formatting and static nominal metadata. Preserve compiler lifetime tracking by raw identity. | 3, 6 |
-| Effects and flow | Treat dispatch as potentially reentrant user code. Conservatively invalidate reachable mutable proofs unless all possible implementations justify a tighter rule; recheck liveness after operand/default effects. | 3, 4 onward |
+| Member surface | Stage 1 accepts empty braced bodies and plain methods. Decide empty-body omission and whether redundant `pub` is accepted. | Future syntax |
+| Default extensions | Decide re-abstraction and any explicit default-body selection syntax. Preserve the class-first and most-specific precedence rules. | Future default extensions |
 
-Re-abstraction and the remaining prefix matching/dispatch rules need their
-semantics.
 Subsequent questions can be settled as their dependent stages approach; the plan
 is usable before all future extension design is complete.
 
-## Implementation choices to evaluate
+## Implementation invariants
 
 - For class implementers, reuse the private 64-bit slot/generation handle and
   generate interface dispatch using the validated initialized class tag. The
@@ -279,26 +280,38 @@ is usable before all future extension design is complete.
   class method or interface fallback in the checked model. Keep import cycles
   legal while rejecting interface-inheritance cycles.
 - Separate contract signatures from bodies in syntax, symbols and body analysis.
-  The current callable model requires a body; an empty synthetic implementation
-  would conceal a missing requirement.
-- Extend the shared call plan with static contract/default ownership and dynamic
+  Required signatures acquire an implementation through checked conformance.
+- Keep static contract and default ownership separate from dynamic
   dispatch information, retaining source-order argument evaluation, snapshots,
   omitted-argument handling and ordered result transport.
 - Keep class-backed interface representation private. Later struct/enum
   implementers will need a value-copy/mutation/lifetime design and may require
   a different erased representation. No stable external ABI is being promised.
 
-These are implementation recommendations rather than confirmed source semantics.
-
 ## Current support and evidence
 
-Stage 1 parses interface declarations, defaults, parent clauses and `override:`.
-Nominal name binding covers ordinary and generic interfaces across source files.
-C4035 guards full semantic compilation. [Stage 1](stage-1.md)
+The verified release slice includes class-backed views in aggregate values,
+object operations, metadata and imported generic holders. Calls retain the
+static interface's omitted-argument defaults and the checked initialized
+class's selected body. [Stage 7 release evidence](stage-7.md) ·
+[Stage 6](stage-6.md) · [Stage 5](stage-5.md) ·
+[Stage 4](stage-4.md) · [Stage 3](stage-3.md) ·
+[Stage 2](stage-2.md) · [Stage 1](stage-1.md)
 
 The [planning baseline](../../../../todo/interfaces-plan.md#foundation-verification--2026-11-07)
 passed 106 existing tests across six suites, zero failures/errors/skips, on
 2026-11-07. It includes Windows x64/x86 class execution and all-nine-profile
 class IR/object checks, with no interface or new foreign-native execution claim.
-Stage 0 remains open for the conformance and runtime decisions used by later
-stages.
+## Future interface work
+
+- Constraints, interface variance and inferred type arguments have separate
+  generic design tasks. [Generic follow-ups](../../../../todo/generic-follow-ups.md)
+- Struct and enum implementers need representation, value-copy, mutation and
+  lifetime rules. Their conformance will use the same one-application rule.
+- State contracts need host, visibility and active-state behavior. Ordinary
+  class virtual dispatch has its own override and call rules to settle.
+  [State design](../../cloth-language/references/semantics.md#states-and-method-dispatch) ·
+  [Object and operator design](../../cloth-language/references/object-protocol.md)
+- Separate compilation needs a cross-module identity, slot and metadata
+  contract. Current source imports compile through the checked whole graph.
+- Future syntax and default-body extensions follow the open decisions above.

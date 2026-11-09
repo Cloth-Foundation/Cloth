@@ -35,6 +35,7 @@ internal class BuiltinEmissionContext(
 	private val stringSplit by lazy { EmitStringSplit(context, builder, abi, strings, location) }
 	private val stringWhitespace by lazy { EmitStringWhitespace(context, builder, abi, strings, location) }
 	private val stringCase by lazy { EmitStringCase(context, builder, abi, strings, location) }
+	val processExit by lazy { EmitProcessExit(context, builder, abi) }
 
 	fun writeStdout(text: LLVMValueRef) = strings.write(module, text)
 	fun writeNewline() = strings.write(module, strings.literal("\n"))

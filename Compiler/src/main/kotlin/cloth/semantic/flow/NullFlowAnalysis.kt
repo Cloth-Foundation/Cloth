@@ -5,8 +5,9 @@ import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.builtin.attachments.ArrayMutation
 import cloth.data.*
 import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.CallableDeclaration
+import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.OperatorRules
@@ -26,7 +27,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		data class Index(val constant: BigInteger?) : Segment
 	}
 
-	private data class Place(val root: BindingSymbol, val path: List<Segment> = emptyList(), val narrowed: CClass? = null) {
+	private data class Place(val root: BindingSymbol, val path: List<Segment> = emptyList(), val narrowed: CMemberType? = null) {
 
 		fun invalidates(proof: Place): Boolean = root == proof.root && path.size <= proof.path.size && path.indices.all { index ->
 			val write = path[index]
@@ -41,8 +42,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private val effects = IdentityHashMap<FunctionBlockExpression, Set<Place>>()
 	private val hinting = Collections.newSetFromMap(IdentityHashMap<LocalSymbol, Boolean>())
 	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<Place>>()
-	private val methodsByName = model.declarations.methods.groupBy { it.name.lexeme }
-	private val hasClasses = model.declarations.classDefinitions.isNotEmpty()
+	private val methodsByName = (model.declarations.methods + model.declarations.interfaceMethods.values).groupBy { it.name.lexeme }
+	private val hasClasses = model.declarations.classDefinitions.isNotEmpty() || model.declarations.interfaces.contracts.isNotEmpty()
 	private val flow get() = model.controlFlow
 	private fun block(symbol: BindingSymbol?) = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 	private fun binding(value: Expression) = (value as? NameExpression)?.let { model.declarations.names[it] as? BindingSymbol }
@@ -66,7 +67,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		var type = model.bindings[place.root]
 		for (segment in place.path) {
 			val payload = (type as? CNullable)?.payload ?: type
-			if (payload == null || payload is CClass) return true
+			if (payload == null || payload.classBackedType() != null) return true
 			type = when (segment) {
 				is Segment.Field -> (payload as? CStruct)?.field(segment.name)?.type
 				is Segment.Index -> (payload as? CArray)?.element
@@ -116,13 +117,14 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		if (!unwrapNullable) return declared
 		val payload = (declared as? CNullable)?.payload ?: declared
 		val narrowed = (expression as? NameExpression)?.let { model.presence.narrowedNames[it] }
-		return if (payload is CClass && narrowed != null && payload.accepts(narrowed)) narrowed else payload
+		return if (narrowed != null && payload?.classBackedType()?.canNarrowTo(narrowed) == true) narrowed else payload
 	}
 
 	private fun callHints(call: CallExpression): List<ValueType> {
 		val candidates = when (val group = model.declarations.candidatesOf(call)) {
 			is FunctionGroupSymbol -> group.overloads
 			is MethodGroupSymbol -> group.overloads
+			is InterfaceMethodGroupSymbol -> group.overloads
 			else -> emptyList()
 		}
 		return candidates.mapNotNull { model.declaredTypeOf(it).results.values.singleOrNull() }
@@ -163,7 +165,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return hints.isNotEmpty() && hints.all { ((it as? CNullable)?.payload ?: it) is CMemberType }
 	}
 
-	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<MethodSymbol> = when (hint) {
+	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<CallableContractSymbol> = when (hint) {
+		is CInterface  -> model.declarations.interfaceGroup(hint, call.name.lexeme)?.overloads.orEmpty()
 		is CMemberType -> model.declarations.methodGroup(hint, call.name.lexeme)?.overloads.orEmpty()
 		null           -> methodsByName[call.name.lexeme].orEmpty()
 		else           -> emptyList()
@@ -186,6 +189,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		val comparison = Operators.fromCharacter(operator.lexeme)
 		if (comparison in OperatorRules.classComparisons && operands.any { it is NullLiteral }) return false
+		if (comparison == Operators.IDENTITY && operands.any { receiverHint(it) is CInterface }) return false
 		fun unknownCouldCarryReceiver(operand: Expression) = when (operand) {
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral,
 			is ArrayLiteral, is InterpolatedString, is NullLiteral, is TypeCheckExpression,
@@ -201,7 +205,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			val hints = operands.map(::receiverHint)
 			if (!operands.zip(hints).all { (operand, hint) -> hint is CMemberType || hint == null && unknownCouldCarryReceiver(operand) }) return false
 			val owner = hints.filterIsInstance<CMemberType>().firstOrNull() ?: return true
-			if (owner is CClass) return true
+			if (owner.classBackedType() != null) return true
 			if (hints.any { it != null && it != owner }) return false
 			return listOf(comparison, Operators.EQUAL).any { operation ->
 				declarations.operators(owner, operation.toString(), right = false, arity = 1).isNotEmpty() || declarations.operators(owner, operation.toString(), right = true, arity = 1).isNotEmpty()
@@ -225,7 +229,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			if (value is NullLiteral || other is NullLiteral) return false
 			val left = receiverHint(value)
 			val right = receiverHint(other)
-			if (left != null && left == right || left is CClass && right is CClass) return false
+			if (left != null && left == right || left?.classBackedType() != null && right?.classBackedType() != null) return false
 		}
 		val names = if (operator == Operators.NOT_EQUAL.toString()) setOf(operator, Operators.EQUAL.toString()) else setOf(operator)
 		val candidates = when (val hint = receiverHint(value)) {
@@ -276,29 +280,30 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 	}
 
-	private fun methodWrites(receiver: Place?, candidates: List<MethodSymbol>): List<Place> {
+	private fun methodWrites(receiver: Place?, candidates: List<CallableContractSymbol>): List<Place> {
 		if (receiver == null) return emptyList()
 		// A fixed receiver can change its fields, not its own presence.
-		return candidates.map { it.owner }.distinct().flatMap { owner ->
+		return candidates.mapNotNull { it.receiver?.owner }.distinct().flatMap { owner ->
 			owner.fields.map { field -> receiver.copy(path = receiver.path + Segment.Field(field.name.lexeme)) }
 		}
 	}
 
 	private fun implicitMethodWrites(call: CallExpression): List<Place> {
 		val self = model.declarations.implicitReceivers[call] ?: return emptyList()
-		val group = model.declarations.candidatesOf(call) as MethodGroupSymbol
+		val group = model.declarations.candidatesOf(call) as? MethodGroupSymbol ?: return emptyList()
 		return methodWrites(bindingPlace(self), group.overloads)
 	}
 
-	private fun presentReturns(candidates: List<CallableSymbol>) = candidates.all {
+	private fun presentReturns(candidates: List<CallableContractSymbol>) = candidates.all {
 		it.declaration.returnTypes.singleOrNull()?.let(::presentAnnotation) == true
 	}
 
-	fun analyze(function: CallableDeclaration) {
+	fun analyze(function: CallableSignature) {
 		function.parameters.forEach { it.defaultValue?.let { value -> expression(value, emptySet()) } }
-		when (val body = function.body) {
+		when (val body = function.executableBody) {
 			is BlockBody      -> statements(body.statements, emptySet())
 			is ExpressionBody -> expression(body.expression, emptySet())
+			null -> Unit
 		}
 	}
 
@@ -442,7 +447,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					if (symbol != null) {
 						val proven = bindingPlace(symbol) in initial
 						if (!sourceType && proven && nullable(symbol)) model.presence.names.add(value)
-						if (!sourceType) initial.asSequence().filter { it.root == symbol && it.path.isEmpty() }.mapNotNull { it.narrowed }.maxByOrNull { it.ancestry().count() }?.let { model.presence.narrowedNames[value] = it }
+						if (!sourceType) {
+							val proofs = initial.filter { it.root == symbol && it.path.isEmpty() }.mapNotNull { it.narrowed }
+							val interfaces = proofs.filterIsInstance<CInterface>()
+							val narrowed = proofs.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() }
+								?: interfaces.singleOrNull { candidate -> interfaces.all { it.accepts(candidate) } }
+							if (narrowed != null) model.presence.narrowedNames[value] = narrowed
+						}
 						if (!nullable(symbol) || proven) presentResults.add(value)
 					}
 					Outcome(initial)
@@ -538,12 +549,17 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is TypeCheckExpression                                     -> {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
-				val subject = stable(value.operand)?.takeIf { it.path.isEmpty() && value.operand is NameExpression }
+				val subject = stable(value.operand)
 				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let {
-					if (model.declarations.genericViews != null) model.types.typeResolver.resolve(it) as? CClass else model.declarations.namedType(it.name) as? CClass
+					val resolved = if (model.declarations.genericViews != null) model.types.typeResolver.resolve(it) else model.declarations.namedType(it.name)
+					resolved?.classBackedType()
 				}
 				if (subject == null || target == null) Outcome(after)
-				else Outcome(after, after + subject + subject.copy(narrowed = target), after)
+				else {
+					// Only bindings receive a new nominal type. Stable field paths can prove presence.
+					val types = if (subject.path.isNotEmpty()) emptySet() else if (target is CInterface) target.ancestors + target else setOf(target)
+					Outcome(after, after + subject + types.map { subject.copy(narrowed = it) }, after)
+				}
 			}
 
 			is CallExpression                                          -> {
@@ -600,6 +616,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val candidates = when (val group = model.declarations.candidatesOf(value)) {
 					is FunctionGroupSymbol -> group.overloads
 					is MethodGroupSymbol   -> group.overloads
+					is InterfaceMethodGroupSymbol -> group.overloads
 					else                   -> emptyList()
 				}
 				if (candidates.isNotEmpty() && presentReturns(candidates)) presentResults.add(value)

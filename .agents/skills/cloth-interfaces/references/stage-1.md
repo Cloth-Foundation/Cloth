@@ -1,9 +1,9 @@
 # Interface Stage 1 syntax and nominal identities
 
-Stage 1 completed on 2026-11-08. The lexer, parser and name analyzer recognize
-non-generic and explicit generic interfaces. Class headers preserve their base
-and interface clauses. The compiler stops at the interface conformance boundary
-with C4035. [Implementation plan](../../../../todo/interfaces-plan.md) ·
+Stage 1 completed on 2026-11-08. The lexer, parser and name analyzer gained
+support for non-generic and explicit generic interfaces. Class headers retained
+their base and interface clauses, and C4035 guarded the conformance boundary.
+[Current Stage 2 boundary](stage-2.md) · [Implementation plan](../../../../todo/interfaces-plan.md) ·
 [Design contract](design.md)
 
 ```cloth
@@ -17,8 +17,7 @@ typedef<class> ValueBox<T> (def<T> item) : IValue<T> {
 }
 ```
 
-The sample parses and binds its type names through `GenericAnalyzer`. A compiler
-request reaches the staged diagnostic before producing an artifact.
+The sample parses and binds its type names through `GenericAnalyzer`.
 
 ## Syntax and name binding
 
@@ -49,12 +48,13 @@ request reaches the staged diagnostic before producing an artifact.
   [Generic names](../../../../Compiler/src/main/kotlin/cloth/semantic/generics/GenericNames.kt)
 - C3118 reports invalid parent kinds, multiple class bases or a constructor
   argument list on an interface clause. Generic arity, raw template and
-  unsupported constraint syntax retain their existing diagnostics. C4035
-  guards semantic compilation and closed-type analysis of interface syntax,
-  including a standalone `override:` prefix. [Interface diagnostics](../../../../Compiler/src/main/kotlin/cloth/diagnostics/InterfaceErrors.kt)
+  unsupported constraint syntax retain their existing diagnostics. At Stage 1,
+  C4035 guarded semantic compilation and closed-type analysis of interface
+  syntax, including a standalone `override:` prefix.
+  [Interface diagnostics](../../../../Compiler/src/main/kotlin/cloth/diagnostics/InterfaceErrors.kt)
 
-Stage 2 owns closed interface identities, inheritance cycles, duplicate
-interface clauses, the one-application rule and conformance. Later stages
+Stage 2 added closed interface identities, inheritance cycles, duplicate
+interface clause checks, the one-application rule and conformance. Later stages
 own member typing, defaults and runtime dispatch. Redundant visibility
 modifiers and body omission remain design choices. The first parser slice
 expects an explicit braced body and plain interface methods.
@@ -73,8 +73,8 @@ Parser tests cover signature and fallback forms, member boundaries, ordered
 headers, source spans and invalid prefixes. Name tests cover owner scope, raw
 applications, arity, parent kinds and the compiler request boundary. Import
 tests cover selected and wildcard imports, cycles, private defining-file
-names and colliding exports. The object and executable requests both produce
-C4035 before creating output. [Parser tests](../../../../Compiler/src/test/kotlin/cloth/InterfaceParsingTest.kt) ·
+names and colliding exports. The object and executable requests both produced
+C4035 before creating output in this run. [Parser tests](../../../../Compiler/src/test/kotlin/cloth/InterfaceParsingTest.kt) ·
 [Name and boundary tests](../../../../Compiler/src/test/kotlin/cloth/InterfaceNamesTest.kt) ·
 [Import tests](../../../../Compiler/src/test/kotlin/cloth/ImportSemanticsTest.kt)
 

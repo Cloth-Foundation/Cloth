@@ -1,5 +1,8 @@
 package cloth.builtin
 
+import cloth.builtin.functions.ExitFunction
+import cloth.builtin.functions.PrintFunction
+import cloth.builtin.functions.PrintlnFunction
 import java.util.*
 
 /** The complete registration list. Declaring an entry also registers its definition. */
@@ -10,6 +13,8 @@ internal object BuiltinFunctions {
 
 	val PRINT = register("print", ::PrintFunction)
 	val PRINTLN = register("println", ::PrintlnFunction)
+	val EXIT = register("exit", ::ExitFunction)
+	//val ERROR = register("error", ::ErrorFunction)
 
 	val all: List<BuiltinDefinition<*>> = Collections.unmodifiableList(functions)
 

@@ -209,8 +209,8 @@ collection methods and records the
 Generic callable execution is implemented in
 [Stage 4](../../cloth-generics/references/stage-4.md). The actual public List module
 and imported-library checks are supplied by [Stage 5](../../cloth-generics/references/stage-5.md);
-use [cloth-collections](../../cloth-collections/SKILL.md) for its API. Ordinary private array fields do
-not imply class indexing/foreach or Bootstrap token-ownership migration.
+use [cloth-collections](../../cloth-collections/SKILL.md) for its API. Direct
+collection indexing and foreach are separate protocols.
 
 ## Generic types
 
@@ -232,8 +232,8 @@ generic classes/structs, recursive value storage and exact native metadata.
 C4033 remains for symbolic/unresolved contexts; C4034 bounds canonical UTF-8
 metadata expansion before flattening shared arguments. [Stage 5](../../cloth-generics/references/stage-5.md)
 supplies the public source List with private generic slots, independent elements,
-checked array export and ordinary import/selection rules. Bootstrap migration
-and collection protocols remain separate.
+checked array export and ordinary import/selection rules. Bootstrap uses it as
+private storage in its owning TokenList. [Bootstrap lexer skill](../../cloth-bootstrap-lexer/SKILL.md)
 
 [Stage 6](../../cloth-generics/references/stage-6.md) completes integration and
 publishes the [user guide](../../../../docs/generics.md), runnable example,
@@ -448,11 +448,20 @@ for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overl
 ## Interfaces
 
 The interface design record owns confirmed syntax and visibility, along with
-open language choices. Stage 1 implements declarations and nominal name
-binding for non-generic and explicit generic interfaces. C4035 marks the
-conformance boundary for compiler requests. The constrained Test.co example
-belongs to the later capability work.
-[Stage 1](../../cloth-interfaces/references/stage-1.md) ·
+open language choices. Class-backed views widen to `Object` and keep their
+identity in nullable values, aggregates and generic holders. Interface array
+elements are invariant. Class equality and formatting dispatch through the
+checked initialized tag. `===` with an interface operand compares the carried
+identities. `::type` describes the static view. Interface calls use the static
+declaration's labels and omitted-argument defaults before selecting the body.
+The constrained Test.co example belongs to later capability work.
+[Public interface guide](../../../../README.md#interfaces) ·
+[Stage 7 release verification](../../cloth-interfaces/references/stage-7.md) ·
+[Stage 6](../../cloth-interfaces/references/stage-6.md) ·
+[Stage 5](../../cloth-interfaces/references/stage-5.md) ·
+[Stage 4](../../cloth-interfaces/references/stage-4.md) ·
+[Stage 3](../../cloth-interfaces/references/stage-3.md) ·
+[Stage 2](../../cloth-interfaces/references/stage-2.md) ·
 [Interface design](../../cloth-interfaces/references/design.md) ·
 [Interface skill](../../cloth-interfaces/SKILL.md) ·
 [Implementation plan](../../../../todo/interfaces-plan.md)

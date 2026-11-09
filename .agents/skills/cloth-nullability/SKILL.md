@@ -5,6 +5,12 @@ description: Design, explain, or extend Cloth nullable types, null literals, pre
 
 # Cloth nullability
 
+Interfaces lift class, parent-interface and `Object` widenings through the
+ordinary nullable carrier. Compound membership guards can retain a shared
+parent interface. Membership proves presence on stable field paths, and
+user calls, equality and formatting invalidate aliased field proofs.
+[Interface presence and lifetime](../cloth-interfaces/references/stage-6.md#object-operations-and-proofs)
+
 [Generic Stage 0](../cloth-generics/references/semantics.md#admitted-arguments-and-nullable-substitution)
 confirms `T?` substitution normalizes one nullable wrapper when T is already
 nullable. Direct duplicate markers stay invalid, suffix positions stay distinct

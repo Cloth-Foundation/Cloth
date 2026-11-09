@@ -1,0 +1,17 @@
+using left.Contract: Value
+using storage.Slot: Slot
+
+fn<string> prefix() = "from bridge: "
+
+typedef<class> Note (def<string> text) : Value<string> {
+    override: mt<string> read() = text
+}
+
+pub fn<string, typeinfo> caption() {
+    def note = Note::new("ready")
+    def<Slot<Value<string>>> slot = { note }
+    def text = slot.item.caption(slot.item.read())
+    if (slot.item.described() != Value<string>::type) text = "unexpected metadata"
+    note::delete
+    return text, slot::type
+}

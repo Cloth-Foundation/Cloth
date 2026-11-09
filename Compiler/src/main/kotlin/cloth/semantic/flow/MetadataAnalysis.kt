@@ -5,25 +5,27 @@ import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.ResultShape
 import cloth.semantic.symbols.BindingSymbol
-import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.ParameterSymbol
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.token.Operators
 import java.util.*
 
-internal fun checkCallableMetadata(function: CallableSymbol, model: FunctionSemanticModel) {
+internal fun checkCallableMetadata(function: CallableContractSymbol, model: FunctionSemanticModel) {
 	function.parameters.forEachIndexed { index, parameter ->
 		parameter.declaration.defaultValue?.let { MetadataAnalysis(model, function.parameters.take(index), readOnlyParameters = true).expression(it) }
 	}
 	val metadata = MetadataAnalysis(model, function.parameters)
 	model.declarations.initializationExpressions(function.declaration).forEach(metadata::expression)
-	when (val body = function.declaration.body) {
+	when (val body = function.declaration.executableBody) {
 		is BlockBody      -> metadata.statements(body.statements)
 		is ExpressionBody -> metadata.expression(body.expression)
+		null -> Unit
 	}
 }
 

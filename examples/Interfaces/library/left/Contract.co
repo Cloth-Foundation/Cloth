@@ -1,0 +1,7 @@
+fn<string> prefix() = "from library: "
+
+pub typedef<interface> Value<T> {
+    mt<T> read()
+    mt<string> caption(string text, opt<string> label ?: prefix()) = default (label + text)
+    mt<typeinfo> described(opt<typeinfo> type ?: Value<T>::type) = default (type)
+}

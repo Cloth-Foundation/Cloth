@@ -1,6 +1,6 @@
 package cloth.semantic
 
-import cloth.data.CClass
+import cloth.data.CMemberType
 import cloth.parser.expression.Expression
 import cloth.semantic.symbols.ReceiverSymbol
 import cloth.semantic.typing.ResolvedOperator
@@ -16,7 +16,9 @@ internal sealed interface ObjectReceiver {
 /** These projections start after resolving and validating the object identity. */
 internal data class InstancePlace(val receiver: ObjectReceiver, val steps: List<PlaceStep>)
 
-internal data class ClassDeletionPlan(val owner: CClass, val nullable: Boolean)
+internal data class ClassDeletionPlan(val owner: CMemberType, val nullable: Boolean)
+
+internal data class InterfaceTypeTest(val source: CMemberType, val target: CMemberType, val nullableSource: Boolean)
 
 internal data class ClassComparisonPlan(val operation: Operators, val identityOverride: ResolvedOperator?) {
 

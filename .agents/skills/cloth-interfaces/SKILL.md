@@ -5,21 +5,27 @@ description: Design or implement Cloth class interfaces, requirements and defaul
 
 # Cloth interfaces
 
-Stage 1 implements interface syntax and nominal name binding. The parser accepts
-braced interfaces with plain `mt` members, explicit defaults, generic parameters
-and parent lists. C4035 marks the conformance boundary for compiler requests.
-[Stage 1 implementation and verification](references/stage-1.md)
+The first class-backed interface slice supports aggregate storage, arrays,
+generic arguments and metadata. Interface views use checked membership,
+`Object` widening, class comparison and formatting, and explicit deletion.
+Calls evaluate omitted arguments in the static interface contract.
+[Stage 7 release verification](references/stage-7.md) ·
+[Stage 6 value contexts and flow](references/stage-6.md) ·
+[Stage 5 defaults and inherited contracts](references/stage-5.md) ·
+[Stage 4 dispatch and lifetime](references/stage-4.md) ·
+[Stage 3 typing and calls](references/stage-3.md) ·
+[Stage 2 conformance](references/stage-2.md) · [Stage 1 syntax and names](references/stage-1.md)
 
-The planned first release covers non-generic and explicit, unconstrained generic
-interfaces with class implementers. The non-generic fixture is the first
-dispatch milestone. The generic work builds on delivered class and struct
-specialization. Constraints and struct or enum implementers have separate
+The first release slice covers non-generic and explicit, unconstrained generic
+interfaces with class implementers. It builds on class and struct specialization.
+Constraints and struct or enum implementers have separate
 follow-ups. [Release scope](references/design.md#generic-interface-release-scope) · [Cloth generics](../cloth-generics/SKILL.md)
 
 The design record owns confirmed behavior and open decisions. The implementation
-plan owns stage status, compiler ownership, acceptance scenarios and foundation
-evidence. Test.co retains the intended constrained interface example.
-[Design record](references/design.md) · [Implementation plan](../../../todo/interfaces-plan.md) · [Test.co](../../../examples/Test.co)
+plan owns compiler routes and acceptance scenarios. The public examples cover
+ordinary class-backed interfaces and closed generic contracts across files.
+[Design record](references/design.md) · [Implementation plan](../../../todo/interfaces-plan.md) ·
+[Public interface guide](../../../README.md#interfaces) · [Test.co](../../../examples/Test.co)
 
 ## Preserve the interface boundary
 
@@ -31,7 +37,8 @@ evidence. Test.co retains the intended constrained interface example.
   before extending inheritance parsing.
 - An interface may name multiple parent interfaces in a comma-separated `:`
   list. Read the [interface inheritance contract](references/design.md#multiple-parent-interfaces-confirmed-2026-11-07).
-  Duplicate-parent handling remains open.
+  Repeated direct clauses fail. Identical applications reached along different
+  inheritance paths contribute one interface.
 - A class method declared to implement an interface method must use `override:`
   before optional `pub`. A matching public method inherited from a base class
   may satisfy a newly implemented interface without a forwarding declaration,
@@ -39,7 +46,8 @@ evidence. Test.co retains the intended constrained interface example.
   [confirmed prefix and inherited-method rules](references/design.md#override-declaration-prefix-confirmed-2026-11-07).
   A newly declared matching method in an implementing class fails without the
   prefix even when the interface supplies a default.
-  Inherited private methods and subclass replacement rules remain open.
+  A private base implementation carries the original requirement it already
+  satisfies. A marked subclass method can replace an inherited target.
 - Resolve defaults by preferring a class implementation, then the most-specific
   interface default. Unrelated competing defaults require an explicit class
   `override:` implementation. Read the [precedence contract](references/design.md#default-precedence-confirmed-2026-11-07).
@@ -56,9 +64,9 @@ evidence. Test.co retains the intended constrained interface example.
   set. Include inherited conformance, merge identical applications reached by
   multiple paths, and reject competing applications after substitution.
   [One-application rule](references/design.md#one-application-per-interface-declaration)
-- Preserve explicit deletion and checked class aliases through every interface
-  value. The plan proposes identity-preserving conversion; it does not establish
-  ownership transfer, garbage collection or automatic destruction.
+- Preserve the checked class identity and explicit deletion rules through
+  every interface conversion. Aggregate copies preserve aliases to the same
+  explicitly managed instance.
 - Keep a required signature distinct from an executable body. A dispatch plan
   must distinguish the static call contract from the selected runtime body.
 - Reuse existing argument binding and result transport. Argument fallbacks and
@@ -67,6 +75,9 @@ evidence. Test.co retains the intended constrained interface example.
   runtime dispatch selects only the body. Implementations receive resolved values
   and do not apply a second set of defaults. Read the
   [static call contract](references/design.md#static-interface-call-contracts-confirmed-2026-11-08).
+- Preserve invariant array element types and the alias identity of interface
+  elements across aggregate copies. `Object` widening, equality, formatting and
+  nominal metadata follow the [integrated value contract](references/stage-6.md).
 - Follow [feature integration](../cloth-feature-integration/SKILL.md) for each
   implemented stage. Preserve first-error reporting and use canonical enum
   spellings in compiler code. Record supported forms and explicit staged gates.
@@ -75,12 +86,16 @@ evidence. Test.co retains the intended constrained interface example.
 
 The [plan's compiler map](../../../todo/interfaces-plan.md#compiler-ownership-map)
 routes syntax, declarations, conformance, calls, flow, storage and lowering.
-Existing ordinary class methods dispatch statically. Class formatting, equality,
-type tests and deletion provide reusable checked runtime-tag mechanisms; they do
-not establish ordinary virtual or interface dispatch.
+Interface dispatch selects a class implementation or fallback from the
+initialized tag and the static slot. Ordinary class methods dispatch statically.
 
-Stage 1 passed 133 focused tests plus the native-free repeat of the 35 import
-tests. Existing class and generic fixtures provide native Windows x64/x86 and
-nine-profile IR and object evidence. The interface-specific coverage ends at
-name analysis and the compilation diagnostic. [Stage 1 results](references/stage-1.md#verification) ·
+Stage 7 covers the full offline Compiler and Shuttle checks, the installed
+launchers, and the native and cross-target matrix. Stage 6 covers aggregate
+transport, guards, object operations and exact metadata.
+[Stage 7 results](references/stage-7.md#regression-and-distribution-checks) ·
+[Stage 6 results](references/stage-6.md#verification) ·
+[Stage 5 results](references/stage-5.md#verification) ·
+[Stage 4 results](references/stage-4.md#verification) ·
+[Stage 3 results](references/stage-3.md#verification) ·
+[Stage 2 results](references/stage-2.md#verification) ·
 [Generic foundation](../cloth-generics/references/stage-6.md)

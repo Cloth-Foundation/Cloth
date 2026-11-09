@@ -31,7 +31,7 @@ internal object InterfaceErrors {
 		listOf(SourceLabel(owner.span, "implementation needed here"), SourceLabel(requirement.span, "interface requirement declared here")),
 	)
 
-	fun override(message: String, span: TokenSpan, requirement: Token? = null) = SemanticException(
+	fun invalidOverride(message: String, span: TokenSpan, requirement: Token? = null) = SemanticException(
 		DiagnosticCode.INVALID_INTERFACE_OVERRIDE, message,
 		listOfNotNull(SourceLabel(span, "class method here"), requirement?.let { SourceLabel(it.span, "interface requirement declared here") }),
 	)
@@ -41,11 +41,5 @@ internal object InterfaceErrors {
 	fun defaults(owner: Token, signature: String, first: Token, second: Token) = SemanticException(
 		DiagnosticCode.CONFLICTING_INTERFACE_DEFAULTS, "Class '${owner.lexeme}' inherits competing defaults for '$signature'",
 		listOf(SourceLabel(owner.span, "declare an '$overridePrefix' implementation here"), SourceLabel(first.span, "one default body"), SourceLabel(second.span, "competing default body")),
-	)
-
-	fun compilation(span: TokenSpan) = ClothDiagnostic(
-		DiagnosticCode.UNSUPPORTED_INTERFACE_COMPILATION,
-		"Interface compilation requires interface value and call support",
-		listOf(SourceLabel(span, "interface conformance is available for declaration analysis")),
 	)
 }

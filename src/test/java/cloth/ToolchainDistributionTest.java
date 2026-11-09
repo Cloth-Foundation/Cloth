@@ -34,6 +34,12 @@ class ToolchainDistributionTest {
         }
     }
 
+    @Test void installedShuttleRunsImportedGenericInterfaceFixture() throws Exception {
+        Path project = Path.of(System.getProperty("cloth.test.workspace"), "examples", "Interfaces");
+        String report = run(installed, temporary, "shuttle", "run", "--project", project.toString(), "-o", "programs/interfaces");
+        assertTrue(report.replace("\r\n", "\n").contains("from library: ready\nSlot<Value<string>>\n\nPEC: 0\n"), report);
+    }
+
     @Test void relocatedCommandsPreserveLocationAndInvocationDirectory() throws Exception {
         Path workspaceScratch = Path.of(System.getProperty("cloth.test.workspace"), "tmp").toRealPath();
         assertTrue(temporary.toRealPath().startsWith(workspaceScratch));

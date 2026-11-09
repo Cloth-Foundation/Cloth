@@ -28,6 +28,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val resultMetadata: MutableMap<Expression, List<ValueType?>> = facts.identityMap { it.resultMetadata }
 	internal val receptions: MutableMap<Statement, ReceptionPlan> = facts.identityMap { it.receptions }
 	internal val typeChecks: MutableMap<TypeCheckExpression, ValueType> = facts.identityMap { it.typeChecks }
+	internal val interfaceTypeTests: MutableMap<TypeCheckExpression, InterfaceTypeTest> = facts.identityMap { it.interfaceTypeTests }
 	private val valueChecks: MutableMap<TypeCheckExpression, BoundValueCheck> = facts.identityMap { it.valueChecks }
 	internal val providers: MutableMap<ProviderAccessExpression, ProviderAccess> = facts.identityMap { it.providers }
 	private val interpolationText: MutableMap<Expression, ProviderResult<*>> = facts.identityMap { it.interpolationText }
@@ -52,6 +53,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	fun typeOf(expression: Expression): ValueType = resultOf(expression).scalarOrNull() ?: throw SemanticErrors.scalarResults(resultOf(expression), expression.span)
 	fun typeOf(statement: Statement): ValueType = resultOf(statement).scalarOrNull() ?: throw SemanticErrors.scalarResults(resultOf(statement), statement.span)
 	fun resultOf(expression: Expression): ResultShape = expressionResults.getValue(expression)
+	internal fun checkedResultOf(expression: Expression): ResultShape? = expressionResults[expression]
 	fun resultOf(statement: Statement): ResultShape = statementResults.getValue(statement)
 	fun representedResultsOf(expression: Expression): List<ValueType?> = resultMetadata[expression] ?: resultOf(expression).values.map { null }
 	internal fun scalarTypeOrNull(expression: Expression): ValueType? = expressionResults[expression]?.scalarOrNull()

@@ -6,6 +6,7 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.PrimaryConstructorDeclaration
+import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.MethodReceiver
@@ -35,11 +36,11 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	private val observed = IdentityHashMap<Expression, Handle?>()
 	private var destroying: Identity? = null
 
-	fun analyze(callables: List<CallableSymbol> = declarations.concreteCallables) {
+	fun analyze(callables: List<CallableContractSymbol> = declarations.concreteContracts) {
 		for (callable in callables) {
 			val state = State()
 			for (parameter in callable.parameters) track(state, parameter, null)
-			val self = callable.receiver?.takeIf { it.owner is CClass }
+			val self = callable.receiver?.takeIf { it.owner.classBackedType() != null }
 			self?.let { track(state, it, null) }
 			destroying = if (callable is DestructorSymbol) state.bindings.getValue(callable.receiver).identity else null
 			for (parameter in callable.parameters) parameter.declaration.defaultValue?.let { expression(it, state.fork()) }
@@ -53,18 +54,16 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				is ConstructorDeclaration        -> arguments(declaration.delegation.arguments, state)
 				else                             -> Unit
 			}
-			when (val body = callable.declaration.body) {
+			when (val body = callable.declaration.executableBody) {
 				is BlockBody      -> statements(body.statements, state)
 				is ExpressionBody -> expression(body.expression, state)
+				null -> Unit
 			}
 		}
 	}
 
-	private fun newHandle(type: ValueType?): Handle? = when {
-		type is CClass                              -> Handle(Identity(), true)
-		type is CNullable && type.payload is CClass -> Handle(Identity(), false)
-		else                                        -> null
-	}
+	private fun newHandle(type: ValueType?): Handle? =
+		type?.classBackedType()?.let { Handle(Identity(), type !is CNullable) }
 
 	private fun track(state: State, binding: BindingSymbol, source: Handle?) {
 		if (binding is ReceiverFieldSymbol) return
@@ -223,7 +222,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		analyze(state.fork())
 	}
 
-	private fun directSelf(value: Expression): Boolean = (value as? NameExpression)?.let { declarations.names[it] } is ReceiverSymbol
+	private fun directSelf(value: Expression): Boolean = declarations.directReceiverOf(value) != null
 
 	private fun operatorCall(value: Expression, operator: ResolvedOperator, operands: List<Expression>, state: State): Handle? {
 		val instance = (operator.call.callable as MethodSymbol).owner is CClass
@@ -278,7 +277,10 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (block != null) loop(state) { statements((block.declaration.body as BlockBody).statements, it) }
 				else if (binding !in state.bindings) track(state, binding, null)
 				val handle = state.bindings[binding]
-				if (handle != null) return if (model.types.scalarTypeOrNull(value) is CClass) handle.copy(present = true) else handle
+				if (handle != null) {
+					val type = model.types.scalarTypeOrNull(value)
+					return if (type !is CNullable && type?.classBackedType() != null) handle.copy(present = true) else handle
+				}
 			}
 
 			is FieldAccessExpression                                                                           -> {
@@ -301,10 +303,16 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 					null -> null
 				}
 				val ownerSelf = owner is ObjectReceiver.Self || owner is ObjectReceiver.Explicit && directSelf(owner.expression)
-				val instance = model.selectedMemberCall(value)?.receiver is MethodReceiver.Instance
-				if (instance) check(handle, state, value.receiver.span, directSelf(value.receiver))
+				val call = model.selectedBoundMemberCall(value)
+				val instance = when (call) {
+					is ResolvedCall.Source -> call.receiver is MethodReceiver.Instance
+					is ResolvedCall.Interface -> true
+					null -> false
+				}
+				val self = directSelf(value.receiver) || (call as? ResolvedCall.Interface)?.receiver is ObjectReceiver.Self
+				if (instance) check(handle, state, value.receiver.span, self)
 				if (flow.of(value.receiver).canFallThrough) arguments(value.arguments, state)
-				if (instance && value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.receiver.span, directSelf(value.receiver))
+				if (instance && value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.receiver.span, self)
 				if (owner != null && value.arguments.all { flow.of(it).canFallThrough }) check(ownerHandle, state, value.receiver.span, ownerSelf)
 			}
 
@@ -350,9 +358,8 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is TypeCheckExpression                                                                             -> {
 				model.types.valueCheckOf(value)?.let { return operatorCall(value, it.operator, it.application.eagerOperands(), state) }
 				val handle = expression(value.operand, state)
-				if (model.types.typeChecks[value] is CClass) {
-					val self = (value.operand as? NameExpression)?.let { declarations.names[it] } is ReceiverSymbol
-					check(handle, state, value.operand.span, permitDestruction = self)
+				if (model.types.typeChecks[value] is CClass || value in model.types.interfaceTypeTests) {
+					check(handle, state, value.operand.span, permitDestruction = directSelf(value.operand))
 				}
 			}
 

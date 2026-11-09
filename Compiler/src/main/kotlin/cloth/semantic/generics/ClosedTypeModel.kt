@@ -1,10 +1,10 @@
 package cloth.semantic.generics
 
+import cloth.data.CClass
 import cloth.data.CMemberType
 import cloth.data.ValueType
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ClassParentClause
-import cloth.data.CClass
 import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeReference
 import cloth.semantic.interfaces.InterfaceModel

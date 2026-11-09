@@ -89,18 +89,26 @@ array and checks incompatible dimensions. Class-valued elements remain shared
 identities; deleting a list does not delete those objects. List aliases share the
 collection itself, while copy creates another collection requiring deletion.
 
+## Generic interfaces
+
+Classes can implement explicit, unconstrained interface applications such as
+`Value<string>` or `Value<T>` in a generic class. Parent contracts substitute
+their arguments before conformance and dispatch. Closed interface applications
+can also appear in a holder such as `Slot<Value<string>>`. Calls use the static
+interface's labels and omitted-argument defaults.
+[Interfaces.co](../examples/Interfaces.co) · [Interface guide](../README.md#interfaces)
+
 ## Follow-up scope
 
-This delivery does not implement constraints, generic interfaces/functions,
-method-owned type parameters, omitted-argument inference, variance, type defaults,
-generic enums/states or higher-kinded types. Direct collection indexing, indexed
-assignment and foreach require their own protocol. These are deferred features,
-not permanent language restrictions. Keep the intended constrained forms in
+Follow-ups cover constraints, generic functions, method-owned type parameters,
+omitted-argument inference, variance, type defaults, generic enums and states,
+and higher-kinded types. Direct collection indexing, indexed assignment and
+foreach require their own protocol. Keep the intended constrained forms in
 [Test.co](../examples/Test.co).
 
-[Generic follow-ups](../todo/generic-follow-ups.md) separate those future designs
-from the completed slice. Bootstrap's owning TokenList and borrowed cursor keep
-their existing lifetime contract; generic List availability alone does not
-authorize replacing them. The [caller audit](../.agents/skills/cloth-generics/references/caller-audit.md)
-records the migration gates. Target execution and publication evidence live in
-the [Stage 6 record](../.agents/skills/cloth-generics/references/stage-6.md).
+Bootstrap's `TokenList` owns the tokens in a private `List<Token>` and returns
+borrowed tokens through `get()`. [Bootstrap lexer skill](../.agents/skills/cloth-bootstrap-lexer/SKILL.md)
+
+The generic follow-ups track the remaining designs. Stage 6 records target
+execution and publication evidence. [Generic follow-ups](../todo/generic-follow-ups.md) ·
+[Stage 6 record](../.agents/skills/cloth-generics/references/stage-6.md)

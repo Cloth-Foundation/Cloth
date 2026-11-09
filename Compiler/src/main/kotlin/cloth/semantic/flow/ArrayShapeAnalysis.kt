@@ -5,10 +5,11 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.BindingSymbol
-import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.typing.FunctionSemanticModel
@@ -17,13 +18,14 @@ import cloth.token.Operators
 import java.math.BigInteger
 import java.util.IdentityHashMap
 
-internal fun checkArrayShapes(function: CallableSymbol, semantics: FunctionSemanticModel) {
+internal fun checkArrayShapes(function: CallableContractSymbol, semantics: FunctionSemanticModel) {
 	val analysis = ArrayShapeAnalysis(semantics, semantics.typeOf(function).results.values)
 	function.parameters.forEach { parameter -> parameter.declaration.defaultValue?.let(analysis::expression) }
 	semantics.declarations.initializationExpressions(function.declaration).forEach(analysis::expression)
-	when (val body = function.declaration.body) {
+	when (val body = function.declaration.executableBody) {
 		is BlockBody -> analysis.statements(body.statements)
 		is ExpressionBody -> analysis.returned(body.expression)
+		null -> Unit
 	}
 }
 
@@ -80,7 +82,7 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 		val shapes = expression(value)
 		returnTypes.forEachIndexed { index, type -> array(type)?.let { check(it.arrayDimensions, shapes.getOrNull(index), value) } }
 	}
-	private fun call(plan: ResolvedCall.Source?, arguments: List<Expression>, shapes: List<List<BigInteger?>?>) {
+	private fun call(plan: ResolvedCall.Bound?, arguments: List<Expression>, shapes: List<List<BigInteger?>?>) {
 		if (plan == null) return
 		arguments.forEachIndexed { index, value ->
 			array(plan.type.parameters[plan.binding.parameterForArgument[index]])?.let { check(it.arrayDimensions, shapes[index], value) }
@@ -184,7 +186,7 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 			is MemberCallExpression -> {
 				expression(value.receiver)
 				val arguments = value.arguments.map { expression(it).singleOrNull() }
-				call(semantics.selectedMemberCall(value), value.arguments, arguments)
+				call(semantics.selectedBoundMemberCall(value), value.arguments, arguments)
 				model.arrayMutations[value]?.let { mutation ->
 					val binding = symbol(value.receiver)
 					val current = bindings[binding]?.current ?: source(value.receiver) ?: mutation.type.arrayDimensions
@@ -204,7 +206,7 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 					}
 				}
 			}
-			is CallExpression -> call(semantics.calls[value] as? ResolvedCall.Source, value.arguments, value.arguments.map { expression(it).singleOrNull() })
+			is CallExpression -> call(semantics.calls[value] as? ResolvedCall.Bound, value.arguments, value.arguments.map { expression(it).singleOrNull() })
 			is ClassCreationExpression -> call(semantics.constructorCalls[value], value.arguments, value.arguments.map { expression(it).singleOrNull() })
 			is IfExpression -> {
 				val before = snapshot()

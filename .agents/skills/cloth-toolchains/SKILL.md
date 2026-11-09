@@ -5,6 +5,12 @@ description: Extend or troubleshoot Cloth build and run commands, bundled standa
 
 # Cloth targets and toolchains
 
+The class-backed interface release verifies both maintained fixtures with
+installed Windows x64 and x86 launchers and GNU Linux x64 executables linked
+in Ubuntu WSL. Both fixtures emit verified executable IR and startup objects
+on all nine target profiles.
+[Interface release matrix](../cloth-interfaces/references/stage-7.md#native-execution-and-cross-target-emission)
+
 [Generic Stage 4](../cloth-generics/references/stage-4.md) uses each compilation's
 selected layout for closed generic values and the existing private ABI. Windows
 x64/x86 execute its generic fixtures and ownership probes; all nine ABI profiles

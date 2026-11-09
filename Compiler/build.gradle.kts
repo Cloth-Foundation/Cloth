@@ -61,6 +61,8 @@ tasks.test {
 		.withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("examples/Collections") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("examples/Interfaces") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.file(rootProject.file("examples/Interfaces.co")).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.file(rootProject.file("examples/LinearCollections.co")).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("Standard-Library") { include("**/*.co") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.file(rootProject.file(".agents/skills/cloth-generics/references/acceptance-fixtures.md")).withPathSensitivity(PathSensitivity.RELATIVE)

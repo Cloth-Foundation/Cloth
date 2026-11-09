@@ -1,5 +1,6 @@
 package cloth.semantic.flow
 
+import cloth.data.ValueType
 import cloth.diagnostics.InternalErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
@@ -8,6 +9,7 @@ import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.declarations.DeclarationModel
+import cloth.semantic.symbols.BuiltinGroupSymbol
 import cloth.token.Operators
 import java.util.*
 
@@ -119,6 +121,12 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 			// Declaring a deferred block executes none of its statements. Its returns
 			// belong to a separate contract and never complete the enclosing function.
 			is FunctionBlockExpression -> ControlFlow.FALLTHROUGH
+			is CallExpression          -> {
+				val arguments = expression.arguments.fold(ControlFlow.FALLTHROUGH) { flow, argument -> flow.then(of(argument)) }
+				val group = declarations?.calls?.get(expression) as? BuiltinGroupSymbol
+				if (group?.definition?.function?.overloads?.all { it.returns == ValueType.NEVER } == true) arguments.then(ControlFlow.NONE) else arguments
+			}
+
 			is ElvisExpression         -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
 			is BinaryExpression        -> {
 				val left = of(expression.left)

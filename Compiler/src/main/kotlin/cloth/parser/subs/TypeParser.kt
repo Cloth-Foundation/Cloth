@@ -89,6 +89,11 @@ class TypeParser(private val parser: Parser) {
 				else -> return null
 			}
 		}
+		return suffixEnd(offset)
+	}
+
+	private fun suffixEnd(start: Int): Int? {
+		var offset = start
 		while (true) {
 			if (parser.peek(offset).lexeme == Operators.QUESTION.toString()) { offset++; continue }
 			if (parser.peek(offset).lexeme != Operators.BRACKET_OPEN.toString()) return offset
@@ -98,7 +103,16 @@ class TypeParser(private val parser: Parser) {
 		}
 	}
 
-	internal fun startsNamedTypeReceiver(): Boolean = parser.peek().type == TokenType.Identifier && parser.peek(1).lexeme == Operators.LESS.toString() && applicationEnd(1)?.let { parser.peek(it).lexeme == Operators.COLON_COLON.toString() } == true
+	internal fun startsNamedTypeReceiver(): Boolean {
+		if (parser.peek().type != TokenType.Identifier) return false
+		val end = when (parser.peek(1).lexeme) {
+			Operators.LESS.toString() -> applicationEnd(1)
+			Operators.QUESTION.toString() -> suffixEnd(1)
+			Operators.BRACKET_OPEN.toString() -> if (parser.peek(2).lexeme == Operators.BRACKET_CLOSE.toString()) suffixEnd(1) else null
+			else -> null
+		}
+		return end?.let { parser.peek(it).lexeme == Operators.COLON_COLON.toString() } == true
+	}
 
 	fun parse(inCast: Boolean = false, allowArrays: Boolean = false): TypeReference {
 		val start = parser.peek().span

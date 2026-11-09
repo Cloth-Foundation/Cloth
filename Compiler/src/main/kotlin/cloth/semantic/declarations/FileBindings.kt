@@ -51,7 +51,7 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 	private val sources = IdentityHashMap<SourceFile, FileContext>()
 	val objectRoot: CClass = TokenSpan(1, 1, 1, 1).let { span ->
 		val keyword = Token(TokenType.Keyword, span, Keywords.CLASS.toString())
-		CClass(ClassDeclaration(keyword, Token(TokenType.Identifier, span, "Object"), null, null, emptyList(), emptyList(), span)).also { it.defineFields(emptyList()) }
+		CClass(ClassDeclaration(keyword, Token(TokenType.Identifier, span, "Object"), null, null, emptyList(), emptyList(), span), objectRoot = true).also { it.defineFields(emptyList()) }
 	}
 
 	init {

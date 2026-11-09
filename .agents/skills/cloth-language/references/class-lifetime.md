@@ -8,6 +8,13 @@ record. [Class construction](semantics.md#class-declarations-and-constructors) Â
 
 ## Representation and lowering
 
+Interfaces reuse the class identity and checked slot lookup. Dispatch checks
+the receiver after supplied arguments and after static omission expressions.
+The initialized class tag selects the class implementation or fallback body.
+Interface deletion uses the concrete destructor chain.
+[Interface argument effects](../../cloth-interfaces/references/stage-5.md#dispatch-and-lifetime) Â·
+[Interface lifetime](../../cloth-interfaces/references/stage-4.md#membership-and-deletion)
+
 - A class identity is a private 64-bit carrier with a 32-bit slot index and
   a 32-bit generation. A module-local table uses a free list and checked native
   allocation sizes. Reusing a slot preserves the new generation, and an

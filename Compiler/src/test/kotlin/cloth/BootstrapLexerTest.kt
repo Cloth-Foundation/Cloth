@@ -6,8 +6,12 @@ import cloth.api.SourceModule
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
+import cloth.semantic.typing.FunctionAnalyzer
+import cloth.settings.OutputKind
+import cloth.source.SourceGraphLoader
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.toolchain.StandardLibrary
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -21,13 +25,18 @@ import kotlin.test.assertTrue
 class BootstrapLexerTest {
 	private val frontend = Path.of("Bootstrap/Frontend").toAbsolutePath()
 
+	private fun request(source: Path, output: Path, target: String, kind: OutputKind = OutputKind.EXECUTABLE) =
+		StandardLibrary.default().attachTo(CompilationRequest(
+			source, output, listOf(SourceModule("Frontend", frontend), SourceModule("Driver", source.parent)),
+			outputKind = kind, targetTriple = target,
+		))
+
 	@Test
 	fun `Bootstrap scans the same tokens spans and first errors as the Kotlin lexer`(@TempDir directory: Path) {
 		val main = directory.resolve("Main.co")
 		Files.writeString(main, """
 			using lexer.Lexer: Lexer
 			using source.SourceFile: SourceFile
-			using token.Token: Token
 			using token.TokenList: TokenList
 
 			fn<isize> main(string[] args) {
@@ -47,17 +56,11 @@ class BootstrapLexerTest {
 			    }
 			    // Success transfers ownership: the tokens must outlive their lexer.
 			    lexer::delete
-			    def cursor := tokens.cursor()
-			    def<Token?> token = cursor.next()
-			    def<usize> count = 0
-			    while (token != null) {
+			    for (def index <- 0..tokens.size()) {
+			        def token := tokens.get(index)
 			        if (!(token.span.source === source)) return 93
 			        println(token)
-			        count++
-			        token = cursor.next()
 			    }
-			    if (cursor.next() != null || count != tokens.size()) return 94
-			    cursor::delete
 			    tokens::delete
 			    if (source.text != input) return 95
 			    source::delete
@@ -68,11 +71,7 @@ class BootstrapLexerTest {
 		val cases = cases()
 		val expected = cases.map { oracle(it.second) }
 		for (abi in structRunners()) {
-			val executable = ClothCompiler.compile(CompilationRequest(
-				main, directory.resolve("BootstrapLexer_${abi.layout.sizeBits}"),
-				listOf(SourceModule("Frontend", frontend), SourceModule("Driver", directory)),
-				targetTriple = abi.targetTriple,
-			)).artifact
+			val executable = ClothCompiler.compile(request(main, directory.resolve("BootstrapLexer_${abi.layout.sizeBits}"), abi.targetTriple)).artifact
 			for ((index, case) in cases.withIndex()) {
 				val (name, input) = case
 				val arguments = if ('\u0000' in input) listOf(input.replace("\u0000", "<NUL>"), "nul") else listOf(input)
@@ -90,6 +89,38 @@ class BootstrapLexerTest {
 			}
 		}
 		println("Verified ${cases.size} inputs on ${structRunners().size} native profiles, including ${cases.count { it.first.startsWith("Bootstrap source ") }} Bootstrap source files.")
+	}
+
+	@Test
+	fun `Bootstrap releases successful and partial token lists`(@TempDir directory: Path) {
+		val source = Files.writeString(directory.resolve("Ownership.co"), """
+			using lexer.Lexer: Lexer
+			using source.SourceFile: SourceFile
+			using token.TokenList: TokenList
+
+			fn<bool> scanAndDelete(string input, bool succeeds) {
+			    def source := SourceFile::new("<string>", input)
+			    def lexer := Lexer::new(input, source)
+			    def<TokenList?> tokens := lexer.scanTokens()
+			    def valid := if (tokens == null) { !succeeds && lexer.failure != null } else { succeeds && tokens.size() == 3 }
+			    lexer::delete
+			    if (tokens != null) tokens::delete
+			    def sourceSurvived := source.text == input
+			    source::delete
+			    return valid && sourceSurvived
+			}
+
+			fn<bool> sample() = scanAndDelete("first second", true) && scanAndDelete("first second @", false)
+		""".trimIndent())
+		val harness = GrowableArrayStorageTest()
+		for (abi in structRunners()) {
+			val output = directory.resolve("BootstrapOwnership_${abi.layout.sizeBits}")
+			val graph = SourceGraphLoader.load(request(source, output, abi.targetTriple, OutputKind.OBJECT))
+			val model = FunctionAnalyzer(abi.layout).analyze(graph)
+			harness.probe(abi, output, model = model) {
+				expect(checkNotNull(sourceCall("sample", null)), "Bootstrap scan ownership probe failed")
+			}
+		}
 	}
 
 	private fun cases(): List<Pair<String, String>> = buildList {
@@ -113,7 +144,7 @@ class BootstrapLexerTest {
 		add("braces in holes" to "#\"{ {x} /* } ignored */ + \"}\" + '}' + \"\"\"}\"\"\" }\"")
 		add("newline in a hole" to "#\"{ // } ignored\nx }\"")
 		add("Unicode columns" to "\"😀\" '𐐀' #\"😀{value}終\" /*😀\n*/next")
-		add("many list nodes" to "name ".repeat(2_048))
+		add("many tokens" to "name ".repeat(2_048))
 		add("long lexemes" to ("\"\"\"" + "aé😀".repeat(1_024) + "\"\"\""))
 		add("nested holes" to ("#\"{".repeat(24) + "value" + "}\"".repeat(24)))
 		val invalid = listOf(

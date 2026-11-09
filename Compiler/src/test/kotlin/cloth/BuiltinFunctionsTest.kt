@@ -1,8 +1,9 @@
 package cloth
 
 import cloth.builtin.BuiltinFunctions
-import cloth.builtin.PrintFunction
-import cloth.builtin.PrintlnFunction
+import cloth.builtin.functions.ExitFunction
+import cloth.builtin.functions.PrintFunction
+import cloth.builtin.functions.PrintlnFunction
 import cloth.data.CInt
 import cloth.data.ProviderResult
 import cloth.data.ValueType
@@ -10,6 +11,7 @@ import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
+import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
@@ -38,11 +40,13 @@ class BuiltinFunctionsTest {
 
 	@Test
 	fun `named factory registrations are the complete read-only lookup list`() {
-		assertEquals(listOf(BuiltinFunctions.PRINT, BuiltinFunctions.PRINTLN), BuiltinFunctions.all)
+		assertEquals(listOf(BuiltinFunctions.PRINT, BuiltinFunctions.PRINTLN, BuiltinFunctions.EXIT), BuiltinFunctions.all)
 		assertSame(BuiltinFunctions.PRINT, BuiltinFunctions["print"])
 		assertSame(BuiltinFunctions.PRINTLN, BuiltinFunctions["println"])
+		assertSame(BuiltinFunctions.EXIT, BuiltinFunctions["exit"])
 		assertIs<PrintFunction>(BuiltinFunctions.PRINT.function)
 		assertIs<PrintlnFunction>(BuiltinFunctions.PRINTLN.function)
+		assertIs<ExitFunction>(BuiltinFunctions.EXIT.function)
 		assertNull(BuiltinFunctions["printf"])
 		assertNull(BuiltinFunctions["Print"])
 		assertFailsWith<UnsupportedOperationException> {
@@ -114,6 +118,66 @@ class BuiltinFunctionsTest {
 		failure("fn println(bool value) {}\nfn main() { println() }", DiagnosticCode.CALL_ARITY)
 		val assignment = failure("fn main() { print = 1 }", DiagnosticCode.EXPECTED_BINDING)
 		assertEquals(1, assignment.sourceLabels.size)
+		failure("fn exit(int status) {}\nfn<int> value() { exit(7) }", DiagnosticCode.MISSING_RETURN)
+	}
+
+	@Test
+	fun `exit requires one integer status`() {
+		for (call in listOf("exit()", "exit(1, 2)")) {
+			failure("fn main() { $call }", DiagnosticCode.CALL_ARITY)
+		}
+		for (value in listOf("true", "'a'", "1.0", "\"7\"", "[7]", "null")) {
+			val diagnostic = failure("fn main() { exit($value) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
+			assertContains(diagnostic.message.orEmpty(), "requires integer")
+		}
+		failure("fn main() { def<int?> status = null; exit(status) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
+	}
+
+	@Test
+	fun `exit stops the process from a nested function and contributes no conditional value`(@TempDir directory: Path) {
+		val executable = LLVMEmitter().compile(unit("""
+			fn<int> status() {
+			    print("status")
+			    return 7
+			}
+			fn<int> stop() {
+			    println(exit(status()))
+			    println("unreachable")
+			}
+			fn<int> choose(bool stopNow) = if (stopNow) { exit(stop()) } else { 5 }
+			fn main() {
+			    println(choose(false))
+			    println(choose(true))
+			    println("unreachable")
+			}
+		"""), directory.resolve("exit-nested"))
+		assertEquals("5${System.lineSeparator()}status", runExecutable(executable, status = 7))
+	}
+
+	@Test
+	fun `exit normalizes signed unsigned fixed and target integer statuses`(@TempDir directory: Path) {
+		val native = NativeCABI.native()
+		val targets = if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
+		val cases = listOf(
+			Triple("int", "0", 0),
+			Triple("int<8>", "-2", -2),
+			Triple("unsigned int<9>", "265", 265),
+			Triple("int<64>", "-4294967303", -7),
+			Triple("unsigned int<64>", "4294967305", 9),
+			Triple("int<65>", "-18446744073709551606", 10),
+			Triple("unsigned int<65536>", "unsigned int<65536>::max", -1),
+			Triple("isize", "-11", -11),
+			Triple("usize", "usize::max", -1),
+		)
+		for (abi in targets) for ((index, case) in cases.withIndex()) {
+			val (type, value, status) = case
+			val executable = compileMain(directory.resolve("exit-${abi.layout.sizeBits}-$index"), """
+				def<$type> status = $value
+				exit(status)
+				println("unreachable")
+			""", "--target", abi.targetTriple)
+			assertEquals("", runExecutable(executable, status = if (abi.windows) status else status and 255), type)
+		}
 	}
 
 	@Test

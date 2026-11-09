@@ -6,7 +6,7 @@ import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.storage.EmitNullable
 import cloth.emitter.storage.EmitStringArena
-import cloth.emitter.types.primitives.EmitWideInteger
+import cloth.emitter.types.EmitProcessExit
 import cloth.semantic.ProgramModel
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -44,13 +44,7 @@ internal class EmitEntryPoint(private val context: LLVMContextRef, private val m
 					argument(0, if (parameter is CNullable) EmitNullable(context, builder, abi.layout).wrap(arguments, parameter) else arguments)
 				}
 			}
-			val status = when {
-				result == null                     -> LLVMConstInt(nativeType, 0, 0)
-				type is CInteger && type.bits > 64 -> EmitWideInteger(context, builder, abi).loadScalar(result, abi.intType)
-				type.bits < abi.intType.bits       -> if (type.unsigned) LLVMBuildZExt(builder, result, nativeType, "widen_exit_status") else LLVMBuildSExt(builder, result, nativeType, "widen_exit_status")
-				type.bits > abi.intType.bits       -> LLVMBuildTrunc(builder, result, nativeType, "narrow_exit_status")
-				else                               -> result
-			}
+			val status = if (result == null) LLVMConstInt(nativeType, 0, 0) else EmitProcessExit(context, builder, abi).normalize(result, type as CInteger)
 			argumentsEmitter.release(builder)
 			if (resultArena != null) arenaOwner.release(builder, resultArena)
 			val outputType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->

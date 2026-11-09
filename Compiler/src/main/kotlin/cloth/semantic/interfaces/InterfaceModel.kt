@@ -22,8 +22,13 @@ class InterfaceContract internal constructor(
 )
 
 sealed interface InterfaceImplementation {
-	data class ClassMethod internal constructor(val owner: CClass, val declaration: MethodDeclaration, val results: ResultShape) : InterfaceImplementation
-	data class Default internal constructor(val requirement: InterfaceRequirement) : InterfaceImplementation
+	class ClassMethod internal constructor(
+		val owner: CClass,
+		val declaration: MethodDeclaration,
+		val results: ResultShape,
+	) : InterfaceImplementation
+
+	class Default internal constructor(val requirement: InterfaceRequirement) : InterfaceImplementation
 }
 
 /** The static interface and requirement select the slot. The class selects its body. */

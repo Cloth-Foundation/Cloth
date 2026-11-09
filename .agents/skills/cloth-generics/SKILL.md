@@ -24,8 +24,7 @@ Stage 0 confirms the [first-slice contract](references/semantics.md) and capture
 [acceptance/rejection fixtures](references/acceptance-fixtures.md) when implementing
 the [staged plan](../../../todo/generic-types-plan.md). The imported List and
 nullable acceptance fixtures execute today. Actual-library tests now import the
-public List file; fixtures do not substitute for them. Bootstrap migration remains
-separate.
+public List file.
 
 The user confirmed explicit, invariant class/struct parameters, owner-wide lexical
 type scope, checking both declarations and closed instances, ordinary value type
@@ -46,10 +45,24 @@ owns the concrete collection proof and confirmed List requirements:
 - `toArray()` receives into ordinary rectangular `T[]`, checking incompatible
   dimensions at runtime where necessary. It does not create a jagged array type.
 
-The interface release plan extends the delivered class and struct foundation
-to explicit, unconstrained generic interfaces with class implementers.
-Preserve `Entity<T: Entity<T>>` and `IHealth<T: Number>` for the constraint
-work. [Interface plan](../../../todo/interfaces-plan.md) · [Interface scope](../cloth-interfaces/references/design.md#generic-interface-release-scope)
+Interface Stage 2 uses the same interner and symbolic owner substitution for
+explicit, unconstrained generic interfaces with class implementers. Interface
+parent cycles are checked before instantiation. Stage 3 checks their bodies and
+argument defaults in separate symbolic and closed views, including unused
+templates. Preserve `Entity<T: Entity<T>>` and `IHealth<T: Number>` for the
+constraint work. [Interface typing](../cloth-interfaces/references/stage-3.md) ·
+[Interface conformance](../cloth-interfaces/references/stage-2.md) ·
+[Interface scope](../cloth-interfaces/references/design.md#generic-interface-release-scope)
+
+Interface Stage 4 uses the exact closed interface application and class
+specialization for native dispatch and membership. Stage 5 emits fallback
+bodies and argument defaults in their closed declaring interface views.
+Stage 6 permits applications such as `Slot<Value<string>>` and retains their
+exact nominal identity in storage, imports and metadata.
+[Native interface dispatch](../cloth-interfaces/references/stage-4.md) ·
+[Closed interface defaults](../cloth-interfaces/references/stage-5.md) ·
+[Closed interface values](../cloth-interfaces/references/stage-6.md) ·
+[Interface release verification](../cloth-interfaces/references/stage-7.md)
 
 When extending implementation, keep declaration identity plus ordered closed
 arguments in type, callable, metadata and layout caches. Resolve template names
@@ -68,8 +81,10 @@ The public `Standard-Library/cloth/collections/List.co` implementation passes
 actual imported-library tests for ordinary element types, checked rectangular
 export and independent copy. Preserve that delivery evidence when extending it;
 concrete wrappers and generated concrete sources do not replace those tests.
-The [caller audit](references/caller-audit.md) preserves Bootstrap's owning list
-and borrowed cursor. Constraints, generic functions, callable-owned
-parameters, inference and collection protocols remain in the
+Bootstrap uses the public List as storage for its owning token list.
+[Bootstrap lexer skill](../cloth-bootstrap-lexer/SKILL.md)
+
+Constraints, generic functions, callable-owned parameters, inference and
+collection protocols remain in the
 [separate follow-up record](../../../todo/generic-follow-ups.md). Completion of
 the first slice neither implements those features nor publishes a release pin.

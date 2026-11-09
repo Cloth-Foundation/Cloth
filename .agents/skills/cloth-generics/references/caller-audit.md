@@ -1,9 +1,10 @@
 # Generic/List caller audit (2026-11-08)
 
 The first generic class/struct slice and public source List are implemented.
-This audit records consumers and migration boundaries; it performs no Bootstrap
-migration. Read [Stage 6](stage-6.md) for verification evidence and
-[follow-ups](../../../../todo/generic-follow-ups.md) for separate future designs.
+This Stage 6 audit records the original linked implementation and its lifetime
+requirements. The later Bootstrap migration uses the public List as private
+storage. [Bootstrap lexer record](../../cloth-bootstrap-lexer/references/port.md) ·
+[Stage 6 verification](stage-6.md) · [Generic follow-ups](../../../../todo/generic-follow-ups.md)
 
 ## Current callers
 

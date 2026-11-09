@@ -1,0 +1,7 @@
+[project]
+name = "InterfaceImports"
+entryPoint = "App.Main.main"
+
+[modules]
+App = "app"
+Library = "library"

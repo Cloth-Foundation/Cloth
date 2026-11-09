@@ -35,11 +35,17 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
-Interface Stage 1 uses **C3118 / INVALID_INTERFACE_HEADER** for invalid parent
-kinds, extra class bases and constructor arguments on an interface clause.
-**C4035 / UNSUPPORTED_INTERFACE_COMPILATION** guards compiler requests after
-name binding. Both report the relevant source clause or marker.
-[Interface Stage 1](../cloth-interfaces/references/stage-1.md)
+Interface conformance uses **C3118 / INVALID_INTERFACE_HEADER** for invalid
+or duplicate direct clauses and **C3119** through **C3124** for cycles,
+competing applications, incompatible requirements, missing implementations,
+invalid overrides and competing defaults. Interface value and call checking
+uses the ordinary type, binding, presence and lifetime diagnostics. Stage 6
+retires the staged **C4035 / UNSUPPORTED_INTERFACE_COMPILATION** gate. Invalid
+casts and array element adaptations fail before output or linker work.
+Stale native interface views use the class lifetime failure,
+including after an omitted argument deletes the receiver.
+[Interface Stage 6](../cloth-interfaces/references/stage-6.md) ·
+[Conformance diagnostics](../cloth-interfaces/references/stage-2.md#diagnostics)
 
 Generic [Stage 1](../cloth-generics/references/stage-1.md) adds **C2011 /
 UNSUPPORTED_GENERIC_SYNTAX**, **C2012 / GENERIC_ARGUMENT_NESTING**, **C3108 /

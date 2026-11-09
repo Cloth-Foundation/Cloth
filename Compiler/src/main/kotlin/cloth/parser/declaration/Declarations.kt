@@ -33,6 +33,12 @@ sealed interface CallableDeclaration : CallableSignature {
 	val body: FunctionBody
 }
 
+internal val CallableSignature.executableBody: FunctionBody?
+	get() = when (this) {
+		is CallableDeclaration -> body
+		is InterfaceMethodDeclaration -> fallback?.body
+	}
+
 data class FunctionDeclaration(
 	override val keyword: Token,
 	override val name: Token,

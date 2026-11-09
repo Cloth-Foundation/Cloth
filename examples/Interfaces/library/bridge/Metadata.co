@@ -1,0 +1,4 @@
+using right.Contract: Value
+using storage.Slot: Slot
+
+pub fn<typeinfo> otherType() = Slot<Value<string>>::type

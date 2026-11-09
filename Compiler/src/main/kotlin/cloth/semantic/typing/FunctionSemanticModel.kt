@@ -34,11 +34,12 @@ class FunctionSemanticModel internal constructor(
 	internal val bindings: MutableMap<BindingSymbol, ValueType> = facts.identityMap { it.bindings }
 	internal val calls: MutableMap<CallExpression, ResolvedCall> = facts.identityMap { it.calls }
 	internal val sourceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Source> = facts.identityMap { it.sourceMemberCalls }
+	internal val interfaceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Interface> = facts.identityMap { it.interfaceMemberCalls }
 	internal val constructorCalls: MutableMap<CallSite, ResolvedCall.Source> = facts.identityMap { it.constructorCalls }
 	internal val classDeletions: MutableMap<ClassDeletionExpression, ClassDeletionPlan> = facts.identityMap { it.classDeletions }
 
 	internal val callableBodies get() = declarations.concreteCallables + callables.publishedMethods()
-	internal fun bodyOf(callable: CallableSymbol): FunctionSemanticModel = (callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
+	internal fun bodyOf(callable: CallableContractSymbol): FunctionSemanticModel = (callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
 
 	internal fun allBodyModels(): Sequence<FunctionSemanticModel> = sequenceOf(this) + callables.publishedMethods().asSequence().map(::bodyOf)
 
@@ -53,10 +54,10 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	fun typeOf(function: FunctionSymbol): FunctionType = declaredTypeOf(function)
-	internal fun declaredTypeOf(callable: CallableSymbol): FunctionType = contracts.signatures.getValue(callable)
+	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType = contracts.signatures.getValue(callable)
 	internal fun contextSelectorType(method: MethodSymbol): ValueType? = contracts.contextSelectors[method]
 
-	internal fun typeOf(callable: CallableSymbol): FunctionType {
+	internal fun typeOf(callable: CallableContractSymbol): FunctionType {
 		if (callable !is MethodSymbol) return declaredTypeOf(callable)
 		callables.signature(callable)?.let { return it }
 		val declared = declaredTypeOf(callable)
@@ -67,6 +68,7 @@ class FunctionSemanticModel internal constructor(
 	fun selectedFunction(call: CallExpression): FunctionSymbol = (selectedCall(call) as ResolvedCall.Source).callable as FunctionSymbol
 	internal fun selectedCall(call: CallExpression): ResolvedCall = calls.getValue(call)
 	internal fun selectedMemberCall(call: MemberCallExpression): ResolvedCall.Source? = sourceMemberCalls[call]
+	internal fun selectedBoundMemberCall(call: MemberCallExpression): ResolvedCall.Bound? = selectedMemberCall(call) ?: interfaceMemberCalls[call]
 	internal fun selectedConstructor(call: CallSite): ResolvedCall.Source = constructorCalls.getValue(call)
 	internal fun deletionOf(expression: ClassDeletionExpression): ClassDeletionPlan = classDeletions.getValue(expression)
 
@@ -81,7 +83,7 @@ class FunctionSemanticModel internal constructor(
 
 	internal fun initializeBindings() {
 		types.loopJumps.putAll(declarations.loopJumps)
-		for (function in declarations.concreteCallables) {
+		for (function in declarations.concreteContracts) {
 			val parameters = declaredTypeOf(function).parameters
 			function.parameters.forEachIndexed { index, parameter -> bindings[parameter] = parameters[index] }
 		}

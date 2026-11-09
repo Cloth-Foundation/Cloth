@@ -4,6 +4,7 @@ import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
 import cloth.data.CClass
 import cloth.data.CEnum
+import cloth.data.CInterface
 import cloth.data.ClassField
 import cloth.data.EnumField
 import cloth.data.sameDeclaration
@@ -19,7 +20,6 @@ import cloth.semantic.placeRoot
 import cloth.semantic.storedRoot
 import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericAnalyzer
-import cloth.semantic.generics.ClosedTypeAnalyzer
 import cloth.semantic.generics.GenericBodyViews
 import cloth.semantic.generics.GenericSemanticAnalysis
 import cloth.semantic.typing.ArgumentBinder
@@ -41,8 +41,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 	internal fun analyze(files: FileBindings): DeclarationModel {
 		val genericNames = GenericAnalyzer(target).analyze(files)
-		genericNames.requireInterfaceSemantics()
-		if (genericNames.requiresGenericCompilation) return GenericSemanticAnalysis(target).declarations(files, genericNames)
+		if (genericNames.requiresGenericCompilation || genericNames.interfaceSpan != null) {
+			return GenericSemanticAnalysis(target).declarations(files, genericNames)
+		}
 		return prepared(files)
 	}
 
@@ -82,7 +83,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			}
 		}
 		val model = DeclarationModel(files, functions, target, structs, methods, classes, files.objectRoot, enumTypes, enumNames, views)
-		for (callable in model.callables) {
+		for (callable in model.callableContracts) {
 			val scope = LexicalScope(model.fileScopeOf(callable.name))
 			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable
 			if (callable is MethodSymbol) model.methodSymbols[callable.declaration] = callable
@@ -93,7 +94,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				model.parameterSymbols[parameter.declaration] = parameter
 			}
 		}
-		for (callable in model.callables) {
+		for (callable in model.callableContracts) {
 			val receiver = callable.receiver
 			val resolver = BodyResolver(model, receiver)
 			val scope = model.scopeOf(callable.declaration)
@@ -127,13 +128,14 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 				else                             -> Unit
 			}
-			when (val body = callable.declaration.body) {
+			when (val body = callable.declaration.executableBody) {
 				is BlockBody      -> {
 					model.blockScopes[body] = scope
 					resolver.statements(body.statements, scope)
 				}
 
 				is ExpressionBody -> resolver.expression(body.expression, scope)
+				null -> Unit
 			}
 		}
 		return model
@@ -156,7 +158,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		val initializers = declaration.members.filterIsInstance<ClassFieldDeclaration>().map { member ->
 			ClassFieldInitializer(checkNotNull(owner.field(member.name.lexeme)), member.initializer)
 		}
-		val baseCall = declaration.parents.singleOrNull()?.let { parent ->
+		val baseCall = declaration.parents.firstOrNull { nominal(it.type) === owner.base }?.let { parent ->
 			ConstructorDelegation(parent.type.name, parent.constructorArguments.orEmpty(), parent.span, parent.type)
 		}
 		return ClassDefinition(owner, primary, secondary, destructors.singleOrNull()?.let { DestructorSymbol(it, owner) }, initializers, baseCall)
@@ -378,6 +380,8 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 							SemanticErrors.classMember("Class '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
 						} else if (self.owner is CEnum) {
 							SemanticErrors.enumMember("Enum '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
+						} else if (self.owner is CInterface) {
+							SemanticErrors.unknownField(self.owner, expression.name)
 						} else SemanticErrors.structField("Struct '${self.owner.spelling}' has no field '${expression.name.lexeme}'", expression.name.span)
 					}
 				}
@@ -403,7 +407,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 						if (root is ParameterSymbol || root is ReceiverSymbol) model.readOnlyDefaultReceivers.add(expression)
 					}
 					explicitReceiver(expression.receiver)?.let { self ->
-						val group = model.methodGroup(self.owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(self.owner, expression.name)
+						val group = model.memberGroup(self.owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(self.owner, expression.name)
 						checkSelfCall(expression.name)
 						ArgumentBinder.validate(expression.suppliedArguments)
 						model.receiverCalls[expression] = group
@@ -463,9 +467,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 				is CallExpression                                                                                                    -> {
 					ArgumentBinder.validate(expression.suppliedArguments)
-					val symbol = lookup(expression.name, scope) { receiver?.let { model.methodGroup(it.owner, expression.name.lexeme) } }
+					val symbol = lookup(expression.name, scope) { receiver?.let { model.memberGroup(it.owner, expression.name.lexeme) } }
 					if (symbol !is CallableGroupSymbol) throw SemanticErrors.notCallable(expression.name, symbol.name)
-					if (symbol is MethodGroupSymbol) {
+					if (symbol is MethodGroupSymbol || symbol is InterfaceMethodGroupSymbol) {
 						checkSelfCall(expression.name)
 						model.implicitReceivers[expression] = checkNotNull(receiver)
 					}

@@ -69,7 +69,7 @@ class NativeCABITest {
 	@Test
 	fun `native emitted IR records the selected LLVM target and ABI declarations`() {
 		val abi = NativeCABI.native()
-		val unit = parseMain("def fraction = 3.75\nprintln(fraction -> int)")
+		val unit = parseMain("def fraction = 3.75\nprintln(fraction -> int)\nexit(7)")
 		val ir = LLVMEmitter().emitExecutable(unit)
 		val entry = if (abi.windows) "wmain" else "main"
 		assertContains(ir, "target triple = \"${abi.targetTriple}\"")
@@ -77,7 +77,8 @@ class NativeCABITest {
 		assertContains(ir, "declare i${abi.intType.bits} @printf(")
 		assertContains(ir, "declare i${abi.intType.bits} @snprintf(ptr, i${abi.sizeType.bits}, ptr, ...)")
 		assertContains(ir, "declare i${abi.intType.bits} @puts(ptr)")
-		assertContains(ir, "declare void @exit(i${abi.intType.bits})")
+		assertEquals(1, Regex("declare void @exit\\(i${abi.intType.bits}\\)").findAll(ir).count())
+		assertContains(ir, "call void @exit(i${abi.intType.bits} 7)\n  unreachable")
 		for (bits in ValueType.MACHINE_INTEGER_WIDTHS) {
 			val signed = CInt(bits)
 			val unsigned = CInt(bits, true)

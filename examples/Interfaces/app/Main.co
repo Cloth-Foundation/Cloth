@@ -1,0 +1,11 @@
+using bridge.Text: caption
+using bridge.Metadata: otherType
+
+fn<int> main() {
+    def text, described = caption()
+    def other = otherType()
+    if (described == other || described::str != other::str) return 1
+    println(text)
+    println(described)
+    return 0
+}

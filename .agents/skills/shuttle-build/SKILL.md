@@ -22,6 +22,12 @@ Stage 6 adds the application entry point, shared build options, real compilation
 build-before-run launch and process statuses. Read [Stage 6](references/stage-6.md)
 for commands, diagnostics, source ownership and verification.
 
+The interface release exercises the installed `shuttle run` command with a
+multi-module generic interface fixture on Windows x64 and x86. The fixture
+uses defining-file defaults and exact metadata for same-spelled contracts.
+[Imported interface project](../../../examples/Interfaces/build.toml) ·
+[Release verification](../cloth-interfaces/references/stage-7.md)
+
 [Shuttle](../../../Shuttle/build.gradle.kts) has production Compiler and Jackson
 TOML 2.21.1 dependencies. Bootstrap's module tables use the canonical lowercase
 schema. The [compiler facade](../cloth-imports/references/compiler-api.md)

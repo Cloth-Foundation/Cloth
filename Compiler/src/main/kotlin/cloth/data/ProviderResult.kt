@@ -186,7 +186,11 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatNullable((receiver as ProviderReceiver.Value).value, this)
 	}
 
-	data class ClassText(override val receiverType: CClass) : ProviderResult<CString>() {
+	data class ClassText(override val receiverType: CMemberType) : ProviderResult<CString>() {
+		init {
+			require(receiverType.classBackedType() != null)
+		}
+
 
 		override val type get() = CString
 		override val callsFormatter get() = true

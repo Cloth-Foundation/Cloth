@@ -45,13 +45,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
             if (failure != null) println(failure)
             return 1
         }
-        def cursor = tokens.cursor()
-        def<Token?> token = cursor.next()
-        while (token != null) {
-            println(token)
-            token = cursor.next()
-        }
-        cursor::delete
+        for (def index <- 0..tokens.size()) println(tokens.get(index))
         tokens::delete
         return 0
     }

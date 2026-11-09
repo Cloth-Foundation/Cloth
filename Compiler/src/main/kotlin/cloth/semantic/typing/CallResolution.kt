@@ -10,7 +10,10 @@ import cloth.parser.expression.CallExpression
 import cloth.parser.expression.CallSite
 import cloth.parser.expression.Expression
 import cloth.semantic.MethodReceiver
+import cloth.semantic.ObjectReceiver
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.InterfaceMethodGroupSymbol
 
 /** A contextual mismatch rejects a candidate. Located diagnostics still stop analysis. */
 internal inline fun <T> probeCandidate(check: () -> T): T? = try {
@@ -24,9 +27,15 @@ internal class CallResolution(
 	private val typingIn: (FunctionSemanticModel, Boolean) -> ExpressionTyping,
 ) {
 
-	fun source(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source {
+	fun source(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source =
+		resolve(expression, group) { callable, type, binding -> ResolvedCall.Source(callable, type, binding, receiver) }
+
+	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface =
+		resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
+
+	private fun <T : CallableContractSymbol, R> resolve(expression: CallSite, group: List<T>, selectedCall: (T, FunctionType, ArgumentBinding) -> R): R {
 		ArgumentBinder.validate(expression.suppliedArguments)
-		data class Candidate(val callable: CallableSymbol, val binding: ArgumentBinding, val suppliedTypes: List<ValueType>)
+		data class Candidate(val callable: T, val binding: ArgumentBinding, val suppliedTypes: List<ValueType>)
 
 		var firstProblem: BindingProblem? = null
 		val candidates = group.mapNotNull { candidate ->
@@ -79,7 +88,7 @@ internal class CallResolution(
 		val candidate = selected.candidate
 		val type = selected.trial.model.typeOf(candidate.callable)
 		selected.trial.commit()
-		return ResolvedCall.Source(candidate.callable, type, candidate.binding, receiver)
+		return selectedCall(candidate.callable, type, candidate.binding)
 	}
 
 	fun builtin(expression: CallExpression, definition: BuiltinDefinition<*>, validateFormatter: (Expression, ProviderResult<*>) -> Unit): BoundBuiltinCall {

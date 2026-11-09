@@ -15,9 +15,16 @@ import cloth.token.Keywords
 internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 	fun declarations(files: FileBindings, names: GenericNameModel): DeclarationModel {
 		visibility(files, names)
+		val analyzer = ClosedTypeAnalyzer(target)
+		if (!names.requiresGenericCompilation) {
+			val closed = analyzer.closed(files, names)
+			interfaceVisibility(closed, files.objectRoot)
+			return DeclarationAnalyzer(target).prepared(files, GenericBodyViews(closed))
+		}
 		val templateFiles = files.fork()
 		val templateNames = GenericAnalyzer(target).analyze(templateFiles)
-		val symbolicTypes = ClosedTypeAnalyzer(target).symbolic(templateFiles, templateNames)
+		val symbolicTypes = analyzer.symbolic(templateFiles, templateNames)
+		interfaceVisibility(symbolicTypes, templateFiles.objectRoot)
 		val templateDeclarations = DeclarationAnalyzer(target).prepared(templateFiles, GenericBodyViews(symbolicTypes))
 		val templates = FunctionAnalyzer(target).analyze(templateDeclarations)
 		// Width templates retain ordinary call-time range checks. Declaration checking
@@ -36,20 +43,41 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				else -> false
 			}
 			if (canonical && public && method.declaration.operator != null && method.declaration.returnTypes.isEmpty()) {
-				val pending = ArrayDeque<ValueType>().also { it.addAll(templates.typeOf(method).results.values) }
-				while (pending.isNotEmpty()) when (val type = pending.removeLast()) {
-					is CNullable -> pending.add(type.payload)
-					is CArray -> pending.add(type.element)
-					is CMemberType -> {
-						if (type.declaration.visibility == null && type !== templateFiles.objectRoot) throw GenericErrors.privateSignature(method.name, type.name)
-						pending.addAll(type.typeArguments)
-					}
-					else -> Unit
-				}
+				checkExposedTypes(method.name, templates.typeOf(method).results.values, templateFiles.objectRoot)
 			}
 		}
-		val closed = ClosedTypeAnalyzer(target).analyze(files, names)
+		val closed = analyzer.closed(files, names)
 		return DeclarationAnalyzer(target).prepared(files, GenericBodyViews(closed, templates))
+	}
+
+	private fun interfaceVisibility(types: ClosedTypeModel, objectRoot: CClass) {
+		for ((owner, contract) in types.interfaces.contracts) {
+			if (owner.declaration.visibility == null || !owner.typeArguments.withIndex().all { (index, type) ->
+				type is CTypeParameter && type.owner === owner.declaration && type.index == index
+			}) continue
+			for (method in contract.methods.values) {
+				val exposed = method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
+				checkExposedTypes(method.declaration.name, exposed, objectRoot)
+			}
+		}
+	}
+
+	private fun checkExposedTypes(use: cloth.token.Token, exposed: List<ValueType>, objectRoot: CClass) {
+		val pending = ArrayDeque(exposed)
+		val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ValueType, Boolean>())
+		while (pending.isNotEmpty()) {
+			val type = pending.removeLast()
+			if (!seen.add(type)) continue
+			when (type) {
+				is CNullable -> pending.add(type.payload)
+				is CArray -> pending.add(type.element)
+				is CMemberType -> {
+					if (type.declaration.visibility == null && type !== objectRoot) throw GenericErrors.privateSignature(use, type.name)
+					pending.addAll(type.typeArguments)
+				}
+				else -> Unit
+			}
+		}
 	}
 
 	private fun visibility(files: FileBindings, names: GenericNameModel) {

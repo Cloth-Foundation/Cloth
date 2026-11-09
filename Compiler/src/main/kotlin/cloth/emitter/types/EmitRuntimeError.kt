@@ -27,15 +27,7 @@ internal class EmitRuntimeError(private val context: LLVMContextRef, private val
 				details.forEachIndexed { index, value -> arguments.put((index + 1).toLong(), value) }
 				LLVMBuildCall2(builder, outputType, output, arguments, details.size + 1, "")
 			}
-			parameters.put(0, intType)
-			val exitType = LLVMFunctionType(LLVMVoidTypeInContext(context), parameters, 1, 0)
-			val existingExit = LLVMGetNamedFunction(module, "exit")
-			val exit = if (existingExit == null || existingExit.isNull) LLVMAddFunction(module, "exit", exitType) else existingExit
-			PointerPointer<LLVMValueRef>(1L).use { arguments ->
-				arguments.put(0, LLVMConstInt(intType, 1, 0))
-				LLVMBuildCall2(builder, exitType, exit, arguments, 1, "")
-			}
 		}
-		LLVMBuildUnreachable(builder)
+		EmitProcessExit(context, builder, abi).terminate(LLVMConstInt(intType, 1, 0))
 	}
 }

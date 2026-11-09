@@ -51,7 +51,7 @@ internal class EmitCast(private val context: LLVMContextRef, private val builder
 	}
 
 	private fun convert(expression: CastExpression, value: LLVMValueRef, source: ValueType, target: ValueType): LLVMValueRef {
-		if (source == target || source is CClass && target is CClass && target.accepts(source)) return value
+		if (source == target || (target is CClass || target is CInterface) && target.accepts(source)) return value
 		if (source is CEnum && target == ValueType.INT) return value
 		if (target.floating) return toFloating(value, source, target)
 		if (source is CInteger && target is CInteger && (source.bits > 64 || target.bits > 64)) return EmitWideInteger(context, builder, abi).integerCast(value, source, target)

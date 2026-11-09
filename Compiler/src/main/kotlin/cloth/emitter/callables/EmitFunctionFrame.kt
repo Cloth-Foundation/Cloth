@@ -47,7 +47,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 		LLVMBuildBr(builder, exit)
 	}
 
-	fun finish() {
+	fun finish(resultsInCallerArena: Boolean = false) {
 		LLVMPositionBuilderAtEnd(builder, exit)
 		if (predecessors.isEmpty()) {
 			LLVMBuildUnreachable(builder)
@@ -70,11 +70,13 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 			}
 		}
 		var result = value
-		if (returns is ResultShape.Single && returns.type.indirect) result = strings.copyValue(builder, checkNotNull(callerArena), checkNotNull(value), returns.type)
-		if (returns is ResultShape.Multiple) for ((index, type) in returns.values.withIndex()) if (type.indirect) {
-			val slot = LLVMBuildExtractValue(builder, checkNotNull(value), index, "outgoing_$index")
-			val copied = strings.copyValue(builder, checkNotNull(callerArena), slot, type)
-			result = LLVMBuildInsertValue(builder, checkNotNull(result), copied, index, "outgoing_results")
+		if (!resultsInCallerArena) {
+			if (returns is ResultShape.Single && returns.type.indirect) result = strings.copyValue(builder, checkNotNull(callerArena), checkNotNull(value), returns.type)
+			if (returns is ResultShape.Multiple) for ((index, type) in returns.values.withIndex()) if (type.indirect) {
+				val slot = LLVMBuildExtractValue(builder, checkNotNull(value), index, "outgoing_$index")
+				val copied = strings.copyValue(builder, checkNotNull(callerArena), slot, type)
+				result = LLVMBuildInsertValue(builder, checkNotNull(result), copied, index, "outgoing_results")
+			}
 		}
 		arena?.let { strings.release(builder, it) }
 		storedArenas.forEach { strings.release(builder, it) }

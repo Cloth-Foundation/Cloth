@@ -9,6 +9,14 @@ Interface Stage 1 adds original interface identities to the shared type
 namespace and export table. Selected and wildcard imports, private names and
 cycles use the existing file binding rules. Generic interface names resolve in
 their defining file. [Interface Stage 1](../cloth-interfaces/references/stage-1.md)
+Stage 2 reuses those original identities when interning applications and
+merging conformance across cyclic import routes.
+[Interface Stage 2](../cloth-interfaces/references/stage-2.md)
+Stage 6 executes the transitive generic fixture through the public compiler
+request and installed Shuttle. It preserves defining-file defaults and
+distinct nominal identities for same-spelled interface applications.
+[Interface Stage 6](../cloth-interfaces/references/stage-6.md#closed-metadata-and-imports) ·
+[Interface release matrix](../cloth-interfaces/references/stage-7.md#native-execution-and-cross-target-emission)
 
 [Generic Stage 0](../cloth-generics/references/semantics.md#visibility-and-imports)
 requires future template application to retain defining-file private names and

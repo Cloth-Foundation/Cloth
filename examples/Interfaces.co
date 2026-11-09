@@ -1,0 +1,39 @@
+typedef<interface> Value<T> {
+    mt<T> read()
+}
+
+typedef<interface> Labeled : Value<string> {
+    mt<string> label(opt<string> prefix ?: "label: ") = default (prefix + self.read())
+}
+
+typedef<class> Note (def<string> text) : Labeled {
+    override: mt<string> read() = text
+    operator ::str() = text
+}
+
+typedef<struct> Slot<T> {
+    T item
+}
+
+typedef<class> Shelf (pub def<Value<string>[]> items)
+
+fn<int> main() {
+    def first = Note::new("first")
+    def second = Note::new("second")
+    def<Slot<Value<string>>> slot = { first }
+    def shelf = Shelf::new([slot.item])
+    shelf.items.append(second)
+
+    def<Value<string>[]> snapshot = shelf.items
+    shelf.items.clear()
+    shelf::delete
+
+    def<Object> object = slot.item
+    if (object is Labeled) println(object.label())
+    println(snapshot)
+    println(Slot<Value<string>>::type)
+
+    object::delete
+    second::delete
+    return 0
+}

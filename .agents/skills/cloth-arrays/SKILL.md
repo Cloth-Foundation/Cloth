@@ -19,10 +19,12 @@ and can hold fixed or growable arrays. Stored field/index writes address the ori
 element. Copies and foreach receivers preserve recursive independence, including
 nullable row shape witnesses. See [Structs.co](../../../examples/Structs.co).
 
-Arrays and foreach snapshots copy class identities along with their element
-slots. Class-owned arrays retain explicit extents and initialized inner shape;
-growable outer counts may change on whole replacement.
-[Class values](../cloth-language/references/class-values.md)
+Arrays and foreach snapshots copy class and interface identities along with
+their element slots. Interface element types remain invariant. Class-owned
+arrays retain explicit extents and initialized inner shape. Growable outer
+counts may change on whole replacement.
+[Class values](../cloth-language/references/class-values.md) ·
+[Interface storage](../cloth-interfaces/references/stage-6.md#storage-and-lifetime)
 
 Read [confirmed array semantics](references/semantics.md) for the language contract.
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,

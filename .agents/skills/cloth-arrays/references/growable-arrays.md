@@ -230,5 +230,7 @@ struct-slot row collections through ordinary methods.
 [Generic Stage 5](../../cloth-generics/references/stage-5.md) delivers the actual
 imported public List; [generic Stage 6](../../cloth-generics/references/stage-6.md)
 closes that first slice. [Follow-ups](../../../../todo/generic-follow-ups.md)
-retain collection protocols and later generic features. Bootstrap's owning
-TokenList and borrowed cursor remain a separate consumer migration.
+retain collection protocols and later generic features.
+
+Bootstrap's `TokenList` stores tokens in the public `List` and returns borrowed
+tokens through `get()`. [Bootstrap lexer skill](../../cloth-bootstrap-lexer/SKILL.md)

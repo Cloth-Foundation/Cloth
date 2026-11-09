@@ -2,7 +2,6 @@ package cloth.semantic.generics
 
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
-import cloth.diagnostics.InterfaceErrors
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -28,7 +27,7 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 				is CClass -> view.owner(owner.declaration)
 				is CStruct -> view.owner(owner.declaration)
 				is CEnum -> owner.declaration
-				is CInterface -> throw InterfaceErrors.compilation(owner.declaration.kind.span)
+				is CInterface -> view.owner(owner.declaration)
 			}
 		}
 	}
@@ -70,6 +69,14 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 			} },
 		) }
 		fun owner(source: StructDeclaration): StructDeclaration = copy(source) { source.copy(fields = source.fields.map { it.copy(type = type(it.type)) }, methods = source.methods.map(::method)) }
+		fun owner(source: InterfaceDeclaration): InterfaceDeclaration = copy(source) { source.copy(
+			parents = source.parents.map(::type),
+			methods = source.methods.map { member -> copy(member) { member.copy(
+				returnTypes = member.returnTypes.map(::type),
+				parameters = member.parameters.map(::parameter),
+				fallback = member.fallback?.let { it.copy(body = body(it.body)) },
+			) } },
+		) }
 		private fun loopBody(source: LoopBody) = copy(source) { source.copy(statements = source.statements.map(::statement)) }
 
 		private fun statement(source: Statement): Statement = copy(source) { when (source) {

@@ -1,10 +1,5 @@
 # Bootstrap lexer port (2026-11-07)
 
-The [generic Stage 6 caller audit](../../cloth-generics/references/caller-audit.md)
-preserves the TokenList/TokenCursor and token/span/source lifetime below after
-public List delivery. Availability of a generic container does not itself select
-an ownership migration.
-
 ## Scope and use
 
 The user requested the Kotlin lexer port with string input, stopping before
@@ -28,15 +23,24 @@ Use the equivalent native executable path on other hosts.
 
 ~~~cloth
 def lexer := Lexer::new("def answer = 42")
+def<TokenList?> tokens := lexer.scanTokens()
+lexer::delete
+if (tokens != null) {
+    for (def index <- 0..tokens.size()) println(tokens.get(index))
+    tokens::delete
+}
 ~~~
 
-An optional SourceFile second argument must describe the same input. It remains
-caller-owned. Call scanTokens() once per instance. Success transfers TokenList?
-to the caller, including EOF; tokens survive deleting their lexer. Failure
-returns null, destroys partial tokens and retains one owned lexer.failure.
-Scanning does not print. Each token owns its span; spans borrow SourceFile.
-TokenCursor borrows list tokens. Delete cursors before the list and SourceFile
-last. Deleting a failed lexer deletes its failure/span.
+The caller owns the optional `SourceFile` argument, which must describe the
+same input. Call `scanTokens()` once per instance. Success transfers a
+`TokenList` ending in EOF, and the list can outlive its lexer. Failure returns
+null, destroys partial tokens and stores one owned failure on the lexer.
+Deleting a failed lexer deletes its failure and span.
+
+`TokenList.get(usize index)` returns the borrowed token at a zero-based index
+and uses the standard library's bounds check. Use `size()` as the exclusive
+upper bound when traversing the list. Deleting `TokenList` deletes its tokens
+and their spans. Spans borrow `SourceFile`, so delete the source last.
 
 lexTokens() prints complete token JSON or one code/span/message failure, cleans
 up the successful list and returns isize 0/1. Token JSON matches Kotlin's shape,
@@ -47,20 +51,19 @@ excerpt, labels, help and renderer are not ported.
 
 - **I/O:** source input is already a string. File reading, stream APIs and stderr
   diagnostic rendering need design/library work.
-- **Collections:** [growable arrays Stage 7](../../cloth-arrays/references/growable-arrays-stage-7.md)
-  proves array-backed concrete collections. The public generic List is now
-  implemented, with its own [collection contract](../../cloth-collections/SKILL.md).
-  Bootstrap's owning TokenList keeps linked nodes and explicit token
-  deletion. A future migration must preserve that ownership and its borrowed
-  cursor/source lifetimes in a separate consumer change.
+- TokenList imports `cloth.collections.List` and keeps a private
+  `List<Token>` for append and indexed traversal. The generic list stores token
+  identities. TokenList deletes the tokens before deleting that list.
+  Shuttle selects the library by default. Public compiler requests supply its
+  module explicitly. [TokenList.co](../../../../Bootstrap/Frontend/token/TokenList.co) ·
+  [Collection contract](../../cloth-collections/SKILL.md)
 - **String building:** growing JSON concatenation exposed a compiler storage
   defect. The [compiler fix](../../cloth-buffer-lifetimes/references/string-concatenation-storage.md)
   removes prefix stack growth and reclaims replaced strings; ordinary formatting
   now handles the original 3,072-scalar lexeme without recursive chunks. A builder
   remains a possible copying-time optimization, not a correctness requirement.
-- **Ownership:** spans and cursors borrow by convention. Public mutable fields
-  remain. This port does not establish borrow syntax, read-only property rules or
-  collection invalidation semantics.
+- Tokens and spans have public mutable fields. Borrowing follows the ownership
+  conventions above.
 - **Continuation:** the current parser rejects line breaks inside binary chains,
   including parenthesized chains. Those expressions remain on one line here.
 
@@ -87,42 +90,34 @@ claimed as exact diagnostic parity.
 [BootstrapLexerTest](../../../../Compiler/src/test/kotlin/cloth/BootstrapLexerTest.kt)
 compiles once per available native profile and compares token JSON, spans, first
 error codes/messages and exit status with Kotlin. It verifies source identity,
-reads returned tokens after deleting the lexer, exhausts the cursor and deletes
-the list before its source. The test-only driver reconstructs NUL because native
-argv cannot carry it; no input protocol is added to Bootstrap.
-
-All 124 inputs pass on Windows x64 and x86, including every keyword/operator,
-numeric/literal failures, nested holes, CRLF/control/NUL text, deterministic
-mixtures and all eight Bootstrap frontend source files. Larger cases cover
-2,048 list nodes, a 3,072-scalar raw lexeme and 24 nested interpolations. The
-unchanged long-lexeme regression now passes with ordinary unchunked formatting.
+reads the tokens by index after deleting the lexer, and deletes the list before
+its source. The test driver reconstructs NUL because native
+argv cannot carry it. A second test uses the allocator probe to check that
+successful scans and first errors after two tokens release the list storage,
+tokens, and spans.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
-owns the exact eight-file graph and existing native/foreign-target checks;
+checks the exact graph of eight Bootstrap sources plus the library's List.co.
 [ShuttlePublicationTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttlePublicationTest.kt)
-owns nested-project command checks.
+builds and runs the project from its nested lexer directory. Compiler and
+Shuttle track the Bootstrap fixtures as Gradle test inputs.
 
-The final integration command is:
+Run the focused integration checks from the repository root.
 
 ~~~powershell
 .\gradlew.bat :Compiler:test --tests cloth.BootstrapLexerTest --tests cloth.ImportPublicationTest :Shuttle:check '-Pkotlin.incremental=false' '-Pkotlin.compiler.execution.strategy=in-process' --no-build-cache --no-configuration-cache --offline --console=plain --no-daemon
 ~~~
 
-Verification uses an isolated task-local build directory/project cache. The
-final run passes in 49 seconds: four Compiler integration tests (including the
-124-input comparison), 51 Shuttle tests and 25 backend-free configuration tests,
-with zero failures, errors or skips. The compiler test task tracks Bootstrap
-.co files as inputs; editing the port must
-invalidate its differential result. The local verification init also tracks
-Bootstrap files for Shuttle's existing external-fixture smoke test.
+On 2026-11-08 the indexed lexer passed five focused Compiler tests in a copy of
+commit `3567392` with the Bootstrap patch and the checkout's standard library.
+Windows x64 and x86 matched Kotlin on 124 inputs, including all eight Bootstrap
+sources, 2,048 tokens, a 3,072-scalar raw lexeme and 24 nested interpolations.
+The allocator probe passed on both profiles. ImportPublicationTest verified
+executable IR and startup objects for all nine Windows, Linux and macOS
+profiles. Shuttle passed 61 tests and 25 backend-free configuration checks.
 
-Windows x64/x86 execute the full comparison. ImportPublicationTest verifies
-executable IR/startup objects for all nine existing Windows/Linux/macOS ABI
-profiles. The GNU Linux x64 object is linked with cc under Ubuntu WSL and agrees
-with Windows for sample text, interpolation, an invalid numeric first error and
-the long raw lexeme. Native ARM64/macOS/musl execution is not claimed.
+The original lexer port also linked and ran on GNU Linux x64 under Ubuntu WSL
+for sample text, interpolation, an invalid numeric first error and the long
+raw lexeme. That Linux execution predates the List migration.
 
-The original port run left Compiler production code and Shuttle source unchanged.
-The subsequent [compiler storage correction](../../cloth-buffer-lifetimes/references/string-concatenation-storage.md)
-removes the formatter workaround and owns its separate verification evidence.
 The user has asked that ongoing standard-library work remain untouched here.

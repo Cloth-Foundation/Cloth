@@ -5,6 +5,12 @@ description: Design, explain, or extend Cloth compiler data access through doubl
 
 # Cloth compiler data access
 
+Interface Stage 6 emits exact closed interface `::type` results, including
+nullable and array wrappers and interface applications nested in holders.
+A stable name retains its declared type inside a membership guard. Named
+nullable and unsized array type receivers use the ordinary type parser.
+[Interface metadata](../cloth-interfaces/references/stage-6.md#closed-metadata-and-imports)
+
 [Generic Stage 3](../cloth-generics/references/stage-3.md) supports universal
 `T::type` during declaration checking and keeps represented types separate for
 closed owner bodies. Unknown T gains no size, text or numeric provider merely

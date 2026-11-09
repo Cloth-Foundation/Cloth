@@ -7,6 +7,89 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Interface Stage 7 release verification (2026-11-09)
+
+The first class-backed interface slice is complete. The README documents
+ordinary interface use and links the maintained standalone and imported
+fixtures. The full offline checks passed 2,017 Compiler tests, 61 Shuttle
+tests and 10 distribution tests. The fixtures ran on Windows x64, Windows
+x86 and GNU Linux x64 under Ubuntu WSL. Both produced verified executable
+IR and startup objects for all nine target profiles.
+[Public guide](../../../../README.md#interfaces) ·
+[Stage 7 release record](../../cloth-interfaces/references/stage-7.md)
+
+### Interface Stage 6 value contexts and flow (2026-11-09)
+
+Class-backed interface identities now flow through aggregate storage, arrays,
+nullable values, results and generic holders. `Object` widening, membership,
+equality and formatting use the existing class runtime. Compound membership
+guards retain shared parent proofs, and metadata records the static nominal
+view across imports.
+
+The offline regression run passed 1,006 tests across 100 suites, including
+58 interface tests. The standalone generic and import tasks passed 86 and 36
+tests. The maintained fixture ran through installed Shuttle, and the native
+interface tests ran on Windows x64 and x86. The standalone example verified IR
+and emitted objects on all nine profiles.
+[Stage 6 implementation and verification](../../cloth-interfaces/references/stage-6.md)
+
+### Interface Stage 5 defaults and inherited contracts (2026-11-09)
+
+Native dispatch now executes interface fallback bodies and static omission
+expressions, including closed generic and inherited contracts. The checked
+receiver is validated after supplied arguments and again after omitted
+defaults. The selected class method or fallback receives complete values and
+writes buffered results into the original caller's arena.
+
+The offline regression run passed 822 tests across 75 suites, plus 86
+native-free generic tests and 36 native-free import tests. The final interface
+rerun passed all 50 tests. Stage 5 fixtures ran on Windows x64 and x86 and
+verified LLVM IR and object emission on all nine profiles.
+[Interface Stage 5 implementation and verification](../../cloth-interfaces/references/stage-5.md)
+
+### Interface Stage 4 native dispatch and lifetime (2026-11-08)
+
+Scalar and nullable interface views share the private class identity carrier.
+Fully supplied calls dispatch through a checked initialized class tag after
+argument effects. Membership and deletion reuse the same checked class table.
+C4035 gates omitted interface arguments, fallback bodies and later value forms.
+
+The broad run covered 815 tests across 74 suites. The only failure was a Windows
+elevation error launching the x86 fixture with its original name. After renaming
+the fixture, the focused rerun passed all 58 tests. The native-free generic and
+import tasks passed 86 and 36 tests. Interface fixtures ran on Windows x64/x86
+and verified IR and object emission on all nine profiles.
+[Interface Stage 4](../../cloth-interfaces/references/stage-4.md)
+
+### Interface Stage 3 values and call binding (2026-11-08)
+
+Semantic analysis checks nominal interface adaptations and records the static
+contract, receiver, named placement and omissions for each interface call.
+Fallback bodies and omission expressions use their defining scopes and
+separate symbolic and closed views. Presence, local lifetime and metadata
+analysis understand class-backed interface views. C4035 now guards native
+emission after semantic checking.
+
+The isolated offline run passed 714 tests across 62 suites, including 33
+interface tests. The native-free generic and import tasks passed 86 and 36
+tests. Existing class and generic fixtures include native Windows x64/x86
+execution and IR and object verification on all nine target profiles.
+[Interface Stage 3](../../cloth-interfaces/references/stage-3.md)
+
+### Interface Stage 2 graphs and conformance (2026-11-08)
+
+The closed type interner handles interfaces and their substituted signatures.
+Conformance checks symbolic owners and closed instances, merges identical
+applications across paths, and rejects incompatible applications. The checked
+model retains a static requirement and its selected class or fallback body.
+C4035 now follows conformance and precedes value and call typing.
+
+The focused run passed 263 tests across 28 suites. The native-free generic and
+import tasks passed 86 and 36 tests respectively. The interface evidence covers
+analysis and compiler request diagnostics. Class and generic regressions
+include native Windows x64/x86 and all-nine-profile IR and object verification.
+[Interface Stage 2](../../cloth-interfaces/references/stage-2.md)
+
 ### Interface Stage 1 declarations and names (2026-11-08)
 
 The Kotlin and Bootstrap lexers reserve `interface` and `override`. The

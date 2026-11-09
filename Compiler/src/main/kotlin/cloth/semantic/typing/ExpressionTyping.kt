@@ -40,7 +40,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun callResults(expression: CallExpression): ResultShape = ResultShape.of(callType(expression))
 	protected open fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? = null
 	protected open fun equalityContextType(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? = null
-	protected open fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? = null
+	protected open fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CMemberType, right: CMemberType): ResolvedOperator? = null
 	protected open fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = null
 	protected open fun completion(expression: Expression): ControlFlow = ControlFlow.FALLTHROUGH
 	protected open fun completion(statements: List<Statement>): ControlFlow = ControlFlow.FALLTHROUGH
@@ -317,7 +317,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 								}
 								ResultShape.of(previous.values.zip(next.values).mapIndexed { position, (left, right) ->
 									val context = (if (next is ResultShape.Multiple) receptionContext?.positional?.getOrNull(position) else receptionContext?.broadcast) ?: expected?.values?.getOrNull(position)
-									if (left == right) left else if ((context is CArray || context is CNullable || context is CClass) && context.accepts(left) && context.accepts(right)) context
+									if (left == right) left else if ((context is CArray || context is CNullable || context is CClass || context is CInterface) && context.accepts(left) && context.accepts(right)) context
 									else reject { SemanticErrors.branchTypes(left, right, checkNotNull(firstSpan), item.span) }
 								})
 							}
@@ -570,6 +570,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (source == ValueType.Null) throw SemanticErrors.nullableContext(expression.operand.span)
 				val target = resolveType(expression.target)
 				model.typeChecks[expression] = target
+				val sourceOwner = source.classBackedType()
+				val targetOwner = target.classBackedType()
+				if (sourceOwner != null && targetOwner != null && target !is CNullable && (sourceOwner is CInterface || targetOwner is CInterface)) {
+					model.interfaceTypeTests[expression] = InterfaceTypeTest(sourceOwner, targetOwner, source is CNullable)
+				}
 				ValueType.BOOL
 			}
 
@@ -579,7 +584,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if ((source is CNullable || source == ValueType.Null) && target !is CNullable && target != ValueType.VOID) throw SemanticErrors.nullablePayload(source, expression.operand.span)
 				val sourcePayload = (source as? CNullable)?.payload ?: source
 				val targetPayload = (target as? CNullable)?.payload ?: target
-				val upcast = sourcePayload is CClass && targetPayload is CClass && targetPayload.accepts(sourcePayload)
+				val upcast = sourcePayload.classBackedType() != null && targetPayload.classBackedType()?.accepts(sourcePayload) == true
 				val ordinal = sourcePayload is CEnum && targetPayload == ValueType.INT
 				if (source != ValueType.NEVER && sourcePayload != targetPayload && !upcast && !ordinal && !(sourcePayload.numeric && targetPayload.numeric) && target != ValueType.VOID) reject { SemanticErrors.cast(source, target, expression.span) }
 				if (target == ValueType.TYPEINFO) model.metadata[expression.operand]?.let { model.metadata[expression] = it }
@@ -689,6 +694,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val field = (receiver as? CMemberType)?.field(expression.name.lexeme) ?: throw when (receiver) {
 			is CClass -> SemanticErrors.classMember(message, expression.name.span)
 			is CEnum  -> SemanticErrors.enumMember(message, expression.name.span)
+			is CInterface -> SemanticErrors.unknownField(receiver, expression.name)
 			else      -> SemanticErrors.structField(message, expression.name.span)
 		}
 		validateFieldAccess(field, expression.name)
@@ -784,15 +790,15 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	private fun classComparison(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
 		if (operation !in OperatorRules.classComparisons) return null
-		val leftClass = ((left as? CNullable)?.payload ?: left) as? CClass
-		val rightClass = ((right as? CNullable)?.payload ?: right) as? CClass
-		if (operation != Operators.IDENTITY && leftClass == null && rightClass == null) return null
+		val leftView = left.classBackedType()
+		val rightView = right.classBackedType()
+		if (operation != Operators.IDENTITY && leftView == null && rightView == null) return null
 		val comparesNull = expression.left is NullLiteral || expression.right is NullLiteral
 		if (comparesNull && left !is CNullable && right !is CNullable) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
-		if ((leftClass == null && left != ValueType.NEVER && left != ValueType.Null) || (rightClass == null && right != ValueType.NEVER && right != ValueType.Null)) {
+		if ((leftView == null && left != ValueType.NEVER && left != ValueType.Null) || (rightView == null && right != ValueType.NEVER && right != ValueType.Null)) {
 			reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		}
-		val selected = if (!comparesNull && leftClass != null && rightClass != null) classComparisonOverride(expression, operation, leftClass, rightClass) else null
+		val selected = if (!comparesNull && leftView != null && rightView != null) classComparisonOverride(expression, operation, leftView, rightView) else null
 		model.classComparisons[expression] = ClassComparisonPlan(operation, selected)
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
@@ -802,7 +808,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val leftPayload = (left as? CNullable)?.payload ?: left
 		val rightPayload = (right as? CNullable)?.payload ?: right
 		val owner = (if (leftPayload == ValueType.NEVER) rightPayload else leftPayload) as? CMemberType ?: return null
-		if (owner is CClass || leftPayload != owner && leftPayload != ValueType.NEVER || rightPayload != owner && rightPayload != ValueType.NEVER) return null
+		if (owner.classBackedType() != null || leftPayload != owner && leftPayload != ValueType.NEVER || rightPayload != owner && rightPayload != ValueType.NEVER) return null
 		val direct = valueComparisonOverride(expression, operation, owner)
 		val fallback = if (direct == null && operation == Operators.NOT_EQUAL) valueComparisonOverride(expression, Operators.EQUAL, owner) else null
 		if (direct == null && fallback == null && owner !is CEnum) {

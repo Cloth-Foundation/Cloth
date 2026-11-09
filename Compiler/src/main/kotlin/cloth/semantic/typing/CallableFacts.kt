@@ -1,12 +1,12 @@
 package cloth.semantic.typing
 
 import cloth.data.ValueType
-import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.MethodSymbol
 
 /** Contracts fixed before body checking and shared by every trial. */
 internal class CallableContracts(
-	val signatures: Map<CallableSymbol, FunctionType>,
+	val signatures: Map<CallableContractSymbol, FunctionType>,
 	val contextSelectors: Map<MethodSymbol, ValueType>,
 )
 

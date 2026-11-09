@@ -113,10 +113,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun typeOf(expression: Expression) = semantics.typeOf(expression)
 	private val projectedValues = java.util.IdentityHashMap<NameExpression, LLVMValueRef>()
+	private fun directAccess(expression: Expression): ObjectAccess? = functionSemantics.declarations.directReceiverOf(expression)?.let(bindings::objectAccess)
 
 	private fun providerServices(location: String, receiver: Expression? = null): ProviderEmissionContext {
-		val symbol = (receiver as? NameExpression)?.let { functionSemantics.declarations.names[it] } as? ReceiverSymbol
-		return ProviderEmissionContext(context, builder, strings, casts, location, functions, ::stringReturnArena, symbol?.let(bindings::objectAccess)?.duringDestruction)
+		return ProviderEmissionContext(context, builder, strings, casts, location, functions, ::stringReturnArena, receiver?.let(::directAccess)?.duringDestruction)
 	}
 
 	/** A provider consumes its receiver before any temporary cleanup can run. Buffered
@@ -174,9 +174,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val expression = receiver.expression
 			val projected = (expression as? NameExpression)?.let { semantics.projectedOperandOf(it) }
 			val original = projected?.original ?: expression
-			val symbol = (original as? NameExpression)?.let { functionSemantics.declarations.names[it] } as? ReceiverSymbol
-			val access = symbol?.let(bindings::objectAccess)
-			if (projected == null && access != null) access
+			val access = directAccess(original)
+			if (projected == null && expression is NameExpression && access != null) access
 			else ObjectAccess(emitValue(expression), access?.duringDestruction ?: functions.classes.permission(false))
 		}
 	}
@@ -194,7 +193,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun adaptValue(value: LLVMValueRef, source: ValueType, destination: ValueType): LLVMValueRef = when {
 		source == destination                                                    -> value
 		source is CArray && destination is CArray && destination.accepts(source) -> value
-		source is CClass && destination is CClass && destination.accepts(source) -> value
+		(destination is CClass || destination is CInterface) && destination.accepts(source) -> value
 		else                                                                     -> nullable.adapt(value, source, destination)
 	}
 
@@ -206,7 +205,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitMemberCall(call: MemberCallExpression): LLVMValueRef? {
-		functionSemantics.selectedMemberCall(call)?.let { return functions.emitCall(it, call.arguments, this, builder) }
+		when (val selected = functionSemantics.selectedBoundMemberCall(call)) {
+			is ResolvedCall.Source -> return functions.emitCall(selected, call.arguments, this, builder)
+			is ResolvedCall.Interface -> return functions.emitCall(selected, call.arguments, this, builder)
+			null -> Unit
+		}
 		semantics.arrayMutations[call]?.let { return emitArrayMutation(call, it) }
 		val selected = semantics.memberCalls.getValue(call)
 		temporaryDepth++
@@ -272,6 +275,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitCall(call: CallExpression): LLVMValueRef? = when (val selected = functionSemantics.selectedCall(call)) {
 		is ResolvedCall.Source  -> functions.emitCall(selected, call.arguments, this, builder)
+		is ResolvedCall.Interface -> functions.emitCall(selected, call.arguments, this, builder)
 		is ResolvedCall.Builtin -> {
 			// Arguments and text providers may borrow buffers until the operation consumes them.
 			temporaryDepth++
@@ -581,11 +585,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val source = semantics.typeOf(expression.operand)
 				val target = semantics.targetTypeOf(expression)
 				val payload = (source as? CNullable)?.payload ?: source
-				if (payload is CClass && target is CClass) {
+				val instanceTarget = semantics.interfaceTypeTests[expression]?.target ?: (target as? CClass)?.takeIf { payload is CClass }
+				if (instanceTarget != null) {
 					val emitter = functions
-					val symbol = (expression.operand as? NameExpression)?.let { functionSemantics.declarations.names[it] } as? ReceiverSymbol
-					val permitted = symbol?.let(bindings::objectAccess)?.duringDestruction ?: emitter.classes.permission(false)
-					fun matches(identity: LLVMValueRef) = emitter.isInstance(builder, ObjectAccess(identity, permitted), target)
+					val permitted = directAccess(expression.operand)?.duringDestruction ?: emitter.classes.permission(false)
+					fun matches(identity: LLVMValueRef) = emitter.isInstance(builder, ObjectAccess(identity, permitted), instanceTarget)
 					if (source is CNullable) nullable.choose(nullable.present(value), boolType, { matches(nullable.payload(value)) }, { emitter.classes.permission(false) })
 					else matches(value)
 				} else LLVMConstInt(boolType, if (source == target) 1L else 0L, 0)
@@ -889,8 +893,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		else {
 			val emitter = functions
 			fun access(operand: Expression, value: LLVMValueRef): ObjectAccess {
-				val symbol = (operand as? NameExpression)?.let { functionSemantics.declarations.names[it] } as? ReceiverSymbol
-				val permission = symbol?.let(bindings::objectAccess)?.duringDestruction ?: emitter.classes.permission(false)
+				val permission = directAccess(operand)?.duringDestruction ?: emitter.classes.permission(false)
 				return ObjectAccess(value, permission)
 			}
 

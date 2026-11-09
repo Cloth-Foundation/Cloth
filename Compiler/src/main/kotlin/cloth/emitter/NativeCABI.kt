@@ -1,7 +1,6 @@
 package cloth.emitter
 
 import cloth.data.*
-import cloth.diagnostics.InterfaceErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.ToolchainErrors
 import cloth.target.TargetLayout
@@ -42,8 +41,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	fun printArgument(type: ValueType): ValueType = when (type) {
 		is CTypeParameter -> throw InternalErrors.invariant("An unsolved type parameter has no native print argument")
 		is CStruct      -> throw InternalErrors.invariant("Structs have no native print argument")
-		is CClass       -> throw InternalErrors.invariant("Classes have no native print argument")
-		is CInterface   -> throw InterfaceErrors.compilation(type.declaration.kind.span)
+		is CClass, is CInterface -> throw InternalErrors.invariant("Class identities require text adaptation")
 		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
@@ -66,8 +64,7 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
 		is CTypeParameter -> throw InternalErrors.invariant("An unsolved type parameter has no native print format")
 		is CStruct      -> throw InternalErrors.invariant("Structs have no native print format")
-		is CClass       -> throw InternalErrors.invariant("Classes have no native print format")
-		is CInterface   -> throw InterfaceErrors.compilation(argument.declaration.kind.span)
+		is CClass, is CInterface -> throw InternalErrors.invariant("Class identities require text adaptation")
 		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
 		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
 		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")

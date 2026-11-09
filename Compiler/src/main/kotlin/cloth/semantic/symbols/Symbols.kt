@@ -2,6 +2,7 @@ package cloth.semantic.symbols
 
 import cloth.builtin.BuiltinDefinition
 import cloth.data.CClass
+import cloth.data.CInterface
 import cloth.data.CMemberType
 import cloth.data.InstanceField
 import cloth.data.ValueType
@@ -11,6 +12,7 @@ import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
+import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.token.*
 import java.math.BigInteger
 
@@ -50,12 +52,26 @@ sealed interface Symbol {
 	val name: Token
 }
 
-sealed interface CallableSymbol : Symbol {
+sealed interface CallableContractSymbol : Symbol {
 
-	val declaration: CallableDeclaration
+	val declaration: CallableSignature
 	val signature: FunctionSignature
 	val parameters: List<ParameterSymbol>
 	val receiver: ReceiverSymbol? get() = null
+}
+
+sealed interface CallableSymbol : CallableContractSymbol {
+
+	override val declaration: CallableDeclaration
+}
+
+internal class InterfaceMethodSymbol(val requirement: InterfaceRequirement, override val declaration: InterfaceMethodDeclaration) : CallableContractSymbol {
+
+	val owner: CInterface get() = requirement.owner
+	override val name get() = declaration.name
+	override val signature get() = requirement.signature
+	override val parameters = declaration.parameters.map(::ParameterSymbol)
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
 class FunctionSymbol(override val declaration: FunctionDeclaration, private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
@@ -100,6 +116,11 @@ class FunctionGroupSymbol(val overloads: List<FunctionSymbol>) : CallableGroupSy
 }
 
 class MethodGroupSymbol(val overloads: List<MethodSymbol>) : CallableGroupSymbol {
+
+	override val name get() = overloads.first().name
+}
+
+internal class InterfaceMethodGroupSymbol(val owner: CInterface, val overloads: List<InterfaceMethodSymbol>) : CallableGroupSymbol {
 
 	override val name get() = overloads.first().name
 }

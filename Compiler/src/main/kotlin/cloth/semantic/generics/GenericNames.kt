@@ -47,7 +47,6 @@ class GenericNameModel internal constructor(val target: TargetLayout) {
 	fun nameOf(reference: TypeReference): TypeNameIdentity = names.getValue(reference)
 	fun receiverName(expression: NameExpression): TypeNameIdentity? = receivers[expression]
 	internal fun requireImplemented() { genericSpan?.let { throw GenericErrors.compilation(it) } }
-	internal fun requireInterfaceSemantics() { interfaceSpan?.let { throw InterfaceErrors.compilation(it) } }
 }
 
 /** Bind generic syntax in original source contexts before any closed layouts exist. */
@@ -203,11 +202,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 				parameter.defaultValue?.let { expression(it, parameters, values) }
 				values = values + parameter.name.lexeme
 			}
-			val body = when (declaration) {
-				is CallableDeclaration -> declaration.body
-				is InterfaceMethodDeclaration -> declaration.fallback?.body
-			}
-			when (body) {
+			when (val body = declaration.executableBody) {
 				is BlockBody -> statements(body.statements, parameters, values)
 				is ExpressionBody -> expression(body.expression, parameters, values)
 				null -> Unit

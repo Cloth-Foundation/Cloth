@@ -1,0 +1,3 @@
+pub typedef<struct> Slot<T> {
+    T item
+}

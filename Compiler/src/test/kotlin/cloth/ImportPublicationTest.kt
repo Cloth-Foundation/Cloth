@@ -10,6 +10,7 @@ import cloth.semantic.declarations.FileBindings
 import cloth.settings.LinkOptions
 import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
+import cloth.toolchain.StandardLibrary
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
@@ -31,7 +32,8 @@ class ImportPublicationTest {
 	private fun request(project: Path, output: Path, target: String? = null, kind: OutputKind = OutputKind.EXECUTABLE): CompilationRequest {
 		val primary = if (project == example) "app/cli/Main.co" else "Frontend/Main.co"
 		val modules = if (project == example) listOf(SourceModule("App", project.resolve("app")), SourceModule("Support", project.resolve("support"))) else listOf("Frontend", "Compiler", "Backend").map { SourceModule(it, project.resolve(it)) }
-		return CompilationRequest(project.resolve(primary), output, modules, kind, targetTriple = target, linkOptions = if (kind == OutputKind.OBJECT) LinkOptions(linker = output.resolveSibling("missing-linker")) else LinkOptions())
+		val request = CompilationRequest(project.resolve(primary), output, modules, kind, targetTriple = target, linkOptions = if (kind == OutputKind.OBJECT) LinkOptions(linker = output.resolveSibling("missing-linker")) else LinkOptions())
+		return if (project == bootstrap) StandardLibrary.default().attachTo(request) else request
 	}
 
 	@Test
@@ -39,7 +41,15 @@ class ImportPublicationTest {
 		for (project in listOf(example, bootstrap)) {
 			val graph = SourceGraphLoader.load(request(project, directory.resolve("not-created/out.o"), kind = OutputKind.OBJECT))
 			val relative = graph.sources.map { project.relativize(it.path).toString().replace('\\', '/') }.toSet()
-			val expected = if (project == example) setOf("app/cli/Main.co", "app/token/Token.co", "support/report/Report.co", "support/math/Even.co", "app/math/Odd.co") else setOf("Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/lexer/LexerError.co", "Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co", "Frontend/token/Operators.co", "Frontend/source/SourceFile.co")
+			val expected = if (project == example) {
+				setOf("app/cli/Main.co", "app/token/Token.co", "support/report/Report.co", "support/math/Even.co", "app/math/Odd.co")
+			} else {
+				setOf(
+					"Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/lexer/LexerError.co",
+					"Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co",
+					"Frontend/token/Operators.co", "Frontend/source/SourceFile.co", "../Standard-Library/cloth/collections/List.co",
+				)
+			}
 			assertEquals(expected, relative)
 			if (project == example) assertTrue(graph.edges.any { it.backEdge })
 		}
@@ -94,20 +104,22 @@ class ImportPublicationTest {
 		}
 	}
 
-	/** Parse the verified executable IR to emit startup objects without discovering a foreign linker. */
-	private fun emitExecutableObject(emitter: LLVMEmitter, ir: String, output: Path) {
-		val context = LLVMContextCreate()
-		val module = LLVMModuleRef()
-		val failure = BytePointer(null as Pointer?)
-		try {
-			val buffer = LLVMCreateMemoryBufferWithMemoryRangeCopy(ir, ir.toByteArray(Charsets.UTF_8).size.toLong(), "imports")
-			assertEquals(0, LLVMParseIRInContext(context, buffer, module, failure), if (failure.isNull) "Invalid IR" else failure.string)
-			emitter.verify(module)
-			emitter.emitObject(module, output)
-		} finally {
-			if (!module.isNull) LLVMDisposeModule(module)
-			if (!failure.isNull) LLVMDisposeMessage(failure)
-			LLVMContextDispose(context)
-		}
+
+}
+
+/** Parse the verified executable IR to emit startup objects without discovering a foreign linker. */
+internal fun emitExecutableObject(emitter: LLVMEmitter, ir: String, output: Path) {
+	val context = LLVMContextCreate()
+	val module = LLVMModuleRef()
+	val failure = BytePointer(null as Pointer?)
+	try {
+		val buffer = LLVMCreateMemoryBufferWithMemoryRangeCopy(ir, ir.toByteArray(Charsets.UTF_8).size.toLong(), output.fileName.toString())
+		assertEquals(0, LLVMParseIRInContext(context, buffer, module, failure), if (failure.isNull) "Invalid IR" else failure.string)
+		emitter.verify(module)
+		emitter.emitObject(module, output)
+	} finally {
+		if (!module.isNull) LLVMDisposeModule(module)
+		if (!failure.isNull) LLVMDisposeMessage(failure)
+		LLVMContextDispose(context)
 	}
 }

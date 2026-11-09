@@ -5,7 +5,6 @@ import cloth.data.*
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
-import cloth.diagnostics.InterfaceErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
 import cloth.parser.type.TypeReference
@@ -13,6 +12,8 @@ import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.semantic.declarations.EnumModel
 import cloth.semantic.declarations.FileBindings
 import cloth.semantic.declarations.TypeResolver
+import cloth.semantic.interfaces.InterfaceConformanceAnalyzer
+import cloth.semantic.interfaces.interfaceParentOrder
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
 import cloth.token.Token
@@ -26,7 +27,15 @@ internal const val maximumGenericInstances = 4096
 class ClosedTypeAnalyzer(private val target: TargetLayout) {
 	fun analyze(unit: SourceUnit): ClosedTypeModel = analyze(FileBindings.single(unit))
 	internal fun analyze(graph: SourceGraph): ClosedTypeModel = analyze(FileBindings.graph(graph))
-	internal fun analyze(files: FileBindings, names: GenericNameModel = GenericAnalyzer(target).analyze(files)): ClosedTypeModel = Types(files, names, target).analyze()
+	internal fun analyze(files: FileBindings, names: GenericNameModel = GenericAnalyzer(target).analyze(files)): ClosedTypeModel {
+		if (names.interfaceSpan != null && names.owners.isNotEmpty()) {
+			val templates = files.fork()
+			symbolic(templates, GenericAnalyzer(target).analyze(templates))
+		}
+		return closed(files, names)
+	}
+
+	internal fun closed(files: FileBindings, names: GenericNameModel): ClosedTypeModel = Types(files, names, target).analyze()
 	internal fun symbolic(files: FileBindings, names: GenericNameModel): ClosedTypeModel = Types(files, names, target, symbolic = true).analyze()
 
 	private class Types(private val files: FileBindings, private val names: GenericNameModel, private val target: TargetLayout, private val symbolic: Boolean = false) {
@@ -40,7 +49,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private var symbolicCount = 0
 
 		fun analyze(): ClosedTypeModel {
-			names.requireInterfaceSemantics()
+			val interfaceOrder = interfaceParentOrder(files.typeOrder.filterIsInstance<CInterface>(), names)
 			for (use in names.uses) use.owner?.let { ownerUses.getOrPut(it) { mutableListOf() }.add(use) }
 			for (definition in files.typeOrder) if (names.parametersOf(definition.declaration).isEmpty()) register(definition, definition, emptyList(), emptyList(), 0)
 			if (symbolic) for (definition in files.typeOrder) {
@@ -60,13 +69,14 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 						EnumModel.defineFields(type, resolver())
 						type.declaration.operators.forEach { instance.signatureList.add(signature(it)) }
 					}
-					is CInterface -> throw InterfaceErrors.compilation(type.declaration.kind.span)
+					is CInterface -> type.declaration.methods.forEach { instance.signatureList.add(signature(it)) }
 				}
 				for (use in ownerUses[instance.definition.declaration].orEmpty()) bind(use)
 				current = null
 			}
-			validateInheritance()
+			val baseOrder = validateInheritance()
 			validateStructs()
+			if (names.interfaceSpan != null) model.interfaces = InterfaceConformanceAnalyzer(model).analyze(interfaceOrder, baseOrder)
 			model.catalog.values.forEach { it.state = ClosedTypeState.COMPLETE }
 			return model
 		}
@@ -126,20 +136,25 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				is CClass -> CClass(definition.declaration, definition, key.arguments)
 				is CStruct -> CStruct(definition.declaration, genericDefinition = definition, typeArguments = key.arguments)
 				is CEnum -> throw GenericErrors.arity(definition.name, arguments.size, 0, definition.name)
-				is CInterface -> throw InterfaceErrors.compilation(use)
+				is CInterface -> CInterface(definition.declaration, definition, key.arguments)
 			}
 			if (open) symbolicCount++ else closedCount++
 			return register(type, definition, key.arguments, chain + (use to definition.name.lexeme), depth).also { instances[key] = it }.type
 		}
 
-		private fun signature(declaration: CallableDeclaration): ClosedCallableSignature = ClosedCallableSignature(declaration,
+		private fun signature(declaration: CallableSignature): ClosedCallableSignature = ClosedCallableSignature(declaration,
 			declaration.parameters.map { pattern(it.type) }, declaration.returnTypes.map(::pattern),
 			(declaration as? MethodDeclaration)?.operator?.selector?.let(::pattern))
 
 		private fun defineClass(owner: CClass) {
 			val declaration = owner.declaration
-			val clause = declaration.parents.singleOrNull()
-			val base = if (clause == null) files.objectRoot else resolve(clause.type) as? CClass ?: throw SemanticErrors.classMember("'${clause.type.name.lexeme}' is not a class base", clause.type.name.span)
+			var base = files.objectRoot
+			var clause: ClassParentClause? = null
+			for (parent in declaration.parents) when (val type = resolve(parent.type)) {
+				is CClass -> { base = type; clause = parent }
+				is CInterface -> Unit
+				else -> throw SemanticErrors.classMember("'${parent.type.name.lexeme}' is not a class base", parent.type.name.span)
+			}
 			if (base.declaration.finalKeyword != null) throw SemanticErrors.classMember("Cannot inherit from final class '${base.name.lexeme}'", checkNotNull(clause).type.name.span, base.name)
 			if (base === files.objectRoot && clause?.constructorArguments?.isNotEmpty() == true) throw SemanticErrors.classMember("'${base.spelling}' takes no base arguments", clause.span)
 			owner.base = base
@@ -169,17 +184,18 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			owner.declaration.methods.forEach { current!!.signatureList.add(signature(it)) }
 		}
 
-		private fun validateInheritance() {
-			val complete = mutableSetOf<CClass>()
+		private fun validateInheritance(): List<CClass> {
+			val complete = linkedSetOf(files.objectRoot)
 			for (owner in model.nominalTypes.filterIsInstance<CClass>()) {
 				val path = mutableSetOf<CClass>()
 				var next: CClass? = owner
 				while (next != null && next !in complete) {
-					if (!path.add(next)) throw SemanticErrors.classMember("Inheritance cycle involving '${next.name.lexeme}'", next.declaration.parents.single().type.name.span)
+					if (!path.add(next)) throw SemanticErrors.classMember("Inheritance cycle involving '${next.name.lexeme}'", checkNotNull(model.baseClauseOf(next)).type.name.span)
 					next = next.base
 				}
-				complete.addAll(path)
+				complete.addAll(path.reversed())
 			}
+			return complete.drop(1)
 		}
 
 		private fun validateStructs() {

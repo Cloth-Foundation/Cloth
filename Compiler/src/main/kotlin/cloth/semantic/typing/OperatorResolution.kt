@@ -1,6 +1,7 @@
 package cloth.semantic.typing
 
 import cloth.data.CClass
+import cloth.data.classBackedType
 import cloth.data.CMemberType
 import cloth.data.CNullable
 import cloth.data.ValueType
@@ -118,7 +119,7 @@ internal class OperatorResolution(
 	 * Keep null handling, same-type value equality and class dispatch on their existing paths.
 	 */
 	fun equalityContext(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
-		if (operation !in OperatorRules.equality || left == right || left is CClass && right is CClass) return null
+		if (operation !in OperatorRules.equality || left == right || left.classBackedType() != null && right.classBackedType() != null) return null
 		val operands = listOf(expression.left, expression.right)
 		if (listOf(left, right).any { it is CNullable || it == ValueType.Null || it == ValueType.NEVER }) return null
 		if (operands.any { it in model.projectedOperands }) return null
@@ -184,7 +185,7 @@ internal class OperatorResolution(
 		return pairs.all { (a, b) -> b.accepts(a) } && pairs.any { (a, b) -> !a.accepts(b) }
 	}
 
-	fun classComparison(expression: BinaryExpression, operation: Operators, left: CClass, right: CClass): ResolvedOperator? {
+	fun classComparison(expression: BinaryExpression, operation: Operators, left: CMemberType, right: CMemberType): ResolvedOperator? {
 		val declarations = facts.declarations
 		if (operation != Operators.IDENTITY) {
 			if (expression.left in declarations.readOnlyValueReceivers && declarations.classDefinitions.values.any { definition ->
@@ -193,7 +194,7 @@ internal class OperatorResolution(
 				}) throw SemanticErrors.parameterDefault("A default cannot call a user-defined operator through a read-only receiver", expression.operator.span)
 			return null
 		}
-		return staticComparisonOverride(expression, operation, listOf(left, right))
+		return if (left is CClass && right is CClass) staticComparisonOverride(expression, operation, listOf(left, right)) else null
 	}
 
 	fun valueComparison(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = staticComparisonOverride(expression, operation, listOf(owner, owner))

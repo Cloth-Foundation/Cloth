@@ -1,5 +1,7 @@
 package cloth.builtin
 
+import cloth.data.CInt
+import cloth.data.CInteger
 import cloth.data.ProviderReceiver
 import cloth.data.ProviderResult
 import cloth.data.ValueType
@@ -55,6 +57,8 @@ internal sealed interface BuiltinParameter {
 
 	fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument?
 
+	fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef = value
+
 	data class Exact(val type: ValueType) : BuiltinParameter {
 
 		override val spelling get() = type.spelling
@@ -70,23 +74,34 @@ internal sealed interface BuiltinParameter {
 			val text = actual.implicitText(target) ?: return null
 			return BuiltinArgument(actual, ValueType.STRING, text)
 		}
+
+		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef =
+			argument.text?.emit(context.providers, ProviderReceiver.Value(argument.sourceType, value)) ?: value
+	}
+
+	/** Accepts every Cloth integer identity and lowers it to the target's C int. */
+	data object NativeInt : BuiltinParameter {
+
+		override val spelling = "integer"
+		override fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument? =
+			if (actual is CInteger || actual == ValueType.NEVER) BuiltinArgument(actual, CInt(target.cIntBits)) else null
+
+		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef =
+			context.processExit.normalize(value, argument.sourceType as CInteger)
 	}
 }
 
-internal data class BuiltinArgument(val sourceType: ValueType, val parameterType: ValueType, val text: ProviderResult<*>? = null) {
-
-	fun adapt(context: BuiltinEmissionContext, value: LLVMValueRef): LLVMValueRef = text?.emit(context.providers, ProviderReceiver.Value(sourceType, value)) ?: value
-}
+internal data class BuiltinArgument(val sourceType: ValueType, val parameterType: ValueType, val text: ProviderResult<*>? = null)
 
 /** Contains committed argument conversions, never AST evaluation or name lookup. */
 internal data class BoundBuiltinCall(val definition: BuiltinDefinition<*>, val overload: BuiltinOverload, val arguments: List<BuiltinArgument>) {
 
 	fun emit(context: BuiltinEmissionContext, values: List<LLVMValueRef>): LLVMValueRef? {
 		if (values.size != arguments.size) throw InternalErrors.invariant("Built-in argument count changed after resolution")
-		val adapted = arguments.zip(values) { argument, value -> argument.adapt(context, value) }
+		val adapted = values.mapIndexed { index, value -> overload.parameters[index].adapt(context, arguments[index], value) }
 		val result = overload.body.emit(context, adapted)
-		if (overload.returns == ValueType.VOID) {
-			if (result != null) throw InternalErrors.invariant("Void built-in returned an LLVM value")
+		if (overload.returns == ValueType.VOID || overload.returns == ValueType.NEVER) {
+			if (result != null) throw InternalErrors.invariant("Built-in without a result returned an LLVM value")
 		} else if (result == null || LLVMTypeOf(result).address() != overload.returns.llvmValue(context.context, context.abi.layout).address()) {
 			throw InternalErrors.invariant("Built-in result does not match '${overload.returns.spelling}'")
 		}

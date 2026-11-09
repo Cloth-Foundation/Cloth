@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth print and println, recursive array
 
 # Cloth output and built-in functions
 
+Class-backed interface views use the initialized class formatter for `::str`,
+output, interpolation and recursive array text. Nullable output preserves
+absence. User formatters can invalidate aliased field proofs.
+[Interface formatting](../cloth-interfaces/references/stage-6.md#object-operations-and-proofs)
+
 [Arbitrary integer Stage 5](../cloth-numerics/references/arbitrary-width-output.md)
 integrates exact decimal text for signed/unsigned widths 1..65536 across print,
 interpolation, `::str`, nullable values and recursive arrays. Wide values use a
@@ -59,7 +64,7 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
 
 Inspect [BuiltinFunctions](../../../Compiler/src/main/kotlin/cloth/builtin/BuiltinFunctions.kt),
 [BuiltinFunction](../../../Compiler/src/main/kotlin/cloth/builtin/BuiltinFunction.kt),
-[PrintFunction](../../../Compiler/src/main/kotlin/cloth/builtin/PrintFunction.kt),
+[PrintFunction](../../../Compiler/src/main/kotlin/cloth/builtin/functions/PrintFunction.kt),
 [BuiltinEmissionContext](../../../Compiler/src/main/kotlin/cloth/emitter/types/BuiltinEmissionContext.kt),
 and [EmitOutput](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitOutput.kt).
 Example: [Builtins.co](../../../examples/Builtins.co).

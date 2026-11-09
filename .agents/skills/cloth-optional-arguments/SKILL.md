@@ -5,6 +5,12 @@ description: Design, explain, or extend Cloth opt parameter wrappers, final para
 
 # Cloth optional arguments and defaults
 
+Interface calls share the argument binder and evaluate omission expressions in
+the static declaration's scope. Stage 5 reuses the ordinary prelude in the
+dispatch entry. The selected body receives every argument as supplied.
+[Interface call contracts](../cloth-interfaces/references/stage-3.md#static-call-binding-and-defaults) ·
+[Native interface defaults](../cloth-interfaces/references/stage-5.md#static-arguments-and-closed-fallback-bodies)
+
 [Generic Stage 3](../cloth-generics/references/stage-3.md) checks owner-generic
 defaults with unknown exact parameters and again after substitution, preserving
 earlier-parameter scope, read-only defaults and ordinary argument placement.

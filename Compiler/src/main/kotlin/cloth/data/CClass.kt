@@ -31,11 +31,21 @@ sealed interface InstanceField {
 }
 
 /** Class identity is established before resolving fields, including recursive class fields. */
-class CClass internal constructor(override val declaration: ClassDeclaration, val genericDefinition: CClass? = null, override val typeArguments: List<ValueType> = emptyList()) : CMemberType(Keywords.CLASS) {
+class CClass internal constructor(
+	override val declaration: ClassDeclaration,
+	val genericDefinition: CClass? = null,
+	override val typeArguments: List<ValueType> = emptyList(),
+	private val objectRoot: Boolean = false,
+) : CMemberType(Keywords.CLASS) {
 
 	internal var base: CClass? = null
+	internal var implementedInterfaces: Set<CInterface> = emptySet()
 	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
-	override fun accepts(actual: ValueType) = super.accepts(actual) || actual is CClass && this in actual.ancestry()
+	override fun accepts(actual: ValueType) = super.accepts(actual) || when (actual) {
+		is CClass -> this in actual.ancestry()
+		is CInterface -> objectRoot
+		else -> false
+	}
 
 	// The implicit root has no fields. A source base occupies the first slot.
 	internal val fieldOffset get() = if (base?.base != null) 1 else 0

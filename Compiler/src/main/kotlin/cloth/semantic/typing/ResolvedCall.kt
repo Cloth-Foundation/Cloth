@@ -1,23 +1,39 @@
 package cloth.semantic.typing
 
 import cloth.builtin.BoundBuiltinCall
+import cloth.data.CInterface
 import cloth.data.ValueType
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.semantic.MethodReceiver
+import cloth.semantic.ObjectReceiver
 import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.token.Operators
 
 internal sealed interface ResolvedCall {
 
 	val type: FunctionType
 
+	sealed interface Bound : ResolvedCall {
+		val binding: ArgumentBinding
+	}
+
 	data class Source(
 		val callable: CallableSymbol,
 		override val type: FunctionType,
-		val binding: ArgumentBinding,
+		override val binding: ArgumentBinding,
 		val receiver: MethodReceiver? = null,
-	) : ResolvedCall
+	) : Bound
+
+	/** The static contract supplies labels and omissions. Runtime selects the body. */
+	data class Interface(
+		val owner: CInterface,
+		val contract: InterfaceMethodSymbol,
+		override val type: FunctionType,
+		override val binding: ArgumentBinding,
+		val receiver: ObjectReceiver,
+	) : Bound
 
 	data class Builtin(val call: BoundBuiltinCall) : ResolvedCall {
 
