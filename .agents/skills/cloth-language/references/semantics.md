@@ -403,6 +403,8 @@ Read [Cloth strings and characters](../../cloth-strings/references/semantics.md#
 
 Read [Cloth output and built-in functions](../../cloth-output/references/semantics.md#built-in-functions) and its
 [feature skill](../../cloth-output/SKILL.md).
+See [explicit process termination](../../cloth-program-entry/references/semantics.md#explicit-process-termination)
+for the `exit(status)` built-in.
 
 ## Strings
 

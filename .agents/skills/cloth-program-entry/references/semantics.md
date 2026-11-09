@@ -55,6 +55,31 @@ the parent skill for current implementation boundaries and source/test routing.
   See [development status](../../cloth-language/references/development.md) for implemented Unicode argument-array
   construction and target-specific execution evidence.
 
+## Explicit process termination
+
+On 2026-11-09 the user requested early process termination with an integer
+status. `exit(status)` is available without an import and accepts one signed
+or unsigned fixed-width integer of any supported width, `isize`, or `usize`.
+An integer literal uses ordinary expression typing. Invalid arity and
+non-integer arguments produce the ordinary built-in call diagnostics.
+
+```cloth
+fn stop(usize status) {
+    exit(status)
+}
+```
+
+The call evaluates its argument once and terminates the process from any
+calling function. The terminating path produces no value and contributes no
+continuing branch to a conditional. `exit` follows ordinary built-in shadowing.
+
+The native status boundary sign-extends narrow signed values and zero-extends
+narrow unsigned values. Equal-width values preserve their bits and wider
+values retain their low native C int bits. The operating system interprets the
+resulting process status. Output written before the call is preserved through
+C runtime termination. The `PEC: N` report belongs to the startup adapter's
+normal completion path after `main` returns.
+
 ## Project entry selection
 
 The [compiler request contract](../../cloth-imports/references/compiler-api.md#entry-selection)

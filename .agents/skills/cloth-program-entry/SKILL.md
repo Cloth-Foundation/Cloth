@@ -1,6 +1,6 @@
 ---
 name: cloth-program-entry
-description: Design, explain, or extend Cloth executable main validation, Unicode command-line startup, process exit-code normalization, or PEC completion output across supported targets.
+description: Design, explain, or extend Cloth executable main validation, the exit built-in, Unicode command-line startup, process exit-code normalization, or PEC completion output across supported targets.
 ---
 
 # Cloth program entry
@@ -17,6 +17,8 @@ Linux x64 GNU and object/assembly evidence across all supported profiles.
 
 Read [confirmed entry semantics](references/semantics.md) and the shared
 [portability contract](../cloth-language/references/semantics.md#portability).
+The [explicit termination contract](references/semantics.md#explicit-process-termination)
+covers `exit(status)` and its integer argument.
 Use [toolchains](../cloth-toolchains/SKILL.md) for linking and object mode and
 [output](../cloth-output/SKILL.md) for explicit print/println calls.
 
@@ -50,6 +52,15 @@ policy over a complete checked source graph, preserving the startup rules below.
   entry call returns, then return that same normalized status. An ordinary Cloth
   call to main does not print a second completion report. Fatal startup/runtime
   failure before normal completion prints no PEC message.
+- Register `exit` through [BuiltinFunctions](../../../Compiler/src/main/kotlin/cloth/builtin/BuiltinFunctions.kt).
+  Its native-int parameter keeps the argument's source type until lowering.
+  [ControlFlowModel](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ControlFlowModel.kt)
+  recognizes the resolved built-in group as non-returning after its argument,
+  so shadowing, argument control flow and conditional joins retain their ordinary rules.
+- [EmitProcessExit](../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitProcessExit.kt)
+  shares status conversion with the entry adapter and the C `exit` declaration
+  with runtime failures. Read wide integers through their low limb storage and
+  end the calling block with LLVM `unreachable` after the C call.
 
 ## Source, evidence, and limits
 
