@@ -24,6 +24,13 @@ the comparison authority. Keep Bootstrap's explicit spelling enums synchronized.
   do not restore the recursive chunk workaround.
 - [TokenList.co](../../../Bootstrap/Frontend/token/TokenList.co) owns nodes and
   tokens. Its cursor borrows them. This is not generic collection support.
+  [Growable arrays Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md)
+  proves concrete array-backed collections but preserves this owning list and
+  borrowed cursor. Default value storage does not implicitly delete Tokens;
+  migration needs its own ownership/partial-error/cursor/source lifetime tests.
+  The [generic Stage 6 caller audit](../cloth-generics/references/caller-audit.md)
+  confirms those contracts against the current sources. Public List now exists,
+  but its class-element identity semantics do not replace this owning container.
 - [LexerError.co](../../../Bootstrap/Frontend/lexer/LexerError.co) retains one
   owned failure. Destroy partial tokens and stop at the first error.
 - [Main.co](../../../Bootstrap/Frontend/Main.co) scans the sample or first

@@ -184,16 +184,14 @@ class StructParsingTest {
 	}
 
 	@Test
-	fun `functions in structs are rejected and other typedef kinds remain unsupported`() {
+	fun `functions in structs and unsupported state declarations are rejected`() {
 		for (visibility in listOf("", "pub ")) {
 			val failure = assertFailsWith<SyntaxException> { parse("typedef<struct> S { ${visibility}fn forbidden() {} }") }
 			assertEquals(DiagnosticCode.FUNCTION_IN_TYPE, failure.diagnosticCode)
 			assertEquals("fn", textAt(failure.sourceLabels.single().span))
 			assertContains(assertNotNull(failure.guidance), "mt")
 		}
-		for (kind in listOf("interface", "state")) {
-			val failure = assertFailsWith<SyntaxException> { parse("pub typedef<$kind> S {}") }
-			assertEquals(kind, textAt(failure.sourceLabels.single().span))
-		}
+		val failure = assertFailsWith<SyntaxException> { parse("pub typedef<state> S {}") }
+		assertEquals("state", textAt(failure.sourceLabels.single().span))
 	}
 }

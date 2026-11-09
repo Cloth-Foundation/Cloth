@@ -6,6 +6,12 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
 
 ## Value and storage rules
 
+[Generic Stage 4](../../cloth-generics/references/stage-4.md) applies these rules
+to closed classes/structs, including private generic slot arrays. Destruction
+releases each container's recursive field buffers while class-valued elements
+retain caller-managed identity. Constructors, generic bases and destructor chains
+use the canonical closed owner and its source-linked callable view.
+
 - Functions, ordered results, nullable values, arrays, structs, and foreach
   snapshots carry class identity. Array and struct copies retain independent
   storage for their own contents. A copy of a class-valued element refers to
@@ -19,7 +25,24 @@ each instance ownership of the buffers in its fields. [Object lifetime](semantic
   [Growable arrays Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md)
   routes array field copies through typed owned capacity and live element arenas,
   including unsized array fields inside stored structs. Existing nested buffered
-  writes still repack the root field; efficient class-field growth remains later work.
+  writes still repack the root field.
+  [Stage 4](../../cloth-arrays/references/growable-arrays-stage-4.md) executes
+  one-dimensional field append/reserve directly through the existing owner,
+  preserving capacity and previous payloads without per-call repacking. Nested
+  class-backed paths still recheck saved identities, presence and bounds after
+  explicit argument effects. Ordinary field reads/exports remain independent.
+  [Stage 5](../../cloth-arrays/references/growable-arrays-stage-5.md) adds direct
+  field insert/removeAt/clear with slot-head shifts and reusable capacity. Removed
+  buffered values receive independent storage before field slot cleanup. Clearing
+  or removing class identities does not delete their objects.
+  [Stage 6](../../cloth-arrays/references/growable-arrays-stage-6.md) executes
+  whole-row rectangular field edits. Removed rows retain independent buffers and
+  parent shape witnesses after owner deletion; nullable field witnesses learned
+  by mutation survive null and aggregate copies.
+  The [final array audit](../../cloth-arrays/references/growable-arrays-stage-8.md)
+  retains direct mutator publication and independent field exports, including
+  source List methods. List clear/destruction releases value buffers while
+  class-valued elements still require their explicit deletion policy.
 - Array fields keep explicit extents and initialized inner dimensions. A nullable
   field first establishes inner dimensions when a present value is assigned and
   retains them across absence. [Growable arrays Stage 1](../../cloth-arrays/references/growable-arrays-stage-1.md)

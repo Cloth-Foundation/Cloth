@@ -6,6 +6,7 @@ import cloth.data.CClass
 import cloth.data.CEnum
 import cloth.data.ClassField
 import cloth.data.EnumField
+import cloth.data.sameDeclaration
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
@@ -17,6 +18,10 @@ import cloth.semantic.forStepperExpression
 import cloth.semantic.placeRoot
 import cloth.semantic.storedRoot
 import cloth.semantic.symbols.*
+import cloth.semantic.generics.GenericAnalyzer
+import cloth.semantic.generics.ClosedTypeAnalyzer
+import cloth.semantic.generics.GenericBodyViews
+import cloth.semantic.generics.GenericSemanticAnalysis
 import cloth.semantic.typing.ArgumentBinder
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
@@ -35,29 +40,40 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 	internal fun analyze(graph: SourceGraph): DeclarationModel = analyze(FileBindings.graph(graph))
 
 	internal fun analyze(files: FileBindings): DeclarationModel {
-		val types = NamedTypes(files, target)
-		val structs = types.resolveStructs()
-		types.resolveClassFields()
-		types.resolveEnumFields()
-		val nominal: (TypeReference) -> cloth.data.CMemberType? = { types.nominal(it.name) }
-		val classes = types.classes.associateWith { owner -> classDefinition(owner, nominal) }
+		val genericNames = GenericAnalyzer(target).analyze(files)
+		genericNames.requireInterfaceSemantics()
+		if (genericNames.requiresGenericCompilation) return GenericSemanticAnalysis(target).declarations(files, genericNames)
+		return prepared(files)
+	}
+
+	internal fun prepared(files: FileBindings, views: GenericBodyViews? = null): DeclarationModel {
+		val types = if (views == null) NamedTypes(files, target) else null
+		val structs = views?.types?.nominalTypes?.filterIsInstance<cloth.data.CStruct>() ?: types!!.resolveStructs()
+		types?.resolveClassFields()
+		types?.resolveEnumFields()
+		val classTypes = views?.types?.nominalTypes?.filterIsInstance<CClass>() ?: types!!.classes
+		val enumTypes = views?.types?.nominalTypes?.filterIsInstance<CEnum>() ?: types!!.enums
+		val nominal: (TypeReference) -> cloth.data.CMemberType? = { views?.resolvedTypes?.get(it) as? cloth.data.CMemberType ?: files.nominal(it.name) }
+		val classes = classTypes.associateWith { owner -> classDefinition(owner, nominal, views) }
 		val functions = files.files.flatMap { it.functions }
+		if (views != null) functions.forEach { it.signatureResolver = views::signatureType }
 		for (file in files.files) {
 			val signatures = linkedMapOf<FunctionSignature, FunctionSymbol>()
 			for (function in file.functions) {
 				signatures.putIfAbsent(function.signature, function)?.let { throw SemanticErrors.duplicateFunction(function.signature.spelling, it.name, function.name) }
 			}
 		}
-		val enumNames = types.enums.associateWith(EnumModel::nameReader)
-		val enumMembers = types.enums.map { owner ->
+		val enumNames = enumTypes.associateWith(EnumModel::nameReader)
+		val enumMembers = enumTypes.map { owner ->
 			owner to (owner.declaration.operators + owner.fields.map { it.reader } + enumNames.getValue(owner))
 		}
-		val methods = (structs.map { it to it.declaration.methods } + types.classes.map { it to it.declaration.members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
+		val methods = (structs.map { it to ((views?.declarationOf(it) as? StructDeclaration) ?: it.declaration).methods } + classTypes.map { it to ((views?.declarationOf(it) as? ClassDeclaration) ?: it.declaration).members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
 			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean, Pair<SignatureType, Boolean>?>, MethodSymbol>()
 			members.map { declaration ->
 				OperatorRules.validate(declaration, owner)
 				val method = MethodSymbol(declaration, owner, nominal = nominal)
-				val selector = declaration.operator?.selector?.let { SignatureType.of(it, nominal(it)) to it.capturesWidth }
+				if (views != null) method.signatureResolver = views::signatureType
+				val selector = declaration.operator?.selector?.let { (views?.signatureType(it) ?: SignatureType.of(it, nominal(it))) to it.capturesWidth }
 				val key = Triple(method.signature, declaration.operator?.rightReceiver == true, selector)
 				methodSignatures.putIfAbsent(key, method)?.let {
 					throw SemanticErrors.duplicateMethod(owner.name, method.signature.spelling, it.name, method.name)
@@ -65,7 +81,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				method
 			}
 		}
-		val model = DeclarationModel(files, functions, target, structs, methods, classes, types.root, types.enums, enumNames)
+		val model = DeclarationModel(files, functions, target, structs, methods, classes, files.objectRoot, enumTypes, enumNames, views)
 		for (callable in model.callables) {
 			val scope = LexicalScope(model.fileScopeOf(callable.name))
 			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable
@@ -93,7 +109,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			when (val declaration = callable.declaration) {
 				is PrimaryConstructorDeclaration -> {
 					val definition = model.classDefinitions.getValue(model.classOwners.getValue(declaration))
-					declaration.owner.base?.let { base ->
+					definition.baseCall?.let { base ->
 						val resolver = BodyResolver(model, null, preInitialization = true, classOwner = definition.owner)
 						ArgumentBinder.validate(base.suppliedArguments)
 						base.arguments.forEach { resolver.expression(it, scope) }
@@ -123,22 +139,27 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		return model
 	}
 
-	private fun classDefinition(owner: CClass, nominal: (TypeReference) -> cloth.data.CMemberType?): ClassDefinition {
-		val primary = ConstructorSymbol(PrimaryConstructorDeclaration(owner.declaration), owner, nominal)
+	private fun classDefinition(owner: CClass, nominal: (TypeReference) -> cloth.data.CMemberType?, views: GenericBodyViews?): ClassDefinition {
+		val declaration = (views?.declarationOf(owner) as? ClassDeclaration) ?: owner.declaration
+		val primary = ConstructorSymbol(PrimaryConstructorDeclaration(declaration), owner, nominal).also { if (views != null) it.signatureResolver = views::signatureType }
 		val signatures = mutableMapOf(primary.signature to primary)
-		val secondary = owner.declaration.members.filterIsInstance<ConstructorDeclaration>().map { declaration ->
+		val secondary = declaration.members.filterIsInstance<ConstructorDeclaration>().map { declaration ->
 			ConstructorSymbol(declaration, owner, nominal).also { constructor ->
+				if (views != null) constructor.signatureResolver = views::signatureType
 				signatures.putIfAbsent(constructor.signature, constructor)?.let {
 					throw SemanticErrors.classMember("Constructor '${constructor.signature.spelling}' is already declared", constructor.name.span, it.name)
 				}
 			}
 		}
-		val destructors = owner.declaration.members.filterIsInstance<DestructorDeclaration>()
+		val destructors = declaration.members.filterIsInstance<DestructorDeclaration>()
 		if (destructors.size > 1) throw SemanticErrors.classMember("A class can declare only one destructor", destructors[1].name.span, destructors[0].name)
-		val initializers = owner.declaration.members.filterIsInstance<ClassFieldDeclaration>().map { member ->
+		val initializers = declaration.members.filterIsInstance<ClassFieldDeclaration>().map { member ->
 			ClassFieldInitializer(checkNotNull(owner.field(member.name.lexeme)), member.initializer)
 		}
-		return ClassDefinition(owner, primary, secondary, destructors.singleOrNull()?.let { DestructorSymbol(it, owner) }, initializers)
+		val baseCall = declaration.parents.singleOrNull()?.let { parent ->
+			ConstructorDelegation(parent.type.name, parent.constructorArguments.orEmpty(), parent.span, parent.type)
+		}
+		return ClassDefinition(owner, primary, secondary, destructors.singleOrNull()?.let { DestructorSymbol(it, owner) }, initializers, baseCall)
 	}
 
 	private class BodyResolver(
@@ -165,7 +186,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		private fun receiverField(self: ReceiverSymbol?, name: Token): ReceiverFieldSymbol? {
 			val field = self?.field(name.lexeme) ?: return null
 			val classField = field.field as? ClassField
-			if (classField != null && classField.owner != classOwner && classField.visibility == null) throw SemanticErrors.privateClassMember(name, classField.name)
+			if (classField != null && !classField.owner.sameDeclaration(classOwner) && classField.visibility == null) throw SemanticErrors.privateClassMember(name, classField.name)
 			if (initializingField != null && classField?.owner == initializingField.owner && field.field.index >= initializingField.index) {
 				throw SemanticErrors.partialClassInstance("Field '${name.lexeme}' has not been initialized", name.span)
 			}
@@ -365,7 +386,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is TypeReceiverExpression                                                                                            -> Unit
 				is ProviderAccessExpression                                                                                          -> {
 					val receiver = expression.receiver
-					val type = if (receiver is NameExpression) {
+					val type = (receiver as? NameExpression)?.let { model.genericViews?.receivers?.get(it) } ?: if (receiver is NameExpression) {
 						val symbol = lexical(receiver.name, scope)
 						val member = if (symbol == null) receiverField(this.receiver, receiver.name) else null
 						if (symbol !is BindingSymbol && member == null) model.namedType(receiver.name) else null
@@ -393,7 +414,12 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is ClassCreationExpression                                                                                           -> {
 					val receiver = expression.receiver as? NameExpression
 					if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
-					val definition = (receiver?.let { model.namedType(it.name) } as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
+					val type = when (val target = expression.receiver) {
+						is NameExpression -> model.genericViews?.receivers?.get(target) ?: model.namedType(target.name)
+						is TypeReceiverExpression -> model.typeResolver().resolve(target.annotation)
+						else -> null
+					}
+					val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
 					model.classCreations[expression] = definition
 					ArgumentBinder.validate(expression.suppliedArguments)
 					expression.arguments.forEach { expression(it, scope) }
@@ -463,7 +489,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					val target = expression.target
 					val name = target.name
 					val bare = name.type == TokenType.Identifier && !target.hasNullability && target.width == null && !target.unsigned
-					val value = if (bare && model.namedType(name) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
+					val value = if (bare && model.genericViews?.resolvedTypes?.containsKey(target) != true && model.namedType(name) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
 					if (value is BindingSymbol) {
 						val check = BinaryExpression(expression.operand, expression.operator, NameExpression(name))
 						expression(check, scope)

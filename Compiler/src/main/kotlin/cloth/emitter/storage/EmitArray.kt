@@ -97,10 +97,13 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		return reference
 	}
 
-	/** Descriptors can predate a later row write. Merge their inline witnesses with
-	 * the live shared constraints without publishing into a borrowed value.
+	/** Descriptors can predate a later row write. Merge their inner witnesses with
+	 * live shared constraints without publishing into a borrowed value. The
+	 * descriptor owns its outer count: an older selected value can share retained
+	 * binding constraints with a replacement of a different outer length. Explicit
+	 * share/constrain still check every dimension of an embedded row.
 	 */
-	fun current(value: LLVMValueRef, type: CArray, binding: Boolean = false): LLVMValueRef = if (!type.hasNullableRows) value else mergeShape(value, shapeReference(value, type, shapePointer(value, type)), type, rectangularShapeError, binding)
+	fun current(value: LLVMValueRef, type: CArray): LLVMValueRef = if (!type.hasNullableRows) value else mergeShape(value, shapeReference(value, type, shapePointer(value, type)), type, rectangularShapeError, binding = true)
 
 	/** Attach an owned subtree to its receiving value's shared constraints. Never
 	 * use this on borrowed storage: copies need independent shape cells as well as data.
@@ -123,6 +126,28 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 
 	fun readChild(value: LLVMValueRef, parent: LLVMValueRef, parentType: CArray): LLVMValueRef = mapRow(value, parentType.element) { child, type ->
 		constrain(child, type, RetainedArrayShape(childShape(child, current(parent, parentType), type)))
+	}
+
+	/** Check an incoming whole row before allocation, and carry newly established
+	 * extents in the receiving descriptor. Absent rows establish no dimensions.
+	 * Publication into owned shared constraints happens only at the storage edit.
+	 */
+	fun withElementShape(value: LLVMValueRef, element: LLVMValueRef, type: CArray): LLVMValueRef {
+		val actual = current(value, type)
+		val row = row(type.element) ?: return actual
+		fun match(child: LLVMValueRef): LLVMValueRef {
+			val incoming = current(child, row)
+			var reference = actual
+			for (dimension in row.arrayDimensions.indices) {
+				val raw = LLVMBuildExtractValue(builder, incoming, dimension + 1, "incoming_row_extent")
+				reference = LLVMBuildInsertValue(builder, reference, if (dimension == 0) inner(raw) else raw, dimension + 2, "incoming_shape")
+			}
+			return mergeShape(actual, reference, type, rectangularShapeError, binding = true)
+		}
+		return if (type.element is CNullable) {
+			val nullable = EmitNullable(context, builder, target)
+			checkNotNull(nullable.choose(nullable.present(element), types.value(type), { match(nullable.payload(element)) }, { actual }))
+		} else match(element)
 	}
 
 	fun shareChild(value: LLVMValueRef, parent: LLVMValueRef, parentType: CArray): LLVMValueRef = mapRow(value, parentType.element) { child, type ->
@@ -200,7 +225,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		val actual = current(value, type)
 		if (retained != null) {
 			val reference = when (retained.storage) {
-				RetainedArrayShape.Storage.LIVE    -> current(retained.value, type, retained.binding)
+				RetainedArrayShape.Storage.LIVE    -> current(retained.value, type)
 				RetainedArrayShape.Storage.WITNESS -> retained.value
 			}
 			return mergeShape(actual, reference, type, message, retained.binding)
@@ -274,15 +299,26 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	}
 
 	fun checkedAddress(array: LLVMValueRef, element: ValueType, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
+		val checked = validateIndex(array, index, indexType)
+		return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, checked)
+	}
+
+	/** Validate the selected value's original bound without retaining an interior address. */
+	fun validateIndex(array: LLVMValueRef, index: LLVMValueRef, indexType: ValueType): LLVMValueRef {
 		if (indexType is CInteger && indexType.bits > 64) {
 			val wide = EmitWideInteger(context, builder, abi)
+			val stack = EmitStackScope(context, builder)
+			val checkpoint = stack.save()
 			val length = LLVMBuildExtractValue(builder, array, 1, "array_length")
 			val bound = wide.integerCast(length, CUSize(target.sizeBits), CInt(indexType.bits, true))
 			val below = LLVMBuildICmp(builder, LLVMIntSLT, wide.comparison(index, bound, indexType.bits, false), LLVMConstInt(LLVMInt32TypeInContext(context), 0, 0), "array_wide_in_bounds")
 			// Negative two's-complement inputs are above every target-sized bound.
 			memory.guard(below, "Array index out of bounds")
-			val narrowed = wide.loadScalar(index, CUSize(target.sizeBits))
-			return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, narrowed)
+			val checked = wide.loadScalar(index, CUSize(target.sizeBits))
+			// Only the native scalar crosses this local scratch checkpoint. This
+			// also bounds repeated original/current checks around a mutating index.
+			stack.restore(checkpoint)
+			return checked
 		}
 		// Compare in the original operand's range before any narrowing for addressing.
 		val width = maxOf(indexType.bits, target.sizeBits)
@@ -300,7 +336,7 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 		LLVMPositionBuilderAtEnd(builder, invalid)
 		EmitRuntimeError(context, builder, abi).emit("Array index out of bounds")
 		LLVMPositionBuilderAtEnd(builder, ok)
-		return address(LLVMBuildExtractValue(builder, array, 0, "array_pointer"), element, memory.resize(converted))
+		return memory.resize(converted)
 	}
 
 	/** Narrow only after checkedAddress has validated every original index bit. */

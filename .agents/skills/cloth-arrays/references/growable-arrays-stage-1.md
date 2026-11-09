@@ -1,7 +1,12 @@
 # Growable arrays Stage 1: types, receivers and effects
 
 Status: Stage 1 complete. [Stage 2](growable-arrays-stage-2.md) supersedes the
-storage boundary described below; Stages 3-8 remain unimplemented. This record
+storage boundary described below. [Stage 3](growable-arrays-stage-3.md) adds the
+supported source append/reserve slice; [Stage 4](growable-arrays-stage-4.md) adds
+stored field growth and cross-method selection observations.
+[Stage 5](growable-arrays-stage-5.md) executes the remaining one-dimensional
+mutators and independent removed results. [Stage 6](growable-arrays-stage-6.md)
+executes rectangular mutators and value integrations. This record
 preserves Stage 1's implementation and verification snapshot.
 Implemented 2026-11-07 against the current working tree. The
 [confirmed contract](growable-arrays.md) owns intended semantics and the

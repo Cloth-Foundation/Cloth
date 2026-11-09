@@ -1,5 +1,3 @@
-mod my.module
-
 // Module-level C declarations
 interop<C> {
     """
@@ -28,8 +26,7 @@ pub typedef<class> Entity<T: Entity<T>> (def<float> health) : IHealth<float> {
         }
     }
 
-    @Override
-    pub mt<float> getHealth () {
+    override: pub mt<float> getHealth () {
         return self.health
     }
 

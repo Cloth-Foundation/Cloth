@@ -1,6 +1,12 @@
 # Growable arrays Stage 2: owned capacity and typed relocation
 
-Status: Stage 2 complete (2026-11-07). Stages 3-8 remain unimplemented.
+Status: Stage 2 complete (2026-11-07). [Stage 3](growable-arrays-stage-3.md) adds
+source append/reserve. [Stage 4](growable-arrays-stage-4.md) adds stored field
+growth and enlarges private owner controls with scoped observations.
+[Stage 5](growable-arrays-stage-5.md) adds source insertion/removal/clear and
+destructive selection checks. [Stage 6](growable-arrays-stage-6.md) adds rectangular
+mutation and retained witnesses through all public edits. This record preserves the
+Stage 2 storage and verification snapshot.
 The [confirmed contract](growable-arrays.md) and [implementation plan](../../../../todo/growable-arrays-and-lists-plan.md)
 own the language decisions and stage boundaries.
 

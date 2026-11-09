@@ -2,6 +2,7 @@ package cloth.semantic.declarations
 
 import cloth.data.*
 import cloth.diagnostics.SemanticErrors
+import cloth.diagnostics.GenericErrors
 import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
 import cloth.target.TargetLayout
@@ -9,9 +10,11 @@ import cloth.token.Keywords
 import cloth.token.Token
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }, private val contextualNamedType: ((Token) -> CMemberType?)? = null) {
+internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }, private val contextualNamedType: ((Token) -> CMemberType?)? = null, private val substitutedType: ((TypeReference) -> ValueType?)? = null, private val resolvedType: ((TypeReference) -> ValueType?)? = null) {
 
 	fun resolve(annotation: TypeReference): ValueType {
+		resolvedType?.invoke(annotation)?.let { return it }
+		if (substitutedType == null) annotation.application?.let { throw GenericErrors.compilation(it.span) }
 		val name = annotation.name.lexeme
 		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'${Keywords.VOID}' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
@@ -39,11 +42,12 @@ internal class TypeResolver(val target: TargetLayout, private val operatorWidth:
 				Keywords.STRING.toString()    -> ValueType.STRING
 				Keywords.TYPEINFO.toString()  -> ValueType.TYPEINFO
 				Keywords.VOID.toString()      -> ValueType.VOID
-				else                          -> (if (contextualNamedType != null) contextualNamedType.invoke(annotation.name) else namedType(name)) ?: throw SemanticErrors.type(annotation)
+				else                          -> (if (substitutedType != null) substitutedType.invoke(annotation) else if (contextualNamedType != null) contextualNamedType.invoke(annotation.name) else namedType(name)) ?: throw SemanticErrors.type(annotation)
 			}
 		}
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)
-		val scalar = if (annotation.nullable != null) CNullable(base) else base
+		// A nullable actual parameter already supplies the presence carrier for T?.
+		val scalar = if (annotation.nullable != null && base !is CNullable) CNullable(base) else base
 		// Dimensions retain C order; nullable wrappers compose in C# suffix order.
 		return annotation.arraySuffixes.indices.reversed().fold(scalar) { element, index ->
 			val token = annotation.arraySizes.getOrNull(index)

@@ -1,0 +1,28 @@
+pub typedef<class> Words (def<string[]> items ?: []) {
+    pub mt add(string value) { items.append(value) }
+    pub mt insert(usize index, string value) { items.insert(index, value) }
+    pub mt<string> removeAt(usize index) = items.removeAt(index)
+    pub mt clear() { items.clear() }
+    pub mt reserve(usize minimum) { items.reserve(minimum) }
+    pub mt<string[]> snapshot() = items
+}
+
+fn<int> main() {
+    def words := Words::new
+    def alias = words
+    words.reserve(8)
+    words.add("first")
+    alias.add("second")
+    words.insert(1, "middle")
+    def removed = alias.removeAt(0)
+    def saved = words.snapshot()
+    alias.clear()
+    words.add("after")
+    def current = words.snapshot()
+    words::delete
+
+    println(removed)
+    println(saved)
+    println(current)
+    return 0
+}

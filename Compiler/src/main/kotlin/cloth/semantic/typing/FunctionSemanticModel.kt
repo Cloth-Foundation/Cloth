@@ -28,7 +28,7 @@ class FunctionSemanticModel internal constructor(
 ) {
 
 	val target get() = declarations.target
-	val types = SemanticModel(TypeResolver(target, operatorWidth, contextualNamedType = declarations::namedType))
+	val types = SemanticModel(declarations.typeResolver(operatorWidth))
 	private val callables = CallableFacts()
 	private val facts = FactCopies<FunctionSemanticModel>()
 	internal val bindings: MutableMap<BindingSymbol, ValueType> = facts.identityMap { it.bindings }

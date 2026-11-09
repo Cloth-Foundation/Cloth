@@ -14,14 +14,17 @@ import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for resolved binding symbols in the current function. */
-internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val abi: NativeCABI, private val classes: EmitClassStorage? = null, private val receivers: EmitReceiverAccess? = null, private val frame: EmitFunctionFrame? = null, val managedStrings: Set<BindingSymbol> = emptySet()) {
+internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val abi: NativeCABI, private val classes: EmitClassStorage? = null, private val receivers: EmitReceiverAccess? = null, private val frame: EmitFunctionFrame? = null, val managedStrings: Set<BindingSymbol> = emptySet(), val relocatableArrays: Boolean = false) {
 	private val target = abi.layout
 
-	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val initialShape: LLVMValueRef?, val nullableShape: LLVMValueRef?, val ownerArena: LLVMValueRef? = null, val receiver: ReceiverLocation? = null, val stringArena: LLVMValueRef? = null, val struct: StructParent? = null)
+	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val nullableShape: LLVMValueRef?, val ownerArena: LLVMValueRef? = null, val receiver: ReceiverLocation? = null, val stringArena: LLVMValueRef? = null, val struct: StructParent? = null)
 
 	private val bindings = mutableMapOf<BindingSymbol, Storage>()
 	private val objects = mutableMapOf<ReceiverSymbol, ObjectAccess>()
 	private val structReceivers = mutableMapOf<ReceiverSymbol, ReceiverAccess>()
+	internal open class ArrayView(val type: ValueType, val address: LLVMValueRef, val arena: LLVMValueRef)
+	internal class ArraySelection(val root: BindingSymbol, type: ValueType, address: LLVMValueRef, arena: LLVMValueRef, val followsBinding: LLVMValueRef) : ArrayView(type, address, arena)
+	private val arraySelections = mutableListOf<ArraySelection>()
 	private val types = LLVMTypes(context, target)
 	private val nullable = EmitNullable(context, builder, target)
 	private val stored = EmitStoredValue(context, builder, target)
@@ -43,7 +46,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		val shape = if (type is CNullable && type.payload is CArray) allocate(type, "${name}_shape").also { LLVMBuildStore(builder, nullable.store(value, type), it) } else null
 		// Shape storage is independent of presence in the mutable value slot.
 		val arena = if (managesString(key, type)) checkNotNull(frame).storedArena() else null
-		bindings[key] = Storage(name, type, address, value.takeIf { type is CArray }, shape, stringArena = arena)
+		bindings[key] = Storage(name, type, address, shape, stringArena = arena)
 		assign(key, value)
 	}
 
@@ -51,7 +54,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	fun ownsString(key: BindingSymbol): Boolean = bindings[key]?.stringArena != null
 
 	fun bindReceiver(receiver: ReceiverSymbol, access: ReceiverAccess) {
-		bindings[receiver] = Storage(receiver.name.lexeme, receiver.owner, access.address, null, null, access.arena)
+		bindings[receiver] = Storage(receiver.name.lexeme, receiver.owner, access.address, null, access.arena)
 		if (access.resolver != null) structReceivers[receiver] = access
 	}
 
@@ -82,13 +85,13 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		val field = key.field
 		if (field is ClassField) {
 			val address = checkNotNull(classes).locate(builder, objects.getValue(key.receiver), field).address
-			return Storage(key.name.lexeme, field.type, address, null, null)
+			return Storage(key.name.lexeme, field.type, address, null)
 		}
 		val receiver = storage(key.receiver)
 		val owner = key.receiver.owner as CStruct
 		val member = key.field as StructField
 		val address = stored.fieldAddress(receiver.address, owner, member)
-		return Storage(key.name.lexeme, member.type, address, null, null, receiver.ownerArena, receiver.receiver, struct = StructParent(receiver.address, owner, member))
+		return Storage(key.name.lexeme, member.type, address, null, receiver.ownerArena, receiver.receiver, struct = StructParent(receiver.address, owner, member))
 	}
 
 	fun ownerArena(key: BindingSymbol): LLVMValueRef? {
@@ -113,8 +116,59 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		LLVMBuildStore(builder, nullable.store(value, type), checkNotNull(bindings.getValue(key).nullableShape))
 	}
 
-	fun initialArrayShape(key: BindingSymbol): LLVMValueRef = checkNotNull(bindings.getValue(key).initialShape)
+	// The live descriptor includes extents established after an initially empty value.
+	fun bindingArrayShape(key: BindingSymbol): LLVMValueRef = read(key)
 	fun address(key: BindingSymbol): LLVMValueRef = storage(key).address
+
+	/** A stored place follows movement of its selected value, but a whole-binding
+	 * replacement ends that association. These are compiler views, never value copies.
+	 */
+	fun observeArray(key: BindingSymbol): ArraySelection? {
+		if (!relocatableArrays || key is ReceiverSymbol || key is ReceiverFieldSymbol) return null
+		val binding = storage(key)
+		val array = ((binding.type as? CNullable)?.payload ?: binding.type) as? CArray ?: return null
+		if (array.size != null) return null
+		val address = allocate(binding.type, "selected_array")
+		val active = allocate(ValueType.BOOL, "selected_array_follows_binding")
+		stored.store(address, read(key), binding.type)
+		stored.store(active, LLVMConstInt(ValueType.BOOL.llvmValue(context, target), 1, 0), ValueType.BOOL)
+		val arena = checkNotNull(frame).storedArena()
+		val value = stored.load(address, binding.type)
+		val payload = if (binding.type is CNullable) nullable.payload(value) else value
+		val view = if (binding.type is CNullable) stored.payloadAddress(address, binding.type) else address
+		frame.observeArray(arena, payload, array, view)
+		return ArraySelection(key, binding.type, address, arena, active).also(arraySelections::add)
+	}
+
+	fun observeValue(value: LLVMValueRef, type: CArray): ArrayView? {
+		// Even fixed/rectangular child storage can be destroyed by removing its
+		// containing element from an independently growable outer collection.
+		if (!relocatableArrays) return null
+		val address = allocate(type, "selected_array_value")
+		stored.store(address, value, type)
+		val arena = checkNotNull(frame).storedArena()
+		frame.observeArray(arena, value, type, address)
+		return ArrayView(type, address, arena)
+	}
+
+	fun endSelection(selection: ArrayView?) {
+		if (selection == null) return
+		if (selection is ArraySelection) check(arraySelections.remove(selection))
+		val terminator = LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(builder))
+		if (terminator == null || terminator.isNull) checkNotNull(frame).releaseStored(selection.arena)
+	}
+
+	fun publishArrayMutation(key: BindingSymbol, value: LLVMValueRef) {
+		val binding = storage(key)
+		stored.store(binding.address, value, binding.type)
+		if (binding.nullableShape != null && binding.type is CNullable) saveNullableArrayShape(key, value, binding.type)
+		binding.struct?.let { EmitStructFields(context, builder, abi).remember(it, value) }
+		for (selection in arraySelections.filter { it.root === key }) {
+			nullable.choose(stored.load(selection.followsBinding, ValueType.BOOL), null, {
+				stored.store(selection.address, value, selection.type); null
+			}, { null })
+		}
+	}
 
 	fun read(key: BindingSymbol): LLVMValueRef {
 		if (key is ReceiverSymbol) objects[key]?.let { return it.identity }
@@ -123,6 +177,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	}
 
 	fun assign(key: BindingSymbol, value: LLVMValueRef) {
+		for (selection in arraySelections.filter { it.root === key }) stored.store(selection.followsBinding, LLVMConstNull(ValueType.BOOL.llvmValue(context, target)), ValueType.BOOL)
 		if (key is ReceiverFieldSymbol && key.field is ClassField) {
 			checkNotNull(classes).replace(builder, objects.getValue(key.receiver), key.field, value)
 			return

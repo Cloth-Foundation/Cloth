@@ -128,6 +128,7 @@ captures implementation scope and regression evidence.
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
+| Interface declarations, generic name binding, conformance and dispatch planning | [cloth-interfaces](../cloth-interfaces/SKILL.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
 | Optional semicolons and valid terminator placement | [cloth-semicolons](../cloth-semicolons/SKILL.md) |
@@ -141,7 +142,10 @@ captures implementation scope and regression evidence.
 | Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
-| Arrays, inference, rectangular and fixed shapes, indexing | [cloth-arrays](../cloth-arrays/SKILL.md) |
+| Arrays, fixed/growable shapes, indexing, typed mutations and independent values | [cloth-arrays](../cloth-arrays/SKILL.md) |
+| Generic class/struct checking and native values/storage/metadata; List source integration | [cloth-generics](../cloth-generics/SKILL.md) |
+| Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
+| Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Concatenation arenas, replaceable string owners, safe reads/stores and bounded prefix storage | [string storage](../cloth-buffer-lifetimes/references/string-concatenation-storage.md) |
 | String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |
@@ -167,6 +171,14 @@ captures implementation scope and regression evidence.
 
 ## Existing and deferred design records
 
+- Interface Stage 1 parses non-generic and explicit generic interfaces, default
+  methods, parent lists and the class `override:` prefix. Imported names keep
+  their original identities. C4035 gates conformance and execution. Constraints
+  and struct or enum implementers have separate follow-ups.
+  [Stage 1](../cloth-interfaces/references/stage-1.md) · [Interface skill](../cloth-interfaces/SKILL.md) ·
+  [Design record](../cloth-interfaces/references/design.md) ·
+  [Implementation plan](../../../todo/interfaces-plan.md)
+
 - Growable arrays and array-backed lists: Stage 0 confirms the
   [language contract](../cloth-arrays/references/growable-arrays.md), including
   explicit growable `T[]`, fixed literal inference, binding-only immutability,
@@ -179,10 +191,53 @@ captures implementation scope and regression evidence.
   and native whole-array reception with different outer counts.
   [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) adds owned
   capacity, private typed relocation/release and executable unsized struct
-  array fields with retained nullable witnesses. Public mutators retain C4032.
-  The [plan](../../../todo/growable-arrays-and-lists-plan.md) retains later
-  source execution work. Generic `List<T>` additionally requires generic-type
-  support. Use [cloth-arrays](../cloth-arrays/SKILL.md) for current scope.
+  array fields with retained nullable witnesses.
+  [Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes
+  one-dimensional local/parameter/temporary append and reserve with protected
+  operands and selected-place relocation.
+  [Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) executes stored
+  class/aggregate field growth without whole-field repacking and preserves scoped
+  selections across separately emitted methods.
+  [Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) executes insert,
+  removeAt and clear with owned shifts, independent removed values and reusable
+  capacity. [Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) executes
+  rectangular whole-row mutation, retaining witnesses through empty/all-null/null
+  states and preserving providers, output, producers, results and foreach snapshots.
+  Embedded-row shape changes remain C3107; the native rank restriction is removed.
+  [Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md) proves ordinary
+  private-array collection methods and independent struct-slot row elements.
+  The user confirmed different-length List array elements, independent copy and
+  checked rectangular array export. [Generic Stage 5](../cloth-generics/references/stage-5.md)
+  supplies the actual public List module and imported-library tests. Use
+  [cloth-collections](../cloth-collections/SKILL.md) for its API and lifetime rules.
+  [Stage 8](../cloth-arrays/references/growable-arrays-stage-8.md) owns the final
+  array audit, publication and portability evidence, including Linux x64 examples
+  alongside native Windows x64/x86 and all-nine-profile objects.
+  [Generic Stage 0](../cloth-generics/references/stage-0.md) confirms
+  explicit invariant arguments, owner parameter scope, declaration/instance checking,
+  nullable substitution, value arguments and private implementation signatures.
+  [Generic Stage 1](../cloth-generics/references/stage-1.md) implements class/struct
+  parameter syntax, nested applications and lexical/imported name identities.
+  [Generic Stage 2](../cloth-generics/references/stage-2.md) adds target-scoped
+  closed identities, fields/base links/declared signatures, nullable substitution
+  and bounded worklist instantiation.
+  [Generic Stage 3](../cloth-generics/references/stage-3.md) checks unknown-parameter
+  declarations and closed callable/flow facts using separate source-linked views,
+  including public signature privacy. [Generic Stage 4](../cloth-generics/references/stage-4.md)
+  executes closed layouts/callables, recursive storage and exact metadata through
+  the existing ABI. C4033 retains the symbolic/unresolved guard; C4034 bounds
+  canonical metadata expansion without truncating identity/text.
+  The [array plan](../../../todo/growable-arrays-and-lists-plan.md)
+  records the public delivery gate and its evidence. Bootstrap ownership migration
+  stays separate.
+  Use [cloth-arrays](../cloth-arrays/SKILL.md) for implemented behavior and
+  [cloth-generics](../cloth-generics/SKILL.md) for current generic scope and prerequisites.
+  [Generic Stage 6](../cloth-generics/references/stage-6.md) completes the first
+  slice's publication, native examples and caller audit. The interface release
+  plan owns the planned unconstrained generic interface work. Constraints,
+  generic functions, callable-owned parameters, inference and collection
+  protocols have separate follow-ups. [Interface plan](../../../todo/interfaces-plan.md) ·
+  [Generic follow-ups](../../../todo/generic-follow-ups.md)
 
 - Imports and Shuttle: Stage 0 publishes the
   [import contract](../cloth-imports/references/semantics.md),

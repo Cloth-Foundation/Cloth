@@ -29,7 +29,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presence.fields
 
 	override fun validateFieldAccess(field: InstanceField, name: Token) {
-		if (field is ClassField && field.visibility == null && field.owner != classOwner) throw SemanticErrors.privateClassMember(name, field.name)
+		if (field is ClassField && field.visibility == null && !field.owner.sameDeclaration(classOwner)) throw SemanticErrors.privateClassMember(name, field.name)
 		if (field is EnumField && field.declaration.visibility == null && field.owner != facts.declarations.enumOwners[function]) {
 			throw SemanticErrors.enumMember("Enum payload field '${name.lexeme}' is private", name.span)
 		}
@@ -170,8 +170,8 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 				checkWritablePayload(statement.target)
 				val instance = instancePlace(statement.target)
 				if (instance != null) model.instanceWrites[statement] = instance
-				else if (type != ValueType.NEVER && facts.declarations.storedRoot(statement.target) is ReceiverSymbol) {
-					storedPlace(statement.target)?.let { model.receiverElementWrites[statement] = it }
+				else if (type != ValueType.NEVER) {
+					storedPlace(statement.target)?.let { model.storedElementWrites[statement] = it }
 				}
 				val actual = typeOf(statement.value, type)
 				if (type != ValueType.NEVER && !compatible(actual, type)) reject { SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value.span) }
@@ -394,6 +394,6 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	}
 
 	private fun visibleMethods(group: MethodGroupSymbol, name: Token): List<MethodSymbol> = group.overloads.filter {
-		it.owner !is CClass || it.owner == classOwner || it.declaration.visibility != null
+		it.owner !is CClass || it.owner.sameDeclaration(classOwner) || it.declaration.visibility != null
 	}.ifEmpty { throw SemanticErrors.privateClassMember(name, group.name) }
 }

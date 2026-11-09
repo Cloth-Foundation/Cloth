@@ -5,6 +5,21 @@ description: Preserve Cloth compiler buffer lifetimes, recursive value copies, a
 
 # Cloth buffer lifetimes
 
+[Generic Stage 4](../cloth-generics/references/stage-4.md) executes closed generic
+classes/structs through the existing value transfer and arena paths. Private
+`ListSlot<T>[]` class fields preserve independent buffered values, typed slot
+relocation, wanted removed results and absent nullable witnesses across source
+deletion. Class elements copy identity without implicit deletion. Poisoned frees,
+constant-cost reserved append and 1,000 helper-frame cycles verify these paths;
+they do not expand the enclosing cleanup proof. Finalize struct fields before
+consuming their memoized buffered classification.
+
+[Generic Stage 5](../cloth-generics/references/stage-5.md) repeats those ownership
+checks against the actual imported public List file. StandardListStorageTest
+supplies a checked source-graph model to the existing harness; it never pastes
+the library body. Preserve complete slot copies, independent escaping results,
+explicit class identities and the unchanged enclosing cleanup proof.
+
 [Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
 separates binding shape constraints from rectangular row constraints. Only an
 unsized binding's outer count may change on whole replacement; retained inner
@@ -15,7 +30,45 @@ adds array-only capacity/owner fields, typed copies and private relocation/relea
 helpers, and executable unsized struct fields with pointer-free nullable witnesses.
 Relocation transfers live slot arenas and reparents their owners; ordinary copies
 remain independent. Existing unproven indexed writes retain superseded payloads
-in the enclosing owner. Public mutator lowering remains guarded by C4032.
+in the enclosing owner.
+[Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes local,
+parameter and temporary one-dimensional append/reserve. Capture every indirect
+operand, including wide/nullable/struct values, before movement. Release closed
+producer scratch after capture and the separate operand arena after publication.
+Mutators remain outside read-only and enclosing suffix proofs: growth can detach
+an older arena node. Selected indexed places and struct receivers rebase through
+private descriptor views; whole-binding replacement retains the selected old value.
+[Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) adds direct stored
+field append/reserve using the existing array owner, including moved child heads.
+It avoids whole-field repacking. Scoped selection observations update before old
+capacity is freed, including from separately emitted methods. Normal scope cleanup
+unregisters them; frame cleanup covers abrupt exits, and owner destruction clears
+their back-links first. They do not retain owners or authorize enclosing suffix
+cleanup.
+[Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) executes insert,
+removeAt and clear with overlap-safe inline shifts and slot-head transfer.
+Wanted removed values receive independent storage before slot release; direct
+discarded builtin results omit unused copies. Clear releases live payloads while
+retaining capacity. Destroyed children invalidate views of any rank/fixed extent,
+and later accesses recheck current live bounds. Wide result/index scratch has
+local stack checkpoints; these do not authorize an enclosing arena suffix release.
+Wanted snapshots and unproven indexed replacement retain normal frame lifetime.
+[Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) executes whole-row
+rectangular edits. Preflight incoming shape before growth, then publish constraints
+into owned vectors. Removed rows copy parent witnesses before slot release;
+nullable/aggregate witnesses survive null, frame exit and class deletion. Shared
+inner constraints cannot replace a selected descriptor's own outer count. The
+existing conservative suffix/snapshot boundaries remain unchanged.
+[Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md) proves ordinary
+array-backed collections. Struct-slot arrays preserve per-element array shape
+instead of one rectangular row constraint. Get/remove/export/copy receive
+independent value buffers; class elements still share identity and are not
+deleted by container clear/destruction. Both 1,000-cycle helper-frame probes
+return to reserved live bytes without expanding enclosing cleanup proofs.
+[Stage 8](../cloth-arrays/references/growable-arrays-stage-8.md) records final
+regression and Linux x64 execution as well as Windows x64/x86. Preserve these
+measured source-path bounds; they do not prove bounded storage for arbitrary
+captures, wanted snapshots or unproven indexed replacements.
 
 Read [string concatenation and rebinding storage](references/string-concatenation-storage.md)
 for the 2026-11-07 compiler fix: arena-backed concatenation, replaceable owned
@@ -73,6 +126,12 @@ member copy elision and proven arena/stack reclamation.
   live field before releasing the old chain. Class-backed receiver paths
   replay after source effects, and ordinary reads snapshot field values.
   [Class values](../cloth-language/references/class-values.md)
+
+- A proven immediate class array projection can consume the size or snapshot
+  the selected element without copying its backing array. Keep the borrowed
+  projection within that read and preserve the snapshot path for indices
+  that can execute user code.
+  [Immediate class array reads](../cloth-collections/references/linear-collections.md#immediate-class-array-reads)
 
 - [Struct Stage 3](../cloth-structs/references/local-storage.md) keeps aggregate
   storage inline and snapshots it before publishing an independent value. Patch

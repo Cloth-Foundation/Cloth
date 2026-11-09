@@ -37,7 +37,23 @@ annotations and inferred growable copies retain that type rather than capturing
 their current count as a fixed extent.
 [Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md) implements that
 typing and whole-array reception, including broadcast and positional results.
-Mutator signatures type-check, with native execution guarded by C4032.
+[Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes local and
+parameter append/reserve, including `:=`/`final`. Mutation publication updates
+selected place views; whole-binding assignment ends their association with the
+new binding value. Keep that distinction when extending reception or rebinding.
+[Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) extends append/reserve
+to class/struct fields and nested array-element fields, including final stored
+receivers. Scoped owner observations preserve selected versions across growth in
+separately emitted methods; whole replacement still receives an independent value.
+[Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) adds insert,
+removeAt and clear on those same one-dimensional receivers, including final
+bindings. Removed values copy independently before source slot release. Existing
+nullable receiving annotations and fixed receiving count checks still apply.
+[Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) extends every
+method to rectangular arrays. Whole replacement constrains against the current
+binding descriptor, including widths established by mutation after an empty
+initializer. Nullable retained state updates on publication and survives null;
+selected older values retain their own outer count across replacement.
 
 Stage 3 executes range headers with one existing assignment/update to their declared
 counter. The [loop contract](../cloth-control-flow/references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred)

@@ -1,5 +1,10 @@
 package shuttle
 
+import cloth.api.ClothCompiler
+import cloth.api.CompilationRequest
+import cloth.api.SourceModule
+import cloth.settings.OutputKind
+import cloth.toolchain.StandardLibrary
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import shuttle.packaging.prepareToolchainBundle
@@ -67,6 +72,54 @@ class ToolchainBundleTest {
 		assertFailsWith<IllegalArgumentException> { prepareToolchainBundle(root, root, "1") }
 		assertFailsWith<IllegalArgumentException> { prepareToolchainBundle(root, library, "1") }
 		assertTrue(Files.exists(library.resolve("cloth/Library.co")))
+	}
+
+	@Test fun `exporter packages the public collections and their pinned snapshot compiles through the public API`() {
+		val (root, library) = fixture()
+		val actual = Path.of("Standard-Library").toAbsolutePath()
+		val collections = listOf("List", "Deque", "Queue", "Stack").map { "cloth/collections/$it.co" }
+		for (relative in listOf("module.toml", "cloth/Library.co") + collections) {
+			Files.copy(actual.resolve(relative), library.resolve(relative), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+		val revision = commit(library)
+		pin(root, revision)
+		val output = root.resolve("build/public-list-bundle")
+		prepareToolchainBundle(root, output, "generic-list-test")
+		for (relative in collections) {
+			assertContentEquals(Files.readAllBytes(actual.resolve(relative)), Files.readAllBytes(output.resolve("stdlib").resolve(relative)))
+		}
+		assertFalse(Files.exists(output.resolve("stdlib/.git")))
+		val app = Files.createDirectory(root.resolve("app"))
+		val source = Files.writeString(app.resolve("Main.co"), """
+		    using cloth.collections.List : List
+		    using cloth.collections.Deque : Deque
+		    using cloth.collections.Queue : Queue
+		    using cloth.collections.Stack : Stack
+		    fn main() {
+		        def values = List<int[]>::new
+		        values.append([1]); values.append([2, 3])
+		        def copied = values.copy()
+		        values::delete; copied::delete
+
+		        def ends = Deque<int>::new
+		        ends.pushFront(1); ends.pushBack(2)
+		        println(ends.popBack())
+		        ends::delete
+		        def queue = Queue<string>::new
+		        queue.enqueue("first")
+		        println(queue.dequeue())
+		        queue::delete
+		        def stack = Stack<int>::new
+		        stack.push(3)
+		        println(stack.pop())
+		        stack::delete
+		    }
+		""".trimIndent())
+		val selected = StandardLibrary.fromContext(output.toString(), "installed")
+		val request = selected.attachTo(CompilationRequest(source, root.resolve("build/public-list.o"), listOf(SourceModule("App", app)), OutputKind.OBJECT, targetTriple = "aarch64-unknown-linux-gnu"))
+		val bytes = Files.readAllBytes(ClothCompiler.compile(request).artifact)
+		assertEquals(listOf(0x7f, 0x45, 0x4c, 0x46), bytes.take(4).map { it.toInt() and 255 })
+		assertEquals(0xb7, bytes[18].toInt() and 255)
 	}
 
 	private data class Fixture(val root: Path, val library: Path, val revision: String)

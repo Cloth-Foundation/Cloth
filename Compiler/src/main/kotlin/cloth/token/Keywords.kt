@@ -19,8 +19,10 @@ enum class Keywords(private val keyword: String? = null) { // This comment has t
 	CLASS,
 	STRUCT,
 	ENUM,
+	INTERFACE,
 
 	METHOD("mt"),
+	OVERRIDE,
 	OPERATOR,
 	AUTO,
 	FUNCTION("fn"),

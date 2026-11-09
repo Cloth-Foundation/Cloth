@@ -22,16 +22,16 @@ internal class NamedTypes(private val bindings: FileBindings, target: TargetLayo
 
 	init {
 		for (owner in classes) {
-			val clause = owner.declaration.base
-			val base = if (clause == null) root else bindings.nominal(clause.name) as? CClass ?: throw SemanticErrors.classMember("'${clause.name.lexeme}' is not a class base", clause.name.span)
-			if (base.declaration.finalKeyword != null) throw SemanticErrors.classMember("Cannot inherit from final class '${base.spelling}'", checkNotNull(clause).name.span, base.name)
-			if (base == root && clause?.arguments?.isNotEmpty() == true) throw SemanticErrors.classMember("'${root.spelling}' takes no base arguments", clause.span)
+			val clause = owner.declaration.parents.singleOrNull()
+			val base = if (clause == null) root else bindings.nominal(clause.type.name) as? CClass ?: throw SemanticErrors.classMember("'${clause.type.name.lexeme}' is not a class base", clause.type.name.span)
+			if (base.declaration.finalKeyword != null) throw SemanticErrors.classMember("Cannot inherit from final class '${base.spelling}'", checkNotNull(clause).type.name.span, base.name)
+			if (base == root && clause?.constructorArguments?.isNotEmpty() == true) throw SemanticErrors.classMember("'${root.spelling}' takes no base arguments", clause.span)
 			owner.base = base
 		}
 		for (owner in classes) {
 			val seen = mutableSetOf<CClass>()
 			for (base in owner.ancestry()) {
-				if (!seen.add(base)) throw SemanticErrors.classMember("Inheritance cycle involving '${base.spelling}'", checkNotNull(base.declaration.base).name.span)
+				if (!seen.add(base)) throw SemanticErrors.classMember("Inheritance cycle involving '${base.spelling}'", base.declaration.parents.single().type.name.span)
 			}
 		}
 	}

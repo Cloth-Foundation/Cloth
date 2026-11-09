@@ -8,6 +8,10 @@ no capacity field or native mutator execution is added in that stage.
 [Stage 2](growable-arrays-stage-2.md) appends array-only capacity/owner fields,
 introduces typed element arenas and executes unsized struct array fields with
 independent inline witnesses surviving absence. Public mutators remain gated.
+[Stage 6](growable-arrays-stage-6.md) executes whole-row append/insert/removeAt,
+clear and reserve, retaining witnesses through empty/all-null/absent states.
+Its current-descriptor and inner-only refresh rules supersede the original
+binding-vector details below where growth changes an outer count.
 
 The [confirmed row contract](semantics.md#nullable-rectangular-rows) is executable.
 C# marker placement composes nullable arrays at every level while Cloth retains
@@ -46,8 +50,9 @@ array equality remain unsupported.
   and retaining dimensions. Present row writes can establish unknown dimensions
   shared by all siblings, including through nested non-nullable arrays.
 - `EmitValueTransfer` snapshots replacement values before attaching them. Binding
-  replacements retain the original constraint vector; whole-array null assigns
-  retain the existing separate nullable binding shape state. Null row assignments
+  replacements retain current inner constraints; whole-array null assignments
+  retain separate nullable binding shape state, including extents learned by
+  mutation. Null row assignments
   skip payload/shape operations and never clear witnesses.
 - `EmitStringArena` delegates typed copies to `EmitArrayStorage`, which independently
   copies shape vectors into the destination

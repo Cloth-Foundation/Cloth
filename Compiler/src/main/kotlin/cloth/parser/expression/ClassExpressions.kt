@@ -2,6 +2,7 @@ package cloth.parser.expression
 
 import cloth.token.Token
 import cloth.token.TokenSpan
+import cloth.parser.type.TypeReference
 
 data class ClassCreationExpression(
 	val receiver: Expression,
@@ -22,6 +23,7 @@ data class ConstructorDelegation(
 	override val name: Token,
 	override val suppliedArguments: List<CallArgument>,
 	override val span: TokenSpan,
+	val type: TypeReference = TypeReference(name),
 ) : CallSite {
 
 	override val arguments: List<Expression> = suppliedArguments.map { it.expression }

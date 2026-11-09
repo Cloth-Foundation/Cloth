@@ -5,6 +5,22 @@ description: Extend or troubleshoot Cloth build and run commands, bundled standa
 
 # Cloth targets and toolchains
 
+[Generic Stage 4](../cloth-generics/references/stage-4.md) uses each compilation's
+selected layout for closed generic values and the existing private ABI. Windows
+x64/x86 execute its generic fixtures and ownership probes; all nine ABI profiles
+verify IR and emit objects. Foreign Windows ARM64, Linux and macOS evidence is
+IR/object-only. [Generic Stage 5](../cloth-generics/references/stage-5.md) adds the
+actual public List, command-selection tests and a byte-identical temporary pinned
+snapshot export proof. Working release preparation still needs clean/pinned
+submodule history; development selection accepts the edited checkout. This adds
+no public binary ABI.
+
+[Growable arrays Stage 8](../cloth-arrays/references/growable-arrays-stage-8.md)
+adds final Windows x64/x86 and GNU Linux x64 execution of the maintained array,
+concrete collection, imported List and Bootstrap examples. Linux objects include
+verified program startup and are linked with Ubuntu WSL's C driver. All nine
+profiles have verified IR/objects; other native runners remain unavailable.
+
 Read [build options](../../../README.md#building-and-linking) and inspect current
 settings before prescribing commands. The shared
 [portability requirement](../cloth-language/references/semantics.md#portability)
@@ -22,6 +38,12 @@ automatic attachment, explicit module roles and reserved-path diagnostics.
 `--no-stdlib`, shared validation, default bypass and command diagnostics. Preserve the documented
 Windows Unicode installation-path limit. Keep source-library selection separate
 from the existing `--runtime` C runtime option.
+
+The [Windows Unicode launcher plan](../../../todo/windows-unicode-launcher-plan.md)
+tracks the requested fix for both installed commands: Chinese/emoji installation
+paths, unchanged locale/cwd, preserved JVM context and actual installed-command
+tests. The native-host design is a candidate pending its startup proof; the
+current Windows limitation remains until implementation and host verification.
 
 [Stage 4 allocation boundary](references/standard-library-stage-4.md) records the
 user-selected owning-collection consumer and verifies existing typed class

@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth conditionals, boolean short circui
 
 # Cloth control flow
 
+[Generic Stage 3](../cloth-generics/references/stage-3.md) isolates each owner's
+body, loop identities, completion/presence/metadata and lifetime facts using
+source-linked views. Class checks and presence use substituted types rather than
+raw T spelling. Declaration and closed checks never share mutable flow facts.
+
 Numeric range membership in conditions uses `==` / `!=` in either operand order.
 Read the [numeric membership contract](../cloth-numerics/references/range-membership.md)
 for contextual widths, interval semantics, evaluation order and the shared
@@ -37,6 +42,32 @@ when extending execution. The [implementation plan](../../../todo/for-loops-plan
 maps the accepted contract to compiler stages and verification requirements.
 
 ## For loops: integrated range and foreach execution
+
+[Growable arrays Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md)
+executes one-dimensional append/reserve with separate operand owners. Those
+mutators still block enclosing temporary suffix proofs; captured publication
+keeps conservative lifetime. Foreach retains its independent initial snapshot
+while the original source grows. Extend cleanup only with the ownership proof.
+[Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) adds separate
+observation arenas for selections spanning field growth and source method calls.
+Normal completion unregisters them; frame cleanup handles returns, and static
+sites clear previous observations before reuse after deferred returns or loop
+jumps. This scoped cleanup does not expand the enclosing loop/suffix proof.
+[Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) executes removal
+and clear without changing an active foreach snapshot. Cleared/removed source
+payloads release through live slot heads; wanted results keep ordinary independent
+frame lifetime. Direct discarded builtins omit unused result copies. Wide load
+and bound scratch restore locally, while mutators remain barriers to enclosing
+arena-suffix cleanup. Invalidated child selections fail before later access.
+[Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) verifies rectangular
+foreach snapshots while the source appends, removes and clears. Traversal retains
+its original rows/count; each received growable row can mutate independently.
+Conditional, Elvis and deferred captures retain ordinary independent reception.
+[Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md) verifies foreach
+over a collection's independent array export while class aliases edit its source.
+Ordinary classes do not gain direct foreach through private array storage;
+get/size traversal works for independently sized rows. Generic types and a future
+collection traversal protocol remain separate requirements.
 
 Read [stage scope, source ownership and verification](references/for-implementation.md)
 before extending loops. Stages 1-4 implement syntax, scopes/types/repeated flow,

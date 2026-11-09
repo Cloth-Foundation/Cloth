@@ -1,0 +1,48 @@
+// Each struct slot holds an independent array; the outer storage is not a matrix.
+typedef<struct> RowSlot { int[] value }
+
+pub typedef<class> RowList {
+    def<RowSlot[]> items = []
+
+    pub mt append(int[] value) { items.append({ value }) }
+    pub mt<int[]> get(usize index) = items[index].value
+    pub mt insert(usize index, int[] value) { items.insert(index, { value }) }
+    pub mt<int[]> removeAt(usize index) {
+        def removed = items.removeAt(index)
+        return removed.value
+    }
+    pub mt<usize> size() = items::size
+    pub mt clear() { items.clear() }
+    pub mt reserve(usize minimum) { items.reserve(minimum) }
+    // Export remains an ordinary rectangular array, checked as rows are received.
+    pub mt<int[][]> toArray() {
+        def<int[][]> result = []
+        result.reserve(items::size)
+        for (def item <- items) result.append(item.value)
+        return result
+    }
+    pub mt<RowList> copy() {
+        def result = RowList::new
+        result.reserve(items::size)
+        for (def item <- items) result.append(item.value)
+        return result
+    }
+}
+
+fn main() {
+    def rows := RowList::new
+    rows.append([1])
+    rows.append([2, 3])
+    rows.insert(1, [])
+    def copy = rows.copy()
+    def first = rows.get(0)
+    first.append(9)
+    def removed = rows.removeAt(2)
+    rows.clear()
+    rows::delete
+
+    println(first)
+    println(removed)
+    for (def<usize> i <- 0..copy.size()) println(copy.get(i))
+    copy::delete
+}

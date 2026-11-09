@@ -1,5 +1,10 @@
 # Bootstrap lexer port (2026-11-07)
 
+The [generic Stage 6 caller audit](../../cloth-generics/references/caller-audit.md)
+preserves the TokenList/TokenCursor and token/span/source lifetime below after
+public List delivery. Availability of a generic container does not itself select
+an ownership migration.
+
 ## Scope and use
 
 The user requested the Kotlin lexer port with string input, stopping before
@@ -42,8 +47,12 @@ excerpt, labels, help and renderer are not ported.
 
 - **I/O:** source input is already a string. File reading, stream APIs and stderr
   diagnostic rendering need design/library work.
-- **Collections:** fixed-shape arrays cannot grow. The concrete owning TokenList
-  uses linked nodes and explicit deletion; it does not establish List<T>.
+- **Collections:** [growable arrays Stage 7](../../cloth-arrays/references/growable-arrays-stage-7.md)
+  proves array-backed concrete collections. The public generic List is now
+  implemented, with its own [collection contract](../../cloth-collections/SKILL.md).
+  Bootstrap's owning TokenList keeps linked nodes and explicit token
+  deletion. A future migration must preserve that ownership and its borrowed
+  cursor/source lifetimes in a separate consumer change.
 - **String building:** growing JSON concatenation exposed a compiler storage
   defect. The [compiler fix](../../cloth-buffer-lifetimes/references/string-concatenation-storage.md)
   removes prefix stack growth and reclaims replaced strings; ordinary formatting

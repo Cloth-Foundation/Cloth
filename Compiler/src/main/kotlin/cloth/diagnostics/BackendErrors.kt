@@ -5,7 +5,7 @@ import cloth.token.TokenSpan
 
 object BackendErrors {
 
-	fun arrayMutation(span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_ARRAY_MUTATION, "Array mutation is type-checked but native storage lowering is not implemented yet", listOf(SourceLabel(span, "growable-array execution requires a later implementation stage")))
+	fun arrayMutation(span: TokenSpan) = ClothDiagnostic(DiagnosticCode.UNSUPPORTED_ARRAY_MUTATION, "This array mutation receiver is not implemented by native lowering yet", listOf(SourceLabel(span, "native array mutators require a stored or temporary growable array receiver")))
 
 	fun functionType(type: ValueType, span: TokenSpan) = ClothDiagnostic(
 		DiagnosticCode.UNSUPPORTED_FUNCTION_ABI,

@@ -11,14 +11,24 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
+import java.util.IdentityHashMap
 
 /** Immutable, interned module-owned descriptors. No native handles escape into ValueType recipes.
- * Declaration locations distinguish nominal types while displayed text stays unqualified.
+ * Canonical closed descriptors distinguish nominal types; displayed text stays unqualified.
  */
 internal class EmitTypeInfo(
 	private val context: LLVMContextRef, private val builder: LLVMBuilderRef,
 	private val abi: NativeCABI, private val strings: EmitString,
+	private val types: Types,
 ) {
+	/** One registry per emitted module, shared by every callable's string services.
+	 * Closed descriptors already encode declaration identity and ordered exact arguments.
+	 * Number them without flattening an argument DAG or using diagnostic display text.
+	 */
+	internal class Types {
+		private val nominals = IdentityHashMap<CMemberType, Int>()
+		fun identity(type: CMemberType): Int = nominals.getOrPut(type) { nominals.size }
+	}
 
 	private val target get() = strings.target
 	private val pointer get() = CTypeInfo.llvmValue(context, target)
@@ -74,10 +84,7 @@ internal class EmitTypeInfo(
 	private fun identity(type: ValueType): String = when (type) {
 		is CNullable   -> "nullable:${identity(type.payload)}"
 		is CArray      -> "array:${type.size}:${identity(type.element)}"
-		is CMemberType -> type.name.span.let { span ->
-			val source = span.source?.name.orEmpty()
-			"nominal:${source.length}:$source:${span.startLine}:${span.startColumn}:${type.spelling}"
-		}
+		is CMemberType -> "nominal:${types.identity(type)}"
 
 		else           -> type.metadataSpelling
 	}

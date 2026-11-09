@@ -28,7 +28,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected abstract fun nameType(expression: NameExpression): ValueType
 	protected abstract fun statement(statement: Statement)
 	protected abstract fun withScope(action: () -> Unit)
-	protected open fun namedTypeReceiver(expression: Expression): CMemberType? = null
+	protected open fun namedTypeReceiver(expression: Expression): ValueType? = null
 	protected open fun enumCase(expression: FieldAccessExpression): EnumCase? = null
 	protected open fun valueCheck(expression: TypeCheckExpression): BinaryExpression? = null
 	protected open fun fieldPresent(expression: FieldAccessExpression): Boolean = false
@@ -639,7 +639,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 				when (expression.operator.lexeme) {
 					Operators.EQUAL.toString(), Operators.NOT_EQUAL.toString()                                                                                                                                               -> {
-						if (left is CArray || right is CArray || left is CMemberType || right is CMemberType || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+						if (left is CTypeParameter || right is CTypeParameter || left is CArray || right is CArray || left is CMemberType || right is CMemberType || (left != ValueType.NEVER && right != ValueType.NEVER && left != right && !(left.numeric && right.numeric))) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 						ValueType.BOOL
 					}
 
@@ -777,7 +777,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val wrapper = left as? CNullable ?: right as? CNullable
 		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
-		if (!wrapper.accepts(left) || !wrapper.accepts(right) || (payload is CArray || payload is CMemberType) && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		if (!wrapper.accepts(left) || !wrapper.accepts(right) || (payload is CTypeParameter || payload is CArray || payload is CMemberType) && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}

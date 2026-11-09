@@ -4,10 +4,12 @@ import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.BackendErrors
 import cloth.diagnostics.InternalErrors
+import cloth.diagnostics.GenericErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.storage.*
 import cloth.emitter.text.EmitString
+import cloth.emitter.text.EmitTypeInfo
 import cloth.emitter.types.EmitCast
 import cloth.emitter.types.EmitExpression
 import cloth.emitter.types.EmitPower
@@ -42,10 +44,12 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private val results = EmitResults(context, abi.layout)
 	private val functions = IdentityHashMap<CallableSymbol, EmittedCallable>()
 	internal val stringStorage = EmitStringArena(context, module, abi)
+	internal val metadataTypes = EmitTypeInfo.Types()
 	internal val classes by lazy { EmitClassRuntime(context, module, abi) }
 	internal val classStorage by lazy { EmitClassStorage(context, module, abi, classes, stringStorage) }
 	internal val receivers by lazy { EmitReceiverAccess(context, module, abi, classStorage) }
 	internal val hasClasses = semantics.declarations.classDefinitions.isNotEmpty()
+	private val hasArrayMutations = semantics.allBodyModels().any { it.types.arrayMutations.isNotEmpty() }
 	private val classTags = semantics.declarations.classDefinitions.values.mapIndexed { index, definition -> definition.owner to index }.toMap()
 	private fun classTag(owner: CClass) = LLVMConstInt(classes.indexType, classTags.getValue(owner).toLong(), 0)
 	private val classComparisons = mutableMapOf<Operators, LLVMValueRef>()
@@ -100,7 +104,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val rebindings = (semantics.declarations.assignments.values + semantics.declarations.multiAssignments.values.flatMap { it.filterNotNull() })
 				.filterNot { it is ReceiverFieldSymbol }
 				.filter { ((semantics.bindings[it] as? CNullable)?.payload ?: semantics.bindings[it]) == ValueType.STRING }.toSet()
-			val bindings = EmitBindings(context, builder, entry, abi, if (hasClasses) classStorage else null, if (hasClasses) receivers else null, frame, rebindings)
+			val bindings = EmitBindings(context, builder, entry, abi, if (hasClasses) classStorage else null, if (hasClasses) receivers else null, frame, rebindings, relocatableArrays = hasArrayMutations)
 			val objectAccess = callable.objectAccess()
 			if (objectAccess != null) {
 				bindings.bindObject(checkNotNull(function.receiver), objectAccess)
@@ -112,7 +116,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				bindings.checkDestination(function.receiver)
 			}
 			val casts = EmitCast(context, builder, semantics.types, abi)
-			val strings = EmitString(context, builder, abi, arena = { frame.stringReturnArena() })
+			val strings = EmitString(context, builder, abi, arena = { frame.stringReturnArena() }, metadataTypes = metadataTypes)
 			val expressions = EmitExpression(context, builder, bindings, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, signature.results, frame)
 			function.parameters.forEachIndexed { index, parameter ->
 				val type = signature.parameters[index]
@@ -183,7 +187,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val owner = constructor.owner
 		return when (val declaration = constructor.declaration) {
 			is PrimaryConstructorDeclaration -> {
-				val base = declaration.owner.base
+				val base = semantics.declarations.classDefinitions.getValue(owner).baseCall
 				// Allocate the concrete layout at the first source base constructor.
 				val access = if (base != null && owner.base?.base != null) {
 					val identity = expressions.emitDelegation(base, allocation) ?: return null
@@ -272,7 +276,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			val tag = classes.classTag(builder, access)
 			val invalid = block("invalid_class")
 			val dispatch = LLVMBuildSwitch(builder, tag, invalid, classTags.size)
-			val strings = EmitString(context, builder, abi)
+			val strings = EmitString(context, builder, abi, metadataTypes = metadataTypes)
 			for (owner in classTags.keys) {
 				val branch = block("format.${owner.spelling}")
 				LLVMAddCase(dispatch, classTag(owner), branch)
@@ -373,7 +377,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val type = plan.type
 		val target = callable(selected)
 		if (target.type != type) throw InternalErrors.invariant("Resolved call type differs from emitted signature")
-		return target.call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = expressions::stringReturnArena) {
+		fun invoke(structReceiver: (() -> ReceiverAccess)?): LLVMValueRef? = target.call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = expressions::stringReturnArena) {
 			fun putReceiver(receiver: MethodReceiver) {
 				if (receiver is MethodReceiver.Instance) {
 					val access = expressions.emitObjectAccess(receiver.receiver)
@@ -392,7 +396,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				val snapshot = if (operatorReceiver == null) expressions.valueTransfer.transfer(adapted, parameter) else expressions.valueTransfer.snapshot(adapted, parameter)
 				argument(destination, snapshot)
 			}
-			plan.receiver?.let(::putReceiver)
+			if (structReceiver == null) plan.receiver?.let(::putReceiver)
 			// Operators interleave the receiver with the argument in source order.
 			supplied.forEachIndexed { index, expression ->
 				if (index == operatorReceiver) {
@@ -404,19 +408,25 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 					putArgument(expression, plan.binding.parameterForArgument[argument])
 				}
 			}
+			structReceiver?.let { setReceiver(it()) }
 			if (selected is ConstructorSymbol) {
 				val concrete = allocation ?: ConstructorAllocation(classes.instanceBytes(builder, selected.owner), classTag(selected.owner))
 				setAllocation(concrete)
 			}
 		}
+		val receiver = plan.receiver
+		return if (operatorReceiver == null && receiver != null && receiver !is MethodReceiver.Instance && !target.enumReceiver) {
+			expressions.withReceiver(receiver, (selected as MethodSymbol).owner as CStruct) { invoke(it) }
+		} else invoke(null)
 	}
 
 	companion object {
 
 		fun validate(semantics: FunctionSemanticModel) {
+			semantics.declarations.genericViews?.types?.takeIf { it.symbolic }?.names?.genericSpan?.let { throw GenericErrors.compilation(it) }
 			for (body in semantics.allBodyModels()) {
 				val calls = body.types.memberCalls.entries.sortedWith(compareBy({ it.key.span.source?.name.orEmpty() }, { it.key.span.startLine }, { it.key.span.startColumn }))
-				for ((call, bound) in calls) if (bound.overload.storage == BuiltinStorageContract.MUTATING_RECEIVER) throw BackendErrors.arrayMutation(call.name.span)
+				for ((call, bound) in calls) if (bound.overload.storage == BuiltinStorageContract.MUTATING_RECEIVER && body.types.arrayMutations[call]?.let(EmitArrayMutation::supported) != true) throw BackendErrors.arrayMutation(call.name.span)
 			}
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray    -> type.element != ValueType.VOID && supported(type.element)

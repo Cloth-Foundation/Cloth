@@ -1,21 +1,27 @@
 package cloth.parser.declaration
 
 import cloth.parser.expression.ConstructorDelegation
+import cloth.parser.expression.CallArgument
 import cloth.parser.expression.Expression
 import cloth.parser.type.TypeReference
+import cloth.parser.type.TypeParameterList
 import cloth.token.Token
 import cloth.token.TokenSpan
 
 data class ClassDeclaration(
 	val keyword: Token,
-	val name: Token,
-	val visibility: Token?,
+	override val name: Token,
+	override val visibility: Token?,
 	val finalKeyword: Token?,
 	val parameters: List<ClassParameterDeclaration>,
 	val members: List<ClassMember>,
 	override val span: TokenSpan,
-	val base: ConstructorDelegation? = null,
-) : Declaration
+	val parents: List<ClassParentClause> = emptyList(),
+	override val typeParameters: TypeParameterList? = null,
+) : TypeDeclaration
+
+/** An unresolved class header entry. A null argument list preserves omitted parentheses. */
+data class ClassParentClause(val type: TypeReference, val constructorArguments: List<CallArgument>?, val span: TokenSpan)
 
 data class ClassParameterDeclaration(val parameter: ParameterDeclaration, val fieldKeyword: Token? = null, val visibility: Token? = null) {
 

@@ -33,6 +33,10 @@ for stage boundaries, source routing and verification targets.
   or buffered-value facts; cached simple-name lookup cannot represent graph types.
 - Each struct declaration defines a distinct type. Match struct values by
   declaration identity even when field lists are identical.
+  [Generic Stage 2](../cloth-generics/references/stage-2.md) extends this key with
+  ordered exact closed arguments in a target-scoped catalog. Each closed struct
+  has its own substituted fields and retains the original AST. Struct cycles
+  through arrays/nullable wrappers still fail before layout consumption.
 - A type and a variable can share a spelling. Type annotations and ordinary
   variable expressions resolve their names independently. For `Position::type`,
   check the local variable first and use the struct type if no variable is in scope.
@@ -76,8 +80,40 @@ for stage boundaries, source routing and verification targets.
   Nullable array fields have separate inline pointer-free witnesses, retained
   through absence and copied with the containing value. Only an unsized outer
   count may change; explicit extents and established inner shape still constrain
-  reception. Whole-struct replacement receives incoming witnesses. Public array
-  mutators remain guarded by C4032.
+  reception. Whole-struct replacement receives incoming witnesses.
+  [Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) permits such
+  structs as elements of appendable one-dimensional local/parameter arrays.
+  Protected element snapshots preserve buffers and absent-field witnesses through
+  movement. Inline field writes and ordinary struct receivers follow the selected
+  array value through capacity movement.
+  [Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) executes array-field
+  append/reserve on nested fields, array-element structs and `self`, using the
+  existing array owner instead of copying/repacking the containing value. Scoped
+  observations preserve selected reads/writes/receivers across callee growth;
+  class-backed paths still replay checked current storage after replacement.
+  [Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) shifts inline
+  struct bytes and hidden witnesses together with their owned slot heads.
+  Removed structs receive independent buffers/witnesses before their source slot
+  is freed. Clearing/removing a containing element invalidates selected child
+  buffers of every rank, including fixed array fields, before later access.
+  [Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) executes
+  rectangular field mutation, including `self`. Witnesses learned by mutation
+  survive field null, whole-struct copying, removal of the containing struct,
+  return transport and class-owner destruction.
+  [Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md) proves concrete
+  struct-slot collections with independently sized array fields. Each slot keeps
+  its own field shape; outer insertion/removal transfers its value/witnesses.
+  This motivates generic structs for List storage.
+  [Generic Stage 1](../cloth-generics/references/stage-1.md) adds struct parameter
+  syntax and lexical name identities; Stage 2 adds closed fields/layout descriptors.
+  [Generic Stage 3](../cloth-generics/references/stage-3.md) checks symbolic and
+  closed methods/operators with per-owner source-linked views and exact identities.
+  Public methods inherit struct visibility, including public signature leak checks.
+  [Generic Stage 4](../cloth-generics/references/stage-4.md) executes closed
+  struct slots through class fields, typed relocation and independent arguments/
+  results. Absent nullable array fields retain complete witnesses after copies,
+  removal and source destruction. Finalized descriptors memoize buffered-value
+  classification to avoid repeated traversal of shared closed field DAGs.
 - A null check can prove a stored field present when later access resolves the
   same unchanged path. Assigning the field or replacing a containing struct
   invalidates the proof. Use the existing nullable payload access and metadata rules.

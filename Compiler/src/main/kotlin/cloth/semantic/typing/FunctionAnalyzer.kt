@@ -35,7 +35,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 
 	fun analyze(declarations: DeclarationModel): FunctionSemanticModel {
 		if (target != declarations.target) throw InternalErrors.invariant("Declaration and call analysis targets differ")
-		val resolver = TypeResolver(declarations.target, contextualNamedType = declarations::namedType)
+		val resolver = declarations.typeResolver()
 		val signatures = declarations.concreteCallables.associateWith { function ->
 			val parameters = function.parameters.map { parameter ->
 				resolver.resolve(parameter.declaredType).also {
@@ -102,7 +102,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			when (val declaration = function.declaration) {
 				is PrimaryConstructorDeclaration -> {
 					val definition = declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration))
-					declaration.owner.base?.let { clause ->
+					definition.baseCall?.let { clause ->
 						definition.owner.base?.let { declarations.classDefinitions[it] }?.let { checker.bindConstructor(clause, it.constructors) }
 					}
 					for ((field, expression) in definition.fieldInitializers) {

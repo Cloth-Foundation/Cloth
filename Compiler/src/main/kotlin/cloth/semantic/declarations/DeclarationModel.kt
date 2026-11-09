@@ -5,6 +5,7 @@ import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.symbols.*
+import cloth.semantic.generics.GenericBodyViews
 import cloth.target.TargetLayout
 import cloth.token.Operators
 import cloth.token.Token
@@ -21,11 +22,12 @@ class DeclarationModel internal constructor(
 	internal val objectRoot: CClass,
 	internal val enumTypes: List<CEnum>,
 	private val enumNames: Map<CEnum, MethodDeclaration>,
+	val genericViews: GenericBodyViews? = null,
 ) {
 
 	/** Compatibility views contain only the primary file's visible names. Global storage is identity keyed. */
 	val fileScope get() = files.primary.scope
-	val structs = files.primary.types.filterValues { it is CStruct }.mapValues { it.value as CStruct }
+	val structs = files.primary.types.filterValues { it is CStruct && it.declaration.typeParameters == null }.mapValues { it.value as CStruct }
 	internal val classes = files.primary.types.mapNotNull { (name, type) -> (type as? CClass)?.let { classDefinitions[it]?.let { definition -> name to definition } } }.toMap()
 	internal val enums = files.primary.types.filterValues { it is CEnum }.mapValues { it.value as CEnum }
 	internal val callables: List<CallableSymbol> = functions + methods + classDefinitions.values.flatMap { it.constructors + listOfNotNull(it.destructor) }
@@ -34,10 +36,14 @@ class DeclarationModel internal constructor(
 	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else files.primary.types[name]
 	internal fun namedType(name: Token): CMemberType? = files.nominal(name)
 	internal fun fileScopeOf(name: Token): LexicalScope = files.context(name).scope
-	internal fun signatureType(type: cloth.parser.type.TypeReference) = SignatureType.of(type, namedType(type.name))
+	internal fun signatureType(type: cloth.parser.type.TypeReference) = genericViews?.signatureType(type) ?: SignatureType.of(type, namedType(type.name))
+	internal fun typeResolver(operatorWidth: Int? = null) = TypeResolver(target, operatorWidth, contextualNamedType = ::namedType, resolvedType = genericViews?.resolvedTypes?.let { it::get })
 
 	internal fun initializationExpressions(declaration: CallableDeclaration): List<Expression> = when (declaration) {
-		is PrimaryConstructorDeclaration -> declaration.owner.base?.arguments.orEmpty() + classDefinitions.getValue(classOwners.getValue(declaration)).fieldInitializers.map { it.expression }
+		is PrimaryConstructorDeclaration -> {
+			val definition = classDefinitions.getValue(classOwners.getValue(declaration))
+			definition.baseCall?.arguments.orEmpty() + definition.fieldInitializers.map { it.expression }
+		}
 		is ConstructorDeclaration        -> declaration.delegation.arguments
 		else                             -> emptyList()
 	}
@@ -94,7 +100,7 @@ class DeclarationModel internal constructor(
 		else         -> false
 	}
 
-	internal val namedTypeReceivers = IdentityHashMap<NameExpression, CMemberType>()
+	internal val namedTypeReceivers = IdentityHashMap<NameExpression, ValueType>()
 	internal val classCreations = IdentityHashMap<ClassCreationExpression, ClassDefinition>()
 	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()

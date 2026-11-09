@@ -96,8 +96,11 @@ The standard library lives in the `Standard-Library/` Git submodule, with source
 files under `cloth/` relative to that repository's root; for example,
 `cloth/collections/List.co`. The
 [scaffold record](../../shuttle-build/references/standard-library.md) owns its
-project configuration and verification. This layout does not establish a `List`
-API or implement library declarations.
+project configuration and historical verification. The layout alone did not
+establish a collection API; [generic Stage 5](../../cloth-generics/references/stage-5.md)
+now supplies the actual public List. Its
+[collection contract](../../../../Standard-Library/cloth/collections/README.md)
+owns the implemented methods and element lifetime.
 
 Bundled-library Stage 0 selects automatic source availability with explicit
 imports. The user confirmed that `cloth.*` is reserved while a standard library
@@ -188,7 +191,56 @@ independent values and rectangular inner shape.
 that typing and native whole-array reception with different outer counts.
 [Stage 2](../../cloth-arrays/references/growable-arrays-stage-2.md) adds owned
 capacity, private typed relocation/release and executable unsized struct array
-fields, including retained nullable witnesses. Public mutator execution retains C4032.
+fields, including retained nullable witnesses.
+[Stage 3](../../cloth-arrays/references/growable-arrays-stage-3.md) executes
+one-dimensional append/reserve on local/parameter bindings and temporaries.
+[Stage 4](../../cloth-arrays/references/growable-arrays-stage-4.md) extends them to
+stored class/aggregate fields and array-element fields without per-append repacking,
+preserving selections across callee growth.
+[Stage 5](../../cloth-arrays/references/growable-arrays-stage-5.md) executes
+insert/removeAt/clear with independent removed values, owned shifts and reusable
+capacity. [Stage 6](../../cloth-arrays/references/growable-arrays-stage-6.md) executes
+whole-row rectangular edits with retained nullable witnesses through empty/null
+states and the existing provider/output/producer/foreach value integrations.
+Embedded rows still cannot change shape; extracted growable rows are independent.
+[Stage 7](../../cloth-arrays/references/growable-arrays-stage-7.md) proves concrete
+collection methods and records the
+[confirmed List element/copy/export requirements](../../cloth-arrays/references/growable-arrays.md#collection-integration-requirements-confirmed-2026-11-08).
+Generic callable execution is implemented in
+[Stage 4](../../cloth-generics/references/stage-4.md). The actual public List module
+and imported-library checks are supplied by [Stage 5](../../cloth-generics/references/stage-5.md);
+use [cloth-collections](../../cloth-collections/SKILL.md) for its API. Ordinary private array fields do
+not imply class indexing/foreach or Bootstrap token-ownership migration.
+
+## Generic types
+
+[Generic Stage 0 semantics](../../cloth-generics/references/semantics.md) owns the
+confirmed first slice: classes/structs with explicit invariant arguments,
+owner-wide lexical type scope, declaration and closed-instance checking, ordinary
+value arguments, normalized nullable substitution and private helper visibility.
+Constraints, generic interfaces/functions/method parameters, variance and argument
+inference remain later. [Stage 1](../../cloth-generics/references/stage-1.md)
+implements parameter/application syntax, lexical type-parameter symbols and
+original imported template identities with arity/raw-template checks. Generic
+compilation proceeds through [Stage 2](../../cloth-generics/references/stage-2.md)
+closed identities, substituted fields/base links/declared signatures and bounded
+instantiation. [Stage 3](../../cloth-generics/references/stage-3.md) checks symbolic
+declarations and closed callable/flow facts with isolated source-linked views,
+preserving original nominal identities. It validates public generic signature
+privacy. [Stage 4](../../cloth-generics/references/stage-4.md) executes closed
+generic classes/structs, recursive value storage and exact native metadata.
+C4033 remains for symbolic/unresolved contexts; C4034 bounds canonical UTF-8
+metadata expansion before flattening shared arguments. [Stage 5](../../cloth-generics/references/stage-5.md)
+supplies the public source List with private generic slots, independent elements,
+checked array export and ordinary import/selection rules. Bootstrap migration
+and collection protocols remain separate.
+
+[Stage 6](../../cloth-generics/references/stage-6.md) completes integration and
+publishes the [user guide](../../../../docs/generics.md), runnable example,
+[caller audit](../../cloth-generics/references/caller-audit.md) and
+[separate follow-ups](../../../../todo/generic-follow-ups.md). It changes no
+language semantics and does not migrate Bootstrap's owning TokenList/cursor or
+implement the deferred generic/interface/protocol features.
 
 Ordinary parameter rules are in [function parameters](../../cloth-functions/references/semantics.md#function-parameters).
 
@@ -392,6 +444,18 @@ argument omission remains distinct from nullable value absence. Read
 [confirmed optional-call semantics](../../cloth-optional-arguments/references/semantics.md)
 and [optional-argument implementation](../../cloth-optional-arguments/SKILL.md)
 for `opt<T>` / `final opt<T>`, named calls, defaults, evaluation order and overload ranking.
+
+## Interfaces
+
+The interface design record owns confirmed syntax and visibility, along with
+open language choices. Stage 1 implements declarations and nominal name
+binding for non-generic and explicit generic interfaces. C4035 marks the
+conformance boundary for compiler requests. The constrained Test.co example
+belongs to the later capability work.
+[Stage 1](../../cloth-interfaces/references/stage-1.md) ·
+[Interface design](../../cloth-interfaces/references/design.md) ·
+[Interface skill](../../cloth-interfaces/SKILL.md) ·
+[Implementation plan](../../../../todo/interfaces-plan.md)
 
 ## Class declarations and constructors
 

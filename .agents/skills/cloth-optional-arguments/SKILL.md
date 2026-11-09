@@ -1,9 +1,14 @@
 ---
 name: cloth-optional-arguments
-description: Design, explain, or extend Cloth opt<T> and final opt<T> parameters, omission-only defaults, named arguments, deterministic argument placement, and default-aware overload resolution.
+description: Design, explain, or extend Cloth opt parameter wrappers, final parameters, omission-only defaults, named arguments, deterministic argument placement, and default-aware overload resolution.
 ---
 
 # Cloth optional arguments and defaults
+
+[Generic Stage 3](../cloth-generics/references/stage-3.md) checks owner-generic
+defaults with unknown exact parameters and again after substitution, preserving
+earlier-parameter scope, read-only defaults and ordinary argument placement.
+Source-linked body views isolate candidate/default facts for each closed owner.
 
 Read [confirmed semantics](references/semantics.md) before changing the binder or
 default evaluation. Use [functions](../cloth-functions/SKILL.md) for ordinary
@@ -100,6 +105,10 @@ Cross-target IR verification does not establish native Linux/macOS execution.
 See the [final syntax review](../cloth-language/references/development.md#optional-syntax-final-review-2026-11-02),
 the [syntax migration evidence](../cloth-language/references/development.md#optional-parameter-syntax-final-optt-2026-11-02)
 and [original integration evidence](../cloth-language/references/development.md#optional-arguments-and-runtime-defaults-2026-11-01)
-for actual results. Future dispatch must settle visible parameter/default contracts,
-state revalidation, allocation and constructor delegation ordering before adopting
-this binder; recording reusable argument plans implements none of those runtimes.
+for actual results. The confirmed
+[interface call contract](../cloth-interfaces/references/design.md#static-interface-call-contracts-confirmed-2026-11-08)
+uses labels and defaults from the static interface declaration, then dispatches
+only the body with resolved values. Interface execution remains unimplemented.
+State and other future dispatch must settle their visible parameter/default
+contracts, revalidation, allocation and delegation ordering before adopting this
+binder; recording reusable plans implements none of those runtimes.

@@ -5,6 +5,7 @@ import cloth.data.CClass
 import cloth.data.CMemberType
 import cloth.data.InstanceField
 import cloth.data.ValueType
+import cloth.diagnostics.GenericErrors
 import cloth.parser.declaration.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
@@ -13,17 +14,19 @@ import cloth.parser.type.TypeReference
 import cloth.token.*
 import java.math.BigInteger
 
-/** A structural declaration key, not a resolved or validated language type. */
-data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }, val nominal: CMemberType? = null) {
+/** Source signature key, or an exact resolved key retaining closed type identity. */
+data class SignatureType(val name: String, val unsigned: Boolean, val width: BigInteger?, val arrayRank: Int, val arraySizes: List<BigInteger?> = List(arrayRank) { null }, val nullable: Boolean = false, val arrayNullability: List<Boolean> = List(arrayRank) { false }, val nominal: CMemberType? = null, val exact: ValueType? = null) {
 
 	val spelling: String
-		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "${Operators.LESS}$it${Operators.GREATER}" } ?: "") + (if (nullable) Operators.QUESTION.toString() else "") + arraySizes.mapIndexed { index, size -> "${Operators.BRACKET_OPEN}${size ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(index) == true) Operators.QUESTION.toString() else "" }.joinToString("")
+		get() = exact?.spelling ?: ((if (unsigned) "${Keywords.UNSIGNED} " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "${Operators.LESS}$it${Operators.GREATER}" } ?: "") + (if (nullable) Operators.QUESTION.toString() else "") + arraySizes.mapIndexed { index, size -> "${Operators.BRACKET_OPEN}${size ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(index) == true) Operators.QUESTION.toString() else "" }.joinToString(""))
 
 	companion object {
+		internal fun resolved(type: ValueType) = SignatureType(type.keyword.toString(), false, null, 0, exact = type)
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
 		private val defaultWidth = BigInteger.valueOf(ValueType.DEFAULT_BITS.toLong())
 		fun of(type: TypeReference, nominal: CMemberType? = null): SignatureType {
+			type.application?.let { throw GenericErrors.compilation(it.span) }
 			val width = type.width?.takeUnless { type.capturesWidth }?.integerLiteralValue() ?: defaultWidth.takeIf { type.name.lexeme in numericNames }
 			return SignatureType(type.name.lexeme, type.unsigned, width, type.arraySuffixes.size, type.arraySuffixes.indices.map { type.arraySizes.getOrNull(it)?.integerLiteralValue() }, type.nullable != null, type.arraySuffixes.indices.map { type.arrayNullability.getOrNull(it) != null }, nominal)
 		}
@@ -37,7 +40,7 @@ data class FunctionSignature(val name: String, val parameterTypes: List<Signatur
 
 	companion object {
 
-		internal fun of(declaration: CallableDeclaration, nominal: (TypeReference) -> CMemberType? = { null }) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { SignatureType.of(it.type, nominal(it.type)) })
+		internal fun of(declaration: CallableDeclaration, nominal: (TypeReference) -> CMemberType? = { null }, resolved: ((TypeReference) -> SignatureType)? = null) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { resolved?.invoke(it.type) ?: SignatureType.of(it.type, nominal(it.type)) })
 	}
 }
 
@@ -56,24 +59,27 @@ sealed interface CallableSymbol : Symbol {
 }
 
 class FunctionSymbol(override val declaration: FunctionDeclaration, private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 
 	override val name get() = declaration.name
-	override val signature by lazy { FunctionSignature.of(declaration, nominal) }
+	override val signature by lazy { FunctionSignature.of(declaration, nominal, signatureResolver) }
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map { ParameterSymbol(it) }
 }
 
 class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType, override val receiver: ReceiverSymbol = ReceiverSymbol(owner, declaration.keyword), private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 
 	override val name get() = declaration.name
-	override val signature = FunctionSignature.of(declaration, nominal)
+	override val signature by lazy { FunctionSignature.of(declaration, nominal, signatureResolver) }
 	override val parameters: List<ParameterSymbol> = declaration.parameters.map(::ParameterSymbol)
-	internal fun specialization() = MethodSymbol(declaration, owner, receiver, nominal)
+	internal fun specialization() = MethodSymbol(declaration, owner, receiver, nominal).also { it.signatureResolver = signatureResolver }
 }
 
 internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass, nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 
 	override val name get() = declaration.name
-	override val signature = FunctionSignature.of(declaration, nominal)
+	override val signature by lazy { FunctionSignature.of(declaration, nominal, signatureResolver) }
 	override val parameters = declaration.parameters.map(::ParameterSymbol)
 	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }

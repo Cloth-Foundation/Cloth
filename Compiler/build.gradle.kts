@@ -25,7 +25,7 @@ dependencies {
 	// Errors
 	api("com.opencastsoftware:yvette:0.2.0")
 	api("com.opencastsoftware:prettier4j:0.3.1")
-	implementation("org.fusesource.jansi:jansi:2.4.0")
+	implementation("org.fusesource.jansi:jansi:2.4.3")
 }
 
 kotlin {
@@ -60,6 +60,10 @@ tasks.test {
 	inputs.files(rootProject.fileTree("Bootstrap") { include("**/*.co") })
 		.withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("examples/Collections") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.file(rootProject.file("examples/LinearCollections.co")).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("Standard-Library") { include("**/*.co") }).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.file(rootProject.file(".agents/skills/cloth-generics/references/acceptance-fixtures.md")).withPathSensitivity(PathSensitivity.RELATIVE)
 	systemProperty("cloth.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
 }
 
@@ -80,6 +84,33 @@ tasks.register<Test>("importSyntaxTest") {
 
 tasks.check {
 	dependsOn("importSyntaxTest", "importResolutionTest", "importSemanticsTest")
+	dependsOn("genericSyntaxTest")
+}
+
+// Generic source identities need JVM API types, but no native backend binaries.
+tasks.register<Test>("genericSyntaxTest") {
+	workingDir(rootProject.projectDir)
+	systemProperty("cloth.test.nativeFreeGenerics", true)
+	systemProperty("org.bytedeco.javacpp.loadlibraries", "false")
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath.filter {
+		!Regex("(?:llvm|javacpp)-.*-(?:android|ios|linux|macosx|windows)-.*\\.jar").matches(it.name)
+	}
+	inputs.file(rootProject.file(".agents/skills/cloth-generics/references/acceptance-fixtures.md")).withPathSensitivity(PathSensitivity.RELATIVE)
+	useJUnitPlatform()
+	filter {
+		includeTestsMatching("cloth.GenericParsingTest")
+		includeTestsMatching("cloth.GenericNamesTest")
+		includeTestsMatching("cloth.GenericClosedTypesTest")
+		includeTestsMatching("cloth.GenericInstantiationLimitsTest")
+		includeTestsMatching("cloth.GenericClosedImportsTest")
+		includeTestsMatching("cloth.GenericCallableTypingTest")
+		includeTestsMatching("cloth.GenericCallableFlowTest")
+		includeTestsMatching("cloth.GenericOverloadTypingTest")
+		includeTestsMatching("cloth.GenericCallableImportsTest")
+		includeTestsMatching("cloth.StandardListImportsTest")
+	}
+	inputs.files(rootProject.fileTree("Standard-Library") { include("**/*.co") }).withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 tasks.register<Test>("importResolutionTest") {

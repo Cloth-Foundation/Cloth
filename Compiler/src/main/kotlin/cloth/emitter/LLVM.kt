@@ -72,7 +72,8 @@ class LLVMEmitter internal constructor(private val abi: NativeCABI, private val 
 	/** Module composition hook used by native tests and entry-point emission. */
 	internal fun <T> withFunctions(unit: SourceUnit, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T = withFunctions(FunctionAnalyzer(abi.layout).analyze(unit), action)
 
-	private fun <T> withFunctions(semantics: FunctionSemanticModel, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T {
+	/** Checked whole-graph composition, also used by imported-source ownership probes. */
+	internal fun <T> withFunctions(semantics: FunctionSemanticModel, action: (LLVMContextRef, LLVMModuleRef, EmitFunctions, FunctionSemanticModel) -> T): T {
 		validate(semantics)
 		return withValidatedFunctions(semantics, action)
 	}

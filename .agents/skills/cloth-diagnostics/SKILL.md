@@ -35,13 +35,52 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+Interface Stage 1 uses **C3118 / INVALID_INTERFACE_HEADER** for invalid parent
+kinds, extra class bases and constructor arguments on an interface clause.
+**C4035 / UNSUPPORTED_INTERFACE_COMPILATION** guards compiler requests after
+name binding. Both report the relevant source clause or marker.
+[Interface Stage 1](../cloth-interfaces/references/stage-1.md)
+
+Generic [Stage 1](../cloth-generics/references/stage-1.md) adds **C2011 /
+UNSUPPORTED_GENERIC_SYNTAX**, **C2012 / GENERIC_ARGUMENT_NESTING**, **C3108 /
+INVALID_GENERIC_PARAMETER**, **C3109 / GENERIC_ARITY**, **C3110 / RAW_GENERIC_TYPE**
+and **C3111 / INVALID_GENERIC_ARGUMENT**. Names bind in original file contexts.
+[Stage 2](../cloth-generics/references/stage-2.md) adds **C3112 /
+GENERIC_DEPENDENCY_LIMIT**, **C3113 / GENERIC_INSTANCE_LIMIT** and **C3114 /
+GENERIC_SUBSTITUTION_NESTING** for the 64-step, 4,096-instance and 256-layer bounds.
+Existing C3080/C3088 retain struct/inheritance cycles.
+[Stage 3](../cloth-generics/references/stage-3.md) adds **C3115 /
+GENERIC_TEMPLATE_DEPENDENCY_LIMIT**, **C3116 / GENERIC_TEMPLATE_INSTANCE_LIMIT**
+for separately bounded symbolic checking and **C3117 / PRIVATE_GENERIC_SIGNATURE**
+for exposed helpers. Ordinary symbolic/closed body failures retain their original
+codes and source spans. [Stage 4](../cloth-generics/references/stage-4.md) accepts
+closed native models; **C4033 / UNSUPPORTED_GENERIC_TYPES** retains the guard for
+symbolic models and legacy unresolved APIs. **C4034 / GENERIC_METADATA_SIZE**
+rejects expanded generic canonical metadata above 1,048,576 UTF-8 bytes before
+flattening shared argument DAGs, with the original declaration label. Exact-budget
+Unicode text is accepted. Existing C3052 catches oversized inline generic layouts
+before LLVM layout. Human-facing generic argument display is separately bounded
+without changing canonical identity/metadata. The parser uses uncommitted token
+lookahead for named type receivers/casts, without recovery or caught diagnostics.
+
 **C3107 / INVALID_ARRAY_MUTATION** rejects fixed receivers and shape-changing
-embedded-row operations. **C4032 / UNSUPPORTED_ARRAY_MUTATION** guards otherwise
-typed public array mutators before output/linker work. Stage 2 retires its unsized
-struct array field boundary after implementing retained-shape storage. Defaults, lost nullable
+embedded-row operations. **C4032 / UNSUPPORTED_ARRAY_MUTATION** remains a guard for
+unsupported native receiver forms before output/linker work. Stage 3 executes one-dimensional
+local/parameter/temporary append and reserve. Stage 4 extends them to class/aggregate
+fields, nested array-element fields and `self`. Stage 5 executes insert/removeAt/
+clear on those same one-dimensional receivers. Stage 6 removes the rank boundary:
+all currently admitted stored/temporary forms execute rectangular whole-row edits.
+Known incompatible rows fail semantically; dynamic mismatches stop at the first
+shape guard before growth allocation. Embedded-row shape changes remain C3107.
+Stage 2 retired its unsized
+struct array field gate. Defaults, lost nullable
 receiver proofs and provably deleted field owners retain C3066/C3062/C3092.
 [Contract and verification](../cloth-arrays/references/growable-arrays-stage-1.md)
 [Owned storage and fault probes](../cloth-arrays/references/growable-arrays-stage-2.md)
+[Source execution and failure order](../cloth-arrays/references/growable-arrays-stage-3.md)
+[Field replay, ownership and failure probes](../cloth-arrays/references/growable-arrays-stage-4.md)
+[Edit bounds, invalidated children and failure order](../cloth-arrays/references/growable-arrays-stage-5.md)
+[Rectangular shape failures and verification](../cloth-arrays/references/growable-arrays-stage-6.md)
 
 **C0014 / OUTPUT_OVERWRITES_SOURCE** rejects a CLI output path that identifies
 any loaded input source. The emission path checks the final target-specific filename and covers

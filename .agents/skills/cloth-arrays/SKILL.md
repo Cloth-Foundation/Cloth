@@ -38,14 +38,44 @@ five signatures, stored/temporary receiver plans and flow effects. Whole-array
 replacement with a different growable outer count executes.
 [Stage 2](references/growable-arrays-stage-2.md) adds owned capacity, concrete
 copy/reserve/relocation/release helpers and executable unsized struct array fields,
-including retained nullable-field witnesses. Public mutator calls still stop at
-C4032; private helper probes do not establish source-level growth support.
+including retained nullable-field witnesses.
+[Stage 3](references/growable-arrays-stage-3.md) executes one-dimensional append
+and reserve on local/parameter bindings and independent temporaries, preserving
+exact elements, final bindings and independent copies/results.
+[Stage 4](references/growable-arrays-stage-4.md) extends append/reserve to class and
+aggregate fields, nested array-element fields and `self`. Direct publication uses
+the field's existing owner without repacking or copying its previous payloads.
+[Stage 5](references/growable-arrays-stage-5.md) executes insert/removeAt/clear
+with ordered ownership-preserving shifts, independent removed results and reusable
+capacity. [Stage 6](references/growable-arrays-stage-6.md) executes the full API
+on rectangular arrays, including nullable rows and retained inner witnesses after
+remove/clear/null. Embedded-row length changes remain C3107; extracted growable
+rows are independent. Size, metadata, output, producers and foreach retain their
+existing value semantics. The native rank restriction is removed.
+[Stage 7](references/growable-arrays-stage-7.md) proves complete ordinary concrete
+collections with private growable arrays. `List<int[]>` permits independent
+lengths; use per-element struct slots rather than imposing one rectangular T[]
+shape. `copy()` preserves those lengths, while `toArray()` checks rectangular
+reception. [Generic Stage 5](../cloth-generics/references/stage-5.md) supplies
+the actual public List; use [cloth-collections](../cloth-collections/SKILL.md).
+[Stage 8](references/growable-arrays-stage-8.md) owns final portability,
+regression, caller audit and publication evidence. It preserves fixed literal
+inference, explicit extents and rectangular inner-shape checks; no further
+consumer migration is required to deliver growable arrays.
+
+[Generic Stage 4](../cloth-generics/references/stage-4.md) executes that private
+generic slot pattern in the maintained imported List fixture, with poisoned copy,
+relocation, removal and nullable-witness probes. Generic row exports still check
+rectangular shape; copied slots preserve independent lengths. The actual public
+standard-library List module and its imported tests are supplied by Stage 5.
 
 The [Stage 0 record](references/growable-arrays-stage-0.md) publishes a passing
 322-test/24-suite baseline, native Windows x64/x86 coverage and all-nine-profile
 IR/object evidence. The [plan](../../../todo/growable-arrays-and-lists-plan.md)
-stages implementation and the collection proof. Generic `List<T>` additionally
-requires separate generic-type support.
+stages implementation and the collection proof. Generic `List<T>` uses the
+implemented class/struct generic support.
+Use [cloth-generics](../cloth-generics/SKILL.md) for that prerequisite; concrete
+wrappers do not establish generic classes, indexing or iteration protocols.
 
 ## Current implementation rules
 
@@ -75,14 +105,40 @@ requires separate generic-type support.
 - Keep mutators' `MUTATING_RECEIVER` contract distinct from read-only attachments.
   Use the committed `ArrayMutationPlan` receiver/owner instead of copying a
   receiver as an explicit value argument. Reject fixed/embedded length changes,
-  read-only defaults and lost receiver proofs before native emission. C4032 still
-  guards public mutator execution; it no longer gates unsized struct fields.
+  read-only defaults and lost receiver proofs before native emission.
+  `EmitArrayMutation.supported` shares the current native boundary between
+  validation and emission; every currently admitted array rank executes.
+- Preflight incoming whole-row shape with `EmitArray.withElementShape` before
+  growth allocation. Publish established inner extents into owned shared vectors;
+  remember them after every edit. Whole replacement uses the current binding
+  descriptor, and nullable bindings/fields retain witnesses across absence.
+  `current` refreshes inner constraints while preserving each descriptor's own
+  outer length; explicit embedded-row reception still checks every dimension.
+  [Rectangular mutation invariants](references/growable-arrays-stage-6.md)
+- Append/reserve capture indirect operands in a reusable separate arena before
+  growth, then release it after publication. Closed producers release scratch
+  only after that capture. Unproven captured publication retains frame lifetime.
+  Never admit the mutator itself into read-only or whole-loop suffix cleanup.
+  Indexed places retain their selected binding version and original bounds;
+  capacity movement rebases live inline projections. Whole-binding assignment
+  stops a selection following that binding. Scoped observations follow movement
+  even inside separately emitted methods; owner cleanup invalidates back-links
+  before freeing capacity. Class-backed paths replay the current checked field.
+  Destructive edits invalidate views of freed children, including fixed and
+  rectangular child arrays. Check both original and current live bounds after
+  publishing index effects. [Current edit/selection invariants](references/growable-arrays-stage-6.md)
 - Array descriptors append target-sized capacity and an owner after the existing
   shape fields. Strings keep their two-field layout. Use `EmitMemory.bytes` for
   raw byte spans and `EmitArrayStorage` for typed array copies and private growth.
   Borrowed arrays have null owner; reserve copies them before moving storage.
   Relocation transfers live element arenas and reparents moved head cells.
-  [Storage invariants and measured probes](references/growable-arrays-stage-2.md)
+  [Stage 2 storage baseline](references/growable-arrays-stage-2.md),
+  [current owner control and measured field probes](references/growable-arrays-stage-4.md)
+- Shift live inline bytes with memmove and move buffered slot heads in the
+  overlap-safe direction, reparenting nested owners. Snapshot wanted removeAt
+  results before freeing the slot; direct discarded builtin results need no
+  snapshot. Clear releases live heads and retains capacity. Inactive slots never
+  participate in copies/cleanup. [Typed edit evidence](references/growable-arrays-stage-5.md)
 
 ## Implemented boundaries
 

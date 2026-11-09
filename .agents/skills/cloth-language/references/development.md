@@ -7,6 +7,446 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Interface Stage 1 declarations and names (2026-11-08)
+
+The Kotlin and Bootstrap lexers reserve `interface` and `override`. The
+parser retains required signatures, explicit defaults, generic parent
+references and method prefixes. File scopes register original interface
+identities across imports. C3118 reports invalid header kinds and argument
+lists. C4035 guards interface compilation before conformance and code
+generation.
+
+The focused run passed 133 tests across 14 suites in 1m 1s. The native-free
+import task repeated its 35 tests successfully. Existing class and generic
+regressions ran on Windows x64 and x86 and covered IR and objects on all
+nine profiles. Bootstrap matched 124 inputs on both native profiles.
+[Interface Stage 1](../../cloth-interfaces/references/stage-1.md)
+
+### Generic interfaces added to the interface release plan (2026-11-08)
+
+After class and struct generics landed, the user asked to include generics in
+interface planning. The release now includes explicit, unconstrained interfaces
+and generic class conformance. The non-generic fixture remains the first
+dispatch milestone. The plan maps generic scope, substitution and specialization
+onto the interface stages. Constraints and additional implementer kinds have
+separate follow-ups. [Interface scope](../../cloth-interfaces/references/design.md#generic-interface-release-scope) ·
+[Interface plan](../../../../todo/interfaces-plan.md)
+
+The user confirmed one application of each interface declaration per class,
+struct, interface, or enum. The rule includes inherited interfaces. A diamond
+that reaches the same application contributes one entry. The conformance stage
+now covers conflicting applications from direct clauses and inherited paths.
+[One-application rule](../../cloth-interfaces/references/design.md#one-application-per-interface-declaration)
+
+### Growable arrays Stage 8 final integration (2026-11-08)
+
+The [final array record](../../cloth-arrays/references/growable-arrays-stage-8.md)
+reconciles the already-complete rectangular Stage 6 and fulfilled public List
+gate with the remaining Stage 8 audit. Obsolete outer-count tests were migrated
+in Stage 1; fixed literals, explicit extents and rectangular inner-shape checks
+remain covered. No compiler, SDK, Bootstrap or maintained example changes are
+required. Bootstrap's owning list and borrowed cursor retain their separate
+migration boundary.
+
+The fresh focused run passes 463 tests across 38 suites. Twenty-four fresh
+example executions pass across Windows x64, Windows x86 and GNU Linux x64 under
+Ubuntu WSL. Row-array and actual imported Collections examples verify startup
+IR/objects on all nine profiles; six other fixtures add Linux x64 objects.
+Fresh full regression passes 1,950 Compiler and 61 Shuttle tests; both project
+checks pass in 10m 2s with zero failures/errors/skips. Unchanged native-free
+generic/import/configuration tasks remain up to date. Publication checks pass
+for 27 documents and seven skills, preserving 524 implementation/test/example
+inputs. All 39 array-plan tasks are complete; the generic plan retains its 17
+completed tasks and separate future protocols/owning-consumer follow-ups.
+
+### Generic types Stage 6 integration and publication (2026-11-08)
+
+[Stage 6](../../cloth-generics/references/stage-6.md) closes the delivered generic
+class/struct and public List plan. The user-facing generic guide and standalone
+Generics example demonstrate exact arguments, value copies, nullable storage and
+metadata. The README now links the implemented List rather than treating it as
+a future collection. Separate follow-ups retain constraints, generic interfaces/
+functions, callable-owned parameters, inference, variance and collection protocols.
+
+The caller audit preserves Bootstrap's owning TokenList, same-file borrowed
+TokenCursor, token/span ownership, partial-error cleanup and source lifetime.
+Existing callers, intended Test.co and math sources are hash-checked unchanged.
+Compiler, Shuttle and public List implementation/test sources match the Stage 5
+hashes. No consumer migration, release pin update or Git publication is performed.
+
+Both project checks pass in 23s: import syntax/resolution execute freshly;
+the 1,950 Compiler and 61 Shuttle tests and other native-free tasks remain up to
+date from the passing Stage 5 source state. Twenty-three fresh CLI probes cover
+ten native example runs on Windows x64/x86, nine generic-example objects and four
+one-error rejections. The linked record distinguishes cached regression, fresh
+native checks and foreign object-only evidence and retains publication validation.
+
+### Generic types Stage 5 public List and imported-library proof (2026-11-08)
+
+[Stage 5](../../cloth-generics/references/stage-5.md) supplies the actual
+standard-library List class with private generic slots and the documented nine
+methods. The maintained Collections project imports the real file. Copies retain
+independent array elements and complete absent nullable-field witnesses; array
+export keeps rectangular checks. Class-valued elements remain caller-managed.
+
+Actual-source tests cover defining-file helper privacy, repeated/circular routes,
+root aliases, invariant arguments, metadata identity and default/override/disabled
+selection. Native Windows x64/x86, all-nine-profile IR/objects and poisoned helper
+cycles pass. Both real commands consume the source through the existing public
+compiler boundary. A temporary pinned snapshot verifies byte-identical release
+export without changing the working library's Git pin or existing math files.
+The new [collections skill](../../cloth-collections/SKILL.md) owns future API work.
+The focused record retains final counts and publication evidence. Stage 6,
+collection protocols, release preparation and Bootstrap migration remain separate.
+
+The final focused checks pass 191 Compiler tests in 25 suites and nine Shuttle
+tests in two suites, plus 86 generic, 33 import and 25 configuration native-free
+tests (1m 37s). The full regression freshly executes 1,950 Compiler tests in 182
+suites, 61 Shuttle tests in eight suites and the 86 generic tests; the other
+native-free tasks remain up to date (10m 3s), all with zero failures/errors/skips.
+Eighteen CLI probes and eight skill validations pass. The linked record retains
+27-document publication checks and 243 archived XML hashes. The public List
+delivery gate is closed; generic Stage 6 is not marked complete.
+
+### Generic types Stage 4 native values, storage and metadata (2026-11-08)
+
+[Stage 4](../../cloth-generics/references/stage-4.md) emits closed classes/structs,
+constructors/destructors, methods/operators, generic bases and exact typeinfo
+through the existing ABI and value storage. The maintained imported generic List
+and Maybe fixtures execute on Windows x64/x86. Private struct slots preserve
+independent row lengths, returned copies, absent nullable witnesses and class
+identity under poisoned frees; rectangular exports retain their shape checks.
+
+Module-local nominal metadata keys use canonical closed descriptors, fixing
+same-spelled private actuals and avoiding flattened argument keys. Canonical text
+premeasures shared argument DAGs and stops above 1,048,576 UTF-8 bytes as C4034;
+human display stays separately bounded. Struct buffered classification is memoized
+after fields are finalized; exact inline-size checks precede LLVM layout. C4033
+retains the symbolic/unresolved native guard. The focused record owns final counts,
+native versus all-nine-profile IR/object evidence and publication validation.
+
+Only Stages 0-4 are completed. The actual public standard-library List module,
+its delivery gate and Bootstrap migration remain separate work.
+
+The final focused run passes 155 tests in 20 suites (58s), plus 77 generic and 33
+import native-free tests. The full regression freshly executes 1,929 Compiler
+tests in 179 suites and 57 Shuttle tests in seven suites, with zero failures,
+errors or skips (9m 34s); native-free tasks remain up to date from that focused
+run. Nineteen CLI probes pass. Eleven skills validate, and the linked native
+record retains publication checks, archived XML hashes and exact target scope.
+
+### Generic types Stage 3 callable and flow integration (2026-11-08)
+
+[Stage 3](../../cloth-generics/references/stage-3.md) checks unused templates with
+unknown exact CTypeParameters, then checks required closed callables. Independent
+file bindings/models and source-linked body views preserve original ASTs while
+isolating defaults, captures, ordered results, operators, overload trials,
+presence, metadata and class lifetime facts. Signature keys retain exact types;
+private access follows original class declarations across their instances.
+
+Public generic signatures, inherited public struct methods and inferred operator
+results reject private helper exposure as C3117, while caller-private actual
+arguments remain allowed. C3115/C3116 bound symbolic expansion independently of
+closed quotas. Numeric width templates check opaque owner capabilities with the
+widest supported format, followed by actual width checks when requested. Bounded
+human display avoids flattening shared argument trees or splitting surrogate pairs;
+canonical metadata/identity remain separate. FunctionAnalyzer now succeeds for
+valid generics; C4033 moves to native emission validation.
+
+The four new suites cover the maintained imported List fixture and two simultaneous
+owners, exact overloads, nullable substitution/proofs, invalidated captures,
+explicit class lifetime, operators/widths, private helpers and source error order.
+The native-free tasks exercise generic checking without LLVM binaries. Ten CLI
+probes each return 1 with one expected error and no artifact. The focused record
+retains exact final test totals, target scope, report hashes and publication checks.
+Only Stages 0-3 are marked complete; native generic programs, public List and
+Bootstrap migration remain future work.
+
+The final focused run passes 94 tests in nine suites; native-free tasks pass
+77 generic and 33 import tests. The final full regression freshly executes
+1,906 Compiler tests in 176 suites and 57 Shuttle tests in seven suites, all with
+zero failures/errors/skips (8m 54s); the native-free tasks are up to date from that
+focused run. The final run includes the corrected Unicode display case. Eleven
+skills validate; publication covers 20 documents, 954 local links, 117 anchors
+and preserved plan scope. Archived final XML retains per-suite SHA-256 hashes.
+
+### Generic types Stage 2 closed types and bounded instantiation (2026-11-08)
+
+[Stage 2](../../cloth-generics/references/stage-2.md) adds target-scoped interning
+by original template and ordered exact normalized arguments, substituted
+fields/base links/declared callable types, and per-owner annotation/receiver facts.
+Closed CClass/CStruct descriptors share original ASTs while retaining independent
+fields and signature facts. Nullable substitution reuses one carrier; primitive,
+target-sized, array and nominal identities remain exact. Defining-file private
+helpers and caller-private actual types retain their original identities through
+repeated/circular imports.
+
+An explicit worklist registers provisional identities before requirements and
+validates inheritance/struct cycles after field discovery. C3112/C3113/C3114
+control 64 new dependency steps, 4,096 distinct instances and 256 argument layers
+after substitution. Same-key class recursion reuses before charging budgets.
+Generic compilation now reaches C4033 after closed validation; symbolic body
+checking, callable/flow specialization and generic native programs remain later.
+
+The focused run passes 42 tests in six suites; the expanded native-free generic
+task passes 45 tests in five suites. Exact limit boundaries, nullable/array
+substitution, preserved ASTs, target isolation, private imported helpers and the
+maintained List fixture all pass. Native LLVM storage shapes check all nine ABI
+profiles, without emitting generic programs/objects. Eight CLI probes each return
+1 with one expected diagnostic and no artifact. Stages 0-2 are marked complete;
+public List, later generic stages and Bootstrap migration remain open. The focused
+record owns final regression, archived hashes and publication evidence. The final
+run passes 1,874 Compiler tests in 172 suites, 45 native-free generic tests,
+33 native-free import tests and 57 Shuttle tests in seven suites (9m 29s), all
+freshly executed with zero failures/errors/skips. Seven skills validate;
+publication checks cover 15 documents, 817 local links, 99 anchors and the
+preserved plan scope. Final XML copies retain per-suite SHA-256 hashes.
+
+### Generic types Stage 1 syntax and source identity (2026-11-08)
+
+[Stage 1](../../cloth-generics/references/stage-1.md) adds class/struct parameter
+lists, nested named applications and lexical type-parameter symbols with original
+source spans. Named receivers and cast/check targets use token lookahead to
+preserve comparisons; primitive widths, return lists, opt wrappers, nullable and
+array suffixes keep their existing roles. The 256-level argument guard rejects
+deeper syntax with C2012.
+
+Name resolution uses original file bindings, keeping imported/private template
+identities and owner parameter scope without requiring closed layouts. C3108-C3111
+cover invalid parameters, arity, raw templates and invalid arguments. Deferred
+parameter/function/enum grammar uses C2011; C4033 stops closed compilation after
+name checks, including unused templates. Legacy type/signature APIs also prevent
+application erasure. Symbolic body checks, substitution, closed types/layouts,
+public signature visibility and native generic execution remain later stages.
+
+The focused run passes 131 tests in ten suites; separate native-free tasks pass
+25 generic parsing/name tests and 33 import semantic tests. The final regression
+passes 1,852 Compiler tests in 168 suites and 57 Shuttle tests in seven suites,
+all freshly executed with zero failures/errors/skips (9m 27s). Six CLI probes each
+return 1 with one expected diagnostic and no executable. The boundary tests reject
+generic object emission on all nine targets and execute ordinary compatibility
+programs on Windows x64/x86. Public List and Bootstrap remain untouched. The
+generic plan marks only Stages 0-1 complete; the focused record retains exact
+regression and publication evidence. All seven changed skills validate; publication
+checks pass for 14 documents, 797 local links, 99 anchors and the preserved plan
+scope. XML copies retain per-suite hashes.
+
+### Generic types Stage 0 contract and baseline (2026-11-08)
+
+The user confirmed the [generic first-slice contract](../../cloth-generics/references/semantics.md):
+classes/structs with explicit invariant arguments, owner-wide lexical parameter
+scope, declaration and closed-instance checking, ordinary value arguments,
+normalized nullable substitution and private helper visibility. Constraints,
+generic interfaces/functions/method parameters, variance and inferred type
+arguments remain later. The [acceptance fixtures](../../cloth-generics/references/acceptance-fixtures.md)
+specify imported List/private slots, independent row lengths, nullable values,
+metadata, first-error rejections and controlled resource boundaries. They are
+future language inputs, not runnable or shipped generic source.
+
+The [Stage 0 record](../../cloth-generics/references/stage-0.md) captures a fresh
+1,821-test/165-suite Compiler baseline, with zero failures/errors/skips (8m 55s).
+Shuttle's existing 57-test/seven-suite result remains up to date; it is not a fresh
+execution. Forty-three named Compiler preservation suites account for 571 tests.
+Archived XML/hash reports, exact task statuses and 396 unchanged Kotlin source
+hashes separate that evidence from generic implementation. Resource policies are
+selected for future controlled guards: 64 dependency steps, 4,096 closed instances
+and 256 levels of argument structure. No production/test implementation,
+Bootstrap, standard-library or intended Test.co changes are added. Generic
+implementation stages and public List delivery remain open.
+All five changed skills validate. Publication checks cover 12 documents,
+719 relative links and 96 anchors, and recheck source/archived XML hashes.
+Both generic Stage 0 tasks are complete; later stages remain unchecked.
+### Growable arrays Stage 7 collection proof and generic List gate (2026-11-08)
+
+The [Stage 7 record](../../cloth-arrays/references/growable-arrays-stage-7.md)
+proves the complete ordinary StringList method surface and a private struct-slot
+RowList with independently sized array elements. The user confirmed different
+List array-element lengths, independent copy and checked rectangular toArray.
+The [generic-types plan](../../../../todo/generic-types-plan.md) and
+[generic skill](../../cloth-generics/SKILL.md) capture the class/struct prerequisite,
+closed identities, substitution, specialization limits, imports, metadata and
+collection protocol boundaries. Their proposed generic semantics are not yet
+implemented or all confirmed.
+
+All 87 focused tests across nine suites pass, including 19 new tests. Real
+allocation/poison probes cover repeated collection methods, independent exports,
+removed rows and retained witnesses. Both 1,000-cycle helper-frame probes return
+to reserved live bytes; 100 reserved string appends allocate exactly 200 received
+buffers and move zero old bytes. Both Windows widths execute the fixtures; the
+two new suites verify IR/objects across all nine profiles. Bootstrap differential,
+import and standard-library runtime tests pass unchanged. No production compiler,
+Bootstrap or standard-library source changes are needed. Public generic List is
+still absent, so four Stage 7 tasks are checked and its delivery milestone remains
+open. The last full Compiler/Shuttle regression is the Stage 6 snapshot below.
+Both maintained examples also execute through the CLI with --no-stdlib on Windows
+x64/x86. All seven changed skills validate; publication checks pass for 16
+documents, 842 relative links, 99 anchors and four source/test/example files.
+The Stage 7 record owns archived XML/hashes, CLI outputs and validation evidence.
+
+### Growable arrays Stage 6 rectangular mutation and integrations (2026-11-08)
+
+The [Stage 6 record](../../cloth-arrays/references/growable-arrays-stage-6.md)
+owns whole-row append/insert/removeAt, clear and reserve for rectangular arrays.
+Incoming rows establish/check inner shape before growth allocation. Owned shared
+vectors retain witnesses after removal, all-null rows, clear and null. Whole
+replacement checks the live binding descriptor; selected older descriptors keep
+their own outer count. Removed rows copy parent constraints before slot cleanup.
+Embedded-row shape changes still fail with C3107; the native rank gate is removed.
+
+All 248 focused tests across 15 suites pass, including 26 new source/storage tests.
+Native Windows x64/x86 probes cover ranks two through four, nullable witnesses,
+struct/class/self fields, removed results, poisoned frees and invalidated reads.
+Two 1,000-cycle probes retain only reserved live bytes after each cycle; 200 null
+row inserts/removals allocate no extra storage. Providers, growable type identity,
+recursive text, producers/defaults/captures, ordered results and foreach snapshots
+retain their existing contracts. Both new suites verify IR/objects on all nine
+profiles. [GrowableArrayRows.co](../../../../examples/GrowableArrayRows.co) also
+executes through the CLI at both Windows widths, as does the record's minimal
+code sample. Full offline regression passes 1,802 Compiler tests across 163 suites
+and 57 Shuttle tests across seven suites, with zero failures/errors/skips (9m 10s).
+All 13 changed skills pass validation; publication checks cover 28 documents,
+1,140 relative links, 139 anchors and 11 source/test/example files. The Stage 6
+record owns archived XML, copy-verified hashes and commands. Stages 7-8 remain
+open, including generic-type support before public `List<T>` delivery.
+
+### Growable arrays Stage 5 ordered edits and removed values (2026-11-08)
+
+The [Stage 5 record](../../cloth-arrays/references/growable-arrays-stage-5.md)
+owns executable one-dimensional insert/removeAt/clear across stored and temporary
+receivers. Ordered shifts move live inline bytes and reparent buffered slot heads.
+Wanted removed values receive independent storage before slot release; direct
+discarded builtins omit unused snapshots. Clear releases live payloads and keeps
+capacity. Destroyed child views of every rank/fixed extent are invalidated before
+later current-bound checks. Wide result/index scratch restores locally without
+admitting mutators into enclosing arena-suffix cleanup proofs.
+
+All 183 focused tests across nine suites pass, including 32 new tests. A 1,000-cycle
+append/insert/discarded-remove/clear probe returns to reserved live bytes after
+every iteration and uses 6,002 total allocations. Reserved front insertion/removal
+shifts exactly 999,000 string descriptors without copying old payloads. Poisoned
+probes cover removed structs/witnesses, nested owners, nullable/wide values,
+class identity, invalidated children and allocation failures. Both Windows widths
+execute the fixtures; both new suites verify IR and objects on all nine profiles.
+The maintained [GrowableArrayEdits.co](../../../../examples/GrowableArrayEdits.co)
+uses the complete one-dimensional surface through ordinary private-array methods.
+Full offline regression passes 1,776 Compiler tests across 161 suites and 57
+Shuttle tests across seven suites, with zero failures/errors/skips (8m 46s).
+The example also executes through the CLI at both Windows widths. All 12 changed
+skills pass the full validator; 25 documents and 12 source/test/example files pass
+publication checks. The Stage 5 record owns archived XML, hashes, commands and
+the retained conservative snapshot/cleanup boundaries. Stages 6-8 remain open.
+
+### Growable arrays Stage 4 field growth and scoped selections (2026-11-08)
+
+The [Stage 4 record](../../cloth-arrays/references/growable-arrays-stage-4.md)
+owns executable one-dimensional append/reserve on class/aggregate fields, nested
+array-element fields and `self`. Direct publication uses the array's existing
+owner, avoiding per-append root repacking. Scoped owner observations preserve
+selected reads/writes/ordinary struct receivers across growth in separately
+emitted methods. Owner cleanup invalidates back-links before capacity release;
+normal scope and frame cleanup unregister observations. The private callable ABI
+and independent copy/export rules remain unchanged.
+
+All 86 focused tests across seven suites pass, including 25 new Stage 4 tests.
+Scalar class wrappers reach 4,096 elements with 13 capacity growths and 16,380
+moved bytes. Reserved string wrappers retain only live payloads after each call
+and make two received-payload copies per appended string. Native Windows x64/x86
+probes cover poisoned growth, owner replacement/deletion and abrupt cleanup;
+both new suites verify IR/objects on all nine profiles. The maintained
+[GrowableArrayFields.co](../../../../examples/GrowableArrayFields.co) proves shared
+class aliases, private backing storage and independent exports surviving deletion.
+Full offline regression passes 1,744 Compiler tests across 159 suites and 57
+Shuttle tests across seven suites, with zero failures/errors/skips (8m 36s).
+The corrected cleanup/layout selection passes 103 tests across four suites;
+exact byte/peak expectations include the fourth owner-control word. The example
+also executes through the CLI on Windows x64/x86. All 12 changed skills pass the
+full validator; 24 documents and 14 source/test/example files pass publication
+checks. The Stage 4 record owns archived XML, hashes, commands and remaining
+conservative lifetime boundaries. Stages 5-8 remained open at that milestone;
+the Stage 5 entry above owns current one-dimensional edits.
+
+### Growable arrays Stage 3 source append and reserve (2026-11-08)
+
+The [Stage 3 record](../../cloth-arrays/references/growable-arrays-stage-3.md)
+owns one-dimensional local/parameter/temporary append/reserve, exact received
+elements, protected indirect operands and scoped cleanup. Selected indexed places
+and ordinary struct receivers follow capacity movement while retaining original
+bounds and stopping at whole-binding replacement. Other operations, direct field
+receivers and rectangular mutation retain C4032; callable ABI and class deletion
+rules are unchanged.
+
+All 25 new source fixtures pass focused verification, including native Windows
+x64/x86 allocation, movement, poisoned-free and failure probes, plus all-nine-profile
+IR/objects. Scalar growth reaches 4,096 values with one initial owner plus 13 growth
+allocations and 16,380 moved bytes. String producers, self-element copies, full-cap
+integer arguments and repeated temporary calls have bounded measured ownership.
+Full offline regression passes 1,719 Compiler tests across 157 suites and 57
+Shuttle tests across seven suites, with zero failures/errors/skips (8m 31s).
+The documented example executes at both Windows widths. All 12 changed skills
+pass the full validator; 22 documents and 14 source/test/example files pass
+publication checks. The Stage 3 record owns archived XML, hashes, commands and
+the retained conservative cleanup boundaries. Stages 4-8 remained open at that
+milestone; the Stage 4 entry above owns current field support.
+
+### Initial interface scope confirmed (2026-11-08; design only)
+
+The user confirmed non-generic interfaces first, with `IHealth<T>` following
+general generic types and constraints. The
+[interface scope contract](../../cloth-interfaces/references/design.md#initial-implementation-scope-confirmed-2026-11-08)
+and [plan](../../../../todo/interfaces-plan.md) retain concrete first-release
+fixtures and the intended generic Test.co design. Class implementers remain
+first; struct/enum implementers remain later work. No compiler implementation
+or new execution evidence was added by this decision.
+
+The user also confirmed that interface calls use labels and omitted-argument
+defaults from the static interface declaration; runtime dispatch selects only the
+body. The [call-contract record](../../cloth-interfaces/references/design.md#static-interface-call-contracts-confirmed-2026-11-08)
+keeps ordinary evaluation/snapshot rules and prevents a second default evaluation
+by the implementation. Optional-argument guidance now links to that accepted
+design. Signature/optionality compatibility and class-view contracts remain open.
+
+The user also confirmed that a newly declared matching method without
+`override:` in an implementing class is an error even when the interface
+provides a default; the compiler must not silently use that fallback. The
+previously accepted inherited-public-method reuse remains valid without a
+forwarding declaration. These are design records, with no new compiler tests.
+
+### Interface implementation planning (2026-11-07; no compiler change)
+
+The user selected class implementers first, with struct/enum implementers later.
+The user subsequently confirmed signature-only required methods, explicit
+`= default (...)` expression fallbacks and `= default { ... }` block fallbacks. The
+[confirmed method contract](../../cloth-interfaces/references/design.md#required-methods-and-explicit-defaults-confirmed-2026-11-07)
+records those choices; the other Stage 0 decisions remain open. This changes
+design records, with no compiler implementation. The user also confirmed one
+class base plus multiple implemented interfaces in a comma-separated `:` header,
+and multiple parent interfaces in the same colon/comma syntax.
+The user confirmed `override: pub mt<...> ...` or `override: mt<...> ...`, required
+on every newly declared class implementation of an interface method. Test.co now
+uses that prefix in place of `@Override`. The user also confirmed reuse of a
+matching public inherited method, even when the base does not name the interface,
+without a forwarding declaration. The
+[prefix record](../../cloth-interfaces/references/design.md#override-declaration-prefix-confirmed-2026-11-07)
+retains private inheritance, subclass replacement and detailed matching rules as
+remaining decisions.
+The user confirmed default precedence: eligible class implementations win, then
+the most-specific interface default; unrelated competing defaults require an
+explicit class `override:` implementation. Shared-ancestor defaults retain their
+declaration identity through diamonds. Re-abstraction and the other remaining
+Stage 0 details remain open.
+The [interface skill](../../cloth-interfaces/SKILL.md) and
+[design record](../../cloth-interfaces/references/design.md) retain established
+Test.co syntax and visibility separately from recommended/open contracts.
+The [plan](../../../../todo/interfaces-plan.md) stages the contract, syntax and
+nominal identities, conformance, typed calls, checked dispatch, default bodies,
+cross-feature integration and publication. No interface stage is complete.
+
+The focused foundation run passed **106 tests across six suites**, zero
+failures/errors/skips, in 40 seconds. Existing class fixtures executed on Windows
+x64/x86 and verified IR/objects for all nine profiles; this is not interface
+execution evidence or new foreign-native coverage. The plan retains the exact
+command; XML is preserved under `build/interfaces-planning-baseline/test-results/`.
+
 ### Growable arrays Stage 2 owned capacity and typed relocation (2026-11-07)
 
 The [Stage 2 record](../../cloth-arrays/references/growable-arrays-stage-2.md)

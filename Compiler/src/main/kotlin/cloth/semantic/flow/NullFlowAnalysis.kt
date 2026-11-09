@@ -83,7 +83,15 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun common(paths: List<Set<Place>>, fallback: Set<Place>) = paths.reduceOrNull { left, right -> left intersect right } ?: fallback
 	private fun knownPresent(value: Expression) = value in presentResults
-	private fun nullable(symbol: BindingSymbol) = symbol.declaredType?.hasNullability == true
+	private fun nullable(symbol: BindingSymbol) = if (model.declarations.genericViews == null) symbol.declaredType?.hasNullability == true else (when (symbol) {
+		is ReceiverSymbol, is ReceiverFieldSymbol -> model.typeOf(symbol)
+		else -> model.bindings[symbol] ?: symbol.declaredType?.let { model.declarations.genericViews.resolvedTypes[it] }
+	})?.let { it is CNullable || it is CTypeParameter } ?: (symbol.declaredType?.hasNullability == true)
+	private fun presentAnnotation(type: cloth.parser.type.TypeReference): Boolean {
+		val resolved = model.declarations.genericViews?.resolvedTypes?.get(type)
+		return if (resolved == null) !type.hasNullability && type.name.lexeme != Keywords.VOID.toString()
+		else resolved !is CNullable && resolved !is CTypeParameter && resolved != ValueType.VOID
+	}
 
 	/** Use resolved declaration types when available. Inferred locals can
 	 * remain unknown here because this pass precedes overload typing.
@@ -131,6 +139,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return try {
 			val annotation = local.declaredType
 			if (annotation != null) {
+				model.declarations.genericViews?.resolvedTypes?.get(annotation)?.let { return it }
 				if (annotation.arraySuffixes.isNotEmpty()) return if (annotation.capturesWidth) null else model.types.typeResolver.resolve(annotation)
 				if (annotation.name.lexeme == Keywords.STRING.toString()) return if (annotation.hasNullability) CNullable(ValueType.STRING) else ValueType.STRING
 				model.declarations.namedType(annotation.name)?.let { return if (annotation.hasNullability) CNullable(it) else it }
@@ -282,7 +291,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun presentReturns(candidates: List<CallableSymbol>) = candidates.all {
-		it.declaration.returnTypes.singleOrNull()?.let { type -> !type.hasNullability && type.name.lexeme != Keywords.VOID.toString() } == true
+		it.declaration.returnTypes.singleOrNull()?.let(::presentAnnotation) == true
 	}
 
 	fun analyze(function: CallableDeclaration) {
@@ -427,7 +436,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val symbol = binding(value)
 				val deferred = block(symbol)
 				if (deferred != null) {
-					if (deferred.declaration.returnType?.let { !it.hasNullability && it.name.lexeme != Keywords.VOID.toString() } == true) presentResults.add(value)
+					if (deferred.declaration.returnType?.let(::presentAnnotation) == true) presentResults.add(value)
 					Outcome(forgetAliases(forget(initial, writes(deferred))))
 				} else {
 					if (symbol != null) {
@@ -530,7 +539,9 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
 				val subject = stable(value.operand)?.takeIf { it.path.isEmpty() && value.operand is NameExpression }
-				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let { model.declarations.namedType(it.name) as? CClass }
+				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let {
+					if (model.declarations.genericViews != null) model.types.typeResolver.resolve(it) as? CClass else model.declarations.namedType(it.name) as? CClass
+				}
 				if (subject == null || target == null) Outcome(after)
 				else Outcome(after, after + subject + subject.copy(narrowed = target), after)
 			}
@@ -584,7 +595,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		when (value) {
 			is ClassCreationExpression                                                                                                                                                                                                                                   -> presentResults.add(value)
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is ArrayLiteral, is StructLiteral, is InterpolatedString, is BinaryExpression, is UnaryExpression, is ProviderAccessExpression, is TypeCheckExpression -> presentResults.add(value)
-			is CastExpression                                                                                                                                                                                                                                            -> if (!value.target.hasNullability && value.target.name.lexeme != Keywords.VOID.toString()) presentResults.add(value)
+			is CastExpression                                                                                                                                                                                                                                            -> if (presentAnnotation(value.target)) presentResults.add(value)
 			is CallExpression                                                                                                                                                                                                                                            -> {
 				val candidates = when (val group = model.declarations.candidatesOf(value)) {
 					is FunctionGroupSymbol -> group.overloads
@@ -597,7 +608,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is MemberCallExpression                                                                                                                                                                                                                                      -> {
 				val hint = receiverHint(value.receiver)
 				if (arrayMutation(value) != null) {
-					if (ArrayMutation.named(value.name.lexeme) == ArrayMutation.REMOVE_AT && hint is CArray && hint.element !is CNullable) presentResults.add(value)
+					if (ArrayMutation.named(value.name.lexeme) == ArrayMutation.REMOVE_AT && hint is CArray && hint.element !is CNullable && hint.element !is CTypeParameter) presentResults.add(value)
 					return result
 				}
 				val sources = methods(value, hint)

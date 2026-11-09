@@ -5,6 +5,10 @@ override and disable command options are implemented.
 The [Stage 5 record](standard-library-stage-5.md) completes publication with a
 maintained example, real packaged runtime independence and explicit target scope.
 The [toolchain guide](../../../../docs/standard-library.md) owns release/user instructions.
+[Generic Stage 5](../../cloth-generics/references/stage-5.md) adds the actual public
+List API and its imported/command tests. The new source is available through
+development selection; release packaging retains the clean pinned-submodule
+requirement. Its temporary snapshot export evidence does not publish a release.
 The [Stage 4 record](standard-library-stage-4.md) specifies and verifies existing
 class allocation as the first owning-collection runtime boundary. It adds no
 public collection API or new production runtime code.
@@ -123,6 +127,12 @@ Stage 2 consumes those properties for default selection in shared command suppor
 The user deferred arbitrary Windows Unicode installation paths after reproducing
 the installed JDK's code-page limitation; preserve the follow-up and actual tested
 scope in the Stage 1 record rather than claiming full Windows launcher support.
+
+The user subsequently requested a plan to fix both installed commands for Chinese
+and emoji paths without changing locale or cwd, including actual installed-command
+tests. The [launcher plan](../../../../todo/windows-unicode-launcher-plan.md) owns
+that pending work. Its proposed native-host design is not implemented or verified;
+the historical Stage 1 boundary remains the current implementation limit.
 
 ## Command selection
 

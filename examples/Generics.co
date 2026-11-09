@@ -1,0 +1,27 @@
+// The implemented generic slice: explicit invariant classes and structs.
+typedef<struct> Slot<T> {
+    T value;
+    mt<typeinfo> argumentType() = T::type
+}
+
+typedef<class> Box<T> (def<T> value) {
+    pub mt<T> get() = value
+    pub mt<typeinfo> argumentType() = T::type
+}
+
+fn main() {
+    def box = Box<string[]>::new(["first"])
+    def words = box.get()
+    def retained = words
+    words.append("second")
+    println(box.argumentType())
+    box::delete
+    println(words)
+    println(retained)
+
+    def<Slot<int?>> optional = { null }
+    println(optional.value)
+    println(optional.argumentType())
+    println(Box<int>::type == Box<int<32>>::type)
+    println(Box<int>::type == Box<string>::type)
+}

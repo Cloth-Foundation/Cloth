@@ -5,6 +5,28 @@ description: Design, explain, or extend Cloth function declarations, strict para
 
 # Cloth functions and function blocks
 
+[Generic Stage 0](../cloth-generics/references/semantics.md#declaration-and-closed-body-checking)
+confirms owner-generic bodies are checked at declaration, including unused
+templates, then checked again after closed substitution. Unknown T grants no
+numeric/member/class capabilities. Preserve independent candidate/body facts;
+generic function or method-owned parameters remain outside the first slice.
+[Generic Stage 1](../cloth-generics/references/stage-1.md) binds owner parameters
+through signatures, defaults, results and deferred function blocks. It does not
+check generic bodies or specialize callables. Legacy signature/type resolution
+rejects applications with C4033 rather than erasing their arguments.
+[Generic Stage 2](../cloth-generics/references/stage-2.md) supplies per-closed-owner
+declared signature patterns and substituted annotation facts, including
+constructors/defaults/results. Existing inferred operator widths stay patterns.
+[Generic Stage 3](../cloth-generics/references/stage-3.md) checks symbolic
+declarations and closed bodies, including defaults/captures/results/operators,
+using separate source-linked AST views and exact signature keys. Candidate and
+operator inference facts stay isolated. Private access follows the original
+class declaration across its instances. Generic methods/functions remain deferred.
+[Generic Stage 4](../cloth-generics/references/stage-4.md) emits the closed
+constructors/destructors, methods/operators, defaults, captures and ordered results
+through the existing private ABI and frame storage. Keep callable/receiver caches
+keyed by closed symbols/owners. C4033 guards symbolic/unresolved native contexts.
+
 [Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
 extends ordinary/deferred functions, recursion, optional arguments and ordered
 results through 65536 bits. Private wide arguments point to stable snapshots;
@@ -20,6 +42,28 @@ extends private array transport with capacity and owner fields. Callers, nullabl
 carriers, ordered results and callees consume the same `CArray` layout; string
 transport stays two-field. Outgoing arrays copy live slots and their buffers into
 the caller's arena before frame release. Spare capacity is not copied.
+[Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes append
+and reserve on independent one-dimensional parameters and temporaries. Stored
+array-element struct receivers select/check indices before arguments and resolve
+their selected address after argument growth. The private callable ABI is unchanged.
+[Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) executes array-field
+append/reserve through ordinary class/struct methods. Existing owners preserve
+capacity across calls. Scoped observations update caller selections before callee
+growth frees capacity, while class-backed receivers retain checked current-field
+replay. Outgoing field arrays still copy independently before owner deletion.
+[Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) executes insert,
+removeAt and clear through the same receivers. Wanted removed indirect values
+copy before slot cleanup or temporary receiver release, and outgoing results copy
+before frame exit. Direct discarded builtins omit unused removed snapshots;
+ordinary user-defined method/function result transport is unchanged.
+[Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) executes whole-row
+rectangular methods through the same ABI. Defaults, captures, function/method
+producers and temporary receivers preserve independent row data and witnesses;
+removed rows survive source clear, return and class deletion.
+[Stage 8](../cloth-arrays/references/growable-arrays-stage-8.md) consolidates
+the array/callable audit and final target evidence. Independent parameters and
+returned snapshots keep their declared growable/fixed types and inner witnesses;
+ordinary collection methods introduce no separate array transport convention.
 [Struct Stage 4](../cloth-structs/references/function-integration.md) integrates
 recursive, named and defaulted calls, ordered results and deferred struct reads.
 Struct parameters receive independent snapshots and outgoing structs copy to

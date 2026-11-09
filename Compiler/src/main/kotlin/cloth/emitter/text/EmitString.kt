@@ -26,9 +26,9 @@ import java.math.BigInteger
  * generated concatenations belong to a reclaimable function arena. Escaping values copy
  * into binding or caller storage before their expression/invocation is released.
  */
-internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, val abi: NativeCABI, val target: TargetLayout = abi.layout, private val arena: (() -> LLVMValueRef)? = null) {
+internal class EmitString(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, val abi: NativeCABI, val target: TargetLayout = abi.layout, private val arena: (() -> LLVMValueRef)? = null, metadataTypes: EmitTypeInfo.Types = EmitTypeInfo.Types()) {
 
-	val metadata by lazy { EmitTypeInfo(context, builder, abi, this) }
+	val metadata by lazy { EmitTypeInfo(context, builder, abi, this, metadataTypes) }
 
 	private val types = LLVMTypes(context, target)
 	private val memory = EmitMemory(context, builder, abi, target)

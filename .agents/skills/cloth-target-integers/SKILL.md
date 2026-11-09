@@ -59,6 +59,20 @@ widths by using `FIXED_INTEGER_WIDTHS`. The new suite checks reused 32/64-bit AS
   checks capacity against concrete element stride, slot-head bytes, alignment
   padding and arena/control overhead before allocation or payload access. Growth
   saturates within those limits; it never derives counts from JVM width.
+  [Source append/reserve](../cloth-arrays/references/growable-arrays-stage-3.md)
+  use those same checked helpers. Validate an index against its original count
+  before narrowing and separately resolve current selected storage after growth.
+  [Field growth and observations](../cloth-arrays/references/growable-arrays-stage-4.md)
+  add one private owner-control pointer to that checked overhead. Descriptor
+  counts, public usize identity and string layout remain unchanged.
+  [Stage 5 edits](../cloth-arrays/references/growable-arrays-stage-5.md) check
+  insertion's inclusive and removal's exclusive current bound after arguments.
+  Length addition and live shift bytes use checked target arithmetic. Wide
+  original/current bounds checks restore their local wide scratch only after
+  producing the checked native scalar; no index bits are discarded first.
+  [Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) uses these same
+  target counts for rectangular edits and known/unknown inner extents, including
+  zero. Current outer `::size` stays exact `usize` after removal and clear.
 - Signed arithmetic/division/casts retain shared integer rules. isize is allowed
   as a main result; usize and all other unsigned main results are rejected. The
   older usize-main extension is superseded. See

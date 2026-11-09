@@ -10,14 +10,16 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
-/** One descriptor per declaration per source unit. Equality is nominal. */
-class CStruct internal constructor(val declaration: StructDeclaration, fields: List<StructField>? = null) : CMemberType(Keywords.STRUCT) {
+/** Nominal descriptor: one per ordinary declaration or closed generic argument tuple. */
+class CStruct internal constructor(override val declaration: StructDeclaration, fields: List<StructField>? = null, val genericDefinition: CStruct? = null, override val typeArguments: List<ValueType> = emptyList()) : CMemberType(Keywords.STRUCT) {
 
-	override val name get() = declaration.name
 	override val indirect get() = true
 	override lateinit var fields: List<StructField>
 		private set
-	override val buffered get() = fields.any { it.type.buffered }
+	// Field discovery/cycle checking finishes before storage queries. Cache each
+	// descriptor's answer so shared closed field DAGs are not traversed exponentially.
+	private var bufferedValue: Boolean? = null
+	override val buffered get() = bufferedValue ?: fields.any { it.type.buffered }.also { bufferedValue = it }
 	private lateinit var fieldsByName: Map<String, StructField>
 
 	init {
@@ -26,6 +28,7 @@ class CStruct internal constructor(val declaration: StructDeclaration, fields: L
 
 	internal fun defineFields(fields: List<StructField>) {
 		this.fields = fields
+		bufferedValue = null
 		fieldsByName = fields.associateBy { it.name.lexeme }
 	}
 

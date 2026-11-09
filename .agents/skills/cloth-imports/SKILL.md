@@ -5,6 +5,33 @@ description: Design or extend Cloth using imports, selective and wildcard bindin
 
 # Cloth imports
 
+Interface Stage 1 adds original interface identities to the shared type
+namespace and export table. Selected and wildcard imports, private names and
+cycles use the existing file binding rules. Generic interface names resolve in
+their defining file. [Interface Stage 1](../cloth-interfaces/references/stage-1.md)
+
+[Generic Stage 0](../cloth-generics/references/semantics.md#visibility-and-imports)
+requires future template application to retain defining-file private names and
+original closed identities across graph routes. Public generic signatures cannot
+leak private helpers; caller-private actual arguments remain valid where visible.
+No import alias syntax is added. [Generic Stage 1](../cloth-generics/references/stage-1.md)
+binds owner parameters and nested applications using original declarations and
+defining-file scopes, including private helpers and circular graph routes.
+[Generic Stage 2](../cloth-generics/references/stage-2.md) interns closed owners
+and substitutes defining-file private helpers with original caller-private actual
+types. Repeated/circular routes reuse the same closed keys; same-spelled private
+templates remain distinct. [Generic Stage 3](../cloth-generics/references/stage-3.md)
+checks source-linked callable bodies in their defining contexts and rejects
+private helpers exposed by public generic signatures, including inferred operator
+results. Caller-private actual arguments remain valid.
+[Generic Stage 4](../cloth-generics/references/stage-4.md) executes the maintained
+imported List fixture and keeps same-spelled private actuals distinct in runtime
+metadata. The module registry keys canonical closed descriptors, not their shared
+display text. [Generic Stage 5](../cloth-generics/references/stage-5.md) imports
+the actual public List from a separate selected root, with private helpers,
+repeated/circular routes, configured aliases and unchanged role/selection rules.
+Use StandardListImportsTest for native-free actual-library identity/visibility.
+
 Read the [import contract](references/semantics.md) before changing import syntax,
 visibility, overload binding, file resolution or circular-source handling. Read
 the [compiler API contract](references/compiler-api.md) when changing the driver,

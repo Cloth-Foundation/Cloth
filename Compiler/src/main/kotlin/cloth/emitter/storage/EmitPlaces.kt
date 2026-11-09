@@ -39,14 +39,18 @@ internal class EmitPlaces(
 	private val stored = EmitStoredValue(context, builder, abi.layout)
 	private val nullable = EmitNullable(context, builder, abi.layout)
 	private val transfer = expressions.valueTransfer
+	private val temporaryAnalysis = ArrayTemporaryAnalysis(functionSemantics)
 
 	internal data class PlaceAddress(val address: LLVMValueRef, val type: ValueType, val parent: ArrayParent? = null, val struct: StructParent? = null)
 	private data class SavedStep(val step: PlaceStep, val indexType: ValueType? = null, val index: LLVMValueRef? = null)
 	private data class CapturedPath(val steps: List<SavedStep>, val initial: PlaceAddress)
 	private data class CapturedInstance(val access: ObjectAccess, val field: ClassField, val path: CapturedPath)
+	private data class LocalPath(val steps: List<SavedStep>, val initial: PlaceAddress, val resolve: () -> PlaceAddress)
+	internal data class ArrayTarget(val place: PlaceAddress, val arena: LLVMValueRef, val localRoot: BindingSymbol? = null)
 	internal sealed class CapturedWrite(val initial: PlaceAddress, val replayed: Boolean)
 	private class InstanceWrite(val instance: CapturedInstance) : CapturedWrite(instance.path.initial, replayed = true)
 	private class StoredWrite(val root: BindingSymbol, initial: PlaceAddress) : CapturedWrite(initial, replayed = false)
+	private class LocalWrite(val root: BindingSymbol, val path: LocalPath, val receiver: ReceiverAccess?, val dynamic: LLVMValueRef?) : CapturedWrite(path.initial, replayed = true)
 	private class ReceiverWrite(
 		val access: ReceiverAccess, val rootType: ValueType, val dynamic: LLVMValueRef, val path: CapturedPath,
 	) : CapturedWrite(path.initial, replayed = true)
@@ -81,6 +85,62 @@ internal class EmitPlaces(
 	private fun loadArray(location: PlaceAddress): LLVMValueRef {
 		val raw = load(location)
 		return if (location.type is CNullable) nullable.payload(raw) else raw
+	}
+
+	/** Observe each selected array value before its index runs. A later growth
+	 * updates the view even from a separately emitted method; replacement leaves
+	 * the original selection alone. Class-backed paths retain current-field replay.
+	 */
+	private fun <T> withLocalPath(root: () -> PlaceAddress, steps: List<PlaceStep>, dynamic: LLVMValueRef? = null, mayMove: Boolean = true, action: (LocalPath) -> T): T {
+		val views = mutableListOf<EmitBindings.ArrayView>()
+		val observe = mayMove || steps.any { it is PlaceStep.Index && !temporaryAnalysis.hasNoPublication(it.index) }
+		val saved = mutableListOf<SavedStep>()
+		var resolve = root
+		var location = root()
+		try {
+			for (step in steps) when (step) {
+				is PlaceStep.Field -> {
+					val part = SavedStep(step)
+					saved.add(part)
+					val parent = resolve
+					resolve = { replay(builder, parent(), listOf(part)) }
+					location = resolve()
+				}
+				is PlaceStep.Index -> {
+					val wrapper = location.type as? CNullable
+					if (wrapper != null) EmitMemory(context, builder, abi).guard(stored.isPresent(location.address, wrapper), "Nullable stored place is no longer present")
+					val before = loadArray(location)
+					val view = if (observe) bindings.observeValue(before, step.array)?.also(views::add) else null
+					val index = expressions.emitValue(step.index)
+					val indexType = expressions.typeOf(step.index)
+					saved.add(SavedStep(step, indexType, index))
+					val prefix = saved.toList()
+					// Original local bounds precede explicit arguments. A class path
+					// is checked against its re-resolved current field, as before.
+					if (dynamic == null) arrays.validateIndex(before, index, indexType)
+					fun selected(): PlaceAddress {
+						val value = view?.let { stored.load(it.address, it.type) } ?: before
+						return PlaceAddress(arrays.checkedAddress(value, step.array.element, index, indexType), step.array.element, ArrayParent(value, step.array, arrays.checkedIndex(index, indexType)))
+					}
+					resolve = if (dynamic == null) ::selected else {
+						{
+							val carrier = PointerPointer<LLVMTypeRef>(2L).use { fields ->
+								fields.put(0, LLVMPointerTypeInContext(context, 0)); fields.put(1, types.value(step.array))
+								LLVMStructTypeInContext(context, fields, 2, 0)
+							}
+							fun pack(place: PlaceAddress): LLVMValueRef = LLVMBuildInsertValue(builder, LLVMBuildInsertValue(builder, LLVMGetUndef(carrier), place.address, 0, "selected_address"), checkNotNull(place.parent).value, 1, "selected_parent")
+							val chosen = checkNotNull(nullable.choose(dynamic, carrier, { pack(replay(builder, root(), prefix)) }, {
+								arrays.validateIndex(before, index, indexType)
+								pack(selected())
+							}))
+							PlaceAddress(LLVMBuildExtractValue(builder, chosen, 0, "selected_address"), step.array.element, ArrayParent(LLVMBuildExtractValue(builder, chosen, 1, "selected_parent"), step.array, arrays.checkedIndex(index, indexType)))
+						}
+						}
+					location = resolve()
+				}
+			}
+			return action(LocalPath(saved, location, resolve))
+		} finally { views.asReversed().forEach(bindings::endSelection) }
 	}
 
 	private fun replay(using: LLVMBuilderRef, root: PlaceAddress, steps: List<SavedStep>, indices: List<LLVMValueRef> = steps.mapNotNull { it.index }): PlaceAddress {
@@ -223,7 +283,19 @@ internal class EmitPlaces(
 		is MethodReceiver.Instance         -> throw InternalErrors.invariant("Object identity reached the struct receiver path")
 	}
 
-	fun captureWrite(instance: InstancePlace?, place: StoredPlace?): CapturedWrite {
+	fun <T> withWrite(instance: InstancePlace?, place: StoredPlace?, mayMove: Boolean = true, action: (CapturedWrite) -> T): T {
+		if (instance == null && place != null && bindings.relocatableArrays) {
+			val parent = bindings.structAccess(place.root)
+			val dynamic = parent?.resolver?.let { LLVMBuildIsNotNull(builder, it, "class_backed_write") }
+			val rootType = functionSemantics.typeOf(place.root)
+			return withLocalPath({ PlaceAddress(bindings.address(place.root), rootType) }, place.steps, dynamic, mayMove) { path ->
+				action(LocalWrite(place.root, path, parent, dynamic))
+			}
+		}
+		return action(captureWrite(instance, place))
+	}
+
+	private fun captureWrite(instance: InstancePlace?, place: StoredPlace?): CapturedWrite {
 		if (instance != null) return InstanceWrite(captureInstance(instance))
 		val root = checkNotNull(place)
 		val access = bindings.structAccess(root.root) ?: return StoredWrite(root.root, resolvePlace(root))
@@ -232,6 +304,62 @@ internal class EmitPlaces(
 		val dynamic = LLVMBuildIsNotNull(builder, checkNotNull(access.resolver), "class_backed_write")
 		val path = capturePath({ PlaceAddress(receivers.resolve(builder, access).address, rootType) }, root.steps, dynamic)
 		return ReceiverWrite(access, rootType, dynamic, path)
+	}
+
+	fun <T> withReceiver(receiver: MethodReceiver, type: CStruct, action: (() -> ReceiverAccess) -> T): T {
+		val place = (receiver as? MethodReceiver.Stored)?.place
+		if (place != null && bindings.relocatableArrays) {
+			val parent = bindings.structAccess(place.root)
+			val dynamic = parent?.resolver?.let { LLVMBuildIsNotNull(builder, it, "class_backed_receiver") }
+			val rootType = functionSemantics.typeOf(place.root)
+			return withLocalPath({ PlaceAddress(bindings.address(place.root), rootType) }, place.steps, dynamic) { path ->
+				structPayload(builder, path.initial)
+				action {
+					val address = structPayload(builder, path.resolve())
+					val arena = bindings.ownerArena(place.root) ?: expressions.stringReturnArena()
+					if (parent?.resolver == null) ReceiverAccess(address, arena) else {
+						val base = functions.receivers.resolve(builder, parent)
+						val captured = functions.receivers.capture(builder, base.copy(address = address), listOf(parent.address, parent.arena, parent.resolver, checkNotNull(parent.environment)) + path.steps.mapNotNull { it.index }) { using, values ->
+							val root = functions.receivers.resolve(using, ReceiverAccess(values[0], values[1], values[2], values[3]))
+							root.copy(address = structPayload(using, replay(using, PlaceAddress(root.address, rootType), path.steps, values.drop(4))))
+						}
+						captured.copy(resolver = LLVMBuildSelect(builder, checkNotNull(dynamic), checkNotNull(captured.resolver), functions.receivers.absent, "nested_receiver_resolver"))
+					}
+				}
+			}
+		}
+		val access = this.receiver(receiver, type)
+		return action { access }
+	}
+
+	fun <T> withArrayMutation(receiver: MethodReceiver, action: (() -> ArrayTarget) -> T): T = when (receiver) {
+		is MethodReceiver.Stored -> {
+			val place = receiver.place
+			val parent = bindings.structAccess(place.root)
+			val dynamic = parent?.resolver?.let { LLVMBuildIsNotNull(builder, it, "class_backed_array") }
+			val rootType = functionSemantics.typeOf(place.root)
+			withLocalPath({ PlaceAddress(bindings.address(place.root), rootType) }, place.steps, dynamic) { path ->
+				action {
+					ArrayTarget(path.resolve(), bindings.ownerArena(place.root) ?: expressions.stringReturnArena(), place.root.takeIf { place.steps.isEmpty() })
+				}
+			}
+		}
+		is MethodReceiver.StoredInInstance -> {
+			val captured = captureInstance(receiver.place)
+			action {
+				val root = instanceLocation(builder, captured.access, captured.field)
+				ArrayTarget(replay(builder, PlaceAddress(root.address, captured.field.type), captured.path.steps), root.arena)
+			}
+		}
+		else -> throw InternalErrors.invariant("Array mutation requires a stored receiver")
+	}
+
+	fun publishArrayMutation(target: ArrayTarget, value: LLVMValueRef) {
+		if (target.localRoot != null) bindings.publishArrayMutation(target.localRoot, value)
+		else {
+			stored.store(target.place.address, value, target.place.type)
+			target.place.struct?.let { EmitStructFields(context, builder, abi).remember(it, value) }
+		}
 	}
 
 	fun commit(target: CapturedWrite, value: LLVMValueRef, type: ValueType): LLVMValueRef {
@@ -246,6 +374,19 @@ internal class EmitPlaces(
 
 		return when (target) {
 			is StoredWrite   -> write(target.initial, bindings.ownerArena(target.root))
+			is LocalWrite -> {
+				val access = target.receiver
+				if (access == null) write(target.path.resolve(), bindings.ownerArena(target.root))
+				else {
+					nullable.choose(checkNotNull(target.dynamic), null, {
+						val root = functions.receivers.resolve(builder, access)
+						write(target.path.resolve(), root.arena)
+						if (type.buffered) functions.receivers.compact(builder, root)
+						null
+					}, { write(target.path.resolve(), access.arena); null })
+					value
+				}
+			}
 			is InstanceWrite -> {
 				val (access, field, path) = target.instance
 				if (path.steps.isEmpty()) functions.classStorage.replace(builder, access, field, value)

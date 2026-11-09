@@ -1,6 +1,7 @@
 package cloth.parser.subs
 
 import cloth.diagnostics.SyntaxErrors
+import cloth.diagnostics.GenericErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.parser.expression.IfExpression
@@ -11,6 +12,7 @@ import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
+import cloth.token.TokenSpan
 import cloth.token.TokenType
 
 class FunctionParser(private val parser: Parser) {
@@ -21,6 +23,7 @@ class FunctionParser(private val parser: Parser) {
 		val keyword = parser.advance()
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a function name")
+		if (parser.peek().lexeme == Operators.LESS.toString()) throw GenericErrors.syntax("Function type parameters", parser.peek())
 		val parameters = parseParameters()
 		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn()), visibility)
 	}
@@ -42,12 +45,55 @@ class FunctionParser(private val parser: Parser) {
 		return ParameterDeclaration(type, name, finalKeyword, optKeyword, delimiter, fallback, optOpening, optClosing, span)
 	}
 
-	internal fun parseMethod(visibility: Token? = null): MethodDeclaration {
+	private data class MethodHeader(val keyword: Token, val name: Token, val returns: List<TypeReference>, val parameters: List<ParameterDeclaration>)
+
+	private fun methodHeader(): MethodHeader {
 		val keyword = parser.advance()
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a method name")
-		val parameters = parseParameters()
-		return MethodDeclaration(keyword, name, returnTypes, parameters, parseBody("method", returnTypes.isVoidReturn()), visibility)
+		if (parser.peek().lexeme == Operators.LESS.toString()) throw GenericErrors.syntax("Method type parameters", parser.peek())
+		return MethodHeader(keyword, name, returnTypes, parseParameters())
+	}
+
+	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null): MethodDeclaration {
+		val (keyword, name, returns, parameters) = methodHeader()
+		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn()), visibility, overridePrefix = overridePrefix)
+	}
+
+	internal fun parseInterfaceMethod(): InterfaceMethodDeclaration {
+		val (keyword, name, returns, parameters) = methodHeader()
+		val signatureEnd = parser.currentIndex
+		parser.skipNewlines()
+		val fallback = when (parser.peek().lexeme) {
+			Operators.ASSIGN.toString() -> parseInterfaceFallback()
+			Operators.BRACE_OPEN.toString() -> throw SyntaxErrors.expected("'${Operators.ASSIGN} ${Keywords.DEFAULT}' before an interface method body", parser.peek())
+			else -> {
+				parser.currentIndex = signatureEnd
+				null
+			}
+		}
+		return InterfaceMethodDeclaration(keyword, name, returns, parameters, fallback, keyword.span.through(parser.previous().span))
+	}
+
+	private fun parseInterfaceFallback(): InterfaceMethodFallback {
+		val equals = parser.advance()
+		if (!parser.atKeyword(Keywords.DEFAULT)) throw SyntaxErrors.expected("'${Keywords.DEFAULT}' after '${Operators.ASSIGN}' in an interface method", parser.peek())
+		val keyword = parser.advance()
+		parser.skipNewlines()
+		val body = when (parser.peek().lexeme) {
+			Operators.PAREN_OPEN.toString() -> {
+				val expression = inBody {
+					parser.delimited.parentheses {
+						parser.skipNewlines()
+						parser.parseResults(multiline = true).also { parser.skipNewlines() }
+					}
+				}
+				ExpressionBody(equals, expression, equals.span.through(parser.previous().span))
+			}
+			Operators.BRACE_OPEN.toString() -> parseBlockBody()
+			else -> throw SyntaxErrors.expected("a parenthesized expression or a block after '${Keywords.DEFAULT}'", parser.peek())
+		}
+		return InterfaceMethodFallback(equals, keyword, body)
 	}
 
 	internal fun parseOperator(visibility: Token? = null): MethodDeclaration {

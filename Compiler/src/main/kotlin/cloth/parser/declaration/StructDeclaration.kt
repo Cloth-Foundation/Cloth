@@ -1,17 +1,19 @@
 package cloth.parser.declaration
 
 import cloth.parser.type.TypeReference
+import cloth.parser.type.TypeParameterList
 import cloth.token.Token
 import cloth.token.TokenSpan
 
 data class StructDeclaration(
 	val keyword: Token,
-	val name: Token,
+	override val name: Token,
 	val fields: List<StructFieldDeclaration>,
-	val visibility: Token?,
+	override val visibility: Token?,
 	override val span: TokenSpan,
 	val methods: List<MethodDeclaration> = emptyList(),
-) : Declaration
+	override val typeParameters: TypeParameterList? = null,
+) : TypeDeclaration
 
 data class StructFieldDeclaration(val type: TypeReference, val name: Token) {
 
@@ -26,9 +28,10 @@ data class MethodDeclaration(
 	override val body: FunctionBody,
 	val visibility: Token? = null,
 	val operator: OperatorMember? = null,
+	val overridePrefix: TokenSpan? = null,
 ) : CallableDeclaration, ClassMember {
 
-	override val span get() = (visibility ?: keyword).span.through(body.span)
+	override val span get() = (overridePrefix ?: (visibility ?: keyword).span).through(body.span)
 }
 
 data class OperatorMember(val selector: TypeReference?, val rightReceiver: Boolean, val provider: Boolean)

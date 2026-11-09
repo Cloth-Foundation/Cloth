@@ -294,12 +294,8 @@ class GrowableArrayTypingTest {
 	}
 
 	@Test
-	fun `native emission reports the stage boundary before producing output`(@TempDir directory: Path) {
-		val output = directory.resolve("not_emitted")
-		val error = assertFailsWith<ClothDiagnostic> { LLVMEmitter().compile(unit("fn main() { def<int[]> values = []; values.append(1); values.clear() }"), output) }
-		assertEquals(DiagnosticCode.UNSUPPORTED_ARRAY_MUTATION, error.diagnosticCode)
-		assertLocated(error)
-		assertFalse(Files.exists(output))
-		assertFalse(Files.exists(directory.resolve("not_emitted.exe")))
+	fun `rectangular native emission accepts an empty growable clear`(@TempDir directory: Path) {
+		val output = LLVMEmitter().compile(unit("fn main() { def<int[][]> values = []; values.clear() }"), directory.resolve("rectangular"))
+		assertTrue(Files.exists(output))
 	}
 }

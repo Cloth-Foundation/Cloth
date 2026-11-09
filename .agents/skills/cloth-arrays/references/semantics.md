@@ -8,7 +8,7 @@ the parent skill for current implementation boundaries and source/test routing.
 ## Growable-array revision (2026-11-07)
 
 The user confirmed the [growable-array contract](growable-arrays.md): `T[]`
-will have a resizable outer length, `T[N]` stays fixed, and unannotated literals
+has a resizable outer length, `T[N]` stays fixed, and unannotated literals
 continue to infer sized arrays. Binding-only immutability, rectangular inner
 shape, independent values and foreach snapshots are retained. The contract owns
 the initial mutation API and stored/temporary receiver rules.
@@ -19,8 +19,20 @@ This supersedes the historical fixed-initial-outer-shape rules for `[]` below.
 count/witness facts, receiver plans/effects and native whole-array replacement
 with different outer counts. [Stage 2](growable-arrays-stage-2.md) adds owned
 capacity, private typed storage operations and executable unsized struct fields,
-including nullable-field witnesses. Public mutator execution remains guarded by
-C4032. Explicit extents and inner shape still constrain receiving values.
+including nullable-field witnesses. [Stage 3](growable-arrays-stage-3.md) executes
+one-dimensional local/parameter/temporary append and reserve.
+[Stage 4](growable-arrays-stage-4.md) adds class/aggregate and array-element field
+growth, owner-aware publication and scoped selections through source methods.
+[Stage 5](growable-arrays-stage-5.md) executes insert/removeAt/clear on those same
+one-dimensional receivers with independent removed values and owned shifts.
+[Stage 6](growable-arrays-stage-6.md) executes whole-row rectangular mutation,
+retaining inner witnesses through remove/clear/null. Embedded rows cannot change
+shape; extracted growable rows are independent. Explicit extents and inner shape
+still constrain receiving values.
+The [Stage 8 record](growable-arrays-stage-8.md) owns the final caller audit,
+regression and portability evidence. The public source
+[List](../../cloth-collections/SKILL.md) supplies independently sized array
+elements without changing rectangular array semantics.
 
 ## Array construction and value semantics
 
@@ -31,7 +43,8 @@ owns formatting policy, evaluation/lifetime guarantees and capability boundaries
 
 Array syntax and construction were confirmed on 2026-10-30:
 
-- `def<int[]> unsized = [1, 2, 3]` infers a size of 3.
+- `def<int[]> unsized = [1, 2, 3]` starts with three elements and keeps type
+  `int[]`; its outer length can change under the growable-array revision.
 - `def<float[5]> sized = [1.0, 2.0, 3.0, 4.0, 5.0]` supplies an explicit size.
 - `def inferredWithSize = [true, true, false]` infers `bool[3]`.
 - On 2026-10-30 the user confirmed order-independent array element inference.

@@ -32,6 +32,13 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 	/** Rebound strings own replaceable storage, separate from expression scratch. */
 	fun storedArena(): LLVMValueRef = strings.create(entry).also(storedArenas::add)
 	fun replaceStored(arena: LLVMValueRef, value: LLVMValueRef, type: ValueType): LLVMValueRef = strings.replaceValue(builder, entry, arena, value, type)
+	fun releaseStored(arena: LLVMValueRef) = strings.release(builder, arena)
+	fun observeArray(arena: LLVMValueRef, value: LLVMValueRef, type: CArray, view: LLVMValueRef) {
+		// A deferred early exit may leave a previous observation until this site
+		// executes again. Unregister it before reusing the entry-allocated view.
+		strings.release(builder, arena)
+		strings.arrays.observe(builder, arena, value, type, view)
+	}
 	fun replaceArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.replaceElement(builder, array, type, index, value, fallback)
 	fun adoptArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, element: CArray, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.adoptElement(builder, array, type, index, value, element, fallback)
 

@@ -33,6 +33,7 @@ class Parser(private val tokens: List<Token>) {
 	private val structParser = StructParser(this)
 	private val classParser = ClassParser(this)
 	private val enumParser = EnumParser(this)
+	private val interfaceParser = InterfaceParser(this)
 	private val importParser = ImportParser(this)
 	private var bindingBrace: BindingBraceSyntax? = null
 
@@ -80,6 +81,7 @@ class Parser(private val tokens: List<Token>) {
 				if (declaration is StructDeclaration) throw SyntaxErrors.expected("a newline or end of file after a struct declaration", peek())
 				if (declaration is ClassDeclaration) throw SyntaxErrors.expected("a newline or end of file after a class declaration", peek())
 				if (declaration is EnumDeclaration) throw SyntaxErrors.expected("a newline or end of file after an enum declaration", peek())
+				if (declaration is InterfaceDeclaration) throw SyntaxErrors.expected("a newline or end of file after an interface declaration", peek())
 				throw SyntaxErrors.newline(peek())
 			}
 			skipNewlines()
@@ -103,13 +105,15 @@ class Parser(private val tokens: List<Token>) {
 				atKeyword(Keywords.CLASS)                          -> advance()
 				atKeyword(Keywords.STRUCT) && finalKeyword == null -> advance()
 				atKeyword(Keywords.ENUM) && finalKeyword == null   -> advance()
+				atKeyword(Keywords.INTERFACE) && finalKeyword == null -> advance()
 				finalKeyword != null                               -> throw SyntaxErrors.expected("'${Keywords.CLASS}' as the type declaration kind after '${Keywords.FINAL}'", token)
-				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', or '${Keywords.ENUM}' as the type declaration kind", token)
+				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', '${Keywords.ENUM}', or '${Keywords.INTERFACE}' as the type declaration kind", token)
 			}
 		}
 		return when (kind.lexeme) {
 			Keywords.CLASS.toString() -> classParser.parse(keyword, visibility, finalKeyword)
 			Keywords.ENUM.toString()  -> enumParser.parse(keyword, visibility)
+			Keywords.INTERFACE.toString() -> interfaceParser.parse(keyword, kind, visibility)
 			else                      -> structParser.parse(keyword, visibility)
 		}
 	}

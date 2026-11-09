@@ -25,6 +25,7 @@ import cloth.semantic.*
 import cloth.semantic.flow.eagerOperands
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
+import cloth.semantic.symbols.ParameterSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.symbols.ReceiverSymbol
 import cloth.semantic.typing.*
@@ -129,7 +130,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		temporaryDepth++
 		return try {
 			val receiver = if (access.receiverForm == ProviderReceiverForm.TYPE) ProviderReceiver.Type(receiverType)
-			else ProviderReceiver.Value(receiverType, emitRead(access.receiver, borrowString = !access.result.callsFormatter && !access.result.type.indirect))
+			else {
+				val immediate = if (access.result is ProviderResult.ArraySize) emitImmediateClassProjection(access.receiver) else null
+				ProviderReceiver.Value(receiverType, immediate ?: emitRead(access.receiver, borrowString = !access.result.callsFormatter && !access.result.type.indirect))
+			}
 			val location = access.span.source?.let { "${it.name}:${access.span}" } ?: access.span.toString()
 			val services = providerServices(location, access.receiver)
 			access.result.emit(services, receiver)
@@ -203,6 +207,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitMemberCall(call: MemberCallExpression): LLVMValueRef? {
 		functionSemantics.selectedMemberCall(call)?.let { return functions.emitCall(it, call.arguments, this, builder) }
+		semantics.arrayMutations[call]?.let { return emitArrayMutation(call, it) }
 		val selected = semantics.memberCalls.getValue(call)
 		temporaryDepth++
 		try {
@@ -221,6 +226,46 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val providers = providerServices(location)
 			return selected.emit(BuiltinEmissionContext(context, module, builder, abi, providers, strings, location), values)
 		} finally {
+			temporaryDepth--
+		}
+	}
+
+	private fun emitArrayMutation(call: MemberCallExpression, plan: ArrayMutationPlan, needResult: Boolean = true): LLVMValueRef? {
+		check(EmitArrayMutation.supported(plan))
+		temporaryDepth++
+		val operands = frame.storedArena()
+		fun capture(expression: Expression, type: ValueType): LLVMValueRef = temporaryRegion(temporaryAnalysis.hasNoPublication(expression)) {
+			val value = adaptValue(emitRead(expression, borrowString = true), semantics.typeOf(expression), type)
+			valueTransfer.consumeFreshArray(value)
+			if (type.indirect) frame.copyValue(value, type, operands) else value
+		}
+		try {
+			val receiver = plan.receiver
+			val mutation = EmitArrayMutation(context, builder, abi, functions.stringStorage.arrays)
+			fun arguments() = call.arguments.mapIndexed { index, argument -> capture(argument, plan.arguments[index].parameterType) }
+			val receive: ((LLVMValueRef, ValueType) -> LLVMValueRef)? = if (!needResult) null else { value, type -> if (type.indirect) frame.copyValue(value, type) else value }
+			return if (receiver is MethodReceiver.Temporary) {
+				val value = capture(receiver.expression, plan.type)
+				mutation.emit(plan.operation, operands, value, plan.type, arguments(), receive).removed
+			} else places.withArrayMutation(receiver) { current ->
+				fun read(target: EmitPlaces.ArrayTarget): LLVMValueRef {
+					val value = stored.load(target.place.address, target.place.type)
+					if (target.place.type !is CNullable) return value
+					EmitMemory(context, builder, abi).guard(nullable.present(value), "Nullable array receiver is no longer present")
+					return nullable.payload(value)
+				}
+				read(current()) // Select and validate before explicit arguments.
+				val arguments = arguments()
+				val target = current() // Recheck identity, presence and saved indices.
+				val value = read(target)
+				val arena = if (target.localRoot != null) target.arena else functions.stringStorage.arrays.ownerArena(builder, value, plan.type, target.arena)
+				val result = mutation.emit(plan.operation, arena, value, plan.type, arguments, receive)
+				val declared = target.place.type
+				places.publishArrayMutation(target, if (declared is CNullable) nullable.wrap(result.value, declared) else result.value)
+				result.removed
+			}
+		} finally {
+			if (!terminated()) frame.releaseStored(operands)
 			temporaryDepth--
 		}
 	}
@@ -246,12 +291,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
 		val instance = semantics.instanceWrites[statement]
-		val receiver = semantics.receiverElementWrites[statement]
-		if (instance != null || receiver?.let { bindings.structAccess(it.root) } != null) {
-			val target = places.captureWrite(instance, receiver)
-			val type = target.initial.type
-			val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
-			places.commit(target, value, type)
+		val receiver = semantics.storedElementWrites[statement]
+		if (instance != null || receiver != null && (bindings.relocatableArrays || bindings.structAccess(receiver.root) != null)) {
+			places.withWrite(instance, receiver, mayMove = !temporaryAnalysis.hasNoPublication(statement.value)) { target ->
+				val type = target.initial.type
+				val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
+				places.commit(target, value, type)
+			}
 		} else emitOrdinaryElementAssignment(statement)
 	} catch (_: Terminated) {
 		null
@@ -292,13 +338,17 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 		val field = semantics.fields[expression] ?: return emitValue(expression.receiver)
 		if (field is EnumField) return emitEnumPayload(emitValue(expression.receiver), field, expression)
-		val address = if (field is ClassField) {
-			functions.classStorage.locate(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.receiver)), field).address
-		} else stored.fieldAddress(emitValue(expression.receiver), semantics.typeOf(expression.receiver) as CStruct, field)
-		val value = stored.load(address, field.type)
-		val read = if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
+		val address = if (field is ClassField) classFieldAddress(expression, field)
+		else stored.fieldAddress(emitValue(expression.receiver), semantics.typeOf(expression.receiver) as CStruct, field)
+		val read = readPayload(expression, stored.load(address, field.type))
 		return if (field is ClassField) valueTransfer.snapshot(read, semantics.typeOf(expression)) else read
 	}
+
+	private fun classFieldAddress(expression: FieldAccessExpression, field: ClassField): LLVMValueRef =
+		functions.classStorage.locate(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.receiver)), field).address
+
+	private fun readPayload(expression: Expression, value: LLVMValueRef): LLVMValueRef =
+		if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
 
 	private fun emitEnumPayload(receiver: LLVMValueRef, field: EnumField, expression: Expression): LLVMValueRef {
 		val value = functions.enumPayload(builder, receiver, field, ::stringReturnArena)
@@ -306,6 +356,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitReceiver(receiver: MethodReceiver, type: CStruct): ReceiverAccess = places.receiver(receiver, type)
+	fun <T> withReceiver(receiver: MethodReceiver, type: CStruct, action: (() -> ReceiverAccess) -> T): T = places.withReceiver(receiver, type, action)
 
 	fun emitFieldWrite(statement: FieldWriteStatement): LLVMValueRef? = try {
 		val plan = semantics.fieldWrites[statement]
@@ -315,24 +366,25 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			emitValue(statement.target)
 			throw InternalErrors.invariant("Continuing field write has no stored place")
 		}
-		val target = places.captureWrite(instance, plan?.place)
-		val location = target.initial
-		val type = plan?.type ?: location.type
-		val op = Operators.fromCharacterRequired(statement.operator.lexeme)
-		val source = statement.value
-		val valueType = if (op == Operators.ASSIGN) semantics.typeOf(checkNotNull(source)) else semantics.typeOf(statement.target)
-		val value = if (op == Operators.ASSIGN) emitValue(checkNotNull(source)) else {
-			val raw = places.load(location)
-			val payload = if (location.type is CNullable) nullable.payload(raw) else raw
-			val old = if (target.replayed) valueTransfer.snapshot(payload, valueType) else payload
-			if (source == null) emitNumericUpdate(old, valueType, op == Operators.PLUS_PLUS)
-			else {
-				val right = emitValue(source)
-				val base = Token(statement.operator.type, statement.operator.span, op.compoundAssignmentBase().toString())
-				emitBinaryOperands(base, old, right, valueType, semantics.typeOf(source))
+		places.withWrite(instance, plan?.place, mayMove = statement.value?.let { !temporaryAnalysis.hasNoPublication(it) } == true) { target ->
+			val location = target.initial
+			val type = plan?.type ?: location.type
+			val op = Operators.fromCharacterRequired(statement.operator.lexeme)
+			val source = statement.value
+			val valueType = if (op == Operators.ASSIGN) semantics.typeOf(checkNotNull(source)) else semantics.typeOf(statement.target)
+			val value = if (op == Operators.ASSIGN) emitValue(checkNotNull(source)) else {
+				val raw = places.load(location)
+				val payload = if (location.type is CNullable) nullable.payload(raw) else raw
+				val old = if (target.replayed) valueTransfer.snapshot(payload, valueType) else payload
+				if (source == null) emitNumericUpdate(old, valueType, op == Operators.PLUS_PLUS)
+				else {
+					val right = emitValue(source)
+					val base = Token(statement.operator.type, statement.operator.span, op.compoundAssignmentBase().toString())
+					emitBinaryOperands(base, old, right, valueType, semantics.typeOf(source))
+				}
 			}
+			places.commit(target, adaptValue(value, valueType, type), type)
 		}
-		places.commit(target, adaptValue(value, valueType, type), type)
 	} catch (_: Terminated) {
 		null
 	}
@@ -478,7 +530,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private fun emit(expression: Expression, discard: Boolean, consume: ((LLVMValueRef) -> Unit)? = null): LLVMValueRef? {
 		if (terminated()) return null
 		fun produce(): LLVMValueRef? = try {
-			emitInternal(expression).also { value -> if (!terminated() && value != null) consume?.invoke(value) }
+			val mutation = (expression as? MemberCallExpression)?.let { semantics.arrayMutations[it] }
+			val value = if (discard && consume == null && mutation != null) emitArrayMutation(expression, mutation, needResult = false) else emitInternal(expression)
+			value.also { if (!terminated() && it != null) consume?.invoke(it) }
 		} catch (_: Terminated) {
 			null
 		}
@@ -617,8 +671,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		if (field is EnumField) return emitEnumPayload(bindings.read(symbol.receiver), field, expression)
 		val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
 		if (block != null) return emitBlock(block)
-		val stored = bindings.read(symbol)
-		val read = if (semantics.payloadReads.containsKey(expression)) nullable.payload(stored) else stored
+		val read = readPayload(expression, bindings.read(symbol))
 		return if (bindings.mayBorrowInstance(symbol) || bindings.ownsString(symbol) && !borrowString) valueTransfer.snapshot(read, semantics.typeOf(expression)) else read
 	}
 
@@ -634,14 +687,73 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitIndex(expression: IndexExpression, borrowString: Boolean = false): LLVMValueRef {
-		val array = emitValue(expression.array)
-		val fresh = valueTransfer.consumeFreshArray(array)
-		val index = emitValue(expression.index)
-		val type = semantics.typeOf(expression)
-		val value = arrays.index(array, type, index, semantics.typeOf(expression.index))
-		return if (fresh) valueTransfer.freshArray(value, type)
-		else if (!borrowString && ((type as? CNullable)?.payload ?: type) == ValueType.STRING) valueTransfer.snapshot(value, type)
-		else value
+		emitImmediateClassProjection(expression)?.let { return valueTransfer.snapshot(it, semantics.typeOf(expression)) }
+		val root = functionSemantics.declarations.storedRoot(expression.array)
+		val effectful = !temporaryAnalysis.hasNoPublication(expression.index)
+		var selection: EmitBindings.ArrayView? = if (expression.array is NameExpression && effectful) root?.let(bindings::observeArray) else null
+		try {
+			val array = emitValue(expression.array)
+			if (selection == null && effectful) selection = bindings.observeValue(array, semantics.typeOf(expression.array) as CArray)
+			val fresh = valueTransfer.consumeFreshArray(array)
+			val index = emitValue(expression.index)
+			val type = semantics.typeOf(expression)
+			val view = selection
+			val value = if (view == null) arrays.index(array, type, index, semantics.typeOf(expression.index)) else {
+				// Keep the original bound and selected binding version, while reading
+				// live element contents after index effects and capacity movement.
+				arrays.validateIndex(array, index, semantics.typeOf(expression.index))
+				val current = stored.load(view.address, view.type)
+				val selected = if (view.type is CNullable) nullable.payload(current) else current
+				// Removal/clear may have shortened or destroyed a selected child.
+				arrays.index(selected, type, index, semantics.typeOf(expression.index))
+			}
+			return if (fresh) valueTransfer.freshArray(value, type)
+			else if (!borrowString && ((type as? CNullable)?.payload ?: type) == ValueType.STRING) valueTransfer.snapshot(value, type)
+			else value
+		} finally { bindings.endSelection(selection) }
+	}
+
+	/** The caller immediately consumes the count or snapshots the selected value.
+	 * Once the checked class field is loaded, the remaining path contains only
+	 * field projections and indices that cannot call code or change storage.
+	 */
+	private fun emitImmediateClassProjection(expression: Expression): LLVMValueRef? {
+		return when (expression) {
+			is NameExpression -> {
+				val symbol = functionSemantics.declarations.names[expression] as? ReceiverFieldSymbol ?: return null
+				if (symbol.field !is ClassField || expression in projectedValues) return null
+				readPayload(expression, bindings.read(symbol))
+			}
+			is FieldAccessExpression -> {
+				val field = semantics.fields[expression] ?: return null
+				val address = when (field) {
+					is ClassField -> classFieldAddress(expression, field)
+					is StructField -> {
+						val owner = semantics.typeOf(expression.receiver) as? CStruct ?: return null
+						val value = emitImmediateClassProjection(expression.receiver) ?: return null
+						stored.fieldAddress(value, owner, field)
+					}
+					else -> return null
+				}
+				readPayload(expression, stored.load(address, field.type))
+			}
+			is IndexExpression -> {
+				if (!isImmediateIndex(expression.index)) return null
+				val array = emitImmediateClassProjection(expression.array) ?: return null
+				arrays.index(array, semantics.typeOf(expression), emitValue(expression.index), semantics.typeOf(expression.index))
+			}
+			else -> null
+		}
+	}
+
+	private fun isImmediateIndex(expression: Expression): Boolean = when (expression) {
+		is IntegerLiteral -> true
+		is NameExpression -> when (val symbol = functionSemantics.declarations.names[expression]) {
+			is ParameterSymbol -> true
+			is LocalSymbol -> symbol.declaration.initializer !is FunctionBlockExpression
+			else -> false
+		}
+		else -> false
 	}
 
 	private fun emitOperator(operator: ResolvedOperator, operands: List<Expression>): LLVMValueRef? = functions.emitCall(operator.call, operands, this, builder, operatorReceiver = operator.receiverIndex)?.let { valueTransfer.freshResults(it, operator.call.type.results) }

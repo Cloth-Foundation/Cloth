@@ -1,6 +1,7 @@
 package cloth.data
 
 import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.TypeDeclaration
 import cloth.parser.type.TypeReference
 import cloth.target.TargetLayout
 import cloth.token.Keywords
@@ -12,9 +13,12 @@ import org.bytedeco.llvm.global.LLVM.*
 
 sealed class CMemberType(keyword: Keywords) : ValueType(keyword) {
 
-	abstract val name: Token
+	abstract val declaration: TypeDeclaration
+	val name get() = declaration.name
 	abstract val fields: List<InstanceField>
-	override val spelling get() = name.lexeme
+	open val typeArguments: List<ValueType> get() = emptyList()
+	override val spelling get() = if (typeArguments.isEmpty()) name.lexeme else genericTypeDisplay(this)
+	override val metadataSpelling get() = if (typeArguments.isEmpty()) name.lexeme else genericTypeMetadata(this)
 	internal abstract fun field(name: String): InstanceField?
 }
 
@@ -27,9 +31,8 @@ sealed interface InstanceField {
 }
 
 /** Class identity is established before resolving fields, including recursive class fields. */
-class CClass internal constructor(val declaration: ClassDeclaration) : CMemberType(Keywords.CLASS) {
+class CClass internal constructor(override val declaration: ClassDeclaration, val genericDefinition: CClass? = null, override val typeArguments: List<ValueType> = emptyList()) : CMemberType(Keywords.CLASS) {
 
-	override val name get() = declaration.name
 	internal var base: CClass? = null
 	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
 	override fun accepts(actual: ValueType) = super.accepts(actual) || actual is CClass && this in actual.ancestry()
@@ -82,3 +85,6 @@ class ClassField internal constructor(
 
 	internal val nullableArray get() = (type as? CNullable)?.payload as? CArray
 }
+
+/** Access privilege belongs to the source declaration, including its closed instances. */
+internal fun CClass.sameDeclaration(other: CClass?) = declaration === other?.declaration

@@ -87,6 +87,11 @@ Explicit nullable `::str` requires a presence proof. See the
 [nullable buffer record](../cloth-nullability/references/buffers.md) and
 [row implementation](../cloth-arrays/references/nullable-rows.md). Nested nullable
 rows branch on presence while writing directly into the shared text buffer.
+[Growable arrays Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md)
+verifies recursive output, interpolation and `::str` after whole-row growth,
+insertion, removal and clear. Traverse the current live prefix only; retained
+shape witnesses and spare capacity contribute no formatted elements. Returned
+and removed rows keep independent text buffers after source destruction.
 [Printable recipes](../../../Compiler/src/main/kotlin/cloth/data/ImplicitText.kt) ·
 [Integration record](../cloth-language/references/development.md#shared-value-transfer-and-text-recipes-2026-11-06)
 

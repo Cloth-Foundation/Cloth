@@ -5,6 +5,25 @@ description: Design, explain, or extend Cloth nullable types, null literals, pre
 
 # Cloth nullability
 
+[Generic Stage 0](../cloth-generics/references/semantics.md#admitted-arguments-and-nullable-substitution)
+confirms `T?` substitution normalizes one nullable wrapper when T is already
+nullable. Direct duplicate markers stay invalid, suffix positions stay distinct
+and generic bodies keep explicit receiving/payload proof rules. The CNullable
+carrier still rejects nested wrappers.
+[Generic Stage 1](../cloth-generics/references/stage-1.md) preserves nullable
+markers and array suffix positions on parameters/applications in the AST.
+[Generic Stage 2](../cloth-generics/references/stage-2.md) implements nullable
+substitution in closed fields, declared signatures and annotation facts, reusing
+one CNullable carrier. Array-valued T retains its suffix structure.
+[Generic Stage 3](../cloth-generics/references/stage-3.md) uses substituted types
+for presence, casts, deferred results and generic class-check targets in separate
+body views. Unknown T still requires explicit receiving context and grants no
+nullable-specific size/equality capability.
+[Generic Stage 4](../cloth-generics/references/stage-4.md) executes normalized
+carriers, nullable wide arguments/results and complete absent nullable-array field
+witnesses in closed generic slots. Copies/removals retain shape after source
+destruction; incompatible reappearance still fails at the ordinary shape guard.
+
 [Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
 integrates nullable payloads through 65536 bits. Stored values use byte presence
 and inline native-limb bytes; expression values carry presence and an independent
@@ -46,7 +65,25 @@ proofs for fields a method may write. Proofs on independent paths still apply.
 extends receiver-proof checks to typed array mutators. Length changes invalidate
 indexed descendant proofs, including possible class aliases and repeated/captured
 writes; reserve preserves logical element proofs. Nullable removeAt results
-remain nullable. Native mutator execution is still guarded by C4032.
+remain nullable.
+[Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes supported
+append/reserve on proven-present local/parameter nullable arrays and receives
+nullable elements with presence-aware copies. It adds no implicit nullable
+inference or new presence proof.
+[Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) executes these same
+operations on nullable class/struct fields and nested receiver paths. Presence,
+lifetime and saved bounds are checked again after explicit arguments. Class-field
+assignment still needs the existing proof before a later payload call.
+[Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) adds insert,
+removeAt and clear with presence-aware shifted storage and independent nullable
+removed results. Clear preserves outer presence; it does not prove a nullable
+element result present. Absent removed struct fields retain their copied inline
+shape witnesses.
+[Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) executes rectangular
+edits with nullable rows at multiple depths. Null rows establish no width;
+present rows establish/check every inner extent. Remove/clear/null and all-null
+copies/returns retain established witnesses. Explicit nullable receiving types,
+presence checks and proof invalidation remain required.
 [Stage 2](../cloth-arrays/references/growable-arrays-stage-2.md) executes nullable
 unsized struct array fields. Their inline pointer-free witnesses survive absence,
 copy independently and receive the incoming witnesses on whole-struct replacement.

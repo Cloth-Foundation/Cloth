@@ -60,6 +60,13 @@ builds, target objects and native execution after removing disposable toolchain
 and source copies. The [toolchain guide](../../../docs/standard-library.md)
 documents release layout, overrides, provenance and current scope.
 
+[Generic Stage 5](../cloth-generics/references/stage-5.md) adds the maintained
+Collections project and real List consumers through the public compiler facade.
+StandardListConsumerTest executes both commands with default/explicit selection
+and checks disabled imports; ToolchainBundleTest exports byte-identical List
+source from a temporary clean pin. Neither changes working submodule history or
+weakens release cleanliness checks. Portable List logic stays in library source.
+
 ## Development rules
 
 - `Shuttle/` is a Git submodule of Cloth, using

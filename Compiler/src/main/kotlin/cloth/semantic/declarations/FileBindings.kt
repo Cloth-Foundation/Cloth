@@ -4,6 +4,7 @@ import cloth.ast.ImportSelection
 import cloth.ast.SourceUnit
 import cloth.data.CClass
 import cloth.data.CEnum
+import cloth.data.CInterface
 import cloth.data.CMemberType
 import cloth.data.CStruct
 import cloth.diagnostics.ImportErrors
@@ -13,7 +14,9 @@ import cloth.diagnostics.SourceFile
 import cloth.parser.declaration.ClassDeclaration
 import cloth.parser.declaration.EnumDeclaration
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.InterfaceDeclaration
 import cloth.parser.declaration.StructDeclaration
+import cloth.parser.declaration.TypeDeclaration
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.LexicalScope
@@ -38,7 +41,7 @@ internal class FileContext(val unit: SourceUnit) {
 internal class FileExport(val type: CMemberType?, val functions: FunctionGroupSymbol?)
 
 /** Register original identities across all files before binding any import or resolving a type. */
-internal class FileBindings private constructor(val files: List<FileContext>) {
+internal class FileBindings private constructor(val files: List<FileContext>, private val graph: SourceGraph? = null) {
 
 	val primary get() = files.first()
 	val structs = IdentityHashMap<StructDeclaration, CStruct>()
@@ -60,6 +63,7 @@ internal class FileBindings private constructor(val files: List<FileContext>) {
 					is StructDeclaration -> CStruct(declaration).also { structs[declaration] = it }
 					is ClassDeclaration  -> CClass(declaration).also { classes[declaration] = it }
 					is EnumDeclaration   -> CEnum(declaration).also { enums[declaration] = it }
+					is InterfaceDeclaration -> CInterface(declaration)
 					else                 -> null
 				}
 				if (type != null) {
@@ -81,20 +85,12 @@ internal class FileBindings private constructor(val files: List<FileContext>) {
 			// Export only this file's public declarations, never received imports.
 			for (declaration in file.unit.declarations) {
 				val name = when (declaration) {
-					is StructDeclaration   -> declaration.name.takeIf { declaration.visibility != null }
-					is ClassDeclaration    -> declaration.name.takeIf { declaration.visibility != null }
-					is EnumDeclaration     -> declaration.name.takeIf { declaration.visibility != null }
+					is TypeDeclaration -> declaration.name.takeIf { declaration.visibility != null }
 					is FunctionDeclaration -> declaration.name.takeIf { declaration.visibility != null }
 					else                   -> null
 				} ?: continue
 				val publicFunctions = groups[name.lexeme].orEmpty().filter { it.declaration.visibility != null }
-				val publicType = file.types[name.lexeme]?.takeIf { owner ->
-					when (owner) {
-						is CStruct -> owner.declaration.visibility != null
-						is CClass  -> owner.declaration.visibility != null
-						is CEnum   -> owner.declaration.visibility != null
-					}
-				}
+				val publicType = file.types[name.lexeme]?.takeIf { it.declaration.visibility != null }
 				file.exports[name.lexeme] = FileExport(publicType, publicFunctions.takeIf { it.isNotEmpty() }?.let(::FunctionGroupSymbol))
 			}
 		}
@@ -103,6 +99,7 @@ internal class FileBindings private constructor(val files: List<FileContext>) {
 	fun context(name: Token): FileContext = name.span.source?.let { sources[it] } ?: files.singleOrNull() ?: throw InternalErrors.invariant("No defining file context for '${name.lexeme}'")
 
 	fun nominal(name: Token): CMemberType? = if (name.lexeme == objectRoot.spelling) objectRoot else context(name).types[name.lexeme]
+	internal fun fork(): FileBindings = graph?.let { graph(it) } ?: single(primary.unit)
 
 	private fun bind(graph: SourceGraph) {
 		for ((index, file) in files.withIndex()) for (edge in graph.importsOf(graph.sources[index].id)) {
@@ -145,6 +142,6 @@ internal class FileBindings private constructor(val files: List<FileContext>) {
 			return FileBindings(listOf(FileContext(unit)))
 		}
 
-		fun graph(graph: SourceGraph): FileBindings = FileBindings(graph.sources.map { FileContext(it.unit) }).also { it.bind(graph) }
+		fun graph(graph: SourceGraph): FileBindings = FileBindings(graph.sources.map { FileContext(it.unit) }, graph).also { it.bind(graph) }
 	}
 }

@@ -101,7 +101,7 @@ internal class EmitValueTransfer(context: LLVMContextRef, private val builder: L
 			bindings.saveNullableArrayShape(target, nullable.wrap(retained, type), type)
 			retained
 		}
-		val shape = if (type is CArray && (type.hasNullableRows || type.arrayDimensions.any { it == null })) bindings.initialArrayShape(target) else null
+		val shape = if (type is CArray && (type.hasNullableRows || type.arrayDimensions.any { it == null })) bindings.bindingArrayShape(target) else null
 		val snapshot = transfer(value, type, shape?.let { RetainedArrayShape(it, binding = true) }, bindingShapeError)
 		return if (type is CArray && type.hasNullableRows) arrays.share(snapshot, type, arrays.shapePointer(checkNotNull(shape), type), binding = true) else snapshot
 	}

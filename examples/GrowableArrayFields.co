@@ -1,0 +1,25 @@
+pub typedef<class> Words (def<string[]> items ?: []) {
+    pub mt add(string value) { items.append(value) }
+    pub mt reserve(usize minimum) { self.items.reserve(minimum) }
+    pub mt<string[]> snapshot() = items
+    pub mt<usize> count() = items::size
+}
+
+fn<int> main() {
+    def words := Words::new
+    def alias = words
+    words.reserve(8)
+    words.add("first")
+    def saved = words.snapshot()
+    alias.add("second")
+    def exported = alias.snapshot()
+    if (words.count() != 2 || saved::size != 1) return 1
+
+    exported.append("independent")
+    if (words.count() != 2) return 2
+    words::delete
+
+    println(saved)
+    println(exported)
+    return 0
+}

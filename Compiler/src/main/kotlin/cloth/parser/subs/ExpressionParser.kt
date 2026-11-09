@@ -115,6 +115,7 @@ class ExpressionParser(val parser: Parser) {
 
 	fun parsePrimary(allowWhileTrailer: Boolean = false): Expression {
 		val token = parser.peek()
+		if (parser.typeParser.startsNamedTypeReceiver()) return TypeReceiverExpression(parser.typeParser.parse(allowArrays = true))
 
 		return when (token.type) {
 			TokenType.Keyword if TypeParser.startsTypeReceiver(token)                                       -> TypeReceiverExpression(TypeParser(parser).parse(allowArrays = true))

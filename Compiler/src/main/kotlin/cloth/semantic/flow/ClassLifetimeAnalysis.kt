@@ -45,8 +45,9 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			for (parameter in callable.parameters) parameter.declaration.defaultValue?.let { expression(it, state.fork()) }
 			when (val declaration = callable.declaration) {
 				is PrimaryConstructorDeclaration -> {
-					arguments(declaration.owner.base?.arguments.orEmpty(), state)
-					declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration)).fieldInitializers.forEach { expression(it.expression, state) }
+					val definition = declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration))
+					arguments(definition.baseCall?.arguments.orEmpty(), state)
+					definition.fieldInitializers.forEach { expression(it.expression, state) }
 				}
 
 				is ConstructorDeclaration        -> arguments(declaration.delegation.arguments, state)

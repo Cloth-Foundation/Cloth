@@ -1,6 +1,7 @@
 package cloth.parser.subs
 
 import cloth.diagnostics.SyntaxErrors
+import cloth.diagnostics.GenericErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.token.Keywords
@@ -12,6 +13,7 @@ internal class EnumParser(private val parser: Parser) {
 
 	fun parse(keyword: Token, visibility: Token?): EnumDeclaration {
 		val name = parser.expect(TokenType.Identifier, "an enum name")
+		if (at(Operators.LESS)) throw GenericErrors.syntax("Enum type parameters", parser.peek())
 		val fields = if (at(Operators.PAREN_OPEN)) parser.delimited.parentheses {
 			parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::parseField)
 		} else emptyList()

@@ -3,6 +3,7 @@ package cloth.parser.declaration
 import cloth.parser.expression.Expression
 import cloth.parser.statement.Statement
 import cloth.parser.type.TypeReference
+import cloth.parser.type.TypeParameterList
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -11,13 +12,24 @@ sealed interface Declaration {
 	val span: TokenSpan
 }
 
-/** The source contract shared by functions and type members. */
-sealed interface CallableDeclaration : Declaration {
+sealed interface TypeDeclaration : Declaration {
+
+	val name: Token
+	val visibility: Token?
+	val typeParameters: TypeParameterList? get() = null
+}
+
+/** A signature can be declared without supplying an executable body. */
+sealed interface CallableSignature : Declaration {
 
 	val keyword: Token
 	val name: Token
 	val returnTypes: List<TypeReference>
 	val parameters: List<ParameterDeclaration>
+}
+
+sealed interface CallableDeclaration : CallableSignature {
+
 	val body: FunctionBody
 }
 

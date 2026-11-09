@@ -7,13 +7,13 @@ import cloth.token.TokenSpan
 
 data class EnumDeclaration(
 	val keyword: Token,
-	val name: Token,
-	val visibility: Token?,
+	override val name: Token,
+	override val visibility: Token?,
 	val fields: List<EnumFieldDeclaration>,
 	val cases: List<EnumCaseDeclaration>,
 	val operators: List<MethodDeclaration>,
 	override val span: TokenSpan,
-) : Declaration
+) : TypeDeclaration
 
 data class EnumFieldDeclaration(val name: Token, val type: TypeReference, val visibility: Token?, val default: Expression?)
 

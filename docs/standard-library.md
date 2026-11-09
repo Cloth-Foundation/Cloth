@@ -6,10 +6,16 @@ Select public declarations explicitly with `using`; availability adds no names
 to a file's scope. Reached files compile with the application into its native
 executable or object.
 
-The current shipped library is a scaffold. Collections, file APIs, clocks and
-threads are not supplied by this integration milestone. The runnable
-[bundling example](../examples/StandardLibrary/README.md) includes its own stand-in
-library and demonstrates the supported path without claiming a public List API.
+The library supplies generic List, Deque, Queue, and Stack classes.
+[Collection APIs](../Standard-Library/cloth/collections/README.md)
+
+The examples demonstrate the imported collections, including independent array
+elements and ordinary FIFO and LIFO use.
+[List example](../examples/Collections/README.md) ·
+[Deque, Queue, and Stack example](../examples/LinearCollections.co)
+
+The bundling example demonstrates the installed layout with its own library
+fixture. [Bundling example](../examples/StandardLibrary/README.md)
 
 ## Installed layout and relocation
 
@@ -24,8 +30,8 @@ library and demonstrates the supported path without claiming a public List API.
     stdlib/cloth/...
 ```
 
-The source root is `stdlib/`. A future file `stdlib/cloth/collections/List.co`
-would be selected with `using cloth.collections.List : List`.
+The source root is `stdlib/`. Select `stdlib/cloth/collections/List.co`
+with `using cloth.collections.List : List`.
 Import paths retain exact case on every host and omit module IDs.
 
 Move the entire installation together. Launchers derive their installation home
@@ -127,9 +133,13 @@ to be cached already. Default outputs are `build/install/cloth` and
 available through `:Compiler:installDist` and `:Shuttle:installDist`, each including
 the same pinned library snapshot.
 
-The current library pin is `ea48ad55be9577f0b876f04c5aafe4420919597d` (scaffold
-version 0.0.1). Current supported behavior, actual native versus object/IR target
-coverage and publication verification are recorded in
-[Stage 5](../.agents/skills/cloth-toolchains/references/standard-library-stage-5.md).
+The recorded library pin is `ea48ad55be9577f0b876f04c5aafe4420919597d` (scaffold
+version 0.0.1). The new List source is currently a development-checkout change;
+a release must commit the intended library contents and update the compiler pin.
+[Generic Stage 5](../.agents/skills/cloth-generics/references/stage-5.md) records
+its actual-library native/IR/object checks and temporary pinned export proof.
+The earlier [bundling publication](../.agents/skills/cloth-toolchains/references/standard-library-stage-5.md)
+retains the installed-command baseline, rather than evidence that this working
+checkout has been released.
 Precompiled library archives, binary APIs, package downloads/caches, broader native
 services and the full Unicode Windows launcher remain separate future work.

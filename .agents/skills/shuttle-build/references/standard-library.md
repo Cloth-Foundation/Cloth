@@ -1,5 +1,10 @@
 # Standard-library project scaffold
 
+[Generic Stage 5](../../cloth-generics/references/stage-5.md) now supplies the
+actual public List and imported-library verification. This record retains the
+earlier scaffold/layout baseline; use [collections](../../cloth-collections/SKILL.md)
+for the current API and lifetime rules.
+
 Integrated locally on 2026-11-07. The user selected
 [Cloth-Foundation/Standard-Library](https://github.com/Cloth-Foundation/Standard-Library)
 as the standard-library repository, requested replacement of its old contents,

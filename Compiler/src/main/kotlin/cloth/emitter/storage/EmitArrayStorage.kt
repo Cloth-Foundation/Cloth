@@ -23,8 +23,12 @@ internal class EmitArrayStorage(
 	private val size = BufferLayout.count(context, target)
 	private val byte = LLVMInt8TypeInContext(context)
 	private val void = LLVMVoidTypeInContext(context)
-	private val control = PointerPointer<LLVMTypeRef>(3L).use { fields ->
-		fields.put(0, pointer); fields.put(1, size); fields.put(2, size)
+	private val control = PointerPointer<LLVMTypeRef>(4L).use { fields ->
+		fields.put(0, pointer); fields.put(1, size); fields.put(2, size); fields.put(3, pointer)
+		LLVMStructTypeInContext(context, fields, 4, 0)
+	}
+	private val observation = PointerPointer<LLVMTypeRef>(3L).use { fields ->
+		for (index in 0L..2L) fields.put(index, pointer)
 		LLVMStructTypeInContext(context, fields, 3, 0)
 	}
 	private val layout = LLVMGetModuleDataLayout(module)
@@ -32,7 +36,7 @@ internal class EmitArrayStorage(
 	private val nullPointer get() = LLVMConstNull(pointer)
 	private fun count(value: Long) = LLVMConstInt(size, value, 0)
 	private fun controlAddress(builder: LLVMBuilderRef, owner: LLVMValueRef, index: Int) = LLVMBuildStructGEP2(builder, control, owner, index, "array_owner_field")
-	private fun load(builder: LLVMBuilderRef, owner: LLVMValueRef, index: Int): LLVMValueRef = LLVMBuildLoad2(builder, if (index == 0) pointer else size, controlAddress(builder, owner, index), "array_owner_value")
+	private fun load(builder: LLVMBuilderRef, owner: LLVMValueRef, index: Int): LLVMValueRef = LLVMBuildLoad2(builder, if (index == 0 || index == 3) pointer else size, controlAddress(builder, owner, index), "array_owner_value")
 	private fun offset(builder: LLVMBuilderRef, data: LLVMValueRef, amount: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use { indices ->
 		indices.put(0, amount); LLVMBuildInBoundsGEP2(builder, byte, data, indices, 1, "array_storage_bytes")
 	}
@@ -118,7 +122,16 @@ internal class EmitArrayStorage(
 		val destination = LLVMGetParam(function, 1)
 		EmitNullable(context, builder, target).choose(LLVMBuildIsNotNull(builder, destination, "moved_arena"), null, {
 			LLVMBuildStore(builder, destination, controlAddress(builder, owner, 0)); null
-		}, { releaseSlots(builder, owner, type, count(0), load(builder, owner, 1)); null })
+		}, {
+			visitObservations(builder, owner) { node ->
+				LLVMBuildStore(builder, nullPointer, observationAddress(builder, node, 1))
+				val view = LLVMBuildLoad2(builder, pointer, observationAddress(builder, node, 2), "invalidated_view")
+				// A removed containing element can destroy this selected child array.
+				// A zero live bound prevents subsequent projection into freed storage.
+				EmitStoredValue(context, builder, target).store(view, LLVMConstNull(types.value(type)), type)
+			}
+			releaseSlots(builder, owner, type, count(0), load(builder, owner, 1)); null
+		})
 		LLVMBuildRetVoid(builder)
 	}.second
 
@@ -133,6 +146,7 @@ internal class EmitArrayStorage(
 		LLVMBuildStore(builder, destination, controlAddress(builder, owner, 0))
 		LLVMBuildStore(builder, count(0), controlAddress(builder, owner, 1))
 		LLVMBuildStore(builder, capacity, controlAddress(builder, owner, 2))
+		LLVMBuildStore(builder, nullPointer, controlAddress(builder, owner, 3))
 		if (slotBytes != null) LLVMBuildMemSet(builder, offset(builder, owner, checkNotNull(slotsOffset)), LLVMConstInt(byte, 0, 0), slotBytes, 1)
 		return owner
 	}
@@ -174,8 +188,8 @@ internal class EmitArrayStorage(
 		}, destination, value)
 
 	/** Borrowed storage is copied before it can move. Arena crossings also copy. */
-	fun reserve(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, type: CArray, minimum: LLVMValueRef): LLVMValueRef = call(builder,
-		helper("reserve", type, types.value(type), pointer, types.value(type), size) { body, function ->
+	fun reserve(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, type: CArray, minimum: LLVMValueRef, selectedValue: Boolean = false): LLVMValueRef = call(builder,
+		helper("reserve", type, types.value(type), pointer, types.value(type), size, LLVMInt1TypeInContext(context)) { body, function ->
 			val destination = LLVMGetParam(function, 0)
 			val input = LLVMGetParam(function, 1)
 			val minimum = LLVMGetParam(function, 2)
@@ -186,6 +200,9 @@ internal class EmitArrayStorage(
 			val owned = checkNotNull(nullable.choose(LLVMBuildIsNotNull(body, owner, "owned_storage"), types.value(type), {
 				checkNotNull(nullable.choose(LLVMBuildICmp(body, LLVMIntEQ, load(body, owner, 0), destination, "same_owner_arena"), types.value(type), { input }, { copy(body, destination, input, type) }))
 			}, { copy(body, destination, input, type) }))
+			nullable.choose(LLVMBuildAnd(body, LLVMGetParam(function, 3), LLVMBuildIsNotNull(body, owner, "observed_input"), "selected_value"), null, {
+				notifyObservations(body, owner, arrays.owner(owned, type), owned, type); null
+			}, { null })
 			val capacity = arrays.capacity(owned, type)
 			val length = LLVMBuildExtractValue(body, owned, 1, "live_length")
 			val memory = EmitMemory(context, body, abi, target)
@@ -204,30 +221,34 @@ internal class EmitArrayStorage(
 					each(body, count(0), length) { index -> arena.moveHead(body, slot(body, nextHeads, index), slot(body, previousHeads, index)) }
 				}
 				LLVMBuildStore(body, length, controlAddress(body, next, 1))
+				val result = arrays.withStorage(owned, type, data(body, next, type), capacity, next)
+				notifyObservations(body, previous, next, result, type)
 				// Ownership moved with the slots. The old allocation must release no children.
 				LLVMBuildStore(body, count(0), controlAddress(body, previous, 1))
 				arena.releaseAllocation(body, destination, previous, alignment(type))
-				arrays.withStorage(owned, type, data(body, next, type), capacity, next)
+				result
 			}, { owned })
 			LLVMBuildRet(body, checkNotNull(result))
-		}, destination, value, minimum)
+		}, destination, value, minimum, LLVMConstInt(LLVMInt1TypeInContext(context), if (selectedValue) 1 else 0, 0))
 
 	/** Initialize exactly the next live slot after reserve; never inspect inactive bytes. */
 	fun initialize(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, element: LLVMValueRef): LLVMValueRef = call(builder,
 		helper("initialize", type, types.value(type), types.value(type), types.value(type.element)) { body, function ->
-			val input = LLVMGetParam(function, 0)
 			val arrays = EmitArray(context, body, abi, target)
+			val input = arrays.withElementShape(LLVMGetParam(function, 0), LLVMGetParam(function, 1), type)
 			val owner = arrays.owner(input, type)
 			val memory = EmitMemory(context, body, abi, target)
 			memory.guard(LLVMBuildIsNotNull(body, owner, "owned_storage"), "Array slot initialization requires owned storage")
 			val length = LLVMBuildExtractValue(body, input, 1, "live_length")
 			memory.guard(LLVMBuildICmp(body, LLVMIntULT, length, arrays.capacity(input, type), "available_slot"), "Array slot initialization exceeds capacity")
+			if (type.hasNullableRows) arrays.remember(input, type, arrays.shapePointer(input, type))
 			val element = if (type.element.buffered) arena.copyValue(body, slot(body, heads(body, owner, type), length), LLVMGetParam(function, 1), type.element) else LLVMGetParam(function, 1)
 			val received = arrays.shareChild(element, input, type)
 			arrays.store(data(body, owner, type), type.element, length, received)
 			val next = LLVMBuildAdd(body, length, count(1), "new_length")
 			LLVMBuildStore(body, next, controlAddress(body, owner, 1))
-			val result = LLVMBuildInsertValue(body, input, next, 1, "initialized_array")
+			val result = LLVMBuildInsertValue(body, arrays.current(input, type), next, 1, "initialized_array")
+			notifyObservations(body, owner, owner, result, type)
 			if (type.hasNullableRows) arrays.remember(result, type, arrays.shapePointer(result, type))
 			LLVMBuildRet(body, result)
 		}, value, element)
@@ -235,9 +256,9 @@ internal class EmitArrayStorage(
 	/** Release the removed suffix, preserving capacity and every retained inner extent. */
 	fun truncate(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, length: LLVMValueRef): LLVMValueRef = call(builder,
 		helper("truncate", type, types.value(type), types.value(type), size) { body, function ->
-			val input = LLVMGetParam(function, 0)
 			val next = LLVMGetParam(function, 1)
 			val arrays = EmitArray(context, body, abi, target)
+			val input = arrays.current(LLVMGetParam(function, 0), type)
 			val owner = arrays.owner(input, type)
 			val memory = EmitMemory(context, body, abi, target)
 			memory.guard(LLVMBuildIsNotNull(body, owner, "owned_storage"), "Array slot release requires owned storage")
@@ -246,9 +267,80 @@ internal class EmitArrayStorage(
 			releaseSlots(body, owner, type, next, previous)
 			LLVMBuildStore(body, next, controlAddress(body, owner, 1))
 			val result = LLVMBuildInsertValue(body, input, next, 1, "truncated_array")
+			notifyObservations(body, owner, owner, result, type)
 			if (type.hasNullableRows) arrays.remember(result, type, arrays.shapePointer(result, type))
 			LLVMBuildRet(body, result)
 		}, value, length)
+
+	/** Shift only live inline bytes. Each child head moves separately so its
+	 * resource callbacks can reparent nested owners to the destination head cell.
+	 */
+	fun insert(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, index: LLVMValueRef, element: LLVMValueRef): LLVMValueRef = call(builder,
+		helper("insert", type, types.value(type), types.value(type), size, types.value(type.element)) { body, function ->
+			val index = LLVMGetParam(function, 1)
+			val arrays = EmitArray(context, body, abi, target)
+			val input = arrays.withElementShape(LLVMGetParam(function, 0), LLVMGetParam(function, 2), type)
+			val memory = EmitMemory(context, body, abi, target)
+			val owner = arrays.owner(input, type)
+			val length = LLVMBuildExtractValue(body, input, 1, "live_length")
+			memory.guard(LLVMBuildIsNotNull(body, owner, "owned_storage"), "Array insertion requires owned storage")
+			memory.guard(LLVMBuildICmp(body, LLVMIntULT, length, arrays.capacity(input, type), "available_slot"), "Array slot initialization exceeds capacity")
+			memory.guard(LLVMBuildICmp(body, LLVMIntULE, index, length, "insertion_index"), "Array index out of bounds")
+			if (type.hasNullableRows) arrays.remember(input, type, arrays.shapePointer(input, type))
+			val moved = LLVMBuildSub(body, length, index, "shifted_count")
+			val first = arrays.address(data(body, owner, type), type.element, index)
+			val next = arrays.address(data(body, owner, type), type.element, LLVMBuildAdd(body, index, count(1), "following_slot"))
+			LLVMBuildMemMove(body, next, 1, first, 1, memory.elementBytes(moved, types.storage(type.element), allocationError))
+			if (type.element.buffered) {
+				val heads = heads(body, owner, type)
+				each(body, count(0), moved) { offset ->
+					val from = LLVMBuildSub(body, LLVMBuildSub(body, length, count(1), "last_live"), offset, "shift_from")
+					arena.moveHead(body, slot(body, heads, LLVMBuildAdd(body, from, count(1), "shift_to")), slot(body, heads, from))
+				}
+			}
+			val element = if (type.element.buffered) arena.copyValue(body, slot(body, heads(body, owner, type), index), LLVMGetParam(function, 2), type.element) else LLVMGetParam(function, 2)
+			arrays.storeAt(first, type.element, arrays.shareChild(element, input, type))
+			val live = LLVMBuildAdd(body, length, count(1), "inserted_length")
+			LLVMBuildStore(body, live, controlAddress(body, owner, 1))
+			val result = LLVMBuildInsertValue(body, arrays.current(input, type), live, 1, "inserted_array")
+			if (type.hasNullableRows) arrays.remember(result, type, arrays.shapePointer(result, type))
+			notifyObservations(body, owner, owner, result, type)
+			LLVMBuildRet(body, result)
+		}, value, index, element)
+
+	/** The caller snapshots a wanted result before this operation. Release the
+	 * selected slot once, shift left in order and leave the now inactive tail empty.
+	 */
+	fun remove(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, index: LLVMValueRef): LLVMValueRef = call(builder,
+		helper("remove", type, types.value(type), types.value(type), size) { body, function ->
+			val index = LLVMGetParam(function, 1)
+			val arrays = EmitArray(context, body, abi, target)
+			val input = arrays.current(LLVMGetParam(function, 0), type)
+			val memory = EmitMemory(context, body, abi, target)
+			val owner = arrays.owner(input, type)
+			val length = LLVMBuildExtractValue(body, input, 1, "live_length")
+			memory.guard(LLVMBuildIsNotNull(body, owner, "owned_storage"), "Array removal requires owned storage")
+			memory.guard(LLVMBuildICmp(body, LLVMIntULE, length, arrays.capacity(input, type), "valid_live_length"), "Array length exceeds its capacity")
+			memory.guard(LLVMBuildICmp(body, LLVMIntULT, index, length, "removal_index"), "Array index out of bounds")
+			val after = LLVMBuildAdd(body, index, count(1), "following_slot")
+			releaseSlots(body, owner, type, index, after)
+			val live = LLVMBuildSub(body, length, count(1), "removed_length")
+			val moved = LLVMBuildSub(body, live, index, "shifted_count")
+			val first = arrays.address(data(body, owner, type), type.element, index)
+			val next = arrays.address(data(body, owner, type), type.element, after)
+			LLVMBuildMemMove(body, first, 1, next, 1, memory.elementBytes(moved, types.storage(type.element), allocationError))
+			if (type.element.buffered) {
+				val heads = heads(body, owner, type)
+				each(body, index, live) { at -> arena.moveHead(body, slot(body, heads, at), slot(body, heads, LLVMBuildAdd(body, at, count(1), "shift_from"))) }
+			}
+			val tail = arrays.address(data(body, owner, type), type.element, live)
+			LLVMBuildMemSet(body, tail, LLVMConstInt(byte, 0, 0), memory.elementBytes(count(1), types.storage(type.element), allocationError), 1)
+			LLVMBuildStore(body, live, controlAddress(body, owner, 1))
+			val result = LLVMBuildInsertValue(body, input, live, 1, "removed_array")
+			if (type.hasNullableRows) arrays.remember(result, type, arrays.shapePointer(result, type))
+			notifyObservations(body, owner, owner, result, type)
+			LLVMBuildRet(body, result)
+		}, value, index)
 
 	internal fun elementArena(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, index: LLVMValueRef, fallback: LLVMValueRef): LLVMValueRef {
 		if (!type.element.buffered) return fallback
@@ -257,6 +349,97 @@ internal class EmitArrayStorage(
 		return checkNotNull(EmitNullable(context, builder, target).choose(LLVMBuildIsNotNull(builder, owner, "owned_element"), pointer, {
 			slot(builder, heads(builder, owner, type), index)
 		}, { fallback }))
+	}
+
+	/** Stored field mutation keeps the value's existing owner, including a moved
+	 * element arena. Ordinary local/parameter mutation retains its frame boundary.
+	 */
+	internal fun ownerArena(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, fallback: LLVMValueRef): LLVMValueRef {
+		val owner = EmitArray(context, builder, abi, target).owner(value, type)
+		return checkNotNull(EmitNullable(context, builder, target).choose(LLVMBuildIsNotNull(builder, owner, "owned_array_field"), pointer, { load(builder, owner, 0) }, { fallback }))
+	}
+
+	private fun observationAddress(builder: LLVMBuilderRef, node: LLVMValueRef, index: Int) = LLVMBuildStructGEP2(builder, observation, node, index, "array_observation_field")
+	private fun visitObservations(builder: LLVMBuilderRef, owner: LLVMValueRef, action: (LLVMValueRef) -> Unit) {
+		val start = LLVMGetInsertBlock(builder)
+		val function = LLVMGetBasicBlockParent(start)
+		val first = load(builder, owner, 3)
+		val check = LLVMAppendBasicBlockInContext(context, function, "observations_check")
+		val visit = LLVMAppendBasicBlockInContext(context, function, "observation")
+		val done = LLVMAppendBasicBlockInContext(context, function, "observations_done")
+		LLVMBuildBr(builder, check)
+		LLVMPositionBuilderAtEnd(builder, check)
+		val node = LLVMBuildPhi(builder, pointer, "observation_node")
+		LLVMBuildCondBr(builder, LLVMBuildIsNotNull(builder, node, "has_observation"), visit, done)
+		LLVMPositionBuilderAtEnd(builder, visit)
+		action(node)
+		val next = LLVMBuildLoad2(builder, pointer, observationAddress(builder, node, 0), "next_observation")
+		val end = LLVMGetInsertBlock(builder)
+		LLVMBuildBr(builder, check)
+		PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+			values.put(0, first); values.put(1, next); blocks.put(0, start); blocks.put(1, end)
+			LLVMAddIncoming(node, values, blocks, 2)
+		} }
+		LLVMPositionBuilderAtEnd(builder, done)
+	}
+
+	/** Views live in explicit call-scoped arenas. Growth updates them before freeing
+	 * capacity, including when a separately emitted struct method performs it.
+	 */
+	internal fun observe(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, type: CArray, view: LLVMValueRef) {
+		val cleanup = helper("forget_observation", type, void, pointer, pointer) { body, function ->
+			val node = arena.resourcePayload(body, LLVMGetParam(function, 0), target.pointerBits / 8)
+			val optional = EmitNullable(context, body, target)
+			optional.choose(LLVMBuildIsNull(body, LLVMGetParam(function, 1), "release_observation"), null, {
+				val owner = LLVMBuildLoad2(body, pointer, observationAddress(body, node, 1), "observed_owner")
+				optional.choose(LLVMBuildIsNotNull(body, owner, "owner_still_live"), null, {
+					val start = LLVMGetInsertBlock(body)
+					val firstLink = controlAddress(body, owner, 3)
+					val check = LLVMAppendBasicBlockInContext(context, function, "find_observation")
+					val next = LLVMAppendBasicBlockInContext(context, function, "next_observation")
+					val found = LLVMAppendBasicBlockInContext(context, function, "unlink_observation")
+					LLVMBuildBr(body, check)
+					LLVMPositionBuilderAtEnd(body, check)
+					val link = LLVMBuildPhi(body, pointer, "observation_link")
+					val current = LLVMBuildLoad2(body, pointer, link, "observed_node")
+					EmitMemory(context, body, abi, target).guard(LLVMBuildIsNotNull(body, current, "registered_observation"), "Array observation is no longer registered")
+					LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntEQ, current, node, "selected_observation"), found, next)
+					LLVMPositionBuilderAtEnd(body, next)
+					val nextLink = observationAddress(body, current, 0)
+					LLVMBuildBr(body, check)
+					PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+						values.put(0, firstLink); values.put(1, nextLink)
+						blocks.put(0, start); blocks.put(1, next); LLVMAddIncoming(link, values, blocks, 2)
+					} }
+					LLVMPositionBuilderAtEnd(body, found)
+					LLVMBuildStore(body, LLVMBuildLoad2(body, pointer, observationAddress(body, node, 0), "following_observation"), link)
+					null
+				}, { null })
+				null
+			}, { null })
+			LLVMBuildRetVoid(body)
+		}.second
+		val owner = EmitArray(context, builder, abi, target).owner(value, type)
+		EmitNullable(context, builder, target).choose(LLVMBuildIsNotNull(builder, owner, "observable_array"), null, {
+			val node = arena.allocate(builder, destination, count(LLVMABISizeOfType(layout, observation)), target.pointerBits / 8, cleanup)
+			LLVMBuildStore(builder, load(builder, owner, 3), observationAddress(builder, node, 0))
+			LLVMBuildStore(builder, owner, observationAddress(builder, node, 1))
+			LLVMBuildStore(builder, view, observationAddress(builder, node, 2))
+			LLVMBuildStore(builder, node, controlAddress(builder, owner, 3)); null
+		}, { null })
+	}
+
+	private fun notifyObservations(builder: LLVMBuilderRef, previous: LLVMValueRef, owner: LLVMValueRef, value: LLVMValueRef, type: CArray) {
+		val head = load(builder, previous, 3)
+		EmitNullable(context, builder, target).choose(LLVMBuildICmp(builder, LLVMIntNE, previous, owner, "relocated_observations"), null, {
+			LLVMBuildStore(builder, head, controlAddress(builder, owner, 3))
+			LLVMBuildStore(builder, nullPointer, controlAddress(builder, previous, 3)); null
+		}, { null })
+		visitObservations(builder, owner) { node ->
+			LLVMBuildStore(builder, owner, observationAddress(builder, node, 1))
+			val view = LLVMBuildLoad2(builder, pointer, observationAddress(builder, node, 2), "observed_descriptor")
+			EmitStoredValue(context, builder, target).store(view, value, type)
+		}
 	}
 
 	internal fun replaceElement(builder: LLVMBuilderRef, value: LLVMValueRef, type: CArray, index: LLVMValueRef, element: LLVMValueRef, fallback: LLVMValueRef): LLVMValueRef {

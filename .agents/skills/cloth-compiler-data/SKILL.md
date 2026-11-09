@@ -5,6 +5,18 @@ description: Design, explain, or extend Cloth compiler data access through doubl
 
 # Cloth compiler data access
 
+[Generic Stage 3](../cloth-generics/references/stage-3.md) supports universal
+`T::type` during declaration checking and keeps represented types separate for
+closed owner bodies. Unknown T gains no size, text or numeric provider merely
+from one selected actual type. Canonical argument identity stays separate from
+bounded human-facing display.
+[Generic Stage 4](../cloth-generics/references/stage-4.md) emits exact closed
+metadata. Share a module-local EmitTypeInfo.Types registry across callable string
+services; canonical nominal descriptors key identity, including private actual
+arguments and array/nullable wrappers. Canonical text keeps numeric widths and
+premeasures shared arguments before flattening; C4034 rejects expansion beyond
+1,048,576 UTF-8 bytes rather than truncating metadata.
+
 Do-while Stage 3 visits metadata in body-before-condition order, forgetting mutable
 represented-type facts before a body that may repeat. Its test joins actual
 fallthrough/continue snapshots; normal exits join reachable false-test/break
@@ -27,7 +39,8 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   [Stage 6](../cloth-imports/references/stage-6.md) also preserves this identity in
   native typeinfo descriptors and equality, recursively through arrays/nullable
   types. Intern descriptors within the emitted module by canonical structural
-  identity plus nominal source/position, never displayed type text alone. Keep
+  identity and original nominal declarations with exact closed arguments, never
+  displayed type text. Keep
   displayed type names unchanged; binary cross-module metadata ABIs remain deferred.
 - `value::name` and `Type::name` are read-only, lowercase, case-sensitive access.
   Each provider declares supported receiver forms. Parentheses select the separate
@@ -57,6 +70,9 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
 - `ArraySize` reads the target-sized outer count from the value descriptor
   when the static extent is unknown. Inner extents carry a count and a separate
   known flag. Tests exercise that layout with zero, maximum and unknown extents.
+  Immediate class array projections can read that count from checked storage.
+  Preserve receiver evaluation and liveness checks before consuming the count.
+  [Immediate class array reads](../cloth-collections/references/linear-collections.md#immediate-class-array-reads)
   [Buffer counts](../../../Compiler/src/test/kotlin/cloth/BufferCountsTest.kt) ·
   [Provider results](../../../Compiler/src/test/kotlin/cloth/ProviderResultsTest.kt)
 - [Growable arrays Stage 1](../cloth-arrays/references/growable-arrays-stage-1.md)
@@ -68,6 +84,23 @@ The later usize/isize contracts supersede early fixed-64-bit provider records.
   capacity/owner fields after the existing shape fields. Providers keep reading
   live length and extents; capacity never becomes a language size or type fact.
   Enum values, formatting and foreach use the shared array-only layout.
+  [Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes append
+  and reserve on the supported one-dimensional receivers: append changes current
+  `::size`, reserve does not, and both retain declared `T[]` metadata identity.
+  [Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) extends those
+  operations to stored fields. Read current field length after growth; private
+  capacity, owner and scoped observation bookkeeping remain outside metadata.
+  [Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) executes insert,
+  removeAt and clear: value length changes with the operation, clear produces
+  zero, and growable type identity stays unchanged. Saved scalar metadata remains
+  its received value; current queries cannot reuse stale pre-mutation lengths.
+  [Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) verifies these
+  rules for rectangular edits and retained empty shapes: outer size changes,
+  row size retains the inner extent, and rank/canonical growable identity stay
+  unchanged across append/insert/remove/clear and result transport.
+  The [Stage 8 audit](../cloth-arrays/references/growable-arrays-stage-8.md)
+  retains these rules for the completed array surface. List `size()` remains an
+  ordinary method; generic collections do not inherit array-only providers.
 - `typeinfo` is one built-in value type. Preserve canonical type spelling and
   capability/provenance facts across copies, conditional continuations, captures,
   calls and results. Static known failures stay compile-time errors; unknown

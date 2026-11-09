@@ -21,7 +21,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val fields: MutableMap<FieldAccessExpression, InstanceField> = facts.identityMap { it.fields }
 	internal val fieldWrites: MutableMap<FieldWriteStatement, FieldWritePlan> = facts.identityMap { it.fieldWrites }
 	internal val instanceWrites: MutableMap<Statement, InstancePlace> = facts.identityMap { it.instanceWrites }
-	internal val receiverElementWrites: MutableMap<ElementAssignmentStatement, StoredPlace> = facts.identityMap { it.receiverElementWrites }
+	internal val storedElementWrites: MutableMap<ElementAssignmentStatement, StoredPlace> = facts.identityMap { it.storedElementWrites }
 
 	private val expressionResults: MutableMap<Expression, ResultShape> = facts.identityMap { it.expressionResults }
 	private val statementResults: MutableMap<Statement, ResultShape> = facts.identityMap { it.statementResults }

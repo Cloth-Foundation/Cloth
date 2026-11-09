@@ -1,0 +1,27 @@
+using cloth.collections.Deque : Deque
+using cloth.collections.Queue : Queue
+using cloth.collections.Stack : Stack
+
+fn main() {
+    def queue := Queue<string>::new
+    queue.enqueue("first")
+    queue.enqueue("second")
+    while (!queue.isEmpty()) println(queue.dequeue())
+    queue::delete
+
+    def stack := Stack<int>::new
+    stack.push(1)
+    stack.push(2)
+    println(stack.pop())
+    println(stack.pop())
+    stack::delete
+
+    def deque := Deque<int>::new
+    deque.pushBack(2)
+    deque.pushBack(3)
+    deque.pushFront(1)
+    println(deque.popFront())
+    println(deque.popBack())
+    println(deque.peekFront())
+    deque::delete
+}

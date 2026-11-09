@@ -13,22 +13,21 @@ internal class ClassParser(private val parser: Parser) {
 
 	fun parse(keyword: Token, visibility: Token?, finalKeyword: Token?): ClassDeclaration {
 		val name = parser.expect(TokenType.Identifier, "a class name")
+		val typeParameters = parser.typeParser.parseTypeParameters()
 		val parameters = if (at(Operators.PAREN_OPEN)) parser.delimited.parentheses {
 			parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::parseHeaderParameter)
 		} else emptyList()
-		val base = if (at(Operators.COLON)) {
-			val colon = parser.advance()
-			val target = parser.expect(TokenType.Identifier, "a base class name")
-			val arguments = if (at(Operators.PAREN_OPEN)) parser.functionParser.inBody { parser.expressionParser.parseArgumentList() } else emptyList()
-			ConstructorDelegation(target, arguments, colon.span.through(parser.previous().span))
-		} else null
+		val parents = parser.typeParser.parseParents("a class or interface parent name") { type, separator ->
+			val arguments = if (at(Operators.PAREN_OPEN)) parser.functionParser.inBody { parser.expressionParser.parseArgumentList() } else null
+			ClassParentClause(type, arguments, separator.span.through(parser.previous().span))
+		}
 		val headerEnd = parser.currentIndex
 		parser.skipNewlines()
 		val members = if (at(Operators.BRACE_OPEN)) parser.delimited.braces { parseMembers(name) } else {
 			parser.currentIndex = headerEnd
 			emptyList()
 		}
-		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span), base)
+		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span), parents, typeParameters)
 	}
 
 	private fun parseHeaderParameter(): ClassParameterDeclaration {
@@ -49,11 +48,17 @@ internal class ClassParser(private val parser: Parser) {
 	private fun parseMembers(owner: Token): List<ClassMember> = buildList {
 		parser.skipNewlines()
 		while (!at(Operators.BRACE_CLOSE)) {
+			val overridePrefix = if (parser.atKeyword(Keywords.OVERRIDE)) {
+				parser.advance().span.through(parser.expect(Operators.COLON).span).also { parser.skipNewlines() }
+			} else null
 			val visibility = parseVisibility()
+			if (overridePrefix != null && !parser.atKeyword(Keywords.METHOD)) {
+				throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration after '${Keywords.OVERRIDE}${Operators.COLON}'", parser.peek())
+			}
 			val member = when {
 				parser.atKeyword(Keywords.FUNCTION)                              -> throw SyntaxErrors.functionInType(parser.peek())
 				parser.atKeyword(Keywords.DEFINITION)                            -> parseField(visibility)
-				parser.atKeyword(Keywords.METHOD)                                -> parser.functionParser.parseMethod(visibility)
+				parser.atKeyword(Keywords.METHOD)                                -> parser.functionParser.parseMethod(visibility, overridePrefix)
 				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
 				visibility == null && at(Operators.TILDE)                        -> parseDestructor(owner)
 				visibility == null && parser.peek().type == TokenType.Identifier -> parseConstructor(owner)

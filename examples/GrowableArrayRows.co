@@ -1,0 +1,23 @@
+fn<int[]?[]> rows() {
+    def<int[]?[]> values = []
+    values.reserve(8)
+    values.append(null)
+    values.insert(0, [1, 2])
+    values.append([3, 4])
+    return values
+}
+
+fn main() {
+    def<int[]?[]> values = rows()
+    println(values)
+    def<int[]?> removed = values.removeAt(0)
+    values.clear()
+    values.append([5, 6])
+    println(values)
+    if (removed != null) {
+        removed.append(9)
+        println(removed)
+    }
+    println(values::size)
+    println(values::type == int[]?[]::type)
+}

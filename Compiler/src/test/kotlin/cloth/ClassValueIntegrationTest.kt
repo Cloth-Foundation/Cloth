@@ -232,6 +232,31 @@ class ClassValueIntegrationTest {
 	}
 
 	@Test
+	fun `class array reads snapshot only the selected value when the index has no effects`(@TempDir directory: Path) {
+		val source = """
+			typedef<struct> Cell { string[] values }
+			pub typedef<class> Store (pub def<Cell[]> cells)
+			fn<usize> replace(Store store) {
+			    store.cells = [{ ["new", "tail"] }]
+			    return 0
+			}
+			fn<int> main() {
+			    def store = Store::new([{ ["old"] }])
+			    if (store.cells[replace(store)].values[0] != "old") return 1
+			    if (store.cells[0].values::size != 2) return 2
+			    def saved = store.cells[0]
+			    store::delete
+			    if (saved.values[1] != "tail") return 3
+			    return 0
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("class_read_" + abi.layout.sizeBits))
+			assertEquals(processCompletion().replace("\r\n", "\n"), output)
+		}
+	}
+
+	@Test
 	fun `metadata snapshots stay independent of writes through class aliases`(@TempDir directory: Path) {
 		val source = """
 			pub typedef<class> Stamp (pub def<typeinfo> value)

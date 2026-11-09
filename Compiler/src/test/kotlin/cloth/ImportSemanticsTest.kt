@@ -6,6 +6,14 @@ import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
+import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.InterfaceDeclaration
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.expression.NameExpression
+import cloth.parser.expression.ProviderAccessExpression
+import cloth.semantic.generics.GenericAnalyzer
+import cloth.semantic.generics.NominalTypeName
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.semantic.typing.FunctionSemanticModel
@@ -58,7 +66,7 @@ class ImportSemanticsTest {
 
 	@Test
 	fun `explicit private imports label the selector and its original declaration`(@TempDir root: Path) {
-		for (declaration in listOf("fn Hidden() {}", "typedef<struct> Hidden {}", "typedef<class> Hidden", "typedef<enum> Hidden { One }")) {
+		for (declaration in listOf("fn Hidden() {}", "typedef<struct> Hidden {}", "typedef<class> Hidden", "typedef<enum> Hidden { One }", "typedef<interface> Hidden {}")) {
 			val failure = fail(DiagnosticCode.IMPORT_PRIVATE_NAME, root, mapOf("Main.co" to "using Lib: Hidden\nfn main() {}", "Lib.co" to declaration))
 			assertEquals(listOf("Main.co", "Lib.co"), failure.sourceLabels.map { fileOf(it.span.source!!.name) })
 			val rendered = StringBuilder()
@@ -66,6 +74,55 @@ class ImportSemanticsTest {
 			assertContains(rendered.toString(), "C3103")
 			assertContains(rendered.toString(), "Private declaration here")
 		}
+	}
+
+	@Test
+	fun `interfaces retain original imported identities and defining scope across a cycle`(@TempDir root: Path) {
+		val graph = graph(root, mapOf(
+			"Main.co" to """
+				using Contract: Value
+				using Bridge: Reader
+				typedef<interface> Hidden {}
+				typedef<class> Box : Value<int>
+				fn take(Reader<int> view, Hidden helper) {}
+			""",
+			"Contract.co" to """
+				using Bridge: Reader
+				typedef<interface> Hidden {}
+				pub typedef<interface> Value<T> {
+				    mt<T> read()
+				    mt<typeinfo> info() = default (Hidden::type)
+				}
+			""",
+			"Bridge.co" to """
+				using Contract: *
+				pub typedef<interface> Reader<T> : Value<T> { mt<T> other() }
+			""",
+		))
+		val names = GenericAnalyzer(target).analyze(graph)
+		val main = graph.primary.unit.declarations
+		val contract = graph.sources.single { fileOf(it.unit.source!!.name) == "Contract.co" }.unit.declarations
+		val reader = graph.sources.single { fileOf(it.unit.source!!.name) == "Bridge.co" }.unit.declarations.single() as InterfaceDeclaration
+		val box = main.filterIsInstance<ClassDeclaration>().single()
+		val value = assertIs<CInterface>(assertIs<NominalTypeName>(names.nameOf(box.parents.single().type)).type)
+		assertSame(contract[1], value.declaration)
+		assertSame(value, assertIs<NominalTypeName>(names.nameOf(reader.parents.single())).type)
+
+		val fallback = assertIs<ExpressionBody>(value.declaration.methods[1].fallback?.body)
+		val receiver = assertIs<NameExpression>(assertIs<ProviderAccessExpression>(fallback.expression).receiver)
+		val privateType = assertIs<CInterface>(assertIs<NominalTypeName>(names.receiverName(receiver)).type)
+		assertSame(contract[0], privateType.declaration)
+		val callerType = (main.last() as FunctionDeclaration).parameters[1].type
+		assertNotSame(privateType, assertIs<NominalTypeName>(names.nameOf(callerType)).type)
+	}
+
+	@Test
+	fun `distinct interface exports with the same spelling report an import conflict`(@TempDir root: Path) {
+		fail(DiagnosticCode.IMPORT_NAME_CONFLICT, root, mapOf(
+			"Main.co" to "using First: I\nusing Second: *\nfn main() {}",
+			"First.co" to "pub typedef<interface> I {}",
+			"Second.co" to "pub typedef<interface> I {}",
+		))
 	}
 
 	@Test

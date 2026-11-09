@@ -24,7 +24,7 @@ data class CNullable(val payload: ValueType) : ValueType(payload.keyword) {
 	override fun inferArraySizes(actual: ValueType): ValueType = if (actual == Null) this else CNullable(payload.inferArraySizes((actual as? CNullable)?.payload ?: actual))
 	override fun commonArrayShape(other: ValueType): ValueType? = if (other is CNullable) payload.commonArrayShape(other.payload)?.let(::CNullable) else null
 	override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
-		val own = super.providers(target) + if (!payload.buffered && payload !is CStruct) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
+		val own = super.providers(target) + if (!payload.buffered && payload !is CStruct && payload !is CTypeParameter) mapOf(CompilerDataProviders.SIZE to ProviderResult.StorageSize(this, CUSize(target.sizeBits))) else emptyMap()
 		val inherited = payload.providers(target).filter { (name, provider) -> name !in own && ProviderReceiverForm.TYPE in provider.receiverForms }
 		return inherited.mapValues { (_, provider) -> ProviderResult.NullableType(this, provider) } + own
 	}

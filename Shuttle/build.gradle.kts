@@ -55,6 +55,8 @@ tasks.named<JavaExec>("run") {
 tasks.test {
 	workingDir(rootProject.projectDir)
 	useJUnitPlatform()
+	inputs.files(rootProject.fileTree("Standard-Library") { include("**/*.co", "module.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("examples/Collections") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	jvmArgs("--enable-native-access=ALL-UNNAMED")
 	systemProperty("shuttle.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
 }

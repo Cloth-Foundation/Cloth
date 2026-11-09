@@ -14,6 +14,7 @@ internal class StructParser(private val parser: Parser) {
 
 	fun parse(keyword: Token, visibility: Token?): StructDeclaration {
 		val name = parser.expect(TokenType.Identifier, "a struct name")
+		val typeParameters = parser.typeParser.parseTypeParameters()
 		parser.skipNewlines()
 		val (fields, methods) = parser.delimited.braces {
 			parser.skipNewlines()
@@ -27,7 +28,7 @@ internal class StructParser(private val parser: Parser) {
 			}
 			fields to parseMethods()
 		}
-		return StructDeclaration(keyword, name, fields, visibility, (visibility ?: keyword).span.through(parser.previous().span), methods)
+		return StructDeclaration(keyword, name, fields, visibility, (visibility ?: keyword).span.through(parser.previous().span), methods, typeParameters)
 	}
 
 	private fun atEnd() = parser.peek().lexeme == Operators.BRACE_CLOSE.toString()

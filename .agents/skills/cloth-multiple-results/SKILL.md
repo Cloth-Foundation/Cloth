@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth ordered multiple function results,
 
 # Cloth multiple results
 
+[Generic Stage 3](../cloth-generics/references/stage-3.md) resolves ordered generic
+result shapes and receiving contexts per owner, including forwarding, defaults
+and deferred captures. Preserve explicit nullable reception and the ordinary
+discard/shape rules. Native generic result transport remains Stage 4.
+
 [Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
 integrates wide and nullable-wide slots, ordered snapshots, forwarding and
 conditional result carriers through 65536 bits. Small private carriers contain
@@ -36,6 +41,19 @@ boundaries. All five stages are complete for implemented value types.
   facts. Whole replacement may change a growable outer count; explicit extents
   and independently retained inner witnesses still guard each destination after
   complete producer evaluation. Broadcast and positional copies stay independent.
+  [Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md) executes append
+  and reserve after these receptions. Mutating one received array cannot change
+  a sibling slot, the source binding or a previously returned/captured value.
+  [Stage 4](../cloth-arrays/references/growable-arrays-stage-4.md) extends growth
+  to stored fields; exported field arrays and containing value copies remain
+  independent. Class-valued result slots still share identity explicitly.
+  [Stage 5](../cloth-arrays/references/growable-arrays-stage-5.md) receives removed
+  elements independently before releasing their original slot. Forwarding and
+  ordered reception preserve those buffers and retained field witnesses before
+  later operands edit or clear the producer's array.
+  [Stage 6](../cloth-arrays/references/growable-arrays-stage-6.md) verifies grown
+  rectangular arrays and removed rows through ordered results/destructuring.
+  Each received slot preserves independent recursive storage and inner witnesses.
 - Multi-result conditionals use the same continuing-flow rules as
   [control flow](../cloth-control-flow/SKILL.md); unannotated functions still mean void.
 - Declaration resolution reports C3053 for grouped deferred-block

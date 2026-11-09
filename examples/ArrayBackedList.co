@@ -1,0 +1,34 @@
+// A concrete collection proof. Generic List<T> requires the generic-types plan.
+pub typedef<class> StringList (def<string[]> items ?: []) {
+    pub mt append(string value) { items.append(value) }
+    pub mt<string> get(usize index) = items[index]
+    pub mt insert(usize index, string value) { items.insert(index, value) }
+    pub mt<string> removeAt(usize index) = items.removeAt(index)
+    pub mt<usize> size() = items::size
+    pub mt clear() { items.clear() }
+    pub mt reserve(usize minimum) { items.reserve(minimum) }
+    pub mt<string[]> toArray() = items
+}
+
+fn<int> main() {
+    def list := StringList::new
+    def alias = list
+    list.reserve(8)
+    list.append("first")
+    alias.append("last")
+    list.insert(1, "middle")
+    println(alias.get(1))
+    println(alias.size())
+    def removed = alias.removeAt(0)
+    def saved = list.toArray()
+    list.clear()
+    alias.append("after")
+    def current = alias.toArray()
+    list::delete
+
+    saved.append("independent")
+    println(removed)
+    println(saved)
+    println(current)
+    return 0
+}

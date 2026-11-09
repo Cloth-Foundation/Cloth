@@ -1,0 +1,33 @@
+using cloth.collections.List : List
+
+fn main() {
+    def values := List<int>::new
+    def alias = values
+    values.reserve(8)
+    values.append(1)
+    alias.insert(0, 2)
+    def removed = values.removeAt(1)
+    def exported = values.toArray()
+    def copied = values.copy()
+    values.clear()
+    values::delete
+    exported.append(9)
+    println(removed)
+    println(exported)
+    println(copied.get(0))
+    copied::delete
+
+    def rows = List<int[]>::new
+    rows.append([1])
+    rows.append([2, 3])
+    def rowCopy = rows.copy()
+    def first = rows.get(0)
+    def last = rows.removeAt(1)
+    rows::delete
+    first.append(9)
+    println(first)
+    println(last)
+    println(rowCopy.get(0))
+    println(rowCopy.get(1))
+    rowCopy::delete
+}

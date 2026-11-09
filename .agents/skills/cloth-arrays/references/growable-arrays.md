@@ -6,8 +6,15 @@ behavior, with implementation support staged in the
 The [Stage 0 record](growable-arrays-stage-0.md) owns its baseline;
 [Stage 1](growable-arrays-stage-1.md) owns typing, receiver/effect and whole-array
 reception support. [Stage 2](growable-arrays-stage-2.md) owns capacity, private typed
-storage operations and executable unsized struct fields. Public mutators retain
-the C4032 execution boundary.
+storage operations and executable unsized struct fields.
+[Stage 3](growable-arrays-stage-3.md) executes one-dimensional append/reserve on
+local/parameter bindings and temporaries.
+[Stage 4](growable-arrays-stage-4.md) extends them to stored fields and paths through
+`self` without whole-field repacking. [Stage 5](growable-arrays-stage-5.md) executes
+insert/removeAt/clear on those same one-dimensional receivers.
+[Stage 6](growable-arrays-stage-6.md) executes rectangular whole-row mutation and
+its nullable-witness, provider, output, producer and snapshot integrations.
+[Stage 8](growable-arrays-stage-8.md) owns the final audit and target evidence.
 Existing [array semantics](semantics.md) continue to own element
 inference, exact typed values, rectangularity, independent copies and snapshots.
 
@@ -48,8 +55,9 @@ copy.append(4)
 growing = [5, 6]             // Permitted: growing still has type int[].
 ```
 
-Examples using mutators type-check in Stage 1 and become executable in later
-storage stages. Neither assigning a growable value nor calling a function changes the
+Examples using mutators type-check in Stage 1. Stages 3-6 execute the full
+API, including rectangular rows and stored fields. Neither assigning a growable
+value nor calling a function changes the
 type or contents of an independent source array.
 
 ## Binding immutability and value lifetimes
@@ -139,6 +147,7 @@ receiver or its temporary owner.
 
 Only the outer length of an independent array value is growable. Rectangular
 rows remain constrained by their enclosing array's established inner shape.
+The whole-row mutation example below executes in Stage 6.
 
 ```cloth
 def<int[][3]> matrix = [[1, 2, 3]]
@@ -186,11 +195,40 @@ growable types, current-count/inner-witness facts, the five signatures and
 stored/temporary receiver plans. Whole-array replacement with a different outer
 count executes. [Stage 2](growable-arrays-stage-2.md) adds owned capacity, private
 typed reserve/relocation/release and executable unsized struct array fields with
-retained nullable witnesses. Public mutator execution is still guarded by C4032;
-private helper probes do not establish source-level growth. Record each supported
+retained nullable witnesses. [Stage 3](growable-arrays-stage-3.md) executes
+one-dimensional local/parameter/temporary append and reserve with protected
+operands, checked growth and selected-place relocation.
+[Stage 4](growable-arrays-stage-4.md) extends this to class/aggregate fields,
+array-element fields and `self`, preserving capacity and selected values across
+source method calls. [Stage 5](growable-arrays-stage-5.md) executes insert/removeAt/
+clear with independent removed values, live slot cleanup and overlap-safe shifts.
+[Stage 6](growable-arrays-stage-6.md) executes rectangular mutation with retained
+inner witnesses, independent removed rows and existing value integrations.
+Record each supported
 slice in the [array skill](../SKILL.md).
 
-Generic `List<T>` remains dependent on a separately specified and implemented
-user-defined generic-type facility. Growable arrays supply its typed backing
-storage; Stage 0 establishes neither a public List API nor a List-specific
-ownership, indexing or iterator protocol.
+The public [List](../../cloth-collections/SKILL.md) now uses the implemented
+generic class/struct facility and this typed backing storage. Its independent
+elements, checked export and explicit lifetime are ordinary source-library
+behavior. Collection indexing and iteration protocols remain separate work.
+
+## Collection integration requirements (confirmed 2026-11-08)
+
+During Stage 7 the user confirmed that `List<int[]>` permits elements with
+independent lengths. Direct `T[]` backing would impose rectangular dimensions
+when T is an array; a per-element value container can preserve independent shapes.
+This does not change the rectangular contract of ordinary Cloth arrays.
+
+The user confirmed `copy()` for an independent collection preserving those
+element lengths, together with checked `toArray()` conversion into ordinary T[].
+For array elements, incompatible dimensions fail the existing rectangular check;
+copy preserves their different lengths. Class-valued elements retain normal
+shared identity under value copying.
+
+The [Stage 7 proof](growable-arrays-stage-7.md) executes concrete string and
+struct-slot row collections through ordinary methods.
+[Generic Stage 5](../../cloth-generics/references/stage-5.md) delivers the actual
+imported public List; [generic Stage 6](../../cloth-generics/references/stage-6.md)
+closes that first slice. [Follow-ups](../../../../todo/generic-follow-ups.md)
+retain collection protocols and later generic features. Bootstrap's owning
+TokenList and borrowed cursor remain a separate consumer migration.
