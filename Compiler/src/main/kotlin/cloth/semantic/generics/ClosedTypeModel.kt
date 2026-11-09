@@ -2,9 +2,12 @@ package cloth.semantic.generics
 
 import cloth.data.CMemberType
 import cloth.data.ValueType
-import cloth.parser.declaration.CallableDeclaration
+import cloth.parser.declaration.CallableSignature
+import cloth.parser.declaration.ClassParentClause
+import cloth.data.CClass
 import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeReference
+import cloth.semantic.interfaces.InterfaceModel
 import cloth.target.TargetLayout
 import cloth.token.TokenSpan
 import java.util.IdentityHashMap
@@ -16,7 +19,7 @@ sealed interface ClosedTypePattern {
 }
 
 data class ClosedCallableSignature(
-	val declaration: CallableDeclaration,
+	val declaration: CallableSignature,
 	val parameters: List<ClosedTypePattern>,
 	val results: List<ClosedTypePattern>,
 	val selector: ClosedTypePattern? = null,
@@ -47,6 +50,8 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	internal val roots = IdentityHashMap<TypeReference, ClosedTypePattern>()
 	internal val receivers = IdentityHashMap<NameExpression, ValueType>()
 	internal val functionList = mutableListOf<ClosedCallableSignature>()
+	var interfaces: InterfaceModel = InterfaceModel.Empty
+		internal set
 	val instances: List<ClosedTypeInstance> get() = catalog.values.filter { it.arguments.isNotEmpty() }
 	val nominalTypes: List<CMemberType> get() = catalog.keys.toList()
 	val functions: List<ClosedCallableSignature> get() = functionList.toList()
@@ -54,5 +59,7 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	fun patternOf(reference: TypeReference, owner: CMemberType? = null): ClosedTypePattern = owner?.let { catalog.getValue(it).facts[reference] } ?: roots.getValue(reference)
 	fun typeOf(reference: TypeReference, owner: CMemberType? = null): ValueType = (patternOf(reference, owner) as ClosedTypePattern.Exact).type
 	fun receiverTypeOf(expression: NameExpression, owner: CMemberType? = null): ValueType? = owner?.let { catalog.getValue(it).receivers[expression] } ?: receivers[expression]
+	internal fun baseClauseOf(owner: CClass): ClassParentClause? =
+		owner.declaration.parents.firstOrNull { typeOf(it.type, owner) === owner.base }
 	internal fun requireImplemented() = names.requireImplemented()
 }

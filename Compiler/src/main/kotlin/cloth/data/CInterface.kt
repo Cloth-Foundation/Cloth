@@ -7,8 +7,13 @@ import cloth.token.Keywords
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 
-/** The original declaration identity used by file scopes and generic name binding. */
-class CInterface internal constructor(override val declaration: InterfaceDeclaration) : CMemberType(Keywords.INTERFACE) {
+/** A nominal interface declaration or an interned application of it. */
+class CInterface internal constructor(
+	override val declaration: InterfaceDeclaration,
+	val genericDefinition: CInterface? = null,
+	override val typeArguments: List<ValueType> = emptyList(),
+) : CMemberType(Keywords.INTERFACE) {
+	internal val definition get() = genericDefinition ?: this
 	override val fields: List<InstanceField> get() = emptyList()
 	override fun field(name: String): InstanceField? = null
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef =
