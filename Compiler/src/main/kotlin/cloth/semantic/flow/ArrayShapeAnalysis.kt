@@ -5,6 +5,7 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -13,6 +14,7 @@ import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.typing.FunctionSemanticModel
+import cloth.semantic.typing.ArgumentBinding
 import cloth.semantic.typing.ResolvedCall
 import cloth.token.Operators
 import java.math.BigInteger
@@ -21,7 +23,11 @@ import java.util.IdentityHashMap
 internal fun checkArrayShapes(function: CallableContractSymbol, semantics: FunctionSemanticModel) {
 	val analysis = ArrayShapeAnalysis(semantics, semantics.typeOf(function).results.values)
 	function.parameters.forEach { parameter -> parameter.declaration.defaultValue?.let(analysis::expression) }
-	semantics.declarations.initializationExpressions(function.declaration).forEach(analysis::expression)
+	val declaration = function.declaration
+	if (declaration is StateInitialPayloadDeclaration) {
+		val state = checkNotNull(semantics.declarations.states.stateOf(function))
+		ArrayShapeAnalysis(semantics, listOf(state.payloadType)).returned(declaration.expression)
+	} else semantics.declarations.initializationExpressions(declaration).forEach(analysis::expression)
 	when (val body = function.declaration.executableBody) {
 		is BlockBody -> analysis.statements(body.statements)
 		is ExpressionBody -> analysis.returned(body.expression)
@@ -83,9 +89,11 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 		returnTypes.forEachIndexed { index, type -> array(type)?.let { check(it.arrayDimensions, shapes.getOrNull(index), value) } }
 	}
 	private fun call(plan: ResolvedCall.Bound?, arguments: List<Expression>, shapes: List<List<BigInteger?>?>) {
-		if (plan == null) return
+		if (plan != null) checkArguments(plan.binding, plan.type.parameters, arguments, shapes)
+	}
+	private fun checkArguments(binding: ArgumentBinding, parameters: List<ValueType>, arguments: List<Expression>, shapes: List<List<BigInteger?>?>) {
 		arguments.forEachIndexed { index, value ->
-			array(plan.type.parameters[plan.binding.parameterForArgument[index]])?.let { check(it.arrayDimensions, shapes[index], value) }
+			array(parameters[binding.parameterForArgument[index]])?.let { check(it.arrayDimensions, shapes[index], value) }
 		}
 	}
 	private fun rowWrite(target: IndexExpression, value: Expression) {
@@ -207,6 +215,18 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 				}
 			}
 			is CallExpression -> call(semantics.calls[value] as? ResolvedCall.Bound, value.arguments, value.arguments.map { expression(it).singleOrNull() })
+			is StateCallExpression -> {
+				expression(value.receiver)
+				val arguments = value.arguments.map { expression(it).singleOrNull() }
+				semantics.stateCalls[value]?.let { checkArguments(it.binding, it.type.parameters, value.arguments, arguments) }
+			}
+			is StateTransitionExpression -> {
+				expression(value.receiver)
+				value.payload?.let { payload ->
+					val shape = expression(payload).singleOrNull()
+					array(semantics.stateTransitions[value]?.payloadType)?.let { check(it.arrayDimensions, shape, payload) }
+				}
+			}
 			is ClassCreationExpression -> call(semantics.constructorCalls[value], value.arguments, value.arguments.map { expression(it).singleOrNull() })
 			is IfExpression -> {
 				val before = snapshot()
@@ -234,6 +254,14 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 				val after = snapshot()
 				merge(if (value.left is NullLiteral) listOf(after) else listOf(before, after), before)
 				shape = common(listOf(source(value.left), source(value.fallback))) ?: shape
+			}
+			is GuardedReceiver -> shape = source(value.source) ?: shape
+			is GuardedAccessExpression -> {
+				expression(value.receiver)
+				val skipped = snapshot()
+				expression(value.continuation)
+				if (flow.of(value.receiver).canFallThrough && flow.of(value.continuation).canFallThrough) merge(listOf(skipped, snapshot()), skipped)
+				else restore(skipped)
 			}
 			is BinaryExpression -> {
 				expression(value.left)

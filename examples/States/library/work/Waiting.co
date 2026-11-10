@@ -1,0 +1,12 @@
+using work.Contract : Named
+
+fn<string> receipt(string label) = "[" + label + "]"
+
+typedef<state<string>> pub Waiting for Named {
+    init { println(self.display()) }
+
+    pub mt<string> release() {
+        self -> Ready
+        return receipt(state)
+    }
+}

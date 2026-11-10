@@ -28,7 +28,6 @@ import cloth.target.TargetLayout
 import cloth.token.Keywords
 import cloth.token.Token
 import cloth.token.TokenSpan
-import cloth.token.TokenType
 
 /** Collects source callable signatures, then resolves names in each body. */
 class DeclarationAnalyzer(private val target: TargetLayout) {
@@ -41,7 +40,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 	internal fun analyze(files: FileBindings): DeclarationModel {
 		val genericNames = GenericAnalyzer(target).analyze(files)
-		if (genericNames.requiresGenericCompilation || genericNames.interfaceSpan != null) {
+		if (genericNames.requiresGenericCompilation || genericNames.interfaceSpan != null || files.topLevelStates.isNotEmpty()) {
 			return GenericSemanticAnalysis(target).declarations(files, genericNames)
 		}
 		return prepared(files)
@@ -88,6 +87,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			if (callable is FunctionSymbol) model.functionSymbols[callable.declaration] = callable
 			if (callable is MethodSymbol) model.methodSymbols[callable.declaration] = callable
 			callable.receiver?.let(scope::declare)
+			model.states.payloadOf(callable.declaration)?.let(scope::declare)
 			model.callableScopes[callable.declaration] = scope
 			for (parameter in callable.parameters) {
 				scope.declare(parameter)
@@ -96,7 +96,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		}
 		for (callable in model.callableContracts) {
 			val receiver = callable.receiver
-			val resolver = BodyResolver(model, receiver)
+			val resolver = BodyResolver(model, receiver, classOwner = model.classOwners[callable.declaration])
 			val scope = model.scopeOf(callable.declaration)
 			val defaultScope = LexicalScope(model.fileScopeOf(callable.name))
 			val constructor = callable is ConstructorSymbol
@@ -124,6 +124,10 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					val delegation = BodyResolver(model, null, preInitialization = true, classOwner = model.classOwners[declaration])
 					ArgumentBinder.validate(declaration.delegation.suppliedArguments)
 					declaration.delegation.arguments.forEach { delegation.expression(it, defaultScope) }
+				}
+
+				is StateInitialPayloadDeclaration -> {
+					BodyResolver(model, receiver, initializingStatePayload = true).expression(declaration.expression, defaultScope)
 				}
 
 				else                             -> Unit
@@ -172,6 +176,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		private val allowNestedReturn: Boolean = false,
 		private val preInitialization: Boolean = false,
 		private val initializingField: ClassField? = null,
+		private val initializingStatePayload: Boolean = false,
 		private val classOwner: CClass? = receiver?.owner as? CClass,
 	) {
 
@@ -218,6 +223,8 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			if (!defaultContext) return null
 			return when (operand) {
 				is CastExpression        -> readOnlyDefaultRoot(operand.operand)
+				is GuardedAccessExpression -> readOnlyDefaultRoot(operand.continuation)
+				is GuardedReceiver       -> readOnlyDefaultRoot(operand.source)
 				is FieldAccessExpression -> readOnlyDefaultRoot(operand.receiver)
 				is IndexExpression       -> readOnlyDefaultRoot(operand.array)
 				else                     -> model.storedRoot(operand)?.takeIf { it is ParameterSymbol || it is ReceiverSymbol }
@@ -360,7 +367,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is ExpressionStatement        -> expression(statement.expression, scope)
 				is ReturnStatement            -> {
 					if (defaultContext && !allowNestedReturn) throw SemanticErrors.parameterDefault("A return cannot escape from a parameter default", statement.span)
-					if (!allowNestedReturn && (preInitialization || initializingField != null)) {
+					if (!allowNestedReturn && (preInitialization || initializingField != null || initializingStatePayload)) {
 						throw SemanticErrors.partialClassInstance("A return cannot escape from class initialization", statement.span)
 					}
 					statement.value?.let { expression(it, scope) }
@@ -444,8 +451,14 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				}
 
 				is StateCallExpression                                                                                               -> {
-					expression(expression.receiver, scope)
+					ArgumentBinder.validate(expression.suppliedArguments)
+					receiverValue(expression.receiver, scope)
 					expression.arguments.forEach { expression(it, scope) }
+				}
+
+				is StateTransitionExpression                                                                                         -> {
+					receiverValue(expression.receiver, scope)
+					expression.payload?.let { expression(it, scope) }
 				}
 
 				is FunctionBlockExpression                                                                                           -> {
@@ -455,7 +468,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					model.blockScopes[body] = child
 					classOwner?.let { model.classOwners[expression.declaration] = it }
 					(receiver?.owner as? CEnum)?.let { model.enumOwners[expression.declaration] = it }
-					BodyResolver(model, receiver, defaultContext, unavailable, allowNestedReturn = true, preInitialization = preInitialization, initializingField = initializingField, classOwner = classOwner).statements(body.statements, child)
+					BodyResolver(model, receiver, defaultContext, unavailable, allowNestedReturn = true, preInitialization = preInitialization, initializingField = initializingField, initializingStatePayload = initializingStatePayload, classOwner = classOwner).statements(body.statements, child)
 				}
 
 				is ArrayLiteral                                                                                                      -> expression.elements.forEach { expression(it, scope) }
@@ -489,22 +502,37 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					expression(expression.fallback, scope)
 				}
 
+				is GuardedAccessExpression -> {
+					expression(expression.receiver, scope)
+					expression(expression.continuation, scope)
+				}
+				is GuardedReceiver -> Unit
+
 				is BinaryExpression                                                                                                  -> {
 					receiverValue(expression.left, scope)
 					receiverValue(expression.right, scope)
 				}
 
-				is CastExpression                                                                                                    -> expression(expression.operand, scope)
+				is CastExpression                                                                                                    -> {
+					if (model.unboundStateName(expression.target) != null) receiverValue(expression.operand, scope)
+					else expression(expression.operand, scope)
+				}
 				is TypeCheckExpression                                                                                               -> {
 					val target = expression.target
 					val name = target.name
-					val bare = name.type == TokenType.Identifier && !target.hasNullability && target.width == null && !target.unsigned
+					val bare = target.bareIdentifier != null
 					val value = if (bare && model.genericViews?.resolvedTypes?.containsKey(target) != true && model.namedType(name) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
 					if (value is BindingSymbol) {
 						val check = BinaryExpression(expression.operand, expression.operator, NameExpression(name))
 						expression(check, scope)
 						model.recordValueTarget(expression, check)
-					} else expression(expression.operand, scope)
+					} else {
+						val operand = expression.operand
+						// An allocated receiver can test its state even while its fields are being initialized.
+						if (initializingField != null && model.unboundStateName(target) != null && operand is NameExpression && operand.name.lexeme == Keywords.SELF.toString()) {
+							model.names[operand] = value(operand.name, scope)
+						} else expression(operand, scope)
+					}
 				}
 
 				is InterpolatedString                                                                                                -> expression.parts.forEach { receiverValue(it, scope) }

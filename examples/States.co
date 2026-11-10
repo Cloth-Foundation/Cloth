@@ -1,0 +1,40 @@
+typedef<struct> Work {
+    string title,
+    int[] steps
+}
+
+typedef<class> Job (def<string> name) {
+    def<string> suffix = " done"
+    pub state<string, int[]> ::finish(opt<string> ending ?: self.suffix)
+
+    default: ({ self.name, [1, 2] })
+    pub state<Work> Running {
+        init { println("Started " + state.title) }
+
+        mt<string, int[]> finish(string ending) {
+            self -> Finished
+            return state.title + ending, state.steps
+        }
+    }
+
+    pub state<void> Finished {}
+
+    ~Job {
+        if (self is Finished) println("Closed " + self.name)
+    }
+}
+
+typedef<class> Report : Job("report")
+
+fn<int> main() {
+    def report = Report::new
+    if (!(report is Running)) return 1
+
+    def<string, int[]> label, steps = report::finish()
+    if (!(report is Finished)) return 2
+    report::delete
+
+    println(label)
+    println(steps)
+    return 0
+}

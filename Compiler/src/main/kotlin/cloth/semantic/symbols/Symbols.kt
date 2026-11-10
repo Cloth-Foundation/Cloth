@@ -42,7 +42,7 @@ data class FunctionSignature(val name: String, val parameterTypes: List<Signatur
 
 	companion object {
 
-		internal fun of(declaration: CallableDeclaration, nominal: (TypeReference) -> CMemberType? = { null }, resolved: ((TypeReference) -> SignatureType)? = null) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { resolved?.invoke(it.type) ?: SignatureType.of(it.type, nominal(it.type)) })
+		internal fun of(declaration: CallableSignature, nominal: (TypeReference) -> CMemberType? = { null }, resolved: ((TypeReference) -> SignatureType)? = null) = FunctionSignature(declaration.name.lexeme, declaration.parameters.map { resolved?.invoke(it.type) ?: SignatureType.of(it.type, nominal(it.type)) })
 	}
 }
 
@@ -71,6 +71,29 @@ internal class InterfaceMethodSymbol(val requirement: InterfaceRequirement, over
 	override val name get() = declaration.name
 	override val signature get() = requirement.signature
 	override val parameters = declaration.parameters.map(::ParameterSymbol)
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
+}
+
+internal class StateMethodContractSymbol(owner: CClass, override val declaration: StateMethodContractDeclaration, override val signature: FunctionSignature) : CallableContractSymbol {
+
+	override val name get() = declaration.name
+	override val parameters = declaration.parameters.map(::ParameterSymbol)
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
+}
+
+internal class StateActivationSymbol(owner: CMemberType, override val declaration: StateActivationDeclaration) : CallableContractSymbol {
+
+	override val name get() = declaration.name
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters = emptyList<ParameterSymbol>()
+	override val receiver = ReceiverSymbol(owner, declaration.keyword)
+}
+
+internal class StateInitialPayloadSymbol(owner: CClass, override val declaration: StateInitialPayloadDeclaration) : CallableContractSymbol {
+
+	override val name get() = declaration.name
+	override val signature = FunctionSignature.of(declaration)
+	override val parameters = emptyList<ParameterSymbol>()
 	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
@@ -143,6 +166,13 @@ class ReceiverSymbol(val owner: CMemberType, val keyword: Token) : BindingSymbol
 	internal fun field(name: String): ReceiverFieldSymbol? = owner.field(name)?.let { field ->
 		fields.getOrPut(name) { ReceiverFieldSymbol(this, field) }
 	}
+}
+
+internal class StatePayloadSymbol(val state: StateBodyDeclaration, val type: ValueType) : BindingSymbol {
+
+	override val name = state.keyword
+	override val declaredType get() = state.payloadType
+	override val mutable get() = false
 }
 
 /** A field selected through the current receiver, including implicit name lookup. */

@@ -34,6 +34,10 @@ edges and deferred-body handling in their respective passes. A bare value
 target follows the ordinary operator call path and supplies no narrowing proof.
 [Operand contexts and checks](../cloth-language/references/operand-contexts.md)
 
+State predicates refine tracked object identities in the lifetime pass.
+State-call proofs use the captured identity after supplied operands and
+omitted defaults. [State flow and diagnostics](../cloth-language/references/state-runtime.md#flow-checks-and-errors)
+
 The reference also owns [confirmed for-loop and range design](references/semantics.md#for-loops-and-ranges-design-confirmed-implementation-deferred).
 Both forms use `<-`; only numeric ranges admit a required `; stepper` clause.
 Preserve the accepted fixed-bound/free-direction, strict typing, default `+1`,

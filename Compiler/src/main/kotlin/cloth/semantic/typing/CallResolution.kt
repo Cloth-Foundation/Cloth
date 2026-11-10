@@ -4,11 +4,13 @@ import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
 import cloth.data.ProviderResult
+import cloth.data.CClass
 import cloth.data.ValueType
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.CallSite
 import cloth.parser.expression.Expression
+import cloth.parser.expression.StateCallExpression
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.symbols.CallableContractSymbol
@@ -32,6 +34,9 @@ internal class CallResolution(
 
 	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface =
 		resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
+
+	fun state(expression: StateCallExpression, group: List<CallableContractSymbol>, owner: CClass): ResolvedStateCall =
+		resolve(expression, group) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
 
 	private fun <T : CallableContractSymbol, R> resolve(expression: CallSite, group: List<T>, selectedCall: (T, FunctionType, ArgumentBinding) -> R): R {
 		ArgumentBinder.validate(expression.suppliedArguments)

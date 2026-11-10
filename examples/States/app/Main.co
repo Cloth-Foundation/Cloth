@@ -1,0 +1,34 @@
+using work.Contract : Named
+using work.Waiting : Waiting
+
+typedef<class> Desk (def<string> label) : Named {
+    override: mt<string> name() = self.label
+
+    default: (self.label) state Waiting
+    pub state<void> Ready {}
+}
+
+typedef<class> Remote : Named {
+    override: mt<string> name() = "remote"
+
+    default: pub state<void> Ready {}
+    state Waiting
+}
+
+fn<int> main() {
+    def desk = Desk::new("desk")
+    if (!(desk is Waiting)) return 1
+
+    def remote = Remote::new
+    remote -> Waiting("parcel")
+
+    def first = desk::release()
+    def second = remote::release()
+    if (!(desk is Ready) || !(remote is Ready)) return 2
+    desk::delete
+    remote::delete
+
+    println(first)
+    println(second)
+    return 0
+}

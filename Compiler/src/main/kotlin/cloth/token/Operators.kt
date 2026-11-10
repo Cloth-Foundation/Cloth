@@ -39,6 +39,7 @@ enum class Operators(private val character: String) { // This comment has to exi
 	POINTER_LEFT("<-"),
 
 	QUESTION("?"),
+	SAFE_DOT("?."),
 	ELVIS("?:"),
 	RANGE(".."),
 	RANGE_INCLUSIVE("..="),

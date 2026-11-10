@@ -19,6 +19,15 @@ data class ClassDeletionExpression(val receiver: Expression, val keyword: Token)
 	override val span get() = receiver.span.through(keyword.span)
 }
 
+/** A state transition with an explicit parenthesized payload position. */
+data class StateTransitionExpression(
+	val receiver: Expression,
+	val operator: Token,
+	val target: Token,
+	val payload: Expression?,
+	override val span: TokenSpan,
+) : Expression
+
 data class ConstructorDelegation(
 	override val name: Token,
 	override val suppliedArguments: List<CallArgument>,

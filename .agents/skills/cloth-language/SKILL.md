@@ -124,10 +124,13 @@ captures implementation scope and regression evidence.
 | Work area | Skill |
 | --- | --- |
 | Source imports, selected/wildcard exports, circular graphs, file scopes and compiler requests | [cloth-imports](../cloth-imports/SKILL.md) |
-| Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md) |
+| Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md), [Native command](../shuttle-build/references/native.md) |
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
+| Nested state declarations, shared call contracts, activation, transitions, dispatch and state facts | [state syntax and checking](references/state-syntax.md), [activation and dispatch](references/state-runtime.md) |
+| Top-level state declarations, class and interface host contracts, imported attachments and attached defaults | [state attachments](references/state-attachments.md) |
+| Maintained state examples, installed commands, first-error checks and target coverage | [state publication](references/state-publication.md) |
 | Interface declarations, generic conformance, dispatch and class-backed value contexts | [cloth-interfaces](../cloth-interfaces/SKILL.md) |
 | Named structs, aggregate construction, fields and independent copies | [cloth-structs](../cloth-structs/SKILL.md) |
 | Enum cases, payloads, constant casts, `::name`, type-only `::values`, formatting, and explicit struct equality | [struct and enum operators](references/value-operators.md) |
@@ -139,7 +142,7 @@ captures implementation scope and regression evidence.
 | Float abs/clamp/signum, signed zeros, NaNs, infinities and software half comparison | [float attachments](../cloth-numerics/references/float-attachments.md) |
 | Boolean toInt conversion to signed int32 with separate BoolAttachments registration | [boolean attachments](../cloth-numerics/references/bool-attachments.md) |
 | usize/isize, target-sized counts and identity | [cloth-target-integers](../cloth-target-integers/SKILL.md) |
-| Nullable types, presence proofs, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
+| Nullable types, presence proofs, guarded member chains, Elvis, nullable casts and metadata | [cloth-nullability](../cloth-nullability/SKILL.md) |
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, fixed/growable shapes, indexing, typed mutations and independent values | [cloth-arrays](../cloth-arrays/SKILL.md) |
@@ -164,7 +167,7 @@ captures implementation scope and regression evidence.
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | Nullable type providers, payload bounds and fixed array type counts | [nullable provider integration](../cloth-compiler-data/references/nullable-providers.md) |
-| print/println, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
+| print, println, input, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |
 | Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |

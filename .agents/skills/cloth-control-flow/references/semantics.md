@@ -10,6 +10,10 @@ the parent skill for current implementation boundaries and source/test routing.
 - `is` supports both active-state checks, such as `player is Alive`, and runtime
   type checks, such as `entity is Player`. The target declaration determines
   which check is requested.
+- A successful state-target check establishes the active state of a stable
+  receiver on the proven path. Possible rebinding, transition or deletion
+  invalidates that fact, including effects through aliases.
+  [State flow and dispatch](../../cloth-language/references/semantics.md#states-and-method-dispatch)
 - The [value-target overload](../../cloth-language/references/operand-contexts.md#forms-of-is)
   applies to expressions such as `player is other`. Only the built-in
   type-target check supplies a runtime type proof for narrowing.

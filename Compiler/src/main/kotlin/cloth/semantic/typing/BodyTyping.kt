@@ -4,13 +4,17 @@ import cloth.data.*
 import cloth.builtin.attachments.ArrayMutation
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
+import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.parser.type.TypeReference
 import cloth.semantic.*
+import cloth.semantic.declarations.StateDefinition
+import cloth.semantic.declarations.checkStatePayloadPresence
 import cloth.semantic.flow.ControlFlow
 import cloth.semantic.symbols.*
 import cloth.token.Keywords
@@ -38,6 +42,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	override fun enumCase(expression: FieldAccessExpression) = facts.declarations.enumCases[expression]
 	override fun valueCheck(expression: TypeCheckExpression) = facts.declarations.valueTargetOf(expression)
+	override fun unboundStateName(reference: TypeReference) = facts.declarations.unboundStateName(reference)
 
 	override fun completion(expression: Expression) = if (hasReturnContract) facts.controlFlow.of(expression) else ControlFlow.FALLTHROUGH
 	override fun completion(statements: List<Statement>) = if (hasReturnContract) facts.controlFlow.of(statements) else ControlFlow.FALLTHROUGH
@@ -266,6 +271,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private fun enumPayloadPlace(expression: Expression): Expression? = when (expression) {
 		is FieldAccessExpression -> if (model.fields[expression] is EnumField) expression else enumPayloadPlace(expression.receiver)
+		is GuardedReceiver       -> enumPayloadPlace(expression.source)
 		is IndexExpression       -> enumPayloadPlace(expression.array)
 		is NameExpression        -> expression.takeIf { (facts.declarations.names[it] as? ReceiverFieldSymbol)?.field is EnumField }
 		else                     -> null
@@ -312,6 +318,92 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val owner = receiver.classBackedType() ?: throw SemanticErrors.classLifecycle("'${Keywords.DELETE}' requires a class object", expression.receiver.span)
 		facts.classDeletions[expression] = ClassDeletionPlan(owner, receiver is CNullable)
 		return ValueType.VOID
+	}
+
+	override fun stateCallResults(expression: StateCallExpression): ResultShape {
+		facts.stateCalls[expression]?.let { return it.type.results }
+		if (expression.receiver is TypeReceiverExpression) throw SemanticErrors.stateCall(expression.name)
+		val receiver = typeOf(expression.receiver, preserveResultOnExit = true)
+		if (receiver == ValueType.NEVER) {
+			expression.arguments.forEach { typeOf(it) }
+			return ResultShape.Never
+		}
+		if (receiver is CNullable) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
+		val owner = stateOwner(receiver, expression.receiver) ?: throw SemanticErrors.stateCall(expression.name)
+		if (expression.receiver in facts.declarations.readOnlyValueReceivers) {
+			throw SemanticErrors.parameterDefault("A default cannot call a state method through a read-only receiver", expression.name.span)
+		}
+		val candidates = facts.declarations.states[owner]?.contracts?.values.orEmpty().filter { it.callable.name.lexeme == expression.name.lexeme }
+		if (candidates.isEmpty()) throw StateErrors.target("Class '${owner.spelling}' has no state method '${expression.name.lexeme}'", expression.name)
+		val visible = candidates.filter { it.public || it.owner.sameDeclaration(classOwner) }.map { it.callable }
+		if (visible.isEmpty()) throw SemanticErrors.privateClassMember(expression.name, candidates.first().callable.name)
+		val selected = overloads.state(expression, visible, owner)
+		facts.stateCalls[expression] = selected
+		return selected.type.results
+	}
+
+	override fun checkStateTest(expression: TypeCheckExpression, source: ValueType): Boolean {
+		val name = unboundStateName(expression.target) ?: return false
+		val owner = stateOwner(source, expression.operand) ?: return false
+		if (source is CNullable) throw SemanticErrors.nullablePayload(source, expression.operand.span)
+		facts.stateTests[expression] = stateTarget(owner, name)
+		return true
+	}
+
+	override fun checkBareTransition(expression: CastExpression, source: ValueType): Boolean {
+		if (stateOwner(source, expression.operand) == null) return false
+		bindTransition(expression, expression.operand, source, expression.target.name, null)
+		return true
+	}
+
+	override fun stateTransitionType(expression: StateTransitionExpression): ValueType {
+		val source = typeOf(expression.receiver, preserveResultOnExit = true)
+		if (source == ValueType.NEVER) {
+			expression.payload?.let { typeOf(it) }
+			return ValueType.NEVER
+		}
+		bindTransition(expression, expression.receiver, source, expression.target, expression.payload)
+		return ValueType.VOID
+	}
+
+	private fun stateReceiver(type: ValueType, expression: Expression, target: Token): CClass {
+		if (type is CNullable || type == ValueType.Null) throw SemanticErrors.nullablePayload(type, expression.span)
+		return stateOwner(type, expression) ?: throw StateErrors.target("State '${target.lexeme}' requires a class value receiver", target)
+	}
+
+	private fun stateOwner(type: ValueType, expression: Expression): CClass? {
+		val contract = type.classBackedType() ?: return null
+		// Ordinary member lookup still uses the declared host contract of self.
+		val self = facts.declarations.directReceiverOf(expression)
+		return self?.let(facts.declarations.states::attachedStateOf)?.owner ?: contract as? CClass
+	}
+
+	private fun stateTarget(owner: CClass, name: Token): StateDefinition {
+		val state = facts.declarations.states[owner]?.supported?.get(name.lexeme)
+			?: throw StateErrors.target("Class '${owner.spelling}' does not support state '${name.lexeme}'", name)
+		if (state.declaration.visibility == null && !state.owner.sameDeclaration(classOwner)) {
+			throw SemanticErrors.privateClassMember(name, state.name)
+		}
+		return state
+	}
+
+	private fun bindTransition(site: Expression, receiver: Expression, source: ValueType, target: Token, payload: Expression?) {
+		val owner = stateReceiver(source, receiver, target)
+		if (receiver in facts.declarations.readOnlyValueReceivers) {
+			throw SemanticErrors.parameterDefault("A default cannot transition an object through a read-only receiver", target.span)
+		}
+		val state = stateTarget(owner, target)
+		checkStatePayloadPresence(state.name, state.payloadType, payload != null, payload?.span ?: target.span)
+		payload?.let { checkStatePayload(it, state) }
+		facts.stateTransitions[site] = state
+	}
+
+	fun checkStatePayload(expression: Expression, state: StateDefinition) {
+		val type = state.payloadType
+		val actual = typeOf(expression, type, contextualFloat = true)
+		if (!type.accepts(actual)) {
+			throw StateErrors.payload("State '${state.name.lexeme}' requires payload type '${type.spelling}', got '${actual.spelling}'", expression.span, state.name)
+		}
 	}
 
 	override fun callResults(expression: CallExpression): ResultShape {

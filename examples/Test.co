@@ -38,7 +38,7 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
         println("Goodbye.")
     }
 
-    @Initial
+    default:
     pub state<void> Alive {
 
         pub mt<DamageType, float> attack (DamageSource source) {
@@ -58,14 +58,7 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
 
     }
 
-    pub state<DeathInfo> Dead {
-
-        init {
-            self.die()
-            println(state.message)
-        }
-
-    }
+    state Dead
 
     operator ::str () = "Player"
 
@@ -74,7 +67,7 @@ pub typedef<class> Player (def<string?> name ?: "Unknown") : Entity<Player>(100f
 
 }
 
-pub typedef<state<DeathInfo>> Dead for Player {
+typedef<state<DeathInfo>> pub Dead for Player {
 
     init {
         self.die()

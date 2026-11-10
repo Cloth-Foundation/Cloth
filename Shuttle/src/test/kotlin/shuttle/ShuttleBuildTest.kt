@@ -2,7 +2,6 @@ package shuttle
 
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-import cloth.diagnostics.DiagnosticReporter
 import cloth.settings.LinkerDriver
 import cloth.settings.RuntimeLinkage
 import cloth.settings.StandardLibrarySelection
@@ -43,7 +42,7 @@ class ShuttleBuildTest {
 		val project = importedProject(directory)
 		Files.writeString(project.source, "using support.Worker: answer\npub fn<int> library() = answer()")
 		val reports = StringBuilder()
-		assertEquals(0, runShuttle(arrayOf("build", "--emit=object", "--target=aarch64-unknown-linux-gnu", "--linker", "does-not-exist", "-o", "objects/foreign.o", "-Lrelative/libs", "-lfoo"), DiagnosticReporter(reports), directory), reports.toString())
+		assertEquals(0, runNativeShuttle(arrayOf("build", "--emit=object", "--target=aarch64-unknown-linux-gnu", "--linker", "does-not-exist", "-o", "objects/foreign.o", "-Lrelative/libs", "-lfoo"), reports, directory), reports.toString())
 		val bytes = Files.readAllBytes(directory.resolve("objects/foreign.o"))
 		assertEquals(listOf(0x7f, 0x45, 0x4c, 0x46), bytes.take(4).map { it.toInt() and 255 })
 		assertEquals(0xb7, bytes[18].toInt() and 255)
@@ -56,7 +55,7 @@ class ShuttleBuildTest {
 		val project = importedProject(directory)
 		val nested = Files.createDirectories(directory.resolve("tools/nested"))
 		val reports = StringBuilder()
-		assertEquals(0, runShuttle(arrayOf("build", "--emit", "object", "--output=local.o"), DiagnosticReporter(reports), nested), reports.toString())
+		assertEquals(0, runNativeShuttle(arrayOf("build", "--emit", "object", "--output=local.o"), reports, nested), reports.toString())
 		assertTrue(Files.isRegularFile(nested.resolve("local.o")))
 		assertFalse(Files.exists(project.root.resolve("build")))
 	}
@@ -83,10 +82,12 @@ class ShuttleBuildTest {
 		assertEquals(DiagnosticCode.UNKNOWN_NAME, failure.diagnosticCode)
 		assertEquals(text, failure.sourceLabels.single().span.source?.text)
 		assertEquals(worker.toString(), failure.sourceLabels.single().span.source?.name)
-		val expected = StringBuilder().also { DiagnosticReporter(it).report(failure) }.toString()
 		val rendered = StringBuilder()
-		assertEquals(1, runShuttle(arrayOf("build"), DiagnosticReporter(rendered), directory))
-		assertEquals(expected, rendered.toString())
+		assertEquals(1, runNativeShuttle(arrayOf("build"), rendered, directory))
+		assertContains(rendered.toString(), "Unknown name 'unknownName'")
+		assertContains(rendered.toString(), worker.toString())
+		assertContains(rendered.toString(), "pub fn<int> answer() = unknownName")
+		assertContains(rendered.toString(), "Declare a visible binding or function with this name.")
 		assertEquals(1, Regex("C3020").findAll(rendered).count())
 		assertFalse(Files.exists(project.root.resolve("build")))
 	}
@@ -97,7 +98,7 @@ class ShuttleBuildTest {
 		val nested = Files.createDirectories(directory.resolve("nested"))
 		Files.writeString(nested.resolve("build.toml"), "[project\n")
 		val reports = StringBuilder()
-		assertEquals(1, runShuttle(arrayOf("build"), DiagnosticReporter(reports), nested))
+		assertEquals(1, runNativeShuttle(arrayOf("build"), reports, nested))
 		assertEquals(1, Regex("S0004").findAll(reports).count())
 		assertFalse(Files.exists(directory.resolve("build")))
 		assertFalse(Files.exists(nested.resolve("build")))
@@ -110,7 +111,7 @@ class ShuttleBuildTest {
 			arrayOf("build", "extra") to "S0014", arrayOf("build", "--", "argument") to "S0014",
 			arrayOf("run", "--emit=object") to "S0015", arrayOf("build", "--unknown") to "C0001")) {
 			val reports = StringBuilder()
-			assertEquals(1, runShuttle(args, DiagnosticReporter(reports), directory), args.toList().toString())
+			assertEquals(1, runNativeShuttle(args, reports, directory), args.toList().toString())
 			assertEquals(1, Regex(code).findAll(reports).count(), reports.toString())
 		}
 		assertTrue(Files.list(directory).use { it.findAny().isEmpty })
@@ -124,14 +125,14 @@ class ShuttleBuildTest {
 			val original = Files.readAllBytes(input)
 			val alias = Files.createLink(directory.resolve("alias$index.o"), input)
 			val reports = StringBuilder()
-			assertEquals(1, runShuttle(arrayOf("build", "--emit", "object", "-o", alias.toString()), DiagnosticReporter(reports), directory))
+			assertEquals(1, runNativeShuttle(arrayOf("build", "--emit", "object", "-o", alias.toString()), reports, directory))
 			assertEquals(1, Regex("S0012").findAll(reports).count())
 			assertContentEquals(original, Files.readAllBytes(input))
 		}
 		val executable = directory.resolve("alias")
 		Files.createLink(executable.resolveSibling("alias.exe"), project.build)
 		val reports = StringBuilder()
-		assertEquals(1, runShuttle(arrayOf("build", "-o", executable.toString()), DiagnosticReporter(reports), directory))
+		assertEquals(1, runNativeShuttle(arrayOf("build", "-o", executable.toString()), reports, directory))
 		assertContains(reports.toString(), "S0012")
 	}
 
@@ -141,7 +142,7 @@ class ShuttleBuildTest {
 		val source = directory.resolve("Library/support/Worker.co")
 		val original = Files.readString(source)
 		val reports = StringBuilder()
-		assertEquals(1, runShuttle(arrayOf("build", "--emit=object", "-o", source.toString()), DiagnosticReporter(reports), directory))
+		assertEquals(1, runNativeShuttle(arrayOf("build", "--emit=object", "-o", source.toString()), reports, directory))
 		assertContains(reports.toString(), "C0014")
 		assertEquals(original, Files.readString(source))
 	}

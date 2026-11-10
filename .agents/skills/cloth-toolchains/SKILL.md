@@ -38,6 +38,9 @@ before implementing library packaging, shared command discovery, overrides or
 reserved `cloth.*` paths. Its Stage 0 selects those rules and an explicit module
 role. [Stage 1](references/standard-library-stage-1.md) implements combined and
 per-command distributions, pinned sources/provenance and launcher context.
+[Bundled Java runtime](references/bundled-java-runtime.md) covers the shared
+Java 25 image, automatic launcher selection, platform-specific archives and
+release verification.
 [Stage 2](references/standard-library-stage-2.md) adds shared default selection,
 automatic attachment, explicit module roles and reserved-path diagnostics.
 [Stage 3](references/standard-library-stage-3.md) implements `--stdlib PATH` and

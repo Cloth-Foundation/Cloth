@@ -63,7 +63,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun canAlias(place: Place): Boolean {
 		if (!hasClasses || place.path.isEmpty()) return false
 		// A struct method can receive a projected class field through its receiver ABI.
-		if (place.root is ReceiverSymbol) return true
+		if (place.root is ReceiverSymbol || place.root is StatePayloadSymbol) return true
 		var type = model.bindings[place.root]
 		for (segment in place.path) {
 			val payload = (type as? CNullable)?.payload ?: type
@@ -110,6 +110,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 			is FieldAccessExpression   -> model.declarations.enumCases[expression]?.owner ?: (receiverHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
 			is IndexExpression         -> (receiverHint(expression.array) as? CArray)?.element
+			is GuardedReceiver         -> receiverHint(expression.source, unwrapNullable = false)?.let { (it as? CNullable)?.payload ?: it }
 			is CallExpression          -> callHints(expression).distinct().singleOrNull()
 			is MemberCallExpression    -> memberHints(expression).distinct().singleOrNull()
 			else                       -> null
@@ -516,6 +517,20 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(after)
 			}
 
+			is GuardedAccessExpression -> {
+				val receiver = expression(value.receiver, initial, sourceType = true)
+				val subject = stable(value.receiver)
+				val present = receiver.after + listOfNotNull(subject)
+				val absent = forget(receiver.after, listOfNotNull(subject))
+				val accessed = expression(value.continuation, present)
+				Outcome(when {
+					!flow.of(value.receiver).canFallThrough -> receiver.after
+					!flow.of(value.continuation).canFallThrough -> absent
+					knownPresent(value.receiver) -> accessed.after
+					else -> absent intersect accessed.after
+				})
+			}
+
 			is IfExpression                                            -> {
 				var remaining = initial
 				var reachable = true
@@ -541,10 +556,14 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			}
 
 			is TypeReceiverExpression                                  -> Outcome(initial)
-			is CastExpression                                          -> expression(value.operand, initial)
+			is CastExpression                                          -> {
+				val operand = expression(value.operand, initial)
+				if (model.declarations.unboundStateName(value.target) == null) operand else Outcome(forgetAliases(operand.after))
+			}
 			is TypeCheckExpression                                     -> {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
+				if (model.declarations.unboundStateName(value.target) != null) return Outcome(after)
 				val subject = stable(value.operand)
 				val target = value.target.takeIf { !it.hasNullability && it.arraySuffixes.isEmpty() }?.let {
 					val resolved = if (model.declarations.genericViews != null) model.types.typeResolver.resolve(it) else model.declarations.namedType(it.name)
@@ -593,7 +612,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 			is ClassCreationExpression                                 -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
 			is ClassDeletionExpression                                 -> Outcome(forgetAliases(expression(value.receiver, initial).after))
-			is StateCallExpression                                     -> Outcome(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after })
+			is StateCallExpression, is StateTransitionExpression        -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
 			is ResultListExpression, is ArrayLiteral, is StructLiteral -> Outcome(value.eagerOperands().fold(initial) { facts, item -> expression(item, facts).after })
 			is IndexExpression                                         -> expression(value.index, expression(value.array, initial).after)
 			is InterpolatedString                                      -> Outcome(value.parts.fold(initial) { facts, part ->
@@ -607,7 +626,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		when (value) {
 			is ClassCreationExpression                                                                                                                                                                                                                                   -> presentResults.add(value)
 			is IntegerLiteral, is FloatingPointLiteral, is BooleanLiteral, is CharacterLiteral, is StringLiteral, is ArrayLiteral, is StructLiteral, is InterpolatedString, is BinaryExpression, is UnaryExpression, is ProviderAccessExpression, is TypeCheckExpression -> presentResults.add(value)
-			is CastExpression                                                                                                                                                                                                                                            -> if (presentAnnotation(value.target)) presentResults.add(value)
+			is CastExpression                                                                                                                                                                                                                                            -> if (model.declarations.unboundStateName(value.target) == null && presentAnnotation(value.target)) presentResults.add(value)
 			is CallExpression                                                                                                                                                                                                                                            -> {
 				val candidates = when (val group = model.declarations.candidatesOf(value)) {
 					is FunctionGroupSymbol -> group.overloads
@@ -652,6 +671,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 					visit(value.left); visit(value.fallback)
 				}
 
+				is GuardedAccessExpression -> {
+					visit(value.receiver); visit(value.continuation)
+				}
+
 				is UnaryExpression          -> visit(value.operand)
 				is CastExpression           -> visit(value.operand)
 				is TypeCheckExpression      -> visit(model.declarations.valueTargetOf(value) ?: value.operand)
@@ -668,9 +691,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 				is ClassCreationExpression  -> value.arguments.forEach(::visit)
 				is ClassDeletionExpression  -> visit(value.receiver)
-				is StateCallExpression      -> {
-					visit(value.receiver); value.arguments.forEach(::visit)
-				}
+				is StateCallExpression, is StateTransitionExpression -> value.eagerOperands().forEach(::visit)
 
 				is ResultListExpression     -> value.values.forEach(::visit)
 				is ArrayLiteral             -> value.elements.forEach(::visit)

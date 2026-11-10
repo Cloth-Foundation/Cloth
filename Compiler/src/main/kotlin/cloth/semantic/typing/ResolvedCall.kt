@@ -1,12 +1,14 @@
 package cloth.semantic.typing
 
 import cloth.builtin.BoundBuiltinCall
+import cloth.data.CClass
 import cloth.data.CInterface
 import cloth.data.ValueType
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.token.Operators
@@ -40,6 +42,14 @@ internal sealed interface ResolvedCall {
 		override val type = FunctionType(call.arguments.map { it.parameterType }, call.overload.returns)
 	}
 }
+
+/** The implementation is selected after argument evaluation, using the active state at dispatch. */
+internal data class ResolvedStateCall(
+	val owner: CClass,
+	val contract: CallableContractSymbol,
+	val type: FunctionType,
+	val binding: ArgumentBinding,
+)
 
 internal data class ResolvedOperator(val call: ResolvedCall.Source, val receiverIndex: Int)
 internal data class BoundValueCheck(val application: BinaryExpression, val operator: ResolvedOperator)

@@ -7,6 +7,7 @@ import cloth.emitter.callables.EmitFunctionFrame
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.symbols.ReceiverSymbol
+import cloth.semantic.symbols.StatePayloadSymbol
 import org.bytedeco.llvm.LLVM.LLVMBasicBlockRef
 import org.bytedeco.llvm.LLVM.LLVMBuilderRef
 import org.bytedeco.llvm.LLVM.LLVMContextRef
@@ -62,11 +63,16 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		objects[receiver] = access
 	}
 
+	fun bindStatePayload(binding: StatePayloadSymbol, address: LLVMValueRef, arena: LLVMValueRef) {
+		bindings[binding] = Storage(binding.name.lexeme, binding.type, address, null, ownerArena = arena)
+	}
+
 	fun objectAccess(receiver: ReceiverSymbol): ObjectAccess? = objects[receiver]
 	fun structAccess(binding: BindingSymbol): ReceiverAccess? = (binding as? ReceiverSymbol)?.let { structReceivers[it] }
 	fun mayBorrowInstance(key: BindingSymbol): Boolean = when (key) {
 		is ReceiverFieldSymbol -> key.field is ClassField || key.receiver in structReceivers
 		is ReceiverSymbol      -> key in structReceivers
+		is StatePayloadSymbol  -> true
 		else                   -> false
 	}
 

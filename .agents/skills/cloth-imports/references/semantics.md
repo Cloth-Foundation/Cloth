@@ -109,6 +109,11 @@ enter the existing callable/value lookup space. Preserve the current distinction
 between those spaces and ordinary nearer lexical shadowing. Importing a class,
 struct or enum preserves its member visibility and original nominal identity.
 
+Imported top-level state names enter the attachment namespace. Both named
+and wildcard imports preserve the original state declaration and its source
+scope. Classes use `state StateName` to add a bound state to their supported
+set. [State attachment rules](../../cloth-language/references/state-attachments.md)
+
 Selecting a function name imports all of that file's public overloads under the
 name. Private overloads remain usable only in their defining file. Existing
 argument placement, exact typing and overload ranking still select the call.

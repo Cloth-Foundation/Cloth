@@ -8,6 +8,8 @@ import java.nio.charset.Charset;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,8 +21,12 @@ class ToolchainDistributionTest {
     @Test void installedBundleContainsBothCommandsPinnedSourcesAndProvenance() throws IOException {
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth")));
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth.bat")));
-        assertTrue(Files.isRegularFile(installed.resolve("bin/shuttle")));
-        assertTrue(Files.isRegularFile(installed.resolve("bin/shuttle.bat")));
+        assertTrue(Files.isExecutable(installed.resolve(windows ? "bin/shuttle.exe" : "bin/shuttle")));
+        assertFalse(Files.exists(installed.resolve("bin/shuttle.bat")));
+        try (var files = Files.list(installed.resolve("lib"))) {
+            assertTrue(files.noneMatch(file -> file.getFileName().toString().startsWith("jackson-")));
+        }
+        assertTrue(Files.isExecutable(installed.resolve(windows ? "runtime/bin/java.exe" : "runtime/bin/java")));
         assertTrue(Files.isRegularFile(installed.resolve("stdlib/module.toml")));
         assertTrue(Files.isRegularFile(installed.resolve("stdlib/cloth/Library.co")));
         var metadata = new Properties();
@@ -38,6 +44,76 @@ class ToolchainDistributionTest {
         Path project = Path.of(System.getProperty("cloth.test.workspace"), "examples", "Interfaces");
         String report = run(installed, temporary, "shuttle", "run", "--project", project.toString(), "-o", "programs/interfaces");
         assertTrue(report.replace("\r\n", "\n").contains("from library: ready\nSlot<Value<string>>\n\nPEC: 0\n"), report);
+    }
+
+    @Test void installedCommandsRunPublishedStateFixtures() throws Exception {
+        Path examples = Path.of(System.getProperty("cloth.test.workspace"), "examples");
+        var targets = new ArrayList<>(List.of("native"));
+        if (windows && System.getProperty("os.arch").equals("amd64")) targets.add("i686-pc-windows-msvc");
+        for (String target : targets) {
+            var clothArgs = new ArrayList<>(List.of("run", examples.resolve("States.co").toString(), "programs/nested-" + target));
+            var shuttleArgs = new ArrayList<>(List.of("run", "--project", examples.resolve("States").toString(), "-o", "programs/attached-" + target));
+            if (!target.equals("native")) {
+                clothArgs.addAll(List.of("--target", target));
+                shuttleArgs.addAll(List.of("--target", target));
+            }
+            String nested = run(installed, temporary, "cloth", clothArgs.toArray(String[]::new)).replace("\r\n", "\n");
+            assertTrue(nested.endsWith("Started report\nClosed report\nreport done\n[1, 2]\n\nPEC: 0\n"), nested);
+            String attached = run(installed, temporary, "shuttle", shuttleArgs.toArray(String[]::new)).replace("\r\n", "\n");
+            assertTrue(attached.endsWith("Worker desk\nWorker remote\n[desk]\n[parcel]\n\nPEC: 0\n"), attached);
+        }
+    }
+
+    @Test void installedCommandsReportTheFirstStateErrorAndPropagateRuntimeFailure() throws Exception {
+        Path source = temporary.resolve("Main.co");
+        Files.writeString(temporary.resolve("build.toml"), "[project]\nname = \"StateErrors\"\nentryPoint = \"App.Main.main\"\n[modules]\nApp = \".\"\n");
+        Files.writeString(temporary.resolve("module.toml"), "[module]\nname = \"App\"\n");
+        String types = """
+                typedef<class> Job {
+                    default: state<void> Ready {
+                        pub mt run(int marker) { println("body ran") }
+                    }
+                    pub state<void> Closed {}
+                }
+                """;
+        Files.writeString(source, types + """
+                fn main() {
+                    def job = Job::new
+                    job -> Closed
+                    job::run(1)
+                    job::run(2)
+                }
+                """);
+        for (String command : List.of("cloth", "shuttle")) {
+            String output = "objects/" + command + ".o";
+            String[] args = command.equals("cloth") ? new String[]{"--emit", "object", "Main.co", output}
+                    : new String[]{"build", "--emit", "object", "-o", output};
+            String report = runExpected(1, installed, temporary, command, args);
+            var codes = Pattern.compile("\\b[CS]\\d{4}\\b").matcher(report).results().map(MatchResult::group).toList();
+            assertEquals(List.of("C3130"), codes, report);
+            assertTrue(report.contains("Main.co"), report);
+            assertFalse(Files.exists(temporary.resolve(output)));
+        }
+
+        Files.writeString(source, types + """
+                fn<int> close(Job job) {
+                    job -> Closed
+                    println("Changed to Closed")
+                    return 1
+                }
+                fn main() {
+                    def job = Job::new
+                    job::run(close(job))
+                }
+                """);
+        for (String command : List.of("cloth", "shuttle")) {
+            String output = "programs/" + command + "-state-error";
+            String[] args = command.equals("cloth") ? new String[]{"run", "Main.co", output}
+                    : new String[]{"run", "-o", output};
+            String report = runExpected(1, installed, temporary, command, args).replace("\r\n", "\n");
+            assertTrue(report.endsWith("Changed to Closed\nInvalid state for 'run(int)'\n"), report);
+            assertFalse(report.contains("body ran"), report);
+        }
     }
 
     @Test void relocatedCommandsPreserveLocationAndInvocationDirectory() throws Exception {
@@ -349,6 +425,8 @@ class ToolchainDistributionTest {
     private void assertLocation(String output, Path relocated) {
         assertTrue(output.contains("cloth.toolchain.home = " + relocated), output);
         assertTrue(output.contains("cloth.toolchain.layout = installed"), output);
+        assertTrue(output.contains("java.home = " + relocated.resolve("runtime")), output);
+        assertTrue(output.contains("java.specification.version = 25"), output);
     }
 
     private String run(Path toolchain, Path client, String command, String... args) throws Exception {
@@ -360,13 +438,14 @@ class ToolchainDistributionTest {
     }
 
     private String runExpectedFrom(int expected, Path toolchain, Path invocationDirectory, Path log, String command, String... args) throws Exception {
-        Path script = toolchain.resolve("bin/" + command + (windows ? ".bat" : ""));
+        boolean batch = windows && command.equals("cloth");
+        Path script = toolchain.resolve("bin/" + command + (batch ? ".bat" : windows ? ".exe" : ""));
         var invocation = new ArrayList<String>();
-        if (windows) invocation.addAll(List.of("cmd.exe", "/d", "/c"));
+        if (batch) invocation.addAll(List.of("cmd.exe", "/d", "/c"));
         invocation.add(script.toString());
         invocation.addAll(List.of(args));
         var builder = new ProcessBuilder(invocation).directory(invocationDirectory.toFile()).redirectErrorStream(true).redirectOutput(log.toFile());
-        builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        builder.environment().put("JAVA_HOME", temporary.resolve("missing-jdk").toString());
         builder.environment().put("JAVA_OPTS", "-XshowSettings:properties -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \"-Djava.io.tmpdir=" + temporary + "\"");
         builder.environment().remove("JDK_JAVA_OPTIONS");
         builder.environment().remove("_JAVA_OPTIONS");

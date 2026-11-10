@@ -66,6 +66,20 @@ class NullabilityParsingTest {
 	}
 
 	@Test
+	fun `guarded hops own the remaining postfix chain up to a group or Elvis`() {
+		val fallback = assertIs<ElvisExpression>(expression("a?.b.c()?.d[0] ?: 5"))
+		val first = assertIs<GuardedAccessExpression>(fallback.left)
+		val second = assertIs<GuardedAccessExpression>(first.continuation)
+		val unguarded = assertIs<MemberCallExpression>(second.receiver)
+		assertSame(first.payload, assertIs<FieldAccessExpression>(unguarded.receiver).receiver)
+		assertSame(second.payload, assertIs<FieldAccessExpression>(assertIs<IndexExpression>(second.continuation).array).receiver)
+		assertEquals("a?.b.c()?.d[0]", text(first.span))
+		assertEquals("?.", text(second.operator.span))
+		val outside = assertIs<FieldAccessExpression>(expression("(a?.b).c"))
+		assertIs<GuardedAccessExpression>(outside.receiver)
+	}
+
+	@Test
 	fun `fallback parsing preserves argument result array and interpolation boundaries`() {
 		val call = assertIs<CallExpression>(expression("consume(a ?: b, null)"))
 		assertEquals(2, call.arguments.size)

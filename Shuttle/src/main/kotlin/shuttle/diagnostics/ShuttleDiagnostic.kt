@@ -60,7 +60,6 @@ class ShuttleDiagnostic internal constructor(
 internal object ShuttleErrors {
 	fun command(reason: String, usage: String, cause: Throwable? = null) = ShuttleDiagnostic(ShuttleDiagnosticCode.INVALID_COMMAND, reason, guidance = usage, cause = cause)
 	fun runRequiresExecutable() = ShuttleDiagnostic(ShuttleDiagnosticCode.RUN_REQUIRES_EXECUTABLE, "The 'run' command requires executable output", guidance = "Omit '--emit object' to build and run the project.")
-	fun runFailed(path: Path, cause: Throwable) = ShuttleDiagnostic(ShuttleDiagnosticCode.PROGRAM_LAUNCH_FAILED, "Unable to run '$path'", guidance = if (cause is InterruptedException) "Execution was interrupted." else cause.message, cause = cause)
 	fun io(cause: Throwable) = ShuttleDiagnostic(ShuttleDiagnosticCode.COMMAND_IO, "Unable to complete Shuttle command", guidance = cause.message, cause = cause)
 	fun internal(cause: Throwable) = ShuttleDiagnostic(ShuttleDiagnosticCode.INTERNAL_FAILURE, "Unexpected Shuttle failure", cause = cause)
 	fun projectNotFound(directory: Path) = ShuttleDiagnostic(ShuttleDiagnosticCode.PROJECT_NOT_FOUND, "No build.toml found in '$directory' or its parent directories")
@@ -69,7 +68,14 @@ internal object ShuttleErrors {
 	fun encoding(path: Path, cause: Throwable) = ShuttleDiagnostic(ShuttleDiagnosticCode.INVALID_MANIFEST_ENCODING, "Manifest '$path' is not valid UTF-8", manifestPath = path, cause = cause)
 	fun syntax(document: ManifestDocument, line: Int?, column: Int?, reason: String, cause: Throwable): ShuttleDiagnostic {
 		val lines = document.source.text.split('\n').map { it.removeSuffix("\r") }
-		val position = if (line != null && column != null && line in 1..lines.size && column in 1..lines[line - 1].length + 1) TokenSpan(line, column, line, column, document.source) else null
+		val position = line?.takeIf { it in 1..lines.size }?.let {
+			val end = lines[it - 1].length + 1
+			when {
+				column == null -> TokenSpan(it, 1, it, end, document.source)
+				column in 1..end -> TokenSpan(it, column, it, column, document.source)
+				else -> null
+			}
+		}
 		return ShuttleDiagnostic(ShuttleDiagnosticCode.INVALID_TOML, "Invalid TOML: $reason", document.path,
 			source = document.source, syntaxPosition = position, cause = cause)
 	}

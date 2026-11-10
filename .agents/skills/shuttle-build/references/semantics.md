@@ -41,32 +41,17 @@ work.
 
 ## TOML dependency and diagnostics
 
-Use TOML 1.0 as the initial configuration syntax baseline. Select
-`com.fasterxml.jackson.dataformat:jackson-dataformat-toml:2.21.1`, aligned with
-Jackson BOM 2.21.1; the probe uses core/databind 2.21.1 and annotations 2.21.
-The dependency belongs only to Shuttle. Construct the TomlFactory with
-`StreamReadFeature.STRICT_DUPLICATE_DETECTION` and
-`TomlReadFeature.PARSE_JAVA_TIME` enabled. The latter preserves date/time types
-so schema string fields cannot accidentally accept unquoted TOML dates. Keep
-default strict syntax; do not enable permissive extensions or implement a subset
-parser around strings/regular expressions. TOML 1.1 additions are not part of
-this baseline.
+The [TOML 1.0 specification](https://toml.io/en/v1.0.0) defines the syntax
+baseline. The [native command](native.md) contains the pinned tomlkt parser and
+strict syntax fixes. It preserves the type distinction between dates and
+strings, rejects duplicate definitions and stops at the first detected failure.
+The worker applies the existing schema to the resulting typed tree.
 
-The parser throws on the first failure, including duplicate definitions. Shuttle
-must immediately propagate that failure as one located configuration diagnostic;
-there is no recovery/error accumulation. Source inspection and the
-[probe evidence](stage-0.md) establish this behavior for the pinned dependency.
-The [TOML 1.0 specification](https://toml.io/en/v1.0.0) owns syntax, not the example
-layout or these Cloth field names.
-
-The selected parser usually retains syntax-error line/column information but
-some invalid date/time failures have no position. Keep provided positions and
-use file context when unavailable. It returns a tree without successful field
-source positions. Preserve the manifest's original
-text and path. Schema diagnostics must name the precise logical key path and may
-use a file-level label; do not falsely highlight line 1 as the offending key or
-guess positions by searching strings. Exact schema field spans require a future
-parser-capability decision, not a second TOML parser inside Shuttle.
+Keep the original text and path for one configuration diagnostic. Syntax
+diagnostics retain the line supplied by tomlkt and use file context when a line
+is unavailable. Schema diagnostics identify the exact logical key path and
+label the manifest at file level. The parser supplies the grammar and source
+positions.
 
 ## Project selection and roots
 
@@ -212,12 +197,11 @@ Stage 2 implements the schema, discovery and request conversion above through
 internal Shuttle model APIs. Its 28-test normal suite includes a real TOML-to-
 compiler object fixture; 24 configuration tests also pass with native backend
 jars removed from their runtime classpath. See [Stage 2 evidence](stage-2.md).
-Stage 6 implements the command/launcher and process statuses above. It shares
-CompilerOptions and NativeProgram with the standalone compiler, and calls only
-the plain compilation facade. Gradle application packaging supplies shuttle and
-shuttle.bat with native access enabled on JDK 25. [Stage 6 evidence](stage-6.md)
-records actual command execution and the Windows Java wide-argument adapter;
-configuration-only tests still run without native backend jars.
+Stage 6 first implemented the build, run and process-status contract.
+[Stage 6 evidence](stage-6.md) records the original JVM launchers.
+The [native command](native.md) now launches the worker and emitted programs.
+The worker shares CompilerOptions and calls the plain compilation facade.
+Configuration-only tests call the native parser without LLVM jars.
 [Stage 3](../../cloth-imports/references/stage-3.md)
 parses compiler import headers; [Stage 4](../../cloth-imports/references/stage-4.md)
 discovers their complete source graph independently of TOML. [Stage 5](../../cloth-imports/references/stage-5.md)

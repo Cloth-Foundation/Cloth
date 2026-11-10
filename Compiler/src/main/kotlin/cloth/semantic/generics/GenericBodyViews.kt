@@ -33,12 +33,13 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 	}
 
 	internal fun declarationOf(owner: CMemberType) = owners.getValue(owner)
+	internal fun stateView(owner: CClass, source: TopLevelStateDeclaration) = View(owner).state(source)
 	fun originalOf(node: Any): Any = originals[node] ?: node
 	fun viewOf(node: Any, owner: CMemberType): Any = copies.getValue(owner).getValue(node)
 	internal fun signatureType(reference: TypeReference): SignatureType = resolvedTypes[reference]?.let(SignatureType::resolved) ?: SignatureType.of(reference)
 
 	private inner class View(private val owner: CMemberType) {
-		private val cache = IdentityHashMap<Any, Any>().also { copies[owner] = it }
+		private val cache = copies.getOrPut(owner) { IdentityHashMap() }
 		@Suppress("UNCHECKED_CAST")
 		private fun <T : Any> copy(source: T, create: () -> T): T = cache.getOrPut(source) { create().also { originals[it] = source } } as T
 
@@ -57,11 +58,25 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 		private fun delegation(source: ConstructorDelegation) = copy(source) { source.copy(suppliedArguments = arguments(source.suppliedArguments), type = type(source.type)) }
 		private fun method(source: MethodDeclaration) = copy(source) { source.copy(returnTypes = source.returnTypes.map(::type), parameters = source.parameters.map(::parameter), body = body(source.body), operator = source.operator?.let { it.copy(selector = it.selector?.let(::type)) }) }
 		private fun function(source: FunctionDeclaration) = copy(source) { source.copy(returnTypes = source.returnTypes.map(::type), parameters = source.parameters.map(::parameter), body = body(source.body)) }
+		private fun stateMember(source: StateMember): StateMember = when (source) {
+			is MethodDeclaration -> method(source)
+			is StateInitializerDeclaration -> copy(source) { source.copy(body = body(source.body) as BlockBody) }
+		}
+		fun state(source: TopLevelStateDeclaration): TopLevelStateDeclaration = copy(source) {
+			source.copy(payloadType = type(source.payloadType), host = type(source.host), members = source.members.map(::stateMember))
+		}
 
 		fun owner(source: ClassDeclaration): ClassDeclaration = copy(source) { source.copy(
 			parameters = source.parameters.map { it.copy(parameter = parameter(it.parameter)) },
 			parents = source.parents.map { it.copy(type = type(it.type), constructorArguments = it.constructorArguments?.let(::arguments)) },
 			members = source.members.map { member -> when (member) {
+				is NestedStateDeclaration -> copy(member) { member.copy(
+					payloadType = type(member.payloadType),
+					initial = member.initial?.let { it.copy(payload = it.payload?.let(::expression)) },
+					members = member.members.map(::stateMember),
+				) }
+				is StateAttachmentDeclaration -> copy(member) { member.copy(initial = member.initial?.let { it.copy(payload = it.payload?.let(::expression)) }) }
+				is StateMethodContractDeclaration -> copy(member) { member.copy(returnTypes = member.returnTypes.map(::type), parameters = member.parameters.map(::parameter)) }
 				is ClassFieldDeclaration -> copy(member) { member.copy(type = type(member.type), initializer = expression(member.initializer)) }
 				is MethodDeclaration -> method(member)
 				is ConstructorDeclaration -> copy(member) { member.copy(parameters = member.parameters.map(::parameter), delegation = delegation(member.delegation), body = body(member.body) as BlockBody) }
@@ -113,10 +128,13 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 			is ResultListExpression -> source.copy(values = source.values.map(::expression))
 			is TypeReceiverExpression -> source.copy(annotation = type(source.annotation))
 			is CastExpression -> source.copy(operand = expression(source.operand), target = type(source.target))
+			is StateTransitionExpression -> source.copy(receiver = expression(source.receiver), payload = source.payload?.let(::expression))
 			is TypeCheckExpression -> source.copy(operand = expression(source.operand), target = type(source.target))
 			is UnaryExpression -> source.copy(operand = expression(source.operand))
 			is BinaryExpression -> source.copy(left = expression(source.left), right = expression(source.right))
 			is ElvisExpression -> source.copy(left = expression(source.left), fallback = expression(source.fallback))
+			is GuardedAccessExpression -> source.copy(payload = expression(source.payload) as GuardedReceiver, continuation = expression(source.continuation))
+			is GuardedReceiver -> GuardedReceiver(expression(source.source))
 			is IndexExpression -> source.copy(array = expression(source.array), index = expression(source.index))
 			is FieldAccessExpression -> source.copy(receiver = expression(source.receiver))
 			is ProviderAccessExpression -> source.copy(receiver = expression(source.receiver))

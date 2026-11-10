@@ -39,7 +39,7 @@ class StandardListConsumerTest {
 		for (target in targets) for (explicit in listOf(false, true)) {
 			val options = (target?.let { listOf("--target", it) } ?: emptyList()) + if (explicit) listOf("--stdlib", library.toString()) else emptyList()
 			for ((entry, arguments) in listOf(
-				"shuttle.EntryKt" to (listOf("run", "--project", project.toString()) + options),
+				null to (listOf("run", "--project", project.toString()) + options),
 				"cloth.EntryKt" to (listOf("run", project.resolve("app/Main.co").toString(), root.resolve("standalone_${target ?: "native"}_$explicit").toString()) + options),
 			)) {
 				val result = shuttleProcess(root, arguments, mainClass = entry)
@@ -53,7 +53,7 @@ class StandardListConsumerTest {
 	@Test fun `disabled commands report the missing List import without producing an artifact`(@TempDir root: Path) {
 		val project = project(root.resolve("project"))
 		for ((entry, arguments) in listOf(
-			"shuttle.EntryKt" to listOf("build", "--project", project.toString(), "--no-stdlib", "--emit", "object"),
+			null to listOf("build", "--project", project.toString(), "--no-stdlib", "--emit", "object"),
 			"cloth.EntryKt" to listOf(project.resolve("app/Main.co").toString(), root.resolve("absent.o").toString(), "--no-stdlib", "--emit", "object"),
 		)) {
 			val result = shuttleProcess(root, arguments, mainClass = entry)

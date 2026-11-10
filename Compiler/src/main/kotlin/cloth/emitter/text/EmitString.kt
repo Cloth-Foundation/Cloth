@@ -317,4 +317,5 @@ internal class EmitString(private val context: LLVMContextRef, private val build
 	}
 
 	fun write(module: LLVMModuleRef, value: LLVMValueRef) = EmitOutput(context, builder, abi, target).write(module, value)
+	fun readLine(module: LLVMModuleRef) = EmitInput(context, module, abi, target).readLine(builder, checkNotNull(arena).invoke())
 }

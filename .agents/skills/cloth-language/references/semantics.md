@@ -48,9 +48,11 @@ their feature-owned reference.
 - Cloth aims to remove unnecessary ceremony. Use the compact forms established
   by the language design; do not extrapolate unrelated syntax changes from this
   preference alone.
-- A transition to a `state<void>` destination needs no empty argument list:
-  `player -> Alive`. Parentheses are not required for that transition. Whether
-  an explicit empty argument list is also accepted has not been specified.
+- Interface overrides and nested initial-state selections use the declaration
+  prefixes `override:` and `default:`, respectively.
+- A transition to a `state<void>` destination accepts both `player -> Alive`
+  and `player -> Alive()`. Both spellings perform the same transition without
+  a payload.
 - A single-line `mt` or `fn` body may use `=` instead of a brace-delimited body.
   For a non-void function, the expression's value is returned implicitly, for
   example `fn<int> add(int a, int b) = a + b`. A void function's expression
@@ -140,8 +142,10 @@ a value of that type. Nested `typedef` declarations are pending compiler support
 
 ## Callable declarations in type bodies
 
-A callable member of a `typedef` uses `mt` and has an implicit receiver
-named `self`.
+Methods use `mt` and have an implicit receiver named `self`.
+Host classes can also declare bodyless state-call contracts.
+[State-call contracts](#states-and-method-dispatch)
+
 A `fn` declaration inside any `typedef` body is a compile-time error,
 including in classes, interfaces, structs and enums. See the
 [method contract](../../cloth-functions/references/semantics.md#user-defined-methods)
@@ -403,6 +407,8 @@ Read [Cloth strings and characters](../../cloth-strings/references/semantics.md#
 
 Read [Cloth output and built-in functions](../../cloth-output/references/semantics.md#built-in-functions) and its
 [feature skill](../../cloth-output/SKILL.md).
+See [console input](../../cloth-output/references/semantics.md#console-input)
+for `input()` and its optional nullable prompt.
 See [explicit process termination](../../cloth-program-entry/references/semantics.md#explicit-process-termination)
 for the `exit(status)` built-in.
 
@@ -539,6 +545,10 @@ object identity and remain subject to the deletion rules below.
   destructor can read and write fields through `self` and call methods on
   `self`. Those calls retain the same receiver access. Copies of the identity
   carry ordinary alias access. A second or recursive deletion is an error.
+- Direct destructor `self` can also test its active state and call state
+  methods with the same receiver permission. Keep an existing activation
+  available through the destructor chain. Explicit transitions require an
+  ordinary live receiver.
 - Field access, method calls and deletion require a live instance, subject to
   the destructor receiver rule. Copying or passing an identity and comparing
   it with `null` remain valid after deletion.
@@ -564,13 +574,22 @@ object identity and remain subject to the deletion rules below.
   Inherited and newly declared states belong to the same state machine. A base
   class and its subclass do not have independently active states.
 - An object's permitted states are the states its class explicitly supports,
-  including inherited states. A transition target must belong to that supported
-  set; public visibility alone does not make an unrelated state a valid target.
+  including inherited states. A live object can transition from any active
+  state to a supported target whose visibility allows the transition. Use
+  ordinary state checks in code to enforce policies for particular paths.
 - `object is StateName` is a boolean expression that checks whether the object
   is currently in the named state, for example `player is Alive`.
+- A successful state check establishes an active-state fact for a stable
+  receiver binding on the proven control-flow path. A possible rebind
+  invalidates the binding's fact. An effect that may transition or delete
+  the tested object also invalidates it, including through an alias. A call
+  uses a state fact for compile-time checking only when it covers the
+  captured receiver at dispatch after argument and default effects.
+  [State flow and diagnostics](state-runtime.md#flow-checks-and-errors)
 - State methods are separate from ordinary class methods. They do not fulfill
   the hosting class's interface method requirements; those must be implemented
   by ordinary class methods.
+  [Checked nested-state slice](state-syntax.md#checked-declarations-and-calls)
 - State methods use `object::method(arguments)`, for example
   `player::attack(source)`. Ordinary class method calls use
   `object.method(arguments)`, for example `player.applyDamage(10f)` where visible.
@@ -578,9 +597,56 @@ object identity and remain subject to the deletion rules below.
   particular named state's implementation. Missing implementations still raise
   the established invalid-state error.
 - Different states can implement the same method signature.
+- On 2026-11-09 the user confirmed one shared call contract per state-method
+  overload. That contract supplies the parameter labels and omitted-argument
+  defaults for every state that implements the overload. The active state
+  supplies the implementation body.
+- Infer the shared contract from the state method declarations when they
+  agree on the signature and labels and every parameter is required. A
+  single required-only implementation, such as `Alive.attack` in Test.co,
+  supplies its own contract. Declare state-method defaults once on the host
+  class as part of the shared contract.
+- An explicit state-call contract is a bodyless host-class declaration.
+  Write `pub state ::attack(...)` for a void contract. An ordered result
+  list follows `state`, as in
+  `pub state<int, bool> ::attack(opt<int> power ?: 10)`. The `::` before
+  the name identifies the contract. Implementations in states use `mt`.
+
+  ```cloth
+  typedef<class> Player {
+      def<int> basePower = 10
+
+      pub state<int, bool> ::attack(opt<int> power ?: self.basePower)
+
+      default:
+      pub state<void> Alive {
+          pub mt<int, bool> attack(int power) = power, true
+      }
+  }
+  ```
+
+- Shared defaults resolve in the host class's declaration scope. They can
+  read earlier resolved parameters and host fields through read-only
+  `self` under the ordinary method-default rules. Receiver field reads
+  use the ordinary liveness checks. For the state call, the payload
+  binding `state` comes into scope in the selected implementation body.
+  [Method-default scope](../../cloth-optional-arguments/references/semantics.md#scope-evaluation-and-lifetimes)
 - Calls to state methods select the implementation in the object's active state.
-- If the active state has no matching implementation, raise an invalid-state
-  error. Do not silently ignore the call or execute another state's body.
+- Reject a state call at compile time if the compiler can prove that the
+  captured receiver has valid access at dispatch and its active state has
+  no matching implementation. Account for effects of supplied arguments and
+  omitted defaults when establishing that fact. When the dispatch state is
+  uncertain, a missing implementation raises a runtime invalid-state error.
+- The user also confirmed the state-call evaluation order. Evaluate and
+  capture the receiver once. Evaluate supplied arguments once in source
+  order, then evaluate omitted defaults from the shared contract once in
+  parameter order. After those evaluations complete normally, check the
+  captured receiver under the object lifetime rules and dispatch through its
+  active state at that point. A transition during a supplied argument or a
+  default affects that selection. For example, if `prepareSource(player)`
+  moves the player from `Alive` to `Dead`,
+  `player::attack(prepareSource(player))` dispatches through `Dead` and raises
+  an invalid-state error if it has no matching `attack`.
 - An ordinary class method and a state method may share the same signature.
   `object.method(...)` selects the ordinary method; `object::method(...)` selects
   state dispatch. Sharing a signature does not establish overriding or fallback
@@ -606,6 +672,13 @@ object identity and remain subject to the deletion rules below.
 - The compiler retains old state payload storage until calls using it finish.
   This does not require copying the payload or introduce GC. Explicitly created
   objects referenced within a payload still follow normal deletion rules.
+- Storing or returning `state` or one of its fields uses ordinary value
+  reception and result rules. Value data, including nested buffers, becomes
+  an independent snapshot that survives release of the originating activation.
+  Class values, including class fields inside a copied payload, carry the same
+  checked object identity and follow explicit object lifetime rules.
+  [Buffer lifetimes](../../cloth-buffer-lifetimes/SKILL.md) ·
+  [Class values](class-values.md#value-and-storage-rules)
 
 ## Top-level states
 
@@ -614,30 +687,26 @@ object identity and remain subject to the deletion rules below.
   satisfies the state's declared host contract.
 - A host contract may be an interface or a class. A class contract permits that
   class and its subclasses to host the state, subject to explicit state support.
-- Top-level states obey normal member visibility rules. Hosting a state grants
-  it no special access to the host class's private members.
-- Within a top-level state, `self` has the declared host-contract type. Extra
-  members of a particular hosting class are not directly available merely
-  because that class hosts the state.
+- Within a top-level state, `self` has the declared host-contract type and
+  accesses ordinary members through that type's public surface. The body
+  resolves private file-level helpers in its declaring file.
 - Top-level state declarations use `typedef<state<Payload>>`, followed by
   `pub StateName for HostContract` and the state body. `pub` is optional under
   Cloth's default-private visibility rule. `for` introduces the host contract.
-- Nested state declarations use the `state<Payload> StateName` form in `../../../../examples/Test.co`.
-  Do not substitute that nested spelling for the top-level `typedef` form.
-- A class attaches top-level states using a class-level `@State(StateName, ...)`
-  decorator, for example `@State(Dead, Stunned)`. Each attached state is added to
-  the class's permitted states, alongside inherited and nested states.
+- A class writes `state Dead` to attach a top-level state declared in its
+  file or imported through `using`. The attachment adds the state to the
+  permitted set alongside inherited and nested states. A nested state uses
+  `state<Payload> StateName { ... }`. [Test.co](../../../../examples/Test.co)
 - The class must satisfy every attached state's host contract. State-name
   conflicts are compile-time errors under the existing non-overriding rules.
-- If an attached state contains a transition to another state, the hosting class
-  must explicitly support that target too, either directly or through inheritance.
-  Attaching `Dead` when it transitions to `Alive` is a compile-time error if the
-  class does not support `Alive`. Referencing a target never attaches it implicitly.
-- Attaching a public top-level state automatically permits external transitions
-  into that state on the hosting object. There is no separate host-class opt-in
-  for external transition permission beyond attaching the public state.
-- Importing a state name into a file does not itself attach that state to a class.
-  `use state StateName` is not Cloth's state-attachment syntax.
+- State operations on direct `self` use the attaching class's supported
+  states and shared call contracts, subject to ordinary member visibility.
+  Each attaching class must supply all referenced targets directly or through
+  inheritance. A missing target is a compile-time error in the state body.
+- The declaration's visibility applies to the attachment. A public state
+  permits external transitions on objects that support it. Imports bind the
+  declaration name, and classes select their supported states explicitly.
+  [State attachments](state-attachments.md)
 
 Accepted top-level declaration example, with `Player` as a class host contract:
 
@@ -653,36 +722,34 @@ pub Dead for Player {
 
 ## Initial state and construction
 
-- For an attached state, the class selects its initial state with the class-level
-  decorator `@Initial(StateName, payloadExpression)`, for example
-  `@Initial(Alive, { name })`. An attached `state<void>` uses `@Initial(Alive)`.
-- The selected attached state must be in the class's supported state set. Its
-  initial payload follows the same post-construction evaluation order as a
-  nested initial state's payload.
-- Every class that declares states must declare exactly one `@Initial` state.
-- When constructing a subclass object, the subclass's declared `@Initial` state
-  replaces the base class's initial state as the selected initial state.
+- A class uses the `default:` prefix to select its initial state. For an
+  attachment, write `default: ({ name }) state Dead` with a payload or
+  `default: state Dead` for a void state. The prefix evaluates its payload
+  after construction in the selecting class's scope.
+- Every class that declares states must select exactly one initial state.
+- When constructing a subclass object, the subclass's selected initial state
+  replaces the base class's initial selection.
 - After the entire base-to-subclass constructor chain finishes, the selected
   initial state becomes active and its `init` block runs automatically.
-- The initial state may require a payload; it is not restricted to `state<void>`.
-- On a nested state declaration, the accepted payload syntax is
-  `@Initial(payloadExpression)`. Constructor arguments provide the inputs; the
-  class builds its initial-state payload using the constructed object's fields.
-- Construction order is: finish the entire constructor chain, evaluate the
-  selected initial payload, activate that state with its payload, then run its
-  `init` block.
-- A nested `state<void>` initial state can use plain `@Initial`.
-- The payload expression is evaluated during object construction. This special
-  syntax does not imply that arbitrary annotations accept runtime expressions.
+- Before initial activation, including during initial payload evaluation, a
+  state test on a live receiver returns `false` for a supported target.
+  State-method dispatch and explicit transitions require an active state.
+- An initial state can require a payload. Constructor arguments provide the
+  inputs, and the class builds the initial payload using the constructed
+  object's fields. Put the expression in the prefix as
+  `default: (payloadExpression)` before the nested state declaration.
+- Finish the entire constructor chain, evaluate the selected initial payload,
+  activate that state with its payload, then run its `init` block.
+- A nested `state<void>` initial state uses bare `default:`.
+  [Activation runtime](state-runtime.md#activation-and-access)
 
-Accepted extension to the syntax examples, assuming `SessionInfo` contains a
-`name` field:
+The initial payload below supplies the `name` field of `SessionInfo`.
 
 ```cloth
 typedef<class>
 pub Player (def<string> name) {
 
-    @Initial({ name })
+    default: ({ name })
     pub state<SessionInfo> Alive {
         init {
             println(state.name)
@@ -693,9 +760,6 @@ pub Player (def<string> name) {
 
 def player := Player::new("Alex")
 ```
-
-`@Initial(payloadExpression)` was accepted in the discussion and has not yet been
-added to `../../../../examples/Test.co`.
 
 ## Compiler diagnostics
 

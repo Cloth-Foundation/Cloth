@@ -130,6 +130,32 @@ class ManifestTest {
 	}
 
 	@Test
+	fun `bare null is a syntax failure even inside arrays and tables`(@TempDir directory: Path) {
+		val path = directory.resolve("build.toml")
+		for (value in listOf("null", "[null]", "{ value = [null] }")) {
+			Files.writeString(path, projectText().replace("name = \"Demo\"", "name = $value"))
+			val failure = assertFailsWith<ShuttleDiagnostic> { ManifestLoader.project(path) }
+			assertEquals(ShuttleDiagnosticCode.INVALID_TOML, failure.diagnosticCode)
+		}
+		assertEquals("null", ManifestLoader.project(Files.writeString(path, projectText(name = "null"))).name)
+	}
+
+	@Test
+	fun `native parser rejects an assignment on a table header line and raw control characters`(@TempDir directory: Path) {
+		val path = directory.resolve("build.toml")
+		val invalid = listOf(
+			projectText().replace("[project]\n", "[project] "),
+			projectText().replace("[modules]", "version = 'A\u0001B'\n[modules]"),
+			projectText().replace("[modules]", "version = 'A\rB'\n[modules]"),
+			"[project.metadata]\n[project]\n" + projectText(),
+		)
+		for (text in invalid) {
+			Files.writeString(path, text)
+			assertEquals(ShuttleDiagnosticCode.INVALID_TOML, assertFailsWith<ShuttleDiagnostic> { ManifestLoader.project(path) }.diagnosticCode)
+		}
+	}
+
+	@Test
 	fun `strict UTF8 rejects malformed bytes without replacing their text`(@TempDir directory: Path) {
 		val path = Files.write(directory.resolve("invalid.toml"), byteArrayOf(0xc3.toByte(), 0x28))
 		val failure = assertFailsWith<ShuttleDiagnostic> { ManifestLoader.project(path) }

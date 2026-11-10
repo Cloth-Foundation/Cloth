@@ -9,17 +9,19 @@ import org.bytedeco.llvm.global.LLVM.*
 internal data class ObjectAccess(val identity: LLVMValueRef, val duringDestruction: LLVMValueRef)
 
 /** The table outlives individual instances. Its addresses never cross a source call. */
-internal class EmitClassRuntime(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI) {
+internal class EmitClassRuntime(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val tracksStates: Boolean) {
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
 	internal val indexType = LLVMInt32TypeInContext(context)
 	private val identityType = LLVMInt64TypeInContext(context)
 	internal val size = LLVMIntTypeInContext(context, abi.layout.sizeBits)
-	private val slotType = PointerPointer<LLVMTypeRef>(6L).use { fields ->
-		fields.put(0, pointer); fields.put(1, indexType); fields.put(2, indexType); fields.put(3, flag)
-		fields.put(4, indexType); fields.put(5, indexType)
-		LLVMStructTypeInContext(context, fields, 6, 0)
+	private val slotType = run {
+		val layout = listOf(pointer, indexType, indexType, flag, indexType, indexType) + listOfNotNull(pointer.takeIf { tracksStates })
+		PointerPointer<LLVMTypeRef>(layout.size.toLong()).use { fields ->
+			layout.forEachIndexed { index, type -> fields.put(index.toLong(), type) }
+			LLVMStructTypeInContext(context, fields, layout.size, 0)
+		}
 	}
 	private val slots = global("cloth.objects.slots", pointer)
 	private val count = global("cloth.objects.count", indexType)
@@ -107,8 +109,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	private fun emitAllocate() = helper("allocate", identityType, size, indexType) { builder, function ->
 		val memory = EmitMemory(context, builder, abi)
-		val payload = call(builder, malloc, "new_instance", LLVMGetParam(function, 0))
-		memory.guard(LLVMBuildIsNotNull(builder, payload, "allocated"), "Unable to allocate class instance")
+		val payload = allocateStorage(builder, LLVMGetParam(function, 0), "new_instance", "Unable to allocate class instance")
 		val head = LLVMBuildLoad2(builder, indexType, freeHead, "free_slot")
 		val reuse = block(function, "reuse_slot")
 		val append = block(function, "append_slot")
@@ -161,6 +162,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildStore(builder, permission(false), address(builder, slot, 3))
 		LLVMBuildStore(builder, LLVMGetParam(function, 1), address(builder, slot, 4))
 		LLVMBuildStore(builder, integer(-1), address(builder, slot, 5))
+		if (tracksStates) LLVMBuildStore(builder, LLVMConstNull(pointer), address(builder, slot, activeStateField))
 		val generation = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "instance_generation")
 		val upper = LLVMBuildShl(builder, memory.resize(generation, identityType), LLVMConstInt(identityType, 32, 0), "upper_generation")
 		LLVMBuildRet(builder, LLVMBuildOr(builder, upper, memory.resize(index, identityType), "instance_identity"))
@@ -170,7 +172,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		val handle = LLVMGetParam(function, 0)
 		val slot = call(builder, lookup, "deleting_slot", handle, permission(true))
 		val storage = address(builder, slot, 0)
-		call(builder, free, "", LLVMBuildLoad2(builder, pointer, storage, "deleted_storage"))
+		freeStorage(builder, LLVMBuildLoad2(builder, pointer, storage, "deleted_storage"))
 		LLVMBuildStore(builder, LLVMConstNull(pointer), storage)
 		val generationAddress = address(builder, slot, 1)
 		val generation = LLVMBuildLoad2(builder, indexType, generationAddress, "deleted_generation")
@@ -191,6 +193,15 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		return memory.elementBytes(memory.count(1), owner.instanceStorage(context, abi.layout), "Class instance exceeds native allocation size")
 	}
 
+	fun allocateStorage(builder: LLVMBuilderRef, bytes: LLVMValueRef, name: String, failure: String): LLVMValueRef =
+		call(builder, malloc, name, bytes).also { storage ->
+			EmitMemory(context, builder, abi).guard(LLVMBuildIsNotNull(builder, storage, "allocated"), failure)
+		}
+
+	fun freeStorage(builder: LLVMBuilderRef, storage: LLVMValueRef) {
+		call(builder, free, "", storage)
+	}
+
 	fun create(builder: LLVMBuilderRef, bytes: LLVMValueRef, tag: LLVMValueRef): ObjectAccess {
 		val access = ObjectAccess(call(builder, allocate, "created_object", bytes, tag), permission(false))
 		LLVMBuildMemSet(builder, instance(builder, access), LLVMConstInt(LLVMInt8TypeInContext(context), 0, 0), bytes, 1)
@@ -198,6 +209,11 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 	}
 
 	private fun checkedSlot(builder: LLVMBuilderRef, access: ObjectAccess) = call(builder, lookup, "checked_slot", access.identity, access.duringDestruction)
+	fun stateSlot(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef {
+		check(tracksStates)
+		return address(builder, checkedSlot(builder, access), activeStateField)
+	}
+
 	fun finishClass(builder: LLVMBuilderRef, access: ObjectAccess, tag: LLVMValueRef) {
 		val slot = checkedSlot(builder, access)
 		LLVMBuildStore(builder, tag, address(builder, slot, 5))
@@ -225,5 +241,9 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	fun finishDelete(builder: LLVMBuilderRef, identity: LLVMValueRef) {
 		call(builder, release, "", identity)
+	}
+
+	private companion object {
+		const val activeStateField = 6
 	}
 }

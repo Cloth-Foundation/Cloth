@@ -74,7 +74,11 @@ choice; `opt<T>` is a parameter declaration form, not a distinct runtime type.
   default, including a bare call that resolves to the receiver. Deletion and
   writes through these views also report C3066. See the
   [method contract](../../cloth-functions/references/semantics.md#user-defined-methods).
-  State payload defaults await their separate runtime.
+- Shared state-method defaults use the same read-only receiver rules in
+  the host class's declaration scope. The state payload binding belongs
+  to the selected method body. The state dispatcher checks receiver access
+  and reads the active state after resolving all arguments.
+  [State calls](../../cloth-language/references/state-runtime.md#state-method-dispatch)
 - A return cannot escape a default into the caller or callee. Helper calls and
   explicitly declared local deferred blocks retain their own return boundaries.
 - At each executed call, evaluate supplied arguments once in written order and

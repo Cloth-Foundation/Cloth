@@ -30,20 +30,11 @@ internal class EmitInterfaceDispatch(
 	private val tagOf: (CClass) -> LLVMValueRef,
 ) {
 	private val slots = mutableMapOf<Pair<CInterface, InterfaceRequirement>, EmittedCallable>()
-	private val pending = ArrayDeque<Pair<ResolvedCall.Interface, EmittedCallable>>()
 
 	fun entry(plan: ResolvedCall.Interface): EmittedCallable = slots.getOrPut(plan.owner to plan.contract.requirement) {
 		val name = "cloth.interface.dispatch.${slots.size}.${plan.contract.name.lexeme}"
 		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }
-			.also { pending.addLast(plan to it) }
-	}
-
-	fun emitPending() {
-		// Defaults may use the same slot or add further slots to the worklist.
-		while (pending.isNotEmpty()) {
-			val (plan, entry) = pending.removeFirst()
-			emitEntry(plan, entry)
-		}
+			.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
 	}
 
 	private fun emitEntry(plan: ResolvedCall.Interface, entry: EmittedCallable) {
@@ -70,7 +61,7 @@ internal class EmitInterfaceDispatch(
 			val frame = EmitFunctionFrame(context, builder, start, plan.type.results, LLVMGetReturnType(entry.signature), functions.stringStorage, entry.callerArena)
 			val arguments = if (entry.hasOmissions) {
 				classes.check(builder, access) // Supplied arguments may have invalidated the receiver.
-				functions.bindInterfaceArguments(plan.contract, entry, builder, start, frame)
+				functions.bindDispatchArguments(plan.contract, entry, builder, start, frame)
 			} else plan.type.parameters.indices.map { entry.parameter(builder, it) }
 			// Omission expressions can also invalidate the receiver. Resolve it again before selecting a body.
 			val tag = classes.classTag(builder, access)

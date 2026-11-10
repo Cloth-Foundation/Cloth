@@ -2,7 +2,7 @@ using cloth.collections.List: List
 using token.Token: Token
 
 pub typedef<class> TokenList {
-    def<List<Token>> tokens = List<Token>::new
+    pub def<List<Token>> tokens = List<Token>::new
 
     // Appending transfers ownership of the token.
     pub mt append(Token token) = tokens.append(token)

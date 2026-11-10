@@ -75,6 +75,7 @@ object SemanticErrors {
 	fun nullableContext(span: TokenSpan) = issue(DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "A nullable value requires an explicit nullable destination type", span, "Declare a matching 'T${Operators.QUESTION}' type, or use a presence proof or non-null fallback to obtain a non-null value. Cloth never infers nullability.")
 	fun nullablePayload(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Access to '${type.spelling}' requires proof that its payload is present", span, "Check the value against ${Keywords.NULL}, or supply a non-null fallback with '${Operators.ELVIS}'.")
 	fun elvis(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ELVIS, message, span)
+	fun guardedReceiver(type: ValueType, operator: Token) = issue(DiagnosticCode.INVALID_GUARDED_RECEIVER, "Operator '${Operators.SAFE_DOT}' requires a nullable receiver, got '${type.spelling}'", operator.span)
 	fun nullComparison(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_NULL_COMPARISON, message, span)
 
 	fun blockReception(span: TokenSpan) = issue(DiagnosticCode.UNSUPPORTED_MULTIPLE_RESULTS, "Multiple-result or discard function-block declarations are not implemented yet", span, "Declare independent scalar function blocks, or destructure an evaluated result producer.")
@@ -102,7 +103,7 @@ object SemanticErrors {
 	fun providerReceiver(type: ValueType, name: Token) = issue(DiagnosticCode.INVALID_PROVIDER_RECEIVER, "Compiler data '${name.lexeme}' does not support this receiver form for '${type.spelling}'", name.span)
 	fun metadata(represented: ValueType, name: Token, requirement: String) = issue(DiagnosticCode.INVALID_METADATA_ACCESS, "Type metadata ${Operators.COLON_COLON}${name.lexeme} requires $requirement, got '${represented.metadataSpelling}'", name.span)
 	fun typeReceiver(span: TokenSpan) = issue(DiagnosticCode.TYPE_RECEIVER_VALUE, "A type receiver is not an executable value", span, "Select compiler data from the type with '${Operators.COLON_COLON}name'.")
-	fun stateCall(name: Token) = issue(DiagnosticCode.UNSUPPORTED_STATE_CALL, "State-method calls are not implemented yet", name.span, "Parentheses select a state-method call; compiler data access uses no parentheses.")
+	fun stateCall(name: Token) = issue(DiagnosticCode.UNSUPPORTED_STATE_CALL, "A state-method call requires a class value receiver", name.span, "Parentheses select a state-method call; compiler data access uses no parentheses.")
 	fun unknownName(name: Token) = issue(DiagnosticCode.UNKNOWN_NAME, "Unknown name '${name.lexeme}'", name.span, "Declare a visible binding or function with this name.")
 	fun duplicateFunction(signature: String, first: Token, duplicate: Token) = SemanticException(DiagnosticCode.DUPLICATE_FUNCTION, "Function '$signature' is already declared", listOf(SourceLabel(first.span, "first declared here"), SourceLabel(duplicate.span, "same name and parameter types")), "Return types, parameter names and '${Keywords.FINAL}' do not distinguish overloads.")
 	fun notCallable(name: Token, declaration: Token) = SemanticException(DiagnosticCode.NOT_CALLABLE, "Binding '${name.lexeme}' is not callable", listOf(SourceLabel(declaration.span, "binding declared here"), SourceLabel(name.span, "called here")), "A local binding shadows a function with the same name.")

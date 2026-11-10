@@ -37,6 +37,9 @@ internal val CallableSignature.executableBody: FunctionBody?
 	get() = when (this) {
 		is CallableDeclaration -> body
 		is InterfaceMethodDeclaration -> fallback?.body
+		is StateMethodContractDeclaration -> null
+		is StateActivationDeclaration -> initializer.body
+		is StateInitialPayloadDeclaration -> null
 	}
 
 data class FunctionDeclaration(

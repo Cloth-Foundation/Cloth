@@ -29,7 +29,7 @@ data class MethodDeclaration(
 	val visibility: Token? = null,
 	val operator: OperatorMember? = null,
 	val overridePrefix: TokenSpan? = null,
-) : CallableDeclaration, ClassMember {
+) : CallableDeclaration, ClassMember, StateMember {
 
 	override val span get() = (overridePrefix ?: (visibility ?: keyword).span).through(body.span)
 }

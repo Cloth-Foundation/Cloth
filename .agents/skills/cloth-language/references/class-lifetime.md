@@ -39,6 +39,10 @@ Interface deletion uses the concrete destructor chain.
   generation. Release looks up the identity again after the destructor, so
   it can release the correct slot even if the destructor grew the table.
   Absent nullable deletion skips lookup and destructor execution. [Instance table](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassRuntime.kt)
+- Stateful objects keep their activation through the destructor chain. Deletion
+  releases the slot's activation ownership before the slot is recycled.
+  Entry hooks and state methods hold their own ownership of the payload.
+  [State activation storage](state-runtime.md#activation-storage)
 
 ## Diagnostics and scope
 

@@ -3,6 +3,7 @@ package shuttle.command
 import cloth.diagnostics.CliErrors
 import cloth.settings.CompilerOptions
 import cloth.settings.OutputKind
+import shuttle.bridge.shuttleUsage
 import shuttle.diagnostics.ShuttleErrors
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -60,10 +61,6 @@ internal class ShuttleSettings(args: Array<String>) {
 	}
 
 	companion object {
-		const val usage = "Usage: shuttle build [--project PATH] [-o PATH] [build options]\n" +
-			"       shuttle run [--project PATH] [-o PATH] [build options] [-- program arguments]\n" +
-			"Build options: --stdlib PATH | --no-stdlib, --target TRIPLE, --emit executable|object, --debug, --linker PATH, " +
-			"--linker-driver lld|msvc|cc, --runtime default|static|dynamic, --subsystem console|windows, " +
-			"-L DIR, -l NAME, --sysroot DIR, --msvc-tools DIR, --windows-sdk DIR, --windows-sdk-version VERSION"
+		const val usage = shuttleUsage
 	}
 }

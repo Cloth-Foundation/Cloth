@@ -11,11 +11,14 @@ import cloth.diagnostics.ImportErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.SourceFile
+import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.ClassDeclaration
 import cloth.parser.declaration.EnumDeclaration
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.InterfaceDeclaration
+import cloth.parser.declaration.StateClassMember
 import cloth.parser.declaration.StructDeclaration
+import cloth.parser.declaration.TopLevelStateDeclaration
 import cloth.parser.declaration.TypeDeclaration
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
@@ -32,18 +35,26 @@ internal class FileContext(val unit: SourceUnit) {
 	val scope = LexicalScope()
 	val types = linkedMapOf<String, CMemberType>()
 	val localTypes = linkedMapOf<String, CMemberType>()
+	val states = linkedMapOf<String, TopLevelStateDeclaration>()
+	val localStates = linkedMapOf<String, TopLevelStateDeclaration>()
 	val functions = mutableListOf<FunctionSymbol>()
 	val exports = linkedMapOf<String, FileExport>()
 	val typeImports = mutableMapOf<String, Token>()
 	val functionImports = mutableMapOf<String, Token>()
+	val stateImports = mutableMapOf<String, Token>()
 }
 
-internal class FileExport(val type: CMemberType?, val functions: FunctionGroupSymbol?)
+internal class FileExport(val type: CMemberType?, val functions: FunctionGroupSymbol?, val state: TopLevelStateDeclaration?)
 
 /** Register original identities across all files before binding any import or resolving a type. */
 internal class FileBindings private constructor(val files: List<FileContext>, private val graph: SourceGraph? = null) {
 
 	val primary get() = files.first()
+	val topLevelStates = files.flatMap { it.unit.declarations.filterIsInstance<TopLevelStateDeclaration>() }
+	val firstStateSyntax = topLevelStates.firstOrNull()?.keyword?.span ?: files.asSequence().flatMap { it.unit.declarations.asSequence() }
+		.filterIsInstance<ClassDeclaration>().firstNotNullOfOrNull { declaration ->
+			declaration.members.firstNotNullOfOrNull { (it as? StateClassMember)?.keyword?.span }
+		}
 	val structs = IdentityHashMap<StructDeclaration, CStruct>()
 	val classes = IdentityHashMap<ClassDeclaration, CClass>()
 	val enums = IdentityHashMap<EnumDeclaration, CEnum>()
@@ -80,6 +91,13 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 					file.functions.add(symbol)
 					groups.getOrPut(symbol.name.lexeme) { mutableListOf() }.add(symbol)
 				}
+				if (declaration is TopLevelStateDeclaration) {
+					val name = declaration.name
+					file.states.putIfAbsent(name.lexeme, declaration)?.let { prior ->
+						throw StateErrors.declaration("Top-level state '${name.lexeme}' is already declared", name, prior.name)
+					}
+					file.localStates[name.lexeme] = declaration
+				}
 			}
 			for (overloads in groups.values) file.scope.declare(FunctionGroupSymbol(overloads.toList()))
 			// Export only this file's public declarations, never received imports.
@@ -87,11 +105,13 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 				val name = when (declaration) {
 					is TypeDeclaration -> declaration.name.takeIf { declaration.visibility != null }
 					is FunctionDeclaration -> declaration.name.takeIf { declaration.visibility != null }
+					is TopLevelStateDeclaration -> declaration.name.takeIf { declaration.visibility != null }
 					else                   -> null
 				} ?: continue
 				val publicFunctions = groups[name.lexeme].orEmpty().filter { it.declaration.visibility != null }
 				val publicType = file.types[name.lexeme]?.takeIf { it.declaration.visibility != null }
-				file.exports[name.lexeme] = FileExport(publicType, publicFunctions.takeIf { it.isNotEmpty() }?.let(::FunctionGroupSymbol))
+				val publicState = file.states[name.lexeme]?.takeIf { it.visibility != null }
+				file.exports[name.lexeme] = FileExport(publicType, publicFunctions.takeIf { it.isNotEmpty() }?.let(::FunctionGroupSymbol), publicState)
 			}
 		}
 	}
@@ -99,6 +119,7 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 	fun context(name: Token): FileContext = name.span.source?.let { sources[it] } ?: files.singleOrNull() ?: throw InternalErrors.invariant("No defining file context for '${name.lexeme}'")
 
 	fun nominal(name: Token): CMemberType? = if (name.lexeme == objectRoot.spelling) objectRoot else context(name).types[name.lexeme]
+	fun state(name: Token): TopLevelStateDeclaration? = context(name).states[name.lexeme]
 	internal fun fork(): FileBindings = graph?.let { graph(it) } ?: single(primary.unit)
 
 	private fun bind(graph: SourceGraph) {
@@ -111,7 +132,7 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 			}
 			for ((name, token) in names) {
 				val exported = source.exports[name] ?: run {
-					val privateName = source.localTypes[name]?.name ?: source.functions.firstOrNull { it.name.lexeme == name }?.name
+					val privateName = source.localTypes[name]?.name ?: source.localStates[name]?.name ?: source.functions.firstOrNull { it.name.lexeme == name }?.name
 					if (privateName != null) throw ImportErrors.privateName(token, privateName)
 					throw ImportErrors.missingName(token, edge.declaration)
 				}
@@ -129,6 +150,14 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 					if (previous == null) {
 						file.scope.declare(functions)
 						file.functionImports[name] = token
+					}
+				}
+				exported.state?.let { state ->
+					val previous = file.states[name]
+					if (previous != null && previous !== state) throw ImportErrors.conflict(name, token, previous.name, state.name, file.stateImports[name])
+					if (previous == null) {
+						file.states[name] = state
+						file.stateImports[name] = token
 					}
 				}
 			}

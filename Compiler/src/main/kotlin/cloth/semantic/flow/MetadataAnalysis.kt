@@ -236,6 +236,16 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 				}
 			}
 
+			is GuardedReceiver -> model.metadata[value.source]
+			is GuardedAccessExpression -> {
+				expression(value.receiver)
+				val skipped = snapshot()
+				expression(value.continuation)
+				if (flow.of(value.receiver).canFallThrough && flow.of(value.continuation).canFallThrough) merge(listOf(skipped, snapshot()))
+				else restore(skipped)
+				null
+			}
+
 			is BinaryExpression         -> {
 				if (value.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					expression(value.left)

@@ -49,6 +49,45 @@ the parent skill for current implementation boundaries and source/test routing.
   are not rolled back. Native Windows console/code-page behavior and failures
   delayed until a buffered flush still need separate verification and design.
 
+### Console input
+
+The unimported `input()` and `input(string?)` forms both return `string?`.
+A plain string lifts to the nullable prompt type. A present prompt is printed
+once with no added newline. Omitting it or passing `null` skips prompt output.
+The call flushes pending native output before waiting on standard input.
+Other prompt types, extra arguments and named labels are rejected.
+
+```cloth
+fn main() {
+    def<string?> name = input("Name: ")
+    if (name != null) {
+        println(#"Hello, {name}")
+    }
+}
+```
+
+Each call consumes one line from the native text stream. LF and CRLF delimit
+lines and are excluded from the result. A blank line yields a present empty
+string. Native EOF or read failure completes a pending line and yields `null`
+when there are no pending bytes. Other whitespace and embedded NULs are preserved.
+
+Read bytes must form valid UTF-8. Malformed input terminates through the runtime
+error path, matching native command-line UTF-8 validation. The Windows console
+uses the native text stream and its configured encoding.
+
+#### Input verification (2026-11-09)
+
+`BuiltinFunctionsTest` checked both overloads, strict prompt typing, and explicit
+nullable result bindings. Native Windows x64 and x86 pipe tests observed the
+prompt before supplying stdin and checked line endings, blank lines, EOF, Unicode,
+NUL, growth and independent results. A native test rejected truncated UTF-8 after
+a NUL. The reader passed LLVM verification on all nine profiles.
+
+The offline run passed 180 tests across 12 suites. It covered
+`BuiltinFunctionsTest`, `UnicodeArgumentsTest`, `BufferCountsTest`,
+`CallResolutionTest`, `Nullability*`, `NullableBuffersTest`,
+`OptionalArguments*` and `ProgramEntryTest`.
+
 ## Recursive array text
 
 - On 2026-11-02 the user confirmed recursive array contents for printing,

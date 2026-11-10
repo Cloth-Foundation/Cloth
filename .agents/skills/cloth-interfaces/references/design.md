@@ -17,9 +17,9 @@ language proposals. The plan owns implementation stages and verification.
   [visibility contract](../../cloth-functions/references/semantics.md#visibility-in-cloth-source).
 - Callable members of a `typedef` use `mt` with implicit `self`; `fn` inside a
   type is an error. [Shared declaration rule](../../cloth-language/references/semantics.md#callable-declarations-in-type-bodies)
-- State methods are separate from ordinary class methods and cannot satisfy the
-  hosting class's interface requirements. A future top-level state's host
-  contract may be an interface. [Shared state rules](../../cloth-language/references/semantics.md#states-and-method-dispatch)
+- Top-level states can use an interface as their host contract. The attaching
+  class satisfies that interface through ordinary methods and interface
+  defaults. [State attachments](../../cloth-language/references/state-attachments.md)
 - On 2026-11-07 the user selected **classes first; structs and enums later** for
   interface implementation. This is implementation ordering, not a permanent
   prohibition on value types implementing interfaces.

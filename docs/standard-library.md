@@ -22,8 +22,9 @@ fixture. [Bundling example](../examples/StandardLibrary/README.md)
 ```text
 <toolchain>/
     bin/cloth[.bat]
-    bin/shuttle[.bat]
+    bin/shuttle[.exe]
     lib/...
+    runtime/bin/java[.exe]
     toolchain.properties
     stdlib/module.toml
     stdlib/cloth/Library.co
@@ -36,14 +37,17 @@ Import paths retain exact case on every host and omit module IDs.
 
 Move the entire installation together. Launchers derive their installation home
 from their own location, independently of the caller's working directory. Put
-`bin/` on PATH or invoke either launcher directly. Compilation requires Java 25
-and the native linker/CRT/sysroot needed by the selected target. Object emission
-does not discover a linker. Ordinary compilation downloads no library sources.
+`bin/` on PATH or invoke either launcher directly. The bundled Java 25 runtime
+runs the compiler for both commands. The Shuttle command is a native executable.
+Building an executable also requires the native
+linker, CRT and sysroot for the selected target. Object emission can run with
+the bundled toolchain alone.
 
-On Windows, the Gradle launchers support spaces and Unicode installation
-characters representable by the host code page. The user-approved follow-up for
-arbitrary Unicode installation/classpath paths remains open. Unicode application
-arguments and explicit library paths use the existing wide-argument adapter.
+On Windows, JVM classpath startup supports spaces and installation characters
+representable by the host code page. The
+[launcher plan](../todo/windows-unicode-launcher-plan.md) tracks arbitrary
+Unicode installation paths. The native Shuttle command uses wide Windows
+arguments for project paths and program launch.
 
 The resulting executable runs independently of the compiler installation and
 Cloth source files. Its normal target platform and C runtime dependencies still
@@ -124,14 +128,17 @@ outputs. Neither compiler API calls nor user builds perform Git operations.
 From a prepared checkout, build a combined installation or ZIP/TAR archives:
 
 ```powershell
-.\gradlew.bat :installDist :distZip :distTar --offline
+.\gradlew.bat :installDist :distZip :distTar
 ```
 
-Use `./gradlew` on Unix. Offline Gradle builds require the normal build dependencies
-to be cached already. Default outputs are `build/install/cloth` and
-`build/distributions/cloth-<version>.zip` / `.tar`. Per-command installations remain
-available through `:Compiler:installDist` and `:Shuttle:installDist`, each including
-the same pinned library snapshot.
+Use `./gradlew` on Linux and macOS. Build releases with a redistributable JDK 25
+for each host OS and CPU you distribute to. Gradle uses that JDK's `jlink` to
+build the runtime and derives the archive suffix from the JDK's platform.
+Outputs are `build/install/cloth` and
+`build/distributions/cloth-<version>-<os>-<arch>.zip` / `.tar`. Select the archive
+matching the machine that runs Cloth, for example `windows-x64` or `macos-arm64`.
+Per-command `installDist`, `distZip` and `distTar` tasks in `:Compiler` and
+`:Shuttle` include the same runtime and pinned library snapshot.
 
 The recorded library pin is `ea48ad55be9577f0b876f04c5aafe4420919597d` (scaffold
 version 0.0.1). The new List source is currently a development-checkout change;

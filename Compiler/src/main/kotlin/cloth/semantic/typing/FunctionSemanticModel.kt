@@ -6,6 +6,7 @@ import cloth.parser.statement.Statement
 import cloth.semantic.ClassDeletionPlan
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationModel
+import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ControlFlowModel
 import cloth.semantic.flow.PresenceFacts
@@ -37,6 +38,9 @@ class FunctionSemanticModel internal constructor(
 	internal val interfaceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Interface> = facts.identityMap { it.interfaceMemberCalls }
 	internal val constructorCalls: MutableMap<CallSite, ResolvedCall.Source> = facts.identityMap { it.constructorCalls }
 	internal val classDeletions: MutableMap<ClassDeletionExpression, ClassDeletionPlan> = facts.identityMap { it.classDeletions }
+	internal val stateCalls: MutableMap<StateCallExpression, ResolvedStateCall> = facts.identityMap { it.stateCalls }
+	internal val stateTests: MutableMap<TypeCheckExpression, StateDefinition> = facts.identityMap { it.stateTests }
+	internal val stateTransitions: MutableMap<Expression, StateDefinition> = facts.identityMap { it.stateTransitions }
 
 	internal val callableBodies get() = declarations.concreteCallables + callables.publishedMethods()
 	internal fun bodyOf(callable: CallableContractSymbol): FunctionSemanticModel = (callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
@@ -86,6 +90,7 @@ class FunctionSemanticModel internal constructor(
 		for (function in declarations.concreteContracts) {
 			val parameters = declaredTypeOf(function).parameters
 			function.parameters.forEachIndexed { index, parameter -> bindings[parameter] = parameters[index] }
+			declarations.states.payloadOf(function.declaration)?.let { bindings[it] = it.type }
 		}
 	}
 

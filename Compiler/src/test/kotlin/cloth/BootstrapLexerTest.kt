@@ -130,7 +130,8 @@ class BootstrapLexerTest {
 		add("identifier boundaries" to "auto module definition method function constructor public boolean integer character _ __ _x _1 x_1 IF foo123 café λ 中文 \u0661\u0662")
 		// Quotes are literal delimiters, tested separately below.
 		add("operators" to Operators.entries.filter { it !in listOf(Operators.QUOTATION, Operators.DOUBLE_QUOTATION) }.joinToString(" "))
-		add("longest operators and nullable receivers" to "=== == = := ++ += + -- -= - ** *= * /= / %= % ..= .. . ?:: ?: ? :: -> <- >= <= && || _a __ _")
+		add("default state prefix" to "default: ({ name })\npub state<Info> Alive {}")
+		add("longest operators and nullable receivers" to "=== == = := ++ += + -- -= - ** *= * /= / %= % ..= .. . ?:: ?. ?: ? :: -> <- >= <= && || _a __ _")
 		add("comments" to "// no token\r\n/* two\nlines */x/**/y/* first /* close */z // eof")
 		add("numeric forms" to "0 123 1_000 0xff 0xAf_F0 0b10_01 0o7_0 12f 12F 12i 12I 12.f 12.F 12.50f 12.5 12..14 12..=14 12.foo 12.iValue")
 		add("quoted strings" to "\"\" \"plain café 😀\" \"\\n\\r\\t\\0\\\\\\'\\\"\"")
@@ -148,7 +149,7 @@ class BootstrapLexerTest {
 		add("long lexemes" to ("\"\"\"" + "aé😀".repeat(1_024) + "\"\"\""))
 		add("nested holes" to ("#\"{".repeat(24) + "value" + "}\"".repeat(24)))
 		val invalid = listOf(
-			"@", "x @ 1__", "/*", "/*\nmissing", "1_", "1__2", "0x_1", "0b1_", "1._0",
+			"@", "x @ 1__", "@Initial state<void> Ready {}", "/*", "/*\nmissing", "1_", "1__2", "0x_1", "0b1_", "1._0",
 			"0x", "0b2", "0o8", "0Xff", "0x1.2", "0b10f", "0o7i", "0x1.f", "123.i", "123.0i",
 			"123.0Ifoo", "12foo", "12fSuffix", "12_i", "0x1_foo", "0x１",
 			"\"", "\"missing", "\"a\nb\"", "\"a\rb\"", "\"\\", "\"\\q\"", "\"\\\n",

@@ -3,19 +3,12 @@ package shuttle.manifest
 import cloth.diagnostics.SourceFile
 import cloth.token.Keywords
 import cloth.token.Operators
-import com.fasterxml.jackson.core.StreamReadFeature
-import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.dataformat.toml.TomlFactory
-import com.fasterxml.jackson.dataformat.toml.TomlMapper
-import com.fasterxml.jackson.dataformat.toml.TomlReadFeature
 import shuttle.diagnostics.ShuttleErrors
 import java.io.IOException
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.DateTimeException
 import java.util.Locale
 
 internal class ManifestDocument(val path: Path, val source: SourceFile)
@@ -25,11 +18,6 @@ internal data class ModuleManifest(val document: ManifestDocument, val name: Str
 
 /** Standard TOML parsing followed by Shuttle's schema; no Cloth source is read here. */
 internal object ManifestLoader {
-	private val mapper = TomlMapper(TomlFactory.builder()
-		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-		.enable(TomlReadFeature.PARSE_JAVA_TIME)
-		.build())
-
 	fun project(path: Path): ProjectManifest {
 		val (document, root) = read(path)
 		val project = table(document, root, "project", "project")
@@ -69,7 +57,7 @@ internal object ManifestLoader {
 		return ModuleManifest(document, name, version)
 	}
 
-	private fun read(path: Path): Pair<ManifestDocument, JsonNode> {
+	private fun read(path: Path): Pair<ManifestDocument, ManifestTable> {
 		val text = try {
 			Files.readString(path, StandardCharsets.UTF_8)
 		} catch (failure: CharacterCodingException) {
@@ -79,45 +67,42 @@ internal object ManifestLoader {
 		}
 		val document = ManifestDocument(path, SourceFile(path.toString(), text))
 		val root = try {
-			mapper.readTree(text) ?: mapper.createObjectNode()
-		} catch (failure: JsonProcessingException) {
-			val location = failure.location
-			throw ShuttleErrors.syntax(document, location?.lineNr, location?.columnNr, failure.originalMessage, failure)
-		} catch (failure: DateTimeException) {
-			throw ShuttleErrors.syntax(document, null, null, "Invalid TOML date/time: ${failure.message}", failure)
+			parseManifestToml(text)
+		} catch (failure: ManifestTomlException) {
+			throw ShuttleErrors.syntax(document, failure.line, failure.column, failure.message ?: "Malformed input", failure.cause ?: failure)
 		}
 		return document to root
 	}
 
-	private fun table(document: ManifestDocument, parent: JsonNode, key: String, path: String): JsonNode = optionalTable(document, parent, key, path)
+	private fun table(document: ManifestDocument, parent: ManifestTable, key: String, path: String): ManifestTable = optionalTable(document, parent, key, path)
 		?: throw ShuttleErrors.schema(document, path, "required table is missing")
 
-	private fun optionalTable(document: ManifestDocument, parent: JsonNode, key: String, path: String): JsonNode? {
-		val value = parent.get(key) ?: return null
-		if (!value.isObject) throw ShuttleErrors.schema(document, path, "expected a table")
-		return value
+	private fun optionalTable(document: ManifestDocument, parent: ManifestTable, key: String, path: String): ManifestTable? {
+		val value = parent.entries[key] ?: return null
+		return value as? ManifestTable ?: throw ShuttleErrors.schema(document, path, "expected a table")
 	}
 
-	private fun string(document: ManifestDocument, parent: JsonNode, key: String, path: String): String = optionalString(document, parent, key, path)
+	private fun string(document: ManifestDocument, parent: ManifestTable, key: String, path: String): String = optionalString(document, parent, key, path)
 		?: throw ShuttleErrors.schema(document, path, "required string is missing")
 
-	private fun optionalString(document: ManifestDocument, parent: JsonNode, key: String, path: String): String? {
-		val value = parent.get(key) ?: return null
-		if (!value.isTextual || value.textValue().isBlank()) throw ShuttleErrors.schema(document, path, "expected a nonblank string")
-		return value.textValue()
+	private fun optionalString(document: ManifestDocument, parent: ManifestTable, key: String, path: String): String? {
+		val value = parent.entries[key] ?: return null
+		val text = (value as? ManifestText)?.text
+		if (text.isNullOrBlank()) throw ShuttleErrors.schema(document, path, "expected a nonblank string")
+		return text
 	}
 
-	private fun dependencies(document: ManifestDocument, root: JsonNode) {
+	private fun dependencies(document: ManifestDocument, root: ManifestTable) {
 		val dependencies = optionalTable(document, root, "dependencies", "dependencies") ?: return
-		if (!dependencies.isEmpty) throw ShuttleErrors.dependencies(document)
+		if (dependencies.entries.isNotEmpty()) throw ShuttleErrors.dependencies(document)
 	}
 
-	private fun unknown(document: ManifestDocument, table: JsonNode, prefix: String, allowed: Set<String>) {
+	private fun unknown(document: ManifestDocument, table: ManifestTable, prefix: String, allowed: Set<String>) {
 		val unknown = keys(table).firstOrNull { it !in allowed } ?: return
 		throw ShuttleErrors.schema(document, if (prefix.isEmpty()) unknown else "$prefix.$unknown", "unknown field")
 	}
 
-	private fun keys(table: JsonNode): List<String> = table.properties().map { it.key }.sorted()
+	private fun keys(table: ManifestTable): List<String> = table.entries.keys.sorted()
 
 	private fun identifier(value: String): Boolean = value.isNotEmpty() &&
 		(value.first().isLetter() || value.first() == Operators.UNDERSCORE.toChar()) &&

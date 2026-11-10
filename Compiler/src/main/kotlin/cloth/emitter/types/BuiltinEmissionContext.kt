@@ -8,6 +8,7 @@ import cloth.data.CFloat
 import cloth.data.CInteger
 import cloth.data.ValueType
 import cloth.emitter.NativeCABI
+import cloth.emitter.storage.EmitNullable
 import cloth.emitter.text.*
 import cloth.emitter.types.primitives.EmitCharCase
 import cloth.emitter.types.primitives.EmitCharMember
@@ -39,6 +40,17 @@ internal class BuiltinEmissionContext(
 
 	fun writeStdout(text: LLVMValueRef) = strings.write(module, text)
 	fun writeNewline() = strings.write(module, strings.literal("\n"))
+	fun readStdin(prompt: LLVMValueRef?): LLVMValueRef {
+		if (prompt != null) {
+			val nullable = EmitNullable(context, builder, abi.layout)
+			nullable.choose(nullable.present(prompt), null, {
+				writeStdout(nullable.payload(prompt))
+				null
+			}, { null })
+		}
+		return strings.readLine(module)
+	}
+
 	fun stringIsEmpty(value: LLVMValueRef) = strings.isEmpty(value)
 	fun stringPredicate(value: LLVMValueRef, needle: LLVMValueRef, operation: StringPredicate) = strings.predicate(value, needle, operation)
 	fun stringCharAt(value: LLVMValueRef, index: LLVMValueRef) = stringAccess.charAt(value, index)

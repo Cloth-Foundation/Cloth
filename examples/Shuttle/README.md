@@ -51,8 +51,8 @@ TokenType-to-TokenType equality still compares enum cases.
 After `:Shuttle:installDist`, use the packaged launcher directly:
 
 ```powershell
-.\Shuttle\build\install\shuttle\bin\shuttle.bat build --project examples/Shuttle
-.\Shuttle\build\install\shuttle\bin\shuttle.bat run --project examples/Shuttle -- nested
+.\Shuttle\build\install\shuttle\bin\shuttle.exe build --project examples/Shuttle
+.\Shuttle\build\install\shuttle\bin\shuttle.exe run --project examples/Shuttle -- nested
 ```
 
 The default artifact is examples/Shuttle/build/Imports.exe on Windows or

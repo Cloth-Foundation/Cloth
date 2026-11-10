@@ -76,7 +76,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			for (file in files.files) file.unit.declarations.forEach(::declaration)
 			// Leave the established non-generic checking order untouched.
 			val hasInterfaceHeaders = model.interfaceSpan != null || hasMultipleClassParents
-			if (!model.requiresGenericCompilation && !hasInterfaceHeaders) return model
+			if (!model.requiresGenericCompilation && !hasInterfaceHeaders && files.topLevelStates.isEmpty()) return model
 			for (use in uses) {
 				val identity = resolve(use.type, use.parameters)
 				use.receiver?.let { model.receivers[it] = identity }
@@ -153,6 +153,11 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					declaration.parents.forEach { use(it, parameters) }
 					declaration.methods.forEach { callable(it, parameters, emptySet()) }
 				}
+				is TopLevelStateDeclaration -> {
+					use(declaration.host, parameters)
+					val fields = (files.nominal(declaration.host.name) as? CClass)?.declaration?.let(::classFields).orEmpty()
+					stateBody(declaration, parameters, fields)
+				}
 				is ClassDeclaration -> {
 					if (declaration.parents.size > 1) hasMultipleClassParents = true
 					val fields = classFields(declaration)
@@ -167,6 +172,12 @@ class GenericAnalyzer(private val target: TargetLayout) {
 						parent.constructorArguments.orEmpty().forEach { expression(it.expression, parameters, header) }
 					}
 					for (member in declaration.members) when (member) {
+						is NestedStateDeclaration -> {
+							member.initial?.payload?.let { expression(it, parameters, fields) }
+							stateBody(member, parameters, fields)
+						}
+						is StateAttachmentDeclaration -> member.initial?.payload?.let { expression(it, parameters, fields) }
+						is StateMethodContractDeclaration -> callable(member, parameters, fields)
 						is ClassFieldDeclaration -> { use(member.type, parameters); expression(member.initializer, parameters, fields + header) }
 						is CallableDeclaration -> {
 							if (member is ConstructorDeclaration) member.delegation.arguments.forEach { expression(it, parameters, member.parameters.map { it.name.lexeme }.toSet()) }
@@ -180,6 +191,14 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					declaration.operators.forEach { callable(it, parameters, declaration.fields.map { it.name.lexeme }.toSet()) }
 				}
 				else -> Unit
+			}
+		}
+
+		private fun stateBody(declaration: StateBodyDeclaration, parameters: Map<String, TypeParameterSymbol>, fields: Set<String>) {
+			use(declaration.payloadType, parameters)
+			for (member in declaration.members) when (member) {
+				is MethodDeclaration -> callable(member, parameters, fields)
+				is StateInitializerDeclaration -> statements(member.body.statements, parameters, fields)
 			}
 		}
 
@@ -245,14 +264,21 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			else expression(expression, parameters, values)
 		}
 
+		// A bare name without a nominal binding may resolve in the receiver's state set.
+		private fun useTarget(type: TypeReference, parameters: Map<String, TypeParameterSymbol>) {
+			val name = type.bareIdentifier
+			if (files.firstStateSyntax != null && name != null && name.lexeme !in parameters && files.nominal(name) == null) return
+			use(type, parameters)
+		}
+
 		private fun expression(expression: Expression, parameters: Map<String, TypeParameterSymbol>, values: Set<String>) {
 			when (expression) {
 				is TypeReceiverExpression -> use(expression.annotation, parameters)
-				is CastExpression -> { expression(expression.operand, parameters, values); use(expression.target, parameters) }
+				is CastExpression -> { expression(expression.operand, parameters, values); useTarget(expression.target, parameters) }
 				is TypeCheckExpression -> {
 					expression(expression.operand, parameters, values)
 					val target = expression.target
-					if (target.application != null || target.hasNullability || target.width != null || target.name.lexeme in parameters || target.name.lexeme !in values || files.nominal(target.name) != null) use(target, parameters)
+					if (target.bareIdentifier == null || target.name.lexeme in parameters || target.name.lexeme !in values || files.nominal(target.name) != null) useTarget(target, parameters)
 				}
 				is FunctionBlockExpression -> callable(expression.declaration, parameters, values)
 				is IfExpression -> {
@@ -260,6 +286,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					expression.otherwise?.let { statements(it, parameters, values) }
 				}
 				is ElvisExpression -> { expression(expression.left, parameters, values); expression(expression.fallback, parameters, values) }
+				is GuardedAccessExpression -> { expression(expression.receiver, parameters, values); expression(expression.continuation, parameters, values) }
 				is ProviderAccessExpression -> receiver(expression.receiver, parameters, values)
 				is ClassCreationExpression -> { receiver(expression.receiver, parameters, values, alwaysType = true); expression.arguments.forEach { expression(it, parameters, values) } }
 				is StateCallExpression -> { receiver(expression.receiver, parameters, values); expression.arguments.forEach { expression(it, parameters, values) } }

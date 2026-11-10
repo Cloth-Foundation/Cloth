@@ -13,7 +13,15 @@ import kotlin.test.assertTrue
 internal data class ShuttleProcessResult(val status: Int, val output: String)
 
 /** Invoke the actual main in a child JVM, capturing inherited native output and exit status. */
-internal fun shuttleProcess(directory: Path, arguments: List<String>, input: String = "", mainClass: String = "shuttle.EntryKt"): ShuttleProcessResult {
+internal fun shuttleProcess(directory: Path, arguments: List<String>, input: String = "", mainClass: String? = null): ShuttleProcessResult {
+	if (mainClass == null) {
+		val executable = System.getProperty("cloth.shuttle.parser") ?: error("Missing native Shuttle executable")
+		val builder = ProcessBuilder(listOf(executable) + arguments.map(::quoteForJava))
+			.directory(directory.toFile()).redirectErrorStream(true)
+		builder.environment()["JAVA_HOME"] = System.getProperty("java.home")
+		builder.environment()["CLOTH_SHUTTLE_DEVELOPMENT_HOME"] = System.getProperty("cloth.toolchain.home")
+		return capture(builder, input)
+	}
 	val classpath = System.getProperty("shuttle.test.runtimeClasspath") ?: error("Missing test runtime classpath")
 	val java = Path.of(System.getProperty("java.home"), "bin", "java").toString()
 	val context = listOf("cloth.toolchain.home", "cloth.toolchain.layout").map { name ->
@@ -24,17 +32,27 @@ internal fun shuttleProcess(directory: Path, arguments: List<String>, input: Str
 	val argfile = Files.createTempFile(directory, "shuttle-test-", ".args")
 	Files.writeString(argfile, all.joinToString("\n") { "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" }, Charset.forName(System.getProperty("native.encoding")))
 	try {
-		val process = ProcessBuilder(listOf(java, "@$argfile", mainClass) + arguments.map(::quoteForJava))
-			.directory(directory.toFile()).redirectErrorStream(true).start()
-		try {
-			process.outputStream.use { it.write(input.toByteArray(Charsets.UTF_8)) }
-			assertTrue(process.waitFor(60, TimeUnit.SECONDS), "Shuttle process timed out")
-			return ShuttleProcessResult(process.exitValue(), process.inputStream.readBytes().toString(Charsets.UTF_8))
-		} finally { if (process.isAlive) process.destroyForcibly() }
+		return capture(ProcessBuilder(listOf(java, "@$argfile", mainClass) + arguments.map(::quoteForJava))
+			.directory(directory.toFile()).redirectErrorStream(true), input)
 	} finally { Files.deleteIfExists(argfile) }
 }
 
-private fun quoteForJava(argument: String): String {
+internal fun runNativeShuttle(args: Array<String>, reports: Appendable, directory: Path): Int {
+	val result = shuttleProcess(directory, args.toList())
+	reports.append(result.output)
+	return result.status
+}
+
+private fun capture(builder: ProcessBuilder, input: String): ShuttleProcessResult {
+	val process = builder.start()
+	try {
+		process.outputStream.use { it.write(input.toByteArray(Charsets.UTF_8)) }
+		assertTrue(process.waitFor(60, TimeUnit.SECONDS), "Shuttle process timed out")
+		return ShuttleProcessResult(process.exitValue(), process.inputStream.readBytes().toString(Charsets.UTF_8))
+	} finally { if (process.isAlive) process.destroyForcibly() }
+}
+
+internal fun quoteForJava(argument: String): String {
 	if (ExecutableFormat.current != ExecutableFormat.PE || '"' !in argument) return argument
 	val escaped = Regex("""(\\*)("|\z)""").replace(argument) { match ->
 		val (backslashes, quote) = match.destructured

@@ -9,8 +9,8 @@ suffixes, normal/raw strings, scalar character literals and recursive
 interpolation. Preserve empty segments, doubled braces, braces inside hole-owned
 strings/comments, original lexemes and EOF at the final cursor.
 
-[Main.co](../../../../Bootstrap/Frontend/Main.co) scans its sample or the first
-program argument as text. It does not read a file:
+The Bootstrap driver scans source text from the first program argument or
+standard input. [Main.co](../../../../Bootstrap/Frontend/Main.co)
 
 ~~~powershell
 .\gradlew.bat :Shuttle:run --args='run --project Bootstrap'
@@ -42,8 +42,9 @@ and uses the standard library's bounds check. Use `size()` as the exclusive
 upper bound when traversing the list. Deleting `TokenList` deletes its tokens
 and their spans. Spans borrow `SourceFile`, so delete the source last.
 
-lexTokens() prints complete token JSON or one code/span/message failure, cleans
-up the successful list and returns isize 0/1. Token JSON matches Kotlin's shape,
+`lexTokens()` prints complete token JSON followed by the count including EOF,
+then deletes the list. On failure it prints one code/span/message diagnostic.
+It returns isize 0/1. Token JSON matches Kotlin's shape,
 including operator nameOf and control escapes. Kotlin's diagnostic source
 excerpt, labels, help and renderer are not ported.
 
@@ -121,3 +122,8 @@ for sample text, interpolation, an invalid numeric first error and the long
 raw lexeme. That Linux execution predates the List migration.
 
 The user has asked that ongoing standard-library work remain untouched here.
+
+On 2026-11-09 Kotlin and Bootstrap matched on 124 inputs on Windows x64 and
+x86, including `?.` and adjacent nullable operators. The public request test
+verified the count with a program argument, and Shuttle verified the count
+with source text on standard input. [Guarded access verification](../../cloth-nullability/references/implementation.md#verification-2026-11-09)

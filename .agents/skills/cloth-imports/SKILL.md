@@ -18,6 +18,10 @@ distinct nominal identities for same-spelled interface applications.
 [Interface Stage 6](../cloth-interfaces/references/stage-6.md#closed-metadata-and-imports) ·
 [Interface release matrix](../cloth-interfaces/references/stage-7.md#native-execution-and-cross-target-emission)
 
+Selected and wildcard imports bind public top-level states in the attachment
+namespace. Each attachment retains the original state and its defining file.
+[State attachments](../cloth-language/references/state-attachments.md)
+
 [Generic Stage 0](../cloth-generics/references/semantics.md#visibility-and-imports)
 requires future template application to retain defining-file private names and
 original closed identities across graph routes. Public generic signatures cannot
@@ -126,9 +130,9 @@ The driver now discovers the graph and checks loaded-source output aliases.
 Missing context/files and ambiguous paths have their own located diagnostics.
 [FileBindings](../../../Compiler/src/main/kotlin/cloth/semantic/declarations/FileBindings.kt)
 registers original identities and export views for every file before binding
-imports. Type/function namespaces stay separate, private overloads stay local,
-and received imports are never reexported. Bindings/types resolve through original
-source context; global catalogs use declaration/nominal identity. The primary
+imports. Types, function groups and state attachments use separate namespaces.
+Private overloads stay local and exports come from declarations in the file.
+Bindings and types resolve through the original source context. The primary
 name views on DeclarationModel exist for single-file compatibility.
 
 The driver binds imports before ABI selection, then checks all declarations,

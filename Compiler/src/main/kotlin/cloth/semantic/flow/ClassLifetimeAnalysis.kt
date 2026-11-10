@@ -2,16 +2,19 @@ package cloth.semantic.flow
 
 import cloth.data.*
 import cloth.diagnostics.SemanticErrors
+import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.PrimaryConstructorDeclaration
+import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.ReceptionPlan
+import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.ResolvedCall
@@ -25,13 +28,22 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
 	private class Identity
 	private data class Handle(val identity: Identity, val present: Boolean)
-	private class State(val bindings: MutableMap<BindingSymbol, Handle> = mutableMapOf(), val dead: MutableSet<Identity> = mutableSetOf()) {
+	private data class Activation(val state: StateDefinition?, val ordinaryAccess: Boolean)
+	private data class Branches(val yes: State? = null, val no: State? = null)
+	private class State(
+		val bindings: MutableMap<BindingSymbol, Handle> = mutableMapOf(),
+		val dead: MutableSet<Identity> = mutableSetOf(),
+		val active: MutableMap<Identity, Activation> = mutableMapOf(),
+		var reachable: Boolean = true,
+	) {
 
-		fun fork() = State(bindings.toMutableMap(), dead.toMutableSet())
+		fun fork() = State(bindings.toMutableMap(), dead.toMutableSet(), active.toMutableMap(), reachable)
 	}
 
 	private val declarations = model.declarations
 	private val flow = model.controlFlow
+	private val checksStates = model.stateCalls.isNotEmpty()
+	private val effects = StateEffects(model)
 	private val jumpStates = IdentityHashMap<LoopJumpStatement, State>()
 	private val observed = IdentityHashMap<Expression, Handle?>()
 	private var destroying: Identity? = null
@@ -42,7 +54,8 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			for (parameter in callable.parameters) track(state, parameter, null)
 			val self = callable.receiver?.takeIf { it.owner.classBackedType() != null }
 			self?.let { track(state, it, null) }
-			destroying = if (callable is DestructorSymbol) state.bindings.getValue(callable.receiver).identity else null
+			val identity = self?.let { state.bindings.getValue(it).identity }
+			destroying = identity.takeIf { callable is DestructorSymbol }
 			for (parameter in callable.parameters) parameter.declaration.defaultValue?.let { expression(it, state.fork()) }
 			when (val declaration = callable.declaration) {
 				is PrimaryConstructorDeclaration -> {
@@ -52,7 +65,18 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				}
 
 				is ConstructorDeclaration        -> arguments(declaration.delegation.arguments, state)
+				is StateInitialPayloadDeclaration -> {
+					if (checksStates && identity != null) state.active[identity] = Activation(null, ordinaryAccess = true)
+					expression(declaration.expression, state)
+				}
 				else                             -> Unit
+			}
+			if (checksStates && identity != null) {
+				val entered = declarations.states.stateOf(callable)
+				when {
+					callable is ConstructorSymbol -> state.active[identity] = Activation(null, ordinaryAccess = true)
+					entered != null && callable !is StateInitialPayloadSymbol -> state.active[identity] = Activation(entered, ordinaryAccess = callable is StateActivationSymbol)
+				}
 			}
 			when (val body = callable.declaration.executableBody) {
 				is BlockBody      -> statements(body.statements, state)
@@ -73,7 +97,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun check(handle: Handle?, state: State, span: TokenSpan, permitDestruction: Boolean = false) {
-		if (handle != null && (handle.identity in state.dead || handle.identity == destroying && !permitDestruction)) {
+		if (state.reachable && handle != null && (handle.identity in state.dead || handle.identity == destroying && !permitDestruction)) {
 			throw SemanticErrors.deletedClassAccess(span)
 		}
 	}
@@ -83,10 +107,24 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		if (handle?.present == true) check(handle, state, value.span, directSelf(value))
 	}
 
-	private fun merge(state: State, paths: List<State>) {
-		if (paths.isEmpty()) return
+	private fun commonActivation(facts: List<Activation?>): Activation? {
+		val first = facts.firstOrNull() ?: return null
+		if (facts.any { it == null || it.state !== first.state }) return null
+		return Activation(first.state, ordinaryAccess = facts.all { it?.ordinaryAccess == true })
+	}
+
+	private fun merge(state: State, inputs: List<State>) {
+		val paths = inputs.filter { it.reachable }
+		if (paths.isEmpty()) {
+			state.reachable = false
+			return
+		}
 		val joined = paths.first().fork()
 		for (path in paths.drop(1)) joined.dead.retainAll(path.dead)
+		for (identity in joined.active.keys.toList()) {
+			val fact = commonActivation(paths.map { it.active[identity] })
+			if (fact != null) joined.active[identity] = fact else joined.active.remove(identity)
+		}
 		val merged = mutableMapOf<List<Identity>, Identity>()
 		for (binding in paths.first().bindings.keys) {
 			val handles = paths.mapNotNull { it.bindings[binding] }
@@ -98,21 +136,30 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			val identity = if (identities.all { it == identities.first() }) identities.first() else merged.getOrPut(identities, ::Identity)
 			joined.bindings[binding] = Handle(identity, handles.all { it.present })
 			if (paths.zip(handles).all { (path, handle) -> handle.identity in path.dead }) joined.dead.add(identity)
+			if (checksStates) commonActivation(paths.zip(handles) { path, handle -> path.active[handle.identity] })?.let {
+				joined.active[identity] = it
+			}
 		}
 		state.bindings.clear(); state.bindings.putAll(joined.bindings)
 		state.dead.clear(); state.dead.addAll(joined.dead)
+		state.active.clear(); state.active.putAll(joined.active)
+		state.reachable = true
 	}
+
+	private fun continues(value: Expression, state: State) = state.reachable && flow.of(value).canFallThrough
 
 	private fun arguments(values: List<Expression>, state: State) {
 		for (value in values) {
+			if (!state.reachable) break
 			expression(value, state)
-			if (!flow.of(value).canFallThrough) break
+			if (!continues(value, state)) break
 		}
 	}
 
 	private fun statements(items: List<Statement>, state: State): Handle? {
 		var last: Handle? = null
 		for (item in items) {
+			if (!state.reachable) break
 			last = statement(item, state)
 			if (!flow.of(item).canFallThrough) break
 		}
@@ -161,13 +208,14 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is LoopJumpStatement          -> jumpStates[item] = state.fork()
 			is WhileStatement             -> {
 				if (flow.booleanValue(item.condition) == false) expression(item.condition, state)
-				else loop(state) { loop ->
-					expression(item.condition, loop)
-					if (flow.of(item.condition).canFallThrough) statements(item.body.statements, loop)
+				else loop(state, state.active.isNotEmpty() && (effects.mayChange(item.condition) || effects.mayChange(item.body.statements))) { loop ->
+					condition(item.condition, loop).yes?.let { statements(item.body.statements, it) }
 				}
 			}
 
-			is DoWhileStatement           -> if (flow.canRepeat(item)) loop(state) { doWhile(item, it) } else doWhile(item, state)
+			is DoWhileStatement           -> if (flow.canRepeat(item)) {
+				loop(state, state.active.isNotEmpty() && (effects.mayChange(item.condition) || effects.mayChange(item.body.statements))) { doWhile(item, it) }
+			} else doWhile(item, state)
 
 			is ForStatement               -> {
 				val inputs = when (val source = item.source) {
@@ -175,7 +223,9 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 					is ForSource.Elements -> listOf(source.expression)
 				}
 				arguments(inputs, state)
-				if (inputs.all { flow.of(it).canFallThrough }) loop(state) { loop ->
+				val changes = state.active.isNotEmpty() &&
+					(effects.mayChange(item.body.statements) || item.stepper?.value?.let(effects::mayChange) == true)
+				if (state.reachable && inputs.all { flow.of(it).canFallThrough }) loop(state, changes) { loop ->
 					statements(item.body.statements, loop)
 					if (flow.of(item.body.statements).canFallThrough) item.stepper?.value?.let { expression(it, loop) }
 				}
@@ -206,23 +256,76 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		// Syntax-based flow may include an edge for which this pass has no facts.
 		val exits = body.breaks.map { jumpStates[it] ?: State() }.toMutableList()
 		val testInputs = body.continues.map { jumpStates[it] ?: State() }.toMutableList()
-		if (body.canFallThrough) testInputs.add(afterBody)
+		if (body.canFallThrough && afterBody.reachable) testInputs.add(afterBody)
 		if (testInputs.isNotEmpty()) {
 			val afterTest = state.fork()
 			merge(afterTest, testInputs)
-			expression(item.condition, afterTest)
-			if (flow.of(item.condition).canFallThrough && flow.booleanValue(item.condition) != true) exits.add(afterTest)
+			condition(item.condition, afterTest).no?.let(exits::add)
 		}
 		merge(state, exits)
 	}
 
-	private fun loop(state: State, analyze: (State) -> Unit) {
+	private fun loop(state: State, changesState: Boolean = false, analyze: (State) -> Unit) {
 		// A mutable binding may point to a different allocation on a back edge.
 		state.bindings.keys.removeIf { it.mutable }
+		if (changesState) state.active.clear()
 		analyze(state.fork())
 	}
 
 	private fun directSelf(value: Expression): Boolean = declarations.directReceiverOf(value) != null
+
+	private fun enterState(handle: Handle?, target: StateDefinition, state: State) {
+		// A different binding may still name this object. An entry hook may make further changes.
+		state.active.clear()
+		if (checksStates && handle != null && target.activation == null) {
+			state.active[handle.identity] = Activation(target, ordinaryAccess = true)
+		}
+	}
+
+	private fun join(left: State?, right: State?): State? {
+		if (left == null || right == null) return left ?: right
+		return left.fork().also { merge(it, listOf(left, right)) }
+	}
+
+	private fun condition(value: Expression, state: State): Branches {
+		if (!state.reachable) return Branches()
+		if (checksStates && model.types.operatorOf(value) == null && model.types.operatorContextOf(value) == null) {
+			if (value is UnaryExpression && value.operator.lexeme == Operators.NOT.toString()) {
+				val inner = condition(value.operand, state)
+				return Branches(inner.no, inner.yes)
+			}
+			if (value is BinaryExpression) {
+				when (value.operator.lexeme) {
+					Operators.AND.toString() -> {
+						val left = condition(value.left, state)
+						val right = left.yes?.let { condition(value.right, it) } ?: Branches()
+						return Branches(right.yes, join(left.no, right.no))
+					}
+					Operators.OR.toString() -> {
+						val left = condition(value.left, state)
+						val right = left.no?.let { condition(value.right, it) } ?: Branches()
+						return Branches(join(left.yes, right.yes), right.no)
+					}
+				}
+			}
+		}
+		expression(value, state)
+		if (!continues(value, state)) return Branches()
+		if (checksStates && value is TypeCheckExpression) {
+			val target = model.stateTests[value]
+			val identity = observed[value.operand]?.identity
+			if (target != null && identity != null) {
+				val current = state.active[identity]
+				val yes = if (current == null || current.state === target) state.fork().also {
+					it.active[identity] = Activation(target, ordinaryAccess = !directSelf(value.operand) || current?.ordinaryAccess == true)
+				} else null
+				val no = state.fork().takeUnless { current?.state === target }
+				return Branches(yes, no)
+			}
+		}
+		val truth = flow.booleanValue(value)
+		return Branches(state.fork().takeUnless { truth == false }, state.fork().takeUnless { truth == true })
+	}
 
 	private fun operatorCall(value: Expression, operator: ResolvedOperator, operands: List<Expression>, state: State): Handle? {
 		val instance = (operator.call.callable as MethodSymbol).owner is CClass
@@ -240,7 +343,15 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		return newHandle(model.types.scalarTypeOrNull(value))
 	}
 
-	private fun expression(value: Expression, state: State): Handle? = expressionValue(value, state).also { observed[value] = it }
+	private fun expression(value: Expression, state: State): Handle? {
+		if (!state.reachable) return null
+		val result = expressionValue(value, state)
+		if (state.active.isNotEmpty() && value !is ClassCreationExpression && value !in model.stateTransitions && effects.changesAt(value)) {
+			state.active.clear()
+		}
+		observed[value] = result
+		return result
+	}
 
 	private fun expressionValue(value: Expression, state: State): Handle? {
 		if (value is BinaryExpression) model.types.classComparisons[value]?.let { comparison ->
@@ -259,6 +370,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				val handle = expression(operand, state)
 				if (!flow.of(operand).canFallThrough) return null
 				if ((plan.projections[index]?.call?.callable as? MethodSymbol)?.owner is CClass) check(handle, state, operand.span, directSelf(operand))
+				if (plan.projections[index] != null) state.active.clear()
 				handle
 			}
 			model.types.operatorOf(plan.application)?.let { operator ->
@@ -326,6 +438,53 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.name.span, permitDestruction = true)
 			}
 
+			is StateCallExpression                                                                             -> {
+				val handle = expression(value.receiver, state)
+				if (!continues(value.receiver, state)) return null
+				arguments(value.arguments, state)
+				if (!state.reachable || value.arguments.any { !flow.of(it).canFallThrough }) return null
+				val plan = model.stateCalls[value] ?: return null
+				for (parameter in plan.binding.omittedParameters) {
+					val fallback = checkNotNull(plan.contract.parameters[parameter].declaration.defaultValue)
+					if (!flow.of(fallback).canFallThrough) {
+						state.reachable = false
+						return null
+					}
+					// A specialized body can refer to a default checked in the enclosing model.
+					if (state.active.isNotEmpty() && (model.types.scalarTypeOrNull(fallback) == null || effects.mayChange(fallback))) {
+						state.active.clear()
+					}
+				}
+				val permitted = directSelf(value.receiver)
+				check(handle, state, value.receiver.span, permitted)
+				val active = handle?.let { state.active[it.identity] }
+				val target = active?.state
+				if (target != null && (active.ordinaryAccess || permitted) && plan.contract.signature !in target.methods) {
+					throw StateErrors.dispatch(value.name, plan.contract.signature.spelling, target.name)
+				}
+			}
+
+			is StateTransitionExpression                                                                       -> {
+				val handle = expression(value.receiver, state)
+				if (!continues(value.receiver, state)) return null
+				value.payload?.let { expression(it, state) }
+				if (state.reachable && value.payload?.let { flow.of(it).canFallThrough } != false) {
+					check(handle, state, value.receiver.span)
+					model.stateTransitions[value]?.let { enterState(handle, it, state) }
+				}
+			}
+
+			is ClassCreationExpression                                                                        -> {
+				arguments(value.arguments, state)
+				if (!continues(value, state)) return null
+				val handle = newHandle(model.types.scalarTypeOrNull(value))
+				val owner = declarations.classCreations[value]?.owner
+				val initial = owner?.let { declarations.states[it]?.initial }
+				state.active.clear()
+				if (initial != null) enterState(handle, initial, state)
+				return handle
+			}
+
 			is CallSite                                                                                        -> arguments(value.eagerOperands(), state)
 			is ProviderAccessExpression                                                                        -> {
 				val provider = model.types.providers[value]
@@ -333,12 +492,16 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				else if (provider?.receiverForm != cloth.data.ProviderReceiverForm.TYPE) expression(value.receiver, state)
 			}
 
-			is StateCallExpression                                                                             -> arguments(value.eagerOperands(), state)
 			is IfExpression                                                                                    -> return conditional(value, state)
 			is BinaryExpression                                                                                -> {
+				val operator = Operators.fromCharacterRequired(value.operator.lexeme)
+				if (checksStates && (operator == Operators.AND || operator == Operators.OR)) {
+					val branches = condition(value, state)
+					merge(state, listOfNotNull(branches.yes, branches.no))
+					return null
+				}
 				expression(value.left, state)
 				if (!flow.of(value.left).canFallThrough) return null
-				val operator = Operators.fromCharacterRequired(value.operator.lexeme)
 				val runsWhen = when (operator) {
 					Operators.AND -> true; Operators.OR -> false; else -> null
 				}
@@ -354,11 +517,29 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				optional(value.fallback, state)
 			}
 
-			is CastExpression                                                                                  -> return expression(value.operand, state).takeIf { newHandle(model.types.scalarTypeOrNull(value)) != null }
+			is GuardedReceiver -> return observed[value]
+			is GuardedAccessExpression -> {
+				val receiver = expression(value.receiver, state)
+				if (!flow.of(value.receiver).canFallThrough) return null
+				observed[value.payload] = receiver?.copy(present = true)
+				if (receiver?.present == true) return expression(value.continuation, state)
+				optional(value.continuation, state)
+			}
+
+			is CastExpression                                                                                  -> {
+				val handle = expression(value.operand, state)
+				model.stateTransitions[value]?.let {
+					if (continues(value.operand, state)) {
+						check(handle, state, value.operand.span)
+						enterState(handle, it, state)
+					}
+				}
+				return handle.takeIf { newHandle(model.types.scalarTypeOrNull(value)) != null }
+			}
 			is TypeCheckExpression                                                                             -> {
 				model.types.valueCheckOf(value)?.let { return operatorCall(value, it.operator, it.application.eagerOperands(), state) }
 				val handle = expression(value.operand, state)
-				if (model.types.typeChecks[value] is CClass || value in model.types.interfaceTypeTests) {
+				if (model.types.typeChecks[value] is CClass || value in model.types.interfaceTypeTests || value in model.stateTests) {
 					check(handle, state, value.operand.span, permitDestruction = directSelf(value.operand))
 				}
 			}
@@ -366,6 +547,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is UnaryExpression, is IndexExpression, is ArrayLiteral, is StructLiteral, is ResultListExpression -> arguments(value.eagerOperands(), state)
 			is InterpolatedString                                                                              -> for (part in value.parts) {
 				format(part, state)
+				if (state.active.isNotEmpty() && effects.mayFormat(model.types.interpolationTextOf(part))) state.active.clear()
 				if (!flow.of(part).canFallThrough) break
 			}
 		}
@@ -381,26 +563,22 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	private fun conditional(value: IfExpression, state: State): Handle? {
 		val paths = mutableListOf<State>()
 		val results = mutableListOf<Handle?>()
-		val remaining = state.fork()
-		var canSkip = true
+		var remaining: State? = state.fork()
 		for (branch in value.branches) {
-			expression(branch.condition, remaining)
-			val truth = flow.booleanValue(branch.condition)
-			canSkip = flow.of(branch.condition).canFallThrough && truth != true
-			if (truth != false && flow.of(branch.condition).canFallThrough) {
-				val taken = remaining.fork()
+			val tested = condition(branch.condition, remaining ?: break)
+			tested.yes?.let { taken ->
 				val result = statements(branch.statements, taken)
-				if (flow.of(branch.statements).canFallThrough) {
+				if (taken.reachable && flow.of(branch.statements).canFallThrough) {
 					paths.add(taken); results.add(result)
 				}
 			}
-			if (!canSkip) break
+			remaining = tested.no
 		}
-		if (canSkip) {
+		remaining?.let { skipped ->
 			val body = value.otherwise.orEmpty()
-			val result = statements(body, remaining)
-			if (flow.of(body).canFallThrough) {
-				paths.add(remaining); results.add(result)
+			val result = statements(body, skipped)
+			if (skipped.reachable && flow.of(body).canFallThrough) {
+				paths.add(skipped); results.add(result)
 			}
 		}
 		merge(state, paths)

@@ -12,6 +12,7 @@ import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.symbols.ReceiverSymbol
+import cloth.semantic.symbols.StatePayloadSymbol
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.ResolvedCall
 import java.util.*
@@ -101,6 +102,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	}
 
 	private fun effects(expression: Expression): Effects {
+		if (expression in functions.stateTransitions) return unknown
 		if (types.operatorContextOf(expression) != null) return unknown
 		if (expression is TypeCheckExpression && types.valueCheckOf(expression) != null) return unknown
 		if (expression is NameExpression && types.projectedOperandOf(expression) != null) return Effects()
@@ -116,7 +118,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 			is NameExpression                                                                                      -> {
 				val symbol = functions.declarations.symbolOf(expression)
 				val block = (symbol as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				val backed = hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol) || (symbol as? ReceiverFieldSymbol)?.field is EnumField
+				val backed = symbol is StatePayloadSymbol || hasClasses && (symbol is ReceiverFieldSymbol || symbol is ReceiverSymbol) || (symbol as? ReceiverFieldSymbol)?.field is EnumField
 				if (block == null) Effects(buffers = (backed || symbol in managedStrings) && types.resultOf(expression).values.any { it.indirect }) else effects(block)
 			}
 
@@ -149,6 +151,8 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 				}
 			}
 			is ElvisExpression                                                                                     -> effects(expression.left) + effects(expression.fallback)
+			is GuardedAccessExpression -> effects(expression.receiver) + effects(expression.continuation)
+			is GuardedReceiver -> Effects()
 			is FieldAccessExpression                                                                               -> {
 				val field = types.fields[expression]
 				effects(expression.receiver) + Effects(buffers = (field is ClassField || field is EnumField) && types.resultOf(expression).values.any { it.indirect })

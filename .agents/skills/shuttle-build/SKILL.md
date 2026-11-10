@@ -22,15 +22,26 @@ Stage 6 adds the application entry point, shared build options, real compilation
 build-before-run launch and process statuses. Read [Stage 6](references/stage-6.md)
 for commands, diagnostics, source ownership and verification.
 
+The [native Shuttle command](references/native.md) is the installed and
+development frontend. It parses TOML in Kotlin/Native and calls a private JVM
+worker for the existing compiler. The record owns the build command, parser
+patches, host boundaries and verification.
+
 The interface release exercises the installed `shuttle run` command with a
 multi-module generic interface fixture on Windows x64 and x86. The fixture
 uses defining-file defaults and exact metadata for same-spelled contracts.
 [Imported interface project](../../../examples/Interfaces/build.toml) ·
 [Release verification](../cloth-interfaces/references/stage-7.md)
 
-[Shuttle](../../../Shuttle/build.gradle.kts) has production Compiler and Jackson
-TOML 2.21.1 dependencies. Bootstrap's module tables use the canonical lowercase
-schema. The [compiler facade](../cloth-imports/references/compiler-api.md)
+The state release exercises the installed `shuttle run` command with an
+imported state attached to two classes. The Compiler checks the host contracts
+and transitions through the ordinary graph request.
+[Imported state project](../../../examples/States/build.toml) ·
+[State release verification](../cloth-language/references/state-publication.md)
+
+[Shuttle](../../../Shuttle/build.gradle.kts) stages the native command and
+compiler worker from the same checkout. Bootstrap's module tables use the
+canonical lowercase schema. The [compiler facade](../cloth-imports/references/compiler-api.md)
 compiles the reachable source graph as one program or object. [Stage 3](../cloth-imports/references/stage-3.md) adds located
 compiler import syntax; [Stage 4](../cloth-imports/references/stage-4.md) discovers
 source graphs using only supplied roots. [Stage 5](../cloth-imports/references/stage-5.md)
@@ -84,10 +95,10 @@ weakens release cleanliness checks. Portable List logic stays in library source.
   updated submodule commit in Cloth. The gitlink does not include uncommitted
   source or test files. Shuttle's own ignore rules must allow `src/test/`.
 
-- Keep TOML dependencies and schema/project logic inside Shuttle. Use the existing
-  JVM parser with strict duplicate detection and typed Java time values; never
-  create a custom TOML-like grammar. Dates must not be coerced into strings.
-  Abort immediately on its first syntax failure.
+- Keep TOML dependencies and schema/project logic inside Shuttle. Compile the
+  pinned tomlkt sources into the native executable and preserve the distinction
+  between dates and strings. Abort on the first detected syntax failure. Apply
+  grammar fixes in the parser dependency and keep one parser entry point.
 - Anchor configured module/output paths to the selected build.toml's parent.
   Preserve invocation cwd for program launch; do not depend on it for imports.
 - Convert the validated project to immutable plain compiler inputs. Use the

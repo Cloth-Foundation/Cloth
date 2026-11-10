@@ -17,7 +17,8 @@ object ToolchainBundle {
 	@JvmStatic fun main(received: Array<String>) {
 		try {
 			val args = JavaCommandLine.arguments(received, ToolchainBundle::class.java.name)
-			require(args.size == 3) { "Expected repository root, output directory and compiler version" }
+			require(args.size == 4) { "Expected repository root, output directory, compiler version and native Shuttle path" }
+			System.setProperty("cloth.shuttle.parser", args[3])
 			prepareToolchainBundle(Path.of(args[0]), Path.of(args[1]), args[2])
 		} catch (failure: Diagnostic) {
 			DiagnosticReporter().report(failure)

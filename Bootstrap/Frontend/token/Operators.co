@@ -8,7 +8,7 @@ pub typedef<enum> Operators (pub def<string> spelling) {
     AND("&&"), OR("||"),
     GREATER(">"), LESS("<"), GREATER_EQUAL(">="), LESS_EQUAL("<="),
     POINTER_RIGHT("->"), POINTER_LEFT("<-"),
-    QUESTION("?"), ELVIS("?:"), RANGE(".."), RANGE_INCLUSIVE("..="),
+    QUESTION("?"), SAFE_DOT("?."), ELVIS("?:"), RANGE(".."), RANGE_INCLUSIVE("..="),
     PAREN_OPEN("("), PAREN_CLOSE(")"), BRACE_OPEN("{"), BRACE_CLOSE("}"),
     BRACKET_OPEN("["), BRACKET_CLOSE("]"),
     COMMA(","), DOT("."), COLON(":"), BACKTICK("`"),

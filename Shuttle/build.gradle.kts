@@ -1,6 +1,10 @@
+import org.gradle.api.tasks.options.Option
+import org.gradle.util.internal.ArgumentsSplitter
+
 plugins {
-	application
+	distribution
 	kotlin("jvm") version "2.4.20"
+	kotlin("plugin.serialization") version "2.4.20"
 }
 
 group = "cloth"
@@ -12,8 +16,7 @@ repositories {
 
 dependencies {
 	implementation(project(":Compiler"))
-	implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.1"))
-	implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-toml")
+	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 	testImplementation(platform("org.junit:junit-bom:5.10.0"))
 	testImplementation(kotlin("test-junit5"))
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -39,17 +42,69 @@ tasks.check {
 
 kotlin {
 	jvmToolchain(25)
+	sourceSets.main { kotlin.srcDir("src/shared/kotlin") }
 }
 
-application {
-	mainClass.set("shuttle.EntryKt")
-	applicationName = "shuttle"
-	applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+tasks.jar {
+	archiveBaseName.set("cloth-compiler-worker")
 }
 
-tasks.named<JavaExec>("run") {
+val os = System.getProperty("os.name").lowercase()
+val windows = os.startsWith("windows")
+val arm64 = System.getProperty("os.arch") in setOf("aarch64", "arm64")
+val nativeTarget = when {
+	windows -> "mingwX64"
+	os.startsWith("linux") -> if (arm64) "linuxArm64" else "linuxX64"
+	os.startsWith("mac") -> if (arm64) "macosArm64" else "macosX64"
+	else -> error("Unsupported Shuttle host: $os")
+}
+val commandName = if (windows) "shuttle.exe" else "shuttle"
+val nativeFile = project(":Shuttle:native").layout.buildDirectory.file(
+	"bin/$nativeTarget/releaseExecutable/" + if (windows) commandName else "shuttle.kexe"
+)
+val stageNativeShuttle = tasks.register<Sync>("stageNativeShuttle") {
+	dependsOn(":Shuttle:native:linkReleaseExecutable" + nativeTarget.replaceFirstChar(Char::uppercase))
+	from(nativeFile) {
+		into("bin")
+		rename { commandName }
+		filePermissions { unix("rwxr-xr-x") }
+	}
+	into("lib") {
+		from(tasks.jar, configurations.runtimeClasspath)
+		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	}
+	from("native/licenses") { into("licenses") }
+	into(layout.buildDirectory.dir("native-stage"))
+}
+val stageHome = layout.buildDirectory.dir("native-stage")
+val stageExecutable = stageHome.map { it.file("bin/$commandName").asFile.absolutePath }
+
+distributions.main {
+	distributionBaseName.set("shuttle")
+	contents.from(stageNativeShuttle)
+}
+
+abstract class RunNativeShuttle : Exec() {
+	@Option(option = "args", description = "Arguments for native Shuttle.")
+	fun commandArguments(value: String) { setArgs(ArgumentsSplitter.split(value)) }
+}
+
+tasks.register<RunNativeShuttle>("run") {
+	dependsOn(stageNativeShuttle)
 	workingDir(rootProject.projectDir)
 	standardInput = System.`in`
+	environment("CLOTH_SHUTTLE_DEVELOPMENT_HOME", rootProject.projectDir.absolutePath)
+	val jdk = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) }
+	doFirst {
+		executable = stageExecutable.get()
+		environment("JAVA_HOME", jdk.get().metadata.installationPath.asFile.absolutePath)
+	}
+}
+
+tasks.withType<Test>().configureEach {
+	dependsOn(stageNativeShuttle)
+	systemProperty("cloth.shuttle.parser", stageExecutable.get())
+	systemProperty("shuttle.test.nativeHome", stageHome.get().asFile.absolutePath)
 }
 
 tasks.test {

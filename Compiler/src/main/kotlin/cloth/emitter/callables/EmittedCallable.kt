@@ -1,8 +1,8 @@
 package cloth.emitter.callables
 
-import cloth.data.CClass
 import cloth.data.CEnum
 import cloth.data.CStruct
+import cloth.data.classBackedType
 import cloth.emitter.storage.EmitClassRuntime
 import cloth.emitter.storage.ObjectAccess
 import cloth.emitter.storage.ReceiverAccess
@@ -12,6 +12,8 @@ import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.DestructorSymbol
 import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.symbols.StateActivationSymbol
+import cloth.semantic.symbols.StateMethodContractSymbol
 import cloth.semantic.typing.FunctionType
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -29,17 +31,18 @@ internal class EmittedCallable(
 	hasClasses: Boolean,
 	private val results: EmitResults,
 	acceptsOmissions: Boolean = true,
+	private val usesActivation: Boolean = callable is StateActivationSymbol,
 	classes: () -> EmitClassRuntime,
 ) {
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
-	private val objectReceiver = callable is InterfaceMethodSymbol ||
-		(callable is MethodSymbol || callable is DestructorSymbol) && callable.receiver?.owner is CClass
+	private val objectReceiver = callable is InterfaceMethodSymbol || callable is StateMethodContractSymbol || usesActivation ||
+		(callable is MethodSymbol || callable is DestructorSymbol) && callable.receiver?.owner?.classBackedType() != null
 	val enumReceiver = callable is MethodSymbol && callable.owner is CEnum
 	val replayableStruct = hasClasses && callable is MethodSymbol && callable.owner is CStruct
 	private val prefix = when {
-		objectReceiver                -> listOf(LLVMInt64TypeInContext(context), flag)
+		objectReceiver                -> listOf(LLVMInt64TypeInContext(context), flag) + listOfNotNull(pointer.takeIf { usesActivation })
 		enumReceiver                  -> listOf(results.abiType(checkNotNull(callable.receiver).owner))
 		callable is ConstructorSymbol -> classes().let { listOf(it.size, it.indexType) }
 		callable is MethodSymbol      -> List(if (replayableStruct) 4 else 2) { pointer }
@@ -66,6 +69,10 @@ internal class EmittedCallable(
 	val callerArena: LLVMValueRef? get() = arenaSlot?.let { LLVMGetParam(reference, it) }
 
 	fun objectAccess(): ObjectAccess? = if (objectReceiver) ObjectAccess(LLVMGetParam(reference, 0), LLVMGetParam(reference, 1)) else null
+	fun activation(): LLVMValueRef {
+		check(usesActivation)
+		return LLVMGetParam(reference, 2)
+	}
 	fun enumValue(): LLVMValueRef = LLVMGetParam(reference, 0)
 	fun structAccess(): ReceiverAccess = ReceiverAccess(
 		LLVMGetParam(reference, 0), LLVMGetParam(reference, 1),
@@ -113,6 +120,11 @@ internal class EmittedCallable(
 		fun setReceiver(access: ObjectAccess) {
 			values[0] = access.identity
 			values[1] = access.duringDestruction
+		}
+
+		fun setActivation(activation: LLVMValueRef) {
+			check(usesActivation)
+			values[2] = activation
 		}
 
 		fun setReceiver(access: ReceiverAccess) {

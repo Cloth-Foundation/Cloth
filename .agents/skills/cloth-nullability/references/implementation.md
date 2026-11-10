@@ -116,3 +116,53 @@ Commands used from the repository root:
 
 See [development history](../../cloth-language/references/development.md#nullable-scalar-rule-completion-2026-11-01)
 for the integration milestone. Run fresh checks after subsequent changes.
+
+## Guarded member access
+
+The lexer recognizes `?.`, `?:` and nullable `?::` independently. Bootstrap uses
+the same operator name and spelling. [Guarded access contract](semantics.md#guarded-member-access)
+
+- The parser puts the remaining postfix chain under the guard. A guard introduces one
+  payload reference for its continuation. The reference never repeats the
+  receiver expression. Grouped chains are separate expressions.
+  [ExpressionParser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/ExpressionParser.kt)
+- Expression typing checks the receiver's nullable source type, even with a prior presence proof,
+  and checks the continuation using ordinary member typing. C3125 rejects a
+  non-nullable or untyped receiver. A void call can be used for its side effects.
+  Multiple results require an ordinary call and a presence proof, and are
+  rejected with C3055 inside a guarded chain. The guard itself is a value
+  expression. A guarded struct or array payload uses temporary receiver
+  semantics. A guarded class payload keeps its identity, so subsequent class
+  field selections and calls use ordinary instance storage and lifetime checks.
+  [ExpressionTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/ExpressionTyping.kt)
+- Completion and presence analysis account for both the present continuation and
+  the absent path. Stable receiver proofs apply on the present path while valid.
+  Metadata, array shape and class lifetime analyses merge the continuing paths.
+  Generic body views keep the guard and its payload reference linked within each
+  specialization.
+- The emitter evaluates the receiver once, then uses the existing nullable branch helper.
+  The present branch alone evaluates and wraps the continuation. Existing
+  nullable results pass through directly. A return or loop jump in an argument
+  ends that branch without supplying a value to the join. Ordinary snapshots
+  and storage ownership rules apply inside each reached expression.
+  [EmitExpression](../../../../Compiler/src/main/kotlin/cloth/emitter/types/EmitExpression.kt)
+
+### Verification (2026-11-09)
+
+The guarded access tests check skipped receivers, arguments and defaults,
+nullable result flattening, generic bodies, early returns, void calls and
+first diagnostics. The parser test covers chaining, grouping and the Elvis
+boundary. Bootstrap compares the operator token with Kotlin and asserts the
+printed count through the public compiler request and Shuttle.
+[GuardedAccessTest](../../../../Compiler/src/test/kotlin/cloth/GuardedAccessTest.kt) ·
+[NullabilityParsingTest](../../../../Compiler/src/test/kotlin/cloth/NullabilityParsingTest.kt) ·
+[Bootstrap verification](../../cloth-bootstrap-lexer/references/port.md#verification)
+
+The full run passed 2,035 Compiler tests across 193 suites, 61 Shuttle tests,
+and 25 Shuttle configuration checks, with zero failures, errors or skips.
+Guarded chains linked and ran on Windows x64 and x86. Their executable LLVM IR
+verified on all nine Windows, Linux and macOS target profiles.
+
+```powershell
+.\gradlew.bat :Compiler:test :Shuttle:check --offline --console=plain --no-daemon '-Pkotlin.incremental=false' '-Pkotlin.compiler.execution.strategy=in-process'
+```

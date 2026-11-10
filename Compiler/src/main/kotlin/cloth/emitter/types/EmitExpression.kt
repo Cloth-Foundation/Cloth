@@ -1,5 +1,6 @@
 package cloth.emitter.types
 
+import cloth.builtin.BuiltinParameter
 import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.InternalErrors
@@ -22,6 +23,7 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.*
+import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.flow.eagerOperands
 import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
@@ -113,6 +115,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	fun typeOf(expression: Expression) = semantics.typeOf(expression)
 	private val projectedValues = java.util.IdentityHashMap<NameExpression, LLVMValueRef>()
+	private val guardedValues = java.util.IdentityHashMap<GuardedReceiver, LLVMValueRef>()
 	private fun directAccess(expression: Expression): ObjectAccess? = functionSemantics.declarations.directReceiverOf(expression)?.let(bindings::objectAccess)
 
 	private fun providerServices(location: String, receiver: Expression? = null): ProviderEmissionContext {
@@ -185,6 +188,18 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val plan = functionSemantics.deletionOf(expression)
 		if (plan.nullable) nullable.choose(nullable.present(value), null, { functions.delete(plan, nullable.payload(value), builder); null }, { null })
 		else functions.delete(plan, value, builder)
+		return null
+	}
+
+	private fun emitTransition(receiver: Expression, payload: Expression?, target: StateDefinition?): LLVMValueRef? {
+		val identity = emitValue(receiver)
+		val state = checkNotNull(target)
+		val reclaim = payload != null && state.payloadType.indirect && temporaryAnalysis.hasNoPublication(payload)
+		val activation = temporaryRegion(reclaim) {
+			val value = payload?.let { adaptValue(emitValue(it), typeOf(it), state.payloadType) }
+			functions.states.publish(builder, identity, state, value, initial = false)
+		}
+		functions.runStateInitializer(builder, identity, state, activation)
 		return null
 	}
 
@@ -281,7 +296,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			temporaryDepth++
 			try {
 				val values = call.arguments.mapIndexed { index, expression ->
-					valueTransfer.transfer(emitValue(expression), selected.call.arguments[index].parameterType)
+					val argument = selected.call.arguments[index]
+					val value = emitValue(expression)
+					val adapted = if (selected.call.overload.parameters[index] is BuiltinParameter.Exact) adaptValue(value, argument.sourceType, argument.parameterType) else value
+					valueTransfer.transfer(adapted, argument.parameterType)
 				}
 				val location = call.span.source?.let { "${it.name}:${call.span}" } ?: call.span.toString()
 				val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
@@ -558,6 +576,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is FieldAccessExpression    -> emitFieldRead(expression)
 			is NullLiteral              -> (semantics.typeOf(expression) as? CNullable)?.let(nullable::absent) ?: LLVMConstNull(types.value(ValueType.Null))
 			is ElvisExpression          -> emitElvis(expression)
+			is GuardedAccessExpression  -> emitGuardedAccess(expression)
+			is GuardedReceiver          -> guardedValues.getValue(expression)
 			is ResultListExpression     -> {
 				// Snapshot each buffered position before subsequent expressions can mutate
 				// its source. Even discarded positions execute and retain runtime guards.
@@ -580,6 +600,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			is IfExpression             -> emitConditional(expression, requireValue = semantics.resultOf(expression) !in setOf(ResultShape.Empty, ResultShape.Never))
 			is TypeCheckExpression      -> {
 				semantics.valueCheckOf(expression)?.let { return emitOperator(it.operator, it.application.eagerOperands()) }
+				functionSemantics.stateTests[expression]?.let { state ->
+					return functions.states.matches(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.operand)), state)
+				}
 				// Preserve evaluation (and any side effects) even for a statically known check.
 				val value = emitValue(expression.operand)
 				val source = semantics.typeOf(expression.operand)
@@ -599,8 +622,15 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			is MemberCallExpression     -> emitMemberCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
 			is CallExpression           -> emitCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
+			is StateCallExpression      -> {
+				val plan = functionSemantics.stateCalls[expression]
+				if (plan == null) emit(expression.receiver)
+				else functions.emitStateCall(plan, expression.receiver, expression.arguments, this, builder)
+					?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
+			}
 			is ClassCreationExpression  -> functions.emitCall(functionSemantics.selectedConstructor(expression), expression.arguments, this, builder)
 			is ClassDeletionExpression  -> emitDelete(expression)
+			is StateTransitionExpression -> emitTransition(expression.receiver, expression.payload, functionSemantics.stateTransitions[expression])
 			is IntegerLiteral           -> {
 				val type = semantics.typeOf(expression)
 				if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).constant(expression.value, type.bits)
@@ -625,9 +655,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				result ?: strings.literal("")
 			}
 
-			is CastExpression           -> if (semantics.typeOf(expression) == ValueType.VOID) {
-				emit(expression.operand); null
-			} else casts.emit(expression, emitValue(expression.operand))
+			is CastExpression           -> {
+				val state = functionSemantics.stateTransitions[expression]
+				when {
+					state != null -> emitTransition(expression.operand, null, state)
+					semantics.typeOf(expression) == ValueType.VOID -> { emit(expression.operand); null }
+					else -> casts.emit(expression, emitValue(expression.operand))
+				}
+			}
 
 			is UnaryExpression          -> {
 				semantics.operatorOf(expression)?.let { return emitOperator(it, expression.eagerOperands()) }
@@ -886,6 +921,21 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val fallback = emit(expression.fallback)
 			if (terminated()) null else adaptValue(checkNotNull(fallback), semantics.typeOf(expression.fallback), result)
 		})
+	}
+
+	private fun emitGuardedAccess(expression: GuardedAccessExpression): LLVMValueRef? {
+		val receiver = emitValue(expression.receiver)
+		val result = semantics.typeOf(expression) as? CNullable
+		return nullable.choose(nullable.present(receiver), result?.let(types::value), {
+			guardedValues[expression.payload] = nullable.payload(receiver)
+			try {
+				val value = emit(expression.continuation)
+				if (terminated() || result == null) null
+				else adaptValue(checkNotNull(value), semantics.typeOf(expression.continuation), result)
+			} finally {
+				guardedValues.remove(expression.payload)
+			}
+		}, { result?.let(nullable::absent) })
 	}
 
 	private fun emitClassComparison(expression: BinaryExpression, plan: ClassComparisonPlan): LLVMValueRef = emitPresenceComparison(expression, plan.operation == Operators.NOT_EQUAL) { left, right ->

@@ -16,7 +16,7 @@ data class ProviderAccessExpression(val receiver: Expression, val name: Token) :
 }
 
 /** Distinct syntax so parentheses never turn a provider into a callable operation. */
-data class StateCallExpression(val receiver: Expression, val name: Token, val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : Expression {
+data class StateCallExpression(val receiver: Expression, override val name: Token, override val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : CallSite {
 
-	val arguments: List<Expression> = suppliedArguments.map { it.expression }
+	override val arguments: List<Expression> = suppliedArguments.map { it.expression }
 }

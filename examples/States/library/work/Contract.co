@@ -1,0 +1,4 @@
+pub typedef<interface> Named {
+    mt<string> name()
+    mt<string> display(opt<string> prefix ?: "Worker ") = default (prefix + self.name())
+}

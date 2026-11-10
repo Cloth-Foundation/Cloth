@@ -1,12 +1,9 @@
 package shuttle
 
-import cloth.diagnostics.DiagnosticReporter
 import cloth.diagnostics.DiagnosticCode
 import cloth.util.ExecutableFormat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import shuttle.diagnostics.ShuttleDiagnostic
-import shuttle.diagnostics.ShuttleDiagnosticCode
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.*
@@ -99,18 +96,9 @@ class ShuttleRunTest {
 	@Test
 	fun `run rejects object output before project discovery or artifact work`(@TempDir directory: Path) {
 		val reports = StringBuilder()
-		assertEquals(1, runShuttle(arrayOf("run", "--emit=object", "--", "ignored"), DiagnosticReporter(reports), directory))
+		assertEquals(1, runNativeShuttle(arrayOf("run", "--emit=object", "--", "ignored"), reports, directory))
 		assertEquals(1, Regex("S0015").findAll(reports).count())
 		assertTrue(Files.list(directory).use { it.findAny().isEmpty })
-	}
-
-	@Test
-	fun `launch failure keeps a Shuttle code and original cause`(@TempDir directory: Path) {
-		val missing = directory.resolve("missing-program")
-		val failure = assertFailsWith<ShuttleDiagnostic> { launchProject(missing, emptyList(), directory) }
-		assertEquals(ShuttleDiagnosticCode.PROGRAM_LAUNCH_FAILED, failure.diagnosticCode)
-		assertIs<java.io.IOException>(failure.cause)
-		assertContains(failure.summary, missing.toString())
 	}
 
 	@Test

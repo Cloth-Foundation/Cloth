@@ -6,6 +6,7 @@ import cloth.emitter.NativeCABI
 import cloth.emitter.storage.EmitArray
 import cloth.emitter.storage.EmitMemory
 import cloth.emitter.storage.EmitStringArena
+import cloth.emitter.text.EmitUtf8Validation
 import cloth.emitter.types.EmitRuntimeError
 import cloth.target.TargetLayout
 import org.bytedeco.javacpp.PointerPointer
@@ -27,7 +28,6 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 	private var arena: LLVMValueRef? = null
 	private fun count(value: Long) = LLVMConstInt(size, value, 0)
 	private fun int(value: Long) = LLVMConstInt(integer, value, 0)
-	private fun octet(value: Long) = LLVMConstInt(byte, value, 0)
 
 	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
 		parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
@@ -86,7 +86,7 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 				wideLength(builder, input, next); null
 			}
 		} else {
-			val bytes = call(builder, signature(size, pointer), utf8Length(), "utf8_length", input)
+			val bytes = EmitUtf8Validation(context, module, abi, target).terminatedLength(builder, input)
 			guard(builder, LLVMBuildICmp(builder, LLVMIntNE, bytes, count(-1), "valid_utf8"), next, "UTF-8")
 			if (withValues) memory.bytes(input, bytes) else null
 		}
@@ -151,91 +151,4 @@ internal class EmitArguments(private val context: LLVMContextRef, private val mo
 		return function
 	}
 
-	/** Return the byte length, or -1 for malformed UTF-8. Read only through the
-	 * first NUL, including in truncated sequences; no speculative lookahead loads.
-	 * Bounds implement Unicode Table 3-7 (overlongs, surrogates and > U+10FFFF fail).
-	 */
-	private fun utf8Length(): LLVMValueRef {
-		val existing = LLVMGetNamedFunction(module, "cloth.rt.argument.utf8")
-		if (existing != null && !existing.isNull) return existing
-		val function = LLVMAddFunction(module, "cloth.rt.argument.utf8", signature(size, pointer))
-		LLVMSetLinkage(function, LLVMInternalLinkage)
-		val builder = LLVMCreateBuilderInContext(context)
-		try {
-			fun block(name: String) = LLVMAppendBasicBlockInContext(context, function, name)
-			val entry = block("entry")
-			val check = block("check")
-			val read = block("read")
-			val continuation = block("continuation")
-			val sequence = block("sequence")
-			val leading = block("leading")
-			val setLeading = block("set_leading")
-			val setContinuation = block("set_continuation")
-			val advance = block("advance")
-			val terminator = block("terminator")
-			val valid = block("valid")
-			val invalid = block("invalid")
-			LLVMPositionBuilderAtEnd(builder, entry)
-			val remaining = LLVMBuildAlloca(builder, integer, "remaining")
-			val minimum = LLVMBuildAlloca(builder, byte, "minimum")
-			val maximum = LLVMBuildAlloca(builder, byte, "maximum")
-			LLVMBuildStore(builder, int(0), remaining)
-			LLVMBuildStore(builder, octet(0x80), minimum)
-			LLVMBuildStore(builder, octet(0xbf), maximum)
-			LLVMBuildBr(builder, check)
-			LLVMPositionBuilderAtEnd(builder, check)
-			val index = LLVMBuildPhi(builder, size, "byte_index")
-			val bounded = block("bounded_position")
-			val memory = EmitMemory(context, builder, abi, target)
-			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, index, memory.constant(memory.maximumBytes), "argument_position_fits"), bounded, invalid)
-			LLVMPositionBuilderAtEnd(builder, bounded)
-			val current = LLVMBuildLoad2(builder, byte, offset(builder, byte, LLVMGetParam(function, 0), index), "octet")
-			val pending = LLVMBuildLoad2(builder, integer, remaining, "pending")
-			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, current, octet(0), "end"), terminator, read)
-			LLVMPositionBuilderAtEnd(builder, read)
-			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntNE, pending, int(0), "continuing"), continuation, sequence)
-			LLVMPositionBuilderAtEnd(builder, continuation)
-			val above = LLVMBuildICmp(builder, LLVMIntUGE, current, LLVMBuildLoad2(builder, byte, minimum, "lower"), "above_minimum")
-			val below = LLVMBuildICmp(builder, LLVMIntULE, current, LLVMBuildLoad2(builder, byte, maximum, "upper"), "below_maximum")
-			LLVMBuildCondBr(builder, LLVMBuildAnd(builder, above, below, "valid_continuation"), setContinuation, invalid)
-			LLVMPositionBuilderAtEnd(builder, setContinuation)
-			LLVMBuildStore(builder, LLVMBuildSub(builder, pending, int(1), "remaining_bytes"), remaining)
-			LLVMBuildStore(builder, octet(0x80), minimum)
-			LLVMBuildStore(builder, octet(0xbf), maximum)
-			LLVMBuildBr(builder, advance)
-			LLVMPositionBuilderAtEnd(builder, sequence)
-			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntULT, current, octet(0x80), "ascii"), advance, leading)
-			LLVMPositionBuilderAtEnd(builder, leading)
-			fun between(low: Long, high: Long) = LLVMBuildAnd(builder, LLVMBuildICmp(builder, LLVMIntUGE, current, octet(low), "above"), LLVMBuildICmp(builder, LLVMIntULE, current, octet(high), "below"), "in_range")
-			fun isByte(value: Long) = LLVMBuildICmp(builder, LLVMIntEQ, current, octet(value), "is_leader")
-			val two = between(0xc2, 0xdf)
-			val three = between(0xe0, 0xef)
-			val four = between(0xf0, 0xf4)
-			LLVMBuildCondBr(builder, LLVMBuildOr(builder, two, LLVMBuildOr(builder, three, four, "long_sequence"), "valid_leader"), setLeading, invalid)
-			LLVMPositionBuilderAtEnd(builder, setLeading)
-			LLVMBuildStore(builder, LLVMBuildSelect(builder, two, int(1), LLVMBuildSelect(builder, three, int(2), int(3), "long_count"), "continuations"), remaining)
-			LLVMBuildStore(builder, LLVMBuildSelect(builder, isByte(0xe0), octet(0xa0), LLVMBuildSelect(builder, isByte(0xf0), octet(0x90), octet(0x80), "four_minimum"), "first_minimum"), minimum)
-			LLVMBuildStore(builder, LLVMBuildSelect(builder, isByte(0xed), octet(0x9f), LLVMBuildSelect(builder, isByte(0xf4), octet(0x8f), octet(0xbf), "four_maximum"), "first_maximum"), maximum)
-			LLVMBuildBr(builder, advance)
-			LLVMPositionBuilderAtEnd(builder, advance)
-			val next = LLVMBuildAdd(builder, index, count(1), "next_byte")
-			LLVMBuildBr(builder, check)
-			PointerPointer<LLVMValueRef>(2L).use { values ->
-				PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-					values.put(0, count(0)); values.put(1, next)
-					blocks.put(0, entry); blocks.put(1, advance)
-					LLVMAddIncoming(index, values, blocks, 2)
-				}
-			}
-			LLVMPositionBuilderAtEnd(builder, terminator)
-			LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntEQ, pending, int(0), "complete_sequence"), valid, invalid)
-			LLVMPositionBuilderAtEnd(builder, valid)
-			LLVMBuildRet(builder, index)
-			LLVMPositionBuilderAtEnd(builder, invalid)
-			LLVMBuildRet(builder, count(-1))
-		} finally {
-			LLVMDisposeBuilder(builder)
-		}
-		return function
-	}
 }

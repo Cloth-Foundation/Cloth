@@ -1,0 +1,7 @@
+tomlkt 0.6.1
+Copyright 2026 Loney Chou
+https://github.com/eav-eav-eav/tomlkt
+
+This build includes tomlkt under the Apache License, Version 2.0. Cloth
+modifies the parser to reject raw control characters, bare nulls, assignments
+after table headers on the same line, and repeat declarations of a super-table.

@@ -24,10 +24,12 @@ import cloth.semantic.ClassDeletionPlan
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.ResultShape
+import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.ResolvedCall
 import cloth.semantic.typing.ResolvedOperator
+import cloth.semantic.typing.ResolvedStateCall
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -35,7 +37,8 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 internal val FunctionSemanticModel.nativeBodies: List<CallableContractSymbol>
-	get() = callableBodies + declarations.interfaceMethods.values.filter { it.declaration.fallback != null }
+	get() = callableBodies + declarations.interfaceMethods.values.filter { it.declaration.fallback != null } +
+		declarations.states.callables.filter { it is MethodSymbol || it is StateActivationSymbol }
 
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
@@ -45,7 +48,17 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private val functions = IdentityHashMap<CallableContractSymbol, EmittedCallable>()
 	internal val stringStorage = EmitStringArena(context, module, abi)
 	internal val metadataTypes = EmitTypeInfo.Types()
-	internal val classes by lazy { EmitClassRuntime(context, module, abi) }
+	private val stateDefinitions = semantics.declarations.states.definitions
+	private val tracksStates = stateDefinitions.isNotEmpty() || semantics.declarations.states.callables.any { it is StateMethodContractSymbol }
+	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates) }
+	internal val states by lazy { EmitStateRuntime(context, module, abi, classes, stringStorage, stateDefinitions) }
+	private val initialStates = mutableMapOf<StateDefinition, LLVMValueRef>()
+	private val initialStateType by lazy {
+		PointerPointer<LLVMTypeRef>(1L).use { parameter ->
+			parameter.put(0, LLVMInt64TypeInContext(context))
+			LLVMFunctionType(LLVMVoidTypeInContext(context), parameter, 1, 0)
+		}
+	}
 	internal val classStorage by lazy { EmitClassStorage(context, module, abi, classes, stringStorage) }
 	internal val receivers by lazy { EmitReceiverAccess(context, module, abi, classStorage) }
 	internal val hasClasses = semantics.declarations.classDefinitions.isNotEmpty()
@@ -55,6 +68,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private val interfaceDispatch by lazy {
 		EmitInterfaceDispatch(context, module, abi, semantics.declarations, results, this, ::classTag)
 	}
+	private val stateDispatch by lazy {
+		EmitStateDispatch(context, module, abi, semantics.declarations.states, results, this)
+	}
+	private val dispatchBodies = ArrayDeque<() -> Unit>()
 	private val classComparisons = mutableMapOf<Operators, LLVMValueRef>()
 	private val classFormatter by lazy { emitClassFormatter() }
 	private val classFormatterType by lazy {
@@ -77,26 +94,36 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun callable(function: CallableContractSymbol): EmittedCallable = functions.getValue(function)
 	fun reference(function: CallableSymbol): LLVMValueRef = callable(function).reference
 	fun signature(function: CallableSymbol): LLVMTypeRef = callable(function).signature
+	fun deferDispatch(body: () -> Unit) { dispatchBodies.addLast(body) }
 
 	fun emitAll() {
 		if (semantics.declarations.allStructs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
 		val bodies = semantics.nativeBodies
 		for ((index, function) in bodies.withIndex()) {
+			val stateBody = semantics.declarations.states.stateOf(function) != null
 			val kind = when (function) {
 				is InterfaceMethodSymbol -> "interface.fallback"
-				is MethodSymbol          -> "method"
+				is MethodSymbol          -> if (stateBody) "state.method" else "method"
 				is ConstructorSymbol     -> "constructor"
 				is DestructorSymbol      -> "destructor"
+				is StateActivationSymbol -> "state.init"
 				else                     -> "fn"
 			}
 			val name = "cloth.$kind.$index.${function.name.lexeme}"
 			functions[function] = EmittedCallable(
 				context, module, name, function, semantics.typeOf(function), hasClasses, results,
 				acceptsOmissions = function !is InterfaceMethodSymbol,
+				usesActivation = stateBody,
 			) { classes }
 		}
+		for ((index, state) in stateDefinitions.withIndex()) if (state.initial != null) {
+			initialStates[state] = LLVMAddFunction(module, "cloth.state.initial.$index.${state.name.lexeme}", initialStateType)
+				.also { LLVMSetLinkage(it, LLVMInternalLinkage) }
+		}
 		for (function in bodies) emitBody(function)
-		if (semantics.declarations.interfaces.contracts.isNotEmpty()) interfaceDispatch.emitPending()
+		for ((state, function) in initialStates) emitInitialState(state, function)
+		// A default emitted in one dispatch entry can add a state or interface entry.
+		while (dispatchBodies.isNotEmpty()) dispatchBodies.removeFirst().invoke()
 	}
 
 	private fun emitBody(function: CallableContractSymbol) {
@@ -119,6 +146,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			} else if (function is MethodSymbol) {
 				bindings.bindReceiver(function.receiver, callable.structAccess())
 				bindings.checkDestination(function.receiver)
+			}
+			semantics.declarations.states.payloadOf(function.declaration)?.let { payload ->
+				val activation = callable.activation()
+				bindings.bindStatePayload(payload, states.payload(builder, activation, payload.type), states.arena(builder, activation))
 			}
 			val expressions = expressions(builder, bindings, semantics, signature.results, frame)
 			bindParameters(function, callable, builder, bindings, expressions)
@@ -166,9 +197,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		return EmitExpression(context, builder, bindings, casts, strings, EmitPower(context, builder, abi), abi, this, semantics, result, frame)
 	}
 
-	fun bindInterfaceArguments(contract: InterfaceMethodSymbol, callable: EmittedCallable, builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, frame: EmitFunctionFrame): List<LLVMValueRef> {
+	fun bindDispatchArguments(contract: CallableContractSymbol, callable: EmittedCallable, builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, frame: EmitFunctionFrame): List<LLVMValueRef> {
 		val bindings = bindings(builder, entry, semantics, frame)
-		bindings.bindObject(contract.receiver, checkNotNull(callable.objectAccess()))
+		bindings.bindObject(checkNotNull(contract.receiver), checkNotNull(callable.objectAccess()))
 		val expressions = expressions(builder, bindings, semantics, callable.type.results, frame)
 		return bindParameters(contract, callable, builder, bindings, expressions)
 	}
@@ -246,6 +277,55 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 	}
 
+	private fun emitInitialState(state: StateDefinition, function: LLVMValueRef) {
+		val builder = LLVMCreateBuilderInContext(context)
+		try {
+			val entry = LLVMAppendBasicBlockInContext(context, function, "entry")
+			LLVMPositionBuilderAtEnd(builder, entry)
+			val frame = EmitFunctionFrame(context, builder, entry, ResultShape.Empty, LLVMVoidTypeInContext(context), stringStorage, null)
+			val identity = LLVMGetParam(function, 0)
+			val payload = state.initialPayload?.let { initial ->
+				val access = ObjectAccess(identity, classes.permission(false))
+				classes.check(builder, access)
+				val bindings = bindings(builder, entry, semantics, frame)
+				bindings.bindObject(initial.receiver, access)
+				val expression = initial.declaration.expression
+				val expressions = expressions(builder, bindings, semantics, ResultShape.Empty, frame)
+				val value = expressions.emit(expression)
+				if (expressions.terminated()) {
+					frame.finish()
+					return
+				}
+				expressions.adaptValue(checkNotNull(value), expressions.typeOf(expression), state.payloadType)
+			}
+			val activation = states.publish(builder, identity, state, payload, initial = true)
+			runStateInitializer(builder, identity, state, activation)
+			frame.emitReturn(null)
+			frame.finish()
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
+	}
+
+	fun runStateInitializer(builder: LLVMBuilderRef, identity: LLVMValueRef, state: StateDefinition, activation: LLVMValueRef) {
+		val initializer = state.activation ?: return
+		// The hook can replace this activation or delete the object before it returns.
+		states.retain(builder, activation)
+		callable(initializer).call(builder) {
+			setReceiver(ObjectAccess(identity, classes.permission(false)))
+			setActivation(activation)
+		}
+		states.release(builder, activation)
+	}
+
+	private fun activateInitial(builder: LLVMBuilderRef, identity: LLVMValueRef, owner: CClass) {
+		val state = semantics.declarations.states[owner]?.initial ?: return
+		PointerPointer<LLVMValueRef>(1L).use { argument ->
+			argument.put(0, identity)
+			LLVMBuildCall2(builder, initialStateType, initialStates.getValue(state), argument, 1, "")
+		}
+	}
+
 	fun delete(plan: ClassDeletionPlan, identity: LLVMValueRef, builder: LLVMBuilderRef) {
 		val access = classes.beginDelete(builder, identity)
 		val candidates = classTags.keys.filter(plan.owner::accepts)
@@ -268,6 +348,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			LLVMBuildUnreachable(builder)
 			LLVMPositionBuilderAtEnd(builder, done)
 		}
+		if (tracksStates) states.detach(builder, access)
 		classes.finishDelete(builder, identity)
 	}
 
@@ -413,6 +494,17 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 	}
 
+	fun emitStateCall(plan: ResolvedStateCall, receiver: Expression, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef): LLVMValueRef? {
+		val access = expressions.emitObjectAccess(ObjectReceiver.Explicit(receiver))
+		return stateDispatch.entry(plan).call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = expressions::stringReturnArena) {
+			setReceiver(access)
+			supplied.forEachIndexed { index, expression ->
+				val destination = plan.binding.parameterForArgument[index]
+				argument(destination, evaluateArgument(expressions, expression, plan.type.parameters[destination], transfer = true))
+			}
+		}
+	}
+
 	private fun evaluateArgument(expressions: EmitExpression, expression: Expression, parameter: ValueType, transfer: Boolean): LLVMValueRef {
 		val adapted = expressions.adaptValue(expressions.emitValue(expression), expressions.typeOf(expression), parameter)
 		return if (transfer) expressions.valueTransfer.transfer(adapted, parameter) else expressions.valueTransfer.snapshot(adapted, parameter)
@@ -458,9 +550,12 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 		}
 		val receiver = plan.receiver
-		return if (operatorReceiver == null && receiver != null && receiver !is MethodReceiver.Instance && !target.enumReceiver) {
+		val result = if (operatorReceiver == null && receiver != null && receiver !is MethodReceiver.Instance && !target.enumReceiver) {
 			expressions.withReceiver(receiver, (selected as MethodSymbol).owner as CStruct) { invoke(it) }
 		} else invoke(null)
+		// Delegated constructors share the allocation and leave activation to the outer call.
+		if (selected is ConstructorSymbol && allocation == null) activateInitial(builder, checkNotNull(result), selected.owner)
+		return result
 	}
 
 	companion object {

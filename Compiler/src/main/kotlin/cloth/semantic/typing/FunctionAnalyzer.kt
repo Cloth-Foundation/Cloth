@@ -8,6 +8,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.declaration.PrimaryConstructorDeclaration
+import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.semantic.OperatorRules
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationAnalyzer
@@ -81,6 +82,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 				put(method, type)
 			}
 		}
+		declarations.states.checkResults(signatures)
 		val model = FunctionSemanticModel(declarations, CallableContracts(signatures, selectors))
 		model.initializeBindings()
 		val presence = NullFlowAnalysis(model)
@@ -113,6 +115,11 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 					val owner = declarations.classOwners.getValue(declaration)
 					val primary = declarations.classDefinitions.getValue(owner).primary
 					checker.bindConstructor(declaration.delegation, listOf(primary))
+				}
+
+				is StateInitialPayloadDeclaration -> {
+					val state = checkNotNull(declarations.states.stateOf(function))
+					checker.checkStatePayload(declaration.expression, state)
 				}
 
 				else                             -> Unit

@@ -1,6 +1,7 @@
 package cloth.builtin
 
 import cloth.builtin.functions.ExitFunction
+import cloth.builtin.functions.InputFunction
 import cloth.builtin.functions.PrintFunction
 import cloth.builtin.functions.PrintlnFunction
 import java.util.*
@@ -14,6 +15,7 @@ internal object BuiltinFunctions {
 	val PRINT = register("print", ::PrintFunction)
 	val PRINTLN = register("println", ::PrintlnFunction)
 	val EXIT = register("exit", ::ExitFunction)
+	val INPUT = register("input", ::InputFunction)
 	//val ERROR = register("error", ::ErrorFunction)
 
 	val all: List<BuiltinDefinition<*>> = Collections.unmodifiableList(functions)

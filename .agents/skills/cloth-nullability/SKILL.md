@@ -1,6 +1,6 @@
 ---
 name: cloth-nullability
-description: Design, explain, or extend Cloth nullable types, null literals, presence proofs, lazy Elvis fallback, nullable casts and equality, or nullable formatting and metadata.
+description: Design, explain, or extend Cloth nullable types, null literals, presence proofs, guarded member access, lazy Elvis fallback, nullable casts and equality, or nullable formatting and metadata.
 ---
 
 # Cloth nullability
@@ -45,6 +45,12 @@ read [the implementation record](references/implementation.md). Consult the
 nullable buffers. Proposals in the plan do not establish new language rules.
 
 ## Current scope
+
+Guarded member access uses `?.` on nullable receivers. The first absent guard
+skips the remaining postfix chain. Single results use the ordinary nullable
+carrier and compose with lazy Elvis.
+[Semantics](references/semantics.md#guarded-member-access) ·
+[Implementation and verification](references/implementation.md#guarded-member-access)
 
 [String scalar searches](../cloth-strings/references/scalar-methods.md)
 `indexOf`/`lastIndexOf` produce target `usize?`. They do not prove their own result

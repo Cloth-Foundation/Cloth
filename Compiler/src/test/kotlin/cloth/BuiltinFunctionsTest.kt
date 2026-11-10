@@ -2,9 +2,11 @@ package cloth
 
 import cloth.builtin.BuiltinFunctions
 import cloth.builtin.functions.ExitFunction
+import cloth.builtin.functions.InputFunction
 import cloth.builtin.functions.PrintFunction
 import cloth.builtin.functions.PrintlnFunction
 import cloth.data.CInt
+import cloth.data.CNullable
 import cloth.data.ProviderResult
 import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
@@ -25,6 +27,7 @@ import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
@@ -40,13 +43,15 @@ class BuiltinFunctionsTest {
 
 	@Test
 	fun `named factory registrations are the complete read-only lookup list`() {
-		assertEquals(listOf(BuiltinFunctions.PRINT, BuiltinFunctions.PRINTLN, BuiltinFunctions.EXIT), BuiltinFunctions.all)
+		assertEquals(listOf(BuiltinFunctions.PRINT, BuiltinFunctions.PRINTLN, BuiltinFunctions.EXIT, BuiltinFunctions.INPUT), BuiltinFunctions.all)
 		assertSame(BuiltinFunctions.PRINT, BuiltinFunctions["print"])
 		assertSame(BuiltinFunctions.PRINTLN, BuiltinFunctions["println"])
 		assertSame(BuiltinFunctions.EXIT, BuiltinFunctions["exit"])
+		assertSame(BuiltinFunctions.INPUT, BuiltinFunctions["input"])
 		assertIs<PrintFunction>(BuiltinFunctions.PRINT.function)
 		assertIs<PrintlnFunction>(BuiltinFunctions.PRINTLN.function)
 		assertIs<ExitFunction>(BuiltinFunctions.EXIT.function)
+		assertIs<InputFunction>(BuiltinFunctions.INPUT.function)
 		assertNull(BuiltinFunctions["printf"])
 		assertNull(BuiltinFunctions["Print"])
 		assertFailsWith<UnsupportedOperationException> {
@@ -133,6 +138,103 @@ class BuiltinFunctionsTest {
 		failure("fn main() { def<int?> status = null; exit(status) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
 		val invalidMessage = failure("fn main() { exit(1, 2) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
 		assertContains(invalidMessage.message.orEmpty(), "requires string")
+	}
+
+	@Test
+	fun `input accepts an omitted or nullable string prompt and returns string nullable`() {
+		val ast = parseMain("""
+			def<string?> prompt = null
+			input()
+			input("Name: ")
+			input(null)
+			input(prompt)
+		""")
+		val model = FunctionAnalyzer(nativeTestLayout).analyze(ast)
+		val text = CNullable(ValueType.STRING)
+		ast.mainStatements.drop(1).forEachIndexed { index, statement ->
+			val expression = assertIs<CallExpression>(assertIs<ExpressionStatement>(statement).expression)
+			val call = assertIs<ResolvedCall.Builtin>(model.selectedCall(expression)).call
+			assertSame(BuiltinFunctions.INPUT, call.definition)
+			assertEquals(text, model.typeOf(expression))
+			assertEquals(if (index == 0) emptyList() else listOf(text), call.arguments.map { it.parameterType })
+		}
+		failure("fn main() { input(42) }", DiagnosticCode.INVALID_BUILTIN_ARGUMENT)
+		failure("fn main() { input(null, null) }", DiagnosticCode.CALL_ARITY)
+		failure("fn main() { def line = input() }", DiagnosticCode.EXPLICIT_NULLABLE_TYPE)
+	}
+
+	@Test
+	fun `input flushes its prompt before reading and preserves complete independent lines`(@TempDir directory: Path) {
+		val ast = unit("""
+			fn<string> prompt() {
+			    print("once ")
+			    return "Name: "
+			}
+			fn<string?> read(string? message) = input(message)
+			fn skip() {
+			    input(if (true) { return } else { "unexpected" })
+			}
+			fn main() {
+			    skip()
+			    def<string?> first = input(prompt())
+			    def<string?> second = read("Next: ")
+			    def<string?> blank = input()
+			    def<string?> last = input(null)
+			    def<string?> done = read(null)
+			    println(first)
+			    println(second)
+			    println(blank == "")
+			    println(last)
+			    println(done == null)
+			}
+		""")
+		val first = "  €😀\u0000%  "
+		val second = "x".repeat(255) + "é😀" + "y".repeat(400)
+		val last = "final\r"
+		val native = NativeCABI.native()
+		val targets = if (native.windows) listOf(native, NativeCABI.forTarget("i686-pc-windows-msvc")).distinctBy { it.targetTriple } else listOf(native)
+		for (abi in targets) {
+			val executable = LLVMEmitter(abi).compile(ast, directory.resolve("input-${abi.layout.sizeBits}"))
+			val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
+			try {
+				val prompt = "once Name: ".encodeToByteArray()
+				val beforeInput = CompletableFuture.supplyAsync { process.inputStream.readNBytes(prompt.size) }
+				assertContentEquals(prompt, beforeInput.get(15, TimeUnit.SECONDS))
+				process.outputStream.use { it.write("$first\r\n$second\n\n$last".encodeToByteArray()) }
+				assertTrue(process.waitFor(15, TimeUnit.SECONDS), "input timed out on ${abi.targetTriple}")
+				val output = process.inputStream.readBytes().decodeToString(throwOnInvalidSequence = true)
+				assertEquals(0, process.exitValue(), output)
+				val expected = "Next: $first\n$second\ntrue\n$last\ntrue\n".replace("\n", System.lineSeparator())
+				assertEquals(expected + processCompletion(), output)
+			} finally {
+				if (process.isAlive) process.destroyForcibly()
+			}
+		}
+	}
+
+	@Test
+	fun `input rejects truncated UTF-8 even after an embedded NUL`(@TempDir directory: Path) {
+		val executable = compileMain(directory.resolve("invalid-input"), "println(input())")
+		val process = ProcessBuilder(executable.toString()).redirectErrorStream(true).start()
+		try {
+			process.outputStream.use { it.write(byteArrayOf(0, 0xe2.toByte(), 0x82.toByte(), 10)) }
+			assertTrue(process.waitFor(15, TimeUnit.SECONDS), "input timed out")
+			val output = process.inputStream.readBytes().decodeToString(throwOnInvalidSequence = true)
+			assertEquals(1, process.exitValue(), output)
+			assertEquals("Invalid UTF-8 on standard input" + System.lineSeparator(), output)
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
+	}
+
+	@Test
+	fun `input shares a verified reader across calls on every target profile`() {
+		val ast = unit("fn main() { input()\n input(\"Name: \")\n input(null) }")
+		for (triple in listOf("x86_64-pc-windows-msvc", "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "aarch64-apple-darwin")) {
+			val ir = LLVMEmitter(NativeCABI.forTarget(triple)).emitExecutable(ast)
+			assertEquals(1, ir.lineSequence().count { it.startsWith("define internal ") && it.contains("@cloth.runtime.read.stdin(") }, triple)
+			assertEquals(1, ir.lineSequence().count { it == "declare i32 @getchar()" }, triple)
+		}
 	}
 
 	@Test

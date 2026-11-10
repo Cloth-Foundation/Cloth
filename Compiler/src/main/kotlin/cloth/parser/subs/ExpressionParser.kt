@@ -22,8 +22,8 @@ class ExpressionParser(val parser: Parser) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
 				val target = parser.peek()
-				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
-				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || parser.atKeyword(Keywords.SELF) || target.type == TokenType.Identifier && hasValuePostfix
+				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.SAFE_DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
+				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && hasValuePostfix
 				left = if (valueTarget) BinaryExpression(left, operator, parseUnary(stopAtRange, allowWhileTrailer))
 				else TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
 				continue
@@ -37,7 +37,7 @@ class ExpressionParser(val parser: Parser) {
 			if (kind == Operators.POINTER_RIGHT) {
 				if (CAST_PRECEDENCE < minimumPrecedence) break
 				parser.advance()
-				left = CastExpression(left, operator, TypeParser(parser).parse(inCast = true))
+				left = parseArrowTarget(left, operator)
 				continue
 			}
 			val operatorPrecedence = if (kind in setOf(Operators.RANGE, Operators.RANGE_INCLUSIVE)) OperatorPrecedence(8)
@@ -59,6 +59,19 @@ class ExpressionParser(val parser: Parser) {
 		}
 
 		return left
+	}
+
+	private fun parseArrowTarget(receiver: Expression, operator: Token): Expression {
+		if (parser.peek().type != TokenType.Identifier || parser.peek(1).lexeme != Operators.PAREN_OPEN.toString()) {
+			return CastExpression(receiver, operator, TypeParser(parser).parse(inCast = true))
+		}
+		val target = parser.advance()
+		val payload = parser.delimited.parentheses {
+			parser.skipNewlines()
+			if (parser.peek().lexeme == Operators.PAREN_CLOSE.toString()) null
+			else parseExpression().also { parser.skipNewlines() }
+		}
+		return StateTransitionExpression(receiver, operator, target, payload, receiver.span.through(parser.previous().span))
 	}
 
 	fun parseUnary(stopAtRange: Boolean = false, allowWhileTrailer: Boolean = false): Expression {
@@ -83,11 +96,13 @@ class ExpressionParser(val parser: Parser) {
 
 				Operators.DOT.toString()          -> {
 					parser.advance()
-					val name = parser.expect(TokenType.Identifier, "a member name")
-					if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
-						val arguments = parser.delimited.parentheses { parseArguments() }
-						MemberCallExpression(value, name, arguments, value.span.through(parser.previous().span))
-					} else FieldAccessExpression(value, name)
+					parseMember(value)
+				}
+
+				Operators.SAFE_DOT.toString()     -> {
+					val operator = parser.advance()
+					val payload = GuardedReceiver(value)
+					return GuardedAccessExpression(operator, payload, parsePostfix(parseMember(payload)))
 				}
 
 				Operators.COLON_COLON.toString()  -> {
@@ -98,6 +113,13 @@ class ExpressionParser(val parser: Parser) {
 				else                              -> return value
 			}
 		}
+	}
+
+	private fun parseMember(receiver: Expression): Expression {
+		val name = parser.expect(TokenType.Identifier, "a member name")
+		if (parser.peek().lexeme != Operators.PAREN_OPEN.toString()) return FieldAccessExpression(receiver, name)
+		val arguments = parseArgumentList()
+		return MemberCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
 	}
 
 	private fun parseDoubleColon(receiver: Expression): Expression {
@@ -112,6 +134,9 @@ class ExpressionParser(val parser: Parser) {
 		val arguments = parseArgumentList()
 		return StateCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
 	}
+
+	private fun isImplicitBinding(token: Token): Boolean =
+		token.type == TokenType.Keyword && (token.lexeme == Keywords.SELF.toString() || parser.inStateBody && token.lexeme == Keywords.STATE.toString())
 
 	fun parsePrimary(allowWhileTrailer: Boolean = false): Expression {
 		val token = parser.peek()
@@ -142,7 +167,7 @@ class ExpressionParser(val parser: Parser) {
 
 			TokenType.InterpolationStart                                                                    -> parseInterpolation()
 
-			TokenType.Keyword if token.lexeme == Keywords.SELF.toString()                                   -> NameExpression(parser.advance())
+			TokenType.Keyword if isImplicitBinding(token)                                                   -> NameExpression(parser.advance())
 
 			TokenType.Identifier                                                                            -> {
 				val name = parser.advance()

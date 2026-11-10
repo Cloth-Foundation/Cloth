@@ -88,6 +88,15 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 					checkExposedTypes(method.name, exposed, declarations.objectRoot)
 				}
 			}
+			declarations.states[owner]?.let { states ->
+				for (state in states.supported.values) if (state.declaration.visibility != null) {
+					checkExposedTypes(state.name, listOf(state.payloadType), declarations.objectRoot)
+				}
+				for (contract in states.contracts.values) if (contract.public) {
+					val signature = templates.typeOf(contract.callable)
+					checkExposedTypes(contract.callable.name, signature.parameters + signature.results.values, declarations.objectRoot)
+				}
+			}
 		}
 	}
 

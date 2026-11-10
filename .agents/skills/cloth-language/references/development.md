@@ -7,6 +7,71 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### State runtime Stage 6 publication (2026-11-09)
+
+The maintained Compiler and Shuttle examples exercise inherited defaults,
+shared optional arguments, payload snapshots, and an imported state reused
+by two hosts. Both installed commands verify fail-first compilation and
+controlled runtime dispatch failure. The examples ran on Windows x64 and
+x86 and GNU Linux x64 under Ubuntu WSL. Both produced verified executable
+IR and startup objects on all nine profiles.
+
+The release checks passed 2,071 Compiler tests, 61 Shuttle tests, 12
+distribution tests and 228 dedicated checks. The final Shuttle run used its
+standard JUnit temporary directory after Windows locked workspace fixtures
+during cleanup. [State release verification](state-publication.md)
+
+### State runtime Stage 5 attachments (2026-11-09)
+
+Classes can attach standalone states with `state Name` and select them with
+`default:`. The source graph keeps each definition in its original file.
+Each attachment checks its host contract and state targets while the initial
+payload runs in the selecting class's scope.
+
+The 2,070-test Compiler run found one obsolete parser assertion. After its
+update, the state and parser rerun passed 51 tests and the dedicated import
+and generic tasks had passed 203 test runs. The imported fixture executed
+on Windows x64 and x86, with verified IR and objects across all nine profiles.
+[Attachment implementation and verification](state-attachments.md)
+
+### Nested states Stage 4 (2026-11-09)
+
+State calls bind shared defaults and read the current activation after
+argument effects. The dispatcher pins the selected payload and returns
+values through ordinary caller-owned storage. The lifetime pass tracks
+active-state facts on captured identities and reports C3130 for a proved
+missing body.
+
+The offline regression run passed 707 tests across 63 suites plus 203
+dedicated generic and import test runs. State calls executed on Windows x64
+and x86. LLVM IR and object emission verified across all nine profiles.
+[Dispatch and flow](state-runtime.md#state-method-dispatch) ·
+[Verification](state-runtime.md#stage-4-verification)
+
+### Nested states Stage 3 (2026-11-09)
+
+The outer constructor installs the effective default and runs its entry
+hook. Transitions revalidate the captured identity after payload effects.
+Predicates read the activation from the checked class slot. Each running
+entry hook retains its original payload through re-entry or deletion.
+State calls reach C4036 until Stage 4 dispatch.
+
+The offline run passed 478 tests across 49 suites plus 203 dedicated generic
+and import test runs. State fixtures executed on Windows x64 and x86 and
+verified LLVM IR and object emission on all nine profiles.
+[Runtime and verification](state-runtime.md)
+
+### Nested states Stage 2 (2026-11-09)
+
+Semantic analysis now resolves nested and inherited states, effective default
+selection and typed payloads. State calls bind shared labels, defaults and
+ordered results in the static class view. The emitter checks C4036 after
+semantic validation and before lowering or artifact publication.
+The full offline Compiler check passed 2,047 tests in its main task and
+203 test runs in the dedicated generic and import tasks.
+[Stage 2 checking](state-syntax.md#checked-declarations-and-calls) ·
+[Verification](state-syntax.md#stage-2-verification)
+
 ### Interface, generic and inheritance audit fixes (2026-11-09)
 
 Merged interface slots choose eligible inherited class bodies in either parent
@@ -6346,11 +6411,6 @@ the user's preference for one question at a time:
 - Assignment to a function-block binding: replacing its body, assigning a value,
   and whether `:=` may make the computation binding immutable.
 - Default equality semantics for class instances: identity or field values.
-- Whether there are restrictions on individual source-to-target transition paths.
-  The confirmed phrase "permitted states" means class-supported states, not an
-  approved transition-graph restriction mechanism.
-- Whether state payloads can escape through stored or returned bindings, and
-  their lifetime after the originating method finishes.
 - The exact diagnostics/error model for invalid-state calls and deleted-object access.
 - Deleting an already-invalid binding or intentionally null value.
 - Character ordering, arithmetic, and conversions to/from numeric types.

@@ -29,8 +29,8 @@ the comparison authority. Keep Bootstrap's explicit spelling enums synchronized.
   [Collection contract](../cloth-collections/SKILL.md)
 - [LexerError.co](../../../Bootstrap/Frontend/lexer/LexerError.co) retains one
   owned failure. Destroy partial tokens and stop at the first error.
-- [Main.co](../../../Bootstrap/Frontend/Main.co) scans the sample or first
-  program argument as text, preserving the dogfooding banner.
+- The Bootstrap driver scans source text from the first program argument or
+  standard input and prints the dogfooding banner. [Main.co](../../../Bootstrap/Frontend/Main.co)
 
 Preserve UTF-8 strings and scalar chars. Internal substring indices are scalar;
 published positions are one-based UTF-16 columns with exclusive ends. Do not

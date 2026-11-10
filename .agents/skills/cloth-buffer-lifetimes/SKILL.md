@@ -127,6 +127,12 @@ member copy elision and proven arena/stack reclamation.
   replay after source effects, and ordinary reads snapshot field values.
   [Class values](../cloth-language/references/class-values.md)
 
+- State activations own their payload buffers. Replacing or detaching an
+  activation releases the object's ownership. Entry hooks and dispatched
+  state methods retain the payload and its arena through the invocation.
+  Results escape through ordinary caller-owned copies.
+  [State activation storage](../cloth-language/references/state-runtime.md#activation-storage)
+
 - A proven immediate class array projection can consume the size or snapshot
   the selected element without copying its backing array. Keep the borrowed
   projection within that read and preserve the snapshot path for indices

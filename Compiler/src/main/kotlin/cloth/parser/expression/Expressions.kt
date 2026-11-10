@@ -70,6 +70,19 @@ data class ElvisExpression(val left: Expression, val operator: Token, val fallba
 	override val span get() = left.span.through(fallback.span)
 }
 
+/** A guarded hop owns the remaining postfix expression on its present path. */
+internal data class GuardedAccessExpression(val operator: Token, val payload: GuardedReceiver, val continuation: Expression) : Expression {
+
+	val receiver get() = payload.source
+	override val span get() = receiver.span.through(continuation.span)
+}
+
+/** A reference to the once-evaluated payload inside its guard. */
+internal class GuardedReceiver(val source: Expression) : Expression {
+
+	override val span get() = source.span
+}
+
 /** Contextual absence, never an ordinary inferred null-only source type. */
 data class NullLiteral(override val span: TokenSpan) : Expression
 

@@ -65,7 +65,7 @@ class ImportPublicationTest {
 			val completion = processCompletion().replace("\r\n", "\n")
 			if (project == example) assertEquals("token Name: Cloth\nnested folders\n" + completion, actual)
 			else {
-				assertTrue(actual.endsWith(completion), actual)
+				assertTrue(actual.endsWith("\n3\n" + completion), actual)
 				assertEquals(1, Regex("PEC: 0").findAll(actual).count(), actual)
 			}
 		}
@@ -95,6 +95,7 @@ class ImportPublicationTest {
 	private fun execute(executable: Path): String {
 		val process = ProcessBuilder(executable.toString(), "nested folders").redirectErrorStream(true).start()
 		try {
+			process.outputStream.close()
 			assertTrue(process.waitFor(30, TimeUnit.SECONDS))
 			val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
 			assertEquals(0, process.exitValue(), output)

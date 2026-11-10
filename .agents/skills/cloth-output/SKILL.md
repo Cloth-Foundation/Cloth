@@ -1,6 +1,6 @@
 ---
 name: cloth-output
-description: Design, explain, or extend Cloth print and println, recursive array contents for output/interpolation/str, built-in registration and lookup, printable-value adaptation, or length-aware native UTF-8 output.
+description: Design, explain, or extend Cloth print, println and input, recursive array contents for output/interpolation/str, built-in registration and lookup, printable-value adaptation, or length-aware native UTF-8 console I/O.
 ---
 
 # Cloth output and built-in functions
@@ -29,6 +29,10 @@ use [strings](../cloth-strings/SKILL.md); for normal executable completion use
 
 - `print(value)`, `println(value)`, and `println()` are unimported void functions.
   `print()` and multi-value calls are arity errors. Interpolation composes text.
+- `input()` and `input(string?)` return `string?` without an import. A present
+  prompt uses the same output path as `print`, and pending output flushes before
+  the read. See [console input](references/semantics.md#console-input) for line,
+  EOF and UTF-8 behavior.
 - Preserve lexical shadowing: bindings shadow built-ins even in call position;
   a source function group shadows the whole built-in group. Mismatched source
   overloads do not fall back to the built-in. Names are ordinary case-sensitive
@@ -75,6 +79,17 @@ bytes and interrupted argument behavior. The
 [built-in milestone](../cloth-language/references/development.md#built-in-function-registry-and-explicit-output-2026-10-31)
 records the integrated behavior and evidence; the current suite must be rerun
 before claiming new validation.
+
+For input, [InputFunction](../../../Compiler/src/main/kotlin/cloth/builtin/functions/InputFunction.kt)
+owns the two positional overloads. Exact built-in arguments use ordinary nullable
+lifting before transfer. [EmitInput](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitInput.kt)
+uses checked native scratch growth and copies the validated line into the
+caller's string arena before freeing the scratch. Keep the presence guard around
+prompt output and consume each argument once. The counted
+[UTF-8 validator](../../../Compiler/src/main/kotlin/cloth/emitter/text/EmitUtf8Validation.kt)
+shares the native-argument rules and scans embedded NULs as bytes. Use
+`BuiltinFunctionsTest`, `UnicodeArgumentsTest` and `BufferCountsTest` when
+changing these paths. See the [input verification record](references/semantics.md#input-verification-2026-11-09).
 
 ## Recursive array text
 

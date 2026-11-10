@@ -253,3 +253,26 @@ nullable-value behavior is unchanged.
   payload access. The [provider-owned contract](../../cloth-compiler-data/references/nullable-providers.md)
   retains exact behavior, source ownership and rejection boundaries.
 
+## Guarded member access
+
+The user confirmed `?.` on 2026-11-09. Each `?.` evaluates its nullable receiver
+once. On presence, the field or method uses the payload and the postfix chain
+continues. At the first absent guard, the rest of the chain is skipped, including
+method arguments, omitted defaults and index expressions. A plain `.` on the
+present path still requires a non-nullable or proven-present receiver. A second
+`?.` can guard a subsequent nullable member. Parentheses around the chain end
+its short-circuit scope.
+
+The chain supplies one nullable result. A last member with type `T` or `T?`
+produces `T?`. An explicit nullable annotation is still required for a new
+binding that holds this result. `?:` remains the lazy fallback for the result
+of a chain or for an intermediate value when grouped at that point.
+
+```cloth
+typedef<class> Label(pub def<string?> text) {}
+fn<string> upper(Label? label) = label?.text?.toUpperCase() ?: "missing"
+```
+
+The implementation record covers receiver rules, diagnostics and verification.
+[Implementation](implementation.md#guarded-member-access)
+

@@ -128,6 +128,7 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 			}
 
 			is ElvisExpression         -> of(expression.left).then(if (expression.left is NullLiteral) of(expression.fallback) else ControlFlow.FALLTHROUGH.or(of(expression.fallback)))
+			is GuardedAccessExpression -> of(expression.receiver).then(ControlFlow.FALLTHROUGH.or(of(expression.continuation)))
 			is BinaryExpression        -> {
 				val left = of(expression.left)
 				val right = of(expression.right)

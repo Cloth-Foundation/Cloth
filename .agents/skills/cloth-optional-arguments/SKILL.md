@@ -111,10 +111,12 @@ Cross-target IR verification does not establish native Linux/macOS execution.
 See the [final syntax review](../cloth-language/references/development.md#optional-syntax-final-review-2026-11-02),
 the [syntax migration evidence](../cloth-language/references/development.md#optional-parameter-syntax-final-optt-2026-11-02)
 and [original integration evidence](../cloth-language/references/development.md#optional-arguments-and-runtime-defaults-2026-11-01)
-for actual results. The confirmed
-[interface call contract](../cloth-interfaces/references/design.md#static-interface-call-contracts-confirmed-2026-11-08)
-uses labels and defaults from the static interface declaration, then dispatches
-only the body with resolved values. Interface execution remains unimplemented.
-State and other future dispatch must settle their visible parameter/default
-contracts, revalidation, allocation and delegation ordering before adopting this
-binder; recording reusable plans implements none of those runtimes.
+for actual results. Interface calls use labels and defaults from the static
+interface declaration and dispatch the body with resolved values.
+[Interface call contract](../cloth-interfaces/references/design.md#static-interface-call-contracts-confirmed-2026-11-08) ·
+[Native interface defaults](../cloth-interfaces/references/stage-5.md#static-arguments-and-closed-fallback-bodies)
+
+The state-call design assigns labels and defaults to a shared contract per
+overload. Resolve supplied arguments and omitted defaults before checking
+the captured receiver's liveness and selecting its active state's body.
+[State calls](../cloth-language/references/semantics.md#states-and-method-dispatch)

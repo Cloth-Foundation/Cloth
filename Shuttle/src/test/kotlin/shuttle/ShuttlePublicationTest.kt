@@ -1,6 +1,5 @@
 package shuttle
 
-import cloth.diagnostics.DiagnosticReporter
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -29,12 +28,12 @@ class ShuttlePublicationTest {
 	}
 
 	@Test
-	fun `Bootstrap scaffold runs with its original nested module layout`(@TempDir directory: Path) {
+	fun `Bootstrap reads source and prints its token count from the nested module layout`(@TempDir directory: Path) {
 		val project = copyProject("Bootstrap", directory.resolve("bootstrap"))
-		val result = shuttleProcess(project.resolve("Frontend/lexer"), listOf("run", "-o", directory.resolve("binary/Cloth").toString()))
+		val result = shuttleProcess(project.resolve("Frontend/lexer"), listOf("run", "-o", directory.resolve("binary/Cloth").toString()), input = "def answer = 42\n")
 		assertEquals(0, result.status, result.output)
 		val output = result.output.replace("\r\n", "\n")
-		assertTrue(output.endsWith("\nPEC: 0\n"), output)
+		assertTrue(output.endsWith("\n5\n\nPEC: 0\n"), output)
 		assertEquals(1, Regex("PEC: 0").findAll(output).count(), output)
 	}
 
@@ -43,7 +42,7 @@ class ShuttlePublicationTest {
 		val project = copyProject("examples/Shuttle", directory.resolve("project"))
 		val output = directory.resolve("objects/example.o")
 		val reports = StringBuilder()
-		assertEquals(0, runShuttle(arrayOf("build", "--project", project.toString(), "--emit", "object", "--target", "aarch64-unknown-linux-gnu", "--linker", "missing-linker", "-o", output.toString()), DiagnosticReporter(reports), directory), reports.toString())
+		assertEquals(0, runNativeShuttle(arrayOf("build", "--project", project.toString(), "--emit", "object", "--target", "aarch64-unknown-linux-gnu", "--linker", "missing-linker", "-o", output.toString()), reports, directory), reports.toString())
 		val bytes = Files.readAllBytes(output)
 		assertEquals(listOf(127, 69, 76, 70), bytes.take(4).map { it.toInt() and 255 })
 		assertEquals(183, bytes[18].toInt() and 255)

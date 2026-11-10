@@ -4,6 +4,7 @@ import cloth.data.*
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.parser.type.TypeReference
 import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericBodyViews
 import cloth.semantic.interfaces.InterfaceModel
@@ -43,8 +44,9 @@ class DeclarationModel internal constructor(
 			}
 		}
 	}
-	internal val callableContracts: List<CallableContractSymbol> = callables + interfaceMethods.values
-	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + interfaceMethods.values
+	internal val states = StateCatalog(files, classDefinitions.keys, genericViews, typeResolver())
+	internal val callableContracts: List<CallableContractSymbol> = callables + interfaceMethods.values + states.callables
+	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + interfaceMethods.values + states.callables
 	private val interfaceGroups = interfaces.contracts.mapValues { (owner, contract) ->
 		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }
 			.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
@@ -54,6 +56,9 @@ class DeclarationModel internal constructor(
 	internal fun fileScopeOf(name: Token): LexicalScope = files.context(name).scope
 	internal fun signatureType(type: cloth.parser.type.TypeReference) = genericViews?.signatureType(type) ?: SignatureType.of(type, namedType(type.name))
 	internal fun typeResolver(operatorWidth: Int? = null) = TypeResolver(target, operatorWidth, contextualNamedType = ::namedType, resolvedType = genericViews?.resolvedTypes?.let { it::get })
+	internal fun unboundStateName(target: TypeReference): Token? = target.bareIdentifier?.takeIf {
+		states.firstSyntax != null && namedType(it) == null && genericViews?.resolvedTypes?.containsKey(target) != true
+	}
 
 	internal fun initializationExpressions(declaration: CallableSignature): List<Expression> = when (declaration) {
 		is PrimaryConstructorDeclaration -> {
@@ -61,6 +66,7 @@ class DeclarationModel internal constructor(
 			definition.baseCall?.arguments.orEmpty() + definition.fieldInitializers.map { it.expression }
 		}
 		is ConstructorDeclaration        -> declaration.delegation.arguments
+		is StateInitialPayloadDeclaration -> listOf(declaration.expression)
 		else                             -> emptyList()
 	}
 
@@ -72,7 +78,9 @@ class DeclarationModel internal constructor(
 	}
 
 	internal val classOwners = IdentityHashMap<CallableSignature, CClass>().apply {
-		for (callable in callables) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
+		for (callable in callableContracts) {
+			if (!states.isAttachedBody(callable)) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
+		}
 	}
 	internal val enumOwners = IdentityHashMap<CallableSignature, CEnum>().apply {
 		for (callable in callables) (callable.receiver?.owner as? CEnum)?.let { put(callable.declaration, it) }
