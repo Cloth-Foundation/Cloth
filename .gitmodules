@@ -6,3 +6,7 @@
 	path = Standard-Library
 	url = https://github.com/Cloth-Foundation/Standard-Library.git
 	branch = main
+[submodule "UnicodeGenerator"]
+	path = UnicodeGenerator
+	url = https://github.com/Cloth-Foundation/UnicodeGenerator.git
+	branch = main
