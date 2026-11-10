@@ -7,6 +7,7 @@ import cloth.data.CEnum
 import cloth.data.CInterface
 import cloth.data.CMemberType
 import cloth.data.CStruct
+import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.ImportErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
@@ -88,8 +89,14 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 				}
 				if (declaration is FunctionDeclaration) {
 					val symbol = FunctionSymbol(declaration) { nominal(it.name) }
+					val overloads = groups.getOrPut(symbol.name.lexeme) { mutableListOf() }
+					if (symbol.typeParameterCount != 0) {
+						overloads.firstOrNull { it.typeParameterCount == symbol.typeParameterCount }?.let {
+							throw GenericErrors.duplicateFunction(symbol.name, it.name, symbol.typeParameterCount)
+						}
+					}
 					file.functions.add(symbol)
-					groups.getOrPut(symbol.name.lexeme) { mutableListOf() }.add(symbol)
+					overloads.add(symbol)
 				}
 				if (declaration is TopLevelStateDeclaration) {
 					val name = declaration.name

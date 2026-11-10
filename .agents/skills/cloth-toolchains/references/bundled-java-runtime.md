@@ -32,3 +32,8 @@ Exercise both installed commands to cover dynamic library loads and diagnostics.
   each extracted archive with `JAVA_HOME` unset and Java off PATH. Both archives
   recorded execute permissions for `java` and `jspawnhelper`.
 - Native macOS and ARM64 host verification is pending.
+
+The 2026-11-10 BUILD-1 host recheck used bundled Java 25 on Windows x64 with
+system ACP 1252 and Linux x64 under WSL2. The record includes exact Java builds,
+launcher results and the pending Windows host checks.
+[BUILD-1 Stage 4 host verification](windows-unicode-launcher.md#stage-4-host-verification)

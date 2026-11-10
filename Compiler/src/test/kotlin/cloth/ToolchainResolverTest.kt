@@ -120,9 +120,31 @@ class ToolchainResolverTest {
 			"-dumpmachine"       -> target
 			"-print-search-dirs" -> "libraries: =$library"
 			"--show-sdk-path"    -> library.parent.parent.toString()
+			"clang"              -> executable.toString()
 			else                 -> command.last().substringAfter("-print-file-name=")
 		}
 	}, { executable })
+
+	@Test
+	fun `Linux discovers Clang on PATH when cc is absent and honors overrides`(@TempDir root: Path) {
+		val bin = directory(root.resolve("toolchain with spaces"))
+		val clang = file(bin.resolve("clang${ExecutableFormat.current.extension}"))
+		val library = directory(root.resolve("lib"))
+		file(library.resolve("libm.so"))
+		val environment = mapOf("PATH" to bin.toString())
+		val resolver = unixResolver(clang, library, linux.targetTriple, environment = environment)
+		val config = resolver.resolve(linux, LinkOptions())
+		assertEquals(clang, config.executable)
+		assertContains(config.flags, "--target=${linux.targetTriple}")
+
+		val cc = file(bin.resolve("cc${ExecutableFormat.current.extension}"))
+		assertEquals(cc, resolver.resolve(linux, LinkOptions()).executable)
+		val configured = unixResolver(clang, library, linux.targetTriple, environment = environment + ("CC" to "clang"))
+		assertEquals(clang, configured.resolve(linux, LinkOptions()).executable)
+		assertEquals(cc, configured.resolve(linux, LinkOptions(linker = cc)).executable)
+		val missing = assertFailsWith<ClothDiagnostic> { configured.resolve(linux, LinkOptions(linker = bin.resolve("missing"))) }
+		assertEquals(DiagnosticCode.MISSING_EXECUTABLE, missing.diagnosticCode)
+	}
 
 	@Test
 	fun `Linux Clang resolves target flags sysroot math runtime and ordered user libraries`(@TempDir root: Path) {
@@ -184,6 +206,22 @@ class ToolchainResolverTest {
 		file(bin.resolve("xcrun${ExecutableFormat.current.extension}"))
 		val discovered = unixResolver(executable, library, "aarch64-apple-darwin23.0.0", environment = mapOf("PATH" to bin.toString())).resolve(mac, LinkOptions(linker = executable))
 		assertEquals(config.runtimeLibraries, discovered.runtimeLibraries)
+	}
+
+	@Test
+	fun `macOS uses xcrun to discover Clang and the SDK when cc is absent`(@TempDir root: Path) {
+		val xcrun = file(root.resolve("bin/xcrun${ExecutableFormat.current.extension}"))
+		val clang = file(root.resolve("Apple toolchain/bin/clang"))
+		val sdk = directory(root.resolve("MacOSX.sdk"))
+		val system = file(sdk.resolve("usr/lib/libSystem.tbd"))
+		val queries = mutableListOf<List<String>>()
+		val resolver = unixResolver(clang, system.parent, mac.targetTriple, queries = queries, environment = mapOf("PATH" to xcrun.parent.toString()))
+		val config = resolver.resolve(mac, LinkOptions())
+		assertEquals(clang, config.executable)
+		assertEquals(listOf(system), config.runtimeLibraries)
+		assertEquals(listOf(xcrun.toString(), "--sdk", "macosx", "--find", "clang"), queries.first())
+		assertContains(queries, listOf(clang.toString(), "--version"))
+		assertContains(queries, listOf(xcrun.toString(), "--sdk", "macosx", "--show-sdk-path"))
 	}
 
 	@Test

@@ -23,7 +23,7 @@ class ExpressionParser(val parser: Parser) {
 				parser.advance()
 				val target = parser.peek()
 				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.SAFE_DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
-				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && hasValuePostfix
+				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && (hasValuePostfix || parser.typeParser.startsFunctionTypeArguments())
 				left = if (valueTarget) BinaryExpression(left, operator, parseUnary(stopAtRange, allowWhileTrailer))
 				else TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
 				continue
@@ -170,12 +170,12 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.Keyword if isImplicitBinding(token)                                                   -> NameExpression(parser.advance())
 
 			TokenType.Identifier                                                                            -> {
+				val genericCall = parser.typeParser.startsFunctionTypeArguments()
 				val name = parser.advance()
+				val typeArguments = if (genericCall) parser.typeParser.arguments() else null
 				if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {
-					val arguments = parser.delimited.parentheses {
-						parseArguments()
-					}
-					CallExpression(name, arguments, name.span.through(parser.previous().span))
+					val arguments = parseArgumentList()
+					CallExpression(name, arguments, name.span.through(parser.previous().span), typeArguments)
 				} else NameExpression(name)
 			}
 

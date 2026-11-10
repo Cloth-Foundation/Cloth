@@ -99,6 +99,7 @@ internal class StateInitialPayloadSymbol(owner: CClass, override val declaration
 
 class FunctionSymbol(override val declaration: FunctionDeclaration, private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
 	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
+	internal val typeParameterCount get() = declaration.typeParameters?.parameters?.size ?: 0
 
 	override val name get() = declaration.name
 	override val signature by lazy { FunctionSignature.of(declaration, nominal, signatureResolver) }

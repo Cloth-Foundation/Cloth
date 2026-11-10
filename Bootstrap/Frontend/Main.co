@@ -9,7 +9,7 @@ pub fn<isize> main (string[] args) {
     if (userInput == "") userInput = null
 
     // shouldn't ever crash, as EOF is placed manually.
-    def input := if (args::size == 0) { userInput ?: exit(1, "Try inputting something next time") } else { args[0] }
+    def input := if (args::size == 0) { userInput ?: exit(1, "Input is null") } else { args[0] }
     def source := SourceFile::new("<string>", input)
     def lexer := Lexer::new(input, source)
 

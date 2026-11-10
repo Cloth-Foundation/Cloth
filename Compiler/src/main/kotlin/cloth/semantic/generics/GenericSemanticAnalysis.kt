@@ -142,6 +142,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			(member as? MethodDeclaration)?.operator?.selector?.let(::surface)
 		}
 		for (file in files.files) for (declaration in file.unit.declarations) when (declaration) {
+			is FunctionDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) callable(declaration)
 			is ClassDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) {
 				declaration.parameters.forEach { surface(it.parameter.type) }
 				for (member in declaration.members) when (member) {

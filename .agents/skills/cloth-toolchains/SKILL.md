@@ -59,6 +59,11 @@ module. [Stage 2](references/windows-unicode-launcher.md) integrates the bridge
 into the combined and per-command distributions. `cloth.exe` is the primary
 Windows command. Keep `cloth.bat` as a compatibility entry and `shuttle.exe`
 as the Kotlin/Native frontend.
+[Stage 3 archive checks](references/windows-unicode-launcher.md#stage-3-archive-verification)
+verify both ZIP and TAR formats after extraction and relocation on Windows x64.
+The host recheck covers Windows x64 with system ACP 1252 and Linux x64 under
+WSL2. System ACP 65001 and native Windows ARM64 remain pending.
+[BUILD-1 Stage 4 host verification](references/windows-unicode-launcher.md#stage-4-host-verification)
 
 [Stage 4 allocation boundary](references/standard-library-stage-4.md) records the
 user-selected owning-collection consumer and verifies existing typed class
@@ -96,6 +101,14 @@ Keep native Windows/GNU execution distinct from other profiles' object evidence.
   runtime linkage, GUI/console startup, sysroots, and ordered user libraries.
   Preserve paths with spaces as arguments; resolve dependencies before creating
   output artifacts. Static system CRT linking on macOS is rejected.
+- The shared resolver uses `--linker`, `CC`, then `cc` on `PATH` for Linux and
+  macOS executables. If neither override is set and `cc` is absent, Linux looks
+  for `clang` on `PATH` and macOS asks `xcrun --sdk macosx --find clang`. The
+  resolver tries `/usr/bin/xcrun` on macOS when `PATH` has no `xcrun`. SDK
+  selection uses `--sysroot`, `SDKROOT`, then `xcrun --sdk macosx --show-sdk-path`.
+  The resolver reports a missing driver override or target mismatch immediately.
+  With the platform tools installed, use `shuttle run --project examples/States`.
+  [Verification](../cloth-language/references/development.md#unix-linker-discovery-2026-11-10)
 - The emitter checks the semantic target and callable signatures once before
   executable linker discovery. Executable IR and binary emission share startup
   generation and verify the module after startup is added.
@@ -136,7 +149,7 @@ project sources with imports use Shuttle or explicit roots through the API.
 `cloth run examples/Functions.co build/functions` builds and launches a program.
 The first `--` in `run` separates build options from program arguments. The
 launcher passes the remaining arguments in order and inherits the caller's
-working directory and console streams. The default Windows JVM launcher needs
+working directory and console streams. Windows JVM child-process launch needs
 explicit escaping for literal quotes. Preserve empty, Unicode and spaced
 arguments. Treat flags such as `--debug` after the separator as program arguments.
 

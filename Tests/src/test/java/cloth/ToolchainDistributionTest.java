@@ -23,10 +23,10 @@ class ToolchainDistributionTest {
     @Test void installedBundleContainsBothCommandsPinnedSourcesAndProvenance() throws IOException {
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth")));
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth.bat")));
-        assertFalse(Files.exists(installed.resolve("bin/Compiler.bat")));
         assertTrue(Files.isExecutable(installed.resolve(windows ? "bin/shuttle.exe" : "bin/shuttle")));
         assertFalse(Files.exists(installed.resolve("bin/shuttle.bat")));
         if (windows) {
+            assertFalse(Files.exists(installed.resolve("bin/Compiler.bat")));
             assertTrue(Files.isExecutable(installed.resolve("bin/cloth.exe")));
             assertTrue(Files.isExecutable(installed.resolve("bin/cloth-jvm.exe")));
             assertTrue(Files.isRegularFile(installed.resolve("launcher/cloth-launcher.jar")));

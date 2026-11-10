@@ -8,6 +8,7 @@ import cloth.data.CInterface
 import cloth.data.ClassField
 import cloth.data.EnumField
 import cloth.data.sameDeclaration
+import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
@@ -55,11 +56,13 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		val enumTypes = views?.types?.nominalTypes?.filterIsInstance<CEnum>() ?: types!!.enums
 		val nominal: (TypeReference) -> cloth.data.CMemberType? = { views?.resolvedTypes?.get(it) as? cloth.data.CMemberType ?: files.nominal(it.name) }
 		val classes = classTypes.associateWith { owner -> classDefinition(owner, nominal, views) }
-		val functions = files.files.flatMap { it.functions }
-		if (views != null) functions.forEach { it.signatureResolver = views::signatureType }
+		val ordinaryFunctions = files.files.flatMap { it.functions }.filter { it.typeParameterCount == 0 }
+		if (views != null) ordinaryFunctions.forEach { it.signatureResolver = views::signatureType }
+		val functions = ordinaryFunctions + views?.functions?.values.orEmpty()
 		for (file in files.files) {
 			val signatures = linkedMapOf<FunctionSignature, FunctionSymbol>()
 			for (function in file.functions) {
+				if (function.typeParameterCount != 0) continue
 				signatures.putIfAbsent(function.signature, function)?.let { throw SemanticErrors.duplicateFunction(function.signature.spelling, it.name, function.name) }
 			}
 		}
@@ -201,6 +204,26 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		}
 
 		private fun value(name: Token, scope: LexicalScope) = lookup(name, scope) { receiverField(receiver, name) }
+
+		private fun callGroup(call: CallExpression, group: CallableGroupSymbol): CallableGroupSymbol {
+			val arguments = call.typeArguments
+			if (group !is FunctionGroupSymbol) {
+				if (arguments != null) throw GenericErrors.callArity(call.name, arguments.span, arguments.arguments.size, listOf(0), group.name)
+				return group
+			}
+			val count = arguments?.arguments?.size ?: 0
+			val matching = group.overloads.filter { it.typeParameterCount == count }
+			if (matching.isEmpty()) {
+				val expected = group.overloads.map { it.typeParameterCount }.distinct().sorted()
+				throw GenericErrors.callArity(call.name, arguments?.span ?: call.name.span, count, expected, group.name)
+			}
+			if (arguments != null) {
+				val types = arguments.arguments.map(model.typeResolver()::resolve)
+				val function = checkNotNull(model.genericViews).specialize(matching.single(), types)
+				return FunctionGroupSymbol(listOf(function))
+			}
+			return if (matching.size == group.overloads.size) group else FunctionGroupSymbol(matching)
+		}
 
 		private fun checkReceiverWrite(binding: Symbol?, span: TokenSpan) {
 			if (initializingField != null && (binding is ReceiverSymbol || binding is ReceiverFieldSymbol)) {
@@ -492,7 +515,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 						checkSelfCall(expression.name)
 						model.implicitReceivers[expression] = checkNotNull(receiver)
 					}
-					model.calls[expression] = symbol
+					model.calls[expression] = callGroup(expression, symbol)
 					expression.arguments.forEach { receiverValue(it, scope) }
 				}
 

@@ -5,6 +5,11 @@ description: Design, explain, or extend Cloth function declarations, strict para
 
 # Cloth functions and function blocks
 
+[Explicit generic functions](references/generic-functions.md) covers top-level
+`fn<T> name<T>(T value)` declarations, `name<int>(value)` applications, and the
+standard-library `magic` helper. Reuse the existing symbolic and closed
+worklist and preserve the defining file and separate facts of each specialization.
+
 [Generic Stage 0](../cloth-generics/references/semantics.md#declaration-and-closed-body-checking)
 confirms owner-generic bodies are checked at declaration, including unused
 templates, then checked again after closed substitution. Unknown T grants no
@@ -21,7 +26,7 @@ constructors/defaults/results. Existing inferred operator widths stay patterns.
 declarations and closed bodies, including defaults/captures/results/operators,
 using separate source-linked AST views and exact signature keys. Candidate and
 operator inference facts stay isolated. Private access follows the original
-class declaration across its instances. Generic methods/functions remain deferred.
+class declaration across its instances. This stage covered owner-generic methods.
 [Generic Stage 4](../cloth-generics/references/stage-4.md) emits the closed
 constructors/destructors, methods/operators, defaults, captures and ordered results
 through the existing private ABI and frame storage. Keep callable/receiver caches

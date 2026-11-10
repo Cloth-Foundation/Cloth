@@ -104,7 +104,9 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 		if (options.msvcTools != null || options.windowsSDK != null || options.windowsSDKVersion != null) throw ToolchainErrors.options("MSVC/Windows SDK options require a Windows target")
 		val darwin = abi.profile == NativeCABI.Profile.DARWIN_LP64
 		if (darwin && options.runtime == RuntimeLinkage.STATIC) throw ToolchainErrors.options("Static system C runtime linking is not supported on macOS")
-		val executable = program(options.linker?.toString() ?: env("CC") ?: "cc")
+		val executable = (options.linker?.toString() ?: env("CC"))?.let(::program)
+			?: findOnPath("cc")
+			?: if (darwin) regularFile(macToolchainPath("--find", "clang")) else program("clang")
 		val banner = probe(listOf(executable.toString(), "--version"))
 		val clang = banner.contains("clang", ignoreCase = true)
 		if (!clang && !banner.contains("gcc", ignoreCase = true) && !banner.contains("Free Software Foundation", ignoreCase = true)) throw ToolchainErrors.driver("Unsupported C linker driver '$executable'; expected GCC or Clang")
@@ -117,7 +119,7 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 		}
 		if (driverABI.architecture != abi.architecture || driverABI.profile != abi.profile || (!darwin && driverABI.environment != abi.environment)) throw ToolchainErrors.driver("C linker driver '$executable' targets '${driverABI.targetTriple}', but LLVM selected '${abi.targetTriple}'; choose a matching --linker")
 		val sysroot = options.sysroot?.let(::directory) ?: if (darwin) {
-			env("SDKROOT")?.let { directory(Path.of(it)) } ?: directory(Path.of(probe(listOf(program("xcrun").toString(), "--sdk", "macosx", "--show-sdk-path")).trim()))
+			env("SDKROOT")?.let { directory(Path.of(it)) } ?: directory(macToolchainPath("--show-sdk-path"))
 		} else null
 		val targetFlags = buildList {
 			if (clang) add("--target=${abi.targetTriple}")
@@ -154,11 +156,21 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 	private fun program(name: String): Path {
 		val path = Path.of(name)
 		if (path.isAbsolute || path.parent != null) return regularFile(path)
+		return findOnPath(name) ?: throw ToolchainErrors.executable(name)
+	}
+
+	private fun findOnPath(name: String): Path? {
 		val names = if (hostFormat == ExecutableFormat.PE && !name.endsWith(".exe", ignoreCase = true)) listOf(name, "$name.exe") else listOf(name)
 		for (root in env("PATH").orEmpty().split(File.pathSeparatorChar).filter(String::isNotBlank)) {
 			for (candidate in names) Path.of(root, candidate).takeIf(Files::isRegularFile)?.let { return regularFile(it) }
 		}
-		throw ToolchainErrors.executable(name)
+		return null
+	}
+
+	private fun macToolchainPath(vararg arguments: String): Path {
+		val xcrun = findOnPath("xcrun")
+			?: if (hostFormat == ExecutableFormat.MACH_O) regularFile(Path.of("/usr/bin/xcrun")) else throw ToolchainErrors.executable("xcrun")
+		return Path.of(probe(listOf(xcrun.toString(), "--sdk", "macosx", *arguments)).trim())
 	}
 
 	private fun versions(root: Path): List<Path> {

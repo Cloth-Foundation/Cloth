@@ -32,6 +32,7 @@ class ProgramAnalyzer(private val target: TargetLayout) {
 		if (mains.isEmpty()) throw EntryErrors.missing(primary.unit.end)
 		if (mains.size > 1) throw EntryErrors.duplicate(mains)
 		val main = mains.single()
+		main.declaration.typeParameters?.let { throw EntryErrors.typeParameters(it.span) }
 		val type = functions.typeOf(main)
 		if (type.results is ResultShape.Multiple) throw EntryErrors.returns(main)
 		if (type.parameters.isNotEmpty() && type.parameters != listOf(CArray(ValueType.STRING)) && type.parameters != listOf(CNullable(CArray(ValueType.STRING)))) throw EntryErrors.parameters(main)

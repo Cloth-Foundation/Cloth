@@ -235,7 +235,15 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 
 listOf(project, compilerProject, shuttleProject).forEach { distributionProject ->
 	listOf("distZip", "distTar").forEach { archive ->
-		distributionProject.tasks.named<AbstractArchiveTask>(archive) { archiveClassifier.set(releasePlatform) }
+		distributionProject.tasks.named<AbstractArchiveTask>(archive) {
+			archiveClassifier.set(releasePlatform)
+			if (!windowsHost && distributionProject != compilerProject) {
+				val shuttleMode = "rwxr-xr-x"
+				// Track the per-file rule so existing archives are rebuilt when it changes.
+				inputs.property("unixShuttleMode", shuttleMode)
+				filesMatching("**/bin/shuttle") { permissions { unix(shuttleMode) } }
+			}
+		}
 	}
 }
 

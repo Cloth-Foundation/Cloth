@@ -7,6 +7,7 @@ import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
+import cloth.parser.expression.CallExpression
 import cloth.parser.type.TypeReference
 import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.semantic.declarations.EnumModel
@@ -14,6 +15,8 @@ import cloth.semantic.declarations.FileBindings
 import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.interfaces.InterfaceConformanceAnalyzer
 import cloth.semantic.interfaces.interfaceParentOrder
+import cloth.semantic.symbols.FunctionGroupSymbol
+import cloth.semantic.symbols.FunctionSymbol
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
 import cloth.token.Token
@@ -42,38 +45,33 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private data class Key(val definition: CMemberType, val arguments: List<ValueType>)
 		private val model = ClosedTypeModel(names, target, symbolic)
 		private val instances = linkedMapOf<Key, ClosedTypeInstance>()
-		private val work = ArrayDeque<ClosedTypeInstance>()
-		private val ownerUses = IdentityHashMap<Declaration, MutableList<GenericTypeUse>>()
-		private var current: ClosedTypeInstance? = null
+		private val work = ArrayDeque<() -> Unit>()
+		private val ownerUses = IdentityHashMap<Declaration?, MutableList<GenericTypeUse>>()
+		private val ownerCalls = IdentityHashMap<Declaration?, MutableList<CallExpression>>()
+		private var bindings = model.rootBindings
 		private var closedCount = 0
 		private var symbolicCount = 0
 
 		fun analyze(): ClosedTypeModel {
 			val interfaceOrder = interfaceParentOrder(files.typeOrder.filterIsInstance<CInterface>(), names)
-			for (use in names.uses) use.owner?.let { ownerUses.getOrPut(it) { mutableListOf() }.add(use) }
-			for (definition in files.typeOrder) if (names.parametersOf(definition.declaration).isEmpty()) register(definition, definition, emptyList(), emptyList(), 0)
-			if (symbolic) for (definition in files.typeOrder) {
-				val parameters = names.parametersOf(definition.declaration)
-				if (parameters.isNotEmpty()) instantiate(definition, parameters.map { CTypeParameter(it.owner, it.declaration, it.index) }, definition.name.span)
-			}
-			for (use in names.uses) if (use.owner == null) bind(use)
-			for (file in files.files) for (function in file.functions) model.functionList.add(signature(function.declaration))
-			while (work.isNotEmpty()) {
-				val instance = work.removeFirst()
-				current = instance
-				instance.state = ClosedTypeState.RESOLVING
-				when (val type = instance.type) {
-					is CClass -> defineClass(type)
-					is CStruct -> defineStruct(type)
-					is CEnum -> {
-						EnumModel.defineFields(type, resolver())
-						type.declaration.operators.forEach { instance.signatureList.add(signature(it)) }
-					}
-					is CInterface -> type.declaration.methods.forEach { instance.signatureList.add(signature(it)) }
+			for (use in names.uses) ownerUses.getOrPut(use.owner) { mutableListOf() }.add(use)
+			for (use in names.functionUses) ownerCalls.getOrPut(use.owner) { mutableListOf() }.add(use.call)
+			for (definition in files.typeOrder) if (names.parametersOf(definition.declaration).isEmpty()) register(definition, definition, emptyList(), GenericBindings())
+			if (symbolic) {
+				for (definition in files.typeOrder) {
+					val arguments = symbolicArguments(definition.declaration)
+					if (arguments.isNotEmpty()) instantiate(definition, arguments, definition.name.span)
 				}
-				for (use in ownerUses[instance.definition.declaration].orEmpty()) bind(use)
-				current = null
+				for (file in files.files) for (function in file.functions) {
+					val arguments = symbolicArguments(function.declaration)
+					if (arguments.isNotEmpty()) instantiate(function, arguments, function.name.span)
+				}
 			}
+			bindOwner(null)
+			for (file in files.files) for (function in file.functions) {
+				if (function.typeParameterCount == 0) model.functionList.add(signature(function.declaration))
+			}
+			while (work.isNotEmpty()) work.removeFirst()()
 			val baseOrder = validateInheritance()
 			validateStructs()
 			if (names.interfaceSpan != null) model.interfaces = InterfaceConformanceAnalyzer(model).analyze(interfaceOrder, baseOrder)
@@ -81,21 +79,34 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			return model
 		}
 
-		private fun facts() = current?.facts ?: model.roots
+		private fun symbolicArguments(declaration: Declaration) = names.parametersOf(declaration).map { CTypeParameter(it.owner, it.declaration, it.index) }
+
+		private fun bindOwner(owner: Declaration?) {
+			for (use in ownerUses[owner].orEmpty()) bind(use)
+			for (call in ownerCalls[owner].orEmpty()) {
+				// Discover the needed views from the file group. Body name resolution
+				// still checks the call against its lexical scope.
+				val arguments = checkNotNull(call.typeArguments)
+				val group = files.context(call.name).scope.lookup(call.name.lexeme) as? FunctionGroupSymbol ?: continue
+				val template = group.overloads.firstOrNull { it.typeParameterCount == arguments.arguments.size } ?: continue
+				instantiate(template, arguments.arguments.map(::resolve), arguments.span)
+			}
+		}
+
 		private fun bind(use: GenericTypeUse) {
 			val pattern = pattern(use.type)
-			if (pattern is ClosedTypePattern.Exact) use.receiver?.let { (current?.receivers ?: model.receivers)[it] = pattern.type }
+			if (pattern is ClosedTypePattern.Exact) use.receiver?.let { bindings.receivers[it] = pattern.type }
 		}
-		private fun pattern(annotation: TypeReference): ClosedTypePattern = facts().getOrPut(annotation) {
+		private fun pattern(annotation: TypeReference): ClosedTypePattern = bindings.facts.getOrPut(annotation) {
 			if (annotation.capturesWidth) ClosedTypePattern.OperatorWidth(annotation) else ClosedTypePattern.Exact(resolve(annotation))
 		}
 		private fun resolve(annotation: TypeReference): ValueType {
-			(facts()[annotation] as? ClosedTypePattern.Exact)?.let { return it.type }
-			return resolver().resolve(annotation).also { facts()[annotation] = ClosedTypePattern.Exact(it) }
+			(bindings.facts[annotation] as? ClosedTypePattern.Exact)?.let { return it.type }
+			return resolver().resolve(annotation).also { bindings.facts[annotation] = ClosedTypePattern.Exact(it) }
 		}
 		private fun resolver() = TypeResolver(target, substitutedType = { annotation ->
 			when (val identity = names.names[annotation]) {
-				is TypeParameterSymbol -> current?.environment?.get(identity) ?: throw InternalErrors.invariant("Unsolved owner parameter '${identity.name.lexeme}' in a closed type")
+				is TypeParameterSymbol -> bindings.environment[identity] ?: throw InternalErrors.invariant("Unsolved owner parameter '${identity.name.lexeme}' in a closed type")
 				else -> {
 					val definition = (identity as? NominalTypeName)?.type ?: files.nominal(annotation.name)
 					definition?.let { if (annotation.application == null) it else instantiate(it, annotation.typeArguments.map(::resolve), annotation.span) }
@@ -103,12 +114,42 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		})
 
-		private fun register(type: CMemberType, definition: CMemberType, arguments: List<ValueType>, chain: List<Pair<TokenSpan, String>>, depth: Int): ClosedTypeInstance {
-			val parameters = names.parametersOf(definition.declaration)
-			return ClosedTypeInstance(type, definition, arguments, parameters.zip(arguments).toMap(), chain, depth).also {
+		private fun register(type: CMemberType, definition: CMemberType, arguments: List<ValueType>, bindings: GenericBindings): ClosedTypeInstance =
+			ClosedTypeInstance(type, definition, arguments, bindings).also {
 				model.catalog[type] = it
-				work.addLast(it)
+				work.addLast { define(it) }
 			}
+
+		private fun withBindings(instance: GenericBindings, define: () -> Unit) {
+			val previous = bindings
+			bindings = instance
+			try {
+				define()
+			} finally {
+				bindings = previous
+			}
+		}
+
+		private fun define(instance: ClosedTypeInstance) = withBindings(instance.bindings) {
+			instance.state = ClosedTypeState.RESOLVING
+			val signatures = instance.signatureList
+			when (val type = instance.type) {
+				is CClass -> {
+					defineClass(type)
+					signatures.add(signature(PrimaryConstructorDeclaration(type.declaration)))
+					type.declaration.members.filterIsInstance<CallableDeclaration>().mapTo(signatures, ::signature)
+				}
+				is CStruct -> {
+					defineStruct(type)
+					type.declaration.methods.mapTo(signatures, ::signature)
+				}
+				is CEnum -> {
+					EnumModel.defineFields(type, resolver())
+					type.declaration.operators.mapTo(signatures, ::signature)
+				}
+				is CInterface -> type.declaration.methods.mapTo(signatures, ::signature)
+			}
+			bindOwner(instance.definition.declaration)
 		}
 
 		private fun argumentDepth(type: ValueType): Int {
@@ -116,7 +157,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			while (true) value = when (value) {
 				is CArray -> value.element
 				is CNullable -> value.payload
-				else -> return (value as? CMemberType)?.let { model.catalog[it]?.argumentDepth } ?: 0
+				else -> return (value as? CMemberType)?.let { model.catalog[it]?.bindings?.argumentDepth } ?: 0
 			}
 		}
 
@@ -124,22 +165,41 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			val key = Key(definition, arguments.toList())
 			// Reuse provisional identities before charging depth or instance budgets.
 			instances[key]?.let { return it.type }
-			val chain = current?.chain.orEmpty()
-			val open = arguments.any { it.hasTypeParameters() }
-			val depth = 1 + (arguments.maxOfOrNull(::argumentDepth) ?: 0)
-			fun limit(code: DiagnosticCode, summary: String): Nothing = throw GenericErrors.limit(code, summary, use, definition.name, chain)
-			if (depth > maximumTypeArgumentNesting) limit(DiagnosticCode.GENERIC_SUBSTITUTION_NESTING, "Generic type argument nesting limit exceeded ($maximumTypeArgumentNesting)")
-			if (chain.size >= maximumGenericDependencyDepth) limit(if (open) DiagnosticCode.GENERIC_TEMPLATE_DEPENDENCY_LIMIT else DiagnosticCode.GENERIC_DEPENDENCY_LIMIT, if (open) "Generic template analysis dependency limit exceeded ($maximumGenericDependencyDepth)" else "Generic instantiation dependency limit exceeded ($maximumGenericDependencyDepth)")
-			if (open && symbolicCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_TEMPLATE_INSTANCE_LIMIT, "Too many symbolic generic instances ($maximumGenericInstances)")
-			if (!open && closedCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_INSTANCE_LIMIT, "Too many distinct generic instances ($maximumGenericInstances)")
+			val context = newBindings(definition.declaration, definition.name, key.arguments, use)
 			val type = when (definition) {
 				is CClass -> CClass(definition.declaration, definition, key.arguments)
 				is CStruct -> CStruct(definition.declaration, genericDefinition = definition, typeArguments = key.arguments)
 				is CEnum -> throw GenericErrors.arity(definition.name, arguments.size, 0, definition.name)
 				is CInterface -> CInterface(definition.declaration, definition, key.arguments)
 			}
+			return register(type, definition, key.arguments, context).also { instances[key] = it }.type
+		}
+
+		private fun instantiate(template: FunctionSymbol, arguments: List<ValueType>, use: TokenSpan) {
+			val key = ClosedFunctionKey(template, arguments)
+			model.functionInstances.getOrPut(key) {
+				val context = newBindings(template.declaration, template.name, arguments, use)
+				work.addLast {
+					withBindings(context) {
+						model.functionList.add(signature(template.declaration))
+						bindOwner(template.declaration)
+					}
+				}
+				context
+			}
+		}
+
+		private fun newBindings(declaration: Declaration, name: Token, arguments: List<ValueType>, use: TokenSpan): GenericBindings {
+			val chain = bindings.chain
+			val open = arguments.any { it.hasTypeParameters() }
+			val depth = 1 + (arguments.maxOfOrNull(::argumentDepth) ?: 0)
+			fun limit(code: DiagnosticCode, summary: String): Nothing = throw GenericErrors.limit(code, summary, use, name, chain)
+			if (depth > maximumTypeArgumentNesting) limit(DiagnosticCode.GENERIC_SUBSTITUTION_NESTING, "Generic type argument nesting limit exceeded ($maximumTypeArgumentNesting)")
+			if (chain.size >= maximumGenericDependencyDepth) limit(if (open) DiagnosticCode.GENERIC_TEMPLATE_DEPENDENCY_LIMIT else DiagnosticCode.GENERIC_DEPENDENCY_LIMIT, if (open) "Generic template analysis dependency limit exceeded ($maximumGenericDependencyDepth)" else "Generic instantiation dependency limit exceeded ($maximumGenericDependencyDepth)")
+			if (open && symbolicCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_TEMPLATE_INSTANCE_LIMIT, "Too many symbolic generic instances ($maximumGenericInstances)")
+			if (!open && closedCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_INSTANCE_LIMIT, "Too many distinct generic instances ($maximumGenericInstances)")
 			if (open) symbolicCount++ else closedCount++
-			return register(type, definition, key.arguments, chain + (use to definition.name.lexeme), depth).also { instances[key] = it }.type
+			return GenericBindings(names.parametersOf(declaration).zip(arguments).toMap(), chain + (use to name.lexeme), depth)
 		}
 
 		private fun signature(declaration: CallableSignature): ClosedCallableSignature = ClosedCallableSignature(declaration,
@@ -169,8 +229,6 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			for (parameter in declaration.parameters) if (parameter.fieldKeyword != null) add(parameter.parameter.name, parameter.parameter.type, parameter.visibility)
 			for (field in declaration.members.filterIsInstance<ClassFieldDeclaration>()) add(field.name, field.type, field.visibility)
 			owner.defineFields(fields)
-			current!!.signatureList.add(signature(PrimaryConstructorDeclaration(declaration)))
-			declaration.members.filterIsInstance<CallableDeclaration>().forEach { current!!.signatureList.add(signature(it)) }
 		}
 
 		private fun defineStruct(owner: CStruct) {
@@ -181,7 +239,6 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				if (type == ValueType.VOID) throw SemanticErrors.voidType(field.type.span)
 				StructField(field, index, type)
 			})
-			owner.declaration.methods.forEach { current!!.signatureList.add(signature(it)) }
 		}
 
 		private fun validateInheritance(): List<CClass> {

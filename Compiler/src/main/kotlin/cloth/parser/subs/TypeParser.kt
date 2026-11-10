@@ -50,7 +50,7 @@ class TypeParser(private val parser: Parser) {
 		return TypeParameterList(opening, parameters, parser.expect(Operators.GREATER))
 	}
 
-	private fun arguments(): TypeArgumentList {
+	internal fun arguments(): TypeArgumentList {
 		val opening = parser.expect(Operators.LESS)
 		if (argumentDepth >= maximumTypeArgumentNesting) throw GenericErrors.nesting(opening.span, maximumTypeArgumentNesting)
 		argumentDepth++
@@ -75,7 +75,7 @@ class TypeParser(private val parser: Parser) {
 	/** Uncommitted, iterative lookahead: ordinary comparisons do not parse types
 	 * or emit diagnostics. Committed parsing below checks grammar and depth.
 	 */
-	private fun applicationEnd(start: Int): Int? {
+	private fun angleListEnd(start: Int): Int? {
 		if (parser.peek(start).lexeme != Operators.LESS.toString()) return null
 		var offset = start
 		var depth = 0
@@ -89,8 +89,21 @@ class TypeParser(private val parser: Parser) {
 				else -> return null
 			}
 		}
-		return suffixEnd(offset)
+		return offset
 	}
+
+	private fun applicationEnd(start: Int): Int? = angleListEnd(start)?.let(::suffixEnd)
+
+	internal fun startsFunctionTypeArguments(): Boolean {
+		val name = parser.peek()
+		val opening = parser.peek(1)
+		if (name.type != TokenType.Identifier || !name.touches(opening)) return false
+		val end = angleListEnd(1) ?: return false
+		val arguments = parser.peek(end)
+		return arguments.lexeme == Operators.PAREN_OPEN.toString() && parser.peek(end - 1).touches(arguments)
+	}
+
+	private fun Token.touches(next: Token): Boolean = span.endLine == next.span.startLine && span.endColumn == next.span.startColumn
 
 	private fun suffixEnd(start: Int): Int? {
 		var offset = start

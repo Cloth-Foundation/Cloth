@@ -19,6 +19,12 @@ callable/flow checking, with source-linked views and isolated owner/candidate fa
 [Stage 1](references/stage-1.md) owns syntax and lexical/imported name identities.
 Only closed models emit native code; C4033 guards symbolic/unresolved contexts.
 
+[Explicit generic functions](../cloth-functions/references/generic-functions.md)
+use the same symbolic and closed analysis, including when calls from generic
+types pass their owner parameters. The original function symbol and ordered
+types identify each specialization. This slice includes the source `magic`
+helper in `cloth.lang.num.NumberUtilities`.
+
 Stage 0 confirms the [first-slice contract](references/semantics.md) and captures
 [baseline evidence](references/stage-0.md). Read the
 [acceptance/rejection fixtures](references/acceptance-fixtures.md) when implementing
@@ -84,7 +90,7 @@ concrete wrappers and generated concrete sources do not replace those tests.
 Bootstrap uses the public List as storage for its owning token list.
 [Bootstrap lexer skill](../cloth-bootstrap-lexer/SKILL.md)
 
-Constraints, generic functions, callable-owned parameters, inference and
+Constraints, method-owned parameters, inference and
 collection protocols remain in the
 [separate follow-up record](../../../todo/generic-follow-ups.md). Completion of
 the first slice neither implements those features nor publishes a release pin.

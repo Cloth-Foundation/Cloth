@@ -23,9 +23,9 @@ class FunctionParser(private val parser: Parser) {
 		val keyword = parser.advance()
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a function name")
-		if (parser.peek().lexeme == Operators.LESS.toString()) throw GenericErrors.syntax("Function type parameters", parser.peek())
+		val typeParameters = parser.typeParser.parseTypeParameters()
 		val parameters = parseParameters()
-		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn()), visibility)
+		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn()), visibility, typeParameters)
 	}
 
 	internal fun parseParameters(): List<ParameterDeclaration> = parser.delimited.parentheses {

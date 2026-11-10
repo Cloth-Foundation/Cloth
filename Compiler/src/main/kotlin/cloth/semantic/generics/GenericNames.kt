@@ -31,15 +31,18 @@ class TypeParameterSymbol internal constructor(val owner: Declaration, val decla
 	val name get() = declaration.name
 }
 
-internal data class GenericTypeUse(val type: TypeReference, val parameters: Map<String, TypeParameterSymbol>, val receiver: NameExpression? = null) {
+internal data class GenericTypeUse(val type: TypeReference, val parameters: Map<String, TypeParameterSymbol>, val receiver: NameExpression? = null, val argument: Boolean = false) {
 	val owner get() = parameters.values.firstOrNull()?.owner
 }
+
+internal data class GenericFunctionUse(val call: CallExpression, val owner: Declaration?)
 
 class GenericNameModel internal constructor(val target: TargetLayout) {
 	internal val owners = IdentityHashMap<Declaration, List<TypeParameterSymbol>>()
 	internal val names = IdentityHashMap<TypeReference, TypeNameIdentity>()
 	internal val receivers = IdentityHashMap<NameExpression, TypeNameIdentity>()
 	internal val uses = mutableListOf<GenericTypeUse>()
+	internal val functionUses = mutableListOf<GenericFunctionUse>()
 	internal var genericSpan: TokenSpan? = null
 	internal var interfaceSpan: TokenSpan? = null
 	val requiresGenericCompilation get() = genericSpan != null
@@ -62,9 +65,11 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		fun analyze(): GenericNameModel {
 			for (file in files.files) for (declaration in file.unit.declarations) {
-				val owner = declaration as? TypeDeclaration ?: continue
-				val name = owner.name
-				val list = owner.typeParameters ?: continue
+				val (name, list) = when (declaration) {
+					is TypeDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
+					is FunctionDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
+					else -> continue
+				}
 				if (model.genericSpan == null) model.genericSpan = list.span
 				val seen = mutableMapOf<String, Token>()
 				model.owners[declaration] = list.parameters.mapIndexed { index, parameter ->
@@ -78,7 +83,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			val hasInterfaceHeaders = model.interfaceSpan != null || hasMultipleClassParents
 			if (!model.requiresGenericCompilation && !hasInterfaceHeaders && files.topLevelStates.isEmpty()) return model
 			for (use in uses) {
-				val identity = resolve(use.type, use.parameters)
+				val identity = resolve(use.type, use.parameters, argument = use.argument)
 				use.receiver?.let { model.receivers[it] = identity }
 			}
 			if (hasInterfaceHeaders) checkParents()
@@ -116,10 +121,10 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		}
 
 		private fun parameters(owner: Declaration) = model.parametersOf(owner).associateBy { it.name.lexeme }
-		private fun use(type: TypeReference?, parameters: Map<String, TypeParameterSymbol>) {
+		private fun use(type: TypeReference?, parameters: Map<String, TypeParameterSymbol>, argument: Boolean = false) {
 			if (type == null) return
 			if (type.application != null && model.genericSpan == null) model.genericSpan = type.application.span
-			uses.add(GenericTypeUse(type, parameters))
+			uses.add(GenericTypeUse(type, parameters, argument = argument))
 		}
 
 		private fun resolve(type: TypeReference, parameters: Map<String, TypeParameterSymbol>, argument: Boolean = false, depth: Int = 0): TypeNameIdentity {
@@ -273,6 +278,14 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		private fun expression(expression: Expression, parameters: Map<String, TypeParameterSymbol>, values: Set<String>) {
 			when (expression) {
+				is CallExpression -> {
+					expression.typeArguments?.let { arguments ->
+						if (model.genericSpan == null) model.genericSpan = arguments.span
+						model.functionUses.add(GenericFunctionUse(expression, parameters.values.firstOrNull()?.owner))
+						arguments.arguments.forEach { use(it, parameters, argument = true) }
+					}
+					expression.arguments.forEach { expression(it, parameters, values) }
+				}
 				is TypeReceiverExpression -> use(expression.annotation, parameters)
 				is CastExpression -> { expression(expression.operand, parameters, values); useTarget(expression.target, parameters) }
 				is TypeCheckExpression -> {

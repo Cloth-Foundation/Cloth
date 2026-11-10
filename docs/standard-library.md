@@ -47,7 +47,11 @@ On Windows x64, `cloth.exe` is the primary Cloth command and `cloth.bat`
 forwards to it for compatibility. Both Cloth and Kotlin/Native Shuttle use
 the bundled Java 25 bridge for relocated installations containing Chinese
 characters and emoji. Keep the private launcher files and `runtime/` with
-the rest of the installation. [Windows launcher contract](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md)
+the rest of the installation. The combined, Compiler and Shuttle ZIP and TAR
+archives passed Windows x64 builds and runs after extraction and relocation
+to Chinese-only and emoji-only paths.
+[Windows launcher contract](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md) ·
+[Archive verification](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md#stage-3-archive-verification)
 
 The resulting executable runs independently of the compiler installation and
 Cloth source files. Its normal target platform and C runtime dependencies still
@@ -125,7 +129,8 @@ the library HEAD to match the index pin and its working tree to be clean. It
 exports pinned `module.toml` and `cloth/**/*.co`, omitting Git metadata and build
 outputs. Neither compiler API calls nor user builds perform Git operations.
 
-From a prepared checkout, build a combined installation or ZIP/TAR archives:
+Build the combined installation and ZIP and TAR archives from a prepared
+checkout.
 
 ```powershell
 .\gradlew.bat :installDist :distZip :distTar
@@ -133,24 +138,33 @@ From a prepared checkout, build a combined installation or ZIP/TAR archives:
 
 Use `./gradlew` on Linux and macOS. Build releases with a redistributable JDK 25
 for each host OS and CPU you distribute to. Gradle uses that JDK's `jlink` to
-build the runtime and derives the archive suffix from the JDK's platform.
+build the runtime and derives the archive suffix from the JDK's host platform.
 Windows x64 packaging also uses Visual Studio C++ x64 tools and a Windows SDK
 to build the native launcher and verify the bundled JLI interface.
 Outputs are `build/install/cloth` and
 `build/distributions/cloth-<version>-<os>-<arch>.zip` / `.tar`. Select the archive
-matching the machine that runs Cloth, for example `windows-x64` or `macos-arm64`.
+matching the machine that runs Cloth, such as `windows-x64` or `linux-x64`.
 Per-command `installDist`, `distZip` and `distTar` tasks in `:Compiler` and
 `:Shuttle` include the same runtime and pinned library snapshot.
 
-The recorded library pin is `ea48ad55be9577f0b876f04c5aafe4420919597d` (scaffold
-version 0.0.1). The new List source is currently a development-checkout change;
-a release must commit the intended library contents and update the compiler pin.
-[Generic Stage 5](../.agents/skills/cloth-generics/references/stage-5.md) records
-its actual-library native/IR/object checks and temporary pinned export proof.
-The earlier [bundling publication](../.agents/skills/cloth-toolchains/references/standard-library-stage-5.md)
-retains the installed-command baseline, rather than evidence that this working
-checkout has been released.
+The BUILD-1 verification used standard-library revision
+`c79b58ffba07d9e2a70e4acf954a2dca47cf5666`, which includes `List`. The
+earlier bundling publication used the scaffold snapshot at
+`ea48ad55be9577f0b876f04c5aafe4420919597d`.
+[Bundling publication](../.agents/skills/cloth-toolchains/references/standard-library-stage-5.md)
+
+## Verified launcher hosts
+
+| Host | Coverage |
+| --- | --- |
+| Windows x64, Windows 25H2, ACP 1252 | Both commands and the Cloth batch wrapper passed relocated ZIP and TAR checks with bundled Oracle OpenJDK `25+36-3489`. The Windows x64 packages built and ran x86 output, emitted objects for all nine target profiles, and passed both Gradle development runs. |
+| Linux x64, Ubuntu 24.04 WSL2, UTF-8 | Cloth's shell launcher and the Linux Kotlin/Native Shuttle executable passed the installed distribution checks with bundled Temurin `25.0.5+8-LTS`. Both Gradle development commands ran the maintained List example. |
+| Windows x64, system ACP 65001 | Pending a matching Windows runner. |
+| Windows ARM64, native | Pending a matching Windows package and runner. The current Windows packaging tasks require an x64 JDK and select the `mingwX64` Shuttle frontend. |
+
+The nine target profiles describe compiler outputs. Each release archive's
+suffix identifies the host that runs the bundled launcher and runtime.
+[Host verification record](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md#stage-4-host-verification)
+
 Precompiled library archives, binary APIs, package downloads/caches and broader
-native services remain separate future work. The
-[launcher plan](../todo/windows-unicode-launcher-plan.md) tracks the remaining
-Windows archive and host verification.
+native services remain separate future work.

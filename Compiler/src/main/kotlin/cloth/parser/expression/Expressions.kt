@@ -3,6 +3,7 @@ package cloth.parser.expression
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.Statement
 import cloth.parser.type.TypeReference
+import cloth.parser.type.TypeArgumentList
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -35,7 +36,12 @@ sealed interface CallSite : Expression {
 }
 
 /** A lexical call; overload resolution is a separate semantic stage. */
-data class CallExpression(override val name: Token, override val suppliedArguments: List<CallArgument>, override val span: TokenSpan) : CallSite {
+data class CallExpression(
+	override val name: Token,
+	override val suppliedArguments: List<CallArgument>,
+	override val span: TokenSpan,
+	val typeArguments: TypeArgumentList? = null,
+) : CallSite {
 
 	override val arguments: List<Expression> = suppliedArguments.map { it.expression }
 }

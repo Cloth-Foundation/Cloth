@@ -49,6 +49,7 @@ data class FunctionDeclaration(
 	override val parameters: List<ParameterDeclaration>,
 	override val body: FunctionBody,
 	val visibility: Token? = null,
+	val typeParameters: TypeParameterList? = null,
 ) : CallableDeclaration {
 
 	/** Compatibility for scalar consumers until ordered result typing is implemented. */

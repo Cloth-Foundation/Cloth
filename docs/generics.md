@@ -1,4 +1,4 @@
-# Generic classes, structs and List
+# Generics in Cloth
 
 Cloth supports named generic classes and structs with explicit invariant type
 arguments. The runnable [Generics example](../examples/Generics.co) uses both:
@@ -70,6 +70,22 @@ limited to 1,048,576 UTF-8 bytes before expansion. The
 [generic contract](../.agents/skills/cloth-generics/references/semantics.md) owns
 the precise rules and diagnostics.
 
+## Generic functions
+
+Declare a function's type parameters after its name, as in
+`pub fn<T> magic<T>(T value) = value`. Supply the types explicitly at the call.
+The standard-library `magic` helper marks a deliberately inline value and
+returns it at the supplied type.
+
+```cloth
+using cloth.lang.num.NumberUtilities : magic
+
+fn main() {
+    def<int> count = magic<int>(64) + 1
+    println(count)
+}
+```
+
 ## Public List
 
 Import the selected standard-library source explicitly:
@@ -100,11 +116,11 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover constraints, generic functions, method-owned type parameters,
-omitted-argument inference, variance, type defaults, generic enums and states,
-and higher-kinded types. Direct collection indexing, indexed assignment and
-foreach require their own protocol. Keep the intended constrained forms in
-[Test.co](../examples/Test.co).
+Follow-ups cover constraints, method-owned type parameters, generic overloads
+with the same type parameter count, omitted-argument inference, variance, type
+defaults, generic enums and states, and higher-kinded types. Direct collection
+indexing, indexed assignment and foreach require their own protocol. Keep the
+intended constrained forms in [Test.co](../examples/Test.co).
 
 Bootstrap's `TokenList` owns the tokens in a private `List<Token>` and returns
 borrowed tokens through `get()`. [Bootstrap lexer skill](../.agents/skills/cloth-bootstrap-lexer/SKILL.md)

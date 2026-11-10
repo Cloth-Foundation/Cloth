@@ -23,8 +23,9 @@ Shuttle sources. `commonMain` defines the JSON exchange and typed manifest tree
 for both targets. `jvmMain` builds the worker JAR, including the standard-library
 exporter, and `jvmTest` owns the project and command tests. `nativeMain` and the
 host-specific source sets build the CLI. The [parent build](../../../../Shuttle/build.gradle.kts)
-stages the executable with the JVM target's JAR and runtime dependencies. The
-release exporter runs against those staged libraries.
+resolves the JVM runtime variants for staging and testing in its own project,
+so these tasks work in parallel. The release exporter runs against the staged
+worker JAR and dependencies.
 
 [The native entry](../../../../Shuttle/native/src/nativeMain/kotlin/shuttle/nativecli/Entry.kt)
 handles help and command dispatch, performs TOML syntax parsing, launches the
@@ -48,6 +49,8 @@ characters, bare null, and repeated explicit declarations of a super-table.
 Keep those checks inside the parser so they run with TOML lexical context.
 The generated parser's `expect` declarations compile in `nativeParserMain`
 and its `actual` declarations compile in the dependent `nativeMain` source set.
+The build scopes parser opt-ins to the native source sets and removes the
+JVM-only `@JvmInline` marker from the generated native parser value class.
 The typed tree retains the distinction between strings, tables and other TOML
 values. See [ManifestTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ManifestTest.kt).
 
@@ -57,7 +60,8 @@ it starts the JVM worker through the shared, version-checked JLI host
 `bin/cloth-jvm.exe`. The exchange keeps the same JSON contract and native
 program launch. Help stays native. With the bundled image absent, the worker
 uses `JAVA_HOME` and then PATH.
-[Installed launcher contract and verification](../../cloth-toolchains/references/windows-unicode-launcher.md)
+[Installed launcher contract](../../cloth-toolchains/references/windows-unicode-launcher.md) ·
+[Relocated ZIP and TAR verification](../../cloth-toolchains/references/windows-unicode-launcher.md#stage-3-archive-verification)
 
 Use `:Shuttle:configurationTest` for manifest and project checks and
 `:Shuttle:test` for compiler and native command integration. `:Tests:test`
@@ -73,3 +77,27 @@ during verification.
 
 The Linux x64 executable cross-linked from Windows. Ubuntu WSL ran its help
 and rejected the same-line table-header fixture through the native parser.
+
+## Consolidated source sets (2026-11-10)
+
+On Windows x64 with Java 25, `:Shuttle:check` passed 64 tests and 27
+configuration checks. `:Shuttle:native:jvmTest --tests shuttle.ManifestTest`
+passed 14 manifest tests directly from the JVM target. `:Tests:test` passed
+all 13 installed-toolchain tests. Both `:Shuttle:run` and the binary from
+`:Shuttle:installDist` ran the maintained nested project with `PEC: 0`.
+The exporter completed against the clean library checkout. After that checkout
+gained local edits, the final package verification reused its export after
+checking all seven files byte for byte against the Git pin.
+
+`:Shuttle:native:allMetadataJar` assembled the multiplatform metadata.
+`:Shuttle:native:linkReleaseExecutableLinuxX64` cross-linked on Windows, and
+the Linux x64 executable printed its help in Ubuntu WSL.
+
+## BUILD-1 host checks (2026-11-10)
+
+On a separate pinned checkout, Ubuntu 24.04 WSL2 built the Linux x64 frontend
+and the bundled Temurin 25 runtime. The standalone and combined installations
+ran real Cloth programs from a Unicode caller directory, and `:Shuttle:run`
+ran the maintained `List` example. The Linux ZIP and TAR tasks now assign
+mode `0755` to `bin/shuttle` and track the mode as an archive task input.
+[Host versions, commands and results](../../cloth-toolchains/references/windows-unicode-launcher.md#stage-4-host-verification)

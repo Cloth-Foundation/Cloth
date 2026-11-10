@@ -122,6 +122,20 @@ class GenericParsingTest {
 		val named = assertIs<BinaryExpression>(expression("value -> Named < low > high"))
 		assertEquals(">", named.operator.lexeme)
 		assertNull(assertIs<CastExpression>(assertIs<BinaryExpression>(named.left).left).target.application)
+		val parenthesized = assertIs<BinaryExpression>(expression("left < right > (limit)"))
+		assertEquals(">", parenthesized.operator.lexeme)
+		assertEquals("<", assertIs<BinaryExpression>(parenthesized.left).operator.lexeme)
+	}
+
+	@Test
+	fun `function parameters and explicit call arguments retain their separate lists`() {
+		val declaration = assertIs<FunctionDeclaration>(unit("pub fn<T> choose<T, U>(T value, U unused) = value").declarations.single())
+		assertEquals("<T, U>", text(assertNotNull(declaration.typeParameters).span))
+		assertEquals("T", declaration.returnType?.spelling)
+		val call = assertIs<CallExpression>(expression("choose<Slot<unsigned int<16>>, int[]?>(value, null)"))
+		val types = assertNotNull(call.typeArguments)
+		assertEquals(listOf("Slot<unsigned int<16>>", "int[]?"), types.arguments.map { it.spelling })
+		assertEquals(2, call.arguments.size)
 	}
 
 	@Test
@@ -129,7 +143,8 @@ class GenericParsingTest {
 		for (source in listOf(
 			"typedef<class> Box<> {}", "typedef<struct> Box<T,> {}", "typedef<class> Box<T U> {}",
 			"fn<Box<>> f() = null", "fn<Box<int,>> f() = null", "fn<Box<int> f() = null",
-			"fn main() { Box<>::new }", "fn main() { Box<int,>::type }"
+			"fn main() { Box<>::new }", "fn main() { Box<int,>::type }",
+			"fn work<>() {}", "fn main() { work<int,>(1) }"
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.EXPECTED_TOKEN, error.diagnosticCode, source)
@@ -138,10 +153,10 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `constraints defaults and generic functions methods enums retain an explicit syntax boundary`() {
+	fun `constraints defaults and generic methods and enums retain an explicit syntax boundary`() {
 		for (source in listOf(
 			"typedef<class> Box<T: Number> {}", "typedef<struct> Box<T = int> {}",
-			"fn work<T>() {}", "typedef<class> Box { mt work<T>() {} }", "typedef<enum> Mode<T> { One }"
+			"fn work<T: Number>() {}", "typedef<class> Box { mt work<T>() {} }", "typedef<enum> Mode<T> { One }"
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_GENERIC_SYNTAX, error.diagnosticCode, source)

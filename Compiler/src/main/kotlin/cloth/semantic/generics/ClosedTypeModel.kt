@@ -8,6 +8,7 @@ import cloth.parser.declaration.ClassParentClause
 import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeReference
 import cloth.semantic.interfaces.InterfaceModel
+import cloth.semantic.symbols.FunctionSymbol
 import cloth.target.TargetLayout
 import cloth.token.TokenSpan
 import java.util.IdentityHashMap
@@ -27,19 +28,26 @@ data class ClosedCallableSignature(
 
 enum class ClosedTypeState { DECLARED, RESOLVING, COMPLETE }
 
+internal class GenericBindings(
+	val environment: Map<TypeParameterSymbol, ValueType> = emptyMap(),
+	val chain: List<Pair<TokenSpan, String>> = emptyList(),
+	val argumentDepth: Int = 0,
+) {
+	val facts = IdentityHashMap<TypeReference, ClosedTypePattern>()
+	val receivers = IdentityHashMap<NameExpression, ValueType>()
+}
+
+internal data class ClosedFunctionKey(val template: FunctionSymbol, val arguments: List<ValueType>)
+
 /** A closed owner has its own facts; its template AST is never rewritten. */
 class ClosedTypeInstance internal constructor(
 	val type: CMemberType,
 	val definition: CMemberType,
 	val arguments: List<ValueType>,
-	internal val environment: Map<TypeParameterSymbol, ValueType>,
-	internal val chain: List<Pair<TokenSpan, String>>,
-	internal val argumentDepth: Int,
+	internal val bindings: GenericBindings,
 ) {
 	var state: ClosedTypeState = ClosedTypeState.DECLARED
 		internal set
-	internal val facts = IdentityHashMap<TypeReference, ClosedTypePattern>()
-	internal val receivers = IdentityHashMap<NameExpression, ValueType>()
 	internal val signatureList = mutableListOf<ClosedCallableSignature>()
 	val signatures: List<ClosedCallableSignature> get() = signatureList.toList()
 }
@@ -47,8 +55,8 @@ class ClosedTypeInstance internal constructor(
 /** Target-scoped semantic types and declaration signatures, without callable body facts. */
 class ClosedTypeModel internal constructor(val names: GenericNameModel, val target: TargetLayout, val symbolic: Boolean = false) {
 	internal val catalog = linkedMapOf<CMemberType, ClosedTypeInstance>()
-	internal val roots = IdentityHashMap<TypeReference, ClosedTypePattern>()
-	internal val receivers = IdentityHashMap<NameExpression, ValueType>()
+	internal val rootBindings = GenericBindings()
+	internal val functionInstances = linkedMapOf<ClosedFunctionKey, GenericBindings>()
 	internal val functionList = mutableListOf<ClosedCallableSignature>()
 	var interfaces: InterfaceModel = InterfaceModel.Empty
 		internal set
@@ -56,9 +64,9 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	val nominalTypes: List<CMemberType> get() = catalog.keys.toList()
 	val functions: List<ClosedCallableSignature> get() = functionList.toList()
 	fun instanceOf(type: CMemberType): ClosedTypeInstance = catalog.getValue(type)
-	fun patternOf(reference: TypeReference, owner: CMemberType? = null): ClosedTypePattern = owner?.let { catalog.getValue(it).facts[reference] } ?: roots.getValue(reference)
+	fun patternOf(reference: TypeReference, owner: CMemberType? = null): ClosedTypePattern = owner?.let { catalog.getValue(it).bindings.facts[reference] } ?: rootBindings.facts.getValue(reference)
 	fun typeOf(reference: TypeReference, owner: CMemberType? = null): ValueType = (patternOf(reference, owner) as ClosedTypePattern.Exact).type
-	fun receiverTypeOf(expression: NameExpression, owner: CMemberType? = null): ValueType? = owner?.let { catalog.getValue(it).receivers[expression] } ?: receivers[expression]
+	fun receiverTypeOf(expression: NameExpression, owner: CMemberType? = null): ValueType? = owner?.let { catalog.getValue(it).bindings.receivers[expression] } ?: rootBindings.receivers[expression]
 	internal fun baseClauseOf(owner: CClass): ClassParentClause? =
 		owner.declaration.parents.firstOrNull { typeOf(it.type, owner) === owner.base }
 	internal fun requireImplemented() = names.requireImplemented()

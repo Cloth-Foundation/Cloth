@@ -161,7 +161,7 @@ captures implementation scope and regression evidence.
 | Char/string delimiter overloads, empty pieces and independent string arrays | [string splitting](../cloth-strings/references/split-method.md) |
 | Literal replacement and prefix/suffix removal | [string editing](../cloth-strings/references/editing-methods.md) |
 | Unicode White_Space trimming and blank-string checks | [whitespace methods](../cloth-strings/references/whitespace-methods.md) |
-| Functions, overloads, captures, deferred blocks | [cloth-functions](../cloth-functions/SKILL.md) |
+| Functions, overloads, captures, deferred blocks, explicit generic functions and `magic` | [cloth-functions](../cloth-functions/SKILL.md), [explicit generic functions](../cloth-functions/references/generic-functions.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
@@ -243,9 +243,10 @@ captures implementation scope and regression evidence.
   [cloth-generics](../cloth-generics/SKILL.md) for current generic scope and prerequisites.
   [Generic Stage 6](../cloth-generics/references/stage-6.md) completes the first
   slice's publication, native examples and caller audit. The interface release
-  record covers delivered unconstrained generic interfaces. Constraints,
-  generic functions, callable-owned parameters, inference and collection
-  protocols have separate follow-ups. [Interface release](../cloth-interfaces/references/stage-7.md) ·
+  record covers delivered unconstrained generic interfaces. Explicit top-level
+  generic functions share the specialization machinery. Constraints, method-owned
+  parameters, inference and collection protocols have separate follow-ups.
+  [Explicit generic functions](../cloth-functions/references/generic-functions.md) · [Interface release](../cloth-interfaces/references/stage-7.md) ·
   [Generic follow-ups](../../../todo/generic-follow-ups.md)
 
 - Imports and Shuttle: Stage 0 publishes the

@@ -5,6 +5,9 @@ description: Design, explain, or extend Cloth numeric literals, fixed-width inte
 
 # Cloth numeric and boolean operations
 
+Use the standard-library `magic<T>(value)` helper to mark a deliberately inline
+number and return it at type `T`. [Explicit generic functions](../cloth-functions/references/generic-functions.md)
+
 Read [boolean attachments](references/bool-attachments.md) for the separate
 `BoolAttachments` provider's sole `toInt()` method: false to 0, true to 1, always
 signed int32. Use the shared named `valueMethod` style and zero extension of i1;

@@ -7,6 +7,16 @@ than treating every earlier snapshot as current behavior.
 
 ## Current work
 
+### Unix linker discovery (2026-11-10)
+
+`ToolchainResolverTest` passed all 12 tests on Windows x64. The Unix fixtures
+cover Clang on `PATH`, discovery of Clang and the SDK through `xcrun`, paths
+with spaces, driver precedence and the missing explicit driver diagnostic.
+All 10 `ShuttleBuildTest` cases passed on Windows x64 through the native
+frontend and its JVM compiler worker. Linux and macOS fallback coverage is
+fixture-based.
+[Toolchain rules](../../cloth-toolchains/SKILL.md#development-rules-and-supported-scope)
+
 ### State runtime Stage 6 publication (2026-11-09)
 
 The maintained Compiler and Shuttle examples exercise inherited defaults,
