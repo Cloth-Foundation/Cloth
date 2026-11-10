@@ -44,18 +44,10 @@ private fun runShuttle(arguments: List<String>): Int {
 	if (command != "build" && command != "run") return report("S0014", "Expected 'build' or 'run'\n$shuttleUsage")
 	val launcher = executablePath()
 	val home = launcher.substringBeforeLast(pathSeparator).substringBeforeLast(pathSeparator)
-	val development = environment("CLOTH_SHUTTLE_DEVELOPMENT_HOME")
-	val context = development ?: home
-	val layout = if (development == null) "installed" else "development"
-	val options = listOf("JAVA_OPTS", "SHUTTLE_OPTS").flatMap { name -> environment(name)?.let(::launcherOptions).orEmpty() }
 	val (status, artifact) = withExchangeFile { exchange ->
 		val request = NativeBuildRequest(buildExchangeVersion, arguments, launcher)
 		writeUtf8(exchange, Json.encodeToString(request))
-		val status = runProcess(javaExecutable(home), listOf(
-			"-Dcloth.toolchain.home=$context",
-			"-Dcloth.toolchain.layout=$layout",
-			"--enable-native-access=ALL-UNNAMED",
-		) + options + listOf("-cp", home + pathSeparator + "lib" + pathSeparator + "*", worker, exchange))
+		val status = compileWithWorker(home, exchange)
 		val artifact = if (status == 0 && command == "run") Json.decodeFromString<NativeBuildResult>(readUtf8(exchange)).artifact else null
 		status to artifact
 	}
@@ -65,6 +57,19 @@ private fun runShuttle(arguments: List<String>): Int {
 	} catch (failure: HostFailure) {
 		report("S0016", failure.message.orEmpty())
 	}
+}
+
+private fun compileWithWorker(home: String, exchange: String): Int {
+	bundledWorkerLauncher(home)?.let { return runProcess(it, listOf("--cloth-shuttle-worker", exchange)) }
+	val development = environment("CLOTH_SHUTTLE_DEVELOPMENT_HOME")
+	val context = development ?: home
+	val layout = if (development == null) "installed" else "development"
+	val options = listOf("JAVA_OPTS", "SHUTTLE_OPTS").flatMap { name -> environment(name)?.let(::launcherOptions).orEmpty() }
+	return runProcess(javaExecutable(home), listOf(
+		"-Dcloth.toolchain.home=$context",
+		"-Dcloth.toolchain.layout=$layout",
+		"--enable-native-access=ALL-UNNAMED",
+	) + options + listOf("-cp", home + pathSeparator + "lib" + pathSeparator + "*", worker, exchange))
 }
 
 private fun report(code: String, message: String, status: Int = 1): Int {

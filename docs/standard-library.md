@@ -21,7 +21,7 @@ fixture. [Bundling example](../examples/StandardLibrary/README.md)
 
 ```text
 <toolchain>/
-    bin/cloth[.bat]
+    bin/cloth[.exe]
     bin/shuttle[.exe]
     lib/...
     runtime/bin/java[.exe]
@@ -43,11 +43,11 @@ Building an executable also requires the native
 linker, CRT and sysroot for the selected target. Object emission can run with
 the bundled toolchain alone.
 
-On Windows, JVM classpath startup supports spaces and installation characters
-representable by the host code page. The
-[launcher plan](../todo/windows-unicode-launcher-plan.md) tracks arbitrary
-Unicode installation paths. The native Shuttle command uses wide Windows
-arguments for project paths and program launch.
+On Windows x64, `cloth.exe` is the primary Cloth command and `cloth.bat`
+forwards to it for compatibility. Both Cloth and Kotlin/Native Shuttle use
+the bundled Java 25 bridge for relocated installations containing Chinese
+characters and emoji. Keep the private launcher files and `runtime/` with
+the rest of the installation. [Windows launcher contract](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md)
 
 The resulting executable runs independently of the compiler installation and
 Cloth source files. Its normal target platform and C runtime dependencies still
@@ -134,6 +134,8 @@ From a prepared checkout, build a combined installation or ZIP/TAR archives:
 Use `./gradlew` on Linux and macOS. Build releases with a redistributable JDK 25
 for each host OS and CPU you distribute to. Gradle uses that JDK's `jlink` to
 build the runtime and derives the archive suffix from the JDK's platform.
+Windows x64 packaging also uses Visual Studio C++ x64 tools and a Windows SDK
+to build the native launcher and verify the bundled JLI interface.
 Outputs are `build/install/cloth` and
 `build/distributions/cloth-<version>-<os>-<arch>.zip` / `.tar`. Select the archive
 matching the machine that runs Cloth, for example `windows-x64` or `macos-arm64`.
@@ -148,5 +150,7 @@ its actual-library native/IR/object checks and temporary pinned export proof.
 The earlier [bundling publication](../.agents/skills/cloth-toolchains/references/standard-library-stage-5.md)
 retains the installed-command baseline, rather than evidence that this working
 checkout has been released.
-Precompiled library archives, binary APIs, package downloads/caches, broader native
-services and the full Unicode Windows launcher remain separate future work.
+Precompiled library archives, binary APIs, package downloads/caches and broader
+native services remain separate future work. The
+[launcher plan](../todo/windows-unicode-launcher-plan.md) tracks the remaining
+Windows archive and host verification.

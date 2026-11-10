@@ -1,31 +1,18 @@
 import java.nio.file.FileSystems
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.Properties
 import javax.inject.Inject
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.jvm.application.tasks.CreateStartScripts
 
 plugins {
-	java
+	`java-base`
 	distribution
 	kotlin("jvm") version "2.4.20" apply false
 }
 group = "cloth"
 version = "1.0-SNAPSHOT"
-
-repositories {
-	mavenCentral()
-}
-
-dependencies {
-	testImplementation(platform("org.junit:junit-bom:5.10.0"))
-	testImplementation("org.junit.jupiter:junit-jupiter")
-	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-tasks.test {
-	useJUnitPlatform()
-}
 
 java {
 	toolchain.languageVersion.set(JavaLanguageVersion.of(25))
@@ -43,8 +30,10 @@ abstract class JavaRuntimeExec : Exec() {
 }
 
 val releaseJdk = javaToolchains.compilerFor(java.toolchain).map { it.metadata.installationPath }
-val releasePlatform = releaseJdk.map { jdk ->
-	val release = Properties().apply { jdk.file("release").asFile.inputStream().use(::load) }
+val releaseMetadata = releaseJdk.map { jdk ->
+	Properties().apply { jdk.file("release").asFile.inputStream().use(::load) }
+}
+val releasePlatform = releaseMetadata.map { release ->
 	val os = when (val name = release.getProperty("OS_NAME")?.trim('"')) {
 		"Windows" -> "windows"
 		"Linux" -> "linux"
@@ -58,10 +47,10 @@ val releasePlatform = releaseJdk.map { jdk ->
 	}
 	"$os-$arch"
 }
+val javaRuntimeImage = layout.buildDirectory.dir("generated/runtime")
 val prepareJavaRuntime = tasks.register<JavaRuntimeExec>("prepareJavaRuntime") {
 	group = "distribution"
 	description = "Link the Java 25 runtime for the Cloth release host."
-	val image = layout.buildDirectory.dir("generated/runtime")
 	val jlink = releaseJdk.zip(releasePlatform) { jdk, platform ->
 		jdk.file(if (platform.startsWith("windows-")) "bin/jlink.exe" else "bin/jlink")
 	}
@@ -70,9 +59,9 @@ val prepareJavaRuntime = tasks.register<JavaRuntimeExec>("prepareJavaRuntime") {
 	inputs.file(jlink).withPathSensitivity(PathSensitivity.NONE)
 	inputs.files(releaseJdk.map { listOf(it.file("release"), it.dir("jmods"), it.file("lib/modules")) })
 		.withPathSensitivity(PathSensitivity.RELATIVE)
-	outputs.dir(image)
+	outputs.dir(javaRuntimeImage)
 	doFirst {
-		val destination = image.get().asFile
+		val destination = javaRuntimeImage.get().asFile
 		fileSystemOperations.delete { delete(destination) }
 		Files.createDirectories(destination.toPath().parent)
 		commandLine(jlink.get().asFile.absolutePath, "--add-modules", modules,
@@ -91,13 +80,91 @@ fun CopySpec.includeJavaRuntime() {
 	}
 }
 
+val windowsHost = System.getProperty("os.name").startsWith("Windows")
+val windowsSources = layout.projectDirectory.dir("Launcher/windows")
+val windowsScriptSource = windowsSources.file("cloth.bat")
+if (windowsHost) compilerProject.tasks.named<CreateStartScripts>("startScripts") {
+	// Do not package older generated scripts left behind by an earlier launcher name.
+	outputDir = compilerProject.layout.buildDirectory.dir("generated/clothStartScripts").get().asFile
+}
+val windowsExecutable = layout.buildDirectory.file("generated/bin/cloth-jvm.exe")
+val compileWindowsBootstrap = tasks.register<JavaCompile>("compileWindowsBootstrap") {
+	source(windowsSources.dir("java"))
+	classpath = files()
+	javaCompiler.set(javaToolchains.compilerFor(java.toolchain))
+	options.release.set(25)
+	destinationDirectory.set(layout.buildDirectory.dir("classes/windowsBootstrap"))
+}
+val windowsBootstrap = tasks.register<Jar>("windowsBootstrap") {
+	from(compileWindowsBootstrap.flatMap { it.destinationDirectory })
+	archiveFileName.set("cloth-launcher.jar")
+	destinationDirectory.set(layout.buildDirectory.dir("generated/launcher"))
+}
+val buildWindowsLauncher = tasks.register<Exec>("buildWindowsLauncher") {
+	dependsOn(prepareJavaRuntime)
+	val jli = javaRuntimeImage.map { it.file("bin/jli.dll") }
+	val version = releaseMetadata.map { it.getProperty("JAVA_RUNTIME_VERSION", it.getProperty("JAVA_VERSION")).trim('"') }
+	val objects = layout.buildDirectory.dir("tmp/buildWindowsLauncher")
+	val buildScript = windowsSources.file("build.cmd").asFile
+	inputs.files(windowsSources.file("main.cpp"), windowsSources.file("utf8.manifest"), buildScript)
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(releaseJdk.map { listOf(it.file("include/jni.h"), it.file("include/win32/jni_md.h")) })
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.file(jli).withPathSensitivity(PathSensitivity.NONE)
+	inputs.property("platform", releasePlatform)
+	inputs.property("javaVersion", version)
+	outputs.file(windowsExecutable)
+	workingDir(objects)
+	commandLine("cmd.exe", "/d", "/c", buildScript.absolutePath)
+	doFirst {
+		check(releasePlatform.get() == "windows-x64") { "The Windows launcher and native Shuttle require a Windows x64 release JDK" }
+		val javaVersion = version.get()
+		check(javaVersion.matches(Regex("25(?:[.+-][A-Za-z0-9.+-]+)?"))) { "Unsupported bundled Java runtime version: $javaVersion" }
+		val jliBytes = jli.get().asFile.readBytes()
+		val digest = MessageDigest.getInstance("SHA-256").digest(jliBytes)
+			.joinToString(", ") { "0x%02x".format(it.toInt() and 255) }
+		val work = objects.get().asFile.toPath()
+		Files.createDirectories(work)
+		Files.writeString(work.resolve("bundled_jli.h"), """
+			constexpr unsigned char expectedJliHash[] = {$digest};
+			constexpr DWORD expectedJliSize = ${jliBytes.size};
+			constexpr char bundledJavaVersion[] = "$javaVersion";
+		""".trimIndent() + "\n")
+		val output = windowsExecutable.get().asFile
+		Files.createDirectories(output.toPath().parent)
+		environment("CLOTH_LAUNCHER_JDK", releaseJdk.get().asFile.absolutePath)
+		environment("CLOTH_LAUNCHER_OUTPUT", output.absolutePath)
+	}
+}
+val verifyWindowsLauncher = tasks.register<Exec>("verifyWindowsLauncher") {
+	dependsOn(buildWindowsLauncher, windowsBootstrap)
+	// Use the exact image and launcher ABI being packaged. Java's dry run loads the module main.
+	args("--cloth-shuttle-worker", "unused")
+	doFirst {
+		executable = windowsExecutable.get().asFile.absolutePath
+		listOf("JAVA_OPTS", "JDK_JAVA_OPTIONS", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "CLOTH_SHUTTLE_DEVELOPMENT_HOME")
+			.forEach { environment.remove(it) }
+		environment("SHUTTLE_OPTS", "--dry-run --show-version")
+	}
+}
+val verifiedWindowsExecutable = files(windowsExecutable).builtBy(verifyWindowsLauncher)
+
+fun CopySpec.includeWindowsLauncher(cloth: Boolean, shuttle: Boolean) {
+	if (!windowsHost) return
+	into("launcher") { from(windowsBootstrap) }
+	into("bin") {
+		if (cloth) from(verifiedWindowsExecutable) { rename { "cloth.exe" } }
+		if (shuttle) from(verifiedWindowsExecutable)
+	}
+}
+
 val toolchainContents = layout.buildDirectory.dir("generated/toolchain")
 val stageShuttle = shuttleProject.tasks.named<Sync>("stageNativeShuttle")
-val shuttleExecutableName = if (System.getProperty("os.name").startsWith("Windows")) "shuttle.exe" else "shuttle"
+val shuttleExecutableName = if (windowsHost) "shuttle.exe" else "shuttle"
 val prepareToolchain = tasks.register<JavaExec>("prepareToolchain") {
 	group = "distribution"
 	description = "Validate and export the pinned standard-library sources and release provenance."
-	classpath = shuttleProject.extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
+	classpath = files(stageShuttle.map { fileTree(it.destinationDir.resolve("lib")) { include("*.jar") } })
 	dependsOn(stageShuttle)
 	mainClass.set("shuttle.packaging.ToolchainBundle")
 	jvmArgs("--enable-native-access=ALL-UNNAMED")
@@ -110,17 +177,18 @@ val prepareToolchain = tasks.register<JavaExec>("prepareToolchain") {
 	outputs.upToDateWhen { false }
 }
 
+compilerProject.tasks.withType<Test>().configureEach {
+	systemProperty("cloth.toolchain.home", rootDir.absolutePath)
+	systemProperty("cloth.toolchain.layout", "development")
+}
 listOf(compilerProject, shuttleProject).forEach { commandProject ->
-	commandProject.tasks.withType<Test>().configureEach {
-		systemProperty("cloth.toolchain.home", rootDir.absolutePath)
-		systemProperty("cloth.toolchain.layout", "development")
-	}
 	commandProject.tasks.withType<JavaExec>().configureEach {
 		systemProperty("cloth.toolchain.home", rootDir.absolutePath)
 		systemProperty("cloth.toolchain.layout", "development")
 	}
 	commandProject.tasks.withType<CreateStartScripts>().configureEach {
-		inputs.property("clothToolchainLauncherFormat", 2)
+		inputs.property("clothToolchainLauncherFormat", 3)
+		if (windowsHost) inputs.file(windowsScriptSource).withPathSensitivity(PathSensitivity.NONE)
 		doLast {
 			val unixAnchor = "        -classpath \"\$CLASSPATH\""
 			val unixJavaAnchor = "if [ -n \"\$JAVA_HOME\" ] ; then"
@@ -136,6 +204,10 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 			unixScript.writeText(unixText.replace(unixJavaAnchor, unixBundledJava).replace(unixAnchor,
 				"        \"-Dcloth.toolchain.home=\$APP_HOME\" \\\n" +
 				"        -Dcloth.toolchain.layout=installed \\\n" + unixAnchor))
+			if (windowsHost) {
+				windowsScript.writeText(windowsScriptSource.asFile.readText().replace("\r\n", "\n").replace("\n", "\r\n"))
+				return@doLast
+			}
 			val windowsAnchor = "\"%JAVA_EXE%\" %DEFAULT_JVM_OPTS%"
 			val windowsJavaAnchor = "if defined JAVA_HOME goto findJavaFromJavaHome"
 			val windowsText = windowsScript.readText()
@@ -155,6 +227,7 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 			contents {
 				from(prepareToolchain)
 				includeJavaRuntime()
+				includeWindowsLauncher(cloth = commandProject == compilerProject, shuttle = commandProject == shuttleProject)
 			}
 		}
 	}
@@ -173,6 +246,7 @@ distributions {
 			from(prepareToolchain)
 			from(stageShuttle)
 			includeJavaRuntime()
+			includeWindowsLauncher(cloth = true, shuttle = true)
 			into("bin") {
 				from(compilerProject.tasks.named("startScripts"))
 				filePermissions { unix("rwxr-xr-x") }
@@ -181,15 +255,12 @@ distributions {
 	}
 }
 
-tasks.test {
-	dependsOn(tasks.named("installDist"))
-	inputs.dir(layout.buildDirectory.dir("install/cloth"))
-	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
-	inputs.files(rootProject.fileTree("examples/Interfaces") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
-	inputs.file(rootProject.file("examples/States.co")).withPathSensitivity(PathSensitivity.RELATIVE)
-	inputs.files(rootProject.fileTree("examples/States") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
-	systemProperty("cloth.test.toolchain", layout.buildDirectory.dir("install/cloth").get().asFile.absolutePath)
-	systemProperty("cloth.test.workspace", rootDir.absolutePath)
-	systemProperty("java.io.tmpdir", rootProject.file("tmp").absolutePath)
-	doFirst { rootProject.file("tmp").mkdirs() }
+val test = tasks.register("test") {
+	group = "verification"
+	description = "Runs the packaged Cloth toolchain integration tests."
+	dependsOn(":Tests:test")
+}
+
+tasks.check {
+	dependsOn(test)
 }

@@ -1,6 +1,8 @@
 package cloth;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -21,8 +23,14 @@ class ToolchainDistributionTest {
     @Test void installedBundleContainsBothCommandsPinnedSourcesAndProvenance() throws IOException {
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth")));
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth.bat")));
+        assertFalse(Files.exists(installed.resolve("bin/Compiler.bat")));
         assertTrue(Files.isExecutable(installed.resolve(windows ? "bin/shuttle.exe" : "bin/shuttle")));
         assertFalse(Files.exists(installed.resolve("bin/shuttle.bat")));
+        if (windows) {
+            assertTrue(Files.isExecutable(installed.resolve("bin/cloth.exe")));
+            assertTrue(Files.isExecutable(installed.resolve("bin/cloth-jvm.exe")));
+            assertTrue(Files.isRegularFile(installed.resolve("launcher/cloth-launcher.jar")));
+        }
         try (var files = Files.list(installed.resolve("lib"))) {
             assertTrue(files.noneMatch(file -> file.getFileName().toString().startsWith("jackson-")));
         }
@@ -119,24 +127,83 @@ class ToolchainDistributionTest {
     @Test void relocatedCommandsPreserveLocationAndInvocationDirectory() throws Exception {
         Path workspaceScratch = Path.of(System.getProperty("cloth.test.workspace"), "tmp").toRealPath();
         assertTrue(temporary.toRealPath().startsWith(workspaceScratch));
-        Path staged = temporary.resolve("staged");
-        copyBundle(staged);
         var nativeEncoder = Charset.forName(System.getProperty("native.encoding", "UTF-8")).newEncoder();
         String supportedUnicode = Arrays.stream(new String[]{"é", "移", "Ж", "Ω", "가", "א", "\u00a0"})
                 .filter(nativeEncoder::canEncode).findFirst().orElse("");
-        Path relocated = temporary.resolve("Relocated Cloth" + (supportedUnicode.isEmpty() ? "" : " " + supportedUnicode));
-        assertTrue(staged.normalize().startsWith(temporary) && relocated.normalize().startsWith(temporary));
-        Files.move(staged, relocated);
-        Path client = Files.createDirectory(temporary.resolve("client"));
-        Files.writeString(client.resolve("Main.co"), "fn<int> main() = 0\n");
-        Files.writeString(client.resolve("build.toml"), "[project]\nname = \"Client\"\nentryPoint = \"App.Main.main\"\n[modules]\nApp = \".\"\n");
-        Files.writeString(client.resolve("module.toml"), "[module]\nname = \"App\"\n");
-        String compilerOutput = run(relocated, client, "cloth", "--emit", "object", "Main.co", "objects/compiler.o");
-        assertLocation(compilerOutput, relocated);
-        assertTrue(Files.size(client.resolve("objects/compiler.o")) > 0);
-        String shuttleOutput = run(relocated, client, "shuttle", "build", "--project", ".", "--emit", "object", "-o", "objects/shuttle.o");
-        assertLocation(shuttleOutput, relocated);
-        assertTrue(Files.size(client.resolve("objects/shuttle.o")) > 0);
+        var names = windows ? List.of("安装目录", "😀🧵", "Cloth 安装 🧵 with spaces")
+                : List.of("Relocated Cloth" + (supportedUnicode.isEmpty() ? "" : " " + supportedUnicode));
+        Path client = writeObjectProject(temporary.resolve(windows ? "客户端 😀" : "client"));
+        for (String name : names) {
+            Path staged = temporary.resolve("staged");
+            copyBundle(staged);
+            Path relocated = temporary.resolve(name);
+            moveOwned(staged, relocated);
+            Path scratch = Files.createDirectory(temporary.resolve("cache " + name));
+            var environment = Map.of("JAVA_OPTS", javaOptions(scratch), "TMP", scratch.toString(), "TEMP", scratch.toString());
+            for (String command : List.of("cloth", "shuttle")) {
+                String object = "objects/" + command + ".o";
+                Files.deleteIfExists(client.resolve(object));
+                String output = runExpectedFrom(0, relocated, client, client.resolve(command + ".log"), command, environment,
+                        objectArguments(command, object));
+                assertLocation(output, relocated);
+                assertTrue(output.contains("user.dir = " + client), output);
+                assertTrue(Files.size(client.resolve(object)) > 0);
+                assertFalse(Files.exists(relocated.resolve(object)));
+            }
+        }
+        if (windows) {
+            Path relocated = temporary.resolve(names.getLast());
+            assertLocation(run(relocated, client, "cloth.bat", "--help"), relocated);
+        }
+    }
+
+    @Test @EnabledOnOs(OS.WINDOWS)
+    void windowsLaunchersValidateTheirBundleAndRetainExternalJavaFallback() throws Exception {
+        Path bundle = temporary.resolve("bundle");
+        copyBundle(bundle);
+        Path client = writeObjectProject(temporary.resolve("client"));
+        Path jli = bundle.resolve("runtime/bin/jli.dll");
+        byte[] bytes = Files.readAllBytes(jli);
+        bytes[bytes.length - 1] ^= 1;
+        Files.write(jli, bytes);
+        assertWindowsStartupFailure(bundle, client, "Incompatible bundled JLI");
+        Files.copy(installed.resolve("runtime/bin/jli.dll"), jli, StandardCopyOption.REPLACE_EXISTING);
+
+        Path jvmConfig = bundle.resolve("runtime/lib/jvm.cfg");
+        Path savedConfig = temporary.resolve("jvm.cfg");
+        moveOwned(jvmConfig, savedConfig);
+        assertWindowsStartupFailure(bundle, client, "Bundled JVM configuration is missing");
+        moveOwned(savedConfig, jvmConfig);
+
+        Path bootstrap = bundle.resolve("launcher/cloth-launcher.jar");
+        Path savedBootstrap = temporary.resolve("bootstrap.jar");
+        moveOwned(bootstrap, savedBootstrap);
+        assertWindowsStartupFailure(bundle, client, "Java bootstrap module is missing");
+        moveOwned(savedBootstrap, bootstrap);
+
+        Path lib = bundle.resolve("lib");
+        Path savedLib = temporary.resolve("saved-lib");
+        moveOwned(lib, savedLib);
+        assertWindowsStartupFailure(bundle, client, "unable to load");
+        moveOwned(savedLib, lib);
+
+        moveOwned(bundle.resolve("runtime"), temporary.resolve("saved-runtime"));
+        Path javaHome = Path.of(System.getProperty("java.home"));
+        String javaPath = javaHome.resolve("bin") + ";" + System.getenv("PATH");
+        for (String command : List.of("cloth", "shuttle")) {
+            Path log = client.resolve(command + ".log");
+            String object = "objects/" + command + ".o";
+            String[] arguments = objectArguments(command, object);
+            String invalid = runExpectedFrom(1, bundle, client, log, command, Map.of("PATH", javaPath), arguments);
+            assertFalse(invalid.contains("java.home = "), invalid);
+            assertFalse(Files.exists(client.resolve(object)));
+            for (String home : List.of(javaHome.toString(), "")) {
+                String output = runExpectedFrom(0, bundle, client, log, command, Map.of("PATH", javaPath, "JAVA_HOME", home), arguments);
+                assertTrue(output.contains("java.home = " + javaHome), output);
+                assertTrue(Files.size(client.resolve(object)) > 0);
+                Files.delete(client.resolve(object));
+            }
+        }
     }
 
     @Test void bothCommandsImportReachableLibrarySourcesWithoutManifestEntries() throws Exception {
@@ -384,11 +451,20 @@ class ToolchainDistributionTest {
         return invocation;
     }
 
-    private void moveOwned(Path source, Path target) throws IOException {
+    private void moveOwned(Path source, Path target) throws IOException, InterruptedException {
         Path owned = temporary.toRealPath();
         assertTrue(source.toRealPath().startsWith(owned), source.toString());
         assertTrue(target.toAbsolutePath().normalize().startsWith(owned), target.toString());
-        Files.move(source, target);
+        // Windows can briefly deny a rename while the copied tree is being scanned.
+        for (int attempt = 1; ; attempt++) {
+            try {
+                Files.move(source, target);
+                return;
+            } catch (AccessDeniedException failure) {
+                if (!windows || attempt == 10) throw failure;
+                Thread.sleep(100);
+            }
+        }
     }
 
     private void removeOwnedTree(Path tree) throws IOException {
@@ -429,6 +505,29 @@ class ToolchainDistributionTest {
         assertTrue(output.contains("java.specification.version = 25"), output);
     }
 
+    private Path writeObjectProject(Path client) throws IOException {
+        Files.createDirectory(client);
+        Files.writeString(client.resolve("Main.co"), "fn<int> main() = 0\n");
+        Files.writeString(client.resolve("build.toml"), "[project]\nname = \"Client\"\nentryPoint = \"App.Main.main\"\n[modules]\nApp = \".\"\n");
+        Files.writeString(client.resolve("module.toml"), "[module]\nname = \"App\"\n");
+        return client;
+    }
+
+    private String[] objectArguments(String command, String object) {
+        return command.equals("cloth") ? new String[]{"--emit", "object", "Main.co", object}
+                : new String[]{"build", "--project", ".", "--emit", "object", "-o", object};
+    }
+
+    private void assertWindowsStartupFailure(Path bundle, Path client, String message) throws Exception {
+        for (String command : List.of("cloth", "shuttle")) {
+            String object = "objects/" + command + ".o";
+            String output = runExpected(2, bundle, client, command, objectArguments(command, object));
+            assertEquals(1, output.lines().filter(line -> line.startsWith("Cloth launcher: ")).count(), output);
+            assertTrue(output.contains(message), output);
+            assertFalse(Files.exists(client.resolve(object)));
+        }
+    }
+
     private String run(Path toolchain, Path client, String command, String... args) throws Exception {
         return runExpected(0, toolchain, client, command, args);
     }
@@ -438,17 +537,23 @@ class ToolchainDistributionTest {
     }
 
     private String runExpectedFrom(int expected, Path toolchain, Path invocationDirectory, Path log, String command, String... args) throws Exception {
-        boolean batch = windows && command.equals("cloth");
-        Path script = toolchain.resolve("bin/" + command + (batch ? ".bat" : windows ? ".exe" : ""));
+        return runExpectedFrom(expected, toolchain, invocationDirectory, log, command, Map.of(), args);
+    }
+
+    private String runExpectedFrom(int expected, Path toolchain, Path invocationDirectory, Path log, String command,
+                                   Map<String, String> environment, String... args) throws Exception {
+        boolean batch = windows && command.endsWith(".bat");
+        Path script = toolchain.resolve("bin/" + command + (windows && !batch ? ".exe" : ""));
         var invocation = new ArrayList<String>();
         if (batch) invocation.addAll(List.of("cmd.exe", "/d", "/c"));
         invocation.add(script.toString());
         invocation.addAll(List.of(args));
         var builder = new ProcessBuilder(invocation).directory(invocationDirectory.toFile()).redirectErrorStream(true).redirectOutput(log.toFile());
         builder.environment().put("JAVA_HOME", temporary.resolve("missing-jdk").toString());
-        builder.environment().put("JAVA_OPTS", "-XshowSettings:properties -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \"-Djava.io.tmpdir=" + temporary + "\"");
-        builder.environment().remove("JDK_JAVA_OPTIONS");
-        builder.environment().remove("_JAVA_OPTIONS");
+        builder.environment().put("JAVA_OPTS", javaOptions(temporary));
+        for (String option : List.of("JDK_JAVA_OPTIONS", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "CLOTH_OPTS", "SHUTTLE_OPTS",
+                "CLOTH_SHUTTLE_DEVELOPMENT_HOME")) builder.environment().remove(option);
+        builder.environment().putAll(environment);
         var process = builder.start();
         process.getOutputStream().close();
         try { assertTrue(process.waitFor(90, TimeUnit.SECONDS), "Launcher timed out"); }
@@ -456,6 +561,10 @@ class ToolchainDistributionTest {
         String output = Files.readString(log);
         assertEquals(expected, process.exitValue(), output);
         return output;
+    }
+
+    private String javaOptions(Path scratch) {
+        return "-XshowSettings:properties -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \"-Djava.io.tmpdir=" + scratch + "\"";
     }
 
     private void copyBundle(Path destination) throws IOException {

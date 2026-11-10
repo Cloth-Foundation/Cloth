@@ -30,7 +30,7 @@ C3098, while an explicit API request without any roots still uses C3097.
 [StandardLibrary](../../../../Compiler/src/main/kotlin/cloth/toolchain/StandardLibrary.kt)
 owns default selection and request attachment. Both the
 [compiler adapter](../../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt)
-and [Shuttle build adapter](../../../../Shuttle/src/main/kotlin/shuttle/command/ProjectBuild.kt)
+and [Shuttle build adapter](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ProjectBuild.kt)
 call it after option/command validation and before reading the program or Shuttle
 project. This enforces early failure for an incomplete default even without imports.
 
@@ -119,7 +119,7 @@ failures retain their codes/order after source discovery. Expected failures retu
   with/without a library candidate, original transitive snapshots, missing sources,
   ordinary ambiguity, regular-root replacements and exact lowercase reservation.
   Both suites join the existing `:Compiler:importResolutionTest` native-free task.
-- [Distribution tests](../../../../src/test/java/cloth/ToolchainDistributionTest.java):
+- [Distribution tests](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java):
   four cases cover the packaged layout/relocation, actual native library calls
   through both commands without manifest entries, cyclic library fixtures,
   unreachable malformed source, promotion, explicit imports, reserved conflicts,

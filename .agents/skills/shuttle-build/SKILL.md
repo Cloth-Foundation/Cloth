@@ -24,8 +24,10 @@ for commands, diagnostics, source ownership and verification.
 
 The [native Shuttle command](references/native.md) is the installed and
 development frontend. It parses TOML in Kotlin/Native and calls a private JVM
-worker for the existing compiler. The record owns the build command, parser
-patches, host boundaries and verification.
+worker for the existing compiler. `:Shuttle:native` builds both targets from
+multiplatform source sets. `:Shuttle` stages the artifacts and exposes the
+development, verification and distribution tasks. The native command record
+owns the source layout, parser patches, host boundaries and verification.
 
 The interface release exercises the installed `shuttle run` command with a
 multi-module generic interface fixture on Windows x64 and x86. The fixture
@@ -93,7 +95,7 @@ weakens release cleanliness checks. Portable List logic stays in library source.
   Cloth's root Gradle wrapper and existing `include("Shuttle")` wiring.
   Commit and publish Shuttle changes in its repository before recording an
   updated submodule commit in Cloth. The gitlink does not include uncommitted
-  source or test files. Shuttle's own ignore rules must allow `src/test/`.
+  source or test files. Shuttle's ignore rules must allow `native/src/jvmTest/`.
 
 - Keep TOML dependencies and schema/project logic inside Shuttle. Compile the
   pinned tomlkt sources into the native executable and preserve the distinction
@@ -122,11 +124,11 @@ configuration task runs ManifestTest and ProjectModelTest with LLVM/JavaCPP jars
 removed from its JVM classpath. The normal task additionally checks the real
 public compiler boundary. See [Stage 2](references/stage-2.md) for observed counts,
 commands and target limits; [Stage 0](references/stage-0.md) retains the original
-dependency-selection probe. Stage 6 adds [ShuttleBuildTest](../../../Shuttle/src/test/kotlin/shuttle/ShuttleBuildTest.kt)
-and [ShuttleRunTest](../../../Shuttle/src/test/kotlin/shuttle/ShuttleRunTest.kt),
+dependency-selection probe. Stage 6 adds [ShuttleBuildTest](../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleBuildTest.kt)
+and [ShuttleRunTest](../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleRunTest.kt),
 including child JVM command execution, Unicode/quoted arguments, streams/cwd,
 process statuses, one original diagnostic and stale-artifact rejection.
-[ShuttlePublicationTest](../../../Shuttle/src/test/kotlin/shuttle/ShuttlePublicationTest.kt)
+[ShuttlePublicationTest](../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 adds maintained example/Bootstrap runs from nested module folders and foreign
 object output. ProjectModelTest also verifies nested entry selection without
 native backend jars. See [Stage 7](../cloth-imports/references/stage-7.md) for evidence.

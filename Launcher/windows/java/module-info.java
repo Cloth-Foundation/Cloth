@@ -1,0 +1,2 @@
+module cloth.launcher {
+}

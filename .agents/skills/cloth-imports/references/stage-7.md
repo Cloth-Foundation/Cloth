@@ -51,7 +51,7 @@ source CLI from project builds and documents the plain compiler API boundary.
 [ImportResolutionTest](../../../../Compiler/src/test/kotlin/cloth/ImportResolutionTest.kt)
 adds an isolated graph case with a deep importing file, transitive nested import
 and a same-named decoy beside the importer. It proves root-relative resolution
-and rejects a flattened basename. [ProjectModelTest](../../../../Shuttle/src/test/kotlin/shuttle/ProjectModelTest.kt)
+and rejects a flattened basename. [ProjectModelTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ProjectModelTest.kt)
 adds a backend-free nested entry selection case without subfolder manifests.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
@@ -60,7 +60,7 @@ native execution, and executable IR plus startup objects for every existing ABI
 profile. Compiler tests supply explicit roots and do not read TOML. The test-only
 IR parser emits startup objects without a foreign linker; an optional artifact
 directory retains Linux GNU x64 outputs for manual native execution.
-[ShuttlePublicationTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttlePublicationTest.kt)
+[ShuttlePublicationTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 copies the maintained TOML/source projects into temporary trees and tests real
 Java-main execution from nested module folders. It also emits a Linux ARM64
 object through Shuttle with an unavailable linker override. The sources remain

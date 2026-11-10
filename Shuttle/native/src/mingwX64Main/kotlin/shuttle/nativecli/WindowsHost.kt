@@ -44,14 +44,28 @@ private fun absolutePath(path: String): String = widePath("Unable to resolve '$p
 	GetFullPathNameW(path.wcstr.ptr, wideCapacity.toUInt(), buffer, null)
 }
 
-private fun isFile(path: String): Boolean = memScoped {
+private fun fileAttributes(path: String): UInt = memScoped {
 	val attributes = GetFileAttributesW(path.wcstr.ptr)
-	attributes != UInt.MAX_VALUE && attributes and FILE_ATTRIBUTE_DIRECTORY.toUInt() == 0u
+	if (attributes == UInt.MAX_VALUE) {
+		val error = GetLastError().toInt()
+		if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
+			throw HostFailure("Unable to inspect '$path' (Windows error $error)")
+		}
+	}
+	attributes
+}
+
+internal actual fun bundledWorkerLauncher(home: String): String? {
+	if (fileAttributes("$home\\runtime") == UInt.MAX_VALUE) return null
+	val launcher = "$home\\bin\\cloth-jvm.exe"
+	val attributes = fileAttributes(launcher)
+	if (attributes == UInt.MAX_VALUE || attributes and FILE_ATTRIBUTE_DIRECTORY.toUInt() != 0u) {
+		throw HostFailure("Bundled Java launcher is missing: '$launcher'")
+	}
+	return launcher
 }
 
 internal actual fun javaExecutable(home: String): String {
-	val bundled = "$home\\runtime\\bin\\java.exe"
-	if (isFile(bundled)) return bundled
 	environment("JAVA_HOME")?.let { return absolutePath(it.trim('"') + "\\bin\\java.exe") }
 	val path = environment("PATH") ?: throw HostFailure("Set JAVA_HOME or put Java 25 on PATH")
 	return widePath("Unable to locate java.exe on PATH") { buffer ->

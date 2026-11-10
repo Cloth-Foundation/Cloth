@@ -37,20 +37,21 @@ Compiler's generated startup. A failed rebuild never launches a previous artifac
 
 ## Ownership and diagnostics
 
-- [ShuttleSettings](../../../../Shuttle/src/main/kotlin/shuttle/command/ShuttleSettings.kt)
+- [ShuttleSettings](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ShuttleSettings.kt)
   parses only project/command choices and delegates common build flags to
   [CompilerOptions](../../../../Compiler/src/main/kotlin/cloth/settings/CompilerOptions.kt).
   Standalone CompilerSettings retains its source/output defaults and two-position
   limit through that same parser. The request API still receives paths/options,
   never raw CLI arrays or TOML types.
-- [ProjectBuild](../../../../Shuttle/src/main/kotlin/shuttle/command/ProjectBuild.kt)
+- [ProjectBuild](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ProjectBuild.kt)
   loads the project, resolves command override paths, prepares the immutable request
   and calls ClothCompiler.compile. It never reads ASTs, chooses an ABI or resolves
   source imports. Compiler owns all those phases and native linking.
-- [Entry](../../../../Shuttle/src/main/kotlin/shuttle/Entry.kt) owns main, reporting,
-  statuses and build-before-run ordering. [NativeProgram](../../../../Compiler/src/main/kotlin/cloth/util/NativeProgram.kt)
-  supplies shared launch transport with the standalone compiler: inherited I/O,
-  cwd, Windows literal-quote encoding, child status and interrupted-child cleanup.
+- The Stage 6 JVM entry owned main, reporting, statuses and build-before-run
+  ordering. It used [NativeProgram](../../../../Compiler/src/main/kotlin/cloth/util/NativeProgram.kt)
+  for inherited I/O, cwd, Windows literal-quote encoding, child status and
+  interrupted-child cleanup. The [native command record](native.md) describes
+  the current frontend and worker.
 - [Gradle](../../../../Shuttle/build.gradle.kts) applies the application plugin,
   selects shuttle.EntryKt, enables native access and packages shuttle/shuttle.bat.
   `:Shuttle:run` uses the root working directory and inherited stdin. Build an
@@ -61,7 +62,7 @@ The common DiagnosticReporter now accepts Yvette Diagnostic, so it renders both
 Shuttle failures and the original ClothDiagnostic without conversion or duplicate
 reporting. Shared compiler-option failures keep C codes and use Shuttle's usage
 text. New Shuttle codes in
-[ShuttleDiagnostic](../../../../Shuttle/src/main/kotlin/shuttle/diagnostics/ShuttleDiagnostic.kt):
+[ShuttleDiagnostic](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/diagnostics/ShuttleDiagnostic.kt):
 
 | Code | Meaning |
 | --- | --- |
@@ -102,11 +103,11 @@ LLVM/TOML work to configuration loading.
 
 ## Verification
 
-[ShuttleBuildTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttleBuildTest.kt)
+[ShuttleBuildTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleBuildTest.kt)
 covers real multi-module builds, actual artifact names, foreign object output
 without a linker/main, common flags, nearest-project cwd rules, unchanged original
 compiler rendering, first configuration failure, CLI failures and manifest/source
-physical aliases. [ShuttleRunTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttleRunTest.kt)
+physical aliases. [ShuttleRunTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleRunTest.kt)
 executes the actual Java main in child JVMs: build versus run status, one PEC,
 Unicode paths and exact arguments, negative statuses, runtime failure, stale
 artifact rejection, launch failure cause and the standalone compiler's shared

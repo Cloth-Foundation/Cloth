@@ -30,7 +30,7 @@ The application's [Main.co](app/Main.co) explicitly selects `greeting` from
 its string field; its copied result survives deletion. Other files do not enter
 the graph merely because a library is available.
 
-[Packaged-command tests](../../src/test/java/cloth/ToolchainDistributionTest.java)
+[Packaged-command tests](../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
 copy these sources into a disposable installed bundle, compile with both commands
 from outside the checkout, relocate the bundle, then make its original paths and
 the application's source paths unavailable before running the native programs.

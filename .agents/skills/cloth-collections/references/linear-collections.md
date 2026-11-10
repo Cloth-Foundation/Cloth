@@ -74,4 +74,4 @@ The packaging fixture exports a temporary pinned snapshot, checks the collection
 files byte for byte, and emits an AArch64 Linux object through installed layout
 selection.
 [Class value tests](../../../../Compiler/src/test/kotlin/cloth/ClassValueIntegrationTest.kt) ·
-[Packaging tests](../../../../Shuttle/src/test/kotlin/shuttle/ToolchainBundleTest.kt)
+[Packaging tests](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ToolchainBundleTest.kt)

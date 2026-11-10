@@ -10,22 +10,22 @@ The [plan](../../../../todo/shuttle-and-imports-plan.md) marks Stages 0-2 comple
 Compiler in production and Jackson TOML 2.21.1 through its aligned BOM. Compiler
 still has no Shuttle/TOML dependency. Production code is under `shuttle`:
 
-- [ManifestLoader](../../../../Shuttle/src/main/kotlin/shuttle/manifest/ManifestLoader.kt)
+- [ManifestLoader](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/manifest/ManifestLoader.kt)
   reads strict UTF-8 snapshots, parses standard TOML, and validates canonical
   project/module fields, identifiers, entry selection, portable artifact names,
   unknown keys, exact types and empty dependency tables. Versions are optional
   metadata. It never invokes a Cloth lexer/parser.
-- [ProjectLoader](../../../../Shuttle/src/main/kotlin/shuttle/project/ProjectLoader.kt)
+- [ProjectLoader](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/project/ProjectLoader.kt)
   selects an explicit directory/build.toml or the nearest ancestor manifest,
   resolves configuration from its parent, canonicalizes physical module roots,
   checks module metadata, then resolves output and exact-case entry components.
   Invalid selected manifests never fall back to another project.
-- [ResolvedProject](../../../../Shuttle/src/main/kotlin/shuttle/project/ResolvedProject.kt)
+- [ResolvedProject](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/project/ResolvedProject.kt)
   retains immutable module/manifest lists and snapshots. `toCompilationRequest`
   produces absolute compiler inputs and forwards output kind, target and link
   options. It checks manifest output aliases but never compiles source, chooses
   an ABI, discovers a linker, creates directories or writes artifacts.
-- [ShuttleDiagnostic](../../../../Shuttle/src/main/kotlin/shuttle/diagnostics/ShuttleDiagnostic.kt)
+- [ShuttleDiagnostic](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/diagnostics/ShuttleDiagnostic.kt)
   is a separate structured Yvette diagnostic with stable S codes. It reuses the
   public source snapshot/range utilities without wrapping compiler diagnostics.
 
@@ -111,18 +111,18 @@ checks alongside the normal test task.
 Observed on Windows x64: the normal task passes **28 tests across three suites**,
 with zero failures, errors or skips:
 
-- [ManifestTest](../../../../Shuttle/src/test/kotlin/shuttle/ManifestTest.kt): 12
+- [ManifestTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ManifestTest.kt): 12
   tests covering strict types including dates, required/unknown/case-sensitive
   fields, optional metadata, artifact/identifier rules, unsupported dependencies,
   duplicates, first syntax error, CRLF, retained snapshots, malformed UTF-8,
   Unicode/multiline values and graphical S-code rendering.
-- [ProjectModelTest](../../../../Shuttle/src/test/kotlin/shuttle/ProjectModelTest.kt):
+- [ProjectModelTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ProjectModelTest.kt):
   12 tests covering nested/explicit project selection, paths with spaces/Unicode,
   no fallback, missing files, deterministic failures, duplicate physical roots,
   module mismatch, exact-case entry files, absolute/root-relative configuration,
   output normalization without writes, immutable collections, option forwarding,
   object entry policy, manifest hard-link/suffix protection and migrated Bootstrap.
-- [CompilerApiBoundaryTest](../../../../Shuttle/src/test/kotlin/shuttle/CompilerApiBoundaryTest.kt):
+- [CompilerApiBoundaryTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/CompilerApiBoundaryTest.kt):
   four tests, including a newly loaded TOML project compiled to an AArch64 Linux
   ELF object through the public facade without main or a linker. A later source
   error remains the original compiler C3020 diagnostic. Existing consumer tests

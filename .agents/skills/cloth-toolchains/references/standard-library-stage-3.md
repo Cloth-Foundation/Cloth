@@ -69,8 +69,8 @@ No additional information command or compatibility scheme is introduced.
 - [CompilerSettings](../../../../Compiler/src/main/kotlin/cloth/settings/CompilerSettings.kt),
   [CompilerDriver](../../../../Compiler/src/main/kotlin/cloth/CompilerDriver.kt),
   [compiler entry](../../../../Compiler/src/main/kotlin/cloth/Entry.kt),
-  [ShuttleSettings](../../../../Shuttle/src/main/kotlin/shuttle/command/ShuttleSettings.kt)
-  and [ProjectBuild](../../../../Shuttle/src/main/kotlin/shuttle/command/ProjectBuild.kt)
+  [ShuttleSettings](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ShuttleSettings.kt)
+  and [ProjectBuild](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ProjectBuild.kt)
   own adaptation/help. Disabled mode passes the original prepared request.
 - [StandardLibraryErrors](../../../../Compiler/src/main/kotlin/cloth/diagnostics/StandardLibraryErrors.kt)
   retains structured, once-rendered failures. The core compilation API still
@@ -79,8 +79,8 @@ No additional information command or compatibility scheme is introduced.
   adds eight backend-free cases: flags, repetition, invalid values/paths,
   conflicts, literal filenames, cwd resolution, bypass, no fallback and selected
   input protection. It joins `:Compiler:importResolutionTest`.
-- [ShuttleBuildTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttleBuildTest.kt)
-  checks shared parsing and literal program arguments. [Distribution tests](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+- [ShuttleBuildTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleBuildTest.kt)
+  checks shared parsing and literal program arguments. [Distribution tests](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
   exercise both actual launchers with relative/spaced/Chinese/supplementary-Unicode
   override paths, incompatible reached code, invalid selections, input protection,
   broken defaults, replacements, ordinary ambiguity, builtins, help and separators.

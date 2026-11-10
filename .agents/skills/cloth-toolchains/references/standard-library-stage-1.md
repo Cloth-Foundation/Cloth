@@ -42,7 +42,7 @@ Compiler's application name is now `cloth`.
 [Root Gradle wiring](../../../../build.gradle.kts) owns the combined distribution,
 common content, launch-script adaptation and development-task properties.
 `:prepareToolchain` runs the build-only
-[ToolchainBundle](../../../../Shuttle/src/main/kotlin/shuttle/packaging/ToolchainBundle.kt)
+[ToolchainBundle](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/packaging/ToolchainBundle.kt)
 exporter using Shuttle's runtime classpath. Keeping module TOML interpretation
 there reuses `ManifestLoader` without adding TOML parsing to Compiler.
 
@@ -110,7 +110,7 @@ Passed in 1m 35s: two root distribution tests, 56 Shuttle tests across seven
 suites (including five exporter tests), and 25 backend-free configuration tests.
 All have zero failures, errors or skips.
 
-- [Distribution tests](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+- [Distribution tests](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
   check commands, metadata and sources, then move a staged bundle to a path with
   spaces and `é`. Both real Windows launchers build nonempty native object files
   from another directory using relative source/project/output paths. JVM settings
@@ -118,7 +118,7 @@ All have zero failures, errors or skips.
   from duplicating the large platform jars; other files are copied normally.
   The fixture selects a Unicode character representable by the host's native
   encoding; the final two-test rerun passes in 7s after that portability adjustment.
-- [Exporter tests](../../../../Shuttle/src/test/kotlin/shuttle/ToolchainBundleTest.kt)
+- [Exporter tests](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ToolchainBundleTest.kt)
   verify pinned contents, canonical line endings, deterministic escaped metadata,
   ignored-artifact exclusion, stale-output replacement, rejection of dirty or
   unpinned checkouts, exact filename case and protection of source directories.

@@ -30,7 +30,7 @@ repository, its version and gitlink do not change in this stage.
 
 ## Packaged execution without the toolchain or sources
 
-[ToolchainDistributionTest](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+[ToolchainDistributionTest](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
 now has nine cases. The new runtime-independence case:
 
 1. Copies the built installation with its normal scripts, JARs and provenance,
@@ -94,7 +94,7 @@ The approved full-Unicode Windows installation/classpath limitation remains open
 
 ## Source and build ownership
 
-- [Distribution tests](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+- [Distribution tests](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
   own both real-command matrices, isolated movement/deletion, external cwd and
   native output assertions. Windows moves/deletes validate their owned absolute
   targets before moving or removing any tree.

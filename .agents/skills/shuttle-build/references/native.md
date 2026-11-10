@@ -18,13 +18,21 @@ Development uses the Gradle toolchain and the checkout's standard library.
 
 ## Ownership
 
-[The native entry](../../../../Shuttle/native/src/commonMain/kotlin/shuttle/nativecli/Entry.kt)
+The [multiplatform build](../../../../Shuttle/native/build.gradle.kts) owns all
+Shuttle sources. `commonMain` defines the JSON exchange and typed manifest tree
+for both targets. `jvmMain` builds the worker JAR, including the standard-library
+exporter, and `jvmTest` owns the project and command tests. `nativeMain` and the
+host-specific source sets build the CLI. The [parent build](../../../../Shuttle/build.gradle.kts)
+stages the executable with the JVM target's JAR and runtime dependencies. The
+release exporter runs against those staged libraries.
+
+[The native entry](../../../../Shuttle/native/src/nativeMain/kotlin/shuttle/nativecli/Entry.kt)
 handles help and command dispatch, performs TOML syntax parsing, launches the
 JVM compiler worker, and starts the compiler's returned artifact. It uses
 versioned private JSON files and passes program arguments directly to the child.
 The result of `run` is the child status. A failed compilation stops before launch.
 
-[The compiler worker](../../../../Shuttle/src/main/kotlin/shuttle/bridge/NativeCompilerWorker.kt)
+[The compiler worker](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/bridge/NativeCompilerWorker.kt)
 uses the existing Java filesystem validation, Shuttle schema, CompilerOptions
 and `ClothCompiler.compile`. It invokes the native parser for each manifest
 snapshot. The build-only standard-library exporter uses that parser as well.
@@ -38,18 +46,21 @@ the JVM's temporary directory.
 patch rejects a value following a table header on the same line, raw control
 characters, bare null, and repeated explicit declarations of a super-table.
 Keep those checks inside the parser so they run with TOML lexical context.
+The generated parser's `expect` declarations compile in `nativeParserMain`
+and its `actual` declarations compile in the dependent `nativeMain` source set.
 The typed tree retains the distinction between strings, tables and other TOML
-values. See [ManifestTest](../../../../Shuttle/src/test/kotlin/shuttle/ManifestTest.kt).
+values. See [ManifestTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ManifestTest.kt).
 
 The [Windows host](../../../../Shuttle/native/src/mingwX64Main/kotlin/shuttle/nativecli/WindowsHost.kt)
-uses wide OS paths and argument transport. The worker JVM's startup classpath
-still follows Java's Windows encoding. The
-[launcher plan](../../../../todo/windows-unicode-launcher-plan.md) tracks
-arbitrary Unicode installation paths. The bundled runtime failed to load
-`java.dll` when invoked through a Chinese and emoji installation alias.
+uses wide OS paths and argument transport. In Windows x64 installations,
+it starts the JVM worker through the shared, version-checked JLI host
+`bin/cloth-jvm.exe`. The exchange keeps the same JSON contract and native
+program launch. Help stays native. With the bundled image absent, the worker
+uses `JAVA_HOME` and then PATH.
+[Installed launcher contract and verification](../../cloth-toolchains/references/windows-unicode-launcher.md)
 
 Use `:Shuttle:configurationTest` for manifest and project checks and
-`:Shuttle:test` for compiler and native command integration. The root `:test`
+`:Shuttle:test` for compiler and native command integration. `:Tests:test`
 checks the combined installed distribution and its bundled Java runtime.
 
 On Windows x64, both Shuttle suites and all 12 combined distribution tests

@@ -39,6 +39,8 @@ internal actual fun launcherOptions(value: String): List<String> = buildList {
 
 internal actual fun environment(name: String): String? = getenv(name)?.toKString()?.takeIf { it.isNotEmpty() }
 
+internal actual fun bundledWorkerLauncher(home: String): String? = null
+
 internal actual fun javaExecutable(home: String): String {
 	val bundled = "$home/runtime/bin/java"
 	if (access(bundled, X_OK) == 0) return bundled

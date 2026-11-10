@@ -171,6 +171,7 @@ captures implementation scope and regression evidence.
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |
 | Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
+| Installed Windows JVM startup, bundled runtime and Unicode relocation | [Windows launchers](../cloth-toolchains/references/windows-unicode-launcher.md) |
 
 ## Existing and deferred design records
 

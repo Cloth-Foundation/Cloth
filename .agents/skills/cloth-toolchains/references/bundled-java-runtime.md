@@ -2,9 +2,10 @@
 
 The combined and per-command Gradle `installDist`, `distZip` and `distTar`
 distributions include a `runtime/` image shared by their installed commands.
-The Gradle launchers select `runtime/bin/java` or `runtime/bin/java.exe` relative
-to `APP_HOME` before checking `JAVA_HOME` and PATH. The fallback supports scripts
-used without an image. Keep this selection order in future launcher work.
+The Unix launchers select `runtime/bin/java` relative to their installation
+home. The Windows launchers start the image through the checked JLI bridge.
+When the image is absent, `JAVA_HOME` precedes PATH. Keep this selection
+order in future launcher work. [Windows launcher contract](windows-unicode-launcher.md)
 
 [The root Gradle build](../../../../build.gradle.kts) creates one image per build
 with the selected Java 25 toolchain's `jlink`. The JDK release metadata supplies

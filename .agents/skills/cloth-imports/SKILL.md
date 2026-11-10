@@ -154,7 +154,7 @@ and [ProgramAnalyzer](../../../Compiler/src/main/kotlin/cloth/semantic/ProgramAn
 The plan records the identity audit, maintained examples and observed target scope.
 
 [CompilationRequestTest](../../../Compiler/src/test/kotlin/cloth/CompilationRequestTest.kt)
-and [Shuttle's API fixture](../../../Shuttle/src/test/kotlin/shuttle/CompilerApiBoundaryTest.kt)
+and [Shuttle's API fixture](../../../Shuttle/native/src/jvmTest/kotlin/shuttle/CompilerApiBoundaryTest.kt)
 verify the public boundary. [ImportParsingTest](../../../Compiler/src/test/kotlin/cloth/ImportParsingTest.kt)
 and [ImportStageBoundaryTest](../../../Compiler/src/test/kotlin/cloth/ImportStageBoundaryTest.kt)
 cover Stage 3. Run `:Compiler:importSyntaxTest` for these 23 tests with native

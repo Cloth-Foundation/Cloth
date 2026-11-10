@@ -44,15 +44,21 @@ release verification.
 [Stage 2](references/standard-library-stage-2.md) adds shared default selection,
 automatic attachment, explicit module roles and reserved-path diagnostics.
 [Stage 3](references/standard-library-stage-3.md) implements `--stdlib PATH` and
-`--no-stdlib`, shared validation, default bypass and command diagnostics. Preserve the documented
-Windows Unicode installation-path limit. Keep source-library selection separate
-from the existing `--runtime` C runtime option.
+`--no-stdlib`, shared validation, default bypass and command diagnostics.
+Keep source-library selection separate from the existing `--runtime` C runtime
+option.
 
 The [Windows Unicode launcher plan](../../../todo/windows-unicode-launcher-plan.md)
-tracks the requested fix for both installed commands: Chinese/emoji installation
-paths, unchanged locale/cwd, preserved JVM context and actual installed-command
-tests. The native-host design is a candidate pending its startup proof; the
-current Windows limitation remains until implementation and host verification.
+tracks Chinese and emoji installation paths for Cloth and Kotlin/Native
+Shuttle's compiler worker. Both use the bundled Java 25 runtime. The
+[installed reproduction](references/windows-unicode-launcher-baseline.md)
+separates bundled JVM discovery from application loading on emoji paths.
+The [Stage 1 proof](references/windows-unicode-launcher-proof.md) passed both
+boundaries on Windows x64 with a version-checked JLI host and a Java bootstrap
+module. [Stage 2](references/windows-unicode-launcher.md) integrates the bridge
+into the combined and per-command distributions. `cloth.exe` is the primary
+Windows command. Keep `cloth.bat` as a compatibility entry and `shuttle.exe`
+as the Kotlin/Native frontend.
 
 [Stage 4 allocation boundary](references/standard-library-stage-4.md) records the
 user-selected owning-collection consumer and verifies existing typed class
@@ -65,7 +71,9 @@ own design prerequisites. Use `StandardLibraryRuntimeTest` for this boundary.
 [maintained bundling example](../../../examples/StandardLibrary/README.md) and
 [toolchain guide](../../../docs/standard-library.md), with packaged external-cwd
 builds and native execution after deleting disposable compiler/source trees.
-ToolchainDistributionTest verifies both commands' nine-profile object matrix;
+[ToolchainDistributionTest](../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
+verifies both commands' nine-profile object matrix. Run `:Tests:test` for the
+packaged-toolchain suite and use `--tests` to select individual cases.
 StandardLibraryPublicationTest owns the exact example graph and executable IR.
 Keep native Windows/GNU execution distinct from other profiles' object evidence.
 

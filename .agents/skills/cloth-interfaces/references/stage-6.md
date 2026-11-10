@@ -94,9 +94,11 @@ all 58 interface tests. The standalone generic and import tasks passed 86 and
 36 tests respectively. The installed Shuttle fixture also passed. The combined
 run finished in 4m 29s with zero failures, errors or skips.
 
+Rerun the focused checks from the repository root.
+
 ```powershell
 .\gradlew.bat :Compiler:test --tests 'cloth.Interface*Test' --offline --console=plain --no-daemon
-.\gradlew.bat :test --tests cloth.ToolchainDistributionTest.installedShuttleRunsImportedGenericInterfaceFixture --offline --console=plain --no-daemon
+.\gradlew.bat :Tests:test --tests cloth.ToolchainDistributionTest.installedShuttleRunsImportedGenericInterfaceFixture --offline --console=plain --no-daemon
 ```
 
 The verification used isolated Gradle outputs. The Standard-Library checkout
@@ -110,4 +112,4 @@ effects, nominal metadata and imported fallbacks. The native fixtures ran on
 Windows x64 and x86. The maintained example verified executable LLVM IR and
 emitted objects on all nine profiles.
 [Integration tests](../../../../Compiler/src/test/kotlin/cloth/InterfaceIntegrationTest.kt) ·
-[Installed Shuttle test](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+[Installed Shuttle test](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)

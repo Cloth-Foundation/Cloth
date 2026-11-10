@@ -5,8 +5,11 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 
 plugins {
 	kotlin("multiplatform")
-	kotlin("plugin.serialization")
+	kotlin("plugin.serialization") version "2.4.20"
 }
+
+group = parent!!.group
+version = parent!!.version
 
 repositories {
 	mavenCentral()
@@ -67,6 +70,8 @@ val prepareTomlParser = tasks.register<Sync>("prepareTomlParser") {
 }
 
 kotlin {
+	jvm()
+	jvmToolchain(25)
 	mingwX64()
 	linuxX64()
 	linuxArm64()
@@ -74,29 +79,45 @@ kotlin {
 	macosX64()
 	applyDefaultHierarchyTemplate()
 	targets.withType<KotlinNativeTarget>().configureEach {
+		compilerOptions.optIn.addAll(
+			"kotlin.contracts.ExperimentalContracts",
+			"kotlinx.serialization.ExperimentalSerializationApi",
+			"kotlinx.serialization.InternalSerializationApi",
+			"dev.eav.tomlkt.TomlSpecific",
+		)
 		binaries.executable(listOf(NativeBuildType.RELEASE)) {
 			baseName = "shuttle"
 			entryPoint = "shuttle.nativecli.main"
 		}
 	}
 	sourceSets.commonMain {
-		kotlin.srcDir("../src/shared/kotlin")
-		kotlin.srcDir(prepareTomlParser.map { it.destinationDir.resolve("commonMain") })
+		dependencies { implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0") }
+	}
+	sourceSets.jvmMain {
+		dependencies { implementation(project(":Compiler")) }
+	}
+	sourceSets.jvmTest {
 		dependencies {
-			implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
-			implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+			implementation(project.dependencies.platform("org.junit:junit-bom:5.10.0"))
+			implementation(kotlin("test-junit5"))
+			runtimeOnly("org.junit.platform:junit-platform-launcher")
 		}
 	}
+	// Keep tomlkt's expect declarations separate from its native actual declarations.
+	val nativeParserMain = sourceSets.create("nativeParserMain") {
+		dependsOn(sourceSets.commonMain.get())
+		kotlin.srcDir(prepareTomlParser.map { it.destinationDir.resolve("commonMain") })
+	}
 	sourceSets.nativeMain {
+		dependsOn(nativeParserMain)
 		kotlin.srcDir(prepareTomlParser.map { it.destinationDir.resolve("kotlinxMain") })
+		dependencies { implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0") }
 	}
 	val posixMain = sourceSets.create("posixMain") { dependsOn(sourceSets.nativeMain.get()) }
 	sourceSets.getByName("linuxMain").dependsOn(posixMain)
 	sourceSets.getByName("macosMain").dependsOn(posixMain)
-	sourceSets.configureEach {
-		languageSettings.optIn("kotlin.contracts.ExperimentalContracts")
-		languageSettings.optIn("kotlinx.serialization.ExperimentalSerializationApi")
-		languageSettings.optIn("kotlinx.serialization.InternalSerializationApi")
-		languageSettings.optIn("dev.eav.tomlkt.TomlSpecific")
-	}
+}
+
+tasks.named<Jar>("jvmJar") {
+	archiveFileName.set("cloth-compiler-worker-${project.version}.jar")
 }

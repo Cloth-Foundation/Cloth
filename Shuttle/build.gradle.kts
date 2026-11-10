@@ -1,52 +1,28 @@
 import org.gradle.api.tasks.options.Option
 import org.gradle.util.internal.ArgumentsSplitter
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 
 plugins {
+	`java-base`
 	distribution
-	kotlin("jvm") version "2.4.20"
-	kotlin("plugin.serialization") version "2.4.20"
 }
 
 group = "cloth"
 version = "1.0-SNAPSHOT"
 
-repositories {
-	mavenCentral()
-}
+val jdk = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) }
+val nativeShuttle = evaluationDependsOn(":Shuttle:native")
+val jvm = nativeShuttle.extensions.getByType<KotlinMultiplatformExtension>()
+	.targets.named<KotlinJvmTarget>("jvm").get()
+val worker = jvm.compilations.getByName("main")
+val workerTests = jvm.compilations.getByName("test")
+val workerJar = nativeShuttle.tasks.named<Jar>("jvmJar")
 
-dependencies {
-	implementation(project(":Compiler"))
-	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-	testImplementation(platform("org.junit:junit-bom:5.10.0"))
-	testImplementation(kotlin("test-junit5"))
-	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-// Execute configuration checks with native backend jars absent from the JVM classpath.
-tasks.register<Test>("configurationTest") {
-	workingDir(rootProject.projectDir)
-	testClassesDirs = sourceSets.test.get().output.classesDirs
-	classpath = sourceSets.test.get().runtimeClasspath.filter {
-		!it.name.startsWith("llvm-") && !it.name.startsWith("javacpp-")
-	}
-	useJUnitPlatform()
-	filter {
-		includeTestsMatching("shuttle.ManifestTest")
-		includeTestsMatching("shuttle.ProjectModelTest")
-	}
-}
-
-tasks.check {
-	dependsOn("configurationTest")
-}
-
-kotlin {
-	jvmToolchain(25)
-	sourceSets.main { kotlin.srcDir("src/shared/kotlin") }
-}
-
-tasks.jar {
-	archiveBaseName.set("cloth-compiler-worker")
+tasks.register("jar") {
+	group = "build"
+	description = "Build the Shuttle JVM worker JAR."
+	dependsOn(workerJar)
 }
 
 val os = System.getProperty("os.name").lowercase()
@@ -59,7 +35,7 @@ val nativeTarget = when {
 	else -> error("Unsupported Shuttle host: $os")
 }
 val commandName = if (windows) "shuttle.exe" else "shuttle"
-val nativeFile = project(":Shuttle:native").layout.buildDirectory.file(
+val nativeFile = nativeShuttle.layout.buildDirectory.file(
 	"bin/$nativeTarget/releaseExecutable/" + if (windows) commandName else "shuttle.kexe"
 )
 val stageNativeShuttle = tasks.register<Sync>("stageNativeShuttle") {
@@ -70,7 +46,7 @@ val stageNativeShuttle = tasks.register<Sync>("stageNativeShuttle") {
 		filePermissions { unix("rwxr-xr-x") }
 	}
 	into("lib") {
-		from(tasks.jar, configurations.runtimeClasspath)
+		from(workerJar, worker.runtimeDependencyFiles)
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	}
 	from("native/licenses") { into("licenses") }
@@ -94,25 +70,59 @@ tasks.register<RunNativeShuttle>("run") {
 	workingDir(rootProject.projectDir)
 	standardInput = System.`in`
 	environment("CLOTH_SHUTTLE_DEVELOPMENT_HOME", rootProject.projectDir.absolutePath)
-	val jdk = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) }
 	doFirst {
 		executable = stageExecutable.get()
 		environment("JAVA_HOME", jdk.get().metadata.installationPath.asFile.absolutePath)
 	}
 }
 
-tasks.withType<Test>().configureEach {
+fun Test.useShuttleStage() {
+	javaLauncher.set(jdk)
+	workingDir(rootProject.projectDir)
+	useJUnitPlatform()
 	dependsOn(stageNativeShuttle)
 	systemProperty("cloth.shuttle.parser", stageExecutable.get())
 	systemProperty("shuttle.test.nativeHome", stageHome.get().asFile.absolutePath)
+	systemProperty("cloth.toolchain.home", rootDir.absolutePath)
+	systemProperty("cloth.toolchain.layout", "development")
 }
 
-tasks.test {
-	workingDir(rootProject.projectDir)
-	useJUnitPlatform()
+fun Test.configureIntegrationTest() {
 	inputs.files(rootProject.fileTree("Bootstrap") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("Standard-Library") { include("**/*.co", "module.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("examples/Collections") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	jvmArgs("--enable-native-access=ALL-UNNAMED")
-	systemProperty("shuttle.test.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+	doFirst { systemProperty("shuttle.test.runtimeClasspath", classpath.asPath) }
+}
+
+val testClasspath = files(workerTests.output.allOutputs, worker.output.allOutputs, workerTests.runtimeDependencyFiles)
+val test = tasks.register<Test>("test") {
+	group = "verification"
+	testClassesDirs = workerTests.output.classesDirs
+	classpath = testClasspath
+	useShuttleStage()
+	configureIntegrationTest()
+}
+
+// Execute configuration checks with native backend jars absent from the JVM classpath.
+val configurationTest = tasks.register<Test>("configurationTest") {
+	group = "verification"
+	testClassesDirs = workerTests.output.classesDirs
+	classpath = testClasspath.filter {
+		!it.name.startsWith("llvm-") && !it.name.startsWith("javacpp-")
+	}
+	useShuttleStage()
+	filter {
+		includeTestsMatching("shuttle.ManifestTest")
+		includeTestsMatching("shuttle.ProjectModelTest")
+	}
+}
+
+nativeShuttle.tasks.named<Test>("jvmTest") {
+	useShuttleStage()
+	configureIntegrationTest()
+}
+
+tasks.check {
+	dependsOn(test, configurationTest)
 }

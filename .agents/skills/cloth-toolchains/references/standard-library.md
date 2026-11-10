@@ -272,9 +272,9 @@ Current sources were inspected at Stage 0: shared
 [request types](../../../../Compiler/src/main/kotlin/cloth/api/CompilationRequest.kt),
 [request validation](../../../../Compiler/src/main/kotlin/cloth/api/CompilationRequestValidation.kt),
 [graph discovery](../../../../Compiler/src/main/kotlin/cloth/source/SourceGraphLoader.kt),
-[Shuttle settings](../../../../Shuttle/src/main/kotlin/shuttle/command/ShuttleSettings.kt),
-[project model](../../../../Shuttle/src/main/kotlin/shuttle/project/ResolvedProject.kt),
-and [build adaptation](../../../../Shuttle/src/main/kotlin/shuttle/command/ProjectBuild.kt).
+[Shuttle settings](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ShuttleSettings.kt),
+[project model](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/project/ResolvedProject.kt),
+and [build adaptation](../../../../Shuttle/native/src/jvmMain/kotlin/shuttle/command/ProjectBuild.kt).
 They establish the handoff points. Stage 2 now attaches the selected root in both
 adapters, preserves its role in request validation and checks reservation during
 discovery. The Stage 2 record owns those sources and observed verification.

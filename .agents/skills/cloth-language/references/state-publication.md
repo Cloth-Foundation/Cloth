@@ -36,7 +36,7 @@ LLVM IR and startup objects. The test worker property
 `cloth.test.statePublicationArtifacts` exports the IR and objects for
 native linker probes.
 
-[ToolchainDistributionTest](../../../../src/test/java/cloth/ToolchainDistributionTest.java)
+[ToolchainDistributionTest](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
 runs the examples through the installed commands. It checks a single C3130
 and no object output for a provable missing state body. A separate program
 transitions during argument evaluation and checks the runtime diagnostic and

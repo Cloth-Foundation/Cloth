@@ -43,6 +43,6 @@ when changing those interactions. [Shuttle](../shuttle-build/SKILL.md) owns buil
 
 Run [BootstrapLexerTest](../../../Compiler/src/test/kotlin/cloth/BootstrapLexerTest.kt)
 for native differential/ownership coverage, [ImportPublicationTest](../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
-for graph/native/foreign-object checks and [ShuttlePublicationTest](../../../Shuttle/src/test/kotlin/shuttle/ShuttlePublicationTest.kt)
+for graph/native/foreign-object checks and [ShuttlePublicationTest](../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 for nested-project command checks. Publish actual scope/evidence through
 [feature integration](../cloth-feature-integration/SKILL.md).

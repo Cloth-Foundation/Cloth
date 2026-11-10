@@ -99,7 +99,7 @@ tokens, and spans.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
 checks the exact graph of eight Bootstrap sources plus the library's List.co.
-[ShuttlePublicationTest](../../../../Shuttle/src/test/kotlin/shuttle/ShuttlePublicationTest.kt)
+[ShuttlePublicationTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 builds and runs the project from its nested lexer directory. Compiler and
 Shuttle track the Bootstrap fixtures as Gradle test inputs.
 

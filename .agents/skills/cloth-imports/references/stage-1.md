@@ -44,7 +44,7 @@ types. LLVM/JavaCPP stay implementation/runtime dependencies.
 
 The [Shuttle build](../../../../Shuttle/build.gradle.kts) has a test-scoped
 Compiler dependency and JUnit 5 setup. Its
-[CompilerApiBoundaryTest](../../../../Shuttle/src/test/kotlin/shuttle/CompilerApiBoundaryTest.kt)
+[CompilerApiBoundaryTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/CompilerApiBoundaryTest.kt)
 compiles as a separate module, with no Compiler internal visibility or test
 helpers. It emits an AArch64 Linux object using only public request types,
 inspects/renders original diagnostics and checks structured request failures.

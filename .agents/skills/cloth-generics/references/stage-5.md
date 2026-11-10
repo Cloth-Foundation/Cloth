@@ -111,13 +111,13 @@ count, complete absent nullable witnesses and incompatible reappearance failure.
 Export/witness probe modules also verify IR and objects on all nine profiles.
 These tests preserve the existing cleanup proof and explicit class lifetime.
 
-[StandardListConsumerTest](../../../../Shuttle/src/test/kotlin/shuttle/StandardListConsumerTest.kt)
+[StandardListConsumerTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/StandardListConsumerTest.kt)
 (3 tests) consumes the library through the public compiler API and real child
 command processes. Both cloth and Shuttle run the actual example with default
 and explicit library selection on Windows x64/x86. Disabled commands fail once
 with no artifact. An AArch64 Linux object verifies the plain request boundary.
 
-The added [ToolchainBundleTest](../../../../Shuttle/src/test/kotlin/shuttle/ToolchainBundleTest.kt)
+The added [ToolchainBundleTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ToolchainBundleTest.kt)
 exports a temporary clean pinned snapshot containing the actual List/Library/module
 bytes, checks byte-identical List export, then compiles an importing AArch64 Linux
 object through the installed-layout selection and public facade. Existing dirty/
