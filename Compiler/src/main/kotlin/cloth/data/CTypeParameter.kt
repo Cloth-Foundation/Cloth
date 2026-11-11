@@ -10,13 +10,30 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import java.util.Collections
 import java.util.IdentityHashMap
 
-/** An unknown exact value type during declaration checking; never a native type. */
-class CTypeParameter internal constructor(val owner: Declaration, val parameter: TypeParameterDeclaration, val index: Int) : ValueType(Keywords.TYPEINFO) {
+/** An unknown exact value type during declaration checking. */
+class CTypeParameter internal constructor(
+	val owner: Declaration,
+	val parameter: TypeParameterDeclaration,
+	val index: Int,
+	internal val numberBound: Boolean,
+) : ValueType(Keywords.TYPEINFO) {
+	internal var nominalBound: CMemberType? = null
 	override val spelling get() = parameter.name.lexeme
-	// An inferred binding cannot assume that an arbitrary actual argument excludes null.
-	override val containsNullability get() = true
+	override val containsNullability get() = !numberBound && nominalBound == null
+	internal override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
+		val providers = super.providers(target)
+		val text = when {
+			numberBound -> ProviderResult.ScalarText(this)
+			nominalBound != null -> ProviderResult.ClassText(this)
+			else -> return providers
+		}
+		return providers + (CompilerDataProviders.STR to text)
+	}
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw GenericErrors.compilation(parameter.span)
 }
+
+/** Numeric operations can be checked on a bound parameter before its format is known. */
+internal val ValueType.supportsNumericOperations: Boolean get() = numeric || (this is CTypeParameter && numberBound)
 
 internal fun ValueType.hasTypeParameters(): Boolean {
 	val seen = Collections.newSetFromMap(IdentityHashMap<ValueType, Boolean>())

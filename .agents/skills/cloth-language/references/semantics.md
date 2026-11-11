@@ -124,6 +124,11 @@ target-sized private helpers through a maintained fixture. Collection logic stay
 in Cloth; no public collection/raw-memory API or new production runtime is added.
 Allocation remains available independently of source-library selection.
 
+[File I/O and bindings](../../cloth-toolchains/references/file-io.md) records
+the selected-library intrinsic body, the value-type `Path`, and the explicit
+lifetime of a read-only `File`. Construction stores the path. A fallible
+`open()` acquires the handle, and `::delete` closes it.
+
 [Stage 5 publication](../../cloth-toolchains/references/standard-library-stage-5.md)
 verifies both packaged commands with a maintained transitive library fixture.
 Its native programs run after the selected toolchain and source copies are
@@ -256,6 +261,17 @@ publishes the [user guide](../../../../docs/generics.md), runnable example,
 [separate follow-ups](../../../../todo/generic-follow-ups.md). It changes no
 language semantics and does not migrate Bootstrap's owning TokenList/cursor or
 implement the deferred generic/interface/protocol features.
+
+[GEN-1 Stage 1](../../cloth-generics/references/constraints-stage-1.md) parses
+and resolves one optional bound per type parameter.
+[GEN-1 Stage 2](../../cloth-generics/references/constraints-stage-2.md) checks
+symbolic and closed type arguments against those bounds.
+[Number bound operations](../../cloth-generics/references/number-bound-operations.md)
+cover explicit casts, same-type arithmetic and comparisons, updates, and numeric
+formatting. [GEN-1 Stage 3](../../cloth-generics/references/constraints-stage-3.md)
+adds nominal-bound operations and carries call contracts into specialization.
+The [constraint design](../../cloth-generics/references/semantics.md#initial-constraint-scope)
+records the satisfaction and operation rules.
 
 Ordinary parameter rules are in [function parameters](../../cloth-functions/references/semantics.md#function-parameters).
 

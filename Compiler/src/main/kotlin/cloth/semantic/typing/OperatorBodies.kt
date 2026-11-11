@@ -6,6 +6,7 @@ import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.MethodDeclaration
 import cloth.semantic.ResultShape
 import cloth.semantic.flow.ClassLifetimeAnalysis
+import cloth.semantic.flow.NullFlowAnalysis
 import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.flow.checkArrayShapes
 import cloth.semantic.symbols.MethodSymbol
@@ -20,7 +21,14 @@ internal class OperatorBodies {
 		val declaration = method.declaration
 		if (!inferring.add(method)) throw SemanticErrors.operatorDeclaration("A recursive operator requires an explicit result type", declaration.span)
 		return try {
-			FunctionType(declared.parameters, inferResult(facts.forCallableBody(), declaration))
+			facts.canonicalBoundMethod(method)?.let { canonical ->
+				facts.typeOf(canonical)
+				NullFlowAnalysis(facts).analyze(declaration)
+			}
+			val body = facts.forCallableBody()
+			val signature = FunctionType(declared.parameters, inferResult(body, declaration))
+			if (facts.declarations.genericViews?.isCanonicalBoundBody(method) == true) facts.inferredBoundBodies[method] = body
+			signature
 		} finally {
 			inferring.remove(method)
 		}
@@ -31,6 +39,10 @@ internal class OperatorBodies {
 		val declaration = template.declaration
 		if (!specializing.add(key)) throw SemanticErrors.operatorDeclaration("A recursive operand context requires an explicit result type", declaration.span)
 		return try {
+			facts.canonicalBoundMethod(template)?.let { canonical ->
+				facts.specialize(canonical, width)
+				NullFlowAnalysis(facts).analyze(declaration)
+			}
 			val body = facts.forCallableBody(width)
 			val annotated = declaration.returnTypes.singleOrNull()?.let(body.types.typeResolver::resolve)
 			val result = annotated ?: inferResult(body.trial().model, declaration)

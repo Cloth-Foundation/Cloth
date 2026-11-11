@@ -44,9 +44,10 @@ class CClass internal constructor(
 	internal var base: CClass? = null
 	internal var implementedInterfaces: Set<CInterface> = emptySet()
 	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
-	override fun accepts(actual: ValueType) = super.accepts(actual) || when (actual) {
+	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || when (actual) {
 		is CClass -> this in actual.ancestry()
 		is CInterface -> objectRoot
+		is CTypeParameter -> actual.nominalBound?.let(::accepts) == true
 		else -> false
 	}
 

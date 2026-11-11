@@ -30,7 +30,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		val templateDeclarations = DeclarationAnalyzer(target).prepared(templateFiles, GenericBodyViews(symbolicTypes))
 		val templates = FunctionAnalyzer(target).analyze(templateDeclarations)
 		// Width templates retain ordinary call-time range checks. Declaration checking
-		// uses the widest admitted format, without granting any capability to owner T.
+		// uses the widest admitted format and retains the owner's declared bounds.
 		for (method in templateDeclarations.widthTemplates) if (method.owner.hasTypeParameters()) {
 			templates.widestSpecialization(method)
 		}
@@ -140,22 +140,32 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			(member as? MethodDeclaration)?.operator?.selector?.let(::surface)
 		}
 		val publicTypes = files.typeOrder.filter { files.privateTypeName(it) == null }.mapTo(java.util.Collections.newSetFromMap(java.util.IdentityHashMap())) { it.declaration }
-		for (declaration in files.declarations) when (declaration) {
-			is FunctionDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) callable(declaration)
-			is ClassDeclaration -> if (declaration in publicTypes && declaration.typeParameters != null) {
-				declaration.parameters.forEach { surface(it.parameter.type) }
-				for (member in declaration.members) when (member) {
-					is ClassFieldDeclaration -> if (member.visibility != null) surface(member.type)
-					is MethodDeclaration -> if (member.visibility != null) callable(member)
-					is ConstructorDeclaration -> callable(member)
-					else -> Unit
+		for (declaration in files.declarations) {
+			val public = when (declaration) {
+				is FunctionDeclaration -> declaration.visibility != null
+				is TypeDeclaration -> declaration in publicTypes
+				else -> false
+			}
+			val parameters = names.parametersOf(declaration)
+			if (!public || parameters.isEmpty()) continue
+			parameters.forEach { it.declaration.bound?.let(::surface) }
+			when (declaration) {
+				is FunctionDeclaration -> callable(declaration)
+				is ClassDeclaration -> {
+					declaration.parameters.forEach { surface(it.parameter.type) }
+					for (member in declaration.members) when (member) {
+						is ClassFieldDeclaration -> if (member.visibility != null) surface(member.type)
+						is MethodDeclaration -> if (member.visibility != null) callable(member)
+						is ConstructorDeclaration -> callable(member)
+						else -> Unit
+					}
 				}
+				is StructDeclaration -> {
+					declaration.fields.forEach { surface(it.type) }
+					declaration.methods.forEach(::callable)
+				}
+				else -> Unit
 			}
-			is StructDeclaration -> if (declaration in publicTypes && declaration.typeParameters != null) {
-				declaration.fields.forEach { surface(it.type) }
-				declaration.methods.forEach(::callable)
-			}
-			else -> Unit
 		}
 	}
 }

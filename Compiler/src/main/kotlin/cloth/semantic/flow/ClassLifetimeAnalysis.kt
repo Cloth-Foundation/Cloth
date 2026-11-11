@@ -6,6 +6,7 @@ import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.declaration.PrimaryConstructorDeclaration
 import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.parser.declaration.executableBody
@@ -81,7 +82,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			when (val body = callable.declaration.executableBody) {
 				is BlockBody      -> statements(body.statements, state)
 				is ExpressionBody -> expression(body.expression, state)
-				null -> Unit
+				null, is IntrinsicBody -> Unit
 			}
 		}
 	}

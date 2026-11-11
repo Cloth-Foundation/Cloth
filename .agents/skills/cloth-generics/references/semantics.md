@@ -56,10 +56,14 @@ this slice. Preserve the intended constrained examples in
 
 ## Initial constraint scope
 
-The first constraints implementation will support one optional bound per type
-parameter. A bound can name `Number`, a class, or an interface, as in
+The initial constraint design allows one optional bound per type parameter.
+A bound can name `Number`, a class, or an interface, as in
 `T: Number`, `T: Entity<T>`, and `T: IHealth<float>`. Combined bounds and
 their syntax are follow-up work.
+
+[GEN-1 Stage 1](constraints-stage-1.md) implements parsing and name resolution
+for these forms. [GEN-1 Stage 2](constraints-stage-2.md) checks satisfaction
+during declaration checking and specialization.
 
 ## Number constraint design
 
@@ -77,12 +81,15 @@ ordinary numeric rules for the concrete type.
 `Number` also grants ordinary numeric formatting. `value::str`,
 `println(value)` and string interpolation use the concrete numeric type's
 formatter. [Output semantics](../../cloth-output/references/semantics.md)
+[Number bound implementation](number-bound-operations.md)
 
 ## Class bound design
 
 A class bound such as `T: Entity<T>` makes the bound's public members
 available directly in the generic body. A value of type `T` can call
 `value.isAlive()` through that bound and keeps its exact type `T`.
+Receiving a class or interface value uses ordinary widening from a proven
+nominal bound, including when passing an argument or initializing a binding.
 [Class member lookup](../../cloth-language/references/class-inheritance.md#supported-slice)
 
 A class-backed interface type satisfies `T: Object` when it can implicitly
@@ -124,6 +131,7 @@ An interface-bound value supports explicit deletion, equality, and formatting
 under the ordinary rules for a class-backed interface view. The value keeps
 its exact type `T`.
 [Interface value operations](../../cloth-interfaces/references/stage-6.md)
+[GEN-1 Stage 3](constraints-stage-3.md)
 
 ## Checking bound satisfaction
 
@@ -131,6 +139,13 @@ An application of a constrained generic must establish that its type
 arguments satisfy the corresponding bounds. For example, a generic declaration
 using `IHealth<T>` must prove `T: Number` when `IHealth` declares `N: Number`.
 Check that proof during declaration checking, including for unused declarations.
+
+A symbolic argument proves a requirement through its own declared bound.
+Specialization checks the exact substituted argument using numeric membership
+or ordinary class and interface widening. `Player` satisfies `T: Entity<T>`
+through the declared `Entity<Player>` base. A subclass used as `T` must prove
+the application with that subclass as its exact argument.
+[Stage 2 proof rules](constraints-stage-2.md)
 
 ## Parameter scope
 
@@ -208,6 +223,8 @@ storage and bodies. It cannot expose a private named helper through a public
 field, constructor input, method parameter or result, including through enclosing
 array/nullable/generic types. A primary constructor parameter is part of the public
 signature even when its initialized field is private.
+Public bounds follow the same rule, including nominal types inside their
+type arguments.
 
 Check public surfaces in the symbolic template's defining context. A public
 generic class exposes its effective inherited public fields, methods and

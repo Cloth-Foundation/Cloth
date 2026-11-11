@@ -35,6 +35,11 @@ multi-error reporter. Multiple labels may explain that same error.
 
 ## Source and verification
 
+**C3136 / INVALID_INTRINSIC_BINDING** rejects invalid library declaration
+origins, unknown or duplicate binding IDs, and incompatible callable
+signatures. Duplicate bindings label both occurrences in one diagnostic.
+[Compiler binding verification](../cloth-toolchains/references/file-io.md#verification-2026-11-11)
+
 Interface conformance uses **C3118 / INVALID_INTERFACE_HEADER** for invalid
 or duplicate direct clauses and **C3119** through **C3124** for cycles,
 competing applications, incompatible requirements, missing implementations,

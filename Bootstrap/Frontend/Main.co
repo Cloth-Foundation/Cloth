@@ -1,22 +1,60 @@
 using lexer.Lexer: *
 using source.SourceFile: SourceFile
+using cloth.io.File: File, FileError
+using cloth.io.Path: pathOf
+using cloth.text.Utf8: decodeUtf8
 
-pub fn<isize> main (string[] args) {
-    println("Cloth Dogfooding")
-
-    def<string?> userInput = input("Input your code: \n")
-
-    if (userInput == "") userInput = null
-
-    // shouldn't ever crash, as EOF is placed manually.
-    def input := if (args::size == 0) { userInput ?: exit(1, "Input is null") } else { args[0] }
-    def source := SourceFile::new("<string>", input)
-    def lexer := Lexer::new(input, source)
-
+fn<isize> lexSource(string name, string text) {
+    def source := SourceFile::new(name, text)
+    def lexer := Lexer::new(text, source)
     def status := lexer.lexTokens()
-
     lexer::delete
     source::delete
-
     return status
+}
+
+fn<isize> lexFile(string spelling) {
+    def path := pathOf(spelling)
+    def file := File::new(path)
+    def<FileError?> openError := file.open()
+    if (openError != null) {
+        file::delete
+        exit(1, #"Cannot open '{path.spelling}' ({openError::name})")
+    }
+
+    def<unsigned int<8>[]> bytes := []
+    while (true) {
+        def<unsigned int<8>[]?, FileError?> chunk, readError := file.read(65536)
+        if (readError != null) {
+            file::delete
+            exit(1, #"Cannot read '{path.spelling}' ({readError::name})")
+        }
+        if (chunk == null) break
+        for (def byte <- chunk) bytes.append(byte)
+    }
+    file::delete
+    def text := decodeUtf8(bytes) ?: exit(1, #"Invalid UTF-8 in '{path.spelling}'")
+    return lexSource(path.spelling, text)
+}
+
+pub fn<isize> main(string[] args) {
+    println("Cloth Dogfooding")
+
+    if (args::size == 0) {
+        def text := input("Input your code: \n") ?: exit(1, "Input is null")
+        if (text == "") exit(1, "Input is null")
+        return lexSource("<string>", text)
+    }
+
+    def argument := args[0]
+    if (argument == "--file") {
+        if (args::size != 2) exit(1, "Expected a source path after --file")
+        return lexFile(args[1])
+    }
+    if (argument == "--text") {
+        if (args::size != 2) exit(1, "Expected source text after --text")
+        return lexSource("<string>", args[1])
+    }
+    if (args::size != 1) exit(1, "Expected one source path")
+    return lexFile(argument)
 }

@@ -1,6 +1,5 @@
 package cloth.emitter.storage
 
-import cloth.data.CClass
 import cloth.emitter.NativeCABI
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -188,9 +187,9 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildRetVoid(builder)
 	}
 
-	fun instanceBytes(builder: LLVMBuilderRef, owner: CClass): LLVMValueRef {
+	fun instanceBytes(builder: LLVMBuilderRef, storage: LLVMTypeRef): LLVMValueRef {
 		val memory = EmitMemory(context, builder, abi)
-		return memory.elementBytes(memory.count(1), owner.instanceStorage(context, abi.layout), "Class instance exceeds native allocation size")
+		return memory.elementBytes(memory.count(1), storage, "Class instance exceeds native allocation size")
 	}
 
 	fun allocateStorage(builder: LLVMBuilderRef, bytes: LLVMValueRef, name: String, failure: String): LLVMValueRef =

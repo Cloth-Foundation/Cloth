@@ -88,3 +88,9 @@ data class BlockBody(val statements: List<Statement>, override val span: TokenSp
 
 /** Distinct from a brace body's final expression; supplies an implicit function return. */
 data class ExpressionBody(override val equals: Token, val expression: Expression, override val span: TokenSpan = equals.span.through(expression.span)) : FunctionBody
+
+/** An explicit body supplied by the selected standard library's compiler bindings. */
+data class IntrinsicBody(override val equals: Token, val operation: Token) : FunctionBody {
+	val id get() = operation.lexeme.removeSurrounding("\"")
+	override val span get() = equals.span.through(operation.span)
+}

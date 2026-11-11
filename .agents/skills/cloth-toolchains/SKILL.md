@@ -82,6 +82,10 @@ allocation behavior. Portable collection logic remains in Cloth. Its fixture is
 not a shipped collection API; later buffer/I/O/clock/thread services retain their
 own design prerequisites. Use `StandardLibraryRuntimeTest` for this boundary.
 
+[Standard-library compiler bindings and file I/O](references/file-io.md)
+covers the registered callable body, typed binding checks, `Path`, read-only
+`File`, and counted UTF-8 decoding. Use it for new platform-backed operations.
+
 [Stage 5 publication](references/standard-library-stage-5.md) adds the
 [maintained bundling example](../../../examples/StandardLibrary/README.md) and
 [toolchain guide](../../../docs/standard-library.md), with packaged external-cwd

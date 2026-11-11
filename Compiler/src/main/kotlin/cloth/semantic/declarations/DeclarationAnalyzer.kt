@@ -142,7 +142,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				}
 
 				is ExpressionBody -> resolver.expression(body.expression, scope)
-				null -> Unit
+				null, is IntrinsicBody -> Unit
 			}
 		}
 		return model

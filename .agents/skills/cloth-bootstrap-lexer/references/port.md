@@ -9,12 +9,15 @@ suffixes, normal/raw strings, scalar character literals and recursive
 interpolation. Preserve empty segments, doubled braces, braces inside hole-owned
 strings/comments, original lexemes and EOF at the final cursor.
 
-The Bootstrap driver scans source text from the first program argument or
-standard input. [Main.co](../../../../Bootstrap/Frontend/Main.co)
+The Bootstrap driver reads a source path from the first program argument or
+`--file <path>`. Zero arguments read an interactive line and `--text <source>`
+accepts literal source. File mode reads counted byte chunks, deletes the file,
+and decodes UTF-8 before invoking the string lexer. Open, read, and decoding
+failures include the path and stop before lexing. [Main.co](../../../../Bootstrap/Frontend/Main.co)
 
 ~~~powershell
-.\gradlew.bat :Shuttle:run --args='run --project Bootstrap'
-.\Bootstrap\build\Cloth.exe 'def answer = 42'
+.\gradlew.bat :Shuttle:run --args='run --project Bootstrap -- Bootstrap/Frontend/source/SourceFile.co'
+.\Bootstrap\build\Cloth.exe --text 'def answer = 42'
 ~~~
 
 Use the equivalent native executable path on other hosts.
@@ -50,8 +53,10 @@ excerpt, labels, help and renderer are not ported.
 
 ## Observed boundaries
 
-- **I/O:** source input is already a string. File reading, stream APIs and stderr
-  diagnostic rendering need design/library work.
+- **I/O:** the lexer receives a string and the driver owns file loading.
+  [File I/O](../../cloth-toolchains/references/file-io.md) records the byte
+  API and decoder. General stream APIs and stderr diagnostic rendering
+  remain separate work.
 - TokenList imports `cloth.collections.List` and keeps a private
   `List<Token>` for append and indexed traversal. The generic list stores token
   identities. TokenList deletes the tokens before deleting that list.
@@ -71,9 +76,18 @@ excerpt, labels, help and renderer are not ported.
 These observations do not establish new language decisions or authorize all
 possible follow-up implementations.
 
-The scanner caches toChars() and keeps scalar substring indices separate from
-one-based UTF-16 line/columns, matching Kotlin's exclusive spans. Non-BMP scalars
-advance columns by two, LF starts a line, and CR is ignored outside literals.
+The scanner caches `toChars()`. The private `CursorPosition<T: Number>` struct
+stores a zero-based `usize` scalar index for slicing lexemes, a one-based line,
+and a one-based UTF-16 column. The lexer uses `CursorPosition<int>`.
+`Lexer.advance()` reads the character at the current index and calls
+`current.advance(character)`. The struct method increments the index and updates
+the coordinates using [Number bound operations](../../cloth-generics/references/number-bound-operations.md).
+Non-BMP scalars advance the column by two, LF starts a line, and CR is ignored
+outside literals.
+
+`mark()` copies the whole cursor with `start = current`. Interpolation saves
+cursor snapshots for later errors. Tokens and errors use the same `span`
+helper to build exclusive `TokenSpan` ranges from the line and column.
 Identifier predicates are BMP-only because Kotlin classifies UTF-16 Char values.
 Cloth uses Unicode 17 while JVM tables depend on its version: newly assigned BMP
 characters are not exhaustively compared, so version differences remain a parity
@@ -98,12 +112,18 @@ successful scans and first errors after two tokens release the list storage,
 tokens, and spans.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
-checks the exact graph of eight Bootstrap sources plus the library's List.co and
-checks token lexemes from a program argument and successful completion.
+checks the exact graph of eight Bootstrap sources plus the library's List,
+Path, File and UTF-8 decoder. The native test holds stdin open, compares
+file-mode token JSON with Kotlin, and checks empty, missing and malformed input
+and the first lexer error.
 [ShuttlePublicationTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 builds and runs the project from its nested lexer directory and checks lexemes
-from standard input and successful completion. Compiler and Shuttle track the
-Bootstrap fixtures as Gradle test inputs.
+from a relative Unicode path and from standard input. Compiler and Shuttle
+track the Bootstrap fixtures as Gradle test inputs.
+
+The 2026-11-11 file-mode slice adds native path reads on Windows x64 and x86
+and GNU Linux x64 under WSL. The [file I/O verification](../../cloth-toolchains/references/file-io.md#verification-2026-11-11)
+records the relative-path dogfooding, UTF-8 boundary cases, and target matrix.
 
 Run the focused integration checks from the repository root.
 
@@ -133,3 +153,10 @@ with source text on standard input. [Guarded access verification](../../cloth-nu
 On 2026-11-10 the compiler and native Shuttle publication suites passed all
 six cases on JDK 25 after switching the Bootstrap assertions to token lexemes
 and successful completion.
+
+On 2026-11-11 all eight lexer and publication tests passed with cursor movement
+in `CursorPosition<T: Number>.advance`.
+`BootstrapLexerTest` matched Kotlin on 126 inputs and passed the ownership probe
+on Windows x64 and x86. `ImportPublicationTest` verified executable IR and
+startup objects for all nine profiles. `ShuttlePublicationTest` passed on Windows,
+including Bootstrap's nested-directory standard-input run.

@@ -186,9 +186,9 @@ internal sealed class ProviderResult<out T : ValueType> {
 		override fun emitValue(context: ProviderEmissionContext, receiver: ProviderReceiver): LLVMValueRef = context.formatNullable((receiver as ProviderReceiver.Value).value, this)
 	}
 
-	data class ClassText(override val receiverType: CMemberType) : ProviderResult<CString>() {
+	data class ClassText(override val receiverType: ValueType) : ProviderResult<CString>() {
 		init {
-			require(receiverType.classBackedType() != null)
+			require(receiverType !is CNullable && receiverType.classBackedType() != null)
 		}
 
 
@@ -227,7 +227,7 @@ internal sealed class ProviderResult<out T : ValueType> {
 	data class ScalarText(override val receiverType: ValueType) : ProviderResult<CString>() {
 
 		init {
-			require(receiverType.numeric || receiverType == CBool || receiverType == CChar || receiverType == CString || receiverType == CTypeInfo) {
+			require(receiverType.supportsNumericOperations || receiverType == CBool || receiverType == CChar || receiverType == CString || receiverType == CTypeInfo) {
 				"Scalar text formatting requires a supported scalar receiver"
 			}
 		}

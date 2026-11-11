@@ -7,6 +7,7 @@ import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.GenericErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
+import cloth.emitter.runtime.EmitLibraryIntrinsics
 import cloth.emitter.storage.*
 import cloth.emitter.text.EmitString
 import cloth.emitter.text.EmitTypeInfo
@@ -17,6 +18,7 @@ import cloth.emitter.types.EmitRuntimeError
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ConstructorDeclaration
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.declaration.PrimaryConstructorDeclaration
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.Expression
@@ -51,6 +53,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private val stateDefinitions = semantics.declarations.states.definitions
 	private val tracksStates = stateDefinitions.isNotEmpty() || semantics.declarations.states.callables.any { it is StateMethodContractSymbol }
 	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates) }
+	private val intrinsics by lazy { EmitLibraryIntrinsics(context, module, abi, semantics.intrinsics, stringStorage, results) { classes } }
 	internal val states by lazy { EmitStateRuntime(context, module, abi, classes, stringStorage, stateDefinitions) }
 	private val initialStates = mutableMapOf<StateDefinition, LLVMValueRef>()
 	private val initialStateType by lazy {
@@ -210,7 +213,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				bindings.bindStatePayload(payload, states.payload(builder, activation, payload.type), states.arena(builder, activation))
 			}
 			val expressions = expressions(builder, bindings, semantics, signature.results, frame)
-			bindParameters(function, callable, builder, bindings, expressions)
+			val arguments = bindParameters(function, callable, builder, bindings, expressions)
 			objectAccess?.let { classes.check(builder, it) }
 			if (callable.replayableStruct) bindings.checkDestination(checkNotNull(function.receiver))
 			val constructed = if (function is ConstructorSymbol) {
@@ -235,6 +238,8 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 						frame.emitReturn(if (signature.results == ResultShape.Empty) null else results.encode(builder, expressions.adaptResults(checkNotNull(result), semantics.resultOf(body.expression), signature.results), signature.results))
 					}
 				}
+
+				is IntrinsicBody -> intrinsics.emit(function, signature.results, builder, arguments, objectAccess, frame)
 			}
 			frame.finish()
 		} finally {
@@ -417,6 +422,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				callable(destructor).call(builder) { setReceiver(access) }
 			}
 		}
+		intrinsics.releaseInstance(concrete, builder, access)
 		for (owner in concrete.ancestry()) classStorage.release(builder, access, owner)
 	}
 
@@ -604,7 +610,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 			structReceiver?.let { setReceiver(it()) }
 			if (selected is ConstructorSymbol) {
-				val concrete = allocation ?: ConstructorAllocation(classes.instanceBytes(builder, selected.owner), classTag(selected.owner))
+				val concrete = allocation ?: ConstructorAllocation(classes.instanceBytes(builder, intrinsics.instanceStorage(selected.owner)), classTag(selected.owner))
 				setAllocation(concrete)
 			}
 		}

@@ -12,6 +12,7 @@ import cloth.parser.declaration.*
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.BindingDeclaration
+import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.generics.*
 import cloth.settings.OutputKind
 import cloth.source.SourceGraph
@@ -162,6 +163,69 @@ class GenericNamesTest {
 		val base = derived.parents.single().type
 		assertSame(model.parametersOf(derived).single(), model.nameOf(base.typeArguments.single()))
 		assertSame(ast.declarations[0], assertIs<cloth.data.CClass>(assertIs<NominalTypeName>(model.nameOf(base)).type).declaration)
+	}
+
+	@Test
+	fun `bounds resolve the original nominal and owner parameter identities`() {
+		val ast = unit("""
+			typedef<class> Entity<T: Entity<T>> {}
+			typedef<class> Player : Entity<Player> {}
+			typedef<interface> IHealth<N: Number> {}
+			typedef<struct> Meter<T: IHealth<N>, N: Number> { T value }
+			fn observe<T: Object>(T value) {}
+		""")
+		val model = GenericAnalyzer(target).analyze(ast)
+		val entity = model.parametersOf(ast.declarations[0]).single()
+		val entityBound = assertNotNull(entity.declaration.bound)
+		val entityName = assertIs<NominalTypeName>(model.nameOf(entityBound))
+		assertSame(ast.declarations[0], entityName.type.declaration)
+		assertSame(entity, model.nameOf(entityBound.typeArguments.single()))
+		val playerBase = assertIs<ClassDeclaration>(ast.declarations[1]).parents.single().type
+		assertEquals(entityName, model.nameOf(playerBase))
+
+		val (meter, number) = model.parametersOf(ast.declarations[3])
+		val meterBound = assertNotNull(meter.declaration.bound)
+		assertSame(ast.declarations[2], assertIs<NominalTypeName>(model.nameOf(meterBound)).type.declaration)
+		assertSame(number, model.nameOf(meterBound.typeArguments.single()))
+		assertSame(NumberBoundName, model.nameOf(assertNotNull(number.declaration.bound)))
+		val objectBound = assertNotNull(model.parametersOf(ast.declarations[4]).single().declaration.bound)
+		assertEquals("Object", assertIs<NominalTypeName>(model.nameOf(objectBound)).type.spelling)
+	}
+
+	@Test
+	fun `plain Number is contextual and qualified and imported types use ordinary lookup`(@TempDir root: Path) {
+		val graph = graph(root, mapOf(
+			"Main.co" to "using Bounds: Number, Family\nfn observe<T: Number, U: Family.Number>(Number value) {}",
+			"Bounds.co" to "pub typedef<class> Number {}\npub typedef<class> Family { pub typedef<interface> Number {} }",
+		))
+		val model = GenericAnalyzer(target).analyze(graph)
+		val imported = graph.sources.single { it.path.fileName.toString() == "Bounds.co" }.unit.declarations
+		val function = graph.sources.single { it.path.fileName.toString() == "Main.co" }.unit.declarations.single() as FunctionDeclaration
+		val (numeric, nominal) = model.parametersOf(function)
+		assertSame(NumberBoundName, model.nameOf(assertNotNull(numeric.declaration.bound)))
+		val nested = assertIs<ClassDeclaration>(imported[1]).nestedTypes.single()
+		assertSame(nested, assertIs<NominalTypeName>(model.nameOf(assertNotNull(nominal.declaration.bound))).type.declaration)
+		assertSame(imported[0], assertIs<NominalTypeName>(model.nameOf(function.parameters.single().type)).type.declaration)
+	}
+
+	@Test
+	fun `bounds keep name and arity errors and reject other bound types`() {
+		val unknown = failure("fn read<T: Missing>(Other value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
+		assertContains(unknown.summary, "'Missing'")
+		failure("fn read<T: Number>(Number value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
+		val prefix = "typedef<interface> IHealth<N> {}\n"
+		failure(prefix + "fn read<T: IHealth>() {}", DiagnosticCode.RAW_GENERIC_TYPE)
+		failure(prefix + "fn read<T: IHealth<int, float>>() {}", DiagnosticCode.GENERIC_ARITY)
+		for (bound in listOf("int", "Object?", "Object[]", "unsigned Object", "T", "Slot")) {
+			failure("typedef<struct> Slot { int value }\nfn read<T: $bound>() {}", DiagnosticCode.INVALID_GENERIC_BOUND)
+		}
+	}
+
+	@Test
+	fun `unused bound declarations reach both semantic entry points`() {
+		val ast = unit("typedef<interface> IHealth<T: Number> {}")
+		assertNotNull(DeclarationAnalyzer(target).analyze(ast).genericViews)
+		assertTrue(ClosedTypeAnalyzer(target).analyze(ast).instances.isEmpty())
 	}
 
 	@Test

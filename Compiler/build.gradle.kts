@@ -105,6 +105,7 @@ tasks.register<Test>("genericSyntaxTest") {
 	filter {
 		includeTestsMatching("cloth.GenericParsingTest")
 		includeTestsMatching("cloth.GenericNamesTest")
+		includeTestsMatching("cloth.GenericBoundsTest")
 		includeTestsMatching("cloth.GenericClosedTypesTest")
 		includeTestsMatching("cloth.GenericInstantiationLimitsTest")
 		includeTestsMatching("cloth.GenericClosedImportsTest")

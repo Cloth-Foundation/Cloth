@@ -56,6 +56,33 @@ class GenericCallableTypingTest {
 	}
 
 	@Test
+	fun `Number bounds grant numeric operations in unused templates`() {
+		analyze("""
+			fn<T> convert<T: Number, U: Number>(U value) = value -> T
+			fn<T> add<T: Number>(T value) {
+			    def<T?> one = 1 -> T
+			    def total = value + one
+			    total++
+			    return total
+			}
+			fn<bool> same<T: Number>(T? left, T? right) = left == right
+			fn<string> describe<T: Number>(T value) {
+			    println(value)
+			    return #"{value::str}: {value}"
+			}
+		""")
+	}
+
+	@Test
+	fun `Number arithmetic requires exact operands and explicit numeric casts`() {
+		failure("fn<T> add<T: Number>(T value) = value + 1", DiagnosticCode.BINARY_OPERANDS)
+		failure("fn<T> add<T: Number, U: Number>(T left, U right) = left + right", DiagnosticCode.BINARY_OPERANDS)
+		failure("fn<bool> same<T: Number>(T value) = value == 1", DiagnosticCode.INCOMPARABLE_TYPES)
+		failure("fn<T> cast<T: Number>(bool value) = value -> T", DiagnosticCode.INVALID_CAST)
+		failure("fn<int> cast<T>(T value) = value -> int", DiagnosticCode.INVALID_CAST)
+	}
+
+	@Test
 	fun `nullable substitution preserves explicit receptions lazy fallback and proofs`() {
 		analyze("""
 			typedef<class> Maybe<T> (def<T?> value ?: null) {

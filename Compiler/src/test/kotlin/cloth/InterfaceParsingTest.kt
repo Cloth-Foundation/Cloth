@@ -84,8 +84,5 @@ class InterfaceParsingTest {
 		}
 		val function = assertFailsWith<SyntaxException> { genericUnit("typedef<interface> I { pub fn read() {} }") }
 		assertEquals(DiagnosticCode.FUNCTION_IN_TYPE, function.diagnosticCode)
-		val constraint = assertFailsWith<SyntaxException> { genericUnit("typedef<interface> I<T: Number> {}") }
-		assertEquals(DiagnosticCode.UNSUPPORTED_GENERIC_SYNTAX, constraint.diagnosticCode)
-		assertEquals(":", text(constraint.sourceLabels.single().span))
 	}
 }

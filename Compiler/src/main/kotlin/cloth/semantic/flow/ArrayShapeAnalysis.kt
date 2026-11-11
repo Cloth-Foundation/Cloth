@@ -5,6 +5,7 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
@@ -31,7 +32,7 @@ internal fun checkArrayShapes(function: CallableContractSymbol, semantics: Funct
 	when (val body = function.declaration.executableBody) {
 		is BlockBody -> analysis.statements(body.statements)
 		is ExpressionBody -> analysis.returned(body.expression)
-		null -> Unit
+		null, is IntrinsicBody -> Unit
 	}
 }
 

@@ -32,6 +32,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun enumCase(expression: FieldAccessExpression): EnumCase? = null
 	protected open fun valueCheck(expression: TypeCheckExpression): BinaryExpression? = null
 	protected open fun fieldPresent(expression: FieldAccessExpression): Boolean = false
+	protected open fun boundView(expression: Expression, actual: ValueType): CMemberType? = null
 	protected open fun validateFieldAccess(field: InstanceField, name: Token) = Unit
 	protected open fun validateFormatter(receiver: Expression, result: ProviderResult<*>) = Unit
 	protected open fun creationType(expression: ClassCreationExpression): ValueType = throw InternalErrors.invariant("Class creation requires function semantics")
@@ -598,8 +599,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				val target = resolveType(expression.target)
 				model.typeChecks[expression] = target
 				val sourceOwner = source.classBackedType()
-				val targetOwner = target.classBackedType()
-				if (sourceOwner != null && targetOwner != null && target !is CNullable && (sourceOwner is CInterface || targetOwner is CInterface)) {
+				val targetOwner = (target as? CMemberType)?.classBackedType()
+				if (sourceOwner != null && targetOwner != null && (sourceOwner is CInterface || targetOwner is CInterface)) {
 					model.interfaceTypeTests[expression] = InterfaceTypeTest(sourceOwner, targetOwner, source is CNullable)
 				}
 				ValueType.BOOL
@@ -612,9 +613,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if ((source is CNullable || source == ValueType.Null) && target !is CNullable && target != ValueType.VOID) throw SemanticErrors.nullablePayload(source, expression.operand.span)
 				val sourcePayload = (source as? CNullable)?.payload ?: source
 				val targetPayload = (target as? CNullable)?.payload ?: target
-				val upcast = sourcePayload.classBackedType() != null && targetPayload.classBackedType()?.accepts(sourcePayload) == true
+				val upcast = sourcePayload.classBackedType() != null && (targetPayload as? CMemberType)?.classBackedType()?.accepts(sourcePayload) == true
 				val ordinal = sourcePayload is CEnum && targetPayload == ValueType.INT
-				if (source != ValueType.NEVER && sourcePayload != targetPayload && !upcast && !ordinal && !(sourcePayload.numeric && targetPayload.numeric) && target != ValueType.VOID) reject { SemanticErrors.cast(source, target, expression.span) }
+				val numericCast = sourcePayload.supportsNumericOperations && targetPayload.supportsNumericOperations
+				if (source != ValueType.NEVER && sourcePayload != targetPayload && !upcast && !ordinal && !numericCast && target != ValueType.VOID) reject { SemanticErrors.cast(source, target, expression.span) }
 				if (target == ValueType.TYPEINFO) model.metadata[expression.operand]?.let { model.metadata[expression] = it }
 				target
 			}
@@ -625,7 +627,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (operand is CNullable || operand == ValueType.Null) throw SemanticErrors.nullablePayload(operand, expression.operand.span)
 				if (expression.operator.lexeme == Operators.NOT.toString()) {
 					if (operand != ValueType.BOOL && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = true) }
-				} else if (!operand.numeric && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = false) }
+				} else if (!operand.supportsNumericOperations && operand != ValueType.NEVER) reject { SemanticErrors.unary(expression.operator, expression.operand, operand, boolean = false) }
 				operand
 			}
 
@@ -658,6 +660,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				valueComparison(expression, operation, left, right)?.let { return it }
 				if (left is CNullable || left == ValueType.Null) throw SemanticErrors.nullablePayload(left, expression.left.span)
 				if (right is CNullable || right == ValueType.Null) throw SemanticErrors.nullablePayload(right, expression.right.span)
+				// The bound proves operations on the exact parameter before its numeric format is known.
+				val operand = if (left == ValueType.NEVER) right else left
+				if (numeric && operand is CTypeParameter && operand.numberBound && operand.accepts(right)) {
+					return if (expression.operator.lexeme in comparisonOperators) ValueType.BOOL else operand
+				}
 				if (expression.operator.lexeme == Operators.MUL_MUL.toString() && left.integer && right.integer) {
 					val exponent = expression.right
 					if (exponent is UnaryExpression && exponent.operator.lexeme == Operators.MINUS.toString() && exponent.operand is IntegerLiteral && exponent.operand.value.signum() > 0) reject { SemanticErrors.negativeExponent(exponent.span) }
@@ -719,10 +726,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		if (receiver == ValueType.NEVER) return receiver
 		if (receiver is CNullable || receiver == ValueType.Null) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		val message = "Type '${receiver.spelling}' has no field '${expression.name.lexeme}'"
-		val field = (receiver as? CMemberType)?.field(expression.name.lexeme) ?: throw when (receiver) {
+		val owner = boundView(expression.receiver, receiver) ?: (receiver as? CMemberType) ?: receiver.classBackedType()
+		val field = owner?.field(expression.name.lexeme) ?: throw when (owner) {
 			is CClass -> SemanticErrors.classMember(message, expression.name.span)
 			is CEnum  -> SemanticErrors.enumMember(message, expression.name.span)
-			is CInterface -> SemanticErrors.unknownField(receiver, expression.name)
+			is CInterface -> SemanticErrors.unknownField(owner, expression.name)
 			else      -> SemanticErrors.structField(message, expression.name.span)
 		}
 		validateFieldAccess(field, expression.name)
@@ -814,15 +822,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val wrapper = left as? CNullable ?: right as? CNullable
 		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
-		if (!wrapper.accepts(left) || !wrapper.accepts(right) || (payload is CTypeParameter || payload is CArray || payload is CMemberType) && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		val unsupportedPayload = (payload is CTypeParameter && !payload.numberBound) || payload is CArray || payload is CMemberType
+		if (!wrapper.accepts(left) || !wrapper.accepts(right) || unsupportedPayload && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
 
 	private fun classComparison(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
 		if (operation !in OperatorRules.classComparisons) return null
-		val leftView = left.classBackedType()
-		val rightView = right.classBackedType()
+		val leftView = boundView(expression.left, left) ?: left.classBackedType()
+		val rightView = boundView(expression.right, right) ?: right.classBackedType()
 		if (operation != Operators.IDENTITY && leftView == null && rightView == null) return null
 		val comparesNull = expression.left is NullLiteral || expression.right is NullLiteral
 		if (comparesNull && left !is CNullable && right !is CNullable) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)

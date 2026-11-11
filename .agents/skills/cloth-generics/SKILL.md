@@ -1,9 +1,18 @@
 ---
 name: cloth-generics
-description: Plan, design, or implement Cloth user-defined generic classes and structs, closed type identities, substitution, specialization, imports, and metadata.
+description: Plan, design, or implement Cloth generics, including bounds, class and struct templates, closed type identities, substitution, specialization, imports, and metadata.
 ---
 
 # Cloth generic types
+
+[GEN-1 Stage 1](references/constraints-stage-1.md) implements single-bound
+syntax and name resolution for classes, structs, interfaces, and functions.
+[GEN-1 Stage 2](references/constraints-stage-2.md) checks satisfaction during
+declaration checking and specialization. C3135 identifies an unsatisfied bound.
+[Number bound operations](references/number-bound-operations.md) cover explicit
+casts, same-type arithmetic and comparisons, updates and numeric formatting.
+[GEN-1 Stage 3](references/constraints-stage-3.md) implements class and
+interface bound operations and retains declaration-site call contracts.
 
 The first generic class/struct slice and public source List are complete through
 [Stage 6 integration and publication](references/stage-6.md). Start with the
@@ -90,7 +99,6 @@ concrete wrappers and generated concrete sources do not replace those tests.
 Bootstrap uses the public List as storage for its owning token list.
 [Bootstrap lexer skill](../cloth-bootstrap-lexer/SKILL.md)
 
-Constraints, method-owned parameters, inference and
-collection protocols remain in the
-[separate follow-up record](../../../todo/generic-follow-ups.md). Completion of
-the first slice neither implements those features nor publishes a release pin.
+The [open questions plan](../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)
+tracks combined bounds, constructor guarantees, method-owned parameters,
+inference, and the remaining generic follow-ups.

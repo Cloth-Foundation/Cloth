@@ -91,6 +91,9 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_STATE_ATTACHMENT("C3131"),
 	PRIVATE_NESTED_TYPE("C3132"),
 	INVALID_VIRTUAL_METHOD("C3133"),
+	INVALID_GENERIC_BOUND("C3134"),
+	UNSATISFIED_GENERIC_BOUND("C3135"),
+	INVALID_INTRINSIC_BINDING("C3136"),
 
 	INVALID_ARRAY("C3038"),
 	INVALID_INDEX("C3039"),
@@ -131,6 +134,7 @@ enum class DiagnosticCode(val id: String) {
 	GENERIC_METADATA_SIZE("C4034"),
 	UNSUPPORTED_INTERFACE_COMPILATION("C4035"),
 	// C4036 retired after state-method dispatch integration.
+	// C4037 retired after generic bound satisfaction checking.
 
 	UNKNOWN_OPTION("C0001"),
 	MISSING_OPTION_VALUE("C0002"),

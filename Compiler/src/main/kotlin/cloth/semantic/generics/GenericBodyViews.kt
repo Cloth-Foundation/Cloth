@@ -5,7 +5,9 @@ import cloth.diagnostics.InternalErrors
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.parser.type.TypeParameterDeclaration
 import cloth.parser.type.TypeReference
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.SignatureType
 import cloth.semantic.typing.FunctionSemanticModel
@@ -18,6 +20,9 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 	private val owners = IdentityHashMap<CMemberType, Declaration>()
 	private val copies = IdentityHashMap<CMemberType, IdentityHashMap<Any, Any>>()
 	private val originals = IdentityHashMap<Any, Any>()
+	private val boundContexts = IdentityHashMap<Expression, GenericBindings>()
+	private val canonicalExpressions = IdentityHashMap<Expression, Expression>()
+	private val canonicalCallables = IdentityHashMap<CallableSignature, CallableSignature>()
 
 	init {
 		for ((reference, pattern) in types.rootBindings.facts) if (pattern is ClosedTypePattern.Exact) resolvedTypes[reference] = pattern.type
@@ -45,12 +50,41 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 	fun originalOf(node: Any): Any = originals[node] ?: node
 	fun viewOf(node: Any, owner: CMemberType): Any = copies.getValue(owner).getValue(node)
 	internal fun signatureType(reference: TypeReference): SignatureType = resolvedTypes[reference]?.let(SignatureType::resolved) ?: SignatureType.of(reference)
+	internal fun isCanonicalBoundBody(callable: CallableContractSymbol): Boolean {
+		if (!types.symbolic) return false
+		if (canonicalCallables[originalOf(callable.declaration) as CallableSignature] === callable.declaration) return true
+		val owner = callable.receiver?.owner ?: return false
+		return types.catalog[owner]?.bindings?.let { it.suppliedArguments == null && it.nominalBounds.isNotEmpty() } == true
+	}
+
+	internal fun checkedExpression(view: Expression): Expression? {
+		if (view !in boundContexts) return null
+		val declarations = templates?.declarations?.genericViews ?: this
+		return declarations.canonicalExpressions[originalOf(view) as Expression]?.takeUnless { it === view }
+	}
+
+	internal fun specializedBound(view: Expression, parameter: TypeParameterDeclaration): CMemberType? =
+		boundContexts[view]?.nominalBounds?.get(parameter)
+
+	internal fun canonicalBoundMethod(declaration: MethodDeclaration): MethodDeclaration? =
+		(canonicalCallables[originalOf(declaration) as MethodDeclaration] as? MethodDeclaration)?.takeUnless { it === declaration }
 
 	private fun view(owner: CMemberType) = View(types.instanceOf(owner).bindings, copies.getOrPut(owner) { IdentityHashMap() })
 
 	private inner class View(private val bindings: GenericBindings, private val cache: IdentityHashMap<Any, Any> = IdentityHashMap()) {
+		private val canonical = types.symbolic && bindings.suppliedArguments == null && bindings.nominalBounds.isNotEmpty()
+
 		@Suppress("UNCHECKED_CAST")
-		private fun <T : Any> copy(source: T, create: () -> T): T = cache.getOrPut(source) { create().also { originals[it] = source } } as T
+		private fun <T : Any> copy(source: T, create: () -> T): T = cache.getOrPut(source) {
+			create().also { view ->
+				originals[view] = source
+				if (canonical && source is CallableSignature && view is CallableSignature) canonicalCallables[source] = view
+				if (source is Expression && view is Expression && bindings.nominalBounds.isNotEmpty()) {
+					boundContexts[view] = bindings
+					if (canonical) canonicalExpressions[source] = view
+				}
+			}
+		} as T
 
 		private fun type(source: TypeReference): TypeReference = copy(source) {
 			source.copy(application = source.application?.copy(arguments = source.typeArguments.map(::type))).also { view ->
@@ -62,6 +96,7 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 		private fun body(source: FunctionBody): FunctionBody = copy(source) { when (source) {
 			is BlockBody -> source.copy(statements = source.statements.map(::statement))
 			is ExpressionBody -> source.copy(expression = expression(source.expression))
+			is IntrinsicBody -> source
 		} }
 		private fun arguments(source: List<CallArgument>) = source.map { it.copy(expression = expression(it.expression)) }
 		private fun delegation(source: ConstructorDelegation) = copy(source) { source.copy(suppliedArguments = arguments(source.suppliedArguments), type = type(source.type)) }

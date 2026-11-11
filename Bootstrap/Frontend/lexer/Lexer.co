@@ -5,16 +5,27 @@ using token.Keywords: Keywords
 using token.Operators: Operators
 using lexer.LexerError: LexerFailure
 
+typedef<struct> CursorPosition<T: Number> {
+    usize index,
+    T line,
+    T column;
+
+    mt advance(char character) {
+        index++
+        if (character == '\n') {
+            line++
+            column = 1 -> T
+        } else if (character.toInt() > 65535) column += (2 -> T)
+        else column++
+    }
+}
+
 pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
     def<char[]> characters = text.toChars()
     def<Keywords[]> keywords = Keywords::values
     def<Operators[]> operators = Operators::values
-    def<usize> start = 0
-    def<usize> current = 0
-    def<int> startLine = 1
-    def<int> startColumn = 1
-    def<int> line = 1
-    def<int> column = 1
+    def<CursorPosition<int>> start = { 0, 1, 1 }
+    def<CursorPosition<int>> current = { 0, 1, 1 }
     pub def<TokenList?> activeTokens = null
     pub def<LexerFailure?> failure = null
 
@@ -56,57 +67,58 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
         if (failure != null) failure::delete
     }
 
-    mt<bool> isAtEnd() = current >= characters::size
+    mt<bool> isAtEnd() = current.index >= characters::size
 
     mt<char> peek(opt<usize> offset ?: 0) {
-        if (offset >= characters::size - current) return '\0'
-        return characters[current + offset]
+        if (offset >= characters::size - current.index) return '\0'
+        return characters[current.index + offset]
     }
 
     mt<char> advance() {
-        def character = characters[current]
-        current++
-        if (character == '\n') {
-            line++
-            column = 1
-        } else if (character.toInt() > 65535) column += 2
-        else column++
+        def character := characters[current.index]
+        current.advance(character)
         return character
     }
 
     mt mark() {
         start = current
-        startLine = line
-        startColumn = column
     }
 
     mt<bool> starts(string pattern) {
         def<usize> offset = 0
         for (def character <- pattern.toChars()) {
-            if (offset >= characters::size - current || peek(offset) != character) return false
+            if (offset >= characters::size - current.index || peek(offset) != character) return false
             offset++
         }
         return true
     }
 
-    mt<TokenSpan> span() = TokenSpan::new(startLine, startColumn, line, column, source)
+    mt<TokenSpan> span(CursorPosition<int> from, CursorPosition<int> to) {
+        return TokenSpan::new(from.line, from.column, to.line, to.column, source)
+    }
 
     mt addToken(TokenType type) {
         def<TokenList?> tokens := activeTokens
         if (tokens != null) {
-            def token = Token::new(type, span(), text.substring(start, current))
+            def token = Token::new(type, span(start, current), text.substring(start.index, current.index))
             tokens.append(token)
         }
     }
 
-    mt failAt(string code, string message, int firstLine, int firstColumn, int lastLine, int lastColumn) {
+    mt failAt(string code, string message, CursorPosition<int> from, CursorPosition<int> to) {
         if (failure == null) {
-            failure = LexerFailure::new(code, message, TokenSpan::new(firstLine, firstColumn, lastLine, lastColumn, source))
+            failure = LexerFailure::new(code, message, span(from, to))
         }
     }
 
-    mt fail(string code, string message) = failAt(code, message, startLine, startColumn, line, column)
-    mt failCursor(string code, string message) = failAt(code, message, line, column, line, column + 1)
+    mt fail(string code, string message) = failAt(code, message, start, current)
+
+    mt failCursor(string code, string message, CursorPosition<int> position) {
+        def end := position
+        // A one-code-unit error span can end inside a surrogate pair.
+        end.column++
+        failAt(code, message, position, end)
+    }
 
     // The Kotlin lexer classifies UTF-16 Char values rather than surrogate pairs.
     mt<bool> letter(char character) = character.toInt() <= 65535 && character.isLetter()
@@ -155,7 +167,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
         if (decimal(character)) number()
         else if (letter(character) || character == '_') identifier()
         else if (character.toInt() > 65535) {
-            failAt("C1000", #"Unexpected character '{character}'", startLine, startColumn, startLine, startColumn + 1)
+            failCursor("C1000", #"Unexpected character '{character}'", start)
         } else fail("C1000", #"Unexpected character '{character}'")
     }
 
@@ -212,13 +224,13 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
 
     mt invalidNumber(string reason) {
         while (identifierPart(peek())) advance()
-        fail("C1013", "Invalid numeric literal '" + text.substring(start, current) + "': " + reason)
+        fail("C1013", "Invalid numeric literal '" + text.substring(start.index, current.index) + "': " + reason)
     }
 
     mt consumeDigits(int radix) {
         while (digit(peek(), radix) || peek() == '_') {
-            if (peek() == '_' && (!digit(characters[current - 1], radix) || !digit(peek(1), radix))) {
-                failCursor("C1002", "Underscores must appear between digits")
+            if (peek() == '_' && (!digit(characters[current.index - 1], radix) || !digit(peek(1), radix))) {
+                failCursor("C1002", "Underscores must appear between digits", current)
                 return
             }
             advance()
@@ -228,7 +240,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
     mt number() {
         def isFloat = false
         def radix = 10
-        if (characters[start] == '0') {
+        if (characters[start.index] == '0') {
             if (peek() == 'x') radix = 16
             else if (peek() == 'b') radix = 2
             else if (peek() == 'o') radix = 8
@@ -236,7 +248,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
         if (radix != 10) {
             advance()
             if (peek() == '_') {
-                failCursor("C1002", "Underscores must appear between digits")
+                failCursor("C1002", "Underscores must appear between digits", current)
                 return
             }
             if (!digit(peek(), radix)) {
@@ -261,7 +273,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
                     return
                 }
                 if (peek() == '_') {
-                    failCursor("C1002", "Underscores must appear between digits")
+                    failCursor("C1002", "Underscores must appear between digits", current)
                     return
                 }
                 isFloat = true
@@ -286,7 +298,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
 
     mt identifier() {
         while (identifierPart(peek())) advance()
-        def name := text.substring(start, current)
+        def name := text.substring(start.index, current.index)
         def type = TokenType.Identifier
         for (def keyword <- keywords) {
             if (keyword != Keywords.AUTO && keyword.spelling == name) {
@@ -368,8 +380,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
     }
 
     mt interpolatedString() {
-        def openingLine := startLine
-        def openingColumn := startColumn
+        def opening := start
         mark()
         while (!isAtEnd() && failure == null) {
             if (peek() == '"') {
@@ -385,21 +396,19 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
                     advance()
                     advance()
                 } else if (brace == '}') {
-                    failCursor("C1012", "Unmatched '}' in interpolated string")
+                    failCursor("C1012", "Unmatched '}' in interpolated string", current)
                     return
                 } else {
                     addToken(TokenType.StringSegment)
                     mark()
                     advance()
                     addToken(TokenType.InterpolationOpen)
-                    def holeLine := startLine
-                    def holeColumn := startColumn
-                    def holeEndLine := line
-                    def holeEndColumn := column
+                    def holeStart := start
+                    def holeEnd := current
                     def depth = 0
                     while (failure == null) {
                         if (isAtEnd()) {
-                            failAt("C1011", "Unterminated string interpolation", holeLine, holeColumn, holeEndLine, holeEndColumn)
+                            failAt("C1011", "Unterminated string interpolation", holeStart, holeEnd)
                             return
                         }
                         mark()
@@ -431,6 +440,6 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
                 return
             } else advance()
         }
-        if (failure == null) failAt("C1003", "Unterminated string", openingLine, openingColumn, line, column)
+        if (failure == null) failAt("C1003", "Unterminated string", opening, current)
     }
 }

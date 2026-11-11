@@ -6,6 +6,7 @@ import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionBody
 import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.declarations.DeclarationModel
@@ -59,6 +60,7 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 	fun of(body: FunctionBody): ControlFlow = when (body) {
 		is BlockBody      -> of(body.statements)
 		is ExpressionBody -> of(body.expression).then(ControlFlow.RETURN)
+		is IntrinsicBody   -> ControlFlow.RETURN
 	}
 
 	fun of(items: List<Statement>): ControlFlow = items.fold(ControlFlow.FALLTHROUGH) { flow, item -> flow.then(of(item)) }

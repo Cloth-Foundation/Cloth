@@ -4,8 +4,8 @@ import cloth.token.Token
 
 internal const val maximumTypeArgumentNesting = 256
 
-data class TypeParameterDeclaration(val name: Token) {
-	val span get() = name.span
+data class TypeParameterDeclaration(val name: Token, val bound: TypeReference? = null) {
+	val span get() = bound?.let { name.span.through(it.span) } ?: name.span
 }
 
 data class TypeParameterList(val opening: Token, val parameters: List<TypeParameterDeclaration>, val closing: Token) {

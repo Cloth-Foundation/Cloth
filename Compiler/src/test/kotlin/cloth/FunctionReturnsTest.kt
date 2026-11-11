@@ -117,6 +117,7 @@ class FunctionReturnsTest {
 				val expression = when (val body = function(model).body) {
 					is ExpressionBody -> body.expression
 					is BlockBody      -> assertIs<ReturnStatement>(body.statements.single()).value!!
+					else             -> error("Expected a source return")
 				}
 				assertEquals(type, model.typeOf(expression))
 			}

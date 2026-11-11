@@ -8,6 +8,7 @@ import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -32,6 +33,12 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private val classOwner = facts.declarations.classOwners[function]
 	override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presence.fields
+	override fun boundView(expression: Expression, actual: ValueType): CMemberType? = facts.boundView(expression)?.also { bound ->
+		val payload = (actual as? CNullable)?.payload ?: actual
+		if (!bound.accepts(payload)) reject {
+			SemanticErrors.classMember("Type '${actual.spelling}' cannot use the '${bound.spelling}' bound", expression.span)
+		}
+	}
 
 	override fun validateFieldAccess(field: InstanceField, name: Token) {
 		if (field is ClassField && field.visibility == null && !field.owner.sameDeclaration(classOwner)) throw SemanticErrors.privateClassMember(name, field.name)
@@ -79,7 +86,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 			}
 
 			is ExpressionBody -> checkExpressionBody(body)
-			null -> Unit
+			null, is IntrinsicBody -> Unit
 		}
 	}
 
@@ -167,7 +174,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 					model.updatePayloads[statement] = declared
 					declared.payload
 				} else declared
-				if (!type.numeric && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }
+				if (!type.supportsNumericOperations && type != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, NameExpression(statement.name), type, boolean = false) }
 				model.recordType(statement, type)
 			}
 
@@ -216,7 +223,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val actual = when {
 			value == null                -> {
 				if (readType is CNullable) throw SemanticErrors.nullablePayload(readType, target.span)
-				if (!readType.numeric && readType != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, target, readType, boolean = false) }
+				if (!readType.supportsNumericOperations && readType != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, target, readType, boolean = false) }
 				readType
 			}
 
@@ -294,7 +301,10 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	override fun operatorType(expression: Expression, operator: Token, operands: List<Expression>): ValueType? = operators.resolve(expression, operator, operands)
 	override fun equalityContextType(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? = operators.equalityContext(expression, operation, left, right)
 
-	override fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CMemberType, right: CMemberType): ResolvedOperator? = operators.classComparison(expression, operation, left, right)
+	override fun classComparisonOverride(expression: BinaryExpression, operation: Operators, left: CMemberType, right: CMemberType): ResolvedOperator? {
+		if (operation == Operators.IDENTITY) facts.checkedIdentity(expression, left, right)?.let { return it.identityOverride }
+		return operators.classComparison(expression, operation, left, right)
+	}
 
 	override fun valueComparisonOverride(expression: BinaryExpression, operation: Operators, owner: CMemberType): ResolvedOperator? = operators.valueComparison(expression, operation, owner)
 
@@ -372,7 +382,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	}
 
 	private fun stateOwner(type: ValueType, expression: Expression): CClass? {
-		val contract = type.classBackedType() ?: return null
+		val contract = (((type as? CNullable)?.payload ?: type) as? CMemberType)?.classBackedType() ?: return null
 		// Ordinary member lookup still uses the declared host contract of self.
 		val self = facts.declarations.directReceiverOf(expression)
 		return self?.let(facts.declarations.states::attachedStateOf)?.owner ?: contract as? CClass
@@ -428,11 +438,16 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		facts.selectedBoundMemberCall(expression)?.let { return it.type.results }
 		if (receiver is CNullable && receiver.payload is CArray) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		if (receiver is CArray && ArrayMutation.named(expression.name.lexeme) != null) return arrayMutation(expression, receiver)
-		if (receiver is CNullable && receiver.payload is CMemberType) {
+		if (receiver is CNullable && (receiver.payload is CMemberType || receiver.payload.classBackedType() != null)) {
 			throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		}
-		if (receiver !is CMemberType) return super.memberCallResults(expression, receiver)
-		val group = facts.declarations.memberGroup(receiver, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(receiver, expression.name)
+		val owner = boundView(expression.receiver, receiver) ?: (receiver as? CMemberType) ?: receiver.classBackedType()
+			?: return super.memberCallResults(expression, receiver)
+		val group = when (val checked = facts.checkedBoundMethod(expression, owner)) {
+			is MethodSymbol -> MethodGroupSymbol(listOf(checked))
+			is InterfaceMethodSymbol -> InterfaceMethodGroupSymbol(checked.owner, listOf(checked))
+			else -> facts.declarations.memberGroup(owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(owner, expression.name)
+		}
 		if (expression in facts.declarations.readOnlyDefaultReceivers) {
 			throw SemanticErrors.parameterDefault("A default cannot call a user-defined method through a read-only receiver", expression.name.span)
 		}
@@ -445,7 +460,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 			return selected.type.results
 		}
 		val candidates = visibleMethods(group as MethodGroupSymbol, expression.name)
-		val source = if (receiver is CClass) MethodReceiver.Instance(ObjectReceiver.Explicit(expression.receiver)) else {
+		val source = if (owner is CClass) MethodReceiver.Instance(ObjectReceiver.Explicit(expression.receiver)) else {
 			for (part in facts.presence.lostReceiverProofs[expression].orEmpty()) {
 				val declared = model.payloadReads[part] ?: continue
 				throw SemanticErrors.receiverProofLost(declared, part.span)

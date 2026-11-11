@@ -36,10 +36,16 @@ class TypeParser(private val parser: Parser) {
 		parser.skipNewlines()
 		val parameters = buildList {
 			while (true) {
-				add(TypeParameterDeclaration(parser.expect(TokenType.Identifier, "a type parameter name")))
+				val name = parser.expect(TokenType.Identifier, "a type parameter name")
+				parser.skipNewlines()
+				val bound = if (parser.peek().lexeme == Operators.COLON.toString()) {
+					parser.advance()
+					parser.skipNewlines()
+					parse(allowArrays = true)
+				} else null
+				add(TypeParameterDeclaration(name, bound))
 				parser.skipNewlines()
 				when (parser.peek().lexeme) {
-					Operators.COLON.toString() -> throw GenericErrors.syntax("Type parameter constraints", parser.peek())
 					Operators.ASSIGN.toString(), Operators.ELVIS.toString() -> throw GenericErrors.syntax("Default type arguments", parser.peek())
 					Operators.GREATER.toString() -> break
 				}

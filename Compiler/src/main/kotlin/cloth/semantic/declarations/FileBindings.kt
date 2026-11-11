@@ -25,6 +25,7 @@ import cloth.parser.declaration.TypeDeclaration
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.LexicalScope
+import cloth.semantic.checkIntrinsicDeclarations
 import cloth.source.SourceGraph
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -33,7 +34,7 @@ import cloth.token.TokenSpan
 import cloth.token.TokenType
 import java.util.*
 
-internal class FileContext(val unit: SourceUnit) {
+internal class FileContext(val unit: SourceUnit, val standardLibraryPaths: Set<String> = emptySet()) {
 
 	val scope = LexicalScope()
 	val types = linkedMapOf<String, CMemberType>()
@@ -64,6 +65,7 @@ private class NestedTypeScope(val declaration: Declaration, val qualifiedName: S
 internal class FileBindings private constructor(val files: List<FileContext>, private val graph: SourceGraph? = null) {
 
 	val primary get() = files.first()
+	val intrinsicBodies = checkIntrinsicDeclarations(files)
 	val topLevelStates = files.flatMap { it.unit.declarations.filterIsInstance<TopLevelStateDeclaration>() }
 	val firstStateSyntax: TokenSpan?
 	val structs = IdentityHashMap<StructDeclaration, CStruct>()
@@ -249,6 +251,8 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 			return FileBindings(listOf(FileContext(unit)))
 		}
 
-		fun graph(graph: SourceGraph): FileBindings = FileBindings(graph.sources.map { FileContext(it.unit) }, graph).also { it.bind(graph) }
+		fun graph(graph: SourceGraph): FileBindings = FileBindings(
+			graph.sources.map { FileContext(it.unit, graph.standardLibraryPaths(it.id)) }, graph,
+		).also { it.bind(graph) }
 	}
 }

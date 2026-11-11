@@ -153,10 +153,42 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `constraints defaults and generic methods and enums retain an explicit syntax boundary`() {
+	fun `all generic declaration forms retain optional bound syntax and source spans`() {
+		val declarations = unit("""
+			typedef<class> Entity<T: Entity<T>> {}
+			typedef<struct> Slot<T: Object, U> { T value, U other }
+			typedef<interface> IHealth<T:
+			    Number> {}
+			fn read<T: IHealth<float>>(T value) {}
+		""").declarations
+		val entity = assertNotNull(assertIs<ClassDeclaration>(declarations[0]).typeParameters).parameters.single()
+		val slot = assertNotNull(assertIs<StructDeclaration>(declarations[1]).typeParameters).parameters
+		val health = assertNotNull(assertIs<InterfaceDeclaration>(declarations[2]).typeParameters).parameters.single()
+		val read = assertNotNull(assertIs<FunctionDeclaration>(declarations[3]).typeParameters).parameters.single()
+		assertEquals("T: Entity<T>", text(entity.span))
+		assertEquals("U", text(slot[1].span))
+		assertNull(slot[1].bound)
+		assertEquals(listOf("Entity<T>", "Object", "Number", "IHealth<float>"),
+			listOf(entity, slot[0], health, read).map { text(assertNotNull(it.bound).span) })
+	}
+
+	@Test
+	fun `a bound requires a type and ends before the next parameter`() {
+		for ((source, token) in listOf(
+			"typedef<class> Box<T:> {}" to ">",
+			"typedef<class> Box<T: Number: Object> {}" to ":",
+		)) {
+			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
+			assertEquals(DiagnosticCode.EXPECTED_TOKEN, error.diagnosticCode, source)
+			assertEquals(token, text(error.sourceLabels.single().span))
+		}
+	}
+
+	@Test
+	fun `defaults and generic methods and enums retain an explicit syntax boundary`() {
 		for (source in listOf(
-			"typedef<class> Box<T: Number> {}", "typedef<struct> Box<T = int> {}",
-			"fn work<T: Number>() {}", "typedef<class> Box { mt work<T>() {} }", "typedef<enum> Mode<T> { One }"
+			"typedef<struct> Box<T = int> {}", "fn work<T: Number = int>() {}",
+			"typedef<class> Box { mt work<T>() {} }", "typedef<enum> Mode<T> { One }"
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_GENERIC_SYNTAX, error.diagnosticCode, source)

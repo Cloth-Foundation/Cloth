@@ -7,6 +7,8 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ClassParentClause
 import cloth.parser.expression.NameExpression
+import cloth.parser.type.TypeArgumentList
+import cloth.parser.type.TypeParameterDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.VirtualMethods
@@ -49,7 +51,9 @@ internal class GenericBindings(
 	val environment: Map<TypeParameterSymbol, ValueType> = emptyMap(),
 	val chain: List<Pair<TokenSpan, String>> = emptyList(),
 	val argumentDepth: Int = 0,
+	val suppliedArguments: TypeArgumentList? = null,
 ) {
+	val nominalBounds = IdentityHashMap<TypeParameterDeclaration, CMemberType>()
 	val facts = IdentityHashMap<TypeReference, ClosedTypePattern>()
 	val receivers = IdentityHashMap<NameExpression, ValueType>()
 }

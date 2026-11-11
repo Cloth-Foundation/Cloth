@@ -98,6 +98,112 @@ class GenericEmissionTest {
 	}
 
 	@Test
+	fun `proved bounds allow closed functions and a self bounded Player to execute`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> IHealth<T: Number> { mt<T> echo(T value) = default (value) }
+			typedef<class> Entity<T: Entity<T>> (pub def<float> health) : IHealth<float> {}
+			typedef<class> Player : Entity<Player>(100f) {}
+			fn<T> keep<T: Entity<T>>(T value) = value
+			fn<T> number<T: Number>(T value) = value
+			fn main() {
+			    def player = Player::new
+			    def kept = keep<Player>(player)
+			    def<IHealth<float>> view = kept
+			    if (view.echo(kept.health) == 100f && number<int>(7) == 7) println("bounds")
+			    kept::delete
+			}
+		"""
+		native(directory, "bounds", source, "bounds\n")
+	}
+
+	@Test
+	fun `class bounds preserve fields static overloads and virtual contracts across specialization`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Entity<T: Entity<T>> (pub def<int> health) {
+			    pub mt<string> pick(Object other, opt<string> label ?: "base") = label
+			    pub mt<int> pick(Player other, opt<int> rank ?: 7) = rank
+			    virtual: pub mt<string> describe(opt<string> label ?: "default") = label
+			    operator ===(Entity<T> other) = false
+			}
+			typedef<class> Player : Entity<Player>(10) {
+			    pub def<int> health = 99
+			    pub mt<int> pick(Player other, opt<int> rank ?: 8) = rank
+			    override: pub mt<string> describe(string name) = #"Player {name}"
+			    operator ===(Player other) = true
+			    ~Player { println("deleted") }
+			}
+			fn<T> update<T: Entity<T>>(T value) { value.health += 1; return value }
+			fn<int> read<T: Entity<T>>(T value) {
+			    def<Entity<T>> entity = value
+			    return entity.health
+			}
+			fn<string> pick<T: Entity<T>>(T value) = value.pick(value)
+			fn<string> describe<T: Entity<T>>(T value) = value.describe() + value.describe(label="named")
+			fn<bool> same<T: Entity<T>>(T left, T right) = left === right
+			fn dispose<T: Entity<T>>(T value) { value::delete }
+			fn<int> main() {
+			    def player = Player::new
+			    def<Player> kept = update<Player>(player)
+			    if (kept.health != 99 || read<Player>(kept) != 11) return 1
+			    if (pick<Player>(kept) != "base") return 2
+			    if (describe<Player>(kept) != "Player defaultPlayer named") return 3
+			    if (same<Player>(kept, kept)) return 4
+			    dispose<Player>(kept)
+			    println("class bounds")
+			    return 0
+			}
+		"""
+		native(directory, "class_bounds", source, "deleted\nclass bounds\n")
+	}
+
+	@Test
+	fun `interface bounds keep their call contracts and use checked identity operations`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> IHealth<N: Number> {
+			    mt<N> getHealth() = default (0 -> N)
+			    mt<string> caption(opt<string> label ?: "default") = default (label)
+			}
+			typedef<interface> Extra : IHealth<int> {}
+			typedef<class> Player : Extra {
+			    override: mt<string> caption(string text) = #"via {text}"
+			    pub mt<int> caption() = 7
+			    operator ==(Object other) = true
+			    operator ===(Player other) = true
+			    operator ::str() = "formatted"
+			    ~Player { println("released") }
+			}
+			fn<string> via<T: IHealth<int>>(T value) {
+			    def<IHealth<int>> view = value
+			    if (view.getHealth() != 0) return "wrong"
+			    return value.caption() + value.caption(label="named")
+			}
+			fn<bool> equal<T: IHealth<int>>(T left, T right) = left == right && !(left != right)
+			fn<bool> identity<T: IHealth<int>>(T left, T right) = left === right
+			fn<bool> raw<T: Object>(T left, T right) = left === right
+			fn<string> display<T: IHealth<int>>(T value) {
+			    println(value)
+			    println(#"{value}")
+			    return value::str
+			}
+			fn dispose<T: IHealth<int>>(T value) { value::delete }
+			fn<int> main() {
+			    def first = Player::new
+			    def second = Player::new
+			    def<Extra> view = first
+			    if (via<Player>(first) != "via defaultvia named" || via<Extra>(view) != "via defaultvia named") return 1
+			    if (!equal<Player>(first, second) || identity<Player>(first, second)) return 2
+			    if (!identity<Extra>(view, view) || !raw<Extra>(view, view) || raw<Player>(first, second)) return 3
+			    if (display<Player>(first) != "formatted") return 4
+			    dispose<Extra>(view)
+			    dispose<Player>(second)
+			    println("interface bounds")
+			    return 0
+			}
+		"""
+		native(directory, "interface_bounds", source, "formatted\nformatted\nreleased\nreleased\ninterface bounds\n")
+	}
+
+	@Test
 	fun `generic argument ABI matrix verifies executable IR and objects on every target`(@TempDir directory: Path) {
 		val ast = structUnit(abiValues)
 		for ((i, triple) in structTargetTriples.withIndex()) {
@@ -105,6 +211,35 @@ class GenericEmissionTest {
 			assertContains(emitter.emitExecutable(ast), "target triple = \"$triple\"")
 			assertTrue(Files.size(emitter.compileObject(ast, directory.resolve("arguments_$i.o"))) > 0)
 		}
+	}
+
+	@Test
+	fun `Number arithmetic uses the concrete format of each specialization`(@TempDir directory: Path) {
+		native(directory, "numberArithmetic", """
+			typedef<struct> Counter<T: Number> {
+			    T value;
+			    mt<T> step(T amount) {
+			        value += amount
+			        value++
+			        return value
+			    }
+			}
+			fn<T> fraction<T: Number>(T value) = -value / (2 -> T)
+			fn<T> convert<T: Number, U: Number>(U value) = value -> T
+			fn<bool> less<T: Number>(T left, T right) = left < right
+			fn<bool> same<T: Number>(T? left, T? right) = left == right
+			fn show<T: Number>(T value) { println(#"{value::str}: {value}"); println(value) }
+			fn main() {
+			    def<Counter<int<129>>> wide = { 18446744073709551616 }
+			    show<int<129>>(wide.step(2))
+			    println(fraction<int>(5) == -2)
+			    println(fraction<float<16>>(5f) == -2.5f)
+			    def<usize> count = 7
+			    println(convert<float<64>, usize>(count) == 7f)
+			    println(less<usize>(count, 8))
+			    println(same<int>(7, 7))
+			}
+		""", "18446744073709551619: 18446744073709551619\n18446744073709551619\ntrue\ntrue\ntrue\ntrue\ntrue\n")
 	}
 
 	@Test

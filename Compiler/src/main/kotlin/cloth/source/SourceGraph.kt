@@ -24,13 +24,17 @@ internal class SourceNode internal constructor(val id: SourceId, val path: Path,
 internal data class ImportEdge(val from: SourceId, val declaration: ImportDeclaration, val to: SourceId, val moduleId: String, val selectedPath: Path, val backEdge: Boolean)
 
 /** Completed discovery only: no merged declarations, symbol lookup or target facts. */
-internal class SourceGraph internal constructor(val primary: SourceNode, sources: List<SourceNode>, edges: List<ImportEdge>) {
+internal class SourceGraph internal constructor(
+	val primary: SourceNode, sources: List<SourceNode>, edges: List<ImportEdge>,
+	private val standardLibraryPaths: Map<SourceId, Set<String>> = emptyMap(),
+) {
 
 	val sources: List<SourceNode> = Collections.unmodifiableList(ArrayList(sources))
 	val edges: List<ImportEdge> = Collections.unmodifiableList(ArrayList(edges))
 	private val outgoing = this.edges.groupBy { it.from }
 
 	fun source(id: SourceId): SourceNode = sources[id.index]
+	fun standardLibraryPaths(id: SourceId): Set<String> = standardLibraryPaths[id].orEmpty()
 	fun importsOf(id: SourceId): List<ImportEdge> = Collections.unmodifiableList(outgoing[id].orEmpty())
 
 	/** Check the actual artifact path, or a possible final name during pre-ABI validation. */

@@ -5,6 +5,7 @@ import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.IntrinsicBody
 import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
@@ -25,7 +26,7 @@ internal fun checkCallableMetadata(function: CallableContractSymbol, model: Func
 	when (val body = function.declaration.executableBody) {
 		is BlockBody      -> metadata.statements(body.statements)
 		is ExpressionBody -> metadata.expression(body.expression)
-		null -> Unit
+		null, is IntrinsicBody -> Unit
 	}
 }
 

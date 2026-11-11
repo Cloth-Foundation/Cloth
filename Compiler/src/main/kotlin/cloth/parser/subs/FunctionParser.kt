@@ -25,7 +25,7 @@ class FunctionParser(private val parser: Parser) {
 		val name = parser.expect(TokenType.Identifier, "a function name")
 		val typeParameters = parser.typeParser.parseTypeParameters()
 		val parameters = parseParameters()
-		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn()), visibility, typeParameters)
+		return FunctionDeclaration(keyword, name, returnTypes, parameters, parseBody("function", returnTypes.isVoidReturn(), allowIntrinsic = true), visibility, typeParameters)
 	}
 
 	internal fun parseParameters(): List<ParameterDeclaration> = parser.delimited.parentheses {
@@ -55,9 +55,9 @@ class FunctionParser(private val parser: Parser) {
 		return MethodHeader(keyword, name, returnTypes, parseParameters())
 	}
 
-	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null, virtualPrefix: TokenSpan? = null): MethodDeclaration {
+	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null, virtualPrefix: TokenSpan? = null, allowIntrinsic: Boolean = false): MethodDeclaration {
 		val (keyword, name, returns, parameters) = methodHeader()
-		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn()), visibility, overridePrefix = overridePrefix, virtualPrefix = virtualPrefix)
+		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn(), allowIntrinsic), visibility, overridePrefix = overridePrefix, virtualPrefix = virtualPrefix)
 	}
 
 	internal fun parseInterfaceMethod(): InterfaceMethodDeclaration {
@@ -151,13 +151,18 @@ class FunctionParser(private val parser: Parser) {
 
 	private fun List<TypeReference>.isVoidReturn() = isEmpty() || singleOrNull()?.spelling == Keywords.VOID.toString()
 
-	private fun parseBody(kind: String, allowStatement: Boolean = false): FunctionBody {
+	private fun parseBody(kind: String, allowStatement: Boolean = false, allowIntrinsic: Boolean = false): FunctionBody {
 		parser.skipNewlines()
 		return inBody {
 			when (parser.peek().lexeme) {
 				Operators.BRACE_OPEN.toString() -> parser.parseBlock()
 				Operators.ASSIGN.toString()     -> {
 					val equals = parser.advance()
+					if (allowIntrinsic && parser.peek().type == TokenType.Identifier && parser.peek().lexeme == "intrinsic" &&
+						parser.peek(1).type == TokenType.StringLiteral) {
+						parser.advance()
+						return@inBody IntrinsicBody(equals, parser.advance())
+					}
 					if (allowStatement) return@inBody parseVoidBody(equals)
 					val expression = parser.parseResults()
 					ExpressionBody(equals, expression, equals.span.through(parser.previous().span))

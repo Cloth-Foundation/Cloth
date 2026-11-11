@@ -26,6 +26,7 @@ class FunctionSemanticModel internal constructor(
 	internal val presence: PresenceFacts = PresenceFacts(),
 	private val operatorBodies: OperatorBodies = OperatorBodies(),
 	private val operatorWidth: Int? = null,
+	private val enclosingBody: FunctionSemanticModel? = null,
 ) {
 
 	val target get() = declarations.target
@@ -41,11 +42,20 @@ class FunctionSemanticModel internal constructor(
 	internal val stateCalls: MutableMap<StateCallExpression, ResolvedStateCall> = facts.identityMap { it.stateCalls }
 	internal val stateTests: MutableMap<TypeCheckExpression, StateDefinition> = facts.identityMap { it.stateTests }
 	internal val stateTransitions: MutableMap<Expression, StateDefinition> = facts.identityMap { it.stateTransitions }
+	internal val inferredBoundBodies: MutableMap<MethodSymbol, FunctionSemanticModel> = facts.identityMap { it.inferredBoundBodies }
 
 	internal val callableBodies get() = declarations.concreteCallables + callables.publishedMethods()
 	internal fun bodyOf(callable: CallableContractSymbol): FunctionSemanticModel = (callable as? MethodSymbol)?.let(callables::bodyOf) ?: this
 
 	internal fun allBodyModels(): Sequence<FunctionSemanticModel> = sequenceOf(this) + callables.publishedMethods().asSequence().map(::bodyOf)
+	internal fun boundDeclarationModels(template: FunctionSemanticModel): Sequence<FunctionSemanticModel> {
+		val models = generateSequence(template) { it.enclosingBody }
+			.flatMap { it.allBodyModels() + it.inferredBoundBodies.values.asSequence() }
+		return if (operatorWidth == null) models else models.sortedBy { it.operatorWidth != operatorWidth }
+	}
+
+	internal fun canonicalBoundMethod(method: MethodSymbol): MethodSymbol? =
+		declarations.genericViews?.canonicalBoundMethod(method.declaration)?.let(declarations::symbolOf)
 
 	fun typeOf(expression: Expression) = types.typeOf(expression)
 	fun resultOf(expression: Expression) = types.resultOf(expression)
@@ -59,6 +69,7 @@ class FunctionSemanticModel internal constructor(
 
 	fun typeOf(function: FunctionSymbol): FunctionType = declaredTypeOf(function)
 	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType = contracts.signatures.getValue(callable)
+	internal val intrinsics get() = contracts.intrinsics
 	internal fun contextSelectorType(method: MethodSymbol): ValueType? = contracts.contextSelectors[method]
 
 	internal fun typeOf(callable: CallableContractSymbol): FunctionType {
@@ -95,12 +106,13 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	/** Callable bodies have their own expression facts, including when widths share syntax. */
-	internal fun forCallableBody(width: Int? = null): FunctionSemanticModel = fresh(width).also { body ->
+	internal fun forCallableBody(width: Int? = null): FunctionSemanticModel = fresh(width, enclosing = this).also { body ->
 		body.initializeBindings()
 		body.callables.copyFrom(callables)
 	}
 
-	private fun fresh(width: Int?) = FunctionSemanticModel(declarations, contracts, controlFlow, presence, operatorBodies, width)
+	private fun fresh(width: Int?, enclosing: FunctionSemanticModel? = enclosingBody) =
+		FunctionSemanticModel(declarations, contracts, controlFlow, presence, operatorBodies, width, enclosing)
 
 	/** Dropping a trial discards all its body and callable facts. */
 	internal fun trial() = Trial()

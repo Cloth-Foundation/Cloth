@@ -74,6 +74,35 @@ limited to 1,048,576 UTF-8 bytes before expansion. The
 [generic contract](../.agents/skills/cloth-generics/references/semantics.md) owns
 the precise rules and diagnostics.
 
+## Numeric bounds
+
+`T: Number` accepts primitive integer and floating-point types, including
+`usize` and `isize`. It gives `T` same-type arithmetic, comparisons, updates,
+explicit numeric casts and formatting. Cast literals to `T` when using them as
+operands.
+
+```cloth
+fn<T> half<T: Number>(T value) = value / (2 -> T)
+
+fn main() {
+    println(half<int>(5))
+    println(half<float>(5f))
+}
+```
+
+Each specialization uses its concrete numeric rules, so these calls print `2`
+and `2.5`. Applying `half` to `string` produces C3135 at the type argument.
+[Number bound operations](../.agents/skills/cloth-generics/references/number-bound-operations.md)
+
+## Class and interface bounds
+
+`T: Base` exposes the class bound's public fields and methods. An interface
+bound exposes its methods. A receiving type can use ordinary widening from
+the proven bound. Calls on `T` keep the overload, labels, and defaults
+selected during declaration checking, with ordinary virtual or interface
+dispatch. Equality, formatting, and deletion use the checked object rules.
+[Operations through bounds](../.agents/skills/cloth-generics/references/constraints-stage-3.md)
+
 ## Generic functions
 
 Declare a function's type parameters after its name, as in
@@ -120,9 +149,10 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover constraints, method-owned type parameters, generic overloads
-with the same type parameter count, omitted-argument inference, variance, type
-defaults, generic enums and states, and higher-kinded types. Direct collection
+Follow-ups cover combined bounds, constructor guarantees, method-owned
+type parameters, generic overloads with the same type parameter count,
+omitted-argument inference, variance, type defaults, generic enums and states,
+and higher-kinded types. Direct collection
 indexing, indexed assignment and foreach require their own protocol. Keep the
 intended constrained forms in [Test.co](../examples/Test.co).
 

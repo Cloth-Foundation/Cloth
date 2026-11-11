@@ -16,6 +16,10 @@ object GenericErrors {
 	fun callArity(name: Token, use: TokenSpan, actual: Int, expected: List<Int>, declaration: Token) = SemanticException(DiagnosticCode.GENERIC_ARITY,
 		"Callable '${name.lexeme}' expects ${expected.joinToString(" or ")} type arguments, got $actual", listOf(SourceLabel(use, "type arguments for this call"), SourceLabel(declaration.span, "callable declared here")).distinctBy { it.span })
 	fun argument(message: String, span: TokenSpan) = SemanticException(DiagnosticCode.INVALID_GENERIC_ARGUMENT, message, listOf(SourceLabel(span, "invalid type argument here")))
+	fun bound(span: TokenSpan) = SemanticException(DiagnosticCode.INVALID_GENERIC_BOUND, "A generic bound must be Number or a non-nullable class or interface", listOf(SourceLabel(span, "invalid bound here")))
+	fun unsatisfiedBound(parameter: Token, argument: String, bound: String, use: TokenSpan, declaration: TokenSpan) =
+		SemanticException(DiagnosticCode.UNSATISFIED_GENERIC_BOUND, "Type argument '$argument' does not satisfy the '$bound' bound on '${parameter.lexeme}'",
+			listOf(SourceLabel(use, "type argument here"), SourceLabel(declaration, "bound declared here")))
 	fun privateSignature(use: Token, helper: Token) = SemanticException(DiagnosticCode.PRIVATE_GENERIC_SIGNATURE, "Public signature exposes private type '${helper.lexeme}'", listOf(SourceLabel(use.span, "private type in public signature"), SourceLabel(helper.span, "private helper declared here")))
 	fun limit(code: DiagnosticCode, summary: String, use: TokenSpan, template: Token, chain: List<Pair<TokenSpan, String>>) = SemanticException(code, summary,
 		(listOf(SourceLabel(use, "this application exceeds the generic resource limit"), SourceLabel(template.span, "generic template declared here")) + chain.mapIndexed { index, (span, name) -> SourceLabel(span, "dependency ${index + 1}: '$name' required here") }).distinctBy { it.span })

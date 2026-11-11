@@ -127,6 +127,7 @@ captures implementation scope and regression evidence.
 | Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md), [Native command](../shuttle-build/references/native.md) |
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
+| Compiler-backed standard-library callables, `Path`, read-only `File` and UTF-8 decoding | [file I/O and bindings](../cloth-toolchains/references/file-io.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Ordinary class virtual methods, override checking and lifecycle dispatch | [Virtual method implementation](references/class-inheritance.md#virtual-method-implementation) |
 | Nested nominal types, lexical and qualified lookup, privacy and generic identity | [nested types](references/nested-types.md) |
@@ -149,6 +150,7 @@ captures implementation scope and regression evidence.
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, fixed/growable shapes, indexing, typed mutations and independent values | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Generic class/struct checking and native values/storage/metadata; List source integration | [cloth-generics](../cloth-generics/SKILL.md) |
+| Generic bounds, satisfaction checks, and bound operations | [GEN-1 Stage 1](../cloth-generics/references/constraints-stage-1.md), [GEN-1 Stage 2](../cloth-generics/references/constraints-stage-2.md), [GEN-1 Stage 3](../cloth-generics/references/constraints-stage-3.md) |
 | Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
 | Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |

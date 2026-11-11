@@ -119,6 +119,7 @@ class DeclarationModel internal constructor(
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
 		is CArray    -> formattingMayCallUserCode(type.element)
+		is CTypeParameter -> type.nominalBound?.let(::formattingMayCallUserCode) == true
 		is CClass, is CInterface -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
 		is CEnum     -> formatterOverride(type) != null
 		else         -> false

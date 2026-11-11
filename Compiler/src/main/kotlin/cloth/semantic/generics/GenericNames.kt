@@ -25,13 +25,22 @@ import java.util.IdentityHashMap
 sealed interface TypeNameIdentity
 data class BuiltinTypeName(val keyword: Keywords) : TypeNameIdentity
 data class NominalTypeName(val type: CMemberType) : TypeNameIdentity
+data object NumberBoundName : TypeNameIdentity {
+	val spelling = "Number"
+}
 
 /** Parameters with identical spelling in different owners remain different symbols. */
 class TypeParameterSymbol internal constructor(val owner: Declaration, val declaration: TypeParameterDeclaration, val index: Int) : TypeNameIdentity {
 	val name get() = declaration.name
 }
 
-internal data class GenericTypeUse(val type: TypeReference, val parameters: Map<String, TypeParameterSymbol>, val receiver: NameExpression? = null, val argument: Boolean = false) {
+internal data class GenericTypeUse(
+	val type: TypeReference,
+	val parameters: Map<String, TypeParameterSymbol>,
+	val receiver: NameExpression? = null,
+	val argument: Boolean = false,
+	val bound: Boolean = false,
+) {
 	val owner get() = parameters.values.firstOrNull()?.owner
 }
 
@@ -46,6 +55,7 @@ class GenericNameModel internal constructor(val target: TargetLayout) {
 	internal var genericSpan: TokenSpan? = null
 	internal var interfaceSpan: TokenSpan? = null
 	internal var hasVirtualMethods = false
+	internal val hasBounds get() = uses.any { it.bound }
 	val requiresGenericCompilation get() = genericSpan != null
 	fun parametersOf(owner: Declaration): List<TypeParameterSymbol> = owners[owner].orEmpty()
 	fun nameOf(reference: TypeReference): TypeNameIdentity = names.getValue(reference)
@@ -84,6 +94,10 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			val hasInterfaceHeaders = model.interfaceSpan != null || hasMultipleClassParents
 			if (!model.requiresGenericCompilation && !hasInterfaceHeaders && !model.hasVirtualMethods && files.topLevelStates.isEmpty()) return model
 			for (use in uses) {
+				if (use.bound) {
+					resolveBound(use.type, use.parameters)
+					continue
+				}
 				val identity = resolve(use.type, use.parameters, argument = use.argument)
 				use.receiver?.let { model.receivers[it] = identity }
 			}
@@ -122,10 +136,21 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		}
 
 		private fun parameters(owner: Declaration) = model.parametersOf(owner).associateBy { it.name.lexeme }
-		private fun use(type: TypeReference?, parameters: Map<String, TypeParameterSymbol>, argument: Boolean = false) {
+		private fun use(type: TypeReference?, parameters: Map<String, TypeParameterSymbol>, argument: Boolean = false, bound: Boolean = false) {
 			if (type == null) return
 			if (type.application != null && model.genericSpan == null) model.genericSpan = type.application.span
-			uses.add(GenericTypeUse(type, parameters, argument = argument))
+			uses.add(GenericTypeUse(type, parameters, argument = argument, bound = bound))
+		}
+
+		private fun resolveBound(type: TypeReference, parameters: Map<String, TypeParameterSymbol>) {
+			if (type.bareIdentifier?.lexeme == NumberBoundName.spelling) {
+				model.names[type] = NumberBoundName
+				return
+			}
+			val nominal = (resolve(type, parameters) as? NominalTypeName)?.type
+			if ((nominal !is CClass && nominal !is CInterface) || type.unsigned || type.hasNullability || type.arraySuffixes.isNotEmpty()) {
+				throw GenericErrors.bound(type.span)
+			}
 		}
 
 		private fun resolve(type: TypeReference, parameters: Map<String, TypeParameterSymbol>, argument: Boolean = false, depth: Int = 0): TypeNameIdentity {
@@ -147,6 +172,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		private fun declaration(declaration: Declaration) {
 			val parameters = parameters(declaration)
+			parameters.values.forEach { use(it.declaration.bound, parameters, bound = true) }
 			when (declaration) {
 				is FunctionDeclaration -> callable(declaration, parameters, emptySet())
 				is StructDeclaration -> {
@@ -231,7 +257,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			when (val body = declaration.executableBody) {
 				is BlockBody -> statements(body.statements, parameters, values)
 				is ExpressionBody -> expression(body.expression, parameters, values)
-				null -> Unit
+				null, is IntrinsicBody -> Unit
 			}
 		}
 

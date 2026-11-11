@@ -11,6 +11,7 @@ import cloth.parser.declaration.PrimaryConstructorDeclaration
 import cloth.parser.declaration.StateInitialPayloadDeclaration
 import cloth.semantic.OperatorRules
 import cloth.semantic.ResultShape
+import cloth.semantic.bindIntrinsics
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.FileBindings
@@ -83,21 +84,43 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			}
 		}
 		declarations.states.checkResults(signatures)
-		val model = FunctionSemanticModel(declarations, CallableContracts(signatures, selectors))
+		val model = FunctionSemanticModel(declarations, CallableContracts(signatures, selectors, bindIntrinsics(declarations, signatures)))
 		model.initializeBindings()
 		val presence = NullFlowAnalysis(model)
-		for (function in declarations.callableContracts) {
-			presence.analyze(function.declaration)
-			presence.analyzeExpressions(declarations.initializationExpressions(function.declaration))
-		}
-		checkEnumPayloads(model)
-		for (function in declarations.concreteContracts) {
-			val checker = BodyTyping(model, function.declaration, bodyResults(function, model))
-			function.parameters.forEachIndexed { index, parameter ->
-				parameter.declaration.defaultValue?.let { checker.checkInitializer(it, signatures.getValue(function).parameters[index], parameter.name) }
+		fun checkPresence(callables: List<CallableContractSymbol>) {
+			for (function in callables) {
+				presence.analyze(function.declaration)
+				presence.analyzeExpressions(declarations.initializationExpressions(function.declaration))
 			}
 		}
-		for (function in declarations.concreteContracts) {
+		val views = declarations.genericViews
+		val canonical = declarations.callableContracts.filter { views?.isCanonicalBoundBody(it) == true }.toSet()
+		val concrete = declarations.concreteContracts
+		if (canonical.isNotEmpty()) {
+			// Complete declaration-site facts before typing any specialized copy of the same body.
+			checkPresence(canonical.toList())
+			checkContracts(concrete.filter { it in canonical }, model)
+		}
+		checkPresence(declarations.callableContracts.filterNot { it in canonical })
+		checkEnumPayloads(model)
+		checkContracts(concrete.filterNot { it in canonical }, model)
+		for (function in concrete) {
+			checkArrayShapes(function, model)
+			checkCallableMetadata(function, model)
+		}
+		if (declarations.classDefinitions.isNotEmpty() || declarations.interfaces.contracts.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
+		return model
+	}
+
+	private fun checkContracts(contracts: List<CallableContractSymbol>, model: FunctionSemanticModel) {
+		val declarations = model.declarations
+		for (function in contracts) {
+			val checker = BodyTyping(model, function.declaration, bodyResults(function, model))
+			function.parameters.forEachIndexed { index, parameter ->
+				parameter.declaration.defaultValue?.let { checker.checkInitializer(it, model.declaredTypeOf(function).parameters[index], parameter.name) }
+			}
+		}
+		for (function in contracts) {
 			val returnResults = bodyResults(function, model)
 			val checker = BodyTyping(model, function.declaration, returnResults)
 			when (val declaration = function.declaration) {
@@ -126,12 +149,6 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			}
 			checker.checkBody()
 		}
-		for (function in declarations.concreteContracts) {
-			checkArrayShapes(function, model)
-			checkCallableMetadata(function, model)
-		}
-		if (declarations.classDefinitions.isNotEmpty() || declarations.interfaces.contracts.isNotEmpty()) ClassLifetimeAnalysis(model).analyze()
-		return model
 	}
 
 	private fun bodyResults(function: CallableContractSymbol, model: FunctionSemanticModel) = if (function is ConstructorSymbol) ResultShape.Empty else model.typeOf(function).results

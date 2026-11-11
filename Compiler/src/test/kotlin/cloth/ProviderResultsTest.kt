@@ -336,6 +336,7 @@ class ProviderResultsTest {
 				expressions.emitStatements(body.statements.dropLast(1))
 				checkNotNull((body.statements.last() as ReturnStatement).value)
 			}
+			else             -> error("Expected a source return")
 		}
 
 		fun int(value: Int): LLVMValueRef = LLVMConstInt(CInt().llvmValue(context, nativeTestLayout), value.toLong(), 1)

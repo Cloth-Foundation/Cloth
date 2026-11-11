@@ -31,8 +31,26 @@ without explicit types use the ordinary overloads. The compiler rejects a
 duplicate template, a call with an unavailable type argument count, or an
 application such as `magic<void>(1)`. Public templates apply the existing
 private-type rules for signatures. The entry point uses an ordinary function.
-Method-owned parameters, inference, constraints, and overloads with the same
-type parameter count are tracked separately. [Follow-ups](../../../../todo/generic-follow-ups.md#generic-functions-and-method-owned-parameters)
+Method-owned parameters, inference, and overloads with the same type parameter
+count are tracked separately. [Follow-ups](../../../../todo/generic-follow-ups.md#generic-functions-and-method-owned-parameters)
+[Generic bounds](../../cloth-generics/references/semantics.md#initial-constraint-scope)
+
+## Method-owned parameter design
+
+A method-owned type parameter must have a name distinct from the enclosing
+type's parameters. In `Box<T>`, a method can declare `pair<U>` and refer to
+both `T` and `U` in its signature, defaults, and body.
+
+```cloth
+typedef<class> Box<T> (def<T> item) {
+    pub mt<T, U> pair<U>(U value) = self.item, value
+}
+```
+
+The first method slice covers ordinary class and struct instance methods.
+A call supplies method type arguments explicitly, as in
+`box.pair<string>("label")`. Virtual, interface, and state methods have
+[separate follow-up work](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types).
 
 ## Compiler integration
 

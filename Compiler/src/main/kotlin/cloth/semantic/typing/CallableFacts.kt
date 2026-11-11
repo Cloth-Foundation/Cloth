@@ -1,6 +1,7 @@
 package cloth.semantic.typing
 
 import cloth.data.ValueType
+import cloth.semantic.LibraryIntrinsic
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.MethodSymbol
 
@@ -8,6 +9,7 @@ import cloth.semantic.symbols.MethodSymbol
 internal class CallableContracts(
 	val signatures: Map<CallableContractSymbol, FunctionType>,
 	val contextSelectors: Map<MethodSymbol, ValueType>,
+	val intrinsics: Map<CallableContractSymbol, LibraryIntrinsic>,
 )
 
 /** Signatures and bodies discovered while checking one branch of analysis. */
