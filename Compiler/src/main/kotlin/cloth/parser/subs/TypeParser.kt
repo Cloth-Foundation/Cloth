@@ -85,7 +85,7 @@ class TypeParser(private val parser: Parser) {
 				token.lexeme == Operators.LESS.toString() -> depth++
 				token.lexeme == Operators.GREATER.toString() -> if (--depth == 0) break
 				token.type in setOf(TokenType.Identifier, TokenType.Keyword, TokenType.IntegerLiteral, TokenType.NewLine) -> Unit
-				token.lexeme in setOf(Operators.COMMA.toString(), Operators.QUESTION.toString(), Operators.BRACKET_OPEN.toString(), Operators.BRACKET_CLOSE.toString()) -> Unit
+				token.lexeme in setOf(Operators.COMMA.toString(), Operators.DOT.toString(), Operators.QUESTION.toString(), Operators.BRACKET_OPEN.toString(), Operators.BRACKET_CLOSE.toString()) -> Unit
 				else -> return null
 			}
 		}
@@ -118,14 +118,34 @@ class TypeParser(private val parser: Parser) {
 
 	internal fun startsNamedTypeReceiver(): Boolean {
 		if (parser.peek().type != TokenType.Identifier) return false
-		val end = when (parser.peek(1).lexeme) {
-			Operators.LESS.toString() -> applicationEnd(1)
-			Operators.QUESTION.toString() -> suffixEnd(1)
-			Operators.BRACKET_OPEN.toString() -> if (parser.peek(2).lexeme == Operators.BRACKET_CLOSE.toString()) suffixEnd(1) else null
+		val offset = nameEnd()
+		val end = when (parser.peek(offset).lexeme) {
+			Operators.LESS.toString() -> applicationEnd(offset)
+			Operators.QUESTION.toString() -> suffixEnd(offset)
+			Operators.BRACKET_OPEN.toString() -> if (parser.peek(offset + 1).lexeme == Operators.BRACKET_CLOSE.toString()) suffixEnd(offset) else null
 			else -> null
 		}
 		return end?.let { parser.peek(it).lexeme == Operators.COLON_COLON.toString() } == true
 	}
+
+	internal fun startsQualifiedTypeCheck(): Boolean {
+		if (parser.peek().type != TokenType.Identifier) return false
+		val offset = nameEnd()
+		if (offset == 1 || startsNamedTypeReceiver()) return false
+		return when (parser.peek(offset).lexeme) {
+			Operators.LESS.toString() -> applicationEnd(offset)?.let(::typeCanEndAt) == true
+			Operators.QUESTION.toString() -> true
+			else -> false
+		}
+	}
+
+	private fun nameEnd(): Int {
+		var offset = 1
+		while (parser.peek(offset).lexeme == Operators.DOT.toString() && parser.peek(offset + 1).type == TokenType.Identifier) offset += 2
+		return offset
+	}
+
+	private fun typeCanEndAt(offset: Int): Boolean = parser.peek(offset).type in setOf(TokenType.Operator, TokenType.EOF, TokenType.NewLine) || parser.atKeyword(Keywords.IS, offset)
 
 	fun parse(inCast: Boolean = false, allowArrays: Boolean = false): TypeReference {
 		val start = parser.peek().span
@@ -135,12 +155,22 @@ class TypeParser(private val parser: Parser) {
 		if (token.type != TokenType.Identifier && !(token.type == TokenType.Keyword && primitiveTypes.any { it.toString() == token.lexeme })) {
 			throw SyntaxErrors.expected("a type name", token)
 		}
-		val name = parser.advance()
+		val first = parser.advance()
+		val name = if (first.type == TokenType.Identifier && parser.peek().lexeme == Operators.DOT.toString()) {
+			val spelling = buildString {
+				append(first.lexeme)
+				while (parser.peek().lexeme == Operators.DOT.toString()) {
+					append(parser.advance().lexeme)
+					append(parser.expect(TokenType.Identifier, "a nested type name").lexeme)
+				}
+			}
+			Token(first.type, first.span.through(parser.previous().span), spelling)
+		} else first
 
 		// After a cast, '<' may instead start an ordering comparison. Only a
 		// complete numeric width suffix belongs to the type in this context.
 		fun widthToken(token: Token) = token.type == TokenType.IntegerLiteral || parser.allowInferredOperatorWidth && token.lexeme == Keywords.AUTO.toString()
-		val application = if (name.type == TokenType.Identifier && parser.peek().lexeme == Operators.LESS.toString() && (!inCast || applicationEnd(0)?.let { parser.peek(it).type == TokenType.Operator || parser.peek(it).type == TokenType.EOF || parser.peek(it).type == TokenType.NewLine || parser.atKeyword(Keywords.IS, it) } == true)) arguments() else null
+		val application = if (name.type == TokenType.Identifier && parser.peek().lexeme == Operators.LESS.toString() && (!inCast || applicationEnd(0)?.let(::typeCanEndAt) == true)) arguments() else null
 		val width = if (name.type != TokenType.Identifier && parser.peek().lexeme == Operators.LESS.toString() && (!inCast || (widthToken(parser.peek(1)) && parser.peek(2).lexeme == Operators.GREATER.toString()))) {
 			parser.delimited.angles {
 				if (widthToken(parser.peek())) parser.advance() else parser.expect(TokenType.IntegerLiteral, "a numeric type width")

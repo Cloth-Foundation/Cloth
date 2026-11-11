@@ -88,15 +88,15 @@ if (windowsHost) compilerProject.tasks.named<CreateStartScripts>("startScripts")
 	outputDir = compilerProject.layout.buildDirectory.dir("generated/clothStartScripts").get().asFile
 }
 val windowsExecutable = layout.buildDirectory.file("generated/bin/cloth-jvm.exe")
-val compileWindowsBootstrap = tasks.register<JavaCompile>("compileWindowsBootstrap") {
-	source(windowsSources.dir("java"))
+val compileLauncherBootstrap = tasks.register<JavaCompile>("compileLauncherBootstrap") {
+	source(layout.projectDirectory.dir("Launcher/java"))
 	classpath = files()
 	javaCompiler.set(javaToolchains.compilerFor(java.toolchain))
 	options.release.set(25)
-	destinationDirectory.set(layout.buildDirectory.dir("classes/windowsBootstrap"))
+	destinationDirectory.set(layout.buildDirectory.dir("classes/launcherBootstrap"))
 }
-val windowsBootstrap = tasks.register<Jar>("windowsBootstrap") {
-	from(compileWindowsBootstrap.flatMap { it.destinationDirectory })
+val launcherBootstrap = tasks.register<Jar>("launcherBootstrap") {
+	from(compileLauncherBootstrap.flatMap { it.destinationDirectory })
 	archiveFileName.set("cloth-launcher.jar")
 	destinationDirectory.set(layout.buildDirectory.dir("generated/launcher"))
 }
@@ -137,7 +137,7 @@ val buildWindowsLauncher = tasks.register<Exec>("buildWindowsLauncher") {
 	}
 }
 val verifyWindowsLauncher = tasks.register<Exec>("verifyWindowsLauncher") {
-	dependsOn(buildWindowsLauncher, windowsBootstrap)
+	dependsOn(buildWindowsLauncher, launcherBootstrap)
 	// Use the exact image and launcher ABI being packaged. Java's dry run loads the module main.
 	args("--cloth-shuttle-worker", "unused")
 	doFirst {
@@ -149,9 +149,9 @@ val verifyWindowsLauncher = tasks.register<Exec>("verifyWindowsLauncher") {
 }
 val verifiedWindowsExecutable = files(windowsExecutable).builtBy(verifyWindowsLauncher)
 
-fun CopySpec.includeWindowsLauncher(cloth: Boolean, shuttle: Boolean) {
+fun CopySpec.includeLaunchers(cloth: Boolean, shuttle: Boolean) {
+	into("launcher") { from(launcherBootstrap) }
 	if (!windowsHost) return
-	into("launcher") { from(windowsBootstrap) }
 	into("bin") {
 		if (cloth) from(verifiedWindowsExecutable) { rename { "cloth.exe" } }
 		if (shuttle) from(verifiedWindowsExecutable)
@@ -187,10 +187,10 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 		systemProperty("cloth.toolchain.layout", "development")
 	}
 	commandProject.tasks.withType<CreateStartScripts>().configureEach {
-		inputs.property("clothToolchainLauncherFormat", 3)
+		inputs.property("clothToolchainLauncherFormat", 4)
 		if (windowsHost) inputs.file(windowsScriptSource).withPathSensitivity(PathSensitivity.NONE)
 		doLast {
-			val unixAnchor = "        -classpath \"\$CLASSPATH\""
+			val unixAnchor = "        -classpath \"\$CLASSPATH\" \\\n        ${mainClass.get()} \\"
 			val unixJavaAnchor = "if [ -n \"\$JAVA_HOME\" ] ; then"
 			val unixText = unixScript.readText()
 			check(unixText.contains(unixAnchor) && unixText.contains(unixJavaAnchor)) {
@@ -201,9 +201,15 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 				    JAVACMD="${'$'}APP_HOME/runtime/bin/java"
 				elif [ -n "${'$'}JAVA_HOME" ] ; then
 			""".trimIndent()
-			unixScript.writeText(unixText.replace(unixJavaAnchor, unixBundledJava).replace(unixAnchor,
-				"        \"-Dcloth.toolchain.home=\$APP_HOME\" \\\n" +
-				"        -Dcloth.toolchain.layout=installed \\\n" + unixAnchor))
+			val unixBootstrap = """
+				"-Dcloth.toolchain.home=${'$'}APP_HOME" \
+				-Dcloth.toolchain.layout=installed \
+				--class-path "" \
+				--module-path "${'$'}APP_HOME/launcher/cloth-launcher.jar" \
+				--module cloth.launcher/cloth.launcher.Bootstrap \
+				${mainClass.get()} "${'$'}APP_HOME/lib" \
+			""".trimIndent().prependIndent("        ")
+			unixScript.writeText(unixText.replace(unixJavaAnchor, unixBundledJava).replace(unixAnchor, unixBootstrap))
 			if (windowsHost) {
 				windowsScript.writeText(windowsScriptSource.asFile.readText().replace("\r\n", "\n").replace("\n", "\r\n"))
 				return@doLast
@@ -227,7 +233,7 @@ listOf(compilerProject, shuttleProject).forEach { commandProject ->
 			contents {
 				from(prepareToolchain)
 				includeJavaRuntime()
-				includeWindowsLauncher(cloth = commandProject == compilerProject, shuttle = commandProject == shuttleProject)
+				includeLaunchers(cloth = commandProject == compilerProject, shuttle = commandProject == shuttleProject)
 			}
 		}
 	}
@@ -254,7 +260,7 @@ distributions {
 			from(prepareToolchain)
 			from(stageShuttle)
 			includeJavaRuntime()
-			includeWindowsLauncher(cloth = true, shuttle = true)
+			includeLaunchers(cloth = true, shuttle = true)
 			into("bin") {
 				from(compilerProject.tasks.named("startScripts"))
 				filePermissions { unix("rwxr-xr-x") }

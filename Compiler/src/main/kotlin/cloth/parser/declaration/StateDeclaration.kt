@@ -53,6 +53,7 @@ data class TopLevelStateDeclaration(
 	val host: TypeReference,
 	override val members: List<StateMember>,
 	override val span: TokenSpan,
+	val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : Declaration, StateBodyDeclaration
 
 data class StateMethodContractDeclaration(

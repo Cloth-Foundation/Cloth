@@ -5,6 +5,7 @@ import cloth.parser.Parser
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.declaration.StructDeclaration
 import cloth.parser.declaration.StructFieldDeclaration
+import cloth.parser.declaration.TypeDeclaration
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -15,20 +16,22 @@ internal class StructParser(private val parser: Parser) {
 	fun parse(keyword: Token, visibility: Token?): StructDeclaration {
 		val name = parser.expect(TokenType.Identifier, "a struct name")
 		val typeParameters = parser.typeParser.parseTypeParameters()
+		val nestedTypes = mutableListOf<TypeDeclaration>()
 		parser.skipNewlines()
 		val (fields, methods) = parser.delimited.braces {
 			parser.skipNewlines()
+			while (parser.startsTypeDeclaration()) nestedTypes.add(parser.parseNestedTypeDeclaration())
 			val fields = if (atMember()) emptyList() else parseFields()
 			if (fields.isNotEmpty() && !atEnd()) {
 				rejectFunction()
 				parser.expect(Operators.SEMICOLON)
 				parser.skipNewlines()
 				rejectFunction()
-				if (!atMember()) throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration after the fields", parser.peek())
+				if (!atMember() && !parser.startsTypeDeclaration()) throw SyntaxErrors.expected("a '${Keywords.METHOD}', '${Keywords.OPERATOR}', or '${Keywords.TYPEDEF}' declaration after the fields", parser.peek())
 			}
-			fields to parseMethods()
+			fields to parseMembers(nestedTypes)
 		}
-		return StructDeclaration(keyword, name, fields, visibility, (visibility ?: keyword).span.through(parser.previous().span), methods, typeParameters)
+		return StructDeclaration(keyword, name, fields, visibility, (visibility ?: keyword).span.through(parser.previous().span), methods, typeParameters, nestedTypes)
 	}
 
 	private fun atEnd() = parser.peek().lexeme == Operators.BRACE_CLOSE.toString()
@@ -42,15 +45,19 @@ internal class StructParser(private val parser: Parser) {
 
 	private fun parseFields(): List<StructFieldDeclaration> = parser.delimited.commaSeparated(
 		Operators.BRACE_CLOSE,
-		endAfterItem = { parser.isSemicolon(parser.peek()) || atMember() || parser.atKeyword(Keywords.FUNCTION, memberOffset()) },
+		endAfterItem = { parser.isSemicolon(parser.peek()) || atMember() || parser.startsTypeDeclaration() || parser.atKeyword(Keywords.FUNCTION, memberOffset()) },
 	) {
 		rejectFunction()
 		val type = parser.typeParser.parse(allowArrays = true)
 		StructFieldDeclaration(type, parser.expect(TokenType.Identifier, "a struct field name"))
 	}
 
-	private fun parseMethods(): List<MethodDeclaration> = buildList {
+	private fun parseMembers(nestedTypes: MutableList<TypeDeclaration>): List<MethodDeclaration> = buildList {
 		while (!atEnd()) {
+			if (parser.startsTypeDeclaration()) {
+				nestedTypes.add(parser.parseNestedTypeDeclaration())
+				continue
+			}
 			rejectFunction()
 			val method = when {
 				parser.atKeyword(Keywords.METHOD)   -> parser.functionParser.parseMethod()

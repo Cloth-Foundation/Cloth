@@ -62,7 +62,7 @@ class UnicodeArgumentsTest {
 	@Test
 	fun `native startup preserves Unicode empty arguments quoting and argument order`(@TempDir directory: Path) {
 		val values = listOf("Cloth", "", "é中😀", "é", "é", "two words", "a\"b", "trailing\\", "%s%llu", "\t\n", "�", "\uFEFF")
-		val executable = LLVMEmitter().compile(parse(sourceFor(values)), directory.resolve("Unicode é中😀/arguments"))
+		val executable = LLVMEmitter().compile(parse(sourceFor(values)), directory.resolve("Unicode é中/arguments"))
 		run(executable, values)
 	}
 

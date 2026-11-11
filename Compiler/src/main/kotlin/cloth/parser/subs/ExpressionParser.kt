@@ -4,6 +4,7 @@ import cloth.data.ValueType
 import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.expression.*
+import cloth.parser.type.TypeReference
 import cloth.token.*
 
 class ExpressionParser(val parser: Parser) {
@@ -24,8 +25,14 @@ class ExpressionParser(val parser: Parser) {
 				val target = parser.peek()
 				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.SAFE_DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
 				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && (hasValuePostfix || parser.typeParser.startsFunctionTypeArguments())
-				left = if (valueTarget) BinaryExpression(left, operator, parseUnary(stopAtRange, allowWhileTrailer))
-				else TypeCheckExpression(left, operator, TypeParser(parser).parse(inCast = true))
+				left = if (!valueTarget || parser.typeParser.startsQualifiedTypeCheck()) {
+					TypeCheckExpression(left, operator, parser.typeParser.parse(inCast = true))
+				} else {
+					val right = parseUnary(stopAtRange, allowWhileTrailer)
+					val path = (right as? FieldAccessExpression)?.typeNameCandidate { it === target }
+					if (path == null) BinaryExpression(left, operator, right)
+					else TypeCheckExpression(left, operator, TypeReference(path), right)
+				}
 				continue
 			}
 			if (operator.type != TokenType.Operator) break

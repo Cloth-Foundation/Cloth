@@ -11,6 +11,10 @@ dispatch entry. The selected body receives every argument as supplied.
 [Interface call contracts](../cloth-interfaces/references/stage-3.md#static-call-binding-and-defaults) ·
 [Native interface defaults](../cloth-interfaces/references/stage-5.md#static-arguments-and-closed-fallback-bodies)
 
+Virtual class calls use the `virtual:` declaration's labels and defaults.
+Overrides declare required parameters and receive all bound values.
+[Ordinary class virtual dispatch](../cloth-language/references/class-inheritance.md#ordinary-class-virtual-dispatch-design)
+
 [Generic Stage 3](../cloth-generics/references/stage-3.md) checks owner-generic
 defaults with unknown exact parameters and again after substitution, preserving
 earlier-parameter scope, read-only defaults and ordinary argument placement.

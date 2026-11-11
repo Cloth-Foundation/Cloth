@@ -13,6 +13,7 @@ data class EnumDeclaration(
 	val cases: List<EnumCaseDeclaration>,
 	val operators: List<MethodDeclaration>,
 	override val span: TokenSpan,
+	override val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : TypeDeclaration
 
 data class EnumFieldDeclaration(val name: Token, val type: TypeReference, val visibility: Token?, val default: Expression?)

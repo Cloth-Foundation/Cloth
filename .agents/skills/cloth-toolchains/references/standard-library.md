@@ -128,11 +128,11 @@ The user deferred arbitrary Windows Unicode installation paths after reproducing
 the installed JDK's code-page limitation; preserve the follow-up and actual tested
 scope in the Stage 1 record rather than claiming full Windows launcher support.
 
-The user subsequently requested a plan to fix both installed commands for Chinese
-and emoji paths without changing locale or cwd, including actual installed-command
-tests. The [launcher plan](../../../../todo/windows-unicode-launcher-plan.md) owns
-that pending work. Its proposed native-host design is not implemented or verified;
-the historical Stage 1 boundary remains the current implementation limit.
+The launcher follow-up integrated Windows and Unix startup changes for both
+commands. Current relocation checks cover paths with Chinese characters and
+spaces. Filesystem paths containing emoji are outside the supported scope.
+[Launcher plan](../../../../todo/windows-unicode-launcher-plan.md) ·
+[Path support policy](../../../../docs/standard-library.md#installed-layout-and-relocation)
 
 ## Command selection
 

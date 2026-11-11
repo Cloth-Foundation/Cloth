@@ -24,7 +24,7 @@ import cloth.token.TokenType
 
 internal class BodyTyping(private val facts: FunctionSemanticModel, private val function: CallableSignature, private val returnResults: ResultShape, private val hasReturnContract: Boolean = true, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe) {
 
-	override fun namedTypeReceiver(expression: Expression) = (expression as? NameExpression)?.let { facts.declarations.namedTypeReceivers[it] }
+	override fun namedTypeReceiver(expression: Expression) = facts.declarations.namedTypeReceivers[expression]
 	private val overloads = CallResolution(facts, ::typingIn)
 	private val operators = OperatorResolution(facts, ::typingIn, ::reject, probe)
 

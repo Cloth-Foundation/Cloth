@@ -12,7 +12,7 @@ import java.util.Arrays;
 import java.util.Locale;
 
 /**
- * Loads the installed application without the Windows system classpath URL encoder.
+ * Loads the installed application from URI-encoded library JAR paths.
  */
 public final class Bootstrap {
 

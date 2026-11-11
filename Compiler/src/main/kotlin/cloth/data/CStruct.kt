@@ -11,7 +11,13 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 /** Nominal descriptor: one per ordinary declaration or closed generic argument tuple. */
-class CStruct internal constructor(override val declaration: StructDeclaration, fields: List<StructField>? = null, val genericDefinition: CStruct? = null, override val typeArguments: List<ValueType> = emptyList()) : CMemberType(Keywords.STRUCT) {
+class CStruct internal constructor(
+	override val declaration: StructDeclaration,
+	fields: List<StructField>? = null,
+	val genericDefinition: CStruct? = null,
+	override val typeArguments: List<ValueType> = emptyList(),
+	enclosingName: String? = genericDefinition?.enclosingName,
+) : CMemberType(Keywords.STRUCT, enclosingName) {
 
 	override val indirect get() = true
 	override lateinit var fields: List<StructField>

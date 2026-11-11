@@ -12,7 +12,8 @@ class CInterface internal constructor(
 	override val declaration: InterfaceDeclaration,
 	val genericDefinition: CInterface? = null,
 	override val typeArguments: List<ValueType> = emptyList(),
-) : CMemberType(Keywords.INTERFACE) {
+	enclosingName: String? = genericDefinition?.enclosingName,
+) : CMemberType(Keywords.INTERFACE, enclosingName) {
 	internal val definition get() = genericDefinition ?: this
 	internal var ancestors: Set<CInterface> = emptySet()
 	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || when (actual) {

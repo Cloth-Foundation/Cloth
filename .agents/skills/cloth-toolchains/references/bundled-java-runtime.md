@@ -3,9 +3,12 @@
 The combined and per-command Gradle `installDist`, `distZip` and `distTar`
 distributions include a `runtime/` image shared by their installed commands.
 The Unix launchers select `runtime/bin/java` relative to their installation
-home. The Windows launchers start the image through the checked JLI bridge.
-When the image is absent, `JAVA_HOME` precedes PATH. Keep this selection
-order in future launcher work. [Windows launcher contract](windows-unicode-launcher.md)
+home and invoke the shared module at `launcher/cloth-launcher.jar`. The
+Windows launchers start the image and module through the checked JLI bridge.
+When the image is absent, `JAVA_HOME` precedes PATH. The Unix launchers
+invoke the same module with the selected external Java 25.
+[Windows launcher contract](windows-unicode-launcher.md) ·
+[Unix launcher contract](unix-unicode-launcher-proof.md#stage-2-installed-distributions)
 
 [The root Gradle build](../../../../build.gradle.kts) creates one image per build
 with the selected Java 25 toolchain's `jlink`. The JDK release metadata supplies

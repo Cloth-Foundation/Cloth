@@ -18,8 +18,8 @@ internal fun Expression.eagerOperands(declarations: DeclarationModel? = null): L
 	is CastExpression                   -> listOf(operand)
 	is TypeCheckExpression              -> declarations?.valueTargetOf(this)?.eagerOperands() ?: listOf(operand)
 	is IndexExpression                  -> listOf(array, index)
-	is FieldAccessExpression            -> listOf(receiver)
-	is ProviderAccessExpression         -> listOf(receiver)
+	is FieldAccessExpression            -> if (declarations?.enumCases?.containsKey(this) == true) emptyList() else listOf(receiver)
+	is ProviderAccessExpression         -> if (receiver is TypeReceiverExpression || declarations?.namedTypeReceivers?.containsKey(receiver) == true) emptyList() else listOf(receiver)
 	is ClassDeletionExpression          -> listOf(receiver)
 	is ResultListExpression             -> values
 	is ArrayLiteral                     -> elements

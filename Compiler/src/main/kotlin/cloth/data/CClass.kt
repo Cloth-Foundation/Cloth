@@ -5,20 +5,22 @@ import cloth.parser.declaration.TypeDeclaration
 import cloth.parser.type.TypeReference
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.Token
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.global.LLVM.*
 
-sealed class CMemberType(keyword: Keywords) : ValueType(keyword) {
+sealed class CMemberType(keyword: Keywords, internal val enclosingName: String?) : ValueType(keyword) {
 
 	abstract val declaration: TypeDeclaration
 	val name get() = declaration.name
+	internal val qualifiedName get() = enclosingName?.let { "$it${Operators.DOT}${name.lexeme}" } ?: name.lexeme
 	abstract val fields: List<InstanceField>
 	open val typeArguments: List<ValueType> get() = emptyList()
-	override val spelling get() = if (typeArguments.isEmpty()) name.lexeme else genericTypeDisplay(this)
-	override val metadataSpelling get() = if (typeArguments.isEmpty()) name.lexeme else genericTypeMetadata(this)
+	override val spelling get() = if (typeArguments.isEmpty()) qualifiedName else genericTypeDisplay(this)
+	override val metadataSpelling get() = if (typeArguments.isEmpty()) qualifiedName else genericTypeMetadata(this)
 	internal abstract fun field(name: String): InstanceField?
 }
 
@@ -36,7 +38,8 @@ class CClass internal constructor(
 	val genericDefinition: CClass? = null,
 	override val typeArguments: List<ValueType> = emptyList(),
 	private val objectRoot: Boolean = false,
-) : CMemberType(Keywords.CLASS) {
+	enclosingName: String? = genericDefinition?.enclosingName,
+) : CMemberType(Keywords.CLASS, enclosingName) {
 
 	internal var base: CClass? = null
 	internal var implementedInterfaces: Set<CInterface> = emptySet()

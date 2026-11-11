@@ -124,7 +124,7 @@ class DeclarationModel internal constructor(
 		else         -> false
 	}
 
-	internal val namedTypeReceivers = IdentityHashMap<NameExpression, ValueType>()
+	internal val namedTypeReceivers = IdentityHashMap<Expression, ValueType>()
 	internal val classCreations = IdentityHashMap<ClassCreationExpression, ClassDefinition>()
 	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()
@@ -155,6 +155,15 @@ class DeclarationModel internal constructor(
 
 	fun symbolOf(declaration: FunctionDeclaration): FunctionSymbol = functionSymbols.getValue(declaration)
 	fun symbolOf(declaration: MethodDeclaration): MethodSymbol = methodSymbols.getValue(declaration)
+	internal fun symbolOf(body: VirtualMethodBody): MethodSymbol =
+		symbolOf(checkNotNull(genericViews).viewOf(body.declaration, body.owner) as MethodDeclaration)
+
+	internal fun virtualFamilyOf(method: MethodSymbol): VirtualMethodFamily? {
+		if (method.declaration.virtualPrefix == null && method.declaration.overridePrefix == null) return null
+		val owner = method.owner as? CClass ?: return null
+		val views = genericViews ?: return null
+		return views.types.virtualMethods.familyOf(owner, views.originalOf(method.declaration) as MethodDeclaration)
+	}
 	fun symbolOf(declaration: ParameterDeclaration): ParameterSymbol = parameterSymbols.getValue(declaration)
 	fun symbolOf(declaration: BindingDeclaration): LocalSymbol = localSymbols.getValue(declaration)
 	fun symbolsOf(declaration: BindingGroupDeclaration): List<GroupLocalSymbol?> = groupSymbols.getValue(declaration)
@@ -170,7 +179,10 @@ class DeclarationModel internal constructor(
 	fun candidatesOf(call: CallExpression): CallableGroupSymbol = calls.getValue(call)
 	internal fun methodGroup(owner: CMemberType, name: String): MethodGroupSymbol? {
 		if (owner !is CClass) return methodGroups[owner]?.get(name)
-		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }.distinctBy { it.signature }.toList()
+		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }
+			.distinctBy { it.signature }
+			.map { method -> virtualFamilyOf(method)?.let { symbolOf(it.base) } ?: method }
+			.toList()
 		return methods.takeIf { it.isNotEmpty() }?.let(::MethodGroupSymbol)
 	}
 	internal fun interfaceGroup(owner: CInterface, name: String): InterfaceMethodGroupSymbol? = interfaceGroups[owner]?.get(name)

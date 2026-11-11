@@ -28,7 +28,7 @@ internal fun genericTypeMetadata(root: CMemberType): String {
 			continue
 		}
 		val length = when (type) {
-			is CMemberType -> bytes(type.name.lexeme) + if (children.isEmpty()) 0 else
+			is CMemberType -> bytes(type.qualifiedName) + if (children.isEmpty()) 0 else
 				bytes("${Operators.LESS}${Operators.GREATER}") + (children.size - 1L) * bytes("${Operators.COMMA} ") + children.sumOf { lengths.getValue(it) }
 			is CArray -> lengths.getValue(type.element) + bytes("${Operators.BRACKET_OPEN}${type.size ?: ""}${Operators.BRACKET_CLOSE}")
 			is CNullable -> lengths.getValue(type.payload) + bytes(Operators.QUESTION.toString())

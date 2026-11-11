@@ -4,6 +4,7 @@ import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinParameter
 import cloth.data.CFloat
 import cloth.data.CInteger
+import cloth.data.CMemberType
 import cloth.data.EnumField
 import cloth.data.ValueType
 import cloth.parser.declaration.BlockBody
@@ -28,6 +29,8 @@ object SemanticErrors {
 	fun arrayMutation(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ARRAY_MUTATION, message, span)
 
 	fun duplicateClassType(name: Token, previous: Token) = SemanticException(DiagnosticCode.DUPLICATE_CLASS_TYPE, "Type '${name.lexeme}' is already declared", listOf(SourceLabel(name.span, "duplicate type declaration"), SourceLabel(previous.span, "first declared here")))
+	internal fun privateNestedType(use: Token, type: CMemberType) = SemanticException(DiagnosticCode.PRIVATE_NESTED_TYPE, "Nested type '${type.spelling}' is private", listOf(SourceLabel(use.span, "access outside the enclosing type"), SourceLabel(type.name.span, "private type declared here")))
+	internal fun virtualMethod(message: String, span: TokenSpan, base: Token? = null) = SemanticException(DiagnosticCode.INVALID_VIRTUAL_METHOD, message, listOfNotNull(SourceLabel(span, "method declared here"), base?.let { SourceLabel(it.span, "virtual base method declared here") }))
 	fun classMember(message: String, span: TokenSpan, previous: Token? = null) = SemanticException(DiagnosticCode.INVALID_CLASS_MEMBER, message, listOfNotNull(SourceLabel(span, "class member here"), previous?.let { SourceLabel(it.span, "first declared here") }))
 	fun privateClassMember(name: Token, declaration: Token) = SemanticException(DiagnosticCode.PRIVATE_CLASS_MEMBER, "Class member '${name.lexeme}' is private", listOf(SourceLabel(name.span, "access outside the declaring class"), SourceLabel(declaration.span, "private member declared here")))
 	fun classLifecycle(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_CLASS_LIFECYCLE, message, span)

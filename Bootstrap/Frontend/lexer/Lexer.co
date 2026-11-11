@@ -46,7 +46,7 @@ pub typedef<class> Lexer (def<string> text, def<SourceFile?> source ?: null) {
             return 1
         }
         for (def index <- 0..tokens.size()) println(tokens.get(index))
-        println(tokens.size())
+        println("Token Count: " + tokens.size()::str)
         tokens::delete
         return 0
     }

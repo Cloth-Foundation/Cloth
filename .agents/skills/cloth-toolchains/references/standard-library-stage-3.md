@@ -81,7 +81,7 @@ No additional information command or compatibility scheme is introduced.
   input protection. It joins `:Compiler:importResolutionTest`.
 - [ShuttleBuildTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttleBuildTest.kt)
   checks shared parsing and literal program arguments. [Distribution tests](../../../../Tests/src/test/java/cloth/ToolchainDistributionTest.java)
-  exercise both actual launchers with relative/spaced/Chinese/supplementary-Unicode
+  exercised both actual launchers with relative/spaced/Chinese/supplementary-Unicode
   override paths, incompatible reached code, invalid selections, input protection,
   broken defaults, replacements, ordinary ambiguity, builtins, help and separators.
 

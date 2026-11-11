@@ -42,7 +42,7 @@ and uses the standard library's bounds check. Use `size()` as the exclusive
 upper bound when traversing the list. Deleting `TokenList` deletes its tokens
 and their spans. Spans borrow `SourceFile`, so delete the source last.
 
-`lexTokens()` prints complete token JSON followed by the count including EOF,
+`lexTokens()` prints complete token JSON followed by a labeled count including EOF,
 then deletes the list. On failure it prints one code/span/message diagnostic.
 It returns isize 0/1. Token JSON matches Kotlin's shape,
 including operator nameOf and control escapes. Kotlin's diagnostic source
@@ -98,10 +98,12 @@ successful scans and first errors after two tokens release the list storage,
 tokens, and spans.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
-checks the exact graph of eight Bootstrap sources plus the library's List.co.
+checks the exact graph of eight Bootstrap sources plus the library's List.co and
+checks token lexemes from a program argument and successful completion.
 [ShuttlePublicationTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
-builds and runs the project from its nested lexer directory. Compiler and
-Shuttle track the Bootstrap fixtures as Gradle test inputs.
+builds and runs the project from its nested lexer directory and checks lexemes
+from standard input and successful completion. Compiler and Shuttle track the
+Bootstrap fixtures as Gradle test inputs.
 
 Run the focused integration checks from the repository root.
 
@@ -127,3 +129,7 @@ On 2026-11-09 Kotlin and Bootstrap matched on 124 inputs on Windows x64 and
 x86, including `?.` and adjacent nullable operators. The public request test
 verified the count with a program argument, and Shuttle verified the count
 with source text on standard input. [Guarded access verification](../../cloth-nullability/references/implementation.md#verification-2026-11-09)
+
+On 2026-11-10 the compiler and native Shuttle publication suites passed all
+six cases on JDK 25 after switching the Bootstrap assertions to token lexemes
+and successful completion.

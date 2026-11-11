@@ -3,7 +3,6 @@ package cloth.semantic.interfaces
 import cloth.data.CClass
 import cloth.data.CInterface
 import cloth.data.CMemberType
-import cloth.data.ValueType
 import cloth.diagnostics.InterfaceErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.SourceLabel
@@ -11,15 +10,14 @@ import cloth.parser.declaration.InterfaceMethodDeclaration
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
-import cloth.semantic.generics.ClosedCallableSignature
 import cloth.semantic.generics.ClosedTypeModel
-import cloth.semantic.generics.ClosedTypePattern
 import cloth.semantic.generics.GenericNameModel
 import cloth.semantic.generics.NominalTypeName
+import cloth.semantic.generics.fixedResults
+import cloth.semantic.generics.fixedSignature
 import cloth.semantic.interfaces.InterfaceImplementation.ClassMethod
 import cloth.semantic.interfaces.InterfaceImplementation.Default
 import cloth.semantic.symbols.FunctionSignature
-import cloth.semantic.symbols.SignatureType
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -105,12 +103,12 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		val own = buildMap {
 			for (closed in types.instanceOf(owner).signatures) {
 				val method = closed.declaration as InterfaceMethodDeclaration
-				val key = closed.key()
+				val key = closed.fixedSignature()
 				val labels = mutableMapOf<String, Token>()
 				for (parameter in method.parameters) {
 					labels.putIfAbsent(parameter.name.lexeme, parameter.name)?.let { throw SemanticErrors.duplicate(parameter.name, it) }
 				}
-				val requirement = InterfaceRequirement(owner, method, key, closed.resultShape())
+				val requirement = InterfaceRequirement(owner, method, key, closed.fixedResults())
 				putIfAbsent(key, requirement)?.let { throw SemanticErrors.duplicateMethod(owner.name, key.spelling, it.declaration.name, method.name) }
 			}
 		}
@@ -184,8 +182,8 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		for ((key, method) in own) {
 			val requirement = groups[key]?.first()
 			val prefix = method.declaration.overridePrefix
-			if (prefix != null && requirement == null) {
-				throw InterfaceErrors.invalidOverride("'${key.spelling}' has no matching interface requirement", prefix)
+			if (prefix != null && requirement == null && types.virtualMethods.familyOf(owner, method.declaration) == null) {
+				throw InterfaceErrors.invalidOverride("'${key.spelling}' has no matching virtual base method or interface requirement", prefix)
 			}
 			if (prefix == null && requirement != null) {
 				throw InterfaceErrors.invalidOverride("'${key.spelling}' requires '${InterfaceErrors.overridePrefix}'", method.declaration.name.span, requirement.declaration.name)
@@ -239,8 +237,8 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		for (closed in types.instanceOf(owner).signatures) {
 			val method = closed.declaration as? MethodDeclaration ?: continue
 			if (method.operator != null) continue
-			val key = closed.key()
-			putIfAbsent(key, ClassMethod(owner, method, closed.resultShape()))?.let {
+			val key = closed.fixedSignature()
+			putIfAbsent(key, ClassMethod(owner, method, closed.fixedResults()))?.let {
 				throw SemanticErrors.duplicateMethod(owner.name, key.spelling, it.declaration.name, method.name)
 			}
 		}
@@ -250,16 +248,4 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		val nearest = owner.base?.ancestry()?.firstNotNullOfOrNull { classMethods[it]?.get(key) }
 		return nearest?.takeIf { it.declaration.visibility != null && it.results == results }
 	}
-
-	private fun ClosedCallableSignature.key() = FunctionSignature(declaration.name.lexeme, parameters.mapIndexed { index, pattern ->
-		val type = (pattern as ClosedTypePattern.Exact).type
-		if (type == ValueType.VOID) throw SemanticErrors.voidType(declaration.parameters[index].type.span)
-		SignatureType.resolved(type)
-	})
-
-	private fun ClosedCallableSignature.resultShape() = ResultShape.of(results.mapIndexed { index, pattern ->
-		val type = (pattern as ClosedTypePattern.Exact).type
-		if (results.size > 1 && type == ValueType.VOID) throw SemanticErrors.voidResult(declaration.returnTypes[index].span)
-		type
-	})
 }

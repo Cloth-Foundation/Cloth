@@ -128,6 +128,8 @@ captures implementation scope and regression evidence.
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
+| Ordinary class virtual methods, override checking and lifecycle dispatch | [Virtual method implementation](references/class-inheritance.md#virtual-method-implementation) |
+| Nested nominal types, lexical and qualified lookup, privacy and generic identity | [nested types](references/nested-types.md) |
 | Nested state declarations, shared call contracts, activation, transitions, dispatch and state facts | [state syntax and checking](references/state-syntax.md), [activation and dispatch](references/state-runtime.md) |
 | Top-level state declarations, class and interface host contracts, imported attachments and attached defaults | [state attachments](references/state-attachments.md) |
 | Maintained state examples, installed commands, first-error checks and target coverage | [state publication](references/state-publication.md) |
@@ -171,7 +173,7 @@ captures implementation scope and regression evidence.
 | main, Unicode arguments, exit status and PEC | [cloth-program-entry](../cloth-program-entry/SKILL.md) |
 | Diagnostics, spans, stable codes, first-error handling | [cloth-diagnostics](../cloth-diagnostics/SKILL.md) |
 | Build and run commands, targets, C ABI, object mode, linking and CRT discovery | [cloth-toolchains](../cloth-toolchains/SKILL.md) |
-| Installed Windows JVM startup, bundled runtime and Unicode relocation | [Windows launchers](../cloth-toolchains/references/windows-unicode-launcher.md) |
+| Installed JVM startup, bundled Java 25 and Unicode relocation | [Windows launchers](../cloth-toolchains/references/windows-unicode-launcher.md), [Unix launchers](../cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-2-installed-distributions) |
 
 ## Existing and deferred design records
 

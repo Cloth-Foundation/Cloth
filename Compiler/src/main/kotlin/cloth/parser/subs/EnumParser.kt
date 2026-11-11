@@ -17,9 +17,12 @@ internal class EnumParser(private val parser: Parser) {
 		val fields = if (at(Operators.PAREN_OPEN)) parser.delimited.parentheses {
 			parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::parseField)
 		} else emptyList()
+		val nestedTypes = mutableListOf<TypeDeclaration>()
 		parser.skipNewlines()
 		val (cases, operators) = parser.delimited.braces {
-			val cases = parser.delimited.commaSeparated(Operators.BRACE_CLOSE, { at(Operators.SEMICOLON) }) {
+			parser.skipNewlines()
+			while (parser.startsTypeDeclaration()) nestedTypes.add(parser.parseNestedTypeDeclaration())
+			val cases = parser.delimited.commaSeparated(Operators.BRACE_CLOSE, { at(Operators.SEMICOLON) || parser.startsTypeDeclaration() }) {
 				val case = parser.expect(TokenType.Identifier, "an enum case")
 				val values = if (at(Operators.PAREN_OPEN)) parser.delimited.parentheses {
 					parser.delimited.commaSeparated(Operators.PAREN_CLOSE, parseItem = ::value)
@@ -30,11 +33,11 @@ internal class EnumParser(private val parser: Parser) {
 			val operators = if (at(Operators.BRACE_CLOSE)) emptyList() else {
 				parser.expect(Operators.SEMICOLON)
 				parser.skipNewlines()
-				parseOperators()
+				parseMembers(nestedTypes)
 			}
 			cases to operators
 		}
-		return EnumDeclaration(keyword, name, visibility, fields, cases, operators, (visibility ?: keyword).span.through(parser.previous().span))
+		return EnumDeclaration(keyword, name, visibility, fields, cases, operators, (visibility ?: keyword).span.through(parser.previous().span), nestedTypes)
 	}
 
 	private fun parseField(): EnumFieldDeclaration {
@@ -53,8 +56,12 @@ internal class EnumParser(private val parser: Parser) {
 		return EnumFieldDeclaration(name, type, visibility, default)
 	}
 
-	private fun parseOperators(): List<MethodDeclaration> = buildList {
+	private fun parseMembers(nestedTypes: MutableList<TypeDeclaration>): List<MethodDeclaration> = buildList {
 		while (!at(Operators.BRACE_CLOSE)) {
+			if (parser.startsTypeDeclaration()) {
+				nestedTypes.add(parser.parseNestedTypeDeclaration())
+				continue
+			}
 			if (!parser.atKeyword(Keywords.OPERATOR)) throw SyntaxErrors.expected("an '${Keywords.OPERATOR}' declaration", parser.peek())
 			val operator = parser.functionParser.parseOperator()
 			add(operator)

@@ -15,6 +15,10 @@ executable and private compiler worker. The combined toolchain and per-command
 distribution install `bin/shuttle.exe` on Windows and `bin/shuttle` on Unix.
 The installed command uses the bundled Java 25 runtime for compilation.
 Development uses the Gradle toolchain and the checkout's standard library.
+On Unix the installed frontend starts its worker through the shared Java
+bootstrap module. The worker's module and library paths resolve relative to
+the native executable, and the worker receives the same private exchange.
+[Installed Unix worker handoff](../../cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-2-installed-distributions)
 
 ## Ownership
 
@@ -97,7 +101,28 @@ the Linux x64 executable printed its help in Ubuntu WSL.
 
 On a separate pinned checkout, Ubuntu 24.04 WSL2 built the Linux x64 frontend
 and the bundled Temurin 25 runtime. The standalone and combined installations
-ran real Cloth programs from a Unicode caller directory, and `:Shuttle:run`
-ran the maintained `List` example. The Linux ZIP and TAR tasks now assign
-mode `0755` to `bin/shuttle` and track the mode as an archive task input.
-[Host versions, commands and results](../../cloth-toolchains/references/windows-unicode-launcher.md#stage-4-host-verification)
+ran real Cloth programs from a Unicode caller directory. Both combined
+archives passed after relocation to `cloth 安装`, and `:Shuttle:run` ran the
+maintained `List` example. The Linux ZIP and TAR tasks now assign mode `0755`
+to `bin/shuttle` and track the mode as an archive task input. This host check
+found the Linux worker's class-loading failure from emoji installation paths.
+[Host versions, commands and results](../../cloth-toolchains/references/windows-unicode-launcher.md#stage-4-host-verification) ·
+[Linux worker reproduction and bootstrap proof](../../cloth-toolchains/references/windows-unicode-launcher.md#linux-emoji-installation-follow-up)
+
+## BUILD-3 Linux proof (2026-11-10)
+
+The cross-linked Linux x64 prototype used bundled Java 25 and the existing
+Java bootstrap for the installed worker handoff. The actual native frontend
+built and ran a Cloth program from emoji-only and mixed installation paths
+under WSL2. The development classpath handoff ran the maintained List project.
+[Worker handoff, host details and results](../../cloth-toolchains/references/unix-unicode-launcher-proof.md)
+
+Stage 2 verified the native worker in the combined and standalone Linux
+`installDist` outputs after emoji relocation. The installed worker used bundled
+Java and both external Java fallbacks. `:Shuttle:run` ran the maintained List
+project with `PEC: 0`.
+[Installed Unix verification](../../cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-2-installed-distributions)
+
+Stage 3 ran the native frontend from the combined and Shuttle-only Linux ZIP
+and TAR extracts after relocation to paths with Chinese characters and spaces.
+[Linux archive verification](../../cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-3-archive-verification)

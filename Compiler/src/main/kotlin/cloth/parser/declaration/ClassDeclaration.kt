@@ -18,6 +18,7 @@ data class ClassDeclaration(
 	override val span: TokenSpan,
 	val parents: List<ClassParentClause> = emptyList(),
 	override val typeParameters: TypeParameterList? = null,
+	override val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : TypeDeclaration
 
 /** An unresolved class header entry. A null argument list preserves omitted parentheses. */

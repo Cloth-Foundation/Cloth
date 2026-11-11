@@ -65,7 +65,9 @@ class ImportPublicationTest {
 			val completion = processCompletion().replace("\r\n", "\n")
 			if (project == example) assertEquals("token Name: Cloth\nnested folders\n" + completion, actual)
 			else {
-				assertTrue(actual.endsWith("\n3\n" + completion), actual)
+				assertContains(actual, "\"lexeme\": \"nested\"")
+				assertContains(actual, "\"lexeme\": \"folders\"")
+				assertTrue(actual.endsWith(completion), actual)
 				assertEquals(1, Regex("PEC: 0").findAll(actual).count(), actual)
 			}
 		}

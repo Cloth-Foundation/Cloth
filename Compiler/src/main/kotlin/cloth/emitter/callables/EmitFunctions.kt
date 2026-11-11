@@ -62,12 +62,14 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	internal val classStorage by lazy { EmitClassStorage(context, module, abi, classes, stringStorage) }
 	internal val receivers by lazy { EmitReceiverAccess(context, module, abi, classStorage) }
 	internal val hasClasses = semantics.declarations.classDefinitions.isNotEmpty()
+	private val hasVirtualMethods = semantics.declarations.methods.any { it.declaration.virtualPrefix != null }
 	private val hasArrayMutations = semantics.allBodyModels().any { it.types.arrayMutations.isNotEmpty() }
 	private val classTags = semantics.declarations.classDefinitions.values.mapIndexed { index, definition -> definition.owner to index }.toMap()
 	private fun classTag(owner: CClass) = LLVMConstInt(classes.indexType, classTags.getValue(owner).toLong(), 0)
 	private val interfaceDispatch by lazy {
-		EmitInterfaceDispatch(context, module, abi, semantics.declarations, results, this, ::classTag)
+		EmitInterfaceDispatch(context, module, semantics.declarations, results, this)
 	}
+	private val virtualEntries = IdentityHashMap<MethodSymbol, EmittedCallable>()
 	private val stateDispatch by lazy {
 		EmitStateDispatch(context, module, abi, semantics.declarations.states, results, this)
 	}
@@ -122,8 +124,64 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}
 		for (function in bodies) emitBody(function)
 		for ((state, function) in initialStates) emitInitialState(state, function)
-		// A default emitted in one dispatch entry can add a state or interface entry.
+		// A default emitted in one dispatch entry can add another dispatch entry.
 		while (dispatchBodies.isNotEmpty()) dispatchBodies.removeFirst().invoke()
+	}
+
+	private fun virtualEntry(method: MethodSymbol): EmittedCallable? {
+		val declarations = semantics.declarations
+		val family = declarations.virtualFamilyOf(method) ?: return null
+		return virtualEntries.getOrPut(method) {
+			val name = "cloth.virtual.dispatch.${virtualEntries.size}.${method.name.lexeme}"
+			EmittedCallable(context, module, name, method, semantics.typeOf(method), hasClasses, results) { classes }
+				.also { entry -> deferDispatch {
+					val targets = family.implementations.map { (owner, body) -> owner to callable(declarations.symbolOf(body)) }
+					emitClassDispatch(entry, method, targets, "Current class level does not provide the virtual method", classes::virtualClassTag)
+				} }
+		}
+	}
+
+	internal fun emitClassDispatch(
+		entry: EmittedCallable,
+		contract: CallableContractSymbol,
+		targets: List<Pair<CClass, EmittedCallable>>,
+		unavailable: String,
+		selectClassTag: (LLVMBuilderRef, ObjectAccess) -> LLVMValueRef = classes::classTag,
+	) {
+		val builder = LLVMCreateBuilderInContext(context)
+		try {
+			fun block(name: String) = LLVMAppendBasicBlockInContext(context, entry.reference, name)
+			val start = block("entry")
+			LLVMPositionBuilderAtEnd(builder, start)
+			val access = checkNotNull(entry.objectAccess())
+			val type = entry.type
+			val frame = EmitFunctionFrame(context, builder, start, type.results, LLVMGetReturnType(entry.signature), stringStorage, entry.callerArena)
+			val arguments = if (entry.hasOmissions) {
+				classes.check(builder, access)
+				bindDispatchArguments(contract, entry, builder, start, frame)
+			} else type.parameters.indices.map { entry.parameter(builder, it) }
+			// Supplied arguments and defaults can invalidate the captured receiver.
+			val tag = selectClassTag(builder, access)
+			val invalid = block("dispatch_unavailable")
+			val dispatch = LLVMBuildSwitch(builder, tag, invalid, targets.size)
+			for ((owner, target) in targets) {
+				if (target.type != type) throw InternalErrors.invariant("Class dispatch target differs from its checked signature")
+				val branch = block("implement.${owner.name.lexeme}")
+				LLVMAddCase(dispatch, classTag(owner), branch)
+				LLVMPositionBuilderAtEnd(builder, branch)
+				val result = target.call(builder, returnArena = { checkNotNull(entry.callerArena) }) {
+					setReceiver(access)
+					arguments.forEachIndexed(::argument)
+				}
+				frame.emitReturn(result?.let { results.encode(builder, it, type.results) })
+			}
+			LLVMPositionBuilderAtEnd(builder, invalid)
+			EmitRuntimeError(context, builder, abi).emit(unavailable)
+			// The selected body has copied indirect results into the original caller's arena.
+			frame.finish(resultsInCallerArena = true)
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
 	}
 
 	private fun emitBody(function: CallableContractSymbol) {
@@ -355,6 +413,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private fun destroy(builder: LLVMBuilderRef, access: ObjectAccess, concrete: CClass) {
 		for (owner in concrete.ancestry()) {
 			semantics.declarations.classDefinitions[owner]?.destructor?.let { destructor ->
+				if (hasVirtualMethods) classes.enterDestructor(builder, access, classTag(owner))
 				callable(destructor).call(builder) { setReceiver(access) }
 			}
 		}
@@ -513,7 +572,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef, allocation: ConstructorAllocation? = null, operatorReceiver: Int? = null): LLVMValueRef? {
 		val selected = plan.callable
 		val type = plan.type
-		val target = callable(selected)
+		val target = (selected as? MethodSymbol)?.let(::virtualEntry) ?: callable(selected)
 		if (target.type != type) throw InternalErrors.invariant("Resolved call type differs from emitted signature")
 		fun invoke(structReceiver: (() -> ReceiverAccess)?): LLVMValueRef? = target.call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = expressions::stringReturnArena) {
 			fun putReceiver(receiver: MethodReceiver) {

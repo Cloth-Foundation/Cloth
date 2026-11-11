@@ -2,9 +2,6 @@ package cloth.emitter.callables
 
 import cloth.data.CClass
 import cloth.data.CInterface
-import cloth.diagnostics.InternalErrors
-import cloth.emitter.NativeCABI
-import cloth.emitter.types.EmitRuntimeError
 import cloth.parser.declaration.MethodDeclaration
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.interfaces.InterfaceImplementation
@@ -12,7 +9,6 @@ import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.semantic.typing.ResolvedCall
 import org.bytedeco.llvm.LLVM.*
-import org.bytedeco.llvm.global.LLVM.*
 
 internal fun InterfaceModel.dispatchTargets(plan: ResolvedCall.Interface): List<Pair<CClass, InterfaceImplementation>> =
 	classes.mapNotNull { (owner, conformance) ->
@@ -23,11 +19,9 @@ internal fun InterfaceModel.dispatchTargets(plan: ResolvedCall.Interface): List<
 internal class EmitInterfaceDispatch(
 	private val context: LLVMContextRef,
 	private val module: LLVMModuleRef,
-	private val abi: NativeCABI,
 	private val declarations: DeclarationModel,
 	private val results: EmitResults,
 	private val functions: EmitFunctions,
-	private val tagOf: (CClass) -> LLVMValueRef,
 ) {
 	private val slots = mutableMapOf<Pair<CInterface, InterfaceRequirement>, EmittedCallable>()
 
@@ -47,42 +41,8 @@ internal class EmitInterfaceDispatch(
 				}
 				is InterfaceImplementation.Default -> declarations.interfaceMethods.getValue(implementation.requirement)
 			}
-			val target = functions.callable(symbol)
-			if (target.type != plan.type) throw InternalErrors.invariant("Interface dispatch target differs from its checked signature")
-			owner to target
+			owner to functions.callable(symbol)
 		}
-		val builder = LLVMCreateBuilderInContext(context)
-		try {
-			fun block(name: String) = LLVMAppendBasicBlockInContext(context, entry.reference, name)
-			val start = block("entry")
-			LLVMPositionBuilderAtEnd(builder, start)
-			val access = checkNotNull(entry.objectAccess())
-			val classes = functions.classes
-			val frame = EmitFunctionFrame(context, builder, start, plan.type.results, LLVMGetReturnType(entry.signature), functions.stringStorage, entry.callerArena)
-			val arguments = if (entry.hasOmissions) {
-				classes.check(builder, access) // Supplied arguments may have invalidated the receiver.
-				functions.bindDispatchArguments(plan.contract, entry, builder, start, frame)
-			} else plan.type.parameters.indices.map { entry.parameter(builder, it) }
-			// Omission expressions can also invalidate the receiver. Resolve it again before selecting a body.
-			val tag = classes.classTag(builder, access)
-			val invalid = block("interface_unavailable")
-			val dispatch = LLVMBuildSwitch(builder, tag, invalid, targets.size)
-			for ((owner, target) in targets) {
-				val branch = block("implement.${owner.name.lexeme}")
-				LLVMAddCase(dispatch, tagOf(owner), branch)
-				LLVMPositionBuilderAtEnd(builder, branch)
-				val result = target.call(builder, returnArena = { checkNotNull(entry.callerArena) }) {
-					setReceiver(access)
-					arguments.forEachIndexed(::argument)
-				}
-				frame.emitReturn(result?.let { results.encode(builder, it, plan.type.results) })
-			}
-			LLVMPositionBuilderAtEnd(builder, invalid)
-			EmitRuntimeError(context, builder, abi).emit("Initialized class does not implement the interface")
-			// The selected body has already copied indirect results into the original caller's arena.
-			frame.finish(resultsInCallerArena = true)
-		} finally {
-			LLVMDisposeBuilder(builder)
-		}
+		functions.emitClassDispatch(entry, plan.contract, targets, "Initialized class does not implement the interface")
 	}
 }

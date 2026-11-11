@@ -49,9 +49,13 @@ Keep source-library selection separate from the existing `--runtime` C runtime
 option.
 
 The [Windows Unicode launcher plan](../../../todo/windows-unicode-launcher-plan.md)
-tracks Chinese and emoji installation paths for Cloth and Kotlin/Native
-Shuttle's compiler worker. Both use the bundled Java 25 runtime. The
-[installed reproduction](references/windows-unicode-launcher-baseline.md)
+tracks Unicode relocation for Cloth and Kotlin/Native Shuttle's compiler
+worker. Both use the bundled Java 25 runtime. Filesystem paths containing
+emoji are outside the supported scope. Use Chinese characters and spaces in
+relocation checks.
+[Path support policy](../../../docs/standard-library.md#installed-layout-and-relocation)
+
+The [installed reproduction](references/windows-unicode-launcher-baseline.md)
 separates bundled JVM discovery from application loading on emoji paths.
 The [Stage 1 proof](references/windows-unicode-launcher-proof.md) passed both
 boundaries on Windows x64 with a version-checked JLI host and a Java bootstrap
@@ -62,8 +66,14 @@ as the Kotlin/Native frontend.
 [Stage 3 archive checks](references/windows-unicode-launcher.md#stage-3-archive-verification)
 verify both ZIP and TAR formats after extraction and relocation on Windows x64.
 The host recheck covers Windows x64 with system ACP 1252 and Linux x64 under
-WSL2. System ACP 65001 and native Windows ARM64 remain pending.
-[BUILD-1 Stage 4 host verification](references/windows-unicode-launcher.md#stage-4-host-verification)
+WSL2. System ACP 65001 and native Windows ARM64 remain pending. BUILD-3 Stage 2
+packages the shared Java bootstrap in all Unix layouts. Cloth's shell script
+and the installed Shuttle worker use it with the selected Java 25 runtime.
+Stage 3 verified all six Linux x64 ZIP and TAR archives after extraction
+and relocation.
+[BUILD-1 Stage 4 host verification](references/windows-unicode-launcher.md#stage-4-host-verification) ·
+[BUILD-3 installed Unix launchers](references/unix-unicode-launcher-proof.md#stage-2-installed-distributions) ·
+[BUILD-3 Linux archives](references/unix-unicode-launcher-proof.md#stage-3-archive-verification)
 
 [Stage 4 allocation boundary](references/standard-library-stage-4.md) records the
 user-selected owning-collection consumer and verifies existing typed class

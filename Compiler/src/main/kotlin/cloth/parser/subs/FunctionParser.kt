@@ -55,9 +55,9 @@ class FunctionParser(private val parser: Parser) {
 		return MethodHeader(keyword, name, returnTypes, parseParameters())
 	}
 
-	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null): MethodDeclaration {
+	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null, virtualPrefix: TokenSpan? = null): MethodDeclaration {
 		val (keyword, name, returns, parameters) = methodHeader()
-		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn()), visibility, overridePrefix = overridePrefix)
+		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn()), visibility, overridePrefix = overridePrefix, virtualPrefix = virtualPrefix)
 	}
 
 	internal fun parseInterfaceMethod(): InterfaceMethodDeclaration {

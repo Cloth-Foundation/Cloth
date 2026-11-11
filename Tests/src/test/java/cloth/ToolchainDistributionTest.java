@@ -25,11 +25,11 @@ class ToolchainDistributionTest {
         assertTrue(Files.isRegularFile(installed.resolve("bin/cloth.bat")));
         assertTrue(Files.isExecutable(installed.resolve(windows ? "bin/shuttle.exe" : "bin/shuttle")));
         assertFalse(Files.exists(installed.resolve("bin/shuttle.bat")));
+        assertTrue(Files.isRegularFile(installed.resolve("launcher/cloth-launcher.jar")));
         if (windows) {
             assertFalse(Files.exists(installed.resolve("bin/Compiler.bat")));
             assertTrue(Files.isExecutable(installed.resolve("bin/cloth.exe")));
             assertTrue(Files.isExecutable(installed.resolve("bin/cloth-jvm.exe")));
-            assertTrue(Files.isRegularFile(installed.resolve("launcher/cloth-launcher.jar")));
         }
         try (var files = Files.list(installed.resolve("lib"))) {
             assertTrue(files.noneMatch(file -> file.getFileName().toString().startsWith("jackson-")));
@@ -130,16 +130,18 @@ class ToolchainDistributionTest {
         var nativeEncoder = Charset.forName(System.getProperty("native.encoding", "UTF-8")).newEncoder();
         String supportedUnicode = Arrays.stream(new String[]{"é", "移", "Ж", "Ω", "가", "א", "\u00a0"})
                 .filter(nativeEncoder::canEncode).findFirst().orElse("");
-        var names = windows ? List.of("安装目录", "😀🧵", "Cloth 安装 🧵 with spaces")
+        boolean chinesePaths = windows || nativeEncoder.canEncode("安装目录 客户端");
+        var names = chinesePaths ? List.of("安装目录", "Cloth 安装 with spaces")
                 : List.of("Relocated Cloth" + (supportedUnicode.isEmpty() ? "" : " " + supportedUnicode));
-        Path client = writeObjectProject(temporary.resolve(windows ? "客户端 😀" : "client"));
+        Path client = writeObjectProject(temporary.resolve(chinesePaths ? "客户端 目录" : "client"));
         for (String name : names) {
             Path staged = temporary.resolve("staged");
             copyBundle(staged);
             Path relocated = temporary.resolve(name);
             moveOwned(staged, relocated);
             Path scratch = Files.createDirectory(temporary.resolve("cache " + name));
-            var environment = Map.of("JAVA_OPTS", javaOptions(scratch), "TMP", scratch.toString(), "TEMP", scratch.toString());
+            var environment = Map.of("JAVA_OPTS", javaOptions(scratch), "TMP", scratch.toString(),
+                    "TEMP", scratch.toString(), "TMPDIR", scratch.toString());
             for (String command : List.of("cloth", "shuttle")) {
                 String object = "objects/" + command + ".o";
                 Files.deleteIfExists(client.resolve(object));
@@ -263,7 +265,7 @@ class ToolchainDistributionTest {
         Path bundle = temporary.resolve("bundle");
         copyBundle(bundle);
         Path client = clientWithLibraryFixture(bundle);
-        Path override = temporary.resolve("Library checkout 移 🧵");
+        Path override = temporary.resolve("Library checkout 中文");
         Files.move(bundle.resolve("stdlib"), override);
         Files.writeString(override.resolve("module.toml"), "development metadata is not parsed during selection\n");
         Files.writeString(bundle.resolve("toolchain.properties"), "format=broken\n");

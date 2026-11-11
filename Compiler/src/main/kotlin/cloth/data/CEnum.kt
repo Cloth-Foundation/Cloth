@@ -10,7 +10,7 @@ import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.global.LLVM.LLVMInt32TypeInContext
 
 /** Every value carries its case ordinal. Payloads are fixed by the declaration. */
-class CEnum internal constructor(override val declaration: EnumDeclaration) : CMemberType(Keywords.ENUM) {
+class CEnum internal constructor(override val declaration: EnumDeclaration, enclosingName: String? = null) : CMemberType(Keywords.ENUM, enclosingName) {
 
 	override lateinit var fields: List<EnumField>
 		private set

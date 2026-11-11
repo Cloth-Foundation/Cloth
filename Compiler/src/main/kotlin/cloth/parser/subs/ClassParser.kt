@@ -20,8 +20,9 @@ internal class ClassParser(private val parser: Parser) {
 		parser.advance()
 		val host = parser.typeParser.parse(allowArrays = true)
 		parser.skipNewlines()
-		val members = parseStateBody()
-		return TopLevelStateDeclaration(keyword, visibility, name, payload, host, members, typedef.span.through(parser.previous().span))
+		val nestedTypes = mutableListOf<TypeDeclaration>()
+		val members = parseStateBody(nestedTypes)
+		return TopLevelStateDeclaration(keyword, visibility, name, payload, host, members, typedef.span.through(parser.previous().span), nestedTypes)
 	}
 
 	fun parse(keyword: Token, visibility: Token?, finalKeyword: Token?): ClassDeclaration {
@@ -36,11 +37,12 @@ internal class ClassParser(private val parser: Parser) {
 		}
 		val headerEnd = parser.currentIndex
 		parser.skipNewlines()
-		val members = if (at(Operators.BRACE_OPEN)) parser.delimited.braces { parseMembers(name) } else {
+		val nestedTypes = mutableListOf<TypeDeclaration>()
+		val members = if (at(Operators.BRACE_OPEN)) parser.delimited.braces { parseMembers(name, nestedTypes) } else {
 			parser.currentIndex = headerEnd
 			emptyList()
 		}
-		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span), parents, typeParameters)
+		return ClassDeclaration(keyword, name, visibility, finalKeyword, parameters, members, (visibility ?: finalKeyword ?: keyword).span.through(parser.previous().span), parents, typeParameters, nestedTypes)
 	}
 
 	private fun parseHeaderParameter(): ClassParameterDeclaration {
@@ -58,24 +60,38 @@ internal class ClassParser(private val parser: Parser) {
 		return ClassParameterDeclaration(parameter, keyword, visibility)
 	}
 
-	private fun parseMembers(owner: Token): List<ClassMember> = buildList {
+	private fun parseMembers(owner: Token, nestedTypes: MutableList<TypeDeclaration>): List<ClassMember> = buildList {
 		parser.skipNewlines()
 		while (!at(Operators.BRACE_CLOSE)) {
+			if (parser.startsTypeDeclaration()) {
+				nestedTypes.add(parser.parseNestedTypeDeclaration())
+				continue
+			}
 			val initial = if (parser.atKeyword(Keywords.DEFAULT)) parseInitialState() else null
-			val overridePrefix = if (initial == null && parser.atKeyword(Keywords.OVERRIDE)) {
+			val methodPrefix = when {
+				initial != null -> null
+				parser.atKeyword(Keywords.OVERRIDE) -> Keywords.OVERRIDE
+				parser.atKeyword(Keywords.VIRTUAL) -> Keywords.VIRTUAL
+				else -> null
+			}
+			val prefixSpan = methodPrefix?.let {
 				parser.advance().span.through(parser.expect(Operators.COLON).span).also { parser.skipNewlines() }
-			} else null
+			}
 			val visibility = parseVisibility()
 			if (initial != null && !parser.atKeyword(Keywords.STATE)) {
 				throw SyntaxErrors.expected("a state declaration or attachment after '${Keywords.DEFAULT}${Operators.COLON}'", parser.peek())
 			}
-			if (overridePrefix != null && !parser.atKeyword(Keywords.METHOD)) {
-				throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration after '${Keywords.OVERRIDE}${Operators.COLON}'", parser.peek())
+			if (methodPrefix != null && !parser.atKeyword(Keywords.METHOD)) {
+				throw SyntaxErrors.expected("a '${Keywords.METHOD}' declaration after '$methodPrefix${Operators.COLON}'", parser.peek())
 			}
 			val member = when {
 				parser.atKeyword(Keywords.FUNCTION)                              -> throw SyntaxErrors.functionInType(parser.peek())
 				parser.atKeyword(Keywords.DEFINITION)                            -> parseField(visibility)
-				parser.atKeyword(Keywords.METHOD)                                -> parser.functionParser.parseMethod(visibility, overridePrefix)
+				parser.atKeyword(Keywords.METHOD)                                -> parser.functionParser.parseMethod(
+					visibility,
+					overridePrefix = prefixSpan.takeIf { methodPrefix == Keywords.OVERRIDE },
+					virtualPrefix = prefixSpan.takeIf { methodPrefix == Keywords.VIRTUAL },
+				)
 				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
 				parser.atKeyword(Keywords.STATE)                                 -> parseState(visibility, initial)
 				visibility == null && at(Operators.TILDE)                        -> parseDestructor(owner)
@@ -129,13 +145,17 @@ internal class ClassParser(private val parser: Parser) {
 		return NestedStateDeclaration(keyword, visibility, name, payload, initial, members, start.through(parser.previous().span))
 	}
 
-	private fun parseStateBody(): List<StateMember> = parser.delimited.braces {
+	private fun parseStateBody(nestedTypes: MutableList<TypeDeclaration>? = null): List<StateMember> = parser.delimited.braces {
 		val previous = parser.inStateBody
 		parser.inStateBody = true
 		try {
 			buildList {
 				parser.skipNewlines()
 				while (!at(Operators.BRACE_CLOSE)) {
+					if (nestedTypes != null && parser.startsTypeDeclaration()) {
+						nestedTypes.add(parser.parseNestedTypeDeclaration())
+						continue
+					}
 					val visibility = parseVisibility()
 					val member = when {
 						parser.atKeyword(Keywords.FUNCTION) -> throw SyntaxErrors.functionInType(parser.peek())

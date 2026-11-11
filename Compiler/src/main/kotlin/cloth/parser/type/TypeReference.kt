@@ -11,7 +11,7 @@ data class TypeReference(val name: Token, val unsigned: Boolean = false, val wid
 	val hasNullability get() = nullable != null || arrayNullability.any { it != null }
 	internal val capturesWidth get() = width?.lexeme == Keywords.AUTO.toString()
 	val typeArguments get() = application?.arguments.orEmpty()
-	internal val bareIdentifier get() = name.takeIf { it.type == TokenType.Identifier && !unsigned && width == null && arraySuffixes.isEmpty() && !hasNullability && application == null }
+	internal val bareIdentifier get() = name.takeIf { it.type == TokenType.Identifier && Operators.DOT.toString() !in it.lexeme && !unsigned && width == null && arraySuffixes.isEmpty() && !hasNullability && application == null }
 
 	val spelling: String
 		get() = (if (unsigned) "${Keywords.UNSIGNED} " else "") + name.lexeme + (width?.let { "${Operators.LESS}${it.lexeme}${Operators.GREATER}" } ?: "") + (application?.let { "${Operators.LESS}${it.arguments.joinToString("${Operators.COMMA} ") { argument -> argument.spelling }}${Operators.GREATER}" } ?: "") + (if (nullable != null) Operators.QUESTION.toString() else "") + arraySuffixes.indices.joinToString("") { "${Operators.BRACKET_OPEN}${arraySizes.getOrNull(it)?.lexeme ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(it) != null) Operators.QUESTION.toString() else "" }

@@ -308,10 +308,10 @@ class IR/object checks, with no interface or new foreign-native execution claim.
   generic design tasks. [Generic follow-ups](../../../../todo/generic-follow-ups.md)
 - Struct and enum implementers need representation, value-copy, mutation and
   lifetime rules. Their conformance will use the same one-application rule.
-- State contracts need host, visibility and active-state behavior. Ordinary
-  class virtual dispatch has its own override and call rules to settle.
+- State contracts bind methods through the active state. Ordinary class
+  virtual calls bind arguments through the `virtual:` declaration.
   [State design](../../cloth-language/references/semantics.md#states-and-method-dispatch) ·
-  [Object and operator design](../../cloth-language/references/object-protocol.md)
+  [Class virtual dispatch](../../cloth-language/references/class-inheritance.md#ordinary-class-virtual-dispatch-design)
 - Separate compilation needs a cross-module identity, slot and metadata
   contract. Current source imports compile through the checked whole graph.
 - Future syntax and default-body extensions follow the open decisions above.

@@ -13,6 +13,7 @@ data class StructDeclaration(
 	override val span: TokenSpan,
 	val methods: List<MethodDeclaration> = emptyList(),
 	override val typeParameters: TypeParameterList? = null,
+	override val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : TypeDeclaration
 
 data class StructFieldDeclaration(val type: TypeReference, val name: Token) {
@@ -29,9 +30,10 @@ data class MethodDeclaration(
 	val visibility: Token? = null,
 	val operator: OperatorMember? = null,
 	val overridePrefix: TokenSpan? = null,
+	val virtualPrefix: TokenSpan? = null,
 ) : CallableDeclaration, ClassMember, StateMember {
 
-	override val span get() = (overridePrefix ?: (visibility ?: keyword).span).through(body.span)
+	override val span get() = (virtualPrefix ?: overridePrefix ?: (visibility ?: keyword).span).through(body.span)
 }
 
 data class OperatorMember(val selector: TypeReference?, val rightReceiver: Boolean, val provider: Boolean)

@@ -3,12 +3,17 @@ package cloth.semantic.generics
 import cloth.data.CClass
 import cloth.data.CMemberType
 import cloth.data.ValueType
+import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.ClassParentClause
 import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeReference
+import cloth.semantic.ResultShape
+import cloth.semantic.declarations.VirtualMethods
 import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.symbols.FunctionSignature
+import cloth.semantic.symbols.SignatureType
 import cloth.target.TargetLayout
 import cloth.token.TokenSpan
 import java.util.IdentityHashMap
@@ -25,6 +30,18 @@ data class ClosedCallableSignature(
 	val results: List<ClosedTypePattern>,
 	val selector: ClosedTypePattern? = null,
 )
+
+internal fun ClosedCallableSignature.fixedSignature() = FunctionSignature(declaration.name.lexeme, parameters.mapIndexed { index, pattern ->
+	val type = (pattern as ClosedTypePattern.Exact).type
+	if (type == ValueType.VOID) throw SemanticErrors.voidType(declaration.parameters[index].type.span)
+	SignatureType.resolved(type)
+})
+
+internal fun ClosedCallableSignature.fixedResults() = ResultShape.of(results.mapIndexed { index, pattern ->
+	val type = (pattern as ClosedTypePattern.Exact).type
+	if (results.size > 1 && type == ValueType.VOID) throw SemanticErrors.voidResult(declaration.returnTypes[index].span)
+	type
+})
 
 enum class ClosedTypeState { DECLARED, RESOLVING, COMPLETE }
 
@@ -60,6 +77,7 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	internal val functionList = mutableListOf<ClosedCallableSignature>()
 	var interfaces: InterfaceModel = InterfaceModel.Empty
 		internal set
+	internal var virtualMethods: VirtualMethods = VirtualMethods.Empty
 	val instances: List<ClosedTypeInstance> get() = catalog.values.filter { it.arguments.isNotEmpty() }
 	val nominalTypes: List<CMemberType> get() = catalog.keys.toList()
 	val functions: List<ClosedCallableSignature> get() = functionList.toList()

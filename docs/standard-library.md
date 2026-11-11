@@ -43,13 +43,16 @@ Building an executable also requires the native
 linker, CRT and sysroot for the selected target. Object emission can run with
 the bundled toolchain alone.
 
+Filesystem paths containing emoji are outside the Cloth toolchain's support scope.
+Use names such as `Cloth 安装` for installation and working directories,
+source and project paths, library overrides, and build outputs.
+
 On Windows x64, `cloth.exe` is the primary Cloth command and `cloth.bat`
 forwards to it for compatibility. Both Cloth and Kotlin/Native Shuttle use
-the bundled Java 25 bridge for relocated installations containing Chinese
-characters and emoji. Keep the private launcher files and `runtime/` with
-the rest of the installation. The combined, Compiler and Shuttle ZIP and TAR
-archives passed Windows x64 builds and runs after extraction and relocation
-to Chinese-only and emoji-only paths.
+the bundled Java 25 bridge for relocated installations. Keep the private
+launcher files and `runtime/` with the rest of the installation. The combined,
+Compiler and Shuttle ZIP and TAR archives passed Windows x64 builds and runs
+after extraction and relocation.
 [Windows launcher contract](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md) ·
 [Archive verification](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md#stage-3-archive-verification)
 
@@ -146,6 +149,7 @@ Outputs are `build/install/cloth` and
 matching the machine that runs Cloth, such as `windows-x64` or `linux-x64`.
 Per-command `installDist`, `distZip` and `distTar` tasks in `:Compiler` and
 `:Shuttle` include the same runtime and pinned library snapshot.
+Extract Unix packages with a tool that preserves archived execute permissions.
 
 The BUILD-1 verification used standard-library revision
 `c79b58ffba07d9e2a70e4acf954a2dca47cf5666`, which includes `List`. The
@@ -158,13 +162,19 @@ earlier bundling publication used the scaffold snapshot at
 | Host | Coverage |
 | --- | --- |
 | Windows x64, Windows 25H2, ACP 1252 | Both commands and the Cloth batch wrapper passed relocated ZIP and TAR checks with bundled Oracle OpenJDK `25+36-3489`. The Windows x64 packages built and ran x86 output, emitted objects for all nine target profiles, and passed both Gradle development runs. |
-| Linux x64, Ubuntu 24.04 WSL2, UTF-8 | Cloth's shell launcher and the Linux Kotlin/Native Shuttle executable passed the installed distribution checks with bundled Temurin `25.0.5+8-LTS`. Both Gradle development commands ran the maintained List example. |
+| Linux x64, Ubuntu 24.04 WSL2, UTF-8 | The combined and standalone `installDist` layouts and all six relocated ZIP and TAR extracts passed native build and run checks with bundled Temurin `25.0.5+8-LTS`. Both Gradle development commands passed. |
 | Windows x64, system ACP 65001 | Pending a matching Windows runner. |
 | Windows ARM64, native | Pending a matching Windows package and runner. The current Windows packaging tasks require an x64 JDK and select the `mingwX64` Shuttle frontend. |
 
 The nine target profiles describe compiler outputs. Each release archive's
 suffix identifies the host that runs the bundled launcher and runtime.
 [Host verification record](../.agents/skills/cloth-toolchains/references/windows-unicode-launcher.md#stage-4-host-verification)
+
+The Linux ZIP and TAR archives each carried the shared bootstrap and
+recorded executable modes for the command entries, Java and `jspawnhelper`.
+The extracts were relocated to `Cloth 安装 with spaces`.
+[Installed Unix verification](../.agents/skills/cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-2-installed-distributions) ·
+[Linux archive verification](../.agents/skills/cloth-toolchains/references/unix-unicode-launcher-proof.md#stage-3-archive-verification)
 
 Precompiled library archives, binary APIs, package downloads/caches and broader
 native services remain separate future work.

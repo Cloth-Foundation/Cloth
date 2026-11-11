@@ -5,6 +5,7 @@ import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.InterfaceDeclaration
 import cloth.parser.declaration.InterfaceMethodDeclaration
+import cloth.parser.declaration.TypeDeclaration
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -15,14 +16,19 @@ internal class InterfaceParser(private val parser: Parser) {
 		val name = parser.expect(TokenType.Identifier, "an interface name")
 		val parameters = parser.typeParser.parseTypeParameters()
 		val parents = parser.typeParser.parseParents("an interface parent name") { type, _ -> type }
+		val nestedTypes = mutableListOf<TypeDeclaration>()
 		parser.skipNewlines()
-		val methods = parser.delimited.braces(::methods)
-		return InterfaceDeclaration(keyword, kind, name, visibility, parameters, parents, methods, (visibility ?: keyword).span.through(parser.previous().span))
+		val methods = parser.delimited.braces { parseMembers(nestedTypes) }
+		return InterfaceDeclaration(keyword, kind, name, visibility, parameters, parents, methods, (visibility ?: keyword).span.through(parser.previous().span), nestedTypes)
 	}
 
-	private fun methods(): List<InterfaceMethodDeclaration> = buildList {
+	private fun parseMembers(nestedTypes: MutableList<TypeDeclaration>): List<InterfaceMethodDeclaration> = buildList {
 		parser.skipNewlines()
 		while (parser.peek().lexeme != Operators.BRACE_CLOSE.toString()) {
+			if (parser.startsTypeDeclaration()) {
+				nestedTypes.add(parser.parseNestedTypeDeclaration())
+				continue
+			}
 			val fnOffset = if (parser.atKeyword(Keywords.PUBLIC)) 1 else 0
 			if (parser.atKeyword(Keywords.FUNCTION, fnOffset)) throw SyntaxErrors.functionInType(parser.peek(fnOffset))
 			if (!parser.atKeyword(Keywords.METHOD)) throw SyntaxErrors.expected("an interface '${Keywords.METHOD}' declaration", parser.peek())

@@ -45,6 +45,7 @@ class GenericNameModel internal constructor(val target: TargetLayout) {
 	internal val functionUses = mutableListOf<GenericFunctionUse>()
 	internal var genericSpan: TokenSpan? = null
 	internal var interfaceSpan: TokenSpan? = null
+	internal var hasVirtualMethods = false
 	val requiresGenericCompilation get() = genericSpan != null
 	fun parametersOf(owner: Declaration): List<TypeParameterSymbol> = owners[owner].orEmpty()
 	fun nameOf(reference: TypeReference): TypeNameIdentity = names.getValue(reference)
@@ -64,7 +65,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		private var hasMultipleClassParents = false
 
 		fun analyze(): GenericNameModel {
-			for (file in files.files) for (declaration in file.unit.declarations) {
+			for (declaration in files.declarations) {
 				val (name, list) = when (declaration) {
 					is TypeDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
 					is FunctionDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
@@ -78,10 +79,10 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					TypeParameterSymbol(declaration, parameter, index)
 				}
 			}
-			for (file in files.files) file.unit.declarations.forEach(::declaration)
+			files.declarations.forEach(::declaration)
 			// Leave the established non-generic checking order untouched.
 			val hasInterfaceHeaders = model.interfaceSpan != null || hasMultipleClassParents
-			if (!model.requiresGenericCompilation && !hasInterfaceHeaders && files.topLevelStates.isEmpty()) return model
+			if (!model.requiresGenericCompilation && !hasInterfaceHeaders && !model.hasVirtualMethods && files.topLevelStates.isEmpty()) return model
 			for (use in uses) {
 				val identity = resolve(use.type, use.parameters, argument = use.argument)
 				use.receiver?.let { model.receivers[it] = identity }
@@ -91,7 +92,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		}
 
 		private fun checkParents() {
-			for (file in files.files) for (declaration in file.unit.declarations) when (declaration) {
+			for (declaration in files.declarations) when (declaration) {
 				is InterfaceDeclaration -> for (parent in declaration.parents) {
 					if ((model.nameOf(parent) as? NominalTypeName)?.type !is CInterface) {
 						throw InterfaceErrors.header("'${parent.name.lexeme}' is not an interface parent", parent.span)
@@ -218,6 +219,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			declaration.returnTypes.forEach { use(it, parameters) }
 			(declaration as? MethodDeclaration)?.let { method ->
 				method.overridePrefix?.let(::interfaceSyntax)
+				if (method.virtualPrefix != null) model.hasVirtualMethods = true
 				method.operator?.selector?.let { use(it, parameters) }
 			}
 			var values = outer
@@ -291,7 +293,9 @@ class GenericAnalyzer(private val target: TargetLayout) {
 				is TypeCheckExpression -> {
 					expression(expression.operand, parameters, values)
 					val target = expression.target
-					if (target.bareIdentifier == null || target.name.lexeme in parameters || target.name.lexeme !in values || files.nominal(target.name) != null) useTarget(target, parameters)
+					val candidate = expression.valueCandidate
+					if (candidate != null && candidate.typeNameCandidate { it.lexeme !in values }?.let(files::nominal) == null) expression(candidate, parameters, values)
+					else if (target.bareIdentifier == null || target.name.lexeme in parameters || target.name.lexeme !in values || files.nominal(target.name) != null) useTarget(target, parameters)
 				}
 				is FunctionBlockExpression -> callable(expression.declaration, parameters, values)
 				is IfExpression -> {

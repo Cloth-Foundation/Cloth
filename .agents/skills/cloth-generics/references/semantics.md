@@ -54,6 +54,84 @@ this slice. Preserve the intended constrained examples in
 [Test.co](../../../../examples/Test.co), including `Entity<T: Entity<T>>` and
 `IHealth<T: Number>`; the first slice does not erase or implement those features.
 
+## Initial constraint scope
+
+The first constraints implementation will support one optional bound per type
+parameter. A bound can name `Number`, a class, or an interface, as in
+`T: Number`, `T: Entity<T>`, and `T: IHealth<float>`. Combined bounds and
+their syntax are follow-up work.
+
+## Number constraint design
+
+The bare name `Number` in a bound selects the built-in constraint. Other
+type references resolve in the ordinary type namespace.
+
+`Number` is a built-in constraint that Cloth's primitive numeric types
+satisfy automatically. It grants explicit numeric casts and same-type
+operators that every admitted type supports. In `IHealth<T: Number>`,
+`0 -> T` uses the cast capability. With two operands of type `T`, a generic
+body can use operators such as `+` and `<`. A literal used as a `T` operand
+needs an explicit cast, as in `value + (1 -> T)`. The cast follows the
+ordinary numeric rules for the concrete type.
+
+`Number` also grants ordinary numeric formatting. `value::str`,
+`println(value)` and string interpolation use the concrete numeric type's
+formatter. [Output semantics](../../cloth-output/references/semantics.md)
+
+## Class bound design
+
+A class bound such as `T: Entity<T>` makes the bound's public members
+available directly in the generic body. A value of type `T` can call
+`value.isAlive()` through that bound and keeps its exact type `T`.
+[Class member lookup](../../cloth-language/references/class-inheritance.md#supported-slice)
+
+A class-backed interface type satisfies `T: Object` when it can implicitly
+widen to `Object`. The type argument retains its exact interface type.
+[Interface widening](../../cloth-interfaces/references/stage-6.md#object-operations-and-proofs)
+
+Calls through the bound select an overload during declaration checking and
+keep that selection when specializing `T`. The selected call contract supplies
+argument labels and defaults. Virtual calls dispatch to the applicable override.
+[Class virtual dispatch](../../cloth-language/references/class-inheritance.md#ordinary-class-virtual-dispatch-design)
+
+A class bound permits explicit `value::delete` on a value of type `T`.
+Ordinary class lifetime checks and destructor dispatch apply.
+[Class lifetime](../../cloth-language/references/semantics.md#object-lifetime-and-nullability)
+
+A class-bound `T` supports ordinary class equality. The `==` and `!=`
+operators use checked class dispatch. For `===`, declaration checking selects
+an overload through the bound and specialization keeps that selection. When no
+overload matches through the bound, `===` compares instance identities.
+[Class equality](../../cloth-language/references/class-equality.md)
+
+A class-bound `T` supports ordinary class formatting. `value::str`, output,
+and interpolation dispatch through the checked receiver to the formatter for
+its initialized class.
+[Class formatting](../../cloth-language/references/class-formatting.md)
+
+A call to `T::new(...)` requires a separate guarantee that every admitted `T`
+has the constructor signature the call uses. The syntax for that guarantee
+is open.
+
+## Interface bound design
+
+An interface bound such as `T: IHealth<float>` admits the exact closed
+interface, interfaces that extend it, and classes that conform to it directly
+or through inheritance. Conformance preserves the bound's exact type arguments.
+[Interface conformance](../../cloth-interfaces/references/design.md#one-application-per-interface-declaration)
+
+An interface-bound value supports explicit deletion, equality, and formatting
+under the ordinary rules for a class-backed interface view. The value keeps
+its exact type `T`.
+[Interface value operations](../../cloth-interfaces/references/stage-6.md)
+
+## Checking bound satisfaction
+
+An application of a constrained generic must establish that its type
+arguments satisfy the corresponding bounds. For example, a generic declaration
+using `IHealth<T>` must prove `T: Number` when `IHealth` declares `N: Number`.
+Check that proof during declaration checking, including for unused declarations.
+
 ## Parameter scope
 
 An owner parameter is visible throughout that class/struct's header and body:

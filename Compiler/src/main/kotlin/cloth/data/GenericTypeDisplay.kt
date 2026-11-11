@@ -57,7 +57,7 @@ internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: 
 				}
 				item is CNullable -> { pending.add(Operators.QUESTION.toString()); pending.add(item.payload) }
 				item is CMemberType -> {
-					append(item.name.lexeme)
+					append(item.qualifiedName)
 					if (item.typeArguments.isNotEmpty() && text.length < limit) {
 						append(Operators.LESS.toString())
 						pending.add(Operators.GREATER.toString())

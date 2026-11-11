@@ -17,6 +17,7 @@ sealed interface TypeDeclaration : Declaration {
 	val name: Token
 	val visibility: Token?
 	val typeParameters: TypeParameterList? get() = null
+	val nestedTypes: List<TypeDeclaration>
 }
 
 /** A signature can be declared without supplying an executable body. */

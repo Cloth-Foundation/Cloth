@@ -133,16 +133,27 @@ the pinned scaffold; these checks do not add a public collection API.
 
 ## Nested type declarations
 
-Any `typedef` body may contain another `typedef` declaration. The nested type
-belongs to the enclosing type's scope. Inside `Outer`, use `Inner` in type
-positions. From outside `Outer`, use `Outer.Inner` where that type is visible.
+A `typedef` body may contain a class, struct, enum or interface `typedef`.
+The nested type belongs to the enclosing declaration's scope. Inside `Outer`
+and its nested scopes, use `Inner` in type positions. From outside `Outer`,
+use `Outer.Inner`. Each nested component accessed outside its enclosing scope
+requires `pub`, including access from another declaration in the same file.
 
+All specializations of `Box<T>` share `Box.Item`. `Item` has no access to
+`Box`'s type parameters. A nested generic declares its own parameters and
+takes its arguments on the final name, as in `Box.Item<int>`.
+
+Reusable `typedef<state<Payload>>` declarations are file-scoped and can own
+nominal types. A class declares a class-owned state with `state<Payload>`.
 Declaring a nested type adds no instance storage. An explicit field can store
-a value of that type. Nested `typedef` declarations are pending compiler support.
+a value of that type. [Nested type implementation](nested-types.md)
 
 ## Callable declarations in type bodies
 
 Methods use `mt` and have an implicit receiver named `self`.
+Class methods opt into virtual dispatch with `virtual:` and use `override:`
+for derived implementations. [Class virtual dispatch](class-inheritance.md#ordinary-class-virtual-dispatch-design)
+
 Host classes can also declare bodyless state-call contracts.
 [State-call contracts](#states-and-method-dispatch)
 

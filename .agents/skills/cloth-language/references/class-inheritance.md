@@ -24,8 +24,8 @@ direction.
   calls, and returns. The existing nullable carriers also admit class upcasts,
   with absence preserved. Class array element types are invariant. Member
   lookup uses the static class and its bases, with private access checked
-  against the declaring class. Ordinary method calls use the selected static
-  declaration.
+  against the declaring class. A selected virtual overload dispatches through
+  the initialized class level or the class level currently being destroyed.
 - A class-target `is` checks the concrete class and its ancestry. An absent
   nullable class value returns false. A present object uses the standard
   liveness checks. A successful test narrows a stable named binding in the
@@ -49,6 +49,88 @@ fn<int> main() {
     return 0
 }
 ```
+
+## Ordinary class virtual dispatch design
+
+A base method explicitly opts into virtual dispatch with `virtual:`, as in
+`virtual: pub mt<string> describe()`. A derived method uses `override:` to
+supply the replacement body. After construction, a call on a live `Player`
+through an `Entity` binding selects the `Player` override of the selected
+virtual method.
+
+Both the virtual base method and its override use `pub`. An override matches
+the base method's parameter types and ordered result types exactly.
+
+During construction, a virtual call dispatches through the most-derived
+class level whose fields have initialized. In an `Entity` constructor running
+for a `Player`, a call after the `Entity` fields initialize selects the
+`Entity` implementation. The `Player` override becomes available when the
+`Player` fields finish initializing.
+
+During destruction, virtual calls through permitted `self` dispatch through
+the class whose destructor is running. After `~Player` finishes, a call in
+`~Entity` selects `Entity`'s implementation. A call through a helper on
+direct `self` uses the same class level.
+
+The `virtual:` declaration supplies the argument labels and omission defaults
+for calls through the base class and its subclasses. An `override:` declares
+required parameters whose names are local to its body. The ordinary binder
+evaluates supplied arguments in written order and defaults in declaration
+order. The selected body receives a value for every parameter.
+
+```cloth
+typedef<class> Entity {
+    virtual: pub mt<string> describe(opt<string> label ?: "entity") = label
+}
+
+typedef<class> Player : Entity {
+    override: pub mt<string> describe(string text) = #"player {text}"
+}
+```
+
+`player.describe(label="scout")` binds `label` from `Entity` and passes
+`"scout"` to `Player`'s `text` parameter.
+
+## Virtual method implementation
+
+`ClassParser` retains the `virtual:` prefix on a class method. The Kotlin and
+Bootstrap lexers recognize `virtual` as a keyword. `VirtualMethods` checks
+public visibility and exact signatures after generic substitution. A matching
+method in a derived class requires `override:`. C3133 reports an invalid
+virtual declaration or override. [Class parser](../../../../Compiler/src/main/kotlin/cloth/parser/subs/ClassParser.kt) ·
+[Virtual method checks](../../../../Compiler/src/main/kotlin/cloth/semantic/declarations/VirtualMethods.kt)
+
+The compiler resolves overloads visible on the receiver's static type. For a
+virtual overload it uses the `virtual:` declaration for argument binding. The
+dispatch entry evaluates defaults in that declaration's scope and checks the
+captured receiver again before selecting the body for the initialized or
+destructor class level. The runtime stores the current destructor's class
+after deletion validates the concrete class.
+Type tests and interface calls read the initialized class tag. Class and
+interface dispatch share the native argument and result handling.
+[Call lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt) ·
+[Object slots](../../../../Compiler/src/main/kotlin/cloth/emitter/storage/EmitClassRuntime.kt)
+
+On 2026-11-10, 66 focused compiler tests passed on JDK 25. The virtual method
+fixture exercised constructor dispatch, base-typed and implicit calls, generic
+specialization, interface conformance and ordered results natively on Windows
+x64 and x86. It generated objects for all nine target profiles. Bootstrap's
+lexer matched Kotlin on 126 inputs on both native profiles. [VirtualMethodsTest](../../../../Compiler/src/test/kotlin/cloth/VirtualMethodsTest.kt) ·
+[BootstrapLexerTest](../../../../Compiler/src/test/kotlin/cloth/BootstrapLexerTest.kt)
+
+The destructor stage passed 48 focused compiler tests on JDK 25 on 2026-11-10.
+The fixture checks that `~Player` can reach its override through an inherited
+helper and `~Entity` calls the base body. A type test on destructor `self`
+observes the initialized class. The fixture ran on Windows x64 and x86 and
+generated objects for all nine profiles. [VirtualMethodsTest](../../../../Compiler/src/test/kotlin/cloth/VirtualMethodsTest.kt)
+
+The argument stage verifies named and omitted calls through both class types,
+closed generic defaults, one evaluation of each omitted expression, and the
+liveness check when a default deletes the receiver. It ran on Windows x64 and
+x86 and generated objects for all nine profiles. The final JDK 25 run on
+2026-11-10 passed all 2,086 compiler tests and three Kotlin/Native Shuttle
+publication tests. [VirtualMethodsTest](../../../../Compiler/src/test/kotlin/cloth/VirtualMethodsTest.kt) ·
+[ShuttlePublicationTest](../../../../Shuttle/native/src/jvmTest/kotlin/shuttle/ShuttlePublicationTest.kt)
 
 ## Implementation ownership
 

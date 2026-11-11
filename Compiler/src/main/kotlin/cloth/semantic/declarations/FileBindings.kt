@@ -14,6 +14,7 @@ import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.SourceFile
 import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.Declaration
 import cloth.parser.declaration.EnumDeclaration
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.InterfaceDeclaration
@@ -26,6 +27,7 @@ import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.LexicalScope
 import cloth.source.SourceGraph
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
 import cloth.token.TokenType
@@ -47,20 +49,33 @@ internal class FileContext(val unit: SourceUnit) {
 
 internal class FileExport(val type: CMemberType?, val functions: FunctionGroupSymbol?, val state: TopLevelStateDeclaration?)
 
+private class NestedTypeScope(val declaration: Declaration, val qualifiedName: String) {
+	val types = linkedMapOf<String, CMemberType>()
+
+	fun contains(use: TokenSpan): Boolean {
+		val owner = declaration.span
+		return use.source === owner.source &&
+			(use.startLine > owner.startLine || use.startLine == owner.startLine && use.startColumn >= owner.startColumn) &&
+			(use.endLine < owner.endLine || use.endLine == owner.endLine && use.endColumn <= owner.endColumn)
+	}
+}
+
 /** Register original identities across all files before binding any import or resolving a type. */
 internal class FileBindings private constructor(val files: List<FileContext>, private val graph: SourceGraph? = null) {
 
 	val primary get() = files.first()
 	val topLevelStates = files.flatMap { it.unit.declarations.filterIsInstance<TopLevelStateDeclaration>() }
-	val firstStateSyntax = topLevelStates.firstOrNull()?.keyword?.span ?: files.asSequence().flatMap { it.unit.declarations.asSequence() }
-		.filterIsInstance<ClassDeclaration>().firstNotNullOfOrNull { declaration ->
-			declaration.members.firstNotNullOfOrNull { (it as? StateClassMember)?.keyword?.span }
-		}
+	val firstStateSyntax: TokenSpan?
 	val structs = IdentityHashMap<StructDeclaration, CStruct>()
 	val classes = IdentityHashMap<ClassDeclaration, CClass>()
 	val enums = IdentityHashMap<EnumDeclaration, CEnum>()
 	val typeOrder = mutableListOf<CMemberType>()
 	private val sources = IdentityHashMap<SourceFile, FileContext>()
+	private val nestedScopes = IdentityHashMap<Declaration, NestedTypeScope>()
+	private val enclosingScopes = IdentityHashMap<TypeDeclaration, NestedTypeScope>()
+	private val scopesByFile = IdentityHashMap<FileContext, MutableList<NestedTypeScope>>()
+	private val orderedDeclarations = mutableListOf<Declaration>()
+	val declarations: List<Declaration> get() = orderedDeclarations
 	val objectRoot: CClass = TokenSpan(1, 1, 1, 1).let { span ->
 		val keyword = Token(TokenType.Keyword, span, Keywords.CLASS.toString())
 		CClass(ClassDeclaration(keyword, Token(TokenType.Identifier, span, "Object"), null, null, emptyList(), emptyList(), span), objectRoot = true).also { it.defineFields(emptyList()) }
@@ -71,22 +86,11 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 			file.unit.source?.let { sources[it] = file }
 			val groups = linkedMapOf<String, MutableList<FunctionSymbol>>()
 			for (declaration in file.unit.declarations) {
-				val type = when (declaration) {
-					is StructDeclaration -> CStruct(declaration).also { structs[declaration] = it }
-					is ClassDeclaration  -> CClass(declaration).also { classes[declaration] = it }
-					is EnumDeclaration   -> CEnum(declaration).also { enums[declaration] = it }
-					is InterfaceDeclaration -> CInterface(declaration)
-					else                 -> null
+				if (declaration is TypeDeclaration) {
+					registerType(file, declaration)
+					continue
 				}
-				if (type != null) {
-					typeOrder.add(type)
-					file.localTypes[type.spelling] = type
-					if (type.spelling == objectRoot.spelling) throw SemanticErrors.classMember("'${objectRoot.spelling}' is the built-in class root", type.name.span)
-					file.types.putIfAbsent(type.spelling, type)?.let { previous ->
-						if (type is CStruct && previous is CStruct) throw SemanticErrors.duplicateStruct(type.name, previous.name)
-						throw SemanticErrors.duplicateClassType(type.name, previous.name)
-					}
-				}
+				orderedDeclarations.add(declaration)
 				if (declaration is FunctionDeclaration) {
 					val symbol = FunctionSymbol(declaration) { nominal(it.name) }
 					val overloads = groups.getOrPut(symbol.name.lexeme) { mutableListOf() }
@@ -104,6 +108,7 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 						throw StateErrors.declaration("Top-level state '${name.lexeme}' is already declared", name, prior.name)
 					}
 					file.localStates[name.lexeme] = declaration
+					registerNestedTypes(file, declaration, name.lexeme, declaration.nestedTypes)
 				}
 			}
 			for (overloads in groups.values) file.scope.declare(FunctionGroupSymbol(overloads.toList()))
@@ -121,11 +126,77 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 				file.exports[name.lexeme] = FileExport(publicType, publicFunctions.takeIf { it.isNotEmpty() }?.let(::FunctionGroupSymbol), publicState)
 			}
 		}
+		firstStateSyntax = topLevelStates.firstOrNull()?.keyword?.span ?: typeOrder.asSequence().filterIsInstance<CClass>().firstNotNullOfOrNull { type ->
+			type.declaration.members.firstNotNullOfOrNull { (it as? StateClassMember)?.keyword?.span }
+		}
+	}
+
+	private fun registerType(file: FileContext, declaration: TypeDeclaration, owner: NestedTypeScope? = null) {
+		val enclosingName = owner?.qualifiedName
+		val type = when (declaration) {
+			is StructDeclaration -> CStruct(declaration, enclosingName = enclosingName).also { structs[declaration] = it }
+			is ClassDeclaration -> CClass(declaration, enclosingName = enclosingName).also { classes[declaration] = it }
+			is EnumDeclaration -> CEnum(declaration, enclosingName).also { enums[declaration] = it }
+			is InterfaceDeclaration -> CInterface(declaration, enclosingName = enclosingName)
+		}
+		val name = type.name.lexeme
+		if (name == objectRoot.spelling) throw SemanticErrors.classMember("'${objectRoot.spelling}' is the built-in class root", type.name.span)
+		val scope = owner?.types ?: file.types
+		scope.putIfAbsent(name, type)?.let { previous ->
+			if (type is CStruct && previous is CStruct) throw SemanticErrors.duplicateStruct(type.name, previous.name)
+			throw SemanticErrors.duplicateClassType(type.name, previous.name)
+		}
+		if (owner == null) file.localTypes[name] = type
+		else enclosingScopes[declaration] = owner
+		orderedDeclarations.add(declaration)
+		typeOrder.add(type)
+		registerNestedTypes(file, declaration, type.qualifiedName, declaration.nestedTypes)
+	}
+
+	private fun registerNestedTypes(file: FileContext, owner: Declaration, qualifiedName: String, types: List<TypeDeclaration>) {
+		if (types.isEmpty()) return
+		val scope = NestedTypeScope(owner, qualifiedName)
+		nestedScopes[owner] = scope
+		scopesByFile.getOrPut(file) { mutableListOf() }.add(scope)
+		for (type in types) registerType(file, type, scope)
 	}
 
 	fun context(name: Token): FileContext = name.span.source?.let { sources[it] } ?: files.singleOrNull() ?: throw InternalErrors.invariant("No defining file context for '${name.lexeme}'")
 
-	fun nominal(name: Token): CMemberType? = if (name.lexeme == objectRoot.spelling) objectRoot else context(name).types[name.lexeme]
+	private fun lexicalType(file: FileContext, use: Token, name: String): CMemberType? = scopesByFile[file]?.asReversed()
+		?.firstNotNullOfOrNull { scope -> scope.types[name]?.takeIf { scope.contains(use.span) } } ?: file.types[name]
+
+	fun nominal(name: Token): CMemberType? {
+		if (name.lexeme == objectRoot.spelling) return objectRoot
+		val file = context(name)
+		val separator = Operators.DOT.toString()
+		if (separator !in name.lexeme) return lexicalType(file, name, name.lexeme)
+
+		val path = name.lexeme.split(separator)
+		var type = lexicalType(file, name, path.first())
+		var owner = type?.declaration ?: file.states[path.first()]
+		for (index in 1 until path.size) {
+			val scope = owner?.let(nestedScopes::get) ?: return null
+			type = scope.types[path[index]] ?: return null
+			if (type.declaration.visibility == null && !scope.contains(name.span)) throw SemanticErrors.privateNestedType(name, type)
+			owner = type.declaration
+		}
+		return type
+	}
+
+	internal fun privateTypeName(type: CMemberType): Token? {
+		if (type === objectRoot) return null
+		var declaration: Declaration? = type.declaration
+		while (declaration != null) when (declaration) {
+			is TypeDeclaration -> {
+				if (declaration.visibility == null) return declaration.name
+				declaration = enclosingScopes[declaration]?.declaration
+			}
+			is TopLevelStateDeclaration -> return if (declaration.visibility == null) declaration.name else null
+			else -> break
+		}
+		return null
+	}
 	fun state(name: Token): TopLevelStateDeclaration? = context(name).states[name.lexeme]
 	internal fun fork(): FileBindings = graph?.let { graph(it) } ?: single(primary.unit)
 

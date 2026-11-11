@@ -41,7 +41,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 	internal fun analyze(files: FileBindings): DeclarationModel {
 		val genericNames = GenericAnalyzer(target).analyze(files)
-		if (genericNames.requiresGenericCompilation || genericNames.interfaceSpan != null || files.topLevelStates.isNotEmpty()) {
+		if (genericNames.requiresGenericCompilation || genericNames.interfaceSpan != null || genericNames.hasVirtualMethods || files.topLevelStates.isNotEmpty()) {
 			return GenericSemanticAnalysis(target).declarations(files, genericNames)
 		}
 		return prepared(files)
@@ -186,6 +186,21 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		private val loops = mutableListOf<LoopTarget>()
 
 		private fun lexical(name: Token, scope: LexicalScope): Symbol? = scope.lookup(name.lexeme) ?: BuiltinFunctions[name.lexeme]?.let { BuiltinGroupSymbol(it, name) }
+
+		private fun typeReceiverName(target: Expression, scope: LexicalScope, alwaysType: Boolean = false): Token? = target.typeNameCandidate { root ->
+			if (alwaysType) true else {
+				val symbol = lexical(root, scope)
+				symbol !is BindingSymbol && (symbol != null || receiverField(receiver, root) == null)
+			}
+		}
+
+		private fun namedTypeReceiver(target: Expression, scope: LexicalScope, alwaysType: Boolean = false): cloth.data.ValueType? {
+			if (target is NameExpression) model.genericViews?.receivers?.get(target)?.let { return it }
+			val name = typeReceiverName(target, scope, alwaysType) ?: return null
+			val type = model.namedType(name) ?: return null
+			if (type.declaration.typeParameters != null) throw GenericErrors.raw(name, type.name)
+			return type
+		}
 
 		private fun lookup(name: Token, scope: LexicalScope, member: () -> Symbol?): Symbol {
 			val symbol = lexical(name, scope)
@@ -405,13 +420,11 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is StructLiteral                                                                                                     -> expression.fields.forEach { expression(it, scope) }
 				is FieldAccessExpression                                                                                             -> {
 					val target = expression.receiver
-					if (target is NameExpression) {
-						val owner = model.namedType(target.name) as? CEnum
-						if (owner != null && lexical(target.name, scope) !is BindingSymbol && receiverField(receiver, target.name) == null) {
-							val case = owner.cases[expression.name.lexeme] ?: throw SemanticErrors.enumMember("Enum '${owner.spelling}' has no case '${expression.name.lexeme}'", expression.name.span)
-							model.enumCases[expression] = case
-							return
-						}
+					val owner = typeReceiverName(target, scope)?.let(model::namedType) as? CEnum
+					if (owner != null) {
+						val case = owner.cases[expression.name.lexeme] ?: throw SemanticErrors.enumMember("Enum '${owner.spelling}' has no case '${expression.name.lexeme}'", expression.name.span)
+						model.enumCases[expression] = case
+						return
 					}
 					if (initializingField != null && target is NameExpression && target.name.lexeme == Keywords.SELF.toString()) model.names[target] = value(target.name, scope)
 					else expression(target, scope)
@@ -430,12 +443,8 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is TypeReceiverExpression                                                                                            -> Unit
 				is ProviderAccessExpression                                                                                          -> {
 					val receiver = expression.receiver
-					val type = (receiver as? NameExpression)?.let { model.genericViews?.receivers?.get(it) } ?: if (receiver is NameExpression) {
-						val symbol = lexical(receiver.name, scope)
-						val member = if (symbol == null) receiverField(this.receiver, receiver.name) else null
-						if (symbol !is BindingSymbol && member == null) model.namedType(receiver.name) else null
-					} else null
-					if (type != null && receiver is NameExpression) model.namedTypeReceivers[receiver] = type
+					val type = namedTypeReceiver(receiver, scope)
+					if (type != null) model.namedTypeReceivers[receiver] = type
 					else receiverValue(receiver, scope)
 				}
 
@@ -455,11 +464,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				is ClassCreationExpression                                                                                           -> {
 					val receiver = expression.receiver as? NameExpression
 					if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
-					val type = when (val target = expression.receiver) {
-						is NameExpression -> model.genericViews?.receivers?.get(target) ?: model.namedType(target.name)
-						is TypeReceiverExpression -> model.typeResolver().resolve(target.annotation)
-						else -> null
-					}
+					val target = expression.receiver
+					val type = if (target is TypeReceiverExpression) model.typeResolver().resolve(target.annotation)
+					else namedTypeReceiver(target, scope, alwaysType = true)
 					val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
 					model.classCreations[expression] = definition
 					ArgumentBinder.validate(expression.suppliedArguments)
@@ -545,8 +552,14 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					val name = target.name
 					val bare = target.bareIdentifier != null
 					val value = if (bare && model.genericViews?.resolvedTypes?.containsKey(target) != true && model.namedType(name) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
-					if (value is BindingSymbol) {
-						val check = BinaryExpression(expression.operand, expression.operator, NameExpression(name))
+					val candidate = expression.valueCandidate
+					val comparison = when {
+						value is BindingSymbol -> NameExpression(name)
+						candidate != null && typeReceiverName(candidate, scope)?.let(model::namedType) == null -> candidate
+						else -> null
+					}
+					if (comparison != null) {
+						val check = BinaryExpression(expression.operand, expression.operator, comparison)
 						expression(check, scope)
 						model.recordValueTarget(expression, check)
 					} else {

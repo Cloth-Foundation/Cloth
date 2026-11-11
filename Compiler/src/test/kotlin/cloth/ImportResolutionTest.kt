@@ -101,7 +101,7 @@ class ImportResolutionTest {
 	@Test
 	fun `module free paths cross roots with spaces and Unicode without module manifests`(@TempDir directory: Path) {
 		val frontend = directory.resolve("Frontend with spaces λ")
-		val library = directory.resolve("Library 🚀")
+		val library = directory.resolve("Library 中文")
 		val entry = source(frontend, "Main.co", "using token.Token: Token, make\nfn main() {}")
 		val token = source(library, "token/Token.co", "pub fn make() {}")
 		val graph = SourceGraphLoader.load(request(entry, listOf(SourceModule("Frontend", frontend), SourceModule("Library", library))))

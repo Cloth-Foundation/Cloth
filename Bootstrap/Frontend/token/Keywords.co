@@ -18,6 +18,7 @@ pub typedef<enum> Keywords (pub def<string> spelling) {
     INTERFACE("interface"),
     METHOD("mt"),
     OVERRIDE("override"),
+    VIRTUAL("virtual"),
     OPERATOR("operator"),
     AUTO("auto"),
     FUNCTION("fn"),

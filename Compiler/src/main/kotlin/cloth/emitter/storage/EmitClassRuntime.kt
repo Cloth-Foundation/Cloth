@@ -100,7 +100,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		val generation = LLVMBuildTrunc(builder, LLVMBuildLShr(builder, handle, LLVMConstInt(identityType, 32, 0), "generation_bits"), indexType, "generation")
 		val actual = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "slot_generation")
 		val payload = LLVMBuildLoad2(builder, pointer, address(builder, slot, 0), "instance")
-		val destroying = LLVMBuildLoad2(builder, flag, address(builder, slot, 3), "destroying")
+		val destroying = LLVMBuildLoad2(builder, flag, address(builder, slot, destroyingField), "destroying")
 		val matching = LLVMBuildICmp(builder, LLVMIntEQ, generation, actual, "matching_generation")
 		val accessible = LLVMBuildOr(builder, LLVMBuildNot(builder, destroying, "not_destroying"), permitted, "destruction_access")
 		memory.guard(LLVMBuildAnd(builder, LLVMBuildAnd(builder, matching, LLVMBuildIsNotNull(builder, payload, "occupied"), "matching_instance"), accessible, "live_instance"), message)
@@ -159,9 +159,9 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		}
 		val slot = slot(builder, index)
 		LLVMBuildStore(builder, payload, address(builder, slot, 0))
-		LLVMBuildStore(builder, permission(false), address(builder, slot, 3))
-		LLVMBuildStore(builder, LLVMGetParam(function, 1), address(builder, slot, 4))
-		LLVMBuildStore(builder, integer(-1), address(builder, slot, 5))
+		LLVMBuildStore(builder, permission(false), address(builder, slot, destroyingField))
+		LLVMBuildStore(builder, LLVMGetParam(function, 1), address(builder, slot, concreteOrDestructorClassField))
+		LLVMBuildStore(builder, integer(-1), address(builder, slot, initializedClassField))
 		if (tracksStates) LLVMBuildStore(builder, LLVMConstNull(pointer), address(builder, slot, activeStateField))
 		val generation = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "instance_generation")
 		val upper = LLVMBuildShl(builder, memory.resize(generation, identityType), LLVMConstInt(identityType, 32, 0), "upper_generation")
@@ -216,10 +216,25 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	fun finishClass(builder: LLVMBuilderRef, access: ObjectAccess, tag: LLVMValueRef) {
 		val slot = checkedSlot(builder, access)
-		LLVMBuildStore(builder, tag, address(builder, slot, 5))
+		LLVMBuildStore(builder, tag, address(builder, slot, initializedClassField))
 	}
 
-	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef = LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), 5), "initialized_class")
+	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef =
+		LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), initializedClassField), "initialized_class")
+
+	fun virtualClassTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef {
+		val slot = checkedSlot(builder, access)
+		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, initializedClassField), "initialized_class")
+		val destructor = LLVMBuildLoad2(builder, indexType, address(builder, slot, concreteOrDestructorClassField), "destructor_class")
+		val destroying = LLVMBuildLoad2(builder, flag, address(builder, slot, destroyingField), "destroying")
+		return LLVMBuildSelect(builder, destroying, destructor, initialized, "virtual_class")
+	}
+
+	fun enterDestructor(builder: LLVMBuilderRef, access: ObjectAccess, tag: LLVMValueRef) {
+		val slot = checkedSlot(builder, access)
+		LLVMBuildStore(builder, tag, address(builder, slot, concreteOrDestructorClassField))
+	}
+
 	fun check(builder: LLVMBuilderRef, access: ObjectAccess) {
 		checkedSlot(builder, access)
 	}
@@ -231,11 +246,11 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	fun beginDelete(builder: LLVMBuilderRef, identity: LLVMValueRef): ObjectAccess {
 		val slot = checkedSlot(builder, ObjectAccess(identity, permission(false)))
-		val concrete = LLVMBuildLoad2(builder, indexType, address(builder, slot, 4), "concrete_class")
-		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, 5), "initialized_class")
+		val concrete = LLVMBuildLoad2(builder, indexType, address(builder, slot, concreteOrDestructorClassField), "concrete_class")
+		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, initializedClassField), "initialized_class")
 		val complete = LLVMBuildICmp(builder, LLVMIntEQ, initialized, concrete, "construction_complete")
 		EmitMemory(context, builder, abi).guard(complete, "Class object is still under construction")
-		LLVMBuildStore(builder, permission(true), address(builder, slot, 3))
+		LLVMBuildStore(builder, permission(true), address(builder, slot, destroyingField))
 		return ObjectAccess(identity, permission(true))
 	}
 
@@ -244,6 +259,10 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 	}
 
 	private companion object {
+		const val destroyingField = 3
+		// Once beginDelete validates the concrete class, this slot holds the current destructor class.
+		const val concreteOrDestructorClassField = 4
+		const val initializedClassField = 5
 		const val activeStateField = 6
 	}
 }

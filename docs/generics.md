@@ -37,10 +37,14 @@ false
 
 ## Arguments and checking
 
-Use explicit arguments at every type application, including nested types such as
+Use explicit arguments at every type application, including nested applications such as
 `Box<Slot<int>>`. `Box::new(1)` does not infer T. Arguments preserve exact identities:
 `Box<int>`, `Box<usize>`, `Box<int[]>` and `Box<int[2]>` are different types.
 `Box<Child>` does not convert to `Box<Parent>` when Child derives from Parent.
+
+A type declared inside `Box<T>` uses `Box` as its qualifier. `Box.Item` is the
+same type for every specialization of `Box`. If `Item` declares its own type
+parameters, apply them on the final component, as in `Box.Item<int>`.
 
 Ordinary value types are valid arguments, including nullable values, arrays,
 enums, classes, structs, typeinfo, usize/isize and nested closed generics. Void,

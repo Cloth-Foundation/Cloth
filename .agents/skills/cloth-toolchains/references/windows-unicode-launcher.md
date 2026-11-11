@@ -34,7 +34,7 @@ JARs via `Path.toUri()` URLs in a context class loader. The direct-Java
 argument recovery still recognizes its original launch forms. The native
 host's original command line has a different application boundary, so the
 bootstrap's argument array arrives intact.
-[Bootstrap module](../../../../Launcher/windows/java/cloth/launcher/Bootstrap.java) ·
+[Bootstrap module](../../../../Launcher/java/cloth/launcher/Bootstrap.java) ·
 [Direct Java argument adapter](../../../../Compiler/src/main/kotlin/cloth/util/JavaCommandLine.kt) ·
 [Windows process code page](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page)
 
@@ -231,6 +231,41 @@ of the staged file's mode. The distribution archive tasks now assign
 so an incremental release build refreshes existing archives.
 [Gradle archive permissions](https://docs.gradle.org/current/userguide/working_with_files.html) ·
 [Archive task wiring](../../../../build.gradle.kts)
+
+The incremental build regenerated the combined ZIP and TAR. Direct inspection
+of both archive formats found mode `0755` for `bin/shuttle`, `runtime/bin/java`
+and `runtime/lib/jspawnhelper` in both layouts, and for `bin/cloth` in the
+combined layout.
+
+```sh
+./gradlew :distZip :distTar :Shuttle:distZip :Shuttle:distTar --offline --max-workers=1
+```
+
+Both commands built x86-64 ELF objects and ran the same `List` fixture from
+the extracted combined ZIP and TAR after relocation to `cloth 安装`. The
+caller directory, source, project and output names contained emoji. Both
+commands preserved the exact arguments and UTF-8 input and returned status 7.
+With the TAR's runtime temporarily absent, both commands built objects using
+`JAVA_HOME` and then PATH. An invalid `JAVA_HOME` took precedence over PATH.
+
+### Linux emoji installation follow-up
+
+Both commands started bundled Java from the extracted Linux ZIP and TAR at
+`cloth 安装 😀`. They returned status 1 with `ClassNotFoundException` for
+`cloth.EntryKt` and `shuttle.bridge.NativeCompilerWorker`, respectively. The
+compiler JAR contained its expected entry class. The OpenJDK classpath loader
+delegates file URL encoding to `ParseUtil`, which percent-encodes the two
+UTF-16 units of a supplementary scalar separately.
+[OpenJDK classpath loader](https://github.com/openjdk/jdk/blob/jdk-25%2B36/src/java.base/share/classes/jdk/internal/loader/URLClassPath.java#L218-L228) ·
+[OpenJDK path encoder](https://github.com/openjdk/jdk/blob/jdk-25%2B36/src/java.base/share/classes/sun/net/www/ParseUtil.java#L100-L143)
+
+Invoking the existing Java bootstrap module directly with the bundled Linux
+JVM loaded both entries from that same installation. The compiler and the
+worker each emitted an x86-64 ELF object. On 2026-11-10 the user chose to track
+Unix launcher work separately. BUILD-3 owns that follow-up.
+[Bootstrap module](../../../../Launcher/java/cloth/launcher/Bootstrap.java) ·
+[BUILD-3 installed-entry build and run proof](unix-unicode-launcher-proof.md) ·
+[Consolidated plan](../../../../todo/open-questions-plan.md#implementation-work)
 
 ### Pending Windows checks
 

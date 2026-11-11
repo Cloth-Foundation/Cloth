@@ -97,7 +97,7 @@ data class CastExpression(val operand: Expression, val operator: Token, val targ
 	override val span get() = operand.span.through(target.span)
 }
 
-data class TypeCheckExpression(val operand: Expression, val operator: Token, val target: TypeReference) : Expression {
+data class TypeCheckExpression(val operand: Expression, val operator: Token, val target: TypeReference, val valueCandidate: FieldAccessExpression? = null) : Expression {
 
 	override val span get() = operand.span.through(target.span)
 }

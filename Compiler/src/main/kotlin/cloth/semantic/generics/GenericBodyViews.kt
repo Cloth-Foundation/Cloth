@@ -140,7 +140,7 @@ class GenericBodyViews internal constructor(val types: ClosedTypeModel, val temp
 			is TypeReceiverExpression -> source.copy(annotation = type(source.annotation))
 			is CastExpression -> source.copy(operand = expression(source.operand), target = type(source.target))
 			is StateTransitionExpression -> source.copy(receiver = expression(source.receiver), payload = source.payload?.let(::expression))
-			is TypeCheckExpression -> source.copy(operand = expression(source.operand), target = type(source.target))
+			is TypeCheckExpression -> source.copy(operand = expression(source.operand), target = type(source.target), valueCandidate = source.valueCandidate?.let { expression(it) as FieldAccessExpression })
 			is UnaryExpression -> source.copy(operand = expression(source.operand))
 			is BinaryExpression -> source.copy(left = expression(source.left), right = expression(source.right))
 			is ElvisExpression -> source.copy(left = expression(source.left), fallback = expression(source.fallback))

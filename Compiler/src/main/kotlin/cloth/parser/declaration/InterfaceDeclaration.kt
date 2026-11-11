@@ -14,6 +14,7 @@ data class InterfaceDeclaration(
 	val parents: List<TypeReference>,
 	val methods: List<InterfaceMethodDeclaration>,
 	override val span: TokenSpan,
+	override val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : TypeDeclaration
 
 data class InterfaceMethodDeclaration(

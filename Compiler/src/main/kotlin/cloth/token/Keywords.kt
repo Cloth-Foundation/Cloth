@@ -23,6 +23,7 @@ enum class Keywords(private val keyword: String? = null) { // This comment has t
 
 	METHOD("mt"),
 	OVERRIDE,
+	VIRTUAL,
 	OPERATOR,
 	AUTO,
 	FUNCTION("fn"),

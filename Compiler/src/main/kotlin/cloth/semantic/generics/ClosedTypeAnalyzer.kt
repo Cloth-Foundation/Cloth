@@ -13,6 +13,7 @@ import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.semantic.declarations.EnumModel
 import cloth.semantic.declarations.FileBindings
 import cloth.semantic.declarations.TypeResolver
+import cloth.semantic.declarations.VirtualMethods
 import cloth.semantic.interfaces.InterfaceConformanceAnalyzer
 import cloth.semantic.interfaces.interfaceParentOrder
 import cloth.semantic.symbols.FunctionGroupSymbol
@@ -31,7 +32,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 	fun analyze(unit: SourceUnit): ClosedTypeModel = analyze(FileBindings.single(unit))
 	internal fun analyze(graph: SourceGraph): ClosedTypeModel = analyze(FileBindings.graph(graph))
 	internal fun analyze(files: FileBindings, names: GenericNameModel = GenericAnalyzer(target).analyze(files)): ClosedTypeModel {
-		if (names.interfaceSpan != null && names.owners.isNotEmpty()) {
+		if ((names.interfaceSpan != null || names.hasVirtualMethods) && names.owners.isNotEmpty()) {
 			val templates = files.fork()
 			symbolic(templates, GenericAnalyzer(target).analyze(templates))
 		}
@@ -74,6 +75,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			while (work.isNotEmpty()) work.removeFirst()()
 			val baseOrder = validateInheritance()
 			validateStructs()
+			if (names.hasVirtualMethods) model.virtualMethods = VirtualMethods.analyze(model, baseOrder)
 			if (names.interfaceSpan != null) model.interfaces = InterfaceConformanceAnalyzer(model).analyze(interfaceOrder, baseOrder)
 			model.catalog.values.forEach { it.state = ClosedTypeState.COMPLETE }
 			return model

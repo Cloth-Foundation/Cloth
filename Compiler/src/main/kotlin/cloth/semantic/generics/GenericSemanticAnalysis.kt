@@ -20,13 +20,13 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		val analyzer = ClosedTypeAnalyzer(target)
 		if (!names.requiresGenericCompilation) {
 			val closed = analyzer.closed(files, names)
-			interfaceVisibility(closed, files.objectRoot)
+			interfaceVisibility(closed, files)
 			return DeclarationAnalyzer(target).prepared(files, GenericBodyViews(closed))
 		}
 		val templateFiles = files.fork()
 		val templateNames = GenericAnalyzer(target).analyze(templateFiles)
 		val symbolicTypes = analyzer.symbolic(templateFiles, templateNames)
-		interfaceVisibility(symbolicTypes, templateFiles.objectRoot)
+		interfaceVisibility(symbolicTypes, templateFiles)
 		val templateDeclarations = DeclarationAnalyzer(target).prepared(templateFiles, GenericBodyViews(symbolicTypes))
 		val templates = FunctionAnalyzer(target).analyze(templateDeclarations)
 		// Width templates retain ordinary call-time range checks. Declaration checking
@@ -38,38 +38,38 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			val declaration = method.owner.declaration
 			val canonical = method.owner.typeArguments.isNotEmpty() && method.owner.isCanonicalApplication()
 			val public = when (declaration) {
-				is ClassDeclaration -> declaration.visibility != null && method.declaration.visibility != null
-				is StructDeclaration -> declaration.visibility != null
+				is ClassDeclaration -> templateFiles.privateTypeName(method.owner) == null && method.declaration.visibility != null
+				is StructDeclaration -> templateFiles.privateTypeName(method.owner) == null
 				else -> false
 			}
 			if (canonical && public && method.declaration.operator != null && method.declaration.returnTypes.isEmpty()) {
-				checkExposedTypes(method.name, templates.typeOf(method).results.values, templateFiles.objectRoot)
+				checkExposedTypes(method.name, templates.typeOf(method).results.values, templateFiles)
 			}
 		}
-		inheritedClassVisibility(templates)
+		inheritedClassVisibility(templates, templateFiles)
 		val closed = analyzer.closed(files, names)
 		return DeclarationAnalyzer(target).prepared(files, GenericBodyViews(closed, templates))
 	}
 
-	private fun interfaceVisibility(types: ClosedTypeModel, objectRoot: CClass) {
+	private fun interfaceVisibility(types: ClosedTypeModel, files: FileBindings) {
 		for ((owner, contract) in types.interfaces.contracts) {
-			if (owner.declaration.visibility == null || !owner.isCanonicalApplication()) continue
+			if (files.privateTypeName(owner) != null || !owner.isCanonicalApplication()) continue
 			for (method in contract.methods.values) {
 				val exposed = method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
-				checkExposedTypes(method.declaration.name, exposed, objectRoot)
+				checkExposedTypes(method.declaration.name, exposed, files)
 			}
 		}
 	}
 
-	private fun inheritedClassVisibility(templates: FunctionSemanticModel) {
+	private fun inheritedClassVisibility(templates: FunctionSemanticModel, files: FileBindings) {
 		val declarations = templates.declarations
 		val methodsByOwner = declarations.methods.groupBy { it.owner }
 		for (owner in declarations.classDefinitions.keys) {
-			if (owner.declaration.visibility == null || owner.typeArguments.isEmpty() || !owner.isCanonicalApplication()) continue
+			if (files.privateTypeName(owner) != null || owner.typeArguments.isEmpty() || !owner.isCanonicalApplication()) continue
 			for (base in owner.ancestry().drop(1)) {
 				for (field in base.fields) {
 					if (field.visibility != null && owner.field(field.name.lexeme) === field) {
-						checkExposedTypes(field.name, listOf(field.type), declarations.objectRoot)
+						checkExposedTypes(field.name, listOf(field.type), files)
 					}
 				}
 				for (method in methodsByOwner[base].orEmpty()) {
@@ -85,16 +85,16 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 					val checked = if (method in declarations.widthTemplates) templates.widestSpecialization(method) else method
 					val signature = templates.typeOf(checked)
 					val exposed = signature.parameters + signature.results.values + listOfNotNull(templates.contextSelectorType(method))
-					checkExposedTypes(method.name, exposed, declarations.objectRoot)
+					checkExposedTypes(method.name, exposed, files)
 				}
 			}
 			declarations.states[owner]?.let { states ->
 				for (state in states.supported.values) if (state.declaration.visibility != null) {
-					checkExposedTypes(state.name, listOf(state.payloadType), declarations.objectRoot)
+					checkExposedTypes(state.name, listOf(state.payloadType), files)
 				}
 				for (contract in states.contracts.values) if (contract.public) {
 					val signature = templates.typeOf(contract.callable)
-					checkExposedTypes(contract.callable.name, signature.parameters + signature.results.values, declarations.objectRoot)
+					checkExposedTypes(contract.callable.name, signature.parameters + signature.results.values, files)
 				}
 			}
 		}
@@ -110,7 +110,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		return specialize(method, width)
 	}
 
-	private fun checkExposedTypes(use: cloth.token.Token, exposed: List<ValueType>, objectRoot: CClass) {
+	private fun checkExposedTypes(use: cloth.token.Token, exposed: List<ValueType>, files: FileBindings) {
 		val pending = ArrayDeque(exposed)
 		val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ValueType, Boolean>())
 		while (pending.isNotEmpty()) {
@@ -120,7 +120,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				is CNullable -> pending.add(type.payload)
 				is CArray -> pending.add(type.element)
 				is CMemberType -> {
-					if (type.declaration.visibility == null && type !== objectRoot) throw GenericErrors.privateSignature(use, type.name)
+					files.privateTypeName(type)?.let { throw GenericErrors.privateSignature(use, it) }
 					pending.addAll(type.typeArguments)
 				}
 				else -> Unit
@@ -131,9 +131,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 	private fun visibility(files: FileBindings, names: GenericNameModel) {
 		fun surface(type: TypeReference) {
 			val nominal = (names.names[type] as? NominalTypeName)?.type
-			if (nominal != null && nominal !== files.objectRoot) {
-				if (nominal.declaration.visibility == null) throw GenericErrors.privateSignature(type.name, nominal.name)
-			}
+			nominal?.let(files::privateTypeName)?.let { throw GenericErrors.privateSignature(type.name, it) }
 			type.typeArguments.forEach(::surface)
 		}
 		fun callable(member: CallableDeclaration) {
@@ -141,9 +139,10 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			member.returnTypes.forEach(::surface)
 			(member as? MethodDeclaration)?.operator?.selector?.let(::surface)
 		}
-		for (file in files.files) for (declaration in file.unit.declarations) when (declaration) {
+		val publicTypes = files.typeOrder.filter { files.privateTypeName(it) == null }.mapTo(java.util.Collections.newSetFromMap(java.util.IdentityHashMap())) { it.declaration }
+		for (declaration in files.declarations) when (declaration) {
 			is FunctionDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) callable(declaration)
-			is ClassDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) {
+			is ClassDeclaration -> if (declaration in publicTypes && declaration.typeParameters != null) {
 				declaration.parameters.forEach { surface(it.parameter.type) }
 				for (member in declaration.members) when (member) {
 					is ClassFieldDeclaration -> if (member.visibility != null) surface(member.type)
@@ -152,7 +151,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 					else -> Unit
 				}
 			}
-			is StructDeclaration -> if (declaration.visibility != null && declaration.typeParameters != null) {
+			is StructDeclaration -> if (declaration in publicTypes && declaration.typeParameters != null) {
 				declaration.fields.forEach { surface(it.type) }
 				declaration.methods.forEach(::callable)
 			}
