@@ -50,7 +50,6 @@ class GenericFunctionsTest {
 	fun `type argument and value argument failures retain located diagnostics`() {
 		val template = "fn<T> id<T>(T value) = value\n"
 		for ((call, code) in listOf(
-			"id(64)" to DiagnosticCode.GENERIC_ARITY,
 			"id<int, string>(64)" to DiagnosticCode.GENERIC_ARITY,
 			"id<void>(64)" to DiagnosticCode.INVALID_GENERIC_ARGUMENT,
 			"id<int>(\"wrong\")" to DiagnosticCode.NO_MATCHING_CALL,
@@ -108,5 +107,25 @@ class GenericFunctionsTest {
 		val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(genericTarget()).analyze(genericUnit(source)) }
 		assertEquals(code, error.diagnosticCode, error.summary)
 		assertLocated(error)
+	}
+
+	@Test
+	fun `same-count winners keep separate native bodies and recursive defaults`(@TempDir directory: Path) {
+		val source = """
+			fn<int> choose<T>(int value, opt<int> step ?: 3) {
+			    if (value == 0) return step
+			    return choose<T>(value - 1, step)
+			}
+			fn<string> choose<T>(T value, opt<string> label ?: "default") = label
+			fn main() {
+			    println(choose<string>(value=2))
+			    println(choose<string>(label="chosen", value="text"))
+			    println(choose<string>("text"))
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("overloads_${abi.layout.sizeBits}"))
+			assertEquals("3\nchosen\ndefault\n" + processCompletion().replace("\r\n", "\n"), output)
+		}
 	}
 }

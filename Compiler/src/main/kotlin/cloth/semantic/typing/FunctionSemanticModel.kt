@@ -10,6 +10,11 @@ import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ControlFlowModel
 import cloth.semantic.flow.PresenceFacts
+import cloth.semantic.generics.ClosedCallableKey
+import cloth.semantic.generics.GenericCallableRequest
+import cloth.semantic.generics.TypeArgumentSpans
+import cloth.semantic.generics.sourceSpans
+import cloth.parser.type.TypeArgumentList
 import cloth.semantic.scalar
 import cloth.semantic.symbols.*
 
@@ -27,6 +32,8 @@ class FunctionSemanticModel internal constructor(
 	private val operatorBodies: OperatorBodies = OperatorBodies(),
 	private val operatorWidth: Int? = null,
 	private val enclosingBody: FunctionSemanticModel? = null,
+	private val publishInference: Boolean = true,
+	private val localCallResults: MutableMap<CallSite, ResultShape>? = null,
 ) {
 
 	val target get() = declarations.target
@@ -35,6 +42,8 @@ class FunctionSemanticModel internal constructor(
 	private val facts = FactCopies<FunctionSemanticModel>()
 	internal val bindings: MutableMap<BindingSymbol, ValueType> = facts.identityMap { it.bindings }
 	internal val calls: MutableMap<CallExpression, ResolvedCall> = facts.identityMap { it.calls }
+	private val callableRequests: MutableMap<ClosedCallableKey, GenericCallableRequest> = facts.orderedMap { it.callableRequests }
+	private val inferredResults: MutableMap<CallSite, ResultShape> = facts.identityMap { it.inferredResults }
 	internal val sourceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Source> = facts.identityMap { it.sourceMemberCalls }
 	internal val interfaceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Interface> = facts.identityMap { it.interfaceMemberCalls }
 	internal val constructorCalls: MutableMap<CallSite, ResolvedCall.Source> = facts.identityMap { it.constructorCalls }
@@ -68,7 +77,8 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	fun typeOf(function: FunctionSymbol): FunctionType = declaredTypeOf(function)
-	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType = contracts.signatures.getValue(callable)
+	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType =
+		contracts.signatures[callable] ?: declarations.genericViews?.candidateType(callable) ?: contracts.signatures.getValue(callable)
 	internal val intrinsics get() = contracts.intrinsics
 	internal fun contextSelectorType(method: MethodSymbol): ValueType? = contracts.contextSelectors[method]
 
@@ -81,6 +91,57 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	fun selectedFunction(call: CallExpression): FunctionSymbol = (selectedCall(call) as ResolvedCall.Source).callable as FunctionSymbol
+	internal fun recordCall(call: CallExpression, resolved: ResolvedCall) {
+		calls[call] = resolved
+		if (resolved is ResolvedCall.Source) requestCallable(call, call.typeArguments, resolved.callable)
+		recordInferredResult(call, resolved.type.results)
+	}
+
+	internal fun recordMemberCall(call: MemberCallExpression, resolved: ResolvedCall.Source) {
+		sourceMemberCalls[call] = resolved
+		requestCallable(call, call.typeArguments, resolved.callable)
+	}
+
+	internal fun recordInferredResult(call: CallSite, results: ResultShape) {
+		if (call in presence.inferredResultsUsed) {
+			inferredResults[call] = results
+			publishInferredResults()
+		}
+	}
+
+	internal fun inferredResult(call: CallSite): ResultShape? =
+		if (localCallResults != null) localCallResults[call] else declarations.genericViews?.inferredResult(call)
+
+	private fun publishInferredResults() {
+		if (!publishInference) return
+		if (localCallResults == null) {
+			declarations.genericViews?.publishInferredResults(inferredResults)
+			return
+		}
+		var changed = false
+		for ((call, result) in inferredResults) {
+			if (localCallResults.put(call, result) != result) changed = true
+		}
+		if (changed) throw CallResultFlowRestart()
+	}
+
+	internal fun requestCallable(call: CallSite, supplied: TypeArgumentList?, callable: CallableSymbol) {
+		requestCallable(call, supplied?.sourceSpans(), callable)
+	}
+
+	internal fun requestCallable(call: CallSite, supplied: TypeArgumentSpans?, callable: CallableSymbol) {
+		val request = declarations.genericViews?.callableRequest(call, supplied, callable) ?: return
+		callableRequests.putIfAbsent(request.key, request)
+	}
+
+	internal fun methodTypeArguments(supplied: TypeArgumentList, report: Boolean): List<ValueType>? {
+		if (!report && operatorWidth == null && supplied.arguments.any { it.capturesWidth }) return null
+		return supplied.arguments.map(types.typeResolver::resolve)
+	}
+
+	internal fun genericCallableRequests(): Sequence<GenericCallableRequest> =
+		allBodyModels().flatMap { it.callableRequests.values.asSequence() }
+
 	internal fun selectedCall(call: CallExpression): ResolvedCall = calls.getValue(call)
 	internal fun selectedMemberCall(call: MemberCallExpression): ResolvedCall.Source? = sourceMemberCalls[call]
 	internal fun selectedBoundMemberCall(call: MemberCallExpression): ResolvedCall.Bound? = selectedMemberCall(call) ?: interfaceMemberCalls[call]
@@ -106,13 +167,20 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	/** Callable bodies have their own expression facts, including when widths share syntax. */
-	internal fun forCallableBody(width: Int? = null): FunctionSemanticModel = fresh(width, enclosing = this).also { body ->
+	internal fun forCallableBody(width: Int?, results: MutableMap<CallSite, ResultShape>?): FunctionSemanticModel {
+		val body = if (results == null) fresh(width, enclosing = this) else FunctionSemanticModel(
+			declarations, contracts, controlFlow, PresenceFacts(), operatorBodies, width, this, localCallResults = results,
+		)
 		body.initializeBindings()
 		body.callables.copyFrom(callables)
+		return body
 	}
 
 	private fun fresh(width: Int?, enclosing: FunctionSemanticModel? = enclosingBody) =
-		FunctionSemanticModel(declarations, contracts, controlFlow, presence, operatorBodies, width, enclosing)
+		FunctionSemanticModel(
+			declarations, contracts, controlFlow, presence, operatorBodies, width, enclosing,
+			publishInference = false, localCallResults = localCallResults,
+		)
 
 	/** Dropping a trial discards all its body and callable facts. */
 	internal fun trial() = Trial()
@@ -126,6 +194,7 @@ class FunctionSemanticModel internal constructor(
 			check(!committed) { "A semantic trial can only commit once" }
 			copyFrom(model)
 			committed = true
+			publishInferredResults()
 		}
 	}
 

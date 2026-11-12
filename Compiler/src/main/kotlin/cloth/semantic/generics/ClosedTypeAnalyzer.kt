@@ -8,7 +8,6 @@ import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.declaration.*
 import cloth.parser.expression.CallExpression
-import cloth.parser.type.TypeArgumentList
 import cloth.parser.type.TypeReference
 import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.semantic.declarations.EnumModel
@@ -18,7 +17,6 @@ import cloth.semantic.declarations.VirtualMethods
 import cloth.semantic.interfaces.InterfaceConformanceAnalyzer
 import cloth.semantic.interfaces.interfaceParentOrder
 import cloth.semantic.symbols.FunctionGroupSymbol
-import cloth.semantic.symbols.FunctionSymbol
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
 import cloth.token.Token
@@ -28,6 +26,9 @@ import java.util.IdentityHashMap
 internal const val maximumGenericDependencyDepth = 64
 internal const val maximumGenericInstances = 4096
 
+/** A newly available type or committed call contract requires fresh semantic facts. */
+internal class GenericAnalysisRestart : RuntimeException(null, null, false, false)
+
 /** Discover closed requirements with a worklist, then validate complete layout graphs. */
 class ClosedTypeAnalyzer(private val target: TargetLayout) {
 	fun analyze(unit: SourceUnit): ClosedTypeModel = analyze(FileBindings.single(unit))
@@ -35,35 +36,49 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 	internal fun analyze(files: FileBindings, names: GenericNameModel = GenericAnalyzer(target).analyze(files)): ClosedTypeModel {
 		if ((names.interfaceSpan != null || names.hasVirtualMethods || names.hasBounds) && names.owners.isNotEmpty()) {
 			val templates = files.fork()
-			symbolic(templates, GenericAnalyzer(target).analyze(templates))
+			worklist(templates, GenericAnalyzer(target).analyze(templates), symbolic = true, checkCallBounds = true)
 		}
-		return closed(files, names)
+		return worklist(files, names, checkCallBounds = true).model
 	}
 
-	internal fun closed(files: FileBindings, names: GenericNameModel): ClosedTypeModel = Types(files, names, target).analyze()
-	internal fun symbolic(files: FileBindings, names: GenericNameModel): ClosedTypeModel = Types(files, names, target, symbolic = true).analyze()
+	internal fun worklist(files: FileBindings, names: GenericNameModel, symbolic: Boolean = false, checkCallBounds: Boolean = false): Worklist =
+		Worklist(files, names, target, symbolic, checkCallBounds).also { it.initialize() }
 
-	private class Types(private val files: FileBindings, private val names: GenericNameModel, private val target: TargetLayout, private val symbolic: Boolean = false) {
-		private data class Key(val definition: CMemberType, val arguments: List<ValueType>)
+	internal class Worklist(
+		private val files: FileBindings,
+		private val names: GenericNameModel,
+		private val target: TargetLayout,
+		private val symbolic: Boolean,
+		checkCallBounds: Boolean,
+	) {
 		private sealed interface Bound {
 			val spelling: String
 			data object Number : Bound { override val spelling get() = NumberBoundName.spelling }
 			data class Nominal(val type: CMemberType) : Bound { override val spelling get() = type.spelling }
+
+			fun accepts(argument: ValueType): Boolean = when (this) {
+				Number -> argument.supportsNumericOperations
+				is Nominal -> type.accepts(argument)
+			}
 		}
 		private data class BoundCheck(val parameter: TypeParameterSymbol, val argument: ValueType, val bound: Bound, val use: TokenSpan)
 
-		private val model = ClosedTypeModel(names, target, symbolic)
-		private val instances = linkedMapOf<Key, ClosedTypeInstance>()
+		val model = ClosedTypeModel(names, target, symbolic, files)
 		private val work = ArrayDeque<() -> Unit>()
 		private val ownerUses = IdentityHashMap<Declaration?, MutableList<GenericTypeUse>>()
 		private val ownerCalls = IdentityHashMap<Declaration?, MutableList<CallExpression>>()
+		private val pendingFunctions = linkedMapOf<ClosedFunctionKey, GenericCallableRequest>()
+		private val callBounds = if (checkCallBounds) mutableListOf<Pair<TypeArgumentSpans, List<ClosedFunctionKey>>>() else null
 		private val boundChecks = mutableListOf<BoundCheck>()
+		private val signatureKeys = GenericSignatureKeys(names)
+		private lateinit var interfaceOrder: Map<CInterface, Int>
 		private var bindings = model.rootBindings
 		private var closedCount = 0
 		private var symbolicCount = 0
 
-		fun analyze(): ClosedTypeModel {
-			val interfaceOrder = interfaceParentOrder(files.typeOrder.filterIsInstance<CInterface>(), names)
+		fun initialize() {
+			// Check source interface cycles before any application can expand them.
+			interfaceOrder = interfaceParentOrder(files.typeOrder.filterIsInstance<CInterface>(), names)
 			for (use in names.uses) if (!use.bound) ownerUses.getOrPut(use.owner) { mutableListOf() }.add(use)
 			for (use in names.functionUses) ownerCalls.getOrPut(use.owner) { mutableListOf() }.add(use.call)
 			for (definition in files.typeOrder) if (names.parametersOf(definition.declaration).isEmpty()) register(definition, definition, emptyList(), GenericBindings())
@@ -74,21 +89,62 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				}
 				for (file in files.files) for (function in file.functions) {
 					val arguments = symbolicArguments(function.declaration)
-					if (arguments.isNotEmpty()) instantiate(function, arguments, function.name.span)
+					if (arguments.isNotEmpty()) instantiate(ClosedFunctionKey(function, arguments), function.name.span)
 				}
 			}
 			bindOwner(null)
 			for (file in files.files) for (function in file.functions) {
 				if (function.typeParameterCount == 0) model.functionList.add(signature(function.declaration))
 			}
-			while (work.isNotEmpty()) work.removeFirst()()
-			val baseOrder = validateInheritance()
-			validateStructs()
-			if (names.hasVirtualMethods) model.virtualMethods = VirtualMethods.analyze(model, baseOrder)
-			if (names.interfaceSpan != null) model.interfaces = InterfaceConformanceAnalyzer(model).analyze(interfaceOrder, baseOrder)
-			checkBounds()
+			complete()
+			for ((supplied, candidates) in callBounds.orEmpty()) {
+				if (candidates.all { it in model.rejectedCallables }) {
+					val failure = model.rejectedCallables.getValue(candidates.first())
+					throw failure.diagnostic(supplied)
+				}
+			}
+		}
+
+		fun expand(requests: Sequence<GenericCallableRequest>): Boolean {
+			for ((key, supplied, caller) in requests) {
+				if (key in model.callableInstances) continue
+				withBindings(caller) { instantiate(key, supplied.span, supplied) }
+			}
+			if (work.isEmpty()) return false
+			complete()
+			return true
+		}
+
+		fun prepareCallables(requests: List<GenericCallableRequest>) {
+			for (request in requests) if (!hasContract(request.key)) prepareCandidate(request)
+			if (work.isNotEmpty()) {
+				complete()
+				throw GenericAnalysisRestart()
+			}
+		}
+
+		fun prepareApplication(key: NominalApplicationKey, caller: GenericBindings, supplied: TypeArgumentSpans): Nothing {
+			withBindings(caller) { instantiate(key.definition, key.arguments, supplied.span, supplied) }
+			complete()
+			throw GenericAnalysisRestart()
+		}
+
+		private fun hasContract(key: ClosedCallableKey) =
+			key in model.callableInstances || key in model.callableCandidates || key in model.rejectedCallables
+
+		private fun complete() {
+			do {
+				while (work.isNotEmpty()) work.removeFirst()()
+				val baseOrder = validateInheritance()
+				validateStructs()
+				if (names.hasVirtualMethods) model.virtualMethods = VirtualMethods.analyze(model, baseOrder)
+				if (names.interfaceSpan != null) model.interfaces = InterfaceConformanceAnalyzer(model).analyze(interfaceOrder, baseOrder)
+				checkBounds()
+				val requests = pendingFunctions.values.toList()
+				pendingFunctions.clear()
+				requests.forEach(::prepareCandidate)
+			} while (work.isNotEmpty())
 			model.catalog.values.forEach { it.state = ClosedTypeState.COMPLETE }
-			return model
 		}
 
 		private fun symbolicArguments(declaration: Declaration) = names.parametersOf(declaration).map { parameter ->
@@ -99,12 +155,20 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private fun bindOwner(owner: Declaration?) {
 			for (use in ownerUses[owner].orEmpty()) bind(use)
 			for (call in ownerCalls[owner].orEmpty()) {
-				// Discover the needed views from the file group. Body name resolution
-				// still checks the call against its lexical scope.
-				val arguments = checkNotNull(call.typeArguments)
+				// Publish candidate contracts from the file group. The lexical call
+				// resolver checks which group is actually visible at this site.
+				val supplied = checkNotNull(call.typeArguments)
 				val group = files.context(call.name).scope.lookup(call.name.lexeme) as? FunctionGroupSymbol ?: continue
-				val template = group.overloads.firstOrNull { it.typeParameterCount == arguments.arguments.size } ?: continue
-				instantiate(template, arguments.arguments.map(::resolve), arguments.span, arguments)
+				val templates = group.overloads.filter { it.typeParameterCount == supplied.arguments.size }
+				if (templates.isEmpty()) continue
+				val arguments = supplied.arguments.map(::resolve)
+				val spans = supplied.sourceSpans()
+				val keys = templates.map { ClosedFunctionKey(it, arguments) }
+				for (key in keys) {
+					if (hasContract(key)) continue
+					pendingFunctions.putIfAbsent(key, GenericCallableRequest(key, spans, bindings))
+				}
+				callBounds?.add(spans to keys)
 			}
 		}
 
@@ -115,18 +179,20 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private fun pattern(annotation: TypeReference): ClosedTypePattern = bindings.facts.getOrPut(annotation) {
 			if (annotation.capturesWidth) ClosedTypePattern.OperatorWidth(annotation) else ClosedTypePattern.Exact(resolve(annotation))
 		}
-		private fun resolve(annotation: TypeReference): ValueType {
+		private fun resolve(annotation: TypeReference, instantiateApplications: Boolean = true): ValueType {
 			(bindings.facts[annotation] as? ClosedTypePattern.Exact)?.let { return it.type }
-			return resolver().resolve(annotation).also { bindings.facts[annotation] = ClosedTypePattern.Exact(it) }
+			return resolver(instantiateApplications).resolve(annotation).also { bindings.facts[annotation] = ClosedTypePattern.Exact(it) }
 		}
-		private fun resolver() = TypeResolver(target, substitutedType = { annotation ->
+		private fun resolver(instantiateApplications: Boolean = true) = TypeResolver(target, substitutedType = { annotation ->
 			when (val identity = names.names[annotation]) {
 				is TypeParameterSymbol -> bindings.environment[identity] ?: throw InternalErrors.invariant("Unsolved owner parameter '${identity.name.lexeme}' in a closed type")
 				else -> {
 					val definition = (identity as? NominalTypeName)?.type ?: files.nominal(annotation.name)
 					definition?.let {
-						val application = annotation.application
-						if (application == null) it else instantiate(it, application.arguments.map(::resolve), annotation.span, application)
+						val application = annotation.application ?: return@let it
+						val arguments = application.arguments.map { argument -> resolve(argument, instantiateApplications) }
+						if (instantiateApplications) instantiate(it, arguments, annotation.span, application.sourceSpans())
+						else model.applications[NominalApplicationKey(it, arguments)]?.type ?: it.application(arguments)
 					}
 				}
 			}
@@ -150,17 +216,23 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 
 		private fun define(instance: ClosedTypeInstance) = withBindings(instance.bindings) {
 			instance.state = ClosedTypeState.RESOLVING
-			bindBounds()
+			bindBounds(instance.definition.declaration)
 			val signatures = instance.signatureList
 			when (val type = instance.type) {
 				is CClass -> {
 					defineClass(type)
 					signatures.add(signature(PrimaryConstructorDeclaration(type.declaration)))
-					type.declaration.members.filterIsInstance<CallableDeclaration>().mapTo(signatures, ::signature)
+					val members = type.declaration.members.filterIsInstance<CallableDeclaration>()
+					members.filterNot { it is MethodDeclaration && it.typeParameters != null }.mapTo(signatures, ::signature)
+					if (symbolic && type.typeArguments.isNotEmpty() && type.isCanonicalApplication()) {
+						registerConstructorTemplates(type, signatures)
+					}
+					registerMethods(type, members.filterIsInstance<MethodDeclaration>())
 				}
 				is CStruct -> {
 					defineStruct(type)
-					type.declaration.methods.mapTo(signatures, ::signature)
+					type.declaration.methods.filter { it.typeParameters == null }.mapTo(signatures, ::signature)
+					registerMethods(type, type.declaration.methods)
 				}
 				is CEnum -> {
 					EnumModel.defineFields(type, resolver())
@@ -169,6 +241,38 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				is CInterface -> type.declaration.methods.mapTo(signatures, ::signature)
 			}
 			bindOwner(instance.definition.declaration)
+		}
+
+		private fun registerConstructorTemplates(owner: CClass, signatures: List<ClosedCallableSignature>) {
+			val slots = owner.typeArguments.map { it as CTypeParameter }
+			model.constructorTemplates[owner.declaration] = signatures
+				.filter { it.declaration is PrimaryConstructorDeclaration || it.declaration is ConstructorDeclaration }
+				.map { signature ->
+					val parameters = signature.parameters.map {
+						when (it) {
+							is ClosedTypePattern.Exact -> it.type
+							is ClosedTypePattern.OperatorWidth -> throw SemanticErrors.type(it.annotation)
+						}
+					}
+					GenericConstructorTemplate(signature.declaration as CallableDeclaration, GenericParameterPatterns(parameters, slots))
+				}
+		}
+
+		private fun registerMethods(owner: CMemberType, declarations: List<MethodDeclaration>) {
+			val methods = declarations.filter { it.typeParameters != null }
+			if (methods.isEmpty()) return
+			val canonical = owner.isCanonicalApplication()
+			val seen = mutableMapOf<GenericMethodSignature, MethodDeclaration>()
+			model.methodTemplates[owner] = methods.map { declaration ->
+				val count = names.parametersOf(declaration).size
+				val key = GenericMethodSignature(count, signatureKeys.signature(declaration, bindings.environment))
+				if (canonical) seen.putIfAbsent(key, declaration)?.let { prior ->
+					throw SemanticErrors.duplicateMethod(owner.name, key.valueParameters.spelling, prior.name, declaration.name)
+				}
+				GenericMethodTemplate(owner, declaration, key, signatureKeys.parameterSlots(declaration)).also {
+					if (symbolic && canonical) instantiate(ClosedMethodKey(it, symbolicArguments(declaration)), declaration.name.span)
+				}
+			}.groupBy { it.declaration.name.lexeme }
 		}
 
 		private fun argumentDepth(type: ValueType): Int {
@@ -180,72 +284,106 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		}
 
-		private fun instantiate(definition: CMemberType, arguments: List<ValueType>, use: TokenSpan, suppliedArguments: TypeArgumentList? = null): CMemberType {
-			val key = Key(definition, arguments.toList())
+		private fun instantiate(definition: CMemberType, arguments: List<ValueType>, use: TokenSpan, suppliedArguments: TypeArgumentSpans? = null): CMemberType {
+			val key = NominalApplicationKey(definition, arguments.toList())
 			// Reuse provisional identities before charging depth or instance budgets.
-			instances[key]?.let { return it.type }
+			model.applications[key]?.let { return it.type }
 			val context = newBindings(definition.declaration, definition.name, key.arguments, use, suppliedArguments)
-			val type = when (definition) {
-				is CClass -> CClass(definition.declaration, definition, key.arguments)
-				is CStruct -> CStruct(definition.declaration, genericDefinition = definition, typeArguments = key.arguments)
-				is CEnum -> throw GenericErrors.arity(definition.name, arguments.size, 0, definition.name)
-				is CInterface -> CInterface(definition.declaration, definition, key.arguments)
-			}
-			return register(type, definition, key.arguments, context).also { instances[key] = it }.type
+			val type = definition.application(key.arguments)
+			return register(type, definition, key.arguments, context).also { model.applications[key] = it }.type
 		}
 
-		private fun instantiate(template: FunctionSymbol, arguments: List<ValueType>, use: TokenSpan, suppliedArguments: TypeArgumentList? = null) {
-			val key = ClosedFunctionKey(template, arguments)
-			model.functionInstances.getOrPut(key) {
-				val context = newBindings(template.declaration, template.name, arguments, use, suppliedArguments)
+		private fun instantiate(key: ClosedCallableKey, use: TokenSpan, suppliedArguments: TypeArgumentSpans? = null) {
+			model.callableInstances.getOrPut(key) {
+				val declaration = key.declaration
+				val context = newBindings(declaration, declaration.name, key.arguments, use, suppliedArguments, key.owner)
+				model.callableCandidates.remove(key)
 				work.addLast {
 					withBindings(context) {
-						bindBounds()
-						model.functionList.add(signature(template.declaration))
-						bindOwner(template.declaration)
+						bindBounds(declaration)
+						val signature = signature(declaration)
+						if (key is ClosedFunctionKey) {
+							model.functionList.add(signature)
+							if (suppliedArguments == null) {
+								model.functionPatterns[key.declaration] = GenericParameterPatterns(
+									signature.parameters.map { (it as ClosedTypePattern.Exact).type },
+									key.arguments.map { it as CTypeParameter },
+								)
+							}
+						}
+						bindOwner(declaration)
 					}
 				}
 				context
 			}
 		}
 
-		private fun newBindings(declaration: Declaration, name: Token, arguments: List<ValueType>, use: TokenSpan, suppliedArguments: TypeArgumentList?): GenericBindings {
+		private fun prepareCandidate(request: GenericCallableRequest) {
+			val (key, supplied, caller) = request
+			val declaration = key.declaration
+			val parameterOwner = if (key is ClosedConstructorKey) key.definition.declaration else declaration
+			val local = names.parametersOf(parameterOwner).zip(key.arguments).toMap()
+			val enclosing = key.owner?.let(model::instanceOf)?.bindings
+			val context = GenericBindings(enclosing?.environment.orEmpty() + local, caller.chain + (supplied.span to declaration.name.lexeme), suppliedArguments = supplied)
+			withBindings(context) {
+				for ((parameter, argument) in local) {
+					// Any satisfied nominal bound is already present in the argument's
+					// ancestry. Resolve other applications for diagnostic spelling only.
+					val bound = boundOf(parameter, instantiateApplications = false) ?: continue
+					if (!bound.accepts(argument)) {
+						model.rejectedCallables[key] = GenericBoundFailure(parameter, argument, bound.spelling)
+						return@withBindings
+					}
+				}
+				model.callableCandidates[key] = GenericCallableCandidate(context, signature(declaration))
+			}
+		}
+
+		private fun newBindings(declaration: Declaration, name: Token, arguments: List<ValueType>, use: TokenSpan, suppliedArguments: TypeArgumentSpans?, owner: CMemberType? = null): GenericBindings {
 			val chain = bindings.chain
-			val open = arguments.any { it.hasTypeParameters() }
-			val depth = 1 + (arguments.maxOfOrNull(::argumentDepth) ?: 0)
+			val exactArguments = owner?.typeArguments.orEmpty() + arguments
+			val open = exactArguments.any { it.hasTypeParameters() }
+			val depth = 1 + (exactArguments.maxOfOrNull(::argumentDepth) ?: 0)
 			fun limit(code: DiagnosticCode, summary: String): Nothing = throw GenericErrors.limit(code, summary, use, name, chain)
 			if (depth > maximumTypeArgumentNesting) limit(DiagnosticCode.GENERIC_SUBSTITUTION_NESTING, "Generic type argument nesting limit exceeded ($maximumTypeArgumentNesting)")
 			if (chain.size >= maximumGenericDependencyDepth) limit(if (open) DiagnosticCode.GENERIC_TEMPLATE_DEPENDENCY_LIMIT else DiagnosticCode.GENERIC_DEPENDENCY_LIMIT, if (open) "Generic template analysis dependency limit exceeded ($maximumGenericDependencyDepth)" else "Generic instantiation dependency limit exceeded ($maximumGenericDependencyDepth)")
 			if (open && symbolicCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_TEMPLATE_INSTANCE_LIMIT, "Too many symbolic generic instances ($maximumGenericInstances)")
 			if (!open && closedCount >= maximumGenericInstances) limit(DiagnosticCode.GENERIC_INSTANCE_LIMIT, "Too many distinct generic instances ($maximumGenericInstances)")
 			if (open) symbolicCount++ else closedCount++
-			return GenericBindings(names.parametersOf(declaration).zip(arguments).toMap(), chain + (use to name.lexeme), depth, suppliedArguments)
+			val enclosing = owner?.let(model::instanceOf)?.bindings
+			val environment = enclosing?.environment.orEmpty() + names.parametersOf(declaration).zip(arguments).toMap()
+			return GenericBindings(environment, chain + (use to name.lexeme), depth, suppliedArguments).also {
+				if (enclosing != null) it.nominalBounds.putAll(enclosing.nominalBounds)
+			}
 		}
 
-		private fun bindBounds() {
+		private fun bindBounds(declaration: Declaration) {
 			val supplied = bindings.suppliedArguments
-			for ((parameter, argument) in bindings.environment) {
-				val reference = parameter.declaration.bound ?: continue
-				val bound = if (names.nameOf(reference) === NumberBoundName) Bound.Number else Bound.Nominal(resolve(reference) as CMemberType)
+			for (parameter in names.parametersOf(declaration)) {
+				val argument = bindings.environment.getValue(parameter)
+				val bound = boundOf(parameter) ?: continue
 				if (bound is Bound.Nominal) bindings.nominalBounds[parameter.declaration] = bound.type
 				if (supplied == null) {
 					// Only the canonical declaration instance supplies facts about its parameters.
 					if (bound is Bound.Nominal) (argument as CTypeParameter).nominalBound = bound.type
 				} else {
-					boundChecks.add(BoundCheck(parameter, argument, bound, supplied.arguments[parameter.index].span))
+					boundChecks.add(BoundCheck(parameter, argument, bound, supplied.arguments[parameter.index]))
 				}
 			}
+		}
+
+		private fun boundOf(parameter: TypeParameterSymbol, instantiateApplications: Boolean = true): Bound? {
+			val reference = parameter.declaration.bound ?: return null
+			return if (names.nameOf(reference) === NumberBoundName) Bound.Number
+			else Bound.Nominal(resolve(reference, instantiateApplications) as CMemberType)
 		}
 
 		private fun checkBounds() {
 			// Parent edges and interface conformance are complete before proofs run.
 			for ((parameter, argument, bound, use) in boundChecks) {
-				val satisfied = when (bound) {
-					Bound.Number -> argument.supportsNumericOperations
-					is Bound.Nominal -> bound.type.accepts(argument)
-				}
-				if (!satisfied) throw GenericErrors.unsatisfiedBound(parameter.name, argument.spelling, bound.spelling, use, checkNotNull(parameter.declaration.bound).span)
+				if (!bound.accepts(argument)) throw GenericBoundFailure(parameter, argument, bound.spelling).diagnostic(use)
 			}
+			boundChecks.clear()
 		}
 
 		private fun signature(declaration: CallableSignature): ClosedCallableSignature = ClosedCallableSignature(declaration,

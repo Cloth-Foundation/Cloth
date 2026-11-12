@@ -16,4 +16,5 @@ pub typedef<enum> Operators (pub def<string> spelling) {
     COLON_COLON("::"), SEMICOLON(";"), UNDERSCORE("_");
 
     operator ::str() = spelling
+    operator<string> ==() = spelling
 }

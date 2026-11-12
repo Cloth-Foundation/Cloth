@@ -4,6 +4,7 @@ import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinArgument
 import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.data.*
+import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
@@ -24,6 +25,7 @@ internal class CandidateMismatch : RuntimeException(null, null, false, false)
 internal abstract class ExpressionTyping(val model: SemanticModel, private val probe: Boolean = false) {
 
 	private var intrinsicTyping = false
+	private var inferenceDefaults = false
 
 	protected abstract fun nameType(expression: NameExpression): ValueType
 	protected abstract fun statement(statement: Statement)
@@ -123,7 +125,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun integer(literal: IntegerLiteral, expected: ValueType?, negative: Boolean = false): ValueType {
 		val type = (if (expected is CNullable) expected.payload else expected) as? CInteger ?: ValueType.INT
 		val value = if (negative) -literal.value else literal.value
-		if (!type.acceptsLiteral(value)) reject { SemanticErrors.integer(value, type, literal.span) }
+		if (!inferenceDefaults && !type.acceptsLiteral(value)) reject { SemanticErrors.integer(value, type, literal.span) }
 		model.recordType(literal, type)
 		return type
 	}
@@ -132,6 +134,18 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	 * types only; emission still evaluates every element once in source order.
 	 */
 	private fun arrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? = overloadedType(expression) ?: ordinaryArrayElementHint(expression, contextualFloat)
+
+	internal fun inferenceHint(expression: Expression): ValueType? = arrayElementHint(expression, contextualFloat = true)
+
+	/** Use default literal types as evidence. Call matching checks their ranges. */
+	internal fun inferenceDefaultType(expression: Expression): ValueType {
+		inferenceDefaults = true
+		return try {
+			typeOf(expression)
+		} finally {
+			inferenceDefaults = false
+		}
+	}
 
 	private fun ordinaryArrayElementHint(expression: Expression, contextualFloat: Boolean): ValueType? = when (expression) {
 		is StructLiteral        -> null
@@ -427,6 +441,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape {
 		val attachment = PrimitiveAttachments[receiver, expression.name.lexeme, model.target] ?: if (receiver == ValueType.NEVER) nonReturningMember(expression) else null
 		val selected = attachment ?: throw SemanticErrors.unknownMember(receiver, expression.name)
+		expression.typeArguments?.let { throw GenericErrors.callArity(expression.name, it.span, it.arguments.size, listOf(0), expression.name) }
 		if (expression.suppliedArguments.any { it.label != null }) throw SemanticErrors.argumentBinding("Built-in member methods do not publish named argument labels yet", expression.span)
 		var candidates = selected.overloads.filter { it.parameters.size == expression.arguments.size + 1 }
 		if (candidates.isEmpty()) throw SemanticErrors.memberArity(expression.name, expression.arguments.size, selected.overloads.first().parameters.size - 1)
@@ -539,7 +554,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				val context = ((expected as? CNullable)?.payload ?: expected) as? CArray
 				if (context?.size != null && context.size != expression.elements.size.toBigInteger()) reject { SemanticErrors.array("Expected ${context.size} array elements, got ${expression.elements.size}; every element must be initialized", expression.span) }
 				val elementContext = context?.element ?: arrayElementContext(expression.elements, contextualFloat)
-				if (context == null && elementContext?.containsNullability == true) throw SemanticErrors.nullableContext(expression.span)
+				if (context == null && elementContext?.containsNullability == true) reject { SemanticErrors.nullableContext(expression.span) }
 				var element: ValueType? = null
 				for (item in expression.elements) {
 					val actual = typeOf(item, elementContext ?: element, contextualFloat = contextualFloat)
@@ -566,7 +581,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			is IntegerLiteral           -> integer(expression, expected)
 			is FloatingPointLiteral     -> {
 				val type = if (contextualFloat) floatingLiteralType ?: ((if (expected is CNullable) expected.payload else expected) as? CFloat) ?: ValueType.FLOAT else ValueType.FLOAT
-				if (!type.acceptsLiteral(expression.value.toBigDecimal())) reject { SemanticErrors.floating(expression.token.lexeme, type, expression.span) }
+				if (!inferenceDefaults && !type.acceptsLiteral(expression.value.toBigDecimal())) reject { SemanticErrors.floating(expression.token.lexeme, type, expression.span) }
 				type
 			}
 

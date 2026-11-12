@@ -8,11 +8,23 @@ import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.lexer.Lexer
+import cloth.parser.Parser
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.expression.BinaryExpression
+import cloth.parser.expression.Expression
+import cloth.parser.expression.FloatingPointLiteral
+import cloth.parser.expression.IntegerLiteral
+import cloth.parser.expression.NameExpression
+import cloth.parser.expression.UnaryExpression
+import cloth.parser.statement.BindingDeclaration
 import cloth.semantic.ProgramAnalyzer
 import cloth.semantic.declarations.FileBindings
 import cloth.settings.LinkOptions
 import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
+import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.toolchain.StandardLibrary
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
@@ -51,9 +63,10 @@ class ImportPublicationTest {
 			} else {
 				setOf(
 					"Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/lexer/LexerError.co",
+					"Frontend/parser/Parser.co", "Frontend/parser/Ast.co",
 					"Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co",
 					"Frontend/token/Operators.co", "Frontend/source/SourceFile.co", "../Standard-Library/cloth/collections/List.co",
-					"../Standard-Library/cloth/io/File.co", "../Standard-Library/cloth/io/Path.co", "../Standard-Library/cloth/text/Utf8.co",
+					"../Standard-Library/cloth/io/fs/File.co", "../Standard-Library/cloth/io/path/Path.co", "../Standard-Library/cloth/text/Utf8.co",
 				)
 			}
 			assertEquals(expected, relative)
@@ -92,6 +105,7 @@ class ImportPublicationTest {
 				assertContains(failure, lexerError.code())
 				assertContains(failure, lexerError.summary)
 				assertContains(execute(artifact, listOf("--text", "def literal = 1")), "\"lexeme\": \"literal\"")
+				verifyBootstrapParser(artifact, directory, completion)
 			}
 		}
 	}
@@ -117,6 +131,66 @@ class ImportPublicationTest {
 		}
 		val foreign = request(bootstrap, directory.resolve("bootstrap-object.o"), "aarch64-unknown-linux-gnu", OutputKind.OBJECT)
 		assertTrue(Files.size(ClothCompiler.compile(foreign).artifact) > 0)
+	}
+
+	private fun verifyBootstrapParser(artifact: Path, directory: Path, completion: String) {
+		val source = """
+			pub fn 計算(
+			)
+			{
+			    ;;def base = 9 - 3 - 1; def result := -(base + 0x2) ** 2 ** 3;
+			    def scale = +1.5 * 2 % 3 / 4
+			}
+			fn empty() {}
+		""".trimIndent()
+		val file = Files.writeString(directory.resolve("parse source.co"), source)
+		val expected = "Cloth Dogfooding\n${renderKotlinTree(source)}\n$completion"
+		assertEquals(expected, execute(artifact, listOf("--parse", "--text", source)))
+		assertEquals(expected, execute(artifact, listOf("--parse", "--file", file.toString())))
+		assertEquals("Cloth Dogfooding\n(source)\n$completion", execute(artifact, listOf("--parse", "--text", "")))
+
+		val invalid = listOf(
+			"fn main( {",
+			"fn main() {};",
+			"fn main() { def x = 1 def y = 2 }",
+			"fn main() { def x = (1 + 2 }",
+			"fn main() { def x = 1",
+			"fn done() {}\nfn main() { def x = 2; def y := (x * 3 + (4 ** 5 * )) }\nfn bad(",
+			"0x",
+		)
+		for (text in invalid) {
+			val diagnostic = assertFailsWith<ClothDiagnostic> { parseWithKotlin(text) }
+			val output = execute(artifact, listOf("--parse", "--text", text), status = 1)
+			assertContains(output, "\"code\": \"${diagnostic.code()}\"")
+			assertContains(output, "\"span\": \"${diagnostic.sourceLabels.first().span}\"")
+			assertEquals(1, output.lineSequence().count { it.startsWith("  \"code\": ") }, output)
+			assertFalse(output.contains("\n(source"), output)
+		}
+	}
+
+	private fun parseWithKotlin(source: String) = Parser(Lexer(SourceFile("<string>", source)).scanTokens()).parse()
+
+	private fun renderKotlinTree(source: String): String {
+		val declarations = parseWithKotlin(source).declarations.map {
+			val function = it as FunctionDeclaration
+			val header = listOfNotNull(function.visibility?.lexeme, function.keyword.lexeme, function.name.lexeme)
+			val bindings = (function.body as BlockBody).statements.map { statement ->
+				val binding = statement as BindingDeclaration
+				val assignment = if (binding.mutable) Operators.ASSIGN else Operators.FINAL_ASSIGN
+				"(${Keywords.DEFINITION} ${binding.name.lexeme} $assignment ${renderExpression(binding.initializer)})"
+			}
+			(header + bindings).joinToString(" ", "(", ")")
+		}
+		return (listOf("source") + declarations).joinToString(" ", "(", ")")
+	}
+
+	private fun renderExpression(expression: Expression): String = when (expression) {
+		is NameExpression          -> expression.name.lexeme
+		is IntegerLiteral           -> expression.token.lexeme
+		is FloatingPointLiteral     -> expression.token.lexeme
+		is UnaryExpression          -> "(${expression.operator.lexeme} ${renderExpression(expression.operand)})"
+		is BinaryExpression         -> "(${expression.operator.lexeme} ${renderExpression(expression.left)} ${renderExpression(expression.right)})"
+		else                        -> error("Unexpected expression in Bootstrap fixture: $expression")
 	}
 
 	private fun execute(executable: Path, arguments: List<String>, status: Int = 0): String {

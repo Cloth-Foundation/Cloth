@@ -34,6 +34,27 @@ types pass their owner parameters. The original function symbol and ordered
 types identify each specialization. This slice includes the source `magic`
 helper in `cloth.lang.num.NumberUtilities`.
 
+[GEN-2 Stage 1](../cloth-functions/references/generic-methods-stage-1.md)
+adds method-owned type names and explicit instance call type arguments to
+the generic name pass.
+
+GEN-2 Stage 2 substitutes signatures for bound-eligible function candidates.
+Committed choices add body instances to the existing generic worklist.
+[GEN-2 Stage 2](../cloth-functions/references/generic-overloads-stage-2.md)
+
+GEN-2 Stage 3 uses the same callable worklist for ordinary methods, keyed
+by their declaration, exact declaring owner, and ordered method arguments.
+[GEN-2 Stage 3](../cloth-functions/references/generic-methods-stage-3.md)
+
+GEN-3 infers complete type argument lists from supplied values. Stages 1 and 2
+try ordinary overloads first for functions and class or struct methods.
+Stage 3 infers a named generic class's arguments at `::new(...)` and ranks
+the substituted constructors.
+[GEN-3 Stage 1](references/function-inference-stage-1.md) ·
+[GEN-3 Stage 2](references/method-inference-stage-2.md) ·
+[GEN-3 Stage 3](references/constructor-inference-stage-3.md) ·
+[Inference rules](references/semantics.md#type-argument-inference-design)
+
 Stage 0 confirms the [first-slice contract](references/semantics.md) and captures
 [baseline evidence](references/stage-0.md). Read the
 [acceptance/rejection fixtures](references/acceptance-fixtures.md) when implementing

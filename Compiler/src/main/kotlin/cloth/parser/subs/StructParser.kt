@@ -60,7 +60,7 @@ internal class StructParser(private val parser: Parser) {
 			}
 			rejectFunction()
 			val method = when {
-				parser.atKeyword(Keywords.METHOD)   -> parser.functionParser.parseMethod()
+				parser.atKeyword(Keywords.METHOD)   -> parser.functionParser.parseMethod(allowTypeParameters = true)
 				parser.atKeyword(Keywords.OPERATOR) -> parser.functionParser.parseOperator()
 				else                                -> throw SyntaxErrors.expected("a '${Keywords.METHOD}' or '${Keywords.OPERATOR}' declaration with inherited visibility", parser.peek())
 			}

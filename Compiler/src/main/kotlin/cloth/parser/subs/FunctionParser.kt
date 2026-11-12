@@ -8,6 +8,7 @@ import cloth.parser.expression.IfExpression
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.Statement
+import cloth.parser.type.TypeParameterList
 import cloth.parser.type.TypeReference
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -45,19 +46,35 @@ class FunctionParser(private val parser: Parser) {
 		return ParameterDeclaration(type, name, finalKeyword, optKeyword, delimiter, fallback, optOpening, optClosing, span)
 	}
 
-	private data class MethodHeader(val keyword: Token, val name: Token, val returns: List<TypeReference>, val parameters: List<ParameterDeclaration>)
+	private data class MethodHeader(
+		val keyword: Token,
+		val name: Token,
+		val returns: List<TypeReference>,
+		val parameters: List<ParameterDeclaration>,
+		val typeParameters: TypeParameterList?,
+	)
 
-	private fun methodHeader(): MethodHeader {
+	private fun methodHeader(allowTypeParameters: Boolean = false): MethodHeader {
 		val keyword = parser.advance()
 		val returnTypes = parser.parseTypeList()
 		val name = parser.expect(TokenType.Identifier, "a method name")
-		if (parser.peek().lexeme == Operators.LESS.toString()) throw GenericErrors.syntax("Method type parameters", parser.peek())
-		return MethodHeader(keyword, name, returnTypes, parseParameters())
+		if (!allowTypeParameters && parser.peek().lexeme == Operators.LESS.toString()) throw GenericErrors.syntax("Method type parameters", parser.peek())
+		val typeParameters = parser.typeParser.parseTypeParameters()
+		return MethodHeader(keyword, name, returnTypes, parseParameters(), typeParameters)
 	}
 
-	internal fun parseMethod(visibility: Token? = null, overridePrefix: TokenSpan? = null, virtualPrefix: TokenSpan? = null, allowIntrinsic: Boolean = false): MethodDeclaration {
-		val (keyword, name, returns, parameters) = methodHeader()
-		return MethodDeclaration(keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn(), allowIntrinsic), visibility, overridePrefix = overridePrefix, virtualPrefix = virtualPrefix)
+	internal fun parseMethod(
+		visibility: Token? = null,
+		overridePrefix: TokenSpan? = null,
+		virtualPrefix: TokenSpan? = null,
+		allowIntrinsic: Boolean = false,
+		allowTypeParameters: Boolean = false,
+	): MethodDeclaration {
+		val (keyword, name, returns, parameters, typeParameters) = methodHeader(allowTypeParameters)
+		return MethodDeclaration(
+			keyword, name, returns, parameters, parseBody("method", returns.isVoidReturn(), allowIntrinsic), visibility,
+			overridePrefix = overridePrefix, virtualPrefix = virtualPrefix, typeParameters = typeParameters,
+		)
 	}
 
 	internal fun parseInterfaceMethod(): InterfaceMethodDeclaration {

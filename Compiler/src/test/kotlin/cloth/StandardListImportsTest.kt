@@ -95,8 +95,8 @@ class StandardListImportsTest {
 	}
 
 	@Test
-	fun `actual List rejects raw wrong arity invalid arguments and variant conversion`(@TempDir root: Path) {
-		for ((index, input) in listOf("List::new" to DiagnosticCode.RAW_GENERIC_TYPE,
+	fun `actual List requires inference evidence and checks explicit arguments and invariance`(@TempDir root: Path) {
+		for ((index, input) in listOf("List::new" to DiagnosticCode.GENERIC_INFERENCE_FAILED,
 			"List<int, string>::new" to DiagnosticCode.GENERIC_ARITY,
 			"List<void>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT,
 			"List<opt<int>>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT).withIndex()) {

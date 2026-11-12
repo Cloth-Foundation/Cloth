@@ -37,10 +37,11 @@ headers such as `typedef<class>`, method return annotations and ordered result
 lists keep their own grammar and meaning.
 
 The argument list is required whenever a generic name is used as a value type,
-including inside its owner. `Box::new(1)` does not infer T; a bare Box parameter
-is not a concrete type. Importing the template name for later explicit application
-is allowed. Constructor/destructor declaration names and implicit `self` retain
-their existing owner syntax; they are not omitted-argument applications.
+including inside its owner. At a constructor call, `Box::new(1)` can infer
+`Box<int>` from the supplied value. A template name can be imported for later
+application. Constructor/destructor declaration names and implicit `self`
+use their existing owner syntax.
+[Constructor inference](constructor-inference-stage-3.md)
 
 `Box<Child>` does not convert to `Box<Parent>` just because Child derives from
 Parent. Ordinary class ancestry of concrete owners is separate from variance in
@@ -163,8 +164,98 @@ owner's name, such as `Box<Box>`, are errors.
 Ordinary value names remain separate from type lookup. A value parameter named T
 does not replace the type parameter T in an annotation. Built-in keyword grammar
 and existing value shadowing rules are unchanged. Expression receivers retain
-existing value-first provider lookup; type applications/annotations remain type
-positions. This slice adds no nested type or generic method syntax.
+existing value-first provider lookup. Type applications and annotations are
+type positions. [GEN-2 Stage 1](../../cloth-functions/references/generic-methods-stage-1.md)
+extends the scope rules to ordinary methods with their own type parameters.
+
+## Type argument inference design
+
+GEN-3 gets its evidence from supplied value arguments. Stage 1 covers top-level
+functions, Stage 2 covers ordinary class and struct methods, and Stage 3 covers
+constructors of named generic classes. A type parameter that appears only in
+the result must be supplied explicitly. For example, when `empty<T>()` returns
+`T[]`, write `def<int[]> values = empty<int>()`.
+[GEN-3 follow-up](../../../../todo/generic-follow-ups.md#omitted-argument-inference-and-defaults) ·
+[Stage 1 integration](function-inference-stage-1.md) ·
+[Stage 2 integration](method-inference-stage-2.md) ·
+[Stage 3 integration](constructor-inference-stage-3.md)
+
+When already-typed arguments provide evidence for the same type parameter,
+their inferred types must agree exactly. If `choose<T>(T left, T right)`
+receives a `Child` and a `Base`, write `choose<Base>(child, base)` to
+select `Base` and use ordinary class widening when checking the call.
+
+When typed arguments determine a type parameter, numeric literals use the
+substituted parameter's ordinary context and range checks. If `small` has
+type `int<8>`, `choose(small, 1)` infers `int<8>` and checks `1` at that width.
+When a numeric literal supplies the only evidence, use its ordinary default
+type and range check. For `echo<T>(T value)`, `echo(1)` infers `int` and
+`echo(1.5)` infers `float`.
+[Numeric literal context](../../cloth-numerics/references/semantics.md#literal-context-and-type-syntax-design-confirmed-2026-11-03)
+
+Check a bare `null` against the substituted parameter. With `count` typed
+as `int`, `choose(count, null)` infers `int` and the second argument fails
+the call check. `choose<int?>(count, null)` explicitly selects a nullable
+parameter. A call whose only possible evidence is bare `null` needs an
+explicit type argument.
+
+Match a declared nullable wrapper to a typed argument's nullable wrapper.
+For an argument of type `int?`, a parameter of type `T?` infers `T = int`.
+A bare `T` captures the whole `int?` type.
+
+Match declared array layers to the argument's element types. For
+`read<T>(T[] values)`, an `int[4]` argument supplies `T = int`. Check the
+substituted parameter with ordinary array reception, including shape checks.
+A bare `T` captures the entire array type, including its extents.
+An array literal with an inferable element type supplies its ordinary inferred
+type. For `read<T>(T[] values)`, `read([1, 2])` infers `T = int`. An empty
+literal needs a known element type, as in `read<int>([])` or when another
+supplied argument establishes the type. An established type can supply the
+array literal's ordinary receiving context.
+[Array types and reception](../../cloth-arrays/references/growable-arrays.md#types-inference-and-reception)
+
+Match a declared generic class or interface application to the corresponding
+application available through the argument's type, class ancestry, or
+interface conformance. For `read<T>(Base<T> value)`, a `Child` that extends
+`Base<int>` supplies `T = int`. Then apply ordinary widening and invariant
+nominal type-argument checks to the substituted parameter.
+
+For a call with omitted type arguments, resolve ordinary overloads first.
+Try inferred generic candidates when the ordinary group has no match.
+An ordinary overload ambiguity reports its usual diagnostic. For example,
+if `Child` extends `Base`, `label(child)` chooses `label(Base value)` when
+that overload and `label<T>(T value)` are available.
+
+Rank inferred candidates with the ordinary overload rules after substitution.
+Equal ranks report ambiguity even when the templates declare different
+numbers of type parameters.
+
+For methods, lookup uses the static receiver and applies inherited hiding
+before inference and bound checks. The exact declaring owner supplies its
+type arguments. Inference fills only the method's own type parameters.
+Calls through a class bound preserve the declaration-site choice and
+substitute its selected arguments into the closed caller. Explicit and
+inferred calls use the same method specialization key.
+
+For `Box::new(...)`, infer the class arguments separately from each
+applicable primary or secondary constructor's parameter types. Check the
+inferred arguments against the class bounds, then apply ordinary overload
+ranking to the substituted signatures. A selected call produces the same
+class application as an explicit receiver with those arguments. With zero
+supplied arguments, write the class arguments explicitly. Base class
+annotations also use explicit arguments.
+
+The first slice accepts a complete explicit list or infers every type argument
+when the list is omitted. Both `pair<int, string>(1, "label")` and
+`pair(1, "label")` use the same specialized contract. Only written value
+arguments contribute evidence. Omitted value defaults follow the selected
+call contract after inference. Declaration-level type-argument defaults and
+partial omission follow in separate stages.
+
+When inference fails for a single generic template, identify the missing or
+conflicting type parameter. When several templates all fail inference, report
+one no-match diagnostic for the overload group. Located errors in the written
+arguments still stop compilation at the first error.
 
 ## Declaration and closed-body checking
 

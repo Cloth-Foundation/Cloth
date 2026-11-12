@@ -127,6 +127,7 @@ captures implementation scope and regression evidence.
 | Shuttle TOML manifests, project/module roots and build/run orchestration | [shuttle-build](../shuttle-build/SKILL.md), [Native command](../shuttle-build/references/native.md) |
 | Standard-library submodule, `cloth/` sources, bundling and namespace contract | [scaffold](../shuttle-build/references/standard-library.md), [contract](../cloth-toolchains/references/standard-library.md), [source integration](../cloth-toolchains/references/standard-library-stage-2.md), [selection controls](../cloth-toolchains/references/standard-library-stage-3.md), [allocation boundary](../cloth-toolchains/references/standard-library-stage-4.md), [publication](../cloth-toolchains/references/standard-library-stage-5.md) |
 | Bootstrap's string-input lexer port, differential checks, token ownership and library boundaries | [cloth-bootstrap-lexer](../cloth-bootstrap-lexer/SKILL.md) |
+| Bootstrap's Cloth parser, arithmetic AST, syntax diagnostics and token lifetime | [cloth-bootstrap-parser](../cloth-bootstrap-parser/SKILL.md) |
 | Compiler-backed standard-library callables, `Path`, read-only `File` and UTF-8 decoding | [file I/O and bindings](../cloth-toolchains/references/file-io.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Ordinary class virtual methods, override checking and lifecycle dispatch | [Virtual method implementation](references/class-inheritance.md#virtual-method-implementation) |
@@ -166,6 +167,12 @@ captures implementation scope and regression evidence.
 | Literal replacement and prefix/suffix removal | [string editing](../cloth-strings/references/editing-methods.md) |
 | Unicode White_Space trimming and blank-string checks | [whitespace methods](../cloth-strings/references/whitespace-methods.md) |
 | Functions, overloads, captures, deferred blocks, explicit generic functions and `magic` | [cloth-functions](../cloth-functions/SKILL.md), [explicit generic functions](../cloth-functions/references/generic-functions.md) |
+| Method-owned type parameters and explicit instance call arguments | [GEN-2 Stage 1](../cloth-functions/references/generic-methods-stage-1.md) |
+| Same-count generic function overloads, candidate bounds, and selected bodies | [GEN-2 Stage 2](../cloth-functions/references/generic-overloads-stage-2.md) |
+| Ordinary generic class and struct method lookup, hiding, specialization, and execution | [GEN-2 Stage 3](../cloth-functions/references/generic-methods-stage-3.md) |
+| Top-level function type argument inference and ordinary overload precedence | [GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) |
+| Class and struct method inference with exact receiver owner arguments | [GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) |
+| Generic class constructor inference and substituted overload ranking | [GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
@@ -248,9 +255,19 @@ captures implementation scope and regression evidence.
   [Generic Stage 6](../cloth-generics/references/stage-6.md) completes the first
   slice's publication, native examples and caller audit. The interface release
   record covers delivered unconstrained generic interfaces. Explicit top-level
-  generic functions share the specialization machinery. Constraints, method-owned
-  parameters, inference and collection protocols have separate follow-ups.
+  generic functions share the specialization machinery. GEN-2 Stage 1 binds
+  method-owned type names and explicit call type arguments. GEN-2 Stage 2
+  resolves same-count overloads for top-level functions. Stage 3 extends
+  lookup and specialization to ordinary methods. GEN-3 Stages 1–3 infer
+  function, ordinary method, and constructor type arguments from supplied values.
+  Collection protocols have separate follow-ups.
   [Explicit generic functions](../cloth-functions/references/generic-functions.md) · [Interface release](../cloth-interfaces/references/stage-7.md) ·
+  [GEN-2 Stage 1](../cloth-functions/references/generic-methods-stage-1.md) ·
+  [GEN-2 Stage 2](../cloth-functions/references/generic-overloads-stage-2.md) ·
+  [GEN-2 Stage 3](../cloth-functions/references/generic-methods-stage-3.md) ·
+  [GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) ·
+  [GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) ·
+  [GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md) ·
   [Generic follow-ups](../../../todo/generic-follow-ups.md)
 
 - Imports and Shuttle: Stage 0 publishes the

@@ -11,8 +11,8 @@ import cloth.token.Keywords
 
 internal enum class LibraryIntrinsic(val id: String, val source: String, val owner: String? = null) {
 	DECODE_UTF8("text.utf8.decode", "cloth/text/Utf8.co"),
-	FILE_OPEN("io.file.open", "cloth/io/File.co", "File"),
-	FILE_READ("io.file.read", "cloth/io/File.co", "File");
+	FILE_OPEN("io.file.open", "cloth/io/fs/File.co", "File"),
+	FILE_READ("io.file.read", "cloth/io/fs/File.co", "File");
 
 	companion object {
 		val bytes = CArray(CInt(8, unsigned = true))

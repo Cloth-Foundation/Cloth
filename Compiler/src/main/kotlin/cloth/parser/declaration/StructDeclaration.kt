@@ -31,6 +31,7 @@ data class MethodDeclaration(
 	val operator: OperatorMember? = null,
 	val overridePrefix: TokenSpan? = null,
 	val virtualPrefix: TokenSpan? = null,
+	val typeParameters: TypeParameterList? = null,
 ) : CallableDeclaration, ClassMember, StateMember {
 
 	override val span get() = (virtualPrefix ?: overridePrefix ?: (visibility ?: keyword).span).through(body.span)

@@ -100,11 +100,11 @@ class TypeParser(private val parser: Parser) {
 
 	private fun applicationEnd(start: Int): Int? = angleListEnd(start)?.let(::suffixEnd)
 
-	internal fun startsFunctionTypeArguments(): Boolean {
-		val name = parser.peek()
-		val opening = parser.peek(1)
+	internal fun startsCallTypeArguments(nameOffset: Int = 0): Boolean {
+		val name = parser.peek(nameOffset)
+		val opening = parser.peek(nameOffset + 1)
 		if (name.type != TokenType.Identifier || !name.touches(opening)) return false
-		val end = angleListEnd(1) ?: return false
+		val end = angleListEnd(nameOffset + 1) ?: return false
 		val arguments = parser.peek(end)
 		return arguments.lexeme == Operators.PAREN_OPEN.toString() && parser.peek(end - 1).touches(arguments)
 	}
@@ -137,7 +137,7 @@ class TypeParser(private val parser: Parser) {
 	internal fun startsQualifiedTypeCheck(): Boolean {
 		if (parser.peek().type != TokenType.Identifier) return false
 		val offset = nameEnd()
-		if (offset == 1 || startsNamedTypeReceiver()) return false
+		if (offset == 1 || startsNamedTypeReceiver() || startsCallTypeArguments(offset - 1)) return false
 		return when (parser.peek(offset).lexeme) {
 			Operators.LESS.toString() -> applicationEnd(offset)?.let(::typeCanEndAt) == true
 			Operators.QUESTION.toString() -> true

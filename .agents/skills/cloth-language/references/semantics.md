@@ -273,6 +273,31 @@ adds nominal-bound operations and carries call contracts into specialization.
 The [constraint design](../../cloth-generics/references/semantics.md#initial-constraint-scope)
 records the satisfaction and operation rules.
 
+[GEN-2 Stage 1](../../cloth-functions/references/generic-methods-stage-1.md)
+parses ordinary class and struct methods with their own type parameters and
+calls such as `box.pair<string>("label")`. Method parameter names must be
+distinct from the enclosing type parameters. Both scopes apply throughout the
+method.
+
+GEN-2 Stage 2 permits top-level generic overloads with the same type parameter
+count and distinct declared value-parameter types. Explicit calls filter by
+bounds, then rank substituted signatures with ordinary overload rules.
+[GEN-2 Stage 2](../../cloth-functions/references/generic-overloads-stage-2.md)
+
+GEN-2 Stage 3 applies those overload rules to ordinary methods. Inherited
+signature hiding precedes bound checks, and calls use the selected static
+contract. Each method specialization includes the exact declaring owner.
+[GEN-2 Stage 3](../../cloth-functions/references/generic-methods-stage-3.md)
+
+GEN-3 infers the complete type argument list for top-level functions,
+ordinary class and struct methods, and named generic class constructors
+from supplied values. A matching ordinary overload takes precedence for
+functions and methods. The exact declaring owner supplies its type
+arguments for methods.
+[GEN-3 Stage 1](../../cloth-generics/references/function-inference-stage-1.md) ·
+[GEN-3 Stage 2](../../cloth-generics/references/method-inference-stage-2.md) ·
+[GEN-3 Stage 3](../../cloth-generics/references/constructor-inference-stage-3.md)
+
 Ordinary parameter rules are in [function parameters](../../cloth-functions/references/semantics.md#function-parameters).
 
 ## Function scopes
@@ -515,6 +540,8 @@ The constrained Test.co example belongs to later capability work.
   constructor and named secondary constructors inherit the class's visibility.
 - `Type::new` and `Type::new()` are equivalent calls with zero supplied
   arguments. Calls that supply arguments use `Type::new(...)`.
+  A named generic class can infer its arguments from supplied values.
+  [Constructor inference](../../cloth-generics/references/constructor-inference-stage-3.md)
 - Defaults and delegation arguments resolve before instance initialization.
   Defaults can read earlier resolved parameters, and the delegation arguments
   can read the secondary constructor's parameters. `self` becomes available

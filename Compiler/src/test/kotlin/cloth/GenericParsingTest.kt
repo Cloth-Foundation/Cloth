@@ -139,12 +139,55 @@ class GenericParsingTest {
 	}
 
 	@Test
+	fun `ordinary methods and member calls preserve their type lists`() {
+		val declarations = unit("""
+			typedef<class> Box<T> (def<T> item) {
+			    pub mt<T, U> pair<U: View<T>>(U value) = self.item, value
+			}
+			typedef<struct> Slot<T> {
+			    T item;
+			    mt<U> echo<U>(U value) = value
+			}
+		""").declarations
+		val pair = assertIs<MethodDeclaration>(assertIs<ClassDeclaration>(declarations[0]).members.single())
+		assertEquals("<U: View<T>>", text(assertNotNull(pair.typeParameters).span))
+		assertEquals(listOf("T", "U"), pair.returnTypes.map { it.spelling })
+		val echo = assertIs<StructDeclaration>(declarations[1]).methods.single()
+		assertEquals("<U>", text(assertNotNull(echo.typeParameters).span))
+		val call = assertIs<MemberCallExpression>(expression("box.pair<Slot<unsigned int<16>>, int[]?>(value=item)"))
+		val types = assertNotNull(call.typeArguments)
+		assertEquals("<Slot<unsigned int<16>>, int[]?>", text(types.span))
+		assertEquals(listOf("Slot<unsigned int<16>>", "int[]?"), types.arguments.map { it.spelling })
+		assertEquals("value", call.suppliedArguments.single().label?.lexeme)
+	}
+
+	@Test
+	fun `generic member calls keep the comparison and postfix grammar`() {
+		for (source in listOf("box.value < high > (low)", "box.value<high> (low)")) {
+			val comparison = assertIs<BinaryExpression>(expression(source))
+			assertEquals(">", comparison.operator.lexeme)
+			val less = assertIs<BinaryExpression>(comparison.left)
+			assertEquals("<", less.operator.lexeme)
+			assertIs<FieldAccessExpression>(less.left)
+		}
+		val valueCheck = assertIs<BinaryExpression>(expression("value is outer.box.read<int>()"))
+		assertIs<MemberCallExpression>(valueCheck.right)
+		val typeCheck = assertIs<TypeCheckExpression>(expression("value is Outer.Box<int>"))
+		assertEquals("Outer.Box<int>", typeCheck.target.spelling)
+		val guarded = assertIs<GuardedAccessExpression>(expression("box?.read<int>().value"))
+		val access = assertIs<FieldAccessExpression>(guarded.continuation)
+		val call = assertIs<MemberCallExpression>(access.receiver)
+		assertEquals("<int>", text(assertNotNull(call.typeArguments).span))
+	}
+
+	@Test
 	fun `empty malformed and trailing generic lists fail at the first syntax error`() {
 		for (source in listOf(
 			"typedef<class> Box<> {}", "typedef<struct> Box<T,> {}", "typedef<class> Box<T U> {}",
 			"fn<Box<>> f() = null", "fn<Box<int,>> f() = null", "fn<Box<int> f() = null",
 			"fn main() { Box<>::new }", "fn main() { Box<int,>::type }",
-			"fn work<>() {}", "fn main() { work<int,>(1) }"
+			"fn work<>() {}", "fn main() { work<int,>(1) }",
+			"typedef<class> Box { mt work<>() {} }", "fn main() { box.work<int,>(1) }"
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.EXPECTED_TOKEN, error.diagnosticCode, source)
@@ -185,10 +228,14 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `defaults and generic methods and enums retain an explicit syntax boundary`() {
+	fun `defaults enums and dispatched generic methods retain an explicit syntax boundary`() {
 		for (source in listOf(
 			"typedef<struct> Box<T = int> {}", "fn work<T: Number = int>() {}",
-			"typedef<class> Box { mt work<T>() {} }", "typedef<enum> Mode<T> { One }"
+			"typedef<enum> Mode<T> { One }",
+			"typedef<class> Box { virtual: pub mt work<T>() {} }",
+			"typedef<class> Box : Base { override: pub mt work<T>() {} }",
+			"typedef<class> Box { state<void> Alive { mt work<T>() {} } }",
+			"typedef<interface> Box { mt work<T>() }",
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_GENERIC_SYNTAX, error.diagnosticCode, source)

@@ -7,8 +7,9 @@ description: Develop Bootstrap's string-input Cloth lexer port, compare tokens a
 
 Read [scope, ownership, boundaries and verification](references/port.md).
 The user confirmed on 2026-11-07 that Bootstrap currently targets a faithful copy
-of the Kotlin lexer using a string. Parsing and later compiler stages are outside
-this slice. Expose concrete library requirements before proposing new facilities.
+of the Kotlin lexer using a string. The [Bootstrap parser skill](../cloth-bootstrap-parser/SKILL.md)
+owns the first parsing slice. Expose concrete library requirements before
+proposing new facilities.
 
 The [Kotlin lexer](../../../Compiler/src/main/kotlin/cloth/lexer/Lexer.kt),
 [keywords](../../../Compiler/src/main/kotlin/cloth/token/Keywords.kt),
@@ -31,7 +32,8 @@ the comparison authority. Keep Bootstrap's explicit spelling enums synchronized.
   owned failure. Destroy partial tokens and stop at the first error.
 - The Bootstrap driver opens a source path from a positional argument or
   `--file <path>` before reading stdin. Use `--text <source>` for literal
-  source and zero arguments for an interactive line. [Main.co](../../../Bootstrap/Frontend/Main.co)
+  source and zero arguments for an interactive line. The leading `--parse` flag
+  selects the parser. [Main.co](../../../Bootstrap/Frontend/Main.co)
 
 Preserve UTF-8 strings and scalar chars. Internal substring indices are scalar;
 published positions are one-based UTF-16 columns with exclusive ends. Do not

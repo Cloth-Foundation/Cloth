@@ -72,7 +72,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		}
 		val methods = (structs.map { it to ((views?.declarationOf(it) as? StructDeclaration) ?: it.declaration).methods } + classTypes.map { it to ((views?.declarationOf(it) as? ClassDeclaration) ?: it.declaration).members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
 			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean, Pair<SignatureType, Boolean>?>, MethodSymbol>()
-			members.map { declaration ->
+			members.filter { it.typeParameters == null }.map { declaration ->
 				OperatorRules.validate(declaration, owner)
 				val method = MethodSymbol(declaration, owner, nominal = nominal)
 				if (views != null) method.signatureResolver = views::signatureType
@@ -83,7 +83,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				}
 				method
 			}
-		}
+		} + views?.methods?.values.orEmpty()
 		val model = DeclarationModel(files, functions, target, structs, methods, classes, files.objectRoot, enumTypes, enumNames, views)
 		for (callable in model.callableContracts) {
 			val scope = LexicalScope(model.fileScopeOf(callable.name))
@@ -222,22 +222,21 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 		private fun callGroup(call: CallExpression, group: CallableGroupSymbol): CallableGroupSymbol {
 			val arguments = call.typeArguments
+			if (group is MethodGroupSymbol) return group
 			if (group !is FunctionGroupSymbol) {
 				if (arguments != null) throw GenericErrors.callArity(call.name, arguments.span, arguments.arguments.size, listOf(0), group.name)
 				return group
 			}
-			val count = arguments?.arguments?.size ?: 0
+			if (arguments == null) return group
+			val count = arguments.arguments.size
 			val matching = group.overloads.filter { it.typeParameterCount == count }
 			if (matching.isEmpty()) {
 				val expected = group.overloads.map { it.typeParameterCount }.distinct().sorted()
-				throw GenericErrors.callArity(call.name, arguments?.span ?: call.name.span, count, expected, group.name)
+				throw GenericErrors.callArity(call.name, arguments.span, count, expected, group.name)
 			}
-			if (arguments != null) {
-				val types = arguments.arguments.map(model.typeResolver()::resolve)
-				val function = checkNotNull(model.genericViews).specialize(matching.single(), types)
-				return FunctionGroupSymbol(listOf(function))
-			}
-			return if (matching.size == group.overloads.size) group else FunctionGroupSymbol(matching)
+			val types = arguments.arguments.map(model.typeResolver()::resolve)
+			val candidates = checkNotNull(model.genericViews).functionCandidates(matching, types, arguments)
+			return FunctionGroupSymbol(candidates)
 		}
 
 		private fun checkReceiverWrite(binding: Symbol?, span: TokenSpan) {
@@ -462,13 +461,15 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				}
 
 				is ClassCreationExpression                                                                                           -> {
-					val receiver = expression.receiver as? NameExpression
-					if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
-					val target = expression.receiver
-					val type = if (target is TypeReceiverExpression) model.typeResolver().resolve(target.annotation)
-					else namedTypeReceiver(target, scope, alwaysType = true)
-					val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
-					model.classCreations[expression] = definition
+					if (model.genericViews?.inferredCreation(expression) == null) {
+						val receiver = expression.receiver as? NameExpression
+						if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
+						val target = expression.receiver
+						val type = if (target is TypeReceiverExpression) model.typeResolver().resolve(target.annotation)
+						else namedTypeReceiver(target, scope, alwaysType = true)
+						val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
+						model.classCreations[expression] = definition
+					}
 					ArgumentBinder.validate(expression.suppliedArguments)
 					expression.arguments.forEach { expression(it, scope) }
 				}

@@ -49,4 +49,5 @@ pub typedef<enum> Keywords (pub def<string> spelling) {
     BREAK("break");
 
     operator ::str() = spelling
+    operator<string> ==() = spelling
 }

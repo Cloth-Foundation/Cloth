@@ -18,6 +18,9 @@ import cloth.semantic.ResultShape
 import cloth.semantic.SemanticException
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.ConstructorSymbol
+import cloth.semantic.symbols.FunctionSymbol
+import cloth.semantic.symbols.MethodSymbol
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -117,7 +120,19 @@ object SemanticErrors {
 	fun memberArity(name: Token, count: Int, expected: Int) = issue(DiagnosticCode.CALL_ARITY, "Member '${name.lexeme}' takes $expected arguments, got $count", name.span, "The receiver is supplied before ${Operators.DOT}; it is not an explicit argument.")
 	internal fun memberArgument(name: Token, argument: Expression, actual: ValueType, parameters: List<BuiltinParameter>) = issue(DiagnosticCode.INVALID_BUILTIN_ARGUMENT, "Member '${name.lexeme}' requires ${parameters.joinToString(" or ") { it.spelling }}, got '${actual.spelling}'", argument.span, "Argument types must match exactly.")
 	internal fun memberAmbiguous(name: Token, span: TokenSpan) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Member call '${name.lexeme}' is ambiguous", span, "Use explicit argument types to select one overload.")
-	private fun callIssue(code: DiagnosticCode, call: CallSite, candidates: List<CallableContractSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, it.signature.spelling) }, help)
+	private fun callSignature(candidate: CallableContractSymbol): String {
+		val parameters = when (candidate) {
+			is FunctionSymbol -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
+			is MethodSymbol -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
+			is ConstructorSymbol -> if (candidate.signatureResolver == null) candidate.owner.declaration.typeParameters else null
+			else -> null
+		} ?: return candidate.signature.spelling
+		val typeParameters = parameters.parameters.joinToString(", ", "<", ">") { it.name.lexeme }
+		val values = candidate.parameters.joinToString(", ", "(", ")") { it.declaredType.spelling }
+		return candidate.name.lexeme + typeParameters + values
+	}
+
+	private fun callIssue(code: DiagnosticCode, call: CallSite, candidates: List<CallableContractSymbol>, summary: String, help: String) = SemanticException(code, summary, listOf(SourceLabel(call.span, "call with ${call.arguments.size} arguments")) + candidates.map { SourceLabel(it.name.span, callSignature(it)) }, help)
 	fun callArity(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
 	fun noMatchingCall(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")
 	fun ambiguousCall(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous", "Use explicit casts to select the intended parameter types.")

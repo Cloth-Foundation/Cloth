@@ -27,6 +27,7 @@ the source behavior. See [Stage 1 syntax](class-syntax.md) and the
   selects the field and allows reads only. Method candidates outside the owner
   include public overloads only. `::new` resolves the class name in the type
   namespace even when a local uses the same name.
+  [Generic constructor inference](../../cloth-generics/references/constructor-inference-stage-3.md)
 
 ## Typed call and receiver plans
 

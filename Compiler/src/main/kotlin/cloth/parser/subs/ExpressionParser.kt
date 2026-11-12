@@ -24,7 +24,7 @@ class ExpressionParser(val parser: Parser) {
 				parser.advance()
 				val target = parser.peek()
 				val hasValuePostfix = parser.peek(1).lexeme in setOf(Operators.PAREN_OPEN.toString(), Operators.DOT.toString(), Operators.SAFE_DOT.toString(), Operators.COLON_COLON.toString(), Operators.BRACKET_OPEN.toString())
-				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && (hasValuePostfix || parser.typeParser.startsFunctionTypeArguments())
+				val valueTarget = target.lexeme == Operators.PAREN_OPEN.toString() || isImplicitBinding(target) || target.type == TokenType.Identifier && (hasValuePostfix || parser.typeParser.startsCallTypeArguments())
 				left = if (!valueTarget || parser.typeParser.startsQualifiedTypeCheck()) {
 					TypeCheckExpression(left, operator, parser.typeParser.parse(inCast = true))
 				} else {
@@ -123,10 +123,12 @@ class ExpressionParser(val parser: Parser) {
 	}
 
 	private fun parseMember(receiver: Expression): Expression {
+		val genericCall = parser.typeParser.startsCallTypeArguments()
 		val name = parser.expect(TokenType.Identifier, "a member name")
+		val typeArguments = if (genericCall) parser.typeParser.arguments() else null
 		if (parser.peek().lexeme != Operators.PAREN_OPEN.toString()) return FieldAccessExpression(receiver, name)
 		val arguments = parseArgumentList()
-		return MemberCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
+		return MemberCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span), typeArguments)
 	}
 
 	private fun parseDoubleColon(receiver: Expression): Expression {
@@ -177,7 +179,7 @@ class ExpressionParser(val parser: Parser) {
 			TokenType.Keyword if isImplicitBinding(token)                                                   -> NameExpression(parser.advance())
 
 			TokenType.Identifier                                                                            -> {
-				val genericCall = parser.typeParser.startsFunctionTypeArguments()
+				val genericCall = parser.typeParser.startsCallTypeArguments()
 				val name = parser.advance()
 				val typeArguments = if (genericCall) parser.typeParser.arguments() else null
 				if (parser.peek().lexeme == Operators.PAREN_OPEN.toString()) {

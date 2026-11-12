@@ -112,6 +112,10 @@ tasks.register<Test>("genericSyntaxTest") {
 		includeTestsMatching("cloth.GenericCallableTypingTest")
 		includeTestsMatching("cloth.GenericCallableFlowTest")
 		includeTestsMatching("cloth.GenericOverloadTypingTest")
+		includeTestsMatching("cloth.GenericMethodTypingTest")
+		includeTestsMatching("cloth.GenericMethodInferenceTypingTest")
+		includeTestsMatching("cloth.GenericConstructorInferenceTypingTest")
+		includeTestsMatching("cloth.GenericInferenceTypingTest")
 		includeTestsMatching("cloth.GenericCallableImportsTest")
 		includeTestsMatching("cloth.StandardListImportsTest")
 	}

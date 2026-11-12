@@ -1,11 +1,11 @@
 # Standard library compiler bindings and read-only files
 
 `Path` and `pathOf(string)` are ordinary source declarations in
-[`cloth.io.Path`](../../../../Standard-Library/cloth/io/Path.co). A path is an
+[`cloth.io.Path`](../../../../Standard-Library/cloth/io/path/Path.co). A path is an
 independent struct value containing the supplied spelling. Opening delegates
 relative path and separator interpretation to the target platform.
 
-[`cloth.io.File`](../../../../Standard-Library/cloth/io/File.co) exports the final
+[`cloth.io.File`](../../../../Standard-Library/cloth/io/fs/File.co) exports the final
 `File` class and `FileError` enum. `File::new(Path)` copies the value into a
 private field. `File::new(string)` constructs a `Path` and delegates. Both
 create an unopened object. `file.open()` returns `null` on success or a typed

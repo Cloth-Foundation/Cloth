@@ -7,6 +7,8 @@ import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
 import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericBodyViews
+import cloth.semantic.generics.GenericMethodSignature
+import cloth.semantic.generics.GenericMethodTemplate
 import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.target.TargetLayout
@@ -86,8 +88,16 @@ class DeclarationModel internal constructor(
 		for (callable in callables) (callable.receiver?.owner as? CEnum)?.let { put(callable.declaration, it) }
 	}
 	private val operatorGroups = methods.filter { it.declaration.operator != null }.groupBy { it.name.lexeme }
-	private val methodGroups = methods.filter { it.declaration.operator == null }.groupBy { it.owner }.mapValues { (_, members) ->
-		members.groupBy { it.name.lexeme }.mapValues { (_, overloads) -> MethodGroupSymbol(overloads) }
+	private val methodGroups = buildMap {
+		val ordinary = methods.filter { it.declaration.operator == null && it.declaration.typeParameters == null }.groupBy { it.owner }
+		val generic = genericViews?.types?.methodTemplates.orEmpty()
+		for (owner in ordinary.keys + generic.keys) {
+			val overloads = ordinary[owner].orEmpty().groupBy { it.name.lexeme }
+			val templates = generic[owner].orEmpty()
+			put(owner, (overloads.keys + templates.keys).associateWith { name ->
+				MethodGroupSymbol(overloads[name].orEmpty(), templates[name].orEmpty())
+			})
+		}
 	}
 
 	internal fun hasOperator(name: String) = name in operatorGroups
@@ -184,7 +194,23 @@ class DeclarationModel internal constructor(
 			.distinctBy { it.signature }
 			.map { method -> virtualFamilyOf(method)?.let { symbolOf(it.base) } ?: method }
 			.toList()
-		return methods.takeIf { it.isNotEmpty() }?.let(::MethodGroupSymbol)
+		val templates = methodTemplates(owner, name)
+		return if (methods.isEmpty() && templates.isEmpty()) null else MethodGroupSymbol(methods, templates)
+	}
+
+	internal fun methodTemplate(owner: CMemberType, source: MethodDeclaration): GenericMethodTemplate? =
+		genericViews?.types?.methodTemplates?.get(owner)?.get(source.name.lexeme)?.firstOrNull { it.declaration === source }
+
+	private fun methodTemplates(owner: CClass, name: String): List<GenericMethodTemplate> {
+		if (genericViews?.types?.methodTemplates.isNullOrEmpty()) return emptyList()
+		return buildList {
+			val hidden = mutableSetOf<GenericMethodSignature>()
+			for (ancestor in owner.ancestry()) {
+				val own = methodGroups[ancestor]?.get(name)?.templates.orEmpty()
+				addAll(own.filter { it.signature !in hidden })
+				own.mapTo(hidden) { it.signature }
+			}
+		}
 	}
 	internal fun interfaceGroup(owner: CInterface, name: String): InterfaceMethodGroupSymbol? = interfaceGroups[owner]?.get(name)
 	internal fun memberGroup(owner: CMemberType, name: String): CallableGroupSymbol? =

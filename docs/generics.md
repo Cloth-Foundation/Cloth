@@ -1,6 +1,6 @@
 # Generics in Cloth
 
-Cloth supports named generic classes and structs with explicit invariant type
+Cloth supports named generic classes and structs with invariant type
 arguments. The runnable [Generics example](../examples/Generics.co) uses both:
 
 ```cloth
@@ -37,9 +37,9 @@ false
 
 ## Arguments and checking
 
-Use explicit arguments at every type application, including nested applications such as
-`Box<Slot<int>>`. `Box::new(1)` does not infer T. Arguments preserve exact identities:
-`Box<int>`, `Box<usize>`, `Box<int[]>` and `Box<int[2]>` are different types.
+Write the full type in annotations, including nested applications such as
+`Box<Slot<int>>`. Arguments preserve exact identities. `Box<int>`, `Box<usize>`,
+`Box<int[]>` and `Box<int[2]>` are different types.
 `Box<Child>` does not convert to `Box<Parent>` when Child derives from Parent.
 
 A type declared inside `Box<T>` uses `Box` as its qualifier. `Box.Item` is the
@@ -106,7 +106,8 @@ dispatch. Equality, formatting, and deletion use the checked object rules.
 ## Generic functions
 
 Declare a function's type parameters after its name, as in
-`pub fn<T> magic<T>(T value) = value`. Supply the types explicitly at the call.
+`pub fn<T> magic<T>(T value) = value`. Supply the types explicitly or let Cloth
+infer the full list from the supplied values.
 The standard-library `magic` helper marks a deliberately inline value and
 returns it at the supplied type.
 
@@ -118,6 +119,45 @@ fn main() {
     println(count)
 }
 ```
+
+Generic overloads with the same type parameter count require distinct declared
+value-parameter types. The compiler compares type parameters by position.
+An explicit call filters candidates by their bounds and ranks the substituted
+signatures with ordinary overload rules. A tie reports an ambiguous call.
+[Generic overload examples](../.agents/skills/cloth-functions/references/generic-overloads-stage-2.md)
+
+For `fn<T> echo<T>(T value) = value`, `echo(1)` infers `T = int`. A
+matching ordinary overload takes precedence. A type parameter that appears
+only in the result requires an explicit type argument, as in `empty<int>()`.
+[Function inference examples](../.agents/skills/cloth-generics/references/function-inference-stage-1.md)
+
+## Generic methods
+
+Ordinary class and struct methods can declare their own type parameters.
+The method can use both its own parameters and the enclosing type's parameters.
+
+```cloth
+typedef<class> Box<T> (def<T> item) {
+    pub mt<T, U> pair<U>(U value) = self.item, value
+}
+```
+
+On a `Box<int>` receiver, `box.pair("label")` infers `U = string` and returns
+`int, string`. `box.pair<string>("label")` selects the same specialization.
+The receiver supplies `T = int`. A matching ordinary overload takes
+precedence, and lookup uses the receiver's static type. A matching child
+declaration hides the inherited signature before candidate bounds are checked.
+[Method inference](../.agents/skills/cloth-generics/references/method-inference-stage-2.md)
+
+## Generic constructors
+
+With `Box<T>` declared as above, `Box::new(value=7)` infers `Box<int>` from
+the supplied value. Primary and secondary constructors compete using the
+ordinary overload rules after inference and bound checks. Use an explicit
+receiver such as `Box<int>::new(...)` when the supplied arguments leave a type
+parameter unknown. This includes zero-argument construction such as
+`List<int>::new`.
+[Constructor inference](../.agents/skills/cloth-generics/references/constructor-inference-stage-3.md)
 
 ## Public List
 
@@ -149,9 +189,8 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover combined bounds, constructor guarantees, method-owned
-type parameters, generic overloads with the same type parameter count,
-omitted-argument inference, variance, type defaults, generic enums and states,
+Follow-ups cover combined bounds, constructor guarantees, generic dispatch contracts,
+partial type argument lists, variance, type defaults, generic enums and states,
 and higher-kinded types. Direct collection
 indexing, indexed assignment and foreach require their own protocol. Keep the
 intended constrained forms in [Test.co](../examples/Test.co).

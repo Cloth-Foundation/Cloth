@@ -1,6 +1,6 @@
 ---
 name: cloth-functions
-description: Design, explain, or extend Cloth function declarations, strict parameters and returns, scopes, recursion, overload resolution, or deferred local function blocks.
+description: Design, explain, or extend Cloth functions and methods, strict parameters and returns, scopes, recursion, overload resolution, or deferred local function blocks.
 ---
 
 # Cloth functions and function blocks
@@ -9,6 +9,28 @@ description: Design, explain, or extend Cloth function declarations, strict para
 `fn<T> name<T>(T value)` declarations, `name<int>(value)` applications, and the
 standard-library `magic` helper. Reuse the existing symbolic and closed
 worklist and preserve the defining file and separate facts of each specialization.
+
+[GEN-2 Stage 1](references/generic-methods-stage-1.md) parses method-owned type
+parameters and explicit member call arguments. It binds both scopes in the
+method and resolves explicit type arguments in the calling file.
+
+GEN-2 Stage 2 resolves same-count top-level generic function overloads.
+Filter candidates by bounds, then rank substituted signatures with ordinary
+overload trials. Expand a body only after a committed selection.
+[GEN-2 Stage 2](references/generic-overloads-stage-2.md)
+
+GEN-2 Stage 3 applies that resolver to ordinary class and struct methods.
+Hide inherited signatures before checking bounds and specialize by the
+declaring owner, method declaration, and explicit arguments.
+[GEN-2 Stage 3](references/generic-methods-stage-3.md)
+
+GEN-3 infers function and ordinary method type arguments when ordinary
+overloads have no match. Named generic classes infer owner arguments from
+`::new(...)` values. Reuse argument placement, candidate trials, and the
+specialization worklist.
+[GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) ·
+[GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) ·
+[GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md)
 
 [Generic Stage 0](../cloth-generics/references/semantics.md#declaration-and-closed-body-checking)
 confirms owner-generic bodies are checked at declaration, including unused

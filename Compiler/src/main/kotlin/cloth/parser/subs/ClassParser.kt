@@ -92,6 +92,7 @@ internal class ClassParser(private val parser: Parser) {
 					overridePrefix = prefixSpan.takeIf { methodPrefix == Keywords.OVERRIDE },
 					virtualPrefix = prefixSpan.takeIf { methodPrefix == Keywords.VIRTUAL },
 					allowIntrinsic = true,
+					allowTypeParameters = methodPrefix == null,
 				)
 				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
 				parser.atKeyword(Keywords.STATE)                                 -> parseState(visibility, initial)

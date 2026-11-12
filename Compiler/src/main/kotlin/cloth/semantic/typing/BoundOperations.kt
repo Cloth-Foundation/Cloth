@@ -11,6 +11,7 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.MemberCallExpression
 import cloth.semantic.ClassComparisonPlan
+import cloth.semantic.generics.sourceSpans
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.MethodSymbol
 
@@ -30,11 +31,11 @@ internal fun FunctionSemanticModel.boundView(value: Expression): CMemberType? {
 	return declarations.genericViews?.specializedBound(value, parameter.parameter)
 }
 
-internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression, owner: CMemberType): CallableContractSymbol? {
+internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression, owner: CMemberType, report: Boolean = true): CallableContractSymbol? {
 	if (boundView(call.receiver) == null) return null
 	return checkedFact(call) { body, checked ->
 		when (val selected = body.selectedBoundMemberCall(checked as MemberCallExpression)) {
-			is ResolvedCall.Source -> specializeMethod(owner, selected.callable as MethodSymbol, body)
+			is ResolvedCall.Source -> specializeMethod(owner, selected.callable as MethodSymbol, body, call, report)
 			is ResolvedCall.Interface -> {
 				val bound = owner as CInterface
 				val source = selected.contract.requirement
@@ -53,17 +54,30 @@ internal fun FunctionSemanticModel.checkedIdentity(expression: BinaryExpression,
 		body.types.classComparisons[checked as BinaryExpression]?.let { plan ->
 			plan.copy(identityOverride = plan.identityOverride?.let { selected ->
 				val owner = if (selected.receiverIndex == 0) left else right
-				val method = specializeMethod(owner, selected.call.callable as MethodSymbol, body)
+				val method = checkNotNull(specializeMethod(owner, selected.call.callable as MethodSymbol, body))
 				selected.copy(call = selected.call.copy(callable = method, type = typeOf(method)))
 			})
 		}
 	}
 }
 
-private fun FunctionSemanticModel.specializeMethod(owner: CMemberType, selected: MethodSymbol, body: FunctionSemanticModel): MethodSymbol {
-	val source = checkNotNull(body.declarations.genericViews).originalOf(selected.declaration) as MethodDeclaration
+private fun FunctionSemanticModel.specializeMethod(
+	owner: CMemberType,
+	selected: MethodSymbol,
+	body: FunctionSemanticModel,
+	call: MemberCallExpression? = null,
+	report: Boolean = true,
+): MethodSymbol? {
+	val canonical = checkNotNull(body.declarations.genericViews)
+	val source = canonical.originalOf(selected.declaration) as MethodDeclaration
 	val declaring = (owner as CClass).ancestry().firstOrNull { it.declaration === selected.owner.declaration }
 		?: throw InternalErrors.invariant("Missing bound class member '${source.name.lexeme}'")
-	val view = checkNotNull(declarations.genericViews).viewOf(source, declaring) as MethodDeclaration
-	return declarations.symbolOf(view)
+	val views = checkNotNull(declarations.genericViews)
+	if (source.typeParameters == null) return declarations.symbolOf(views.viewOf(source, declaring) as MethodDeclaration)
+	val site = checkNotNull(call)
+	val template = declarations.methodTemplate(declaring, source)
+		?: throw InternalErrors.invariant("Missing bound generic method '${source.name.lexeme}'")
+	val supplied = site.typeArguments ?: return views.inferredBoundMethod(site, template, selected, canonical, report)
+	val arguments = methodTypeArguments(supplied, report) ?: return null
+	return views.methodCandidates(listOf(template), arguments, supplied.sourceSpans(), site, report).singleOrNull()
 }

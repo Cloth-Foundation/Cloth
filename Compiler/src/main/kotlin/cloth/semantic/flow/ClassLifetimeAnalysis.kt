@@ -478,9 +478,9 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is ClassCreationExpression                                                                        -> {
 				arguments(value.arguments, state)
 				if (!continues(value, state)) return null
-				val handle = newHandle(model.types.scalarTypeOrNull(value))
-				val owner = declarations.classCreations[value]?.owner
-				val initial = owner?.let { declarations.states[it]?.initial }
+				val type = model.types.scalarTypeOrNull(value)
+				val handle = newHandle(type)
+				val initial = (type as? CClass)?.let { declarations.states[it]?.initial }
 				state.active.clear()
 				if (initial != null) enterState(handle, initial, state)
 				return handle

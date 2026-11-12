@@ -33,7 +33,7 @@ class GenericStageBoundaryTest {
 	@Test
 	fun `generic name failures precede the closed compilation boundary`() {
 		failure("typedef<class> Box<T, T> {}\nfn main() {}", DiagnosticCode.INVALID_GENERIC_PARAMETER)
-		failure("typedef<class> Box<T> {}\nfn main() { Box::new }", DiagnosticCode.RAW_GENERIC_TYPE)
+		failure("typedef<class> Box<T> {}\nfn main() { Box::type }", DiagnosticCode.RAW_GENERIC_TYPE)
 		failure("typedef<class> Box<T> {}\nfn main() { Box<int, string>::new }", DiagnosticCode.GENERIC_ARITY)
 		failure("typedef<class> Box<T> {}\nfn main() { Box<void>::new }", DiagnosticCode.INVALID_GENERIC_ARGUMENT)
 	}
@@ -55,8 +55,8 @@ class GenericStageBoundaryTest {
 	}
 
 	@Test
-	fun `closed generic compilation emits objects on all nine target profiles`(@TempDir directory: Path) {
-		val ast = structUnit("typedef<class> Box<T> {}\nfn main() { Box<int>::new }")
+	fun `inferred generic construction emits objects on all nine target profiles`(@TempDir directory: Path) {
+		val ast = structUnit("typedef<class> Box<T>(T value) {}\nfn main() { def box = Box::new(1); box::delete }")
 		for ((i, triple) in structTargetTriples.withIndex()) {
 			val output = directory.resolve("generic_$i.o")
 			LLVMEmitter(NativeCABI.forTarget(triple)).compileObject(ast, output)

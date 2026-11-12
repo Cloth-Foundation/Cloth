@@ -112,7 +112,7 @@ successful scans and first errors after two tokens release the list storage,
 tokens, and spans.
 
 [ImportPublicationTest](../../../../Compiler/src/test/kotlin/cloth/ImportPublicationTest.kt)
-checks the exact graph of eight Bootstrap sources plus the library's List,
+checks the exact graph of reached Bootstrap sources plus the library's List,
 Path, File and UTF-8 decoder. The native test holds stdin open, compares
 file-mode token JSON with Kotlin, and checks empty, missing and malformed input
 and the first lexer error.

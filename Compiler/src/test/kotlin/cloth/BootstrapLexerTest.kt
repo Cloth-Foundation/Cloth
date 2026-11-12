@@ -92,9 +92,11 @@ class BootstrapLexerTest {
 	}
 
 	@Test
-	fun `Bootstrap releases successful and partial token lists`(@TempDir directory: Path) {
+	fun `Bootstrap releases successful and partial token lists and syntax trees`(@TempDir directory: Path) {
 		val source = Files.writeString(directory.resolve("Ownership.co"), """
 			using lexer.Lexer: Lexer
+			using parser.Ast: SourceUnit
+			using parser.Parser: Parser
 			using source.SourceFile: SourceFile
 			using token.TokenList: TokenList
 
@@ -110,7 +112,33 @@ class BootstrapLexerTest {
 			    return valid && sourceSurvived
 			}
 
-			fn<bool> sample() = scanAndDelete("first second", true) && scanAndDelete("first second @", false)
+			fn<bool> parseAndDelete(string input, bool succeeds) {
+			    def source := SourceFile::new("<string>", input)
+			    def lexer := Lexer::new(input, source)
+			    def<TokenList?> tokens := lexer.scanTokens()
+			    lexer::delete
+			    if (tokens == null) {
+			        source::delete
+			        return false
+			    }
+			    def parser := Parser::new(tokens)
+			    def<SourceUnit?> tree := parser.parse()
+			    def valid = tree == null && !succeeds && parser.failure != null
+			    parser::delete
+			    if (tree != null) {
+			        valid = succeeds && tree.functions.size() == 1 && tree.functions.get(0).bindings.size() == 2
+			        tree::delete
+			    }
+			    tokens::delete
+			    source::delete
+			    return valid
+			}
+
+			fn<bool> sample() {
+			    if (!scanAndDelete("first second", true) || !scanAndDelete("first second @", false)) return false
+			    if (!parseAndDelete("fn main() { def x = 2; def y := -(x + 1) ** 3 }", true)) return false
+			    return parseAndDelete("fn done() {}\nfn main() { def x = 2; def y := (x * 3 + (4 ** 5 * )) }", false)
+			}
 		""".trimIndent())
 		val harness = GrowableArrayStorageTest()
 		for (abi in structRunners()) {
@@ -118,7 +146,7 @@ class BootstrapLexerTest {
 			val graph = SourceGraphLoader.load(request(source, output, abi.targetTriple, OutputKind.OBJECT))
 			val model = FunctionAnalyzer(abi.layout).analyze(graph)
 			harness.probe(abi, output, model = model) {
-				expect(checkNotNull(sourceCall("sample", null)), "Bootstrap scan ownership probe failed")
+				expect(checkNotNull(sourceCall("sample", null)), "Bootstrap ownership probe failed")
 			}
 		}
 	}

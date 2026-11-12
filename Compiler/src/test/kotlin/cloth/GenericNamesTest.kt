@@ -9,9 +9,10 @@ import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.*
-import cloth.parser.expression.NameExpression
-import cloth.parser.expression.ProviderAccessExpression
+import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ExpressionStatement
+import cloth.parser.statement.ReturnStatement
 import cloth.semantic.declarations.DeclarationAnalyzer
 import cloth.semantic.generics.*
 import cloth.settings.OutputKind
@@ -89,6 +90,111 @@ class GenericNamesTest {
 	}
 
 	@Test
+	fun `method-owned names extend the enclosing type scope throughout the callable`() {
+		val ast = unit("""
+			typedef<interface> View<T> {}
+			typedef<class> Box<T> {
+			    pub mt<T, U> pair<U: View<T>, N: Number>(T input, U value, opt<typeinfo> info ?: U::type) {
+			        def<U> deferred = { def<T> copy = input; return value }
+			        return input, self.echo<U>(deferred)
+			    }
+			    mt<U> echo<U>(U value) = value
+			}
+		""")
+		val box = assertIs<ClassDeclaration>(ast.declarations[1])
+		val (pair, echo) = box.members.filterIsInstance<MethodDeclaration>()
+		val model = GenericAnalyzer(target).analyze(ast)
+		val t = model.parametersOf(box).single()
+		val (u, n) = model.parametersOf(pair)
+		assertSame(pair, u.owner)
+		assertEquals(1, n.index)
+		assertNotSame(u, model.parametersOf(echo).single())
+		val bound = assertNotNull(u.declaration.bound)
+		assertSame(ast.declarations[0], assertIs<NominalTypeName>(model.nameOf(bound)).type.declaration)
+		assertSame(t, model.nameOf(bound.typeArguments.single()))
+		assertSame(NumberBoundName, model.nameOf(assertNotNull(n.declaration.bound)))
+		assertSame(t, model.nameOf(pair.returnTypes[0]))
+		assertSame(u, model.nameOf(pair.returnTypes[1]))
+		assertSame(t, model.nameOf(pair.parameters[0].type))
+		assertSame(u, model.nameOf(pair.parameters[1].type))
+		val metadata = assertIs<ProviderAccessExpression>(pair.parameters[2].defaultValue)
+		assertSame(u, model.receiverName(assertIs<NameExpression>(metadata.receiver)))
+		val body = assertIs<BlockBody>(pair.body)
+		val deferred = assertIs<BindingDeclaration>(body.statements[0])
+		assertSame(u, model.nameOf(assertNotNull(deferred.type)))
+		val block = assertIs<FunctionBlockExpression>(deferred.initializer)
+		val copy = assertIs<BindingDeclaration>(assertIs<BlockBody>(block.declaration.body).statements.first())
+		assertSame(t, model.nameOf(assertNotNull(copy.type)))
+		val result = assertIs<ResultListExpression>(assertIs<ReturnStatement>(body.statements[1]).value)
+		val call = assertIs<MemberCallExpression>(result.values[1])
+		val argument = assertNotNull(call.typeArguments).arguments.single()
+		assertSame(u, model.nameOf(argument))
+		assertSame(pair, model.uses.single { it.type === argument }.owner)
+	}
+
+	@Test
+	fun `struct method arguments resolve in the calling file`(@TempDir root: Path) {
+		val graph = graph(root, mapOf(
+			"Main.co" to "using Lib: Slot\nusing Model: Item\nfn read(Slot<int> slot, Item item) { slot.echo<Item>(item) }",
+			"Lib.co" to "typedef<class> Item {}\npub typedef<struct> Slot<T> { T item; mt<U> echo<U>(U value) = value }",
+			"Model.co" to "pub typedef<class> Item {}",
+		))
+		val model = GenericAnalyzer(target).analyze(graph)
+		val slot = graph.sources.single { it.path.fileName.toString() == "Lib.co" }.unit.declarations[1] as StructDeclaration
+		val method = slot.methods.single()
+		assertSame(model.parametersOf(slot).single(), model.nameOf(slot.fields.single().type))
+		assertSame(model.parametersOf(method).single(), model.nameOf(method.returnTypes.single()))
+		val caller = graph.sources.single { it.path.fileName.toString() == "Main.co" }.unit.declarations.single() as FunctionDeclaration
+		val call = assertIs<MemberCallExpression>(assertIs<ExpressionStatement>(assertIs<BlockBody>(caller.body).statements.single()).expression)
+		val type = assertIs<NominalTypeName>(model.nameOf(assertNotNull(call.typeArguments).arguments.single())).type
+		assertSame(graph.sources.single { it.path.fileName.toString() == "Model.co" }.unit.declarations.single(), type.declaration)
+	}
+
+	@Test
+	fun `method parameter conflicts and out of scope names report ordinary name errors`() {
+		val conflict = failure("""
+			typedef<class> Box<T> {
+			    mt echo<T>() {}
+			}
+		""", DiagnosticCode.INVALID_GENERIC_PARAMETER)
+		assertEquals(listOf(2, 1), conflict.sourceLabels.map { it.span.startLine })
+		val duplicate = failure("typedef<struct> Slot { mt echo<U, U>() {} }", DiagnosticCode.INVALID_GENERIC_PARAMETER)
+		assertEquals(2, duplicate.sourceLabels.size)
+		failure("""
+			typedef<class> Box<T> {
+			    mt<U> echo<U>(U value) = value
+			    mt<U> other() = null
+			}
+		""", DiagnosticCode.UNSUPPORTED_TYPE)
+	}
+
+	@Test
+	fun `explicit member argument types are checked before specialization`() {
+		val invalid = assertFailsWith<ClothDiagnostic> {
+			DeclarationAnalyzer(target).analyze(unit("""
+				typedef<class> Box { mt<U> echo<U>(U value) = value }
+				fn read(Box box) { box.echo<Missing>(1) }
+			"""))
+		}
+		assertEquals(DiagnosticCode.UNSUPPORTED_TYPE, invalid.diagnosticCode)
+		assertContains(invalid.summary, "'Missing'")
+		assertLocated(invalid)
+		failure("fn read(int value) { value.echo<void>(1) }", DiagnosticCode.INVALID_GENERIC_ARGUMENT)
+		failure("typedef<class> Box<T> {}\nfn read(int value) { value.echo<Box<int, string>>(1) }", DiagnosticCode.GENERIC_ARITY)
+	}
+
+	@Test
+	fun `valid method names reach closed analysis and body specialization`() {
+		val ast = unit("""
+			typedef<class> Box { pub mt<U> echo<U: Number>(U value) = value }
+			fn read(Box box) { box.echo<int>(1) }
+		""")
+		assertTrue(ClosedTypeAnalyzer(target).analyze(ast).instances.isEmpty())
+		val views = assertNotNull(DeclarationAnalyzer(target).analyze(ast).genericViews)
+		assertEquals("echo", views.methods.values.single().name.lexeme)
+	}
+
+	@Test
 	fun `value bindings do not replace annotation parameters and retain provider receiver precedence`() {
 		val ast = unit("""
 			typedef<class> Box<T> {
@@ -127,13 +233,12 @@ class GenericNamesTest {
 		failure(prefix + "fn take(Box<int, string> value) {}", DiagnosticCode.GENERIC_ARITY)
 		failure(prefix + "fn take(Plain<int> value) {}", DiagnosticCode.GENERIC_ARITY)
 		failure(prefix + "fn take(Box value) {}", DiagnosticCode.RAW_GENERIC_TYPE)
-		failure(prefix + "fn main() { Box::new }", DiagnosticCode.RAW_GENERIC_TYPE)
 		failure(prefix + "fn main() { Box::type }", DiagnosticCode.RAW_GENERIC_TYPE)
 	}
 
 	@Test
 	fun `first encountered application failure stops before later annotation failures`() {
-		val error = failure("typedef<class> Box<T> {}\nfn main() { Box::new; def<Missing<int>> value = null }", DiagnosticCode.RAW_GENERIC_TYPE)
+		val error = failure("typedef<class> Box<T> {}\nfn main() { Box::type; def<Missing<int>> value = null }", DiagnosticCode.RAW_GENERIC_TYPE)
 		assertEquals(2, error.sourceLabels.first().span.startLine)
 		assertContains(error.summary, "Box")
 	}

@@ -1,0 +1,214 @@
+using parser.Ast: SourceUnit, FunctionDeclaration, BindingDeclaration, Expression
+using token.Keywords: Keywords
+using token.Operators: Operators
+using token.Token: Token, TokenType, jsonQuoted
+using token.TokenList: TokenList
+
+pub typedef<class> ParseFailure (pub def<string> code, pub def<string> message, pub def<Token> token) {
+    operator ::str() = "{\n  \"code\": " + jsonQuoted(code) + ",\n  \"span\": " + jsonQuoted(token.span::str) + ",\n  \"message\": " + jsonQuoted(message) + "\n}"
+}
+
+pub typedef<class> Parser (def<TokenList> tokens) {
+    def<usize> cursor = 0
+    def<int> powerPrecedence = 30
+    pub def<ParseFailure?> failure = null
+
+    ~Parser {
+        if (failure != null) failure::delete
+    }
+
+    // Parse an EOF-terminated lexer result once. Success transfers the tree to
+    // the caller. On failure the parser deletes the partial tree.
+    pub mt<SourceUnit?> parse() {
+        def unit := SourceUnit::new
+        skipNewlines()
+        while (peek().type != TokenType.EOF) {
+            def<FunctionDeclaration?> declaration := parseFunction()
+            if (declaration == null) {
+                unit::delete
+                return null
+            }
+            unit.functions.append(declaration)
+            if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
+                expected("a newline or end of file after a brace-bodied function")
+                unit::delete
+                return null
+            }
+            skipNewlines()
+        }
+        return unit
+    }
+
+    mt<Token> peek() = tokens.get(cursor)
+
+    mt<Token> advance() {
+        def token := peek()
+        cursor++
+        return token
+    }
+
+    mt<bool> atOperator(Operators symbol) {
+        def token := peek()
+        return token.type == TokenType.Operator && token.lexeme == symbol
+    }
+
+    mt<bool> atKeyword(Keywords keyword) {
+        def token := peek()
+        return token.type == TokenType.Keyword && token.lexeme == keyword
+    }
+
+    mt skipNewlines() {
+        while (peek().type == TokenType.NewLine) advance()
+    }
+
+    mt<bool> atSeparator() = peek().type == TokenType.NewLine || atOperator(Operators.SEMICOLON)
+
+    mt fail(string code, string message) {
+        failure = ParseFailure::new(code, message, peek())
+    }
+
+    mt<string> found() {
+        def token := peek()
+        if (token.type == TokenType.EOF) return "end of file"
+        if (token.type == TokenType.NewLine) return "a newline"
+        return #"'{token.lexeme}'"
+    }
+
+    mt expected(string description) = fail("C2000", #"Expected {description}, found {found()}")
+
+    mt<bool> expectOperator(Operators symbol) {
+        if (atOperator(symbol)) {
+            advance()
+            return true
+        }
+        expected(#"'{symbol::str}'")
+        return false
+    }
+
+    mt<Token?> expectIdentifier(string description) {
+        if (peek().type == TokenType.Identifier) return advance()
+        expected(description)
+        return null
+    }
+
+    mt<FunctionDeclaration?> parseFunction() {
+        def<Token?> visibility = null
+        if (atKeyword(Keywords.PUBLIC)) visibility = advance()
+        if (!atKeyword(Keywords.FUNCTION)) {
+            expected(#"a '{Keywords.FUNCTION::str}' declaration")
+            return null
+        }
+        def keyword := advance()
+        def<Token?> name := expectIdentifier("a function name")
+        if (name == null) return null
+        if (!expectOperator(Operators.PAREN_OPEN)) return null
+        skipNewlines()
+        if (!expectOperator(Operators.PAREN_CLOSE)) return null
+        skipNewlines()
+        if (!expectOperator(Operators.BRACE_OPEN)) return null
+
+        def declaration := FunctionDeclaration::new(visibility, keyword, name)
+        if (!parseBody(declaration)) {
+            declaration::delete
+            return null
+        }
+        return declaration
+    }
+
+    mt<bool> parseBody(FunctionDeclaration declaration) {
+        while (peek().type != TokenType.EOF && !atOperator(Operators.BRACE_CLOSE)) {
+            if (atSeparator()) {
+                advance()
+                continue
+            }
+            def<BindingDeclaration?> binding := parseBinding()
+            if (binding == null) return false
+            declaration.bindings.append(binding)
+            if (!atSeparator() && !atOperator(Operators.BRACE_CLOSE) && peek().type != TokenType.EOF) {
+                fail("C2001", #"Expected a newline or '{Operators.SEMICOLON::str}' after statement, found {found()}")
+                return false
+            }
+        }
+        return expectOperator(Operators.BRACE_CLOSE)
+    }
+
+    mt<BindingDeclaration?> parseBinding() {
+        if (!atKeyword(Keywords.DEFINITION)) {
+            expected(#"a '{Keywords.DEFINITION::str}' binding")
+            return null
+        }
+        def keyword := advance()
+        def<Token?> name := expectIdentifier("a binding name")
+        if (name == null) return null
+        if (!atOperator(Operators.ASSIGN) && !atOperator(Operators.FINAL_ASSIGN)) {
+            expected(#"'{Operators.ASSIGN::str}' or '{Operators.FINAL_ASSIGN::str}'")
+            return null
+        }
+        def assignment := advance()
+        def<Expression?> initializer := parseExpression(0)
+        if (initializer == null) return null
+        return BindingDeclaration::new(keyword, name, assignment, initializer)
+    }
+
+    mt<int> binaryPrecedence(string spelling) {
+        if (spelling == Operators.MUL_MUL) return powerPrecedence
+        if (spelling == Operators.MULTIPLY || spelling == Operators.DIVIDE || spelling == Operators.MODULO) return 20
+        if (spelling == Operators.PLUS || spelling == Operators.MINUS) return 10
+        return 0
+    }
+
+    mt<bool> endsExpression(string spelling) {
+        return spelling == Operators.PAREN_CLOSE || spelling == Operators.BRACE_CLOSE || spelling == Operators.BRACKET_CLOSE || spelling == Operators.COMMA || spelling == Operators.SEMICOLON
+    }
+
+    mt<Expression?> parseExpression(int minimumPrecedence) {
+        def<Expression?> initial := parsePrefix()
+        if (initial == null) return null
+        def<Expression> left = initial
+        while (true) {
+            def symbol := peek()
+            if (symbol.type != TokenType.Operator || endsExpression(symbol.lexeme)) return left
+            def precedence := binaryPrecedence(symbol.lexeme)
+            if (precedence == 0) {
+                fail("C2003", #"Unsupported operator '{symbol.lexeme}'")
+                left::delete
+                return null
+            }
+            if (precedence < minimumPrecedence) return left
+            advance()
+            def rightPrecedence := if (symbol.lexeme == Operators.MUL_MUL) precedence else precedence + 1
+            def<Expression?> right := parseExpression(rightPrecedence)
+            if (right == null) {
+                left::delete
+                return null
+            }
+            left = Expression::new(symbol, [left, right])
+        }
+    }
+
+    mt<Expression?> parsePrefix() {
+        def token := peek()
+        if (atOperator(Operators.PLUS) || atOperator(Operators.MINUS)) {
+            advance()
+            def<Expression?> operand := parseExpression(powerPrecedence)
+            if (operand == null) return null
+            return Expression::new(token, [operand])
+        }
+        if (atOperator(Operators.PAREN_OPEN)) {
+            advance()
+            def<Expression?> expression := parseExpression(0)
+            if (expression == null) return null
+            if (!expectOperator(Operators.PAREN_CLOSE)) {
+                expression::delete
+                return null
+            }
+            return expression
+        }
+        if (token.type == TokenType.Identifier || token.type == TokenType.IntegerLiteral || token.type == TokenType.FloatingPointLiteral) {
+            advance()
+            return Expression::new(token, [])
+        }
+        fail("C2006", #"Expected a number, binding name, or '{Operators.PAREN_OPEN::str}', got {found()}")
+        return null
+    }
+}

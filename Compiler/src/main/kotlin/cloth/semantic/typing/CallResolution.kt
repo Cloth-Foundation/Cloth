@@ -7,15 +7,21 @@ import cloth.data.ProviderResult
 import cloth.data.CClass
 import cloth.data.ValueType
 import cloth.diagnostics.SemanticErrors
+import cloth.semantic.SemanticException
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.CallSite
+import cloth.parser.expression.ClassCreationExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.StateCallExpression
+import cloth.parser.type.TypeArgumentList
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
+import cloth.semantic.generics.TypeArgumentSpans
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.InterfaceMethodGroupSymbol
+import cloth.semantic.symbols.MethodGroupSymbol
 
 /** A contextual mismatch rejects a candidate. Located diagnostics still stop analysis. */
 internal inline fun <T> probeCandidate(check: () -> T): T? = try {
@@ -32,13 +38,70 @@ internal class CallResolution(
 	fun source(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source =
 		resolve(expression, group) { callable, type, binding -> ResolvedCall.Source(callable, type, binding, receiver) }
 
+	fun function(expression: CallExpression, group: FunctionGroupSymbol): ResolvedCall.Source {
+		if (expression.typeArguments != null) return source(expression, group.overloads)
+		val (ordinary, generic) = group.overloads.partition { it.typeParameterCount == 0 }
+		if (generic.isEmpty()) return source(expression, ordinary)
+		return withInference(expression, ordinary, null) {
+			GenericCallInference(facts, typingIn).functions(expression, generic)
+		}
+	}
+
+	fun method(
+		expression: CallSite,
+		supplied: TypeArgumentList?,
+		group: MethodGroupSymbol,
+		classOwner: CClass?,
+		receiver: MethodReceiver,
+	): ResolvedCall.Source {
+		if (supplied != null) return source(expression, facts.genericMethodCandidates(expression, supplied, group, classOwner), receiver)
+		val ordinary = group.overloads.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		val generic = group.templates.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		if (ordinary.isEmpty() && generic.isEmpty()) throw SemanticErrors.privateClassMember(expression.name, group.name)
+		if (generic.isEmpty()) return source(expression, ordinary, receiver)
+		return withInference(expression, ordinary, receiver) {
+			GenericCallInference(facts, typingIn).methods(expression, generic)
+		}
+	}
+
+	fun inferredConstructor(expression: ClassCreationExpression, definition: CClass): ResolvedCall.Source {
+		val candidates = GenericCallInference(facts, typingIn).constructors(expression, definition)
+		val selected = source(expression, candidates.keys.toList())
+		checkNotNull(facts.declarations.genericViews).requireConstructorOwner(expression, selected.callable, candidates.getValue(selected.callable))
+		return selected
+	}
+
+	private fun withInference(
+		expression: CallSite,
+		ordinary: List<CallableSymbol>,
+		receiver: MethodReceiver?,
+		inferred: () -> Map<CallableSymbol, TypeArgumentSpans>,
+	): ResolvedCall.Source {
+		fun infer(): ResolvedCall.Source {
+			val candidates = inferred()
+			val selected = source(expression, candidates.keys.toList(), receiver)
+			facts.requestCallable(expression, candidates.getValue(selected.callable), selected.callable)
+			return selected
+		}
+
+		if (ordinary.isEmpty()) return infer()
+		return resolve(expression, ordinary, noMatch = { infer() }) { callable, type, binding ->
+			ResolvedCall.Source(callable, type, binding, receiver)
+		}
+	}
+
 	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface =
 		resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
 
 	fun state(expression: StateCallExpression, group: List<CallableContractSymbol>, owner: CClass): ResolvedStateCall =
 		resolve(expression, group) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
 
-	private fun <T : CallableContractSymbol, R> resolve(expression: CallSite, group: List<T>, selectedCall: (T, FunctionType, ArgumentBinding) -> R): R {
+	private fun <T : CallableContractSymbol, R> resolve(
+		expression: CallSite,
+		group: List<T>,
+		noMatch: (() -> SemanticException) -> R = { throw it() },
+		selectedCall: (T, FunctionType, ArgumentBinding) -> R,
+	): R {
 		ArgumentBinder.validate(expression.suppliedArguments)
 		data class Candidate(val callable: T, val binding: ArgumentBinding, val suppliedTypes: List<ValueType>)
 
@@ -51,11 +114,7 @@ internal class CallResolution(
 				Candidate(candidate, binding, binding.parameterForArgument.map(parameters::get))
 			}
 		}
-		if (candidates.isEmpty()) {
-			// Preserve the established required-only positional arity diagnostic.
-			if (expression.suppliedArguments.all { it.label == null } && group.all { fn -> fn.parameters.none { it.declaration.optional } }) throw SemanticErrors.callArity(expression, group)
-			throw checkNotNull(firstProblem).diagnostic()
-		}
+		if (candidates.isEmpty()) return noMatch { ArgumentBinder.failure(expression, group, firstProblem) }
 
 		val ordinary = facts.trial()
 		val ordinaryTypes = probeCandidate {
@@ -81,7 +140,7 @@ internal class CallResolution(
 			} == true
 			if (matches) Match(candidate, trial) else null
 		}
-		if (matches.isEmpty()) throw SemanticErrors.noMatchingCall(expression, candidates.map { it.callable })
+		if (matches.isEmpty()) return noMatch { SemanticErrors.noMatchingCall(expression, candidates.map { it.callable }) }
 		// Omission count breaks ties only between identical supplied type contracts.
 		// Incomparable contextual matches remain ambiguous.
 		val best = if (matches.map { it.candidate.suppliedTypes }.distinct().size == 1) {

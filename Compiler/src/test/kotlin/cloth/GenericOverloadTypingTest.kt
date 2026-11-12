@@ -7,11 +7,103 @@ import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import kotlin.test.*
 
 class GenericOverloadTypingTest {
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(source) }.also { assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it) }
+
+	@Test
+	fun `same-count template signatures compare normalized declared types by position`() {
+		val duplicate = failure("""
+			typedef<struct> Slot<T> { T value }
+			fn<int> pick<A, B>(Slot<B?[]> value, opt<int<32>> other ?: 1) = other
+			fn<string> pick<X: Number, Y>(Slot<Y?[]> item, int offset) = "duplicate"
+		""", DiagnosticCode.DUPLICATE_FUNCTION)
+		assertEquals(listOf(3, 2), duplicate.sourceLabels.map { it.span.startLine })
+		analyze("""
+			fn<int> pick<A, B>(A value) = 1
+			fn<int> pick<A, B>(B value) = 2
+			fn use() { pick<int, string>(1); pick<int, string>("second") }
+		""")
+	}
+
+	@Test
+	fun `bounds filter candidates before resolving their signatures or expanding their bodies`() {
+		val model = analyze("""
+			typedef<struct> Gauge<N: Number> { N level }
+			typedef<class> Entity<T: Entity<T>> {}
+			typedef<struct> Probe<T> {
+			    T item;
+			    mt work(T value) {}
+			    mt work(int value) {}
+			}
+			fn<int> read<N: Number>(Gauge<N> value) = 1
+			fn<int> read<E: Entity<E>>(E value, int other) = 2
+			fn<int> read<U>(U value) = 3
+			fn<int> read<U>(string value) {
+			    def<Probe<U>?> probe = null
+			    return 4
+			}
+			fn use() { read<bool>(true); read<int>(1) }
+		""")
+		val views = assertNotNull(model.declarations.genericViews)
+		assertEquals(listOf(listOf(ValueType.BOOL), listOf(ValueType.INT)), views.functions.keys.map { it.arguments })
+		assertTrue(views.functions.keys.all { it.template.name.span.startLine == 10 })
+		assertTrue(views.types.instances.none { it.type.spelling in setOf("Entity<bool>", "Gauge<bool>", "Probe<int>") })
+	}
+
+	@Test
+	fun `conforming types and ordinary ranking select between contextual generic contracts`() {
+		val model = analyze("""
+			typedef<interface> View<T> {}
+			typedef<class> Player : View<int> {}
+			typedef<class> Guest {}
+			typedef<struct> Item<T> { int number }
+			typedef<struct> Label<T> { string text }
+			fn<int> pick<T: View<int>>(T receiver, Item<T> item) = item.number
+			fn<int> pick<T: Object>(Object receiver, Label<T> item, opt<int> fallback ?: 2) = fallback
+			fn use(Player player, Guest guest) {
+			    pick<Player>(player, { 8 })
+			    pick<Player>(player, { "contextual" })
+			    pick<Guest>(item={ "label" }, receiver=guest, fallback=3)
+			}
+		""")
+		val views = assertNotNull(model.declarations.genericViews)
+		assertEquals(listOf(6, 7, 7), views.functions.keys.map { it.template.name.span.startLine })
+		assertEquals(setOf("Item<Player>", "Label<Player>", "Label<Guest>"), model.types.structLiterals.values.map { it.spelling }.toSet())
+	}
+
+	@Test
+	fun `substituted ties and wholly rejected bounds report a single located error`() {
+		val templates = "fn kind<T>(T value, T other) {}\nfn kind<U>(int value, U other) {}\n"
+		failure(templates + "fn use() { kind<int>(1, 2) }", DiagnosticCode.AMBIGUOUS_CALL)
+		failure(templates + "fn forward<T>(T value) { kind<T>(value, value) }\nfn use() { forward<int>(1) }", DiagnosticCode.AMBIGUOUS_CALL)
+		val rejected = failure("""
+			fn kind<T: Number>(int value) {}
+			fn kind<T: Object>(string value) {}
+			fn use() { kind<bool>(1) }
+		""", DiagnosticCode.UNSATISFIED_GENERIC_BOUND)
+		assertContains(rejected.summary, "'Number'")
+		assertEquals(listOf(3, 1), rejected.sourceLabels.map { it.span.startLine })
+	}
+
+	@Test
+	fun `imported same-count overloads retain the defining file export group`(@TempDir root: Path) {
+		val graph = genericSourceFiles(root, mapOf(
+			"Main.co" to "using Library: choose\nfn main() { choose<int>(1); choose<int>(\"word\") }",
+			"Library.co" to """
+				fn<int> choose<T>(T value) = 0
+				pub fn<int> choose<U>(int value) = value
+				pub fn<string> choose<V>(string value) = value
+			""",
+		))
+		val model = FunctionAnalyzer(genericTarget()).analyze(graph)
+		val views = assertNotNull(model.declarations.genericViews)
+		assertEquals(listOf(2, 3), views.functions.keys.map { it.template.name.span.startLine })
+	}
 
 	@Test
 	fun `top level overloads distinguish exact closed types`() {

@@ -172,17 +172,16 @@ their List does not implicitly delete those objects. Stage 4 executes buffer/lif
 cases with the existing allocator/poison probes; its record distinguishes native
 results from foreign-target IR/object evidence.
 
-## Rejection: no type-argument inference or raw generic values
+## Rejection: missing constructor inference evidence and raw generic values
 
 ```cloth
-typedef<class> Box<T> (def<T> value)
-fn main() { def box = Box::new(1) }
+typedef<class> Box<T> {}
+fn main() { def box = Box::new() }
 ```
 
-Report missing type arguments at Box. The constructor argument does not infer T.
-Likewise, `fn take(Box value) {}` rejects the raw template in a value type position.
-Using/importing the template declaration itself for later explicit application is
-different from treating a bare template as a concrete value type.
+Report C3137 for missing `T`. Supply `Box<int>::new()` to select the owner.
+`fn take(Box value) {}` still requires a complete type in the annotation.
+[Constructor inference](constructor-inference-stage-3.md)
 
 ## Rejection: invariant arguments
 

@@ -3,6 +3,7 @@ package cloth.semantic.typing
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.CallArgument
 import cloth.parser.expression.CallSite
+import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.ParameterSymbol
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -18,6 +19,11 @@ internal data class BindingProblem(val message: String, val span: TokenSpan, val
 internal data class BindingAttempt(val binding: ArgumentBinding? = null, val problem: BindingProblem? = null)
 
 internal object ArgumentBinder {
+
+	fun failure(call: CallSite, group: List<CallableContractSymbol>, problem: BindingProblem?) =
+		if (call.suppliedArguments.all { it.label == null } && group.all { fn -> fn.parameters.none { it.declaration.optional } }) {
+			SemanticErrors.callArity(call, group)
+		} else checkNotNull(problem).diagnostic()
 
 	fun validate(arguments: List<CallArgument>) {
 		val labels = mutableMapOf<String, Token>()

@@ -13,6 +13,7 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
 import cloth.semantic.interfaces.InterfaceRequirement
+import cloth.semantic.generics.GenericMethodTemplate
 import cloth.token.*
 import java.math.BigInteger
 
@@ -139,9 +140,10 @@ class FunctionGroupSymbol(val overloads: List<FunctionSymbol>) : CallableGroupSy
 	override val name get() = overloads.first().name
 }
 
-class MethodGroupSymbol(val overloads: List<MethodSymbol>) : CallableGroupSymbol {
+class MethodGroupSymbol internal constructor(val overloads: List<MethodSymbol>, internal val templates: List<GenericMethodTemplate>) : CallableGroupSymbol {
 
-	override val name get() = overloads.first().name
+	constructor(overloads: List<MethodSymbol>) : this(overloads, emptyList())
+	override val name get() = overloads.firstOrNull()?.name ?: templates.first().declaration.name
 }
 
 internal class InterfaceMethodGroupSymbol(val owner: CInterface, val overloads: List<InterfaceMethodSymbol>) : CallableGroupSymbol {

@@ -11,10 +11,20 @@ object GenericErrors {
 	fun parameter(message: String, name: Token, previous: Token) = SemanticException(DiagnosticCode.INVALID_GENERIC_PARAMETER, message, listOf(SourceLabel(name.span, "invalid type parameter"), SourceLabel(previous.span, "previous declaration here")))
 	fun arity(name: Token, actual: Int, expected: Int, declaration: Token) = SemanticException(DiagnosticCode.GENERIC_ARITY, "Type '${name.lexeme}' expects $expected type arguments, got $actual", listOf(SourceLabel(name.span, "type application here"), SourceLabel(declaration.span, "type declared here")))
 	fun raw(name: Token, declaration: Token) = SemanticException(DiagnosticCode.RAW_GENERIC_TYPE, "Generic type '${name.lexeme}' requires explicit type arguments", listOf(SourceLabel(name.span, "a generic template is not a concrete value type"), SourceLabel(declaration.span, "generic type declared here")))
-	fun duplicateFunction(name: Token, previous: Token, count: Int) = SemanticException(DiagnosticCode.DUPLICATE_FUNCTION,
-		"Function '${name.lexeme}' already has a template with $count type arguments", listOf(SourceLabel(name.span, "duplicate function template"), SourceLabel(previous.span, "first declared here")))
+	fun duplicateFunction(name: Token, previous: Token, signature: String, count: Int) = SemanticException(DiagnosticCode.DUPLICATE_FUNCTION,
+		"Function '$signature' already has a template with $count type parameters",
+		listOf(SourceLabel(name.span, "same declared parameter types"), SourceLabel(previous.span, "first declared here")),
+		"Bounds, result types, parameter names and defaults do not distinguish overloads.")
 	fun callArity(name: Token, use: TokenSpan, actual: Int, expected: List<Int>, declaration: Token) = SemanticException(DiagnosticCode.GENERIC_ARITY,
 		"Callable '${name.lexeme}' expects ${expected.joinToString(" or ")} type arguments, got $actual", listOf(SourceLabel(use, "type arguments for this call"), SourceLabel(declaration.span, "callable declared here")).distinctBy { it.span })
+	fun inferenceMissing(parameter: Token, use: TokenSpan) = SemanticException(DiagnosticCode.GENERIC_INFERENCE_FAILED,
+		"Cannot infer type argument '${parameter.lexeme}' from the supplied values",
+		listOf(SourceLabel(use, "type argument required for this call"), SourceLabel(parameter.span, "type parameter declared here")),
+		"Supply the complete type argument list explicitly.")
+	fun inferenceConflict(parameter: Token, first: String, second: String, firstUse: TokenSpan, secondUse: TokenSpan) =
+		SemanticException(DiagnosticCode.GENERIC_INFERENCE_FAILED, "Conflicting types '$first' and '$second' for type parameter '${parameter.lexeme}'",
+			listOf(SourceLabel(firstUse, "infers '$first'"), SourceLabel(secondUse, "infers '$second'"), SourceLabel(parameter.span, "type parameter declared here")),
+			"Supply the complete type argument list explicitly.")
 	fun argument(message: String, span: TokenSpan) = SemanticException(DiagnosticCode.INVALID_GENERIC_ARGUMENT, message, listOf(SourceLabel(span, "invalid type argument here")))
 	fun bound(span: TokenSpan) = SemanticException(DiagnosticCode.INVALID_GENERIC_BOUND, "A generic bound must be Number or a non-nullable class or interface", listOf(SourceLabel(span, "invalid bound here")))
 	fun unsatisfiedBound(parameter: Token, argument: String, bound: String, use: TokenSpan, declaration: TokenSpan) =

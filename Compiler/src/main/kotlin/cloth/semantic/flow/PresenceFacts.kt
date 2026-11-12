@@ -1,6 +1,7 @@
 package cloth.semantic.flow
 
 import cloth.data.*
+import cloth.parser.expression.CallSite
 import cloth.parser.expression.Expression
 import cloth.parser.expression.FieldAccessExpression
 import cloth.parser.expression.MemberCallExpression
@@ -16,6 +17,7 @@ internal class PresenceFacts {
 	val updates = Collections.newSetFromMap(IdentityHashMap<UpdateStatement, Boolean>())
 	val narrowedNames = IdentityHashMap<NameExpression, List<CMemberType>>()
 	val lostReceiverProofs = IdentityHashMap<MemberCallExpression, List<Expression>>()
+	val inferredResultsUsed = Collections.newSetFromMap(IdentityHashMap<CallSite, Boolean>())
 
 	fun narrowedType(name: NameExpression, source: ValueType?): CMemberType? {
 		val proofs = narrowedNames[name] ?: return null

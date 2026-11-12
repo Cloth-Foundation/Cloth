@@ -1,19 +1,44 @@
 using lexer.Lexer: *
+using parser.Ast: SourceUnit
+using parser.Parser: Parser
 using source.SourceFile: SourceFile
-using cloth.io.File: File, FileError
-using cloth.io.Path: pathOf
+using token.TokenList: TokenList
+using cloth.io.fs.File: File, FileError
+using cloth.io.path.Path: pathOf
 using cloth.text.Utf8: decodeUtf8
 
-fn<isize> lexSource(string name, string text) {
+fn<isize> parseSource(Lexer lexer) {
+    def<TokenList?> tokens := lexer.scanTokens()
+    if (tokens == null) {
+        if (lexer.failure != null) println(lexer.failure)
+        return 1
+    }
+
+    def parser := Parser::new(tokens)
+    def<SourceUnit?> unit := parser.parse()
+    def<isize> status = 0
+    if (unit == null) {
+        if (parser.failure != null) println(parser.failure)
+        status = 1
+    } else {
+        println(unit)
+        unit::delete
+    }
+    parser::delete
+    tokens::delete
+    return status
+}
+
+fn<isize> inspectSource(string name, string text, bool parseMode) {
     def source := SourceFile::new(name, text)
     def lexer := Lexer::new(text, source)
-    def status := lexer.lexTokens()
+    def status := if (parseMode) parseSource(lexer) else lexer.lexTokens()
     lexer::delete
     source::delete
     return status
 }
 
-fn<isize> lexFile(string spelling) {
+fn<isize> inspectFile(string spelling, bool parseMode) {
     def path := pathOf(spelling)
     def file := File::new(path)
     def<FileError?> openError := file.open()
@@ -34,27 +59,30 @@ fn<isize> lexFile(string spelling) {
     }
     file::delete
     def text := decodeUtf8(bytes) ?: exit(1, #"Invalid UTF-8 in '{path.spelling}'")
-    return lexSource(path.spelling, text)
+    return inspectSource(path.spelling, text, parseMode)
 }
 
 pub fn<isize> main(string[] args) {
     println("Cloth Dogfooding")
 
-    if (args::size == 0) {
+    def parseMode := args::size > 0 && args[0] == "--parse"
+    def<usize> first := if (parseMode) 1 else 0
+    def count := args::size - first
+    if (count == 0) {
         def text := input("Input your code: \n") ?: exit(1, "Input is null")
         if (text == "") exit(1, "Input is null")
-        return lexSource("<string>", text)
+        return inspectSource("<string>", text, parseMode)
     }
 
-    def argument := args[0]
+    def argument := args[first]
     if (argument == "--file") {
-        if (args::size != 2) exit(1, "Expected a source path after --file")
-        return lexFile(args[1])
+        if (count != 2) exit(1, "Expected a source path after --file")
+        return inspectFile(args[first + 1], parseMode)
     }
     if (argument == "--text") {
-        if (args::size != 2) exit(1, "Expected source text after --text")
-        return lexSource("<string>", args[1])
+        if (count != 2) exit(1, "Expected source text after --text")
+        return inspectSource("<string>", args[first + 1], parseMode)
     }
-    if (args::size != 1) exit(1, "Expected one source path")
-    return lexFile(argument)
+    if (count != 1) exit(1, "Expected one source path")
+    return inspectFile(argument, parseMode)
 }

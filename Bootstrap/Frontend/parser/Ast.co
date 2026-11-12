@@ -1,0 +1,55 @@
+using cloth.collections.List: List
+using token.Token: Token
+
+// Nodes borrow their syntax tokens. The caller keeps the token list alive.
+pub typedef<class> SourceUnit {
+    pub def<List<FunctionDeclaration>> functions = List<FunctionDeclaration>::new
+
+    ~SourceUnit {
+        for (def index <- 0..functions.size()) functions.get(index)::delete
+        functions::delete
+    }
+
+    operator ::str() {
+        def result = "(source"
+        for (def index <- 0..functions.size()) result += " " + functions.get(index)::str
+        return result + ")"
+    }
+}
+
+pub typedef<class> FunctionDeclaration (pub def<Token?> visibility, pub def<Token> keyword, pub def<Token> name) {
+    pub def<List<BindingDeclaration>> bindings = List<BindingDeclaration>::new
+
+    ~FunctionDeclaration {
+        for (def index <- 0..bindings.size()) bindings.get(index)::delete
+        bindings::delete
+    }
+
+    operator ::str() {
+        def result = "("
+        if (visibility != null) result += visibility.lexeme + " "
+        result += keyword.lexeme + " " + name.lexeme
+        for (def index <- 0..bindings.size()) result += " " + bindings.get(index)::str
+        return result + ")"
+    }
+}
+
+pub typedef<class> BindingDeclaration (pub def<Token> keyword, pub def<Token> name, pub def<Token> assignment, pub def<Expression> initializer) {
+    ~BindingDeclaration { initializer::delete }
+
+    operator ::str() = #"({keyword.lexeme} {name.lexeme} {assignment.lexeme} {initializer::str})"
+}
+
+// Number and name expressions have no operands. Operators own their operands.
+pub typedef<class> Expression (pub def<Token> token, pub def<Expression[]> operands) {
+    ~Expression {
+        for (def operand <- operands) operand::delete
+    }
+
+    operator ::str() {
+        if (operands::size == 0) return token.lexeme
+        def result = "(" + token.lexeme
+        for (def operand <- operands) result += " " + operand::str
+        return result + ")"
+    }
+}
