@@ -34,9 +34,10 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private val classOwner = facts.declarations.classOwners[function]
 	override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presence.fields
-	override fun boundView(expression: Expression, actual: ValueType): CMemberType? = facts.boundView(expression)?.also { bound ->
+	override fun boundViews(expression: Expression, actual: ValueType): List<CMemberType> = facts.boundViews(expression, actual).also { bounds ->
 		val payload = (actual as? CNullable)?.payload ?: actual
-		if (!bound.accepts(payload)) reject {
+		val bound = bounds.firstOrNull { !it.accepts(payload) }
+		if (bound != null) reject {
 			SemanticErrors.classMember("Type '${actual.spelling}' cannot use the '${bound.spelling}' bound", expression.span)
 		}
 	}
@@ -450,23 +451,14 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		if (receiver is CNullable && (receiver.payload is CMemberType || receiver.payload.classBackedType() != null)) {
 			throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		}
-		val owner = boundView(expression.receiver, receiver) ?: (receiver as? CMemberType) ?: receiver.classBackedType()
-			?: return super.memberCallResults(expression, receiver)
-		val checked = facts.checkedBoundMethod(expression, owner)
-		val group = when (checked) {
-			is MethodSymbol -> MethodGroupSymbol(listOf(checked))
-			is InterfaceMethodSymbol -> InterfaceMethodGroupSymbol(checked.owner, listOf(checked))
-			else -> facts.declarations.memberGroup(owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(owner, expression.name)
-		}
-		if (expression in facts.declarations.readOnlyDefaultReceivers) {
-			throw SemanticErrors.parameterDefault("A default cannot call a user-defined method through a read-only receiver", expression.name.span)
-		}
+		val bounds = boundViews(expression.receiver, receiver)
+		if (bounds.isNotEmpty()) return boundMemberCall(expression, bounds, receiver)
+		val owner = receiver as? CMemberType ?: return super.memberCallResults(expression, receiver)
+		val group = facts.declarations.memberGroup(owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(owner, expression.name)
+		checkMethodReceiver(expression)
 		if (group is InterfaceMethodGroupSymbol) {
 			expression.typeArguments?.let { throw GenericErrors.callArity(expression.name, it.span, it.arguments.size, listOf(0), group.name) }
-			val receiverExpression = expression.receiver
-			val self = facts.declarations.directReceiverOf(receiverExpression)
-			val access = if (self != null) ObjectReceiver.Self(self) else ObjectReceiver.Explicit(receiverExpression)
-			val selected = overloads.interfaceCall(expression, group, access)
+			val selected = overloads.interfaceCall(expression, group, objectReceiver(expression.receiver))
 			facts.interfaceMemberCalls[expression] = selected
 			return selected.type.results
 		}
@@ -486,9 +478,35 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 				else             -> MethodReceiver.Temporary(expression.receiver)
 			}
 		}
-		val selected = if (checked is MethodSymbol) overloads.source(expression, listOf(checked), source)
-		else overloads.method(expression, expression.typeArguments, group as MethodGroupSymbol, classOwner, source)
+		val selected = overloads.method(expression, expression.typeArguments, group as MethodGroupSymbol, classOwner, source)
 		facts.recordMemberCall(expression, selected)
+		return selected.type.results
+	}
+
+	private fun objectReceiver(expression: Expression): ObjectReceiver =
+		facts.declarations.directReceiverOf(expression)?.let { ObjectReceiver.Self(it) } ?: ObjectReceiver.Explicit(expression)
+
+	private fun checkMethodReceiver(expression: MemberCallExpression) {
+		if (expression in facts.declarations.readOnlyDefaultReceivers) {
+			throw SemanticErrors.parameterDefault("A default cannot call a user-defined method through a read-only receiver", expression.name.span)
+		}
+	}
+
+	private fun boundMemberCall(expression: MemberCallExpression, bounds: List<CMemberType>, receiver: ValueType): ResultShape {
+		val checked = facts.checkedBoundMethod(expression)
+		val groups = if (checked == null) facts.declarations.boundMemberGroups(bounds, expression.name.lexeme) else emptyList()
+		if (checked == null && groups.isEmpty()) throw SemanticErrors.unknownMember(receiver, expression.name)
+		checkMethodReceiver(expression)
+		val access = objectReceiver(expression.receiver)
+		val selected = when (val contract = checked?.contract) {
+			is MethodSymbol -> overloads.source(expression, listOf(contract), MethodReceiver.Instance(access))
+			is InterfaceMethodSymbol -> overloads.interfaceCall(expression, InterfaceMethodGroupSymbol(checked.view as CInterface, listOf(contract)), access)
+			else -> overloads.boundMember(expression, groups, classOwner, access)
+		}
+		when (selected) {
+			is ResolvedCall.Source -> facts.recordMemberCall(expression, selected)
+			is ResolvedCall.Interface -> facts.interfaceMemberCalls[expression] = selected
+		}
 		return selected.type.results
 	}
 

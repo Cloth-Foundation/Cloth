@@ -28,6 +28,7 @@ enum class Operators(private val character: String) { // This comment has to exi
 	NOT_EQUAL("!="),
 	NOT("!"),
 	AND("&&"),
+	AMPERSAND("&"),
 	OR("||"),
 
 	GREATER(">"),

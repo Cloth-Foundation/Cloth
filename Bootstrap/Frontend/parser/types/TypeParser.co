@@ -1,0 +1,31 @@
+using parser.ParseCursor: ParseCursor
+using parser.types.TypeReference: TypeReference
+using token.Keywords: Keywords
+using token.Operators: Operators
+using token.Token: TokenType
+
+fn<bool> isPrimitiveType(string spelling) {
+    if (spelling == Keywords.INTEGER || spelling == Keywords.FLOAT || spelling == Keywords.BOOLEAN) return true
+    if (spelling == Keywords.STRING || spelling == Keywords.CHARACTER || spelling == Keywords.VOID) return true
+    return spelling == Keywords.TYPEINFO || spelling == Keywords.USIZE || spelling == Keywords.ISIZE
+}
+
+pub fn<TypeReference?> parsePlainType(ParseCursor cursor) {
+    def token := cursor.peek()
+    if (token.type == TokenType.Identifier || (token.type == TokenType.Keyword && isPrimitiveType(token.lexeme))) {
+        def<TypeReference> reference := { cursor.advance() }
+        return reference
+    }
+    cursor.expected("a type name")
+    return null
+}
+
+pub fn<TypeReference?> parsePlainTypeAnnotation(ParseCursor cursor) {
+    if (cursor.expectOperator(Operators.LESS) == null) return null
+    cursor.skipNewlines()
+    def<TypeReference?> type := parsePlainType(cursor)
+    if (type == null) return null
+    cursor.skipNewlines()
+    if (cursor.expectOperator(Operators.GREATER) == null) return null
+    return type
+}

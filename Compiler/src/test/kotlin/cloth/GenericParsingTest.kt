@@ -9,6 +9,7 @@ import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
+import cloth.parser.type.ConstructorBound
 import cloth.token.TokenSpan
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -181,11 +182,10 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `empty malformed and trailing generic lists fail at the first syntax error`() {
+	fun `empty parameter lists and malformed argument lists fail at the first syntax error`() {
 		for (source in listOf(
 			"typedef<class> Box<> {}", "typedef<struct> Box<T,> {}", "typedef<class> Box<T U> {}",
-			"fn<Box<>> f() = null", "fn<Box<int,>> f() = null", "fn<Box<int> f() = null",
-			"fn main() { Box<>::new }", "fn main() { Box<int,>::type }",
+			"fn<Box<int,>> f() = null", "fn<Box<int> f() = null", "fn main() { Box<int,>::type }",
 			"fn work<>() {}", "fn main() { work<int,>(1) }",
 			"typedef<class> Box { mt work<>() {} }", "fn main() { box.work<int,>(1) }"
 		)) {
@@ -210,9 +210,48 @@ class GenericParsingTest {
 		val read = assertNotNull(assertIs<FunctionDeclaration>(declarations[3]).typeParameters).parameters.single()
 		assertEquals("T: Entity<T>", text(entity.span))
 		assertEquals("U", text(slot[1].span))
-		assertNull(slot[1].bound)
+		assertTrue(slot[1].bounds.isEmpty())
 		assertEquals(listOf("Entity<T>", "Object", "Number", "IHealth<float>"),
-			listOf(entity, slot[0], health, read).map { text(assertNotNull(it.bound).span) })
+			listOf(entity, slot[0], health, read).map { text(it.bounds.single().span) })
+	}
+
+	@Test
+	fun `combined bounds preserve order and spans before a default and the next parameter`() {
+		val declarations = unit("""
+			typedef<struct> Pair<T: Entity<T> &
+			    INamed = Player, N: Number> { T value, N count }
+			typedef<class> Box {
+			    mt inspect<U: INamed&Entity<U>>(U value) {}
+			}
+		""").declarations
+		val (value, count) = assertNotNull(assertIs<StructDeclaration>(declarations[0]).typeParameters).parameters
+		assertEquals(listOf("Entity<T>", "INamed"), value.bounds.map { text(it.span) })
+		assertEquals("Player", text(assertNotNull(value.defaultType).span))
+		assertEquals("T: Entity<T> &\n    INamed = Player", text(value.span))
+		assertEquals("Number", text(count.bounds.single().span))
+
+		val method = assertIs<MethodDeclaration>(assertIs<ClassDeclaration>(declarations[1]).members.single())
+		val parameter = assertNotNull(method.typeParameters).parameters.single()
+		assertEquals(listOf("INamed", "Entity<U>"), parameter.bounds.map { text(it.span) })
+		assertEquals("U: INamed&Entity<U>", text(parameter.span))
+		assertEquals("&&", assertIs<BinaryExpression>(expression("true && false")).operator.lexeme)
+	}
+
+	@Test
+	fun `constructor guarantees retain parameter syntax and bound spans`() {
+		val function = assertIs<FunctionDeclaration>(unit("""
+			fn keep<E, T: Object & new() & new(E seed, opt<E> other ?: seed) = Player>(T value) {}
+		""").declarations.single())
+		val parameter = assertNotNull(function.typeParameters).parameters.last()
+		assertEquals(listOf("Object", "new()", "new(E seed, opt<E> other ?: seed)"), parameter.bounds.map { text(it.span) })
+		assertEquals("T: Object & new() & new(E seed, opt<E> other ?: seed) = Player", text(parameter.span))
+		val empty = assertIs<ConstructorBound>(parameter.bounds[1]).declaration
+		assertTrue(empty.parameters.isEmpty())
+		val guarantee = assertIs<ConstructorBound>(parameter.bounds.last()).declaration
+		assertEquals(listOf("seed", "other"), guarantee.parameters.map { it.name.lexeme })
+		assertEquals(listOf("E", "E"), guarantee.parameters.map { it.type.spelling })
+		assertTrue(guarantee.parameters.last().optional)
+		assertEquals("seed", text(assertNotNull(guarantee.parameters.last().defaultValue).span))
 	}
 
 	@Test
@@ -220,6 +259,8 @@ class GenericParsingTest {
 		for ((source, token) in listOf(
 			"typedef<class> Box<T:> {}" to ">",
 			"typedef<class> Box<T: Number: Object> {}" to ":",
+			"typedef<class> Box<T: Object &> {}" to ">",
+			"typedef<class> Box<T: Object && INamed> {}" to "&&",
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.EXPECTED_TOKEN, error.diagnosticCode, source)
@@ -228,9 +269,9 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `defaults enums and dispatched generic methods retain an explicit syntax boundary`() {
+	fun `alternate default syntax enums and dispatched generic methods retain a syntax boundary`() {
 		for (source in listOf(
-			"typedef<struct> Box<T = int> {}", "fn work<T: Number = int>() {}",
+			"typedef<struct> Box<T ?: int> {}", "fn work<T: Number ?: int>() {}",
 			"typedef<enum> Mode<T> { One }",
 			"typedef<class> Box { virtual: pub mt work<T>() {} }",
 			"typedef<class> Box : Base { override: pub mt work<T>() {} }",

@@ -47,7 +47,7 @@ class CClass internal constructor(
 	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || when (actual) {
 		is CClass -> this in actual.ancestry()
 		is CInterface -> objectRoot
-		is CTypeParameter -> actual.nominalBound?.let(::accepts) == true
+		is CTypeParameter -> actual.nominalBounds.any(::accepts)
 		else -> false
 	}
 

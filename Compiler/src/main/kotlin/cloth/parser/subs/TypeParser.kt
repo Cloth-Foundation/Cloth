@@ -3,9 +3,12 @@ package cloth.parser.subs
 import cloth.diagnostics.SyntaxErrors
 import cloth.diagnostics.GenericErrors
 import cloth.parser.Parser
+import cloth.parser.declaration.ConstructorGuaranteeDeclaration
+import cloth.parser.type.ConstructorBound
 import cloth.parser.type.TypeReference
 import cloth.parser.type.TypeArgumentList
 import cloth.parser.type.TypeParameterDeclaration
+import cloth.parser.type.TypeParameterBound
 import cloth.parser.type.TypeParameterList
 import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.token.Keywords
@@ -38,15 +41,16 @@ class TypeParser(private val parser: Parser) {
 			while (true) {
 				val name = parser.expect(TokenType.Identifier, "a type parameter name")
 				parser.skipNewlines()
-				val bound = if (parser.peek().lexeme == Operators.COLON.toString()) {
+				val bounds = if (parser.peek().lexeme == Operators.COLON.toString()) parseBounds() else emptyList()
+				val defaultType = if (parser.peek().lexeme == Operators.ASSIGN.toString()) {
 					parser.advance()
 					parser.skipNewlines()
 					parse(allowArrays = true)
 				} else null
-				add(TypeParameterDeclaration(name, bound))
+				add(TypeParameterDeclaration(name, bounds, defaultType))
 				parser.skipNewlines()
 				when (parser.peek().lexeme) {
-					Operators.ASSIGN.toString(), Operators.ELVIS.toString() -> throw GenericErrors.syntax("Default type arguments", parser.peek())
+					Operators.ELVIS.toString() -> throw GenericErrors.syntax("Type defaults written with '${Operators.ELVIS}'", parser.peek())
 					Operators.GREATER.toString() -> break
 				}
 				parser.expect(Operators.COMMA)
@@ -56,16 +60,30 @@ class TypeParser(private val parser: Parser) {
 		return TypeParameterList(opening, parameters, parser.expect(Operators.GREATER))
 	}
 
+	private fun parseBounds(): List<TypeParameterBound> = buildList {
+		do {
+			parser.advance()
+			parser.skipNewlines()
+			if (parser.atKeyword(Keywords.NEW)) {
+				val keyword = parser.advance()
+				val parameters = parser.functionParser.parseParameters()
+				add(ConstructorBound(ConstructorGuaranteeDeclaration(keyword, parameters, keyword.span.through(parser.previous().span))))
+			} else add(parse(allowArrays = true))
+			parser.skipNewlines()
+		} while (parser.peek().lexeme == Operators.AMPERSAND.toString())
+	}
+
 	internal fun arguments(): TypeArgumentList {
 		val opening = parser.expect(Operators.LESS)
 		if (argumentDepth >= maximumTypeArgumentNesting) throw GenericErrors.nesting(opening.span, maximumTypeArgumentNesting)
 		argumentDepth++
 		try {
 			parser.skipNewlines()
+			if (parser.peek().lexeme == Operators.GREATER.toString()) return TypeArgumentList(opening, emptyList(), parser.advance())
 			val arguments = buildList {
 				while (true) {
 					if (parser.atKeyword(Keywords.OPT)) throw GenericErrors.argument("Omission-only '${Keywords.OPT}' wrappers are not value type arguments", parser.peek().span)
-					add(parse(allowArrays = true))
+					add(if (parser.peek().lexeme == Operators.UNDERSCORE.toString()) TypeReference(parser.advance()) else parse(allowArrays = true))
 					parser.skipNewlines()
 					if (parser.peek().lexeme == Operators.GREATER.toString()) break
 					parser.expect(Operators.COMMA)
@@ -91,7 +109,7 @@ class TypeParser(private val parser: Parser) {
 				token.lexeme == Operators.LESS.toString() -> depth++
 				token.lexeme == Operators.GREATER.toString() -> if (--depth == 0) break
 				token.type in setOf(TokenType.Identifier, TokenType.Keyword, TokenType.IntegerLiteral, TokenType.NewLine) -> Unit
-				token.lexeme in setOf(Operators.COMMA.toString(), Operators.DOT.toString(), Operators.QUESTION.toString(), Operators.BRACKET_OPEN.toString(), Operators.BRACKET_CLOSE.toString()) -> Unit
+				token.lexeme in setOf(Operators.COMMA.toString(), Operators.DOT.toString(), Operators.QUESTION.toString(), Operators.BRACKET_OPEN.toString(), Operators.BRACKET_CLOSE.toString(), Operators.UNDERSCORE.toString()) -> Unit
 				else -> return null
 			}
 		}

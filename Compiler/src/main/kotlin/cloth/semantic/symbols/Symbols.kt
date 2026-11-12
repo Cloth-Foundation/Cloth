@@ -82,6 +82,16 @@ internal class StateMethodContractSymbol(owner: CClass, override val declaration
 	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
 
+internal class ConstructorGuaranteeSymbol(
+	override val declaration: ConstructorGuaranteeDeclaration,
+	parameterTypes: List<ValueType>,
+	val declaringClass: CClass?,
+) : CallableContractSymbol {
+	override val name get() = declaration.name
+	override val parameters = declaration.parameters.map(::ParameterSymbol)
+	override val signature = FunctionSignature(name.lexeme, parameterTypes.map(SignatureType::resolved))
+}
+
 internal class StateActivationSymbol(owner: CMemberType, override val declaration: StateActivationDeclaration) : CallableContractSymbol {
 
 	override val name get() = declaration.name

@@ -6,6 +6,11 @@ import cloth.api.SourceModule
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
+import cloth.parser.Parser
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ReturnStatement
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
@@ -19,6 +24,8 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** Compile the Cloth scanner once per available native profile, then use the Kotlin lexer as its oracle. */
@@ -92,11 +99,72 @@ class BootstrapLexerTest {
 	}
 
 	@Test
-	fun `Bootstrap releases successful and partial token lists and syntax trees`(@TempDir directory: Path) {
+	fun `Bootstrap matches Kotlin AST spans and releases syntax trees`(@TempDir directory: Path) {
+		val input = """
+			/* 😀 */ fn empty() {}
+
+			pub fn<
+			    Item
+			> 計算(
+			    int count,
+			    Item /* 😀 */ item
+			)
+			{
+			    def<int> x = 2
+			    def y := -(x + 1) ** 3
+			    def<
+			        Item
+			    > copy := item
+			}
+			fn<int> value() {}
+			fn<void> finish() { def<int> saved := 1; return }
+		""".trimIndent()
+		val kotlinSource = SourceFile("<string>", input)
+		val functions = Parser(Lexer(kotlinSource).scanTokens()).parse().declarations.map { it as FunctionDeclaration }
+		val (emptyFunction, filledFunction, valueFunction, voidFunction) = functions
+		for (function in functions) {
+			assertSame(kotlinSource, function.span.source)
+			assertSame(kotlinSource, function.body.span.source)
+		}
+		val expectedParameters = filledFunction.parameters.joinToString(", ") {
+			assertSame(kotlinSource, it.type.span.source)
+			assertSame(kotlinSource, it.name.span.source)
+			assertSame(kotlinSource, it.span.source)
+			"\"${it.type.name.lexeme} ${it.type.span} ${it.name.lexeme} ${it.name.span} ${it.span}\""
+		}
+		val expectedReturnTypes = functions.map { function ->
+			function.returnTypes.joinToString(", ") {
+				assertSame(kotlinSource, it.span.source)
+				"\"${it.name.lexeme} ${it.span}\""
+			}
+		}
+		val expectedStatements = functions.map { function ->
+			(function.body as BlockBody).statements.joinToString(", ") { statement ->
+				when (statement) {
+					is BindingDeclaration -> {
+						assertSame(kotlinSource, statement.name.span.source)
+						val annotation = statement.type?.let { type ->
+							assertSame(kotlinSource, type.span.source)
+							" ${type.name.lexeme} ${type.span}"
+						}.orEmpty()
+						"\"${Keywords.DEFINITION} ${statement.name.lexeme} ${statement.name.span}$annotation\""
+					}
+					is ReturnStatement -> {
+						assertNull(statement.value)
+						assertSame(kotlinSource, statement.span.source)
+						"\"${statement.keyword.lexeme} ${statement.span}\""
+					}
+					else -> error("Unexpected statement in Bootstrap fixture: $statement")
+				}
+			}
+		}
 		val source = Files.writeString(directory.resolve("Ownership.co"), """
 			using lexer.Lexer: Lexer
-			using parser.Ast: SourceUnit
+			using parser.Ast: FunctionDeclaration, SourceUnit
 			using parser.Parser: Parser
+			using parser.statements.BindingDeclaration: BindingDeclaration
+			using parser.statements.ReturnStatement: ReturnStatement
+			using parser.types.TypeReference: TypeReference
 			using source.SourceFile: SourceFile
 			using token.TokenList: TokenList
 
@@ -110,6 +178,75 @@ class BootstrapLexerTest {
 			    def sourceSurvived := source.text == input
 			    source::delete
 			    return valid && sourceSurvived
+			}
+
+			fn<bool> matchesParameters(FunctionDeclaration declaration, SourceFile source, string[] expected) {
+			    if (declaration.parameters.size() != expected::size) return false
+			    for (def index <- 0..expected::size) {
+			        def parameter := declaration.parameters.get(index)
+			        def typeName := parameter.type.name
+			        def name := parameter.name
+			        if (!(typeName.span.source === source) || !(name.span.source === source) || !(parameter.span.source === source)) return false
+			        def shape := #"{typeName.lexeme} {typeName.span::str} {name.lexeme} {name.span::str} {parameter.span::str}"
+			        if (shape != expected[index]) return false
+			    }
+			    return true
+			}
+
+			fn<bool> matchesReturnTypes(FunctionDeclaration declaration, SourceFile source, string[] expected) {
+			    if (declaration.returnTypes::size != expected::size) return false
+			    for (def index <- 0..expected::size) {
+			        def typeName := declaration.returnTypes[index].name
+			        if (!(typeName.span.source === source)) return false
+			        if (#"{typeName.lexeme} {typeName.span::str}" != expected[index]) return false
+			    }
+			    return true
+			}
+
+			fn<bool> matchesStatements(FunctionDeclaration declaration, SourceFile source, string[] expected) {
+			    if (declaration.statements.size() != expected::size) return false
+			    for (def index <- 0..expected::size) {
+			        def statement := declaration.statements.get(index)
+			        if (statement is BindingDeclaration) {
+			            def name := statement.name
+			            if (!(name.span.source === source)) return false
+			            def shape = #"{statement.keyword.lexeme} {name.lexeme} {name.span::str}"
+			            def<TypeReference?> type := statement.type
+			            if (type != null) {
+			                def typeName := type.name
+			                if (!(typeName.span.source === source)) return false
+			                shape += #" {typeName.lexeme} {typeName.span::str}"
+			            }
+			            if (shape != expected[index]) return false
+			            continue
+			        }
+			        if (statement is ReturnStatement) {
+			            def keyword := statement.keyword
+			            if (!(keyword.span.source === source)) return false
+			            if (#"{keyword.lexeme} {keyword.span::str}" != expected[index]) return false
+			            continue
+			        }
+			        return false
+			    }
+			    return true
+			}
+
+			fn<bool> matchesFunction(
+			    FunctionDeclaration declaration,
+			    SourceFile source,
+			    string expectedSpan,
+			    string expectedBodySpan,
+			    string[] expectedResults,
+			    string[] expectedParameters,
+			    string[] expectedStatements
+			) {
+			    def span := declaration.span
+			    def bodySpan := declaration.bodySpan
+			    if (!(span.source === source) || !(bodySpan.source === source)) return false
+			    if (span::str != expectedSpan || bodySpan::str != expectedBodySpan) return false
+			    if (!matchesReturnTypes(declaration, source, expectedResults)) return false
+			    if (!matchesParameters(declaration, source, expectedParameters)) return false
+			    return matchesStatements(declaration, source, expectedStatements)
 			}
 
 			fn<bool> parseAndDelete(string input, bool succeeds) {
@@ -126,7 +263,30 @@ class BootstrapLexerTest {
 			    def valid = tree == null && !succeeds && parser.failure != null
 			    parser::delete
 			    if (tree != null) {
-			        valid = succeeds && tree.functions.size() == 1 && tree.functions.get(0).bindings.size() == 2
+			        valid = succeeds && tree.functions.size() == ${functions.size}
+			        if (valid) {
+			            def emptyMatches := matchesFunction(
+			                tree.functions.get(0), source,
+			                "${emptyFunction.span}", "${emptyFunction.body.span}",
+			                [${expectedReturnTypes[0]}], [], [${expectedStatements[0]}]
+			            )
+			            def filledMatches := matchesFunction(
+			                tree.functions.get(1), source,
+			                "${filledFunction.span}", "${filledFunction.body.span}",
+			                [${expectedReturnTypes[1]}], [$expectedParameters], [${expectedStatements[1]}]
+			            )
+			            def valueMatches := matchesFunction(
+			                tree.functions.get(2), source,
+			                "${valueFunction.span}", "${valueFunction.body.span}",
+			                [${expectedReturnTypes[2]}], [], [${expectedStatements[2]}]
+			            )
+			            def voidMatches := matchesFunction(
+			                tree.functions.get(3), source,
+			                "${voidFunction.span}", "${voidFunction.body.span}",
+			                [${expectedReturnTypes[3]}], [], [${expectedStatements[3]}]
+			            )
+			            valid = emptyMatches && filledMatches && valueMatches && voidMatches
+			        }
 			        tree::delete
 			    }
 			    tokens::delete
@@ -136,7 +296,17 @@ class BootstrapLexerTest {
 
 			fn<bool> sample() {
 			    if (!scanAndDelete("first second", true) || !scanAndDelete("first second @", false)) return false
-			    if (!parseAndDelete("fn main() { def x = 2; def y := -(x + 1) ** 3 }", true)) return false
+			    if (!parseAndDelete("${input.replace("\n", "\\n")}", true)) return false
+			    if (!parseAndDelete("fn done(int value) {}\nfn main(Item item,)", false)) return false
+			    if (!parseAndDelete("fn main(int value) ;", false)) return false
+			    if (!parseAndDelete("fn done() {}\nfn main(int value) { def x = 2", false)) return false
+			    if (!parseAndDelete("fn<int> done() {}\nfn<> main() {}", false)) return false
+			    if (!parseAndDelete("fn<int> main(Item item,)", false)) return false
+			    if (!parseAndDelete("fn<Item> main(int index) { def x = 2", false)) return false
+			    if (!parseAndDelete("fn main() { def<int> first = 1; def<> bad = 2 }", false)) return false
+			    if (!parseAndDelete("fn<int> main(int count) { def<int> value = count; def<int> bad := (value * 2 + ) }", false)) return false
+			    if (!parseAndDelete("fn stop() { return", false)) return false
+			    if (!parseAndDelete("fn stop() { def<int> saved := 1; return; def<int> bad = (saved + ) }", false)) return false
 			    return parseAndDelete("fn done() {}\nfn main() { def x = 2; def y := (x * 3 + (4 ** 5 * )) }", false)
 			}
 		""".trimIndent())
@@ -146,7 +316,7 @@ class BootstrapLexerTest {
 			val graph = SourceGraphLoader.load(request(source, output, abi.targetTriple, OutputKind.OBJECT))
 			val model = FunctionAnalyzer(abi.layout).analyze(graph)
 			harness.probe(abi, output, model = model) {
-				expect(checkNotNull(sourceCall("sample", null)), "Bootstrap ownership probe failed")
+				expect(checkNotNull(sourceCall("sample", null)), "Bootstrap span and ownership probe failed")
 			}
 		}
 	}

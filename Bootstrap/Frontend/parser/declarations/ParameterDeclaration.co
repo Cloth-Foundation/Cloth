@@ -1,0 +1,17 @@
+using cloth.collections.List: List
+using parser.types.TypeReference: TypeReference
+using token.Token: Token, TokenSpan
+
+pub typedef<class> ParameterDeclaration (pub def<TypeReference> type, pub def<Token> name) {
+    // The parameter owns its range and borrows the type and name tokens.
+    pub def<TokenSpan> span = type.name.span.through(name.span)
+
+    ~ParameterDeclaration { span::delete }
+
+    operator ::str() = #"({type.name.lexeme} {name.lexeme})"
+}
+
+pub fn deleteParameters(List<ParameterDeclaration> parameters) {
+    for (def index <- 0..parameters.size()) parameters.get(index)::delete
+    parameters::delete
+}

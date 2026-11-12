@@ -1,0 +1,66 @@
+using cloth.collections.List: List
+using parser.ParseCursor: ParseCursor
+using parser.declarations.ParameterDeclaration: ParameterDeclaration, deleteParameters
+using parser.types.TypeParser: parsePlainType, parsePlainTypeAnnotation
+using parser.types.TypeReference: TypeReference
+using token.Keywords: Keywords
+using token.Operators: Operators
+using token.Token: Token
+
+pub typedef<struct> FunctionHeader {
+    Token? visibility,
+    Token keyword,
+    TypeReference[] returnTypes,
+    Token name,
+    List<ParameterDeclaration> parameters
+}
+
+pub fn<FunctionHeader?> parseFunctionHeader(ParseCursor cursor) {
+    def<Token?> visibility = null
+    if (cursor.atKeyword(Keywords.PUBLIC)) visibility = cursor.advance()
+    if (!cursor.atKeyword(Keywords.FUNCTION)) {
+        cursor.expected(#"a '{Keywords.FUNCTION::str}' declaration")
+        return null
+    }
+    def keyword := cursor.advance()
+    def<TypeReference[]> returnTypes = []
+    if (cursor.atOperator(Operators.LESS)) {
+        def<TypeReference?> returnType := parsePlainTypeAnnotation(cursor)
+        if (returnType == null) return null
+        returnTypes = [returnType]
+    }
+    def<Token?> name := cursor.expectIdentifier("a function name")
+    if (name == null) return null
+    if (cursor.expectOperator(Operators.PAREN_OPEN) == null) return null
+
+    def parameters := List<ParameterDeclaration>::new
+    if (!parseParameterList(cursor, parameters) || cursor.expectOperator(Operators.PAREN_CLOSE) == null) {
+        deleteParameters(parameters)
+        return null
+    }
+    // The caller owns the parameter list until it transfers it to the declaration.
+    def<FunctionHeader> header := { visibility, keyword, returnTypes, name, parameters }
+    return header
+}
+
+fn<bool> parseParameterList(ParseCursor cursor, List<ParameterDeclaration> parameters) {
+    cursor.skipNewlines()
+    if (cursor.atOperator(Operators.PAREN_CLOSE)) return true
+    while (true) {
+        def<ParameterDeclaration?> parameter := parseParameter(cursor)
+        if (parameter == null) return false
+        parameters.append(parameter)
+        cursor.skipNewlines()
+        if (cursor.atOperator(Operators.PAREN_CLOSE)) return true
+        if (cursor.expectOperator(Operators.COMMA) == null) return false
+        cursor.skipNewlines()
+    }
+}
+
+fn<ParameterDeclaration?> parseParameter(ParseCursor cursor) {
+    def<TypeReference?> type := parsePlainType(cursor)
+    if (type == null) return null
+    def<Token?> name := cursor.expectIdentifier("a parameter name")
+    if (name == null) return null
+    return ParameterDeclaration::new(type, name)
+}

@@ -1,0 +1,19 @@
+using parser.Ast: Expression
+using parser.statements.Statement: Statement
+using parser.types.TypeReference: TypeReference
+using token.Token: Token
+
+pub typedef<class> BindingDeclaration (
+    pub def<Token> keyword,
+    pub def<TypeReference?> type,
+    pub def<Token> name,
+    pub def<Token> assignment,
+    pub def<Expression> initializer
+) : Statement {
+    ~BindingDeclaration { initializer::delete }
+
+    operator ::str() {
+        def annotation := if (type == null) "" else #" (type {type.name.lexeme})"
+        return #"({keyword.lexeme}{annotation} {name.lexeme} {assignment.lexeme} {initializer::str})"
+    }
+}

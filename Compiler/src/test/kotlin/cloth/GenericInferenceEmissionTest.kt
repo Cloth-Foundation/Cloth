@@ -7,6 +7,33 @@ import kotlin.test.assertEquals
 
 class GenericInferenceEmissionTest {
 	@Test
+	fun `partial arguments and type defaults lower to closed call contracts`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Box<T = int, U = T> (pub def<T> value, pub def<U> label) {
+			    pub mt<V[]> empty<V = U>() = []
+			}
+			fn<T> echo<T = int<8>>(T value) = value
+			fn main() {
+			    def box = Box<int, _>::new(7, "label")
+			    println(box.value)
+			    println(box.label)
+			    def<string[]> empty = box.empty<>()
+			    println(empty)
+			    def another = Box<>::new(2, 3)
+			    println(another.label)
+			    println(echo(300))
+			    println(echo<>(12))
+			    box::delete
+			    another::delete
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("type_defaults_${abi.layout.sizeBits}"))
+			assertEquals("7\nlabel\n[]\n3\n300\n12\n" + processCompletion().replace("\r\n", "\n"), output)
+		}
+	}
+
+	@Test
 	fun `inferred constructors run primary defaults and secondary delegation in source order`(@TempDir directory: Path) {
 		val source = """
 			fn<string> defaultTag() { print("default "); return "primary" }

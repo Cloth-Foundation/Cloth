@@ -13,6 +13,13 @@ declaration checking and specialization. C3135 identifies an unsatisfied bound.
 casts, same-type arithmetic and comparisons, updates and numeric formatting.
 [GEN-1 Stage 3](references/constraints-stage-3.md) implements class and
 interface bound operations and retains declaration-site call contracts.
+[GEN-4 Stage 1](references/combined-bounds-stage-1.md) parses and resolves
+`&`-joined bounds. [GEN-4 Stage 2](references/combined-bounds-stage-2.md)
+checks every bound, written duplicates, and conflicting interface
+applications. [GEN-4 Stage 3](references/combined-bounds-stage-3.md) adds
+widening, overload selection across the bounds, and checked object operations.
+[GEN-5 Stage 1](references/constructor-guarantees-stage-1.md) adds constructor
+guarantee syntax, exact signature proof, and application-site access checks.
 
 The first generic class/struct slice and public source List are complete through
 [Stage 6 integration and publication](references/stage-6.md). Start with the
@@ -49,10 +56,12 @@ by their declaration, exact declaring owner, and ordered method arguments.
 GEN-3 infers complete type argument lists from supplied values. Stages 1 and 2
 try ordinary overloads first for functions and class or struct methods.
 Stage 3 infers a named generic class's arguments at `::new(...)` and ranks
-the substituted constructors.
+the substituted constructors. Stage 4 supports `_` call slots and declared
+type defaults in generic parameter lists.
 [GEN-3 Stage 1](references/function-inference-stage-1.md) ·
 [GEN-3 Stage 2](references/method-inference-stage-2.md) ·
 [GEN-3 Stage 3](references/constructor-inference-stage-3.md) ·
+[GEN-3 Stage 4](references/partial-arguments-and-defaults-stage-4.md) ·
 [Inference rules](references/semantics.md#type-argument-inference-design)
 
 Stage 0 confirms the [first-slice contract](references/semantics.md) and captures

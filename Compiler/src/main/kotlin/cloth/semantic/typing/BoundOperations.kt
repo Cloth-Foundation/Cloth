@@ -3,16 +3,18 @@ package cloth.semantic.typing
 import cloth.data.CClass
 import cloth.data.CInterface
 import cloth.data.CMemberType
-import cloth.data.CNullable
-import cloth.data.CTypeParameter
+import cloth.data.ValueType
+import cloth.data.parameterPayload
 import cloth.diagnostics.InternalErrors
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.MemberCallExpression
 import cloth.semantic.ClassComparisonPlan
+import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.generics.sourceSpans
 import cloth.semantic.symbols.CallableContractSymbol
+import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.semantic.symbols.MethodSymbol
 
 /** The canonical body's facts select the bound view and the source contract. */
@@ -25,31 +27,49 @@ private fun <T : Any> FunctionSemanticModel.checkedFact(
 	return boundDeclarationModels(views.templates ?: this).firstNotNullOfOrNull { read(it, checked) }
 }
 
-internal fun FunctionSemanticModel.boundView(value: Expression): CMemberType? {
-	val declared = checkedFact(value) { body, checked -> body.types.scalarTypeOrNull(checked) }
-	val parameter = ((declared as? CNullable)?.payload ?: declared) as? CTypeParameter ?: return null
-	return declarations.genericViews?.specializedBound(value, parameter.parameter)
+internal fun FunctionSemanticModel.boundViews(value: Expression, actual: ValueType? = null): List<CMemberType> {
+	val parameter = checkedFact(value) { body, checked -> body.types.scalarTypeOrNull(checked)?.parameterPayload() }
+	return parameter?.let { declarations.genericViews?.specializedBounds(value, it.parameter) }
+		?: actual?.parameterPayload()?.nominalBounds.orEmpty()
 }
 
-internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression, owner: CMemberType, report: Boolean = true): CallableContractSymbol? {
-	if (boundView(call.receiver) == null) return null
+internal fun DeclarationModel.boundMemberGroups(bounds: List<CMemberType>, name: String) =
+	bounds.distinct().mapNotNull { memberGroup(it, name) }
+
+internal data class BoundMethod(val view: CMemberType, val contract: CallableContractSymbol)
+
+internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression, report: Boolean = true): BoundMethod? {
 	return checkedFact(call) { body, checked ->
-		when (val selected = body.selectedBoundMemberCall(checked as MemberCallExpression)) {
-			is ResolvedCall.Source -> specializeMethod(owner, selected.callable as MethodSymbol, body, call, report)
+		val original = checked as MemberCallExpression
+		val parameter = body.types.scalarTypeOrNull(original.receiver)?.parameterPayload() ?: return@checkedFact null
+		val bounds = declarations.genericViews?.specializedBounds(call.receiver, parameter.parameter) ?: return@checkedFact null
+		when (val selected = body.selectedBoundMemberCall(original)) {
+			is ResolvedCall.Source -> {
+				val bound = bounds.filterIsInstance<CClass>().single()
+				specializeMethod(bound, selected.callable as MethodSymbol, body, call, report)?.let { BoundMethod(bound, it) }
+			}
 			is ResolvedCall.Interface -> {
-				val bound = owner as CInterface
-				val source = selected.contract.requirement
-				declarations.interfaceMethods.values.firstOrNull { method ->
-					method.requirement.declaration === source.declaration && (method.owner === bound || method.owner in bound.ancestors)
-				} ?: throw InternalErrors.invariant("Missing bound interface requirement '${source.declaration.name.lexeme}'")
+				val index = parameter.nominalBounds.indexOf(selected.owner)
+				val bound = bounds[index] as CInterface
+				rebindInterfaceMethod(bound, selected.contract)
 			}
 			null -> null
 		}
 	}
 }
 
+private fun FunctionSemanticModel.rebindInterfaceMethod(bound: CInterface, selected: InterfaceMethodSymbol): BoundMethod {
+	val source = selected.requirement.declaration
+	val method = declarations.interfaceMethods.values.firstOrNull {
+		it.requirement.declaration === source && (it.owner === bound || it.owner in bound.ancestors)
+	} ?: throw InternalErrors.invariant("Missing bound interface requirement '${source.name.lexeme}'")
+	// Substitution may merge inherited slots in the bound's interface view.
+	val view = if (method.requirement in declarations.interfaces.contracts.getValue(bound).methods.values) bound else method.owner
+	return BoundMethod(view, method)
+}
+
 internal fun FunctionSemanticModel.checkedIdentity(expression: BinaryExpression, left: CMemberType, right: CMemberType): ClassComparisonPlan? {
-	if (boundView(expression.left) == null && boundView(expression.right) == null) return null
+	if (boundViews(expression.left).isEmpty() && boundViews(expression.right).isEmpty()) return null
 	return checkedFact(expression) { body, checked ->
 		body.types.classComparisons[checked as BinaryExpression]?.let { plan ->
 			plan.copy(identityOverride = plan.identityOverride?.let { selected ->
@@ -77,7 +97,10 @@ private fun FunctionSemanticModel.specializeMethod(
 	val site = checkNotNull(call)
 	val template = declarations.methodTemplate(declaring, source)
 		?: throw InternalErrors.invariant("Missing bound generic method '${source.name.lexeme}'")
-	val supplied = site.typeArguments ?: return views.inferredBoundMethod(site, template, selected, canonical, report)
+	val supplied = site.typeArguments
+	if (supplied == null || supplied.hasPlaceholders || supplied.arguments.size != template.signature.typeParameterCount) {
+		return views.inferredBoundMethod(site, template, selected, canonical, report)
+	}
 	val arguments = methodTypeArguments(supplied, report) ?: return null
-	return views.methodCandidates(listOf(template), arguments, supplied.sourceSpans(), site, report).singleOrNull()
+	return views.methodCandidates(listOf(template), arguments, supplied.sourceSpans(), site, report, constructorAccessChecked = true).singleOrNull()
 }

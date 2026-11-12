@@ -36,6 +36,7 @@ internal fun checkGenericFunctionSignatures(files: FileBindings, names: GenericN
 /** Owner arguments retain their exact identities. Callable parameters compare by ordinal. */
 internal class GenericSignatureKeys(private val names: GenericNameModel) {
 	private val positions = mutableMapOf<Int, CTypeParameter>()
+	private val typeDefaults = TypeArgumentDefaults(names)
 	private val applications = mutableMapOf<NominalApplicationKey, CMemberType>()
 	private val normalized = IdentityHashMap<ValueType, ValueType>()
 
@@ -46,8 +47,10 @@ internal class GenericSignatureKeys(private val names: GenericNameModel) {
 
 	fun exposedTypes(declaration: CallableDeclaration, owner: Map<TypeParameterSymbol, ValueType>): List<ValueType> {
 		val environment = environment(declaration, owner)
-		val bounds = names.parametersOf(declaration).mapNotNull { it.declaration.bound }.filter { names.nameOf(it) !== NumberBoundName }
-		return (declaration.parameters.map { it.type } + declaration.returnTypes + bounds).map { resolve(it, environment) }
+		val parameters = names.parametersOf(declaration).map { it.declaration }
+		val bounds = parameters.flatMap { it.bounds }.flatMap { it.signatureTypes() }.filter { names.nameOf(it) !== NumberBoundName }
+		val defaults = parameters.mapNotNull { it.defaultType }
+		return (declaration.parameters.map { it.type } + declaration.returnTypes + bounds + defaults).map { resolve(it, environment) }
 	}
 
 	fun parameterSlots(declaration: CallableDeclaration): List<CTypeParameter> =
@@ -64,7 +67,11 @@ internal class GenericSignatureKeys(private val names: GenericNameModel) {
 			when (val identity = names.nameOf(type)) {
 				is TypeParameterSymbol -> normalize(environment[identity] ?: throw InternalErrors.invariant("Missing signature parameter '${identity.name.lexeme}'"))
 				is NominalTypeName -> if (type.application == null) identity.type
-				else application(identity.type, type.typeArguments.map { resolve(it, environment) })
+				else {
+					val supplied = type.typeArguments.map { resolve(it, environment) }
+					val arguments = typeDefaults.complete(identity.type.declaration, emptyMap(), supplied, ::resolve)
+					application(identity.type, arguments)
+				}
 				else -> null
 			}
 		}).resolve(reference)

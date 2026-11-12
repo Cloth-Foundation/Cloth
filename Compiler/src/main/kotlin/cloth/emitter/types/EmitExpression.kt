@@ -949,12 +949,15 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 			val a = access(expression.left, left)
 			val b = access(expression.right, right)
-			val overload = plan.identityOverride
-			if (overload == null) emitter.compareClasses(builder, a, b, plan.operation) else {
+			if (plan.operation != Operators.IDENTITY) emitter.compareClasses(builder, a, b, plan.operation) else {
 				emitter.classes.check(builder, a)
 				emitter.classes.check(builder, b)
-				if (overload.receiverIndex == 0) emitter.compareWithOverride(builder, overload.call.callable, a, right)
-				else emitter.compareWithOverride(builder, overload.call.callable, b, left)
+				val overload = plan.identityOverride
+				when {
+					overload == null -> LLVMBuildICmp(builder, LLVMIntEQ, left, right, "checked_identity")
+					overload.receiverIndex == 0 -> emitter.compareWithOverride(builder, overload.call.callable, a, right)
+					else -> emitter.compareWithOverride(builder, overload.call.callable, b, left)
+				}
 			}
 		}
 	}

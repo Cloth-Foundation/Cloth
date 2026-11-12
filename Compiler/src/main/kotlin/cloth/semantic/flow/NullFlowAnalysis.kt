@@ -12,11 +12,14 @@ import cloth.parser.declaration.executableBody
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.OperatorRules
+import cloth.semantic.generics.completesTypeArguments
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
-import cloth.semantic.typing.boundView
+import cloth.semantic.typing.boundMemberGroups
+import cloth.semantic.typing.boundViews
 import cloth.semantic.typing.checkedBoundMethod
 import cloth.semantic.typing.checkedIdentity
+import cloth.semantic.typing.completesTypeArguments
 import cloth.semantic.typing.genericMethodCandidates
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -146,20 +149,22 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun canInferCall(call: CallExpression): Boolean {
-		if (call.typeArguments != null) return false
+		val supplied = call.typeArguments
 		return when (val group = model.declarations.candidatesOf(call)) {
-			is FunctionGroupSymbol -> group.overloads.any { it.typeParameterCount != 0 }
-			is MethodGroupSymbol -> group.templates.isNotEmpty()
+			is FunctionGroupSymbol -> supplied?.let(group::completesTypeArguments) ?: group.overloads.any { it.typeParameterCount != 0 }
+			is MethodGroupSymbol -> supplied?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
 			else -> false
 		}
 	}
 
 	private fun canInferMember(call: MemberCallExpression): Boolean =
-		call.typeArguments == null && call.name.lexeme in genericMethodNames && canInferMember(call, nominalHint(call.receiver))
+		call.name.lexeme in genericMethodNames && canInferMember(call, nominalHint(call.receiver))
 
 	private fun canInferMember(call: MemberCallExpression, owner: ValueType?): Boolean =
-		call.typeArguments == null && when (owner) {
-			is CClass, is CStruct -> model.declarations.methodGroup(owner, call.name.lexeme)?.templates?.isNotEmpty() == true
+		when (owner) {
+			is CClass, is CStruct -> model.declarations.methodGroup(owner, call.name.lexeme)?.let { group ->
+				call.typeArguments?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
+			} == true
 			null -> call.name.lexeme in genericMethodNames
 			else -> false
 		}
@@ -224,17 +229,25 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun nominalHint(value: Expression, hint: ValueType? = receiverHint(value)): ValueType? =
-		model.boundView(value) ?: hint?.classBackedType() ?: hint
+		model.boundViews(value, hint).classBackedType() ?: hint?.classBackedType() ?: hint
 
 	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<CallableContractSymbol> {
-		val owner = nominalHint(call.receiver, hint)
+		val bounds = model.boundViews(call.receiver, hint)
+		val owner = bounds.classBackedType() ?: hint?.classBackedType() ?: hint
 		if (canInferMember(call, owner)) return emptyList()
-		if (owner is CMemberType) model.checkedBoundMethod(call, owner, report = false)?.let { return listOf(it) }
+		if (bounds.isNotEmpty()) model.checkedBoundMethod(call, report = false)?.let { return listOf(it.contract) }
 		call.typeArguments?.let { supplied ->
 			if (owner !is CMemberType) return emptyList()
 			val group = model.declarations.methodGroup(owner, call.name.lexeme) ?: return emptyList()
 			return model.genericMethodCandidates(call, supplied, group, classOwner, report = false)
 		}
+		if (bounds.isNotEmpty()) return model.declarations.boundMemberGroups(bounds, call.name.lexeme).flatMap { group ->
+			when (group) {
+				is MethodGroupSymbol -> group.overloads
+				is InterfaceMethodGroupSymbol -> group.overloads
+				else -> emptyList()
+			}
+		}.distinct()
 		return when (owner) {
 			is CInterface  -> model.declarations.interfaceGroup(owner, call.name.lexeme)?.overloads.orEmpty()
 			is CMemberType -> model.declarations.methodGroup(owner, call.name.lexeme)?.overloads.orEmpty()

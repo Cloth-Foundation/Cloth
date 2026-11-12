@@ -7,7 +7,9 @@ import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.CallSite
 import cloth.parser.type.TypeArgumentList
+import cloth.semantic.generics.acceptsTypeArgumentCount
 import cloth.semantic.generics.sourceSpans
+import cloth.semantic.generics.typeArgumentCounts
 import cloth.semantic.symbols.MethodGroupSymbol
 import cloth.semantic.symbols.MethodSymbol
 
@@ -17,8 +19,14 @@ internal fun methodVisible(owner: CMemberType, caller: CClass?, isPublic: Boolea
 internal fun MethodGroupSymbol.typeArgumentError(call: CallSite, supplied: TypeArgumentList?) =
 	GenericErrors.callArity(call.name, supplied?.span ?: call.name.span, supplied?.arguments?.size ?: 0, buildList {
 		if (overloads.isNotEmpty()) add(0)
-		templates.forEach { add(it.signature.typeParameterCount) }
+		templates.forEach { addAll(checkNotNull(it.declaration.typeParameters).parameters.typeArgumentCounts()) }
 	}.distinct().sorted(), name)
+
+internal fun MethodGroupSymbol.matchingTypeArguments(supplied: TypeArgumentList) =
+	templates.filter { checkNotNull(it.declaration.typeParameters).parameters.acceptsTypeArgumentCount(supplied.arguments.size) }
+
+internal fun MethodGroupSymbol.completesTypeArguments(supplied: TypeArgumentList): Boolean =
+	supplied.hasPlaceholders || matchingTypeArguments(supplied).any { it.signature.typeParameterCount > supplied.arguments.size }
 
 internal fun FunctionSemanticModel.genericMethodCandidates(
 	call: CallSite,
@@ -27,8 +35,12 @@ internal fun FunctionSemanticModel.genericMethodCandidates(
 	classOwner: CClass?,
 	report: Boolean = true,
 ): List<MethodSymbol> {
-	val matching = group.templates.filter { it.signature.typeParameterCount == supplied.arguments.size }
+	if (!report && group.completesTypeArguments(supplied)) return emptyList()
+	val matching = group.matchingTypeArguments(supplied)
 	if (matching.isEmpty()) {
+		if (report && supplied.arguments.isEmpty() && group.templates.isEmpty()) {
+			throw GenericErrors.argument("Callable '${call.name.lexeme}' has no type parameters", supplied.span)
+		}
 		if (report) throw group.typeArgumentError(call, supplied)
 		return emptyList()
 	}

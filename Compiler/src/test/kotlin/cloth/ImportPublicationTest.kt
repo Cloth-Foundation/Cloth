@@ -18,6 +18,7 @@ import cloth.parser.expression.IntegerLiteral
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.UnaryExpression
 import cloth.parser.statement.BindingDeclaration
+import cloth.parser.statement.ReturnStatement
 import cloth.semantic.ProgramAnalyzer
 import cloth.semantic.declarations.FileBindings
 import cloth.settings.LinkOptions
@@ -25,6 +26,7 @@ import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.TokenSpan
 import cloth.toolchain.StandardLibrary
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.javacpp.Pointer
@@ -40,6 +42,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ImportPublicationTest {
@@ -64,6 +67,11 @@ class ImportPublicationTest {
 				setOf(
 					"Frontend/Main.co", "Frontend/lexer/Lexer.co", "Frontend/lexer/LexerError.co",
 					"Frontend/parser/Parser.co", "Frontend/parser/Ast.co",
+					"Frontend/parser/ParseCursor.co", "Frontend/parser/declarations/FunctionHeaderParser.co",
+					"Frontend/parser/declarations/ParameterDeclaration.co",
+					"Frontend/parser/types/TypeParser.co", "Frontend/parser/types/TypeReference.co",
+					"Frontend/parser/statements/Statement.co", "Frontend/parser/statements/BindingDeclaration.co",
+					"Frontend/parser/statements/ReturnStatement.co",
 					"Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co",
 					"Frontend/token/Operators.co", "Frontend/source/SourceFile.co", "../Standard-Library/cloth/collections/List.co",
 					"../Standard-Library/cloth/io/fs/File.co", "../Standard-Library/cloth/io/path/Path.co", "../Standard-Library/cloth/text/Utf8.co",
@@ -149,6 +157,57 @@ class ImportPublicationTest {
 		assertEquals(expected, execute(artifact, listOf("--parse", "--file", file.toString())))
 		assertEquals("Cloth Dogfooding\n(source)\n$completion", execute(artifact, listOf("--parse", "--text", "")))
 
+		val parameterSource = """
+			fn one(int value) {}
+			pub fn take(
+			    Item item
+			    ,
+			    string label,
+			    usize count
+			) {
+			    def total := count + 1
+			}
+			fn primitives(int i, float f, bool b, string s, char c, void v, typeinfo t, usize u, isize z) {}
+		""".trimIndent()
+		val parameterTree = "Cloth Dogfooding\n${renderKotlinTree(parameterSource)}\n$completion"
+		assertEquals(parameterTree, execute(artifact, listOf("--parse", "--text", parameterSource)))
+
+		val resultSource = """
+			fn<int> value() {}
+			pub fn<
+			    Item
+			> make(int index) {
+			    def value := index + 1
+			}
+			fn<void> finish() {}
+		""".trimIndent()
+		val resultTree = "Cloth Dogfooding\n${renderKotlinTree(resultSource)}\n$completion"
+		assertEquals(resultTree, execute(artifact, listOf("--parse", "--text", resultSource)))
+
+		val bindingSource = """
+			pub fn<int> typed(Item item, int count) {
+			    def<int> value = count + 1
+			    def<Item> copy := item
+			    def<
+			        int
+			    > doubled := value * 2
+			    def inferred = doubled
+			}
+		""".trimIndent()
+		val bindingTree = "Cloth Dogfooding\n${renderKotlinTree(bindingSource)}\n$completion"
+		assertEquals(bindingTree, execute(artifact, listOf("--parse", "--text", bindingSource)))
+
+		val returnSource = """
+			fn stop(int value) {
+			    def<int> saved := value
+			    return
+			}
+			fn immediate() { return }
+			fn sequence() { return; def<int> saved = 1 }
+		""".trimIndent()
+		val returnTree = "Cloth Dogfooding\n${renderKotlinTree(returnSource)}\n$completion"
+		assertEquals(returnTree, execute(artifact, listOf("--parse", "--text", returnSource)))
+
 		val invalid = listOf(
 			"fn main( {",
 			"fn main() {};",
@@ -156,16 +215,58 @@ class ImportPublicationTest {
 			"fn main() { def x = (1 + 2 }",
 			"fn main() { def x = 1",
 			"fn done() {}\nfn main() { def x = 2; def y := (x * 3 + (4 ** 5 * )) }\nfn bad(",
+			"fn take(int) {}",
+			"fn take(int first Item second) {}",
+			"fn take(int first,\n) {}",
+			"fn take(int first, if second) {}",
+			"fn take(int first) ;",
+			"fn take(int first) { def x = 1",
+			"fn<> value() {}",
+			"fn<if> value() {}",
+			"fn<int value() {}",
+			"fn<int>\nvalue() {}",
+			"fn<int> take(int first,) {}",
+			"fn<Item> make(int index) { def x = 1",
+			"fn main() { def<int> first = 1; def<> value = 2 }",
+			"fn main() { def<if> value = 1 }",
+			"fn main() { def<int value = 1 }",
+			"fn main() { def<int> = 1 }",
+			"fn main() { def<int> value := (1 + ) }",
+			"fn stop() { return",
+			"fn stop() { def<int> saved := 1; return; def<int> bad = (saved + ) }",
 			"0x",
 		)
 		for (text in invalid) {
 			val diagnostic = assertFailsWith<ClothDiagnostic> { parseWithKotlin(text) }
-			val output = execute(artifact, listOf("--parse", "--text", text), status = 1)
-			assertContains(output, "\"code\": \"${diagnostic.code()}\"")
-			assertContains(output, "\"span\": \"${diagnostic.sourceLabels.first().span}\"")
-			assertEquals(1, output.lineSequence().count { it.startsWith("  \"code\": ") }, output)
-			assertFalse(output.contains("\n(source"), output)
+			assertBootstrapParseFailure(artifact, text, diagnostic.code(), diagnostic.sourceLabels.first().span)
 		}
+
+		val multipleResults = "fn<int, string> pair() {}"
+		val kotlinFunction = parseWithKotlin(multipleResults).declarations.single() as FunctionDeclaration
+		assertEquals(2, kotlinFunction.returnTypes.size)
+		assertAnnotationCommaFailure(artifact, multipleResults)
+
+		val multipleBindingTypes = "fn main() { def<int, int> first, second = 1, 2 }"
+		parseWithKotlin(multipleBindingTypes)
+		assertAnnotationCommaFailure(artifact, multipleBindingTypes)
+
+		val valueReturn = "fn<int> value() { return 1 }"
+		val valueFunction = parseWithKotlin(valueReturn).declarations.single() as FunctionDeclaration
+		val valueStatement = (valueFunction.body as BlockBody).statements.single() as ReturnStatement
+		assertBootstrapParseFailure(artifact, valueReturn, "C2001", requireNotNull(valueStatement.value).span)
+	}
+
+	private fun assertAnnotationCommaFailure(artifact: Path, text: String) {
+		val comma = Lexer(SourceFile("<string>", text)).scanTokens().first { it.lexeme == Operators.COMMA.toString() }
+		assertBootstrapParseFailure(artifact, text, "C2000", comma.span)
+	}
+
+	private fun assertBootstrapParseFailure(artifact: Path, text: String, code: String, span: TokenSpan) {
+		val output = execute(artifact, listOf("--parse", "--text", text), status = 1)
+		assertContains(output, "\"code\": \"$code\"")
+		assertContains(output, "\"span\": \"$span\"")
+		assertEquals(1, output.lineSequence().count { it.startsWith("  \"code\": ") }, output)
+		assertFalse(output.contains("\n(source"), output)
 	}
 
 	private fun parseWithKotlin(source: String) = Parser(Lexer(SourceFile("<string>", source)).scanTokens()).parse()
@@ -173,13 +274,28 @@ class ImportPublicationTest {
 	private fun renderKotlinTree(source: String): String {
 		val declarations = parseWithKotlin(source).declarations.map {
 			val function = it as FunctionDeclaration
-			val header = listOfNotNull(function.visibility?.lexeme, function.keyword.lexeme, function.name.lexeme)
-			val bindings = (function.body as BlockBody).statements.map { statement ->
-				val binding = statement as BindingDeclaration
-				val assignment = if (binding.mutable) Operators.ASSIGN else Operators.FINAL_ASSIGN
-				"(${Keywords.DEFINITION} ${binding.name.lexeme} $assignment ${renderExpression(binding.initializer)})"
+			val returnTypes = function.returnTypes.takeIf { it.isNotEmpty() }?.joinToString(" ", "(returnTypes ", ")") {
+				it.name.lexeme
 			}
-			(header + bindings).joinToString(" ", "(", ")")
+			val parameters = function.parameters.takeIf { it.isNotEmpty() }?.joinToString(" ", "(parameters ", ")") {
+				"(${it.type.name.lexeme} ${it.name.lexeme})"
+			}
+			val header = listOfNotNull(function.visibility?.lexeme, function.keyword.lexeme, returnTypes, function.name.lexeme, parameters)
+			val statements = (function.body as BlockBody).statements.map { statement ->
+				when (statement) {
+					is BindingDeclaration -> {
+						val annotation = statement.type?.let { " (type ${it.name.lexeme})" }.orEmpty()
+						val assignment = if (statement.mutable) Operators.ASSIGN else Operators.FINAL_ASSIGN
+						"(${Keywords.DEFINITION}$annotation ${statement.name.lexeme} $assignment ${renderExpression(statement.initializer)})"
+					}
+					is ReturnStatement -> {
+						assertNull(statement.value)
+						"(${statement.keyword.lexeme})"
+					}
+					else -> error("Unexpected statement in Bootstrap fixture: $statement")
+				}
+			}
+			(header + statements).joinToString(" ", "(", ")")
 		}
 		return (listOf("source") + declarations).joinToString(" ", "(", ")")
 	}

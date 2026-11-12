@@ -20,7 +20,11 @@ internal data class ClassDeletionPlan(val owner: CMemberType, val nullable: Bool
 
 internal data class InterfaceTypeTest(val source: CMemberType, val target: CMemberType, val nullableSource: Boolean)
 
-internal data class ClassComparisonPlan(val operation: Operators, val identityOverride: ResolvedOperator?) {
+internal data class ClassComparisonPlan(
+	val operation: Operators,
+	val identityOverride: ResolvedOperator?,
+	val checkedIdentity: Boolean = false,
+) {
 
-	val checksLiveness get() = operation != Operators.IDENTITY || identityOverride != null
+	val checksLiveness get() = operation != Operators.IDENTITY || identityOverride != null || checkedIdentity
 }

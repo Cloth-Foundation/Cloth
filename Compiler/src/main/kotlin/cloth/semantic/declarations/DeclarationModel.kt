@@ -47,8 +47,9 @@ class DeclarationModel internal constructor(
 		}
 	}
 	internal val states = StateCatalog(files, classDefinitions.keys, genericViews, typeResolver())
-	internal val callableContracts: List<CallableContractSymbol> = callables + interfaceMethods.values + states.callables
-	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + interfaceMethods.values + states.callables
+	private val bodylessContracts = interfaceMethods.values + states.callables + genericViews?.constructorGuarantees.orEmpty()
+	internal val callableContracts: List<CallableContractSymbol> = callables + bodylessContracts
+	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + bodylessContracts
 	private val interfaceGroups = interfaces.contracts.mapValues { (owner, contract) ->
 		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }
 			.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
@@ -81,7 +82,10 @@ class DeclarationModel internal constructor(
 
 	internal val classOwners = IdentityHashMap<CallableSignature, CClass>().apply {
 		for (callable in callableContracts) {
-			if (!states.isAttachedBody(callable)) (callable.receiver?.owner as? CClass)?.let { put(callable.declaration, it) }
+			if (!states.isAttachedBody(callable)) {
+				val owner = (callable as? ConstructorGuaranteeSymbol)?.declaringClass ?: (callable.receiver?.owner as? CClass)
+				if (owner != null) put(callable.declaration, owner)
+			}
 		}
 	}
 	internal val enumOwners = IdentityHashMap<CallableSignature, CEnum>().apply {
@@ -129,7 +133,9 @@ class DeclarationModel internal constructor(
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
 		is CNullable -> formattingMayCallUserCode(type.payload)
 		is CArray    -> formattingMayCallUserCode(type.element)
-		is CTypeParameter -> type.nominalBound?.let(::formattingMayCallUserCode) == true
+		is CTypeParameter -> type.nominalBounds.isNotEmpty() && classDefinitions.values.any { definition ->
+			type.nominalBounds.all { it.accepts(definition.owner) } && formatterOverride(definition.owner) != null
+		}
 		is CClass, is CInterface -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
 		is CEnum     -> formatterOverride(type) != null
 		else         -> false

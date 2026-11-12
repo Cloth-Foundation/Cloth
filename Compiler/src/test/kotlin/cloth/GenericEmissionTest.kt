@@ -117,6 +117,159 @@ class GenericEmissionTest {
 	}
 
 	@Test
+	fun `combined bounds preserve the concrete type through inferred and defaulted native calls`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> Named<N> {}
+			typedef<interface> Tagged<N> : Named<N> {}
+			typedef<class> Entity<T> (pub def<int> health) : Named<int> {}
+			typedef<class> Player : Entity<Player>(100), Tagged<int> {}
+			typedef<class> Box<T: Entity<T> & Tagged<int> = Player> (pub def<T> value) {}
+			fn<T> keep<T: Entity<T> & Tagged<int> = Player>(T value) = value
+			fn<T> forward<T: Tagged<int> & Entity<T>>(T value) {
+			    def copy = value
+			    return keep(copy)
+			}
+			fn main() {
+			    def player = Player::new
+			    def<Player> fromDefault = keep<>(player)
+			    def<Player> forwarded = forward(fromDefault)
+			    def box = Box::new(forwarded)
+			    println(box.value.health)
+			    box::delete
+			    player::delete
+			}
+		"""
+		native(directory, "combined_bounds", source, "100\n")
+	}
+
+	@Test
+	fun `constructor proof filters a native specialization while retaining its exact result`(@TempDir directory: Path) {
+		val source = """
+			typedef<class> Player (pub def<int> health) {}
+			fn<T> keep<T: new(opt<int> amount ?: 100)>(T value) {
+			    def<Object> view = value
+			    return value
+			}
+			fn main() {
+			    def player = Player::new(80)
+			    def<Player> retained = keep(player)
+			    println(retained.health)
+			    retained::delete
+			}
+		"""
+		native(directory, "constructor_proof", source, "80\n")
+	}
+
+	@Test
+	fun `combined bound calls rank ordinary contracts and retain the selected contract when specialized`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> Choice<N> {
+			    mt<string> choose(N value, opt<string> label ?: "interface") = default (label)
+			    mt<int> rank(Player value) = default (1)
+			    mt<int> omission(opt<int> label ?: 5) = default (label)
+			    mt<string> echo(string text) = default (text)
+			}
+			typedef<interface> Left<N> : Choice<N> {}
+			typedef<interface> Right<N> : Choice<N> {}
+			typedef<class> Base<N> (pub def<int> count) {
+			    virtual: pub mt<string> choose(N value, opt<string> text ?: "base") = text
+			    pub mt<int> rank(Object value) = 2
+			    pub mt<int> omission(opt<int> first ?: 6, opt<int> second ?: 7) = second
+			    pub mt<U> echo<U: Number>(U value) = value
+			}
+			typedef<class> Player : Base<int>(10), Left<int>, Right<int> {
+			    pub def<int> count = 99
+			    override: pub mt<string> choose(int value, string name) = #"Player {name}"
+			    pub mt<int> rank(Player value, opt<int> extra ?: 3) = extra
+			}
+			fn<string> viaClass<A, B, T: Choice<B> & Base<A>>(T value, A arg) = value.choose(arg) + value.choose(arg, text="named")
+			fn<string> viaInterface<A, B, T: Base<A> & Choice<B>>(T value, B arg) = value.choose(arg) + value.choose(arg, label="named")
+			fn<string> diamond<T: Left<int> & Right<int>>(T value) = value.echo("diamond")
+			fn<int> score<T: Choice<int> & Base<int>>(T value, Player player) {
+			    value.count += 1
+			    if (value.rank(player) != 1 || value.omission() != 5) return 0
+			    if (value.echo("echo") != "echo" || value.echo<int>(4) != 4 || value.echo(7) != 7) return 0
+			    return value.count
+			}
+			fn<int> main() {
+			    def player = Player::new
+			    if (viaClass<int, int, _>(player, 4) != "Player basePlayer named") return 1
+			    if (viaInterface<int, int, _>(player, 4) != "Player interfacePlayer named") return 2
+			    if (score(player, player) != 11 || player.count != 99) return 3
+			    if (diamond(player) != "diamond") return 4
+			    player::delete
+			    println("combined calls")
+			    return 0
+			}
+		"""
+		native(directory, "combined_calls", source, "combined calls\n")
+	}
+
+	@Test
+	fun `specialization keeps an inherited interface contract when two slots merge`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> First<N> { mt<N> echo(N value) }
+			typedef<interface> Second<N> { mt<N> echo(N value) }
+			typedef<interface> Both<A, B> : First<A>, Second<B> {}
+			typedef<interface> Tag {}
+			typedef<class> Player : Both<int, int>, Tag {
+			    override: pub mt<int> echo(int value) = value + 1
+			}
+			fn<B> through<A, B, T: Tag & Both<A, B>>(T value, B arg) = value.echo(arg)
+			fn main() {
+			    def player = Player::new
+			    println(through<int, int, _>(player, 7))
+			    player::delete
+			}
+		"""
+		native(directory, "inherited_bound", source, "8\n")
+	}
+
+	@Test
+	fun `combined bounds check identity fallback and preserve ordinary object operations`(@TempDir directory: Path) {
+		val source = """
+			typedef<interface> Left {}
+			typedef<interface> Right {}
+			typedef<interface> Both : Left, Right {}
+			typedef<class> Base { operator ===(Base other) = false }
+			typedef<class> Player : Base, Both {
+			    operator ===(Player other) = true
+			    operator ==(Object other) = true
+			    operator ::str() = "combined"
+			    ~Player { println("released") }
+			}
+			fn<bool> classIdentity<T: Left & Base>(T left, T right) = left === right
+			fn<bool> identity<T: Right & Left>(T? left, T? right) = left === right
+			fn<bool> equal<T: Left & Right>(T left, T right) = left == right && !(left != right)
+			fn display<T: Right & Left>(T value) {
+			    println(value)
+			    println(#"{value}")
+			    println(value::str)
+			}
+			fn release<T: Left & Right>(T value) { value::delete }
+			fn<Both> escape(Both value) = value
+			fn<int> main() {
+			    def first = Player::new
+			    def second = Player::new
+			    def<Both> view = first
+			    if (classIdentity(first, first) || !identity<Player>(first, first) || identity<Player>(first, second)) return 2
+			    if (!equal(first, second) || !identity<Both>(view, view)) return 3
+			    display(first)
+			    def stale = escape(view)
+			    release(first)
+			    release(second)
+			    println(identity<Both>(stale, null))
+			    println(identity<Both>(stale, stale))
+			    return 0
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("combined_identity_${abi.layout.sizeBits}"), 1)
+			assertEquals("combined\ncombined\ncombined\nreleased\nreleased\nfalse\nClass object is no longer live\n", output)
+		}
+	}
+
+	@Test
 	fun `class bounds preserve fields static overloads and virtual contracts across specialization`(@TempDir directory: Path) {
 		val source = """
 			typedef<class> Entity<T: Entity<T>> (pub def<int> health) {

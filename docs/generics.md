@@ -37,8 +37,9 @@ false
 
 ## Arguments and checking
 
-Write the full type in annotations, including nested applications such as
-`Box<Slot<int>>`. Arguments preserve exact identities. `Box<int>`, `Box<usize>`,
+Use angle lists in annotations, including nested applications such as
+`Box<Slot<int>>`. A declared default can fill a trailing slot. Arguments
+preserve exact identities. `Box<int>`, `Box<usize>`,
 `Box<int[]>` and `Box<int[2]>` are different types.
 `Box<Child>` does not convert to `Box<Parent>` when Child derives from Parent.
 
@@ -103,6 +104,34 @@ selected during declaration checking, with ordinary virtual or interface
 dispatch. Equality, formatting, and deletion use the checked object rules.
 [Operations through bounds](../.agents/skills/cloth-generics/references/constraints-stage-3.md)
 
+### Combined bounds
+
+Write `T: Entity<T> & INamed` to require both `Entity<T>` ancestry and
+`INamed` conformance. A list may contain up to one class bound and multiple
+interface bounds. `Number` stands alone. The compiler checks every bound
+for explicit, inferred, and defaulted type arguments. The value retains its
+exact type `T` for storage, forwarding, and returns.
+
+Repeated written bounds and incompatible applications of the same interface
+produce a diagnostic with both contributing bounds. Matching applications
+reached through inheritance or substitution merge.
+[Combined bound checking](../.agents/skills/cloth-generics/references/combined-bounds-stage-2.md)
+
+The class bound provides fields. Public methods from the bounds participate
+in ordinary overload ranking. When distinct contracts tie, widen the
+receiver to the desired class or interface view. Specialization preserves the
+selected labels and defaults for virtual and interface dispatch. For `===`,
+Cloth uses a matching class-bound overload or checks both present handles
+before comparing identities.
+[Operations through combined bounds](../.agents/skills/cloth-generics/references/combined-bounds-stage-3.md)
+
+### Constructor guarantees
+
+`T: new(float health)` requires an accessible constructor with one
+`float` parameter. Guarantees can stand alone or join nominal bounds.
+Calls through `T::new(...)` follow in Stage 2.
+[Constructor guarantee checking](../.agents/skills/cloth-generics/references/constructor-guarantees-stage-1.md)
+
 ## Generic functions
 
 Declare a function's type parameters after its name, as in
@@ -128,7 +157,7 @@ signatures with ordinary overload rules. A tie reports an ambiguous call.
 
 For `fn<T> echo<T>(T value) = value`, `echo(1)` infers `T = int`. A
 matching ordinary overload takes precedence. A type parameter that appears
-only in the result requires an explicit type argument, as in `empty<int>()`.
+only in the result requires an explicit type argument or a declared default.
 [Function inference examples](../.agents/skills/cloth-generics/references/function-inference-stage-1.md)
 
 ## Generic methods
@@ -155,9 +184,22 @@ With `Box<T>` declared as above, `Box::new(value=7)` infers `Box<int>` from
 the supplied value. Primary and secondary constructors compete using the
 ordinary overload rules after inference and bound checks. Use an explicit
 receiver such as `Box<int>::new(...)` when the supplied arguments leave a type
-parameter unknown. This includes zero-argument construction such as
+parameter without a default. This includes zero-argument construction such as
 `List<int>::new`.
 [Constructor inference](../.agents/skills/cloth-generics/references/constructor-inference-stage-3.md)
+
+## Partial arguments and type defaults
+
+Use `_` to infer a slot in a written call list. For `pair<T, U>(T first, U second)`,
+`pair<int, _>(7, "label")` fixes `T` and infers `U = string`. The same syntax
+works in ordinary method calls and class constructor receivers.
+
+Declare defaults in the type parameter list. In `Box<T = int, U = T>`,
+`Box<>` means `Box<int, int>` and `Box<string>` means `Box<string, string>`.
+A written list uses defaults for trailing omitted slots. An omitted call
+list or a `_` slot tries inference first. For `echo<T = int<8>>(T value)`,
+`echo(1)` infers `int` and `echo<>(1)` selects `int<8>`.
+[Partial arguments and type defaults](../.agents/skills/cloth-generics/references/partial-arguments-and-defaults-stage-4.md)
 
 ## Public List
 
@@ -189,8 +231,8 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover combined bounds, constructor guarantees, generic dispatch contracts,
-partial type argument lists, variance, type defaults, generic enums and states,
+Follow-ups cover calls through constructor guarantees, generic dispatch contracts,
+variance, generic enums and states,
 and higher-kinded types. Direct collection
 indexing, indexed assignment and foreach require their own protocol. Keep the
 intended constrained forms in [Test.co](../examples/Test.co).

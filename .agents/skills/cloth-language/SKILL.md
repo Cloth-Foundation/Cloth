@@ -152,6 +152,8 @@ captures implementation scope and regression evidence.
 | Arrays, fixed/growable shapes, indexing, typed mutations and independent values | [cloth-arrays](../cloth-arrays/SKILL.md) |
 | Generic class/struct checking and native values/storage/metadata; List source integration | [cloth-generics](../cloth-generics/SKILL.md) |
 | Generic bounds, satisfaction checks, and bound operations | [GEN-1 Stage 1](../cloth-generics/references/constraints-stage-1.md), [GEN-1 Stage 2](../cloth-generics/references/constraints-stage-2.md), [GEN-1 Stage 3](../cloth-generics/references/constraints-stage-3.md) |
+| Combined generic bounds, widening, and call contracts | [GEN-4 Stage 1](../cloth-generics/references/combined-bounds-stage-1.md), [GEN-4 Stage 2](../cloth-generics/references/combined-bounds-stage-2.md), [GEN-4 Stage 3](../cloth-generics/references/combined-bounds-stage-3.md) |
+| Constructor guarantee syntax, exact signatures, and access proof | [GEN-5 Stage 1](../cloth-generics/references/constructor-guarantees-stage-1.md) |
 | Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
 | Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
@@ -173,6 +175,7 @@ captures implementation scope and regression evidence.
 | Top-level function type argument inference and ordinary overload precedence | [GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) |
 | Class and struct method inference with exact receiver owner arguments | [GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) |
 | Generic class constructor inference and substituted overload ranking | [GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md) |
+| Partial type argument lists, placeholders, and declaration defaults | [GEN-3 Stage 4](../cloth-generics/references/partial-arguments-and-defaults-stage-4.md) |
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
@@ -268,6 +271,7 @@ captures implementation scope and regression evidence.
   [GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) ·
   [GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) ·
   [GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md) ·
+  [GEN-3 Stage 4](../cloth-generics/references/partial-arguments-and-defaults-stage-4.md) ·
   [Generic follow-ups](../../../todo/generic-follow-ups.md)
 
 - Imports and Shuttle: Stage 0 publishes the

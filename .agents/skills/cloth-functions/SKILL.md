@@ -27,10 +27,12 @@ declaring owner, method declaration, and explicit arguments.
 GEN-3 infers function and ordinary method type arguments when ordinary
 overloads have no match. Named generic classes infer owner arguments from
 `::new(...)` values. Reuse argument placement, candidate trials, and the
-specialization worklist.
+specialization worklist. Partial lists use `_` and declared type defaults
+fill slots after inference.
 [GEN-3 Stage 1](../cloth-generics/references/function-inference-stage-1.md) ·
 [GEN-3 Stage 2](../cloth-generics/references/method-inference-stage-2.md) ·
-[GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md)
+[GEN-3 Stage 3](../cloth-generics/references/constructor-inference-stage-3.md) ·
+[GEN-3 Stage 4](../cloth-generics/references/partial-arguments-and-defaults-stage-4.md)
 
 [Generic Stage 0](../cloth-generics/references/semantics.md#declaration-and-closed-body-checking)
 confirms owner-generic bodies are checked at declaration, including unused

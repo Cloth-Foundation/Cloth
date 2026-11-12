@@ -5,7 +5,7 @@ pub typedef<enum> Operators (pub def<string> spelling) {
     DIVIDE("/"), DIV_EQUAL("/="), MODULO("%"), MOD_EQUAL("%="),
     ASSIGN("="), FINAL_ASSIGN(":="),
     EQUAL("=="), IDENTITY("==="), NOT_EQUAL("!="), NOT("!"),
-    AND("&&"), OR("||"),
+    AND("&&"), AMPERSAND("&"), OR("||"),
     GREATER(">"), LESS("<"), GREATER_EQUAL(">="), LESS_EQUAL("<="),
     POINTER_RIGHT("->"), POINTER_LEFT("<-"),
     QUESTION("?"), SAFE_DOT("?."), ELVIS("?:"), RANGE(".."), RANGE_INCLUSIVE("..="),

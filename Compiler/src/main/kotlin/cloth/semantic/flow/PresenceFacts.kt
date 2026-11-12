@@ -21,11 +21,12 @@ internal class PresenceFacts {
 
 	fun narrowedType(name: NameExpression, source: ValueType?): CMemberType? {
 		val proofs = narrowedNames[name] ?: return null
-		val declared = source?.classBackedType() ?: return null
+		val payload = (source as? CNullable)?.payload ?: source ?: return null
+		val declared = payload.classBackedType() ?: return null
 		val candidates = proofs.filter { target ->
 			// A class-to-interface test opens the interface's call contract.
 			val opensInterface = declared is CClass && target is CInterface
-			declared.canNarrowTo(target) && (opensInterface || !target.accepts(declared))
+			declared.canNarrowTo(target) && (opensInterface || !target.accepts(payload))
 		}
 		val interfaces = candidates.filterIsInstance<CInterface>()
 		return candidates.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() }

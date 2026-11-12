@@ -1,0 +1,71 @@
+using token.Keywords: Keywords
+using token.Operators: Operators
+using token.Token: Token, TokenType, jsonQuoted
+using token.TokenList: TokenList
+
+pub typedef<class> ParseFailure (pub def<string> code, pub def<string> message, pub def<Token> token) {
+    operator ::str() = "{\n  \"code\": " + jsonQuoted(code) + ",\n  \"span\": " + jsonQuoted(token.span::str) + ",\n  \"message\": " + jsonQuoted(message) + "\n}"
+}
+
+// Borrows an EOF-terminated token list and owns the first failure until transferred.
+pub typedef<class> ParseCursor (def<TokenList> tokens) {
+    def<usize> index = 0
+    def<ParseFailure?> failure = null
+
+    ~ParseCursor {
+        if (failure != null) failure::delete
+    }
+
+    pub mt<ParseFailure?> takeFailure() {
+        def<ParseFailure?> result := failure
+        failure = null
+        return result
+    }
+
+    pub mt<Token> peek() = tokens.get(index)
+
+    pub mt<Token> advance() {
+        def token := peek()
+        index++
+        return token
+    }
+
+    pub mt<bool> atOperator(Operators symbol) {
+        def token := peek()
+        return token.type == TokenType.Operator && token.lexeme == symbol
+    }
+
+    pub mt<bool> atKeyword(Keywords keyword) {
+        def token := peek()
+        return token.type == TokenType.Keyword && token.lexeme == keyword
+    }
+
+    pub mt skipNewlines() {
+        while (peek().type == TokenType.NewLine) advance()
+    }
+
+    pub mt fail(string code, string message) {
+        if (failure == null) failure = ParseFailure::new(code, message, peek())
+    }
+
+    pub mt<string> found() {
+        def token := peek()
+        if (token.type == TokenType.EOF) return "end of file"
+        if (token.type == TokenType.NewLine) return "a newline"
+        return #"'{token.lexeme}'"
+    }
+
+    pub mt expected(string description) = fail("C2000", #"Expected {description}, found {found()}")
+
+    pub mt<Token?> expectOperator(Operators symbol) {
+        if (atOperator(symbol)) return advance()
+        expected(#"'{symbol::str}'")
+        return null
+    }
+
+    pub mt<Token?> expectIdentifier(string description) {
+        if (peek().type == TokenType.Identifier) return advance()
+        expected(description)
+        return null
+    }
+}

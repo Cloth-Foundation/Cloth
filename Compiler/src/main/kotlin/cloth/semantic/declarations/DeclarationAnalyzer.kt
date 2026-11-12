@@ -5,6 +5,7 @@ import cloth.builtin.BuiltinFunctions
 import cloth.data.CClass
 import cloth.data.CEnum
 import cloth.data.CInterface
+import cloth.data.CTypeParameter
 import cloth.data.ClassField
 import cloth.data.EnumField
 import cloth.data.sameDeclaration
@@ -22,6 +23,9 @@ import cloth.semantic.storedRoot
 import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericAnalyzer
 import cloth.semantic.generics.GenericBodyViews
+import cloth.semantic.generics.acceptsTypeArguments
+import cloth.semantic.generics.completesTypeArguments
+import cloth.semantic.generics.typeArgumentCounts
 import cloth.semantic.generics.GenericSemanticAnalysis
 import cloth.semantic.typing.ArgumentBinder
 import cloth.source.SourceGraph
@@ -102,7 +106,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			val resolver = BodyResolver(model, receiver, classOwner = model.classOwners[callable.declaration])
 			val scope = model.scopeOf(callable.declaration)
 			val defaultScope = LexicalScope(model.fileScopeOf(callable.name))
-			val constructor = callable is ConstructorSymbol
+			val constructor = callable is ConstructorSymbol || callable is ConstructorGuaranteeSymbol
 			if (!constructor) receiver?.let(defaultScope::declare)
 			for ((index, parameter) in callable.parameters.withIndex()) {
 				parameter.declaration.defaultValue?.let { fallback ->
@@ -229,13 +233,17 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			}
 			if (arguments == null) return group
 			val count = arguments.arguments.size
-			val matching = group.overloads.filter { it.typeParameterCount == count }
+			val matching = group.overloads.filter { it.acceptsTypeArguments(count) }
 			if (matching.isEmpty()) {
-				val expected = group.overloads.map { it.typeParameterCount }.distinct().sorted()
+				if (count == 0 && group.overloads.all { it.typeParameterCount == 0 }) {
+					throw GenericErrors.argument("Callable '${call.name.lexeme}' has no type parameters", arguments.span)
+				}
+				val expected = group.overloads.flatMap { it.declaration.typeParameters?.parameters.orEmpty().typeArgumentCounts() }.distinct().sorted()
 				throw GenericErrors.callArity(call.name, arguments.span, count, expected, group.name)
 			}
+			if (group.completesTypeArguments(arguments)) return FunctionGroupSymbol(matching)
 			val types = arguments.arguments.map(model.typeResolver()::resolve)
-			val candidates = checkNotNull(model.genericViews).functionCandidates(matching, types, arguments)
+			val candidates = checkNotNull(model.genericViews).functionCandidates(call, matching, types, arguments)
 			return FunctionGroupSymbol(candidates)
 		}
 
@@ -467,6 +475,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 						val target = expression.receiver
 						val type = if (target is TypeReceiverExpression) model.typeResolver().resolve(target.annotation)
 						else namedTypeReceiver(target, scope, alwaysType = true)
+						if (type is CTypeParameter && type.constructorSignatures.isNotEmpty()) throw GenericErrors.guaranteedConstruction(expression.span)
 						val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
 						model.classCreations[expression] = definition
 					}

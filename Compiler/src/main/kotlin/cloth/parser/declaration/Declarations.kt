@@ -38,10 +38,20 @@ internal val CallableSignature.executableBody: FunctionBody?
 	get() = when (this) {
 		is CallableDeclaration -> body
 		is InterfaceMethodDeclaration -> fallback?.body
+		is ConstructorGuaranteeDeclaration -> null
 		is StateMethodContractDeclaration -> null
 		is StateActivationDeclaration -> initializer.body
 		is StateInitialPayloadDeclaration -> null
 	}
+
+data class ConstructorGuaranteeDeclaration(
+	override val keyword: Token,
+	override val parameters: List<ParameterDeclaration>,
+	override val span: TokenSpan,
+) : CallableSignature {
+	override val name get() = keyword
+	override val returnTypes: List<TypeReference> get() = emptyList()
+}
 
 data class FunctionDeclaration(
 	override val keyword: Token,

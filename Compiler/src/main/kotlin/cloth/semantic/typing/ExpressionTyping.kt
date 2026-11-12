@@ -34,7 +34,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun enumCase(expression: FieldAccessExpression): EnumCase? = null
 	protected open fun valueCheck(expression: TypeCheckExpression): BinaryExpression? = null
 	protected open fun fieldPresent(expression: FieldAccessExpression): Boolean = false
-	protected open fun boundView(expression: Expression, actual: ValueType): CMemberType? = null
+	protected open fun boundViews(expression: Expression, actual: ValueType): List<CMemberType> = emptyList()
 	protected open fun validateFieldAccess(field: InstanceField, name: Token) = Unit
 	protected open fun validateFormatter(receiver: Expression, result: ProviderResult<*>) = Unit
 	protected open fun creationType(expression: ClassCreationExpression): ValueType = throw InternalErrors.invariant("Class creation requires function semantics")
@@ -741,7 +741,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		if (receiver == ValueType.NEVER) return receiver
 		if (receiver is CNullable || receiver == ValueType.Null) throw SemanticErrors.nullablePayload(receiver, expression.receiver.span)
 		val message = "Type '${receiver.spelling}' has no field '${expression.name.lexeme}'"
-		val owner = boundView(expression.receiver, receiver) ?: (receiver as? CMemberType) ?: receiver.classBackedType()
+		val owner = boundViews(expression.receiver, receiver).classBackedType() ?: (receiver as? CMemberType) ?: receiver.classBackedType()
 		val field = owner?.field(expression.name.lexeme) ?: throw when (owner) {
 			is CClass -> SemanticErrors.classMember(message, expression.name.span)
 			is CEnum  -> SemanticErrors.enumMember(message, expression.name.span)
@@ -845,8 +845,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	private fun classComparison(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
 		if (operation !in OperatorRules.classComparisons) return null
-		val leftView = boundView(expression.left, left) ?: left.classBackedType()
-		val rightView = boundView(expression.right, right) ?: right.classBackedType()
+		val leftBounds = boundViews(expression.left, left)
+		val rightBounds = boundViews(expression.right, right)
+		val leftView = leftBounds.classBackedType() ?: left.classBackedType()
+		val rightView = rightBounds.classBackedType() ?: right.classBackedType()
 		if (operation != Operators.IDENTITY && leftView == null && rightView == null) return null
 		val comparesNull = expression.left is NullLiteral || expression.right is NullLiteral
 		if (comparesNull && left !is CNullable && right !is CNullable) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
@@ -854,7 +856,8 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		}
 		val selected = if (!comparesNull && leftView != null && rightView != null) classComparisonOverride(expression, operation, leftView, rightView) else null
-		model.classComparisons[expression] = ClassComparisonPlan(operation, selected)
+		val checkedIdentity = operation == Operators.IDENTITY && !comparesNull && (leftBounds.size > 1 || rightBounds.size > 1)
+		model.classComparisons[expression] = ClassComparisonPlan(operation, selected, checkedIdentity)
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
 

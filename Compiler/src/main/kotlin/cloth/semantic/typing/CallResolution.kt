@@ -3,25 +3,32 @@ package cloth.semantic.typing
 import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
+import cloth.data.CInterface
 import cloth.data.ProviderResult
 import cloth.data.CClass
 import cloth.data.ValueType
+import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.semantic.SemanticException
 import cloth.parser.expression.CallExpression
 import cloth.parser.expression.CallSite
 import cloth.parser.expression.ClassCreationExpression
 import cloth.parser.expression.Expression
+import cloth.parser.expression.MemberCallExpression
 import cloth.parser.expression.StateCallExpression
 import cloth.parser.type.TypeArgumentList
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.generics.TypeArgumentSpans
+import cloth.semantic.generics.completesTypeArguments
 import cloth.semantic.symbols.CallableContractSymbol
+import cloth.semantic.symbols.CallableGroupSymbol
 import cloth.semantic.symbols.CallableSymbol
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.InterfaceMethodGroupSymbol
+import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.semantic.symbols.MethodGroupSymbol
+import cloth.semantic.symbols.MethodSymbol
 
 /** A contextual mismatch rejects a candidate. Located diagnostics still stop analysis. */
 internal inline fun <T> probeCandidate(check: () -> T): T? = try {
@@ -39,7 +46,12 @@ internal class CallResolution(
 		resolve(expression, group) { callable, type, binding -> ResolvedCall.Source(callable, type, binding, receiver) }
 
 	fun function(expression: CallExpression, group: FunctionGroupSymbol): ResolvedCall.Source {
-		if (expression.typeArguments != null) return source(expression, group.overloads)
+		expression.typeArguments?.let { supplied ->
+			if (!group.completesTypeArguments(supplied)) return source(expression, group.overloads)
+			return withInference(expression, emptyList(), null) {
+				GenericCallInference(facts, typingIn).functions(expression, group.overloads)
+			}
+		}
 		val (ordinary, generic) = group.overloads.partition { it.typeParameterCount == 0 }
 		if (generic.isEmpty()) return source(expression, ordinary)
 		return withInference(expression, ordinary, null) {
@@ -54,13 +66,19 @@ internal class CallResolution(
 		classOwner: CClass?,
 		receiver: MethodReceiver,
 	): ResolvedCall.Source {
-		if (supplied != null) return source(expression, facts.genericMethodCandidates(expression, supplied, group, classOwner), receiver)
-		val ordinary = group.overloads.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
-		val generic = group.templates.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
-		if (ordinary.isEmpty() && generic.isEmpty()) throw SemanticErrors.privateClassMember(expression.name, group.name)
+		if (supplied != null && !group.completesTypeArguments(supplied)) {
+			return source(expression, facts.genericMethodCandidates(expression, supplied, group, classOwner), receiver)
+		}
+		val ordinary = if (supplied == null) group.overloads.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) } else emptyList()
+		val templates = if (supplied == null) group.templates else group.matchingTypeArguments(supplied)
+		if (supplied != null && templates.isEmpty()) throw group.typeArgumentError(expression, supplied)
+		val generic = templates.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		if (ordinary.isEmpty() && generic.isEmpty()) {
+			throw SemanticErrors.privateClassMember(expression.name, templates.firstOrNull()?.declaration?.name ?: group.name)
+		}
 		if (generic.isEmpty()) return source(expression, ordinary, receiver)
 		return withInference(expression, ordinary, receiver) {
-			GenericCallInference(facts, typingIn).methods(expression, generic)
+			GenericCallInference(facts, typingIn).methods(expression, supplied, generic)
 		}
 	}
 
@@ -71,21 +89,63 @@ internal class CallResolution(
 		return selected
 	}
 
+	fun boundMember(
+		expression: MemberCallExpression,
+		groups: List<CallableGroupSymbol>,
+		classOwner: CClass?,
+		receiver: ObjectReceiver,
+	): ResolvedCall.Bound {
+		val methods = groups.filterIsInstance<MethodGroupSymbol>().singleOrNull()
+		val interfaces = buildMap<InterfaceMethodSymbol, CInterface> {
+			for (group in groups.filterIsInstance<InterfaceMethodGroupSymbol>()) {
+				for (contract in group.overloads) putIfAbsent(contract, group.owner)
+			}
+		}
+		val supplied = expression.typeArguments
+		val sourceReceiver = MethodReceiver.Instance(receiver)
+		if (methods != null && (interfaces.isEmpty() || supplied != null)) {
+			return method(expression, supplied, methods, classOwner, sourceReceiver)
+		}
+		if (supplied != null) {
+			throw GenericErrors.callArity(expression.name, supplied.span, supplied.arguments.size, listOf(0), groups.first().name)
+		}
+		val ordinary: List<CallableContractSymbol> = methods?.overloads.orEmpty()
+			.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) } + interfaces.keys
+		val templates = methods?.templates.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		return resolve(expression, ordinary, noMatch = { failure ->
+			if (templates.isEmpty()) throw failure()
+			inferSource(expression, sourceReceiver) { GenericCallInference(facts, typingIn).methods(expression, null, templates) }
+		}, ambiguity = { best ->
+			val views = best.map { (it as? InterfaceMethodSymbol)?.let(interfaces::getValue) }
+			if (views.distinct().size > 1) SemanticErrors.ambiguousBoundCall(expression, best)
+			else SemanticErrors.ambiguousCall(expression, best)
+		}) { contract, type, binding ->
+			when (contract) {
+				is InterfaceMethodSymbol -> ResolvedCall.Interface(interfaces.getValue(contract), contract, type, binding, receiver)
+				else -> ResolvedCall.Source(contract as MethodSymbol, type, binding, sourceReceiver)
+			}
+		}
+	}
+
+	private fun inferSource(
+		expression: CallSite,
+		receiver: MethodReceiver?,
+		inferred: () -> Map<CallableSymbol, TypeArgumentSpans>,
+	): ResolvedCall.Source {
+		val candidates = inferred()
+		val selected = source(expression, candidates.keys.toList(), receiver)
+		facts.requestCallable(expression, candidates.getValue(selected.callable), selected.callable)
+		return selected
+	}
+
 	private fun withInference(
 		expression: CallSite,
 		ordinary: List<CallableSymbol>,
 		receiver: MethodReceiver?,
 		inferred: () -> Map<CallableSymbol, TypeArgumentSpans>,
 	): ResolvedCall.Source {
-		fun infer(): ResolvedCall.Source {
-			val candidates = inferred()
-			val selected = source(expression, candidates.keys.toList(), receiver)
-			facts.requestCallable(expression, candidates.getValue(selected.callable), selected.callable)
-			return selected
-		}
-
-		if (ordinary.isEmpty()) return infer()
-		return resolve(expression, ordinary, noMatch = { infer() }) { callable, type, binding ->
+		if (ordinary.isEmpty()) return inferSource(expression, receiver, inferred)
+		return resolve(expression, ordinary, noMatch = { inferSource(expression, receiver, inferred) }) { callable, type, binding ->
 			ResolvedCall.Source(callable, type, binding, receiver)
 		}
 	}
@@ -100,6 +160,7 @@ internal class CallResolution(
 		expression: CallSite,
 		group: List<T>,
 		noMatch: (() -> SemanticException) -> R = { throw it() },
+		ambiguity: (List<T>) -> SemanticException = { SemanticErrors.ambiguousCall(expression, it) },
 		selectedCall: (T, FunctionType, ArgumentBinding) -> R,
 	): R {
 		ArgumentBinder.validate(expression.suppliedArguments)
@@ -147,7 +208,7 @@ internal class CallResolution(
 			val minimum = matches.minOf { it.candidate.binding.omittedParameters.size }
 			matches.filter { it.candidate.binding.omittedParameters.size == minimum }
 		} else matches
-		if (best.size > 1) throw SemanticErrors.ambiguousCall(expression, best.map { it.candidate.callable })
+		if (best.size > 1) throw ambiguity(best.map { it.candidate.callable })
 		val selected = best.single()
 		val candidate = selected.candidate
 		val type = selected.trial.model.typeOf(candidate.callable)

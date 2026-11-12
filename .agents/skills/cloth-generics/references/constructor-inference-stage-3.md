@@ -21,11 +21,11 @@ overload ranking and report equal ranks as ambiguous. Constructor defaults
 and delegation use the selected constructor's call contract.
 [Confirmed inference rules](semantics.md#type-argument-inference-design)
 
-Use an explicit receiver when the supplied values give too little evidence.
+Use an explicit receiver when the supplied values give too little evidence
+and the declaration leaves a slot without a default.
 For example, `List<int>::new` supplies the argument for a parameterless
 constructor. An expected result type and an omitted default provide no
-evidence. Type annotations and base class clauses use full type argument
-lists.
+evidence. Type annotations and base class clauses use angle lists.
 
 ## Compiler integration
 
@@ -50,8 +50,9 @@ lists.
 An uninferred or conflicting parameter in a single candidate reports C3137.
 A group that fails inference reports C3024, tied viable contracts report
 C3025, and an unsatisfied class bound reports C3135.
-Partial lists and type-parameter defaults remain GEN-3 follow-ups. Constructor
-guarantees for `T::new(...)` belong to GEN-5.
+[Stage 4](partial-arguments-and-defaults-stage-4.md) covers partial lists and
+type-parameter defaults. Constructor guarantees for `T::new(...)` belong
+to GEN-5.
 [Open questions plan](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)
 
 ## Verification on 2026-11-11

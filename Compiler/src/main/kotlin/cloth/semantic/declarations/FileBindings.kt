@@ -193,6 +193,20 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 		}
 		return null
 	}
+
+	internal fun typeAccessibleAt(type: CMemberType, use: TokenSpan): Boolean {
+		var declaration: Declaration = type.declaration
+		while (true) {
+			val enclosing = (declaration as? TypeDeclaration)?.let(enclosingScopes::get)
+			val visibility = when (declaration) {
+				is TypeDeclaration -> declaration.visibility
+				is TopLevelStateDeclaration -> declaration.visibility
+				else -> return true
+			}
+			if (visibility == null && !(enclosing?.contains(use) ?: (declaration.span.source === use.source))) return false
+			declaration = enclosing?.declaration ?: return true
+		}
+	}
 	fun state(name: Token): TopLevelStateDeclaration? = context(name).states[name.lexeme]
 	internal fun fork(): FileBindings = graph?.let { graph(it) } ?: single(primary.unit)
 

@@ -109,10 +109,10 @@ class GenericNamesTest {
 		assertSame(pair, u.owner)
 		assertEquals(1, n.index)
 		assertNotSame(u, model.parametersOf(echo).single())
-		val bound = assertNotNull(u.declaration.bound)
+		val bound = u.declaration.typeBounds.single()
 		assertSame(ast.declarations[0], assertIs<NominalTypeName>(model.nameOf(bound)).type.declaration)
 		assertSame(t, model.nameOf(bound.typeArguments.single()))
-		assertSame(NumberBoundName, model.nameOf(assertNotNull(n.declaration.bound)))
+		assertSame(NumberBoundName, model.nameOf(n.declaration.typeBounds.single()))
 		assertSame(t, model.nameOf(pair.returnTypes[0]))
 		assertSame(u, model.nameOf(pair.returnTypes[1]))
 		assertSame(t, model.nameOf(pair.parameters[0].type))
@@ -281,7 +281,7 @@ class GenericNamesTest {
 		""")
 		val model = GenericAnalyzer(target).analyze(ast)
 		val entity = model.parametersOf(ast.declarations[0]).single()
-		val entityBound = assertNotNull(entity.declaration.bound)
+		val entityBound = entity.declaration.typeBounds.single()
 		val entityName = assertIs<NominalTypeName>(model.nameOf(entityBound))
 		assertSame(ast.declarations[0], entityName.type.declaration)
 		assertSame(entity, model.nameOf(entityBound.typeArguments.single()))
@@ -289,11 +289,11 @@ class GenericNamesTest {
 		assertEquals(entityName, model.nameOf(playerBase))
 
 		val (meter, number) = model.parametersOf(ast.declarations[3])
-		val meterBound = assertNotNull(meter.declaration.bound)
+		val meterBound = meter.declaration.typeBounds.single()
 		assertSame(ast.declarations[2], assertIs<NominalTypeName>(model.nameOf(meterBound)).type.declaration)
 		assertSame(number, model.nameOf(meterBound.typeArguments.single()))
-		assertSame(NumberBoundName, model.nameOf(assertNotNull(number.declaration.bound)))
-		val objectBound = assertNotNull(model.parametersOf(ast.declarations[4]).single().declaration.bound)
+		assertSame(NumberBoundName, model.nameOf(number.declaration.typeBounds.single()))
+		val objectBound = model.parametersOf(ast.declarations[4]).single().declaration.typeBounds.single()
 		assertEquals("Object", assertIs<NominalTypeName>(model.nameOf(objectBound)).type.spelling)
 	}
 
@@ -307,9 +307,9 @@ class GenericNamesTest {
 		val imported = graph.sources.single { it.path.fileName.toString() == "Bounds.co" }.unit.declarations
 		val function = graph.sources.single { it.path.fileName.toString() == "Main.co" }.unit.declarations.single() as FunctionDeclaration
 		val (numeric, nominal) = model.parametersOf(function)
-		assertSame(NumberBoundName, model.nameOf(assertNotNull(numeric.declaration.bound)))
+		assertSame(NumberBoundName, model.nameOf(numeric.declaration.typeBounds.single()))
 		val nested = assertIs<ClassDeclaration>(imported[1]).nestedTypes.single()
-		assertSame(nested, assertIs<NominalTypeName>(model.nameOf(assertNotNull(nominal.declaration.bound))).type.declaration)
+		assertSame(nested, assertIs<NominalTypeName>(model.nameOf(nominal.declaration.typeBounds.single())).type.declaration)
 		assertSame(imported[0], assertIs<NominalTypeName>(model.nameOf(function.parameters.single().type)).type.declaration)
 	}
 
@@ -324,6 +324,79 @@ class GenericNamesTest {
 		for (bound in listOf("int", "Object?", "Object[]", "unsigned Object", "T", "Slot")) {
 			failure("typedef<struct> Slot { int value }\nfn read<T: $bound>() {}", DiagnosticCode.INVALID_GENERIC_BOUND)
 		}
+	}
+
+	@Test
+	fun `combined bounds bind imported nested and recursive names in one declaration scope`(@TempDir root: Path) {
+		val graph = graph(root, mapOf(
+			"Main.co" to "using Bounds: Entity, Views\nfn inspect<T: Views.Named<T> & Entity<T> & Views.Tagged>(T value) {}",
+			"Bounds.co" to """
+				pub typedef<class> Entity<T> {}
+				pub typedef<class> Views {
+				    pub typedef<interface> Named<T> {}
+				    pub typedef<interface> Tagged {}
+				}
+			""",
+		))
+		val model = GenericAnalyzer(target).analyze(graph)
+		val imported = graph.sources.single { it.path.fileName.toString() == "Bounds.co" }.unit.declarations
+		val function = graph.sources.single { it.path.fileName.toString() == "Main.co" }.unit.declarations.single()
+		val parameter = model.parametersOf(function).single()
+		val (named, entity, tagged) = parameter.declaration.typeBounds
+		val (namedDeclaration, taggedDeclaration) = assertIs<ClassDeclaration>(imported[1]).nestedTypes
+		assertSame(namedDeclaration, assertIs<NominalTypeName>(model.nameOf(named)).type.declaration)
+		assertSame(imported[0], assertIs<NominalTypeName>(model.nameOf(entity)).type.declaration)
+		assertSame(taggedDeclaration, assertIs<NominalTypeName>(model.nameOf(tagged)).type.declaration)
+		assertSame(parameter, model.nameOf(named.typeArguments.single()))
+		assertSame(parameter, model.nameOf(entity.typeArguments.single()))
+	}
+
+	@Test
+	fun `combined bounds allow one class and keep Number standalone`() {
+		val declarations = """
+			typedef<class> First {}
+			typedef<class> Second {}
+			typedef<interface> Named {}
+			typedef<interface> Tagged {}
+		""".trimIndent()
+		val classConflict = unit(declarations + "\nfn inspect<T: First & Named & Second & Missing>(T value) {}")
+		val bounds = assertNotNull(assertIs<FunctionDeclaration>(classConflict.declarations.last()).typeParameters).parameters.single().bounds
+		val error = assertFailsWith<ClothDiagnostic> { GenericAnalyzer(target).analyze(classConflict) }
+		assertEquals(DiagnosticCode.INVALID_GENERIC_BOUND, error.diagnosticCode)
+		assertEquals(listOf(bounds[2].span, bounds[0].span), error.sourceLabels.map { it.span })
+
+		for (list in listOf("Number & Named", "Named & Number", "Named & int", "Named & Tagged?", "Named & Tagged[]")) {
+			failure(declarations + "\nfn inspect<T: $list>(T value) {}", DiagnosticCode.INVALID_GENERIC_BOUND)
+		}
+		failure(declarations + "\nfn inspect<T: Named & Missing>(T value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
+		val interfaceOnly = unit(declarations + "\nfn inspect<T: Named & Tagged>(T value) {}")
+		assertTrue(GenericAnalyzer(target).analyze(interfaceOnly).hasBounds)
+	}
+
+	@Test
+	fun `combined bounds carry the resolved names into both semantic paths`() {
+		val ast = unit("""
+			typedef<interface> Named {}
+			typedef<class> Player : Named {}
+			typedef<struct> Record<T: Object & Named> { T value }
+			fn inspect(Record<Player> value) {}
+		""")
+		val model = GenericAnalyzer(target).analyze(ast)
+		val bounds = model.parametersOf(ast.declarations[2]).single().declaration.typeBounds
+		assertEquals(listOf("Object", "Named"), bounds.map { assertIs<NominalTypeName>(model.nameOf(it)).type.spelling })
+		assertNotNull(DeclarationAnalyzer(target).analyze(ast).genericViews)
+		assertEquals("Record<Player>", ClosedTypeAnalyzer(target).analyze(ast).instances.single().type.spelling)
+	}
+
+	@Test
+	fun `every combined bound is checked for public signature visibility`() {
+		val ast = unit("""
+			typedef<interface> Hidden {}
+			pub fn inspect<T: Object & Hidden>(T value) {}
+		""")
+		val error = assertFailsWith<ClothDiagnostic> { DeclarationAnalyzer(target).analyze(ast) }
+		assertEquals(DiagnosticCode.PRIVATE_GENERIC_SIGNATURE, error.diagnosticCode)
+		assertContains(error.summary, "Hidden")
 	}
 
 	@Test

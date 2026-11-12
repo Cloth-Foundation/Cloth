@@ -19,7 +19,7 @@ class CInterface internal constructor(
 	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || when (actual) {
 		is CClass -> this in actual.implementedInterfaces
 		is CInterface -> this in actual.ancestors
-		is CTypeParameter -> actual.nominalBound?.let(::accepts) == true
+		is CTypeParameter -> actual.nominalBounds.any(::accepts)
 		else -> false
 	}
 	override val fields: List<InstanceField> get() = emptyList()
@@ -33,9 +33,11 @@ class CInterface internal constructor(
 internal fun ValueType.classBackedType(): CMemberType? = when (val payload = (this as? CNullable)?.payload ?: this) {
 	is CClass -> payload
 	is CInterface -> payload
-	is CTypeParameter -> payload.nominalBound
+	is CTypeParameter -> payload.nominalBounds.classBackedType()
 	else -> null
 }
+
+internal fun List<CMemberType>.classBackedType(): CMemberType? = firstOrNull { it is CClass } ?: firstOrNull()
 
 /** A successful nominal type test refines a stable object binding. */
 internal fun CMemberType.canNarrowTo(target: CMemberType): Boolean = when (this) {

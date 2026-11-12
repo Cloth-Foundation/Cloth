@@ -12,6 +12,7 @@ import cloth.semantic.ResultShape
 import cloth.semantic.declarations.ClassDefinition
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.CallableSymbol
+import cloth.semantic.symbols.ConstructorGuaranteeSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.MethodSymbol
@@ -69,6 +70,20 @@ class GenericBodyViews internal constructor(
 		}
 	}
 
+	internal val constructorGuarantees = buildList {
+		fun addGuarantees(owner: Declaration, bindings: GenericBindings, declaringClass: CClass?) {
+			if (bindings.constructorBounds.isEmpty()) return
+			val view = View(bindings)
+			for (parameter in types.names.parametersOf(owner)) {
+				for (bound in bindings.constructorBounds[parameter].orEmpty()) {
+					add(ConstructorGuaranteeSymbol(view.constructorGuarantee(bound.declaration), bound.parameterTypes, declaringClass))
+				}
+			}
+		}
+		for (instance in types.catalog.values) addGuarantees(instance.definition.declaration, instance.bindings, instance.type as? CClass)
+		for ((key, bindings) in types.callableInstances) addGuarantees(key.declaration, bindings, key.owner as? CClass)
+	}
+
 	internal fun finishDiscovery() { worklist = null }
 
 	internal fun candidateType(symbol: CallableContractSymbol): FunctionType? = candidateContracts[symbol]
@@ -92,11 +107,13 @@ class GenericBodyViews internal constructor(
 		symbol
 	}
 
-	internal fun functionCandidates(templates: List<FunctionSymbol>, arguments: List<ValueType>, supplied: TypeArgumentList): List<FunctionSymbol> {
+	internal fun functionCandidates(call: CallExpression, templates: List<FunctionSymbol>, arguments: List<ValueType>, supplied: TypeArgumentList): List<FunctionSymbol> {
 		val keys = templates.map { ClosedFunctionKey(it, arguments) }
-		val viable = keys.filterNot { it in types.rejectedCallables }.map { functions[it] ?: candidate(it) as FunctionSymbol }
+		val caller = callContexts[call] ?: types.rootBindings
+		val spans = supplied.sourceSpans()
+		val viable = keys.filter { types.candidateFailure(it, spans, caller) == null }.map { functions[it] ?: candidate(it) as FunctionSymbol }
 		if (viable.isNotEmpty()) return viable
-		throw types.rejectedCallables.getValue(keys.first()).diagnostic(supplied.sourceSpans())
+		throw checkNotNull(types.candidateFailure(keys.first(), spans, caller)).diagnostic(spans)
 	}
 
 	internal fun functionPatterns(template: FunctionSymbol): GenericParameterPatterns =
@@ -107,6 +124,23 @@ class GenericBodyViews internal constructor(
 
 	internal fun constructorTemplates(definition: CClass): List<GenericConstructorTemplate> =
 		(templates?.declarations?.genericViews?.types ?: types).constructorTemplates.getValue(definition.declaration)
+
+	internal fun completeTypeArguments(
+		call: CallSite,
+		declaration: Declaration,
+		owner: CMemberType?,
+		arguments: List<ValueType?>,
+	): List<ValueType> {
+		val parameters = types.names.parametersOf(declaration)
+		if (parameters.none { arguments.getOrNull(it.index) == null && it.declaration.defaultType != null }) {
+			return arguments.takeWhile { it != null }.filterNotNull()
+		}
+		val cache = types.completedTypeArguments.getOrPut(declaration) { mutableMapOf() }
+		return cache.getOrPut(owner to arguments) {
+			val caller = callContexts[call] ?: types.rootBindings
+			checkNotNull(worklist).completeCallTypeArguments(declaration, owner, arguments, caller, call.span)
+		}
+	}
 
 	internal fun inferredCandidates(
 		call: CallSite,
@@ -125,13 +159,13 @@ class GenericBodyViews internal constructor(
 			GenericCallableRequest(key, spans, caller)
 		})
 		val viable = buildMap {
-			for ((key, spans) in inferred) if (key !in types.rejectedCallables) {
+			for ((key, spans) in inferred) if (types.candidateFailure(key, spans, caller) == null) {
 				put(instance(key) ?: candidate(key), spans)
 			}
 		}
 		if (viable.isNotEmpty()) return viable
 		val (key, spans) = inferred.first()
-		throw types.rejectedCallables.getValue(key).diagnostic(spans)
+		throw checkNotNull(types.candidateFailure(key, spans, caller)).diagnostic(spans)
 	}
 
 	/** A signature-only constructor becomes a real call after its winning owner is interned. */
@@ -147,12 +181,15 @@ class GenericBodyViews internal constructor(
 		spans: TypeArgumentSpans,
 		call: CallSite,
 		report: Boolean,
+		constructorAccessChecked: Boolean = false,
 	): List<MethodSymbol> {
 		val keys = templates.map { ClosedMethodKey(it, arguments) }
 		val caller = callContexts[call] ?: types.rootBindings
-		worklist?.prepareCallables(keys.map { GenericCallableRequest(it, spans, caller) })
-		val viable = keys.filterNot { it in types.rejectedCallables }.map { methods[it] ?: candidate(it) as MethodSymbol }
-		if (viable.isEmpty() && report) throw types.rejectedCallables.getValue(keys.first()).diagnostic(spans)
+		worklist?.prepareCallables(keys.map { GenericCallableRequest(it, spans, caller) }, constructorAccessChecked)
+		fun failure(key: ClosedMethodKey) =
+			if (constructorAccessChecked) types.rejectedCallables[key] else types.candidateFailure(key, spans, caller)
+		val viable = keys.filter { failure(it) == null }.map { methods[it] ?: candidate(it) as MethodSymbol }
+		if (viable.isEmpty() && report) throw checkNotNull(failure(keys.first())).diagnostic(spans)
 		return viable
 	}
 
@@ -184,7 +221,7 @@ class GenericBodyViews internal constructor(
 			}
 		}
 		val arguments = key.arguments.map(::rebind)
-		return methodCandidates(listOf(template), arguments, call.typeArgumentSpans(arguments.size), call, report).singleOrNull()
+		return methodCandidates(listOf(template), arguments, call.typeArgumentSpans(arguments.size), call, report, constructorAccessChecked = true).singleOrNull()
 	}
 
 	private fun CallSite.typeArgumentSpans(count: Int) = TypeArgumentSpans(span, List(count) { span })
@@ -227,7 +264,7 @@ class GenericBodyViews internal constructor(
 		return declarations.canonicalExpressions[originalOf(view) as Expression]?.takeUnless { it === view }
 	}
 
-	internal fun specializedBound(view: Expression, parameter: TypeParameterDeclaration): CMemberType? =
+	internal fun specializedBounds(view: Expression, parameter: TypeParameterDeclaration): List<CMemberType>? =
 		boundContexts[view]?.nominalBounds?.get(parameter)
 
 	internal fun canonicalBoundMethod(declaration: MethodDeclaration): MethodDeclaration? =
@@ -257,6 +294,7 @@ class GenericBodyViews internal constructor(
 			}
 		}
 		private fun parameter(source: ParameterDeclaration) = copy(source) { source.copy(type = type(source.type), defaultValue = source.defaultValue?.let(::expression)) }
+		fun constructorGuarantee(source: ConstructorGuaranteeDeclaration) = copy(source) { source.copy(parameters = source.parameters.map(::parameter)) }
 		private fun body(source: FunctionBody): FunctionBody = copy(source) { when (source) {
 			is BlockBody -> source.copy(statements = source.statements.map(::statement))
 			is ExpressionBody -> source.copy(expression = expression(source.expression))

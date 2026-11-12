@@ -36,8 +36,9 @@ Application uses `Box<int>`, `Slot<string>` and nested forms such as
 headers such as `typedef<class>`, method return annotations and ordered result
 lists keep their own grammar and meaning.
 
-The argument list is required whenever a generic name is used as a value type,
-including inside its owner. At a constructor call, `Box::new(1)` can infer
+An angle list is required whenever a generic name is used as a value type,
+including inside its owner. A declared default can fill trailing slots in
+that list. At a constructor call, `Box::new(1)` can infer
 `Box<int>` from the supplied value. A template name can be imported for later
 application. Constructor/destructor declaration names and implicit `self`
 use their existing owner syntax.
@@ -59,12 +60,44 @@ this slice. Preserve the intended constrained examples in
 
 The initial constraint design allows one optional bound per type parameter.
 A bound can name `Number`, a class, or an interface, as in
-`T: Number`, `T: Entity<T>`, and `T: IHealth<float>`. Combined bounds and
-their syntax are follow-up work.
+`T: Number`, `T: Entity<T>`, and `T: IHealth<float>`. See the
+[GEN-4 design](#combined-bounds-design) for combined bounds.
 
 [GEN-1 Stage 1](constraints-stage-1.md) implements parsing and name resolution
 for these forms. [GEN-1 Stage 2](constraints-stage-2.md) checks satisfaction
 during declaration checking and specialization.
+
+## Combined bounds design
+
+Use `&` to join bounds, as in `T: Entity<T> & INamed`. A parameter may
+combine multiple interface bounds and may include one class bound.
+`Number` stands alone. The argument keeps its exact type and must
+satisfy every bound through the ordinary class and interface rules.
+
+Public method candidates from the bounds use ordinary overload ranking.
+An equal-rank tie between distinct contracts is ambiguous. Widening the
+receiver to the desired class or interface selects that view's overloads,
+labels, and defaults. Specialization keeps the selected contract.
+
+For `===`, select a matching overload from the class bound when one exists.
+The identity fallback checks both handles for liveness when both operands
+are present, including with interface-only bound lists. Nullable comparisons
+inspect presence first. [Class identity](../../cloth-language/references/class-equality.md)
+
+Apply the one-application rule to the interfaces required by all bounds,
+including inherited interfaces. Reject a conflict that declaration checking
+can prove, such as `IHealth<int> & IHealth<float>`, with labels on both
+contributing bounds. Check conflicts that depend on substitution when
+those type arguments are known. Reject a written duplicate such as
+`INamed & INamed`. Merge identical requirements reached by multiple
+inheritance paths or made identical by substitution.
+[One application per interface](../../cloth-interfaces/references/design.md#one-application-per-interface-declaration)
+
+[GEN-4 Stage 1](combined-bounds-stage-1.md) implements the syntax and name
+resolution for these lists. [GEN-4 Stage 2](combined-bounds-stage-2.md)
+checks satisfaction and interface applications during declaration checking
+and specialization. [GEN-4 Stage 3](combined-bounds-stage-3.md) implements
+widening, member calls, and checked identity through the combined bounds.
 
 ## Number constraint design
 
@@ -117,9 +150,82 @@ and interpolation dispatch through the checked receiver to the formatter for
 its initialized class.
 [Class formatting](../../cloth-language/references/class-formatting.md)
 
-A call to `T::new(...)` requires a separate guarantee that every admitted `T`
-has the constructor signature the call uses. The syntax for that guarantee
-is open.
+Construction through `T::new(...)` follows the
+[constructor guarantee rules](#constructor-guarantee-design).
+
+## Constructor guarantee design
+
+Write `new(...)` in the type parameter's bound list. For example,
+`T: Entity<T> & new(float health)` requires the class bound and a
+one-parameter constructor. A guarantee can stand alone as in
+`T: new(float health)`. Every admitted `T` is a constructible class,
+so a value of type `T` can widen to `Object`.
+
+Every admitted `T` must have a constructor with the exact ordered parameter
+types and arity required by the guarantee. Count every declared parameter,
+including optional ones. A guarantee for one `float` parameter requires a
+constructor with one `float` parameter.
+
+Check constructor access in the scope of the type argument's application.
+A class private to the caller's file can satisfy the guarantee of an imported
+generic when the caller can construct that class.
+
+One type parameter can require several signatures, as in
+`T: new() & new(float health)`. An admitted type satisfies each requirement.
+Calls through `T::new(...)` rank the declared guarantees using the ordinary
+overload rules. If distinct signatures become equal after substitution, one
+constructor can satisfy both. Each call keeps the guarantee selected in the
+generic body, including its labels and defaults.
+
+Calls through `T::new(...)` use the guarantee's parameter labels and bind
+arguments to its parameter positions. Each matching constructor can declare
+its own parameter names. The guarantee supplies defaults for omitted
+arguments and passes the complete argument list to the matched constructor.
+Write a default as in `T: Entity<T> & new(opt<float> health ?: 100f)`.
+Defaults use constructor-default scope. They can read earlier parameters of
+the guarantee and names in its defining scope. They have no instance receiver.
+[GEN-5 Stage 1](constructor-guarantees-stage-1.md) implements declaration
+checking and specialization proof.
+
+## Nullable bound design
+
+A bound such as `T: Base?` requires a nullable type argument. Its payload
+must satisfy the bound inside the nullable wrapper. For example, `Player?`
+qualifies when `Player` extends `Base`.
+
+A presence proof exposes the exact non-null payload type. If `T` is
+`Player?`, then `def payload = value` inside `if (value != null)` infers
+`Player`. Member lookup keeps the `Base` contract during specialization.
+
+`T: Number?` requires a nullable type whose exact payload satisfies
+`Number`. A presence proof exposes that payload with ordinary `Number`
+operations.
+
+Combine nullable bounds as in `T: Base? & INamed?`. Each requirement checks
+the same nullable type argument, whose payload must satisfy both `Base`
+and `INamed`.
+
+## Array bound design
+
+An array bound written with `[]` requires a growable array shape. With a
+proven growable bound, operations such as `append` follow the ordinary
+array mutation rules.
+
+A fixed array bound such as `T: int[4]` requires the exact declared extent.
+Cloth checks the extent during type checking.
+
+A bound with a concrete element type requires that exact element type.
+`T: Base[]` guarantees a growable array of `Base` values, so the body can
+append a `Base` value under the ordinary array rules.
+
+`T: Number[]` requires a growable array whose exact element type satisfies
+`Number`. Indexing exposes that exact type with ordinary `Number` operations.
+Writes and appends use the array's exact element type.
+
+Nullable and array suffixes compose in ordinary type order. `Number?[]`
+requires a growable array of nullable numeric elements. `Number[]?` requires
+a nullable growable array of numeric elements. Check the nullable position
+and declared array shape at each level.
 
 ## Interface bound design
 
@@ -173,12 +279,13 @@ extends the scope rules to ordinary methods with their own type parameters.
 GEN-3 gets its evidence from supplied value arguments. Stage 1 covers top-level
 functions, Stage 2 covers ordinary class and struct methods, and Stage 3 covers
 constructors of named generic classes. A type parameter that appears only in
-the result must be supplied explicitly. For example, when `empty<T>()` returns
-`T[]`, write `def<int[]> values = empty<int>()`.
-[GEN-3 follow-up](../../../../todo/generic-follow-ups.md#omitted-argument-inference-and-defaults) ·
+the result needs an explicit argument or a declared default. For example,
+when `empty<T>()` returns `T[]`, write `def<int[]> values = empty<int>()`.
+[GEN-3 integration summary](../../../../todo/generic-follow-ups.md#omitted-argument-inference-and-defaults) ·
 [Stage 1 integration](function-inference-stage-1.md) ·
 [Stage 2 integration](method-inference-stage-2.md) ·
-[Stage 3 integration](constructor-inference-stage-3.md)
+[Stage 3 integration](constructor-inference-stage-3.md) ·
+[Stage 4 integration](partial-arguments-and-defaults-stage-4.md)
 
 When already-typed arguments provide evidence for the same type parameter,
 their inferred types must agree exactly. If `choose<T>(T left, T right)`
@@ -196,8 +303,8 @@ type and range check. For `echo<T>(T value)`, `echo(1)` infers `int` and
 Check a bare `null` against the substituted parameter. With `count` typed
 as `int`, `choose(count, null)` infers `int` and the second argument fails
 the call check. `choose<int?>(count, null)` explicitly selects a nullable
-parameter. A call whose only possible evidence is bare `null` needs an
-explicit type argument.
+parameter. If bare `null` is the only possible evidence, use an explicit
+argument or a declared default that receives `null`.
 
 Match a declared nullable wrapper to a typed argument's nullable wrapper.
 For an argument of type `int?`, a parameter of type `T?` infers `T = int`.
@@ -242,15 +349,24 @@ applicable primary or secondary constructor's parameter types. Check the
 inferred arguments against the class bounds, then apply ordinary overload
 ranking to the substituted signatures. A selected call produces the same
 class application as an explicit receiver with those arguments. With zero
-supplied arguments, write the class arguments explicitly. Base class
-annotations also use explicit arguments.
+supplied arguments, every omitted class argument needs a declared default.
+Base class annotations use angle lists and may select declared defaults.
 
-The first slice accepts a complete explicit list or infers every type argument
-when the list is omitted. Both `pair<int, string>(1, "label")` and
-`pair(1, "label")` use the same specialized contract. Only written value
-arguments contribute evidence. Omitted value defaults follow the selected
-call contract after inference. Declaration-level type-argument defaults and
-partial omission follow in separate stages.
+An omitted call type list leaves every slot open for inference. A written
+list can fix types and use `_` in any direct slot that should infer its
+type. `pair<int, _>(1, "label")` selects the same contract as
+`pair<int, string>(1, "label")`. Unwritten trailing slots in a written list
+use their declared defaults. `<>` selects all defaults and requires a
+default for every slot. Outside direct calls, write angle lists with
+explicit types and any trailing defaults.
+
+Declare a type default with `T = Type` or `T: Bound = Type`. It resolves in
+the defining file and may use earlier parameters and an ordinary method's
+enclosing type parameters. Defaults fill remaining slots left to right
+after ordinary inference, including numeric literal defaults. A type
+default must satisfy its bound in the declaration's type environment, and
+public defaults follow signature visibility rules. Omitted value arguments
+provide no type evidence. Their defaults follow the selected call contract.
 
 When inference fails for a single generic template, identify the missing or
 conflicting type parameter. When several templates all fail inference, report

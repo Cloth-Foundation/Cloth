@@ -37,6 +37,9 @@ typedef<class> Account (def<int> id) {
   class has an overload. Use `Object?` as the cast target for nullable values.
   Raw identity is valid for stale aliases. Alias invalidation and destruction
   always use the carried identities.
+- Through a combined generic bound list, `===` uses a matching class-bound
+  overload or checks both present handles before comparing instance identities.
+  [Operations through combined bounds](../../cloth-generics/references/combined-bounds-stage-3.md)
 - Every comparison captures both operands once, left to right. Two absent
   operands compare equal. One absent operand compares unequal to a present
   operand. These cases inspect presence before any payload or liveness check.

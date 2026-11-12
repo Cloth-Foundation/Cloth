@@ -56,7 +56,8 @@ inference reports C3024, and equal substituted ranks report C3025.
   [Method execution](../../cloth-functions/references/method-execution.md)
 
 [Stage 3](constructor-inference-stage-3.md) covers class constructor calls.
-Partial argument lists and type-parameter defaults remain GEN-3 follow-ups.
+[Stage 4](partial-arguments-and-defaults-stage-4.md) covers partial lists and
+type-parameter defaults.
 Method-owned parameters for virtual, interface, and state dispatch are
 tracked under GEN-6.
 [Open questions plan](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)

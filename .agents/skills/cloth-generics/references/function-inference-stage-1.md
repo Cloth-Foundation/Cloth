@@ -51,7 +51,8 @@ candidate. A group whose candidates all fail inference reports C3024.
 Substituted ties report C3025 and unsatisfied bounds retain C3135.
 [Stage 2](method-inference-stage-2.md) extends the resolver to ordinary methods.
 [Stage 3](constructor-inference-stage-3.md) covers class constructor calls.
-Partial lists and type-parameter defaults remain follow-ups.
+[Stage 4](partial-arguments-and-defaults-stage-4.md) covers placeholders and
+type-parameter defaults.
 [GEN-3 plan](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)
 
 ## Verification on 2026-11-11

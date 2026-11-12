@@ -1,0 +1,8 @@
+using cloth.collections.List: List
+
+pub typedef<class> Statement {}
+
+pub fn deleteStatements(List<Statement> statements) {
+    for (def index <- 0..statements.size()) statements.get(index)::delete
+    statements::delete
+}

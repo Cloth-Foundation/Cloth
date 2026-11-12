@@ -163,7 +163,10 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			type.typeArguments.forEach(::surface)
 		}
 		fun callable(member: CallableDeclaration) {
-			names.parametersOf(member).forEach { it.declaration.bound?.let(::surface) }
+			names.parametersOf(member).forEach {
+				it.declaration.bounds.flatMap { bound -> bound.signatureTypes() }.forEach(::surface)
+				it.declaration.defaultType?.let(::surface)
+			}
 			member.parameters.forEach { surface(it.type) }
 			member.returnTypes.forEach(::surface)
 			(member as? MethodDeclaration)?.operator?.selector?.let(::surface)
@@ -178,7 +181,10 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			val parameters = names.parametersOf(declaration)
 			if (!public) continue
 			val genericOwner = parameters.isNotEmpty()
-			if (declaration is TypeDeclaration) parameters.forEach { it.declaration.bound?.let(::surface) }
+			if (declaration is TypeDeclaration) parameters.forEach {
+				it.declaration.bounds.flatMap { bound -> bound.signatureTypes() }.forEach(::surface)
+				it.declaration.defaultType?.let(::surface)
+			}
 			when (declaration) {
 				is FunctionDeclaration -> if (genericOwner) callable(declaration)
 				is ClassDeclaration -> {

@@ -1,0 +1,6 @@
+using parser.statements.Statement: Statement
+using token.Token: Token
+
+pub typedef<class> ReturnStatement (pub def<Token> keyword) : Statement {
+    operator ::str() = #"({keyword.lexeme})"
+}

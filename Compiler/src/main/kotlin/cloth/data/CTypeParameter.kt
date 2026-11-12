@@ -17,20 +17,23 @@ class CTypeParameter internal constructor(
 	val index: Int,
 	internal val numberBound: Boolean,
 ) : ValueType(Keywords.TYPEINFO) {
-	internal var nominalBound: CMemberType? = null
+	internal var nominalBounds: List<CMemberType> = emptyList()
+	internal var constructorSignatures: List<List<ValueType>> = emptyList()
 	override val spelling get() = parameter.name.lexeme
-	override val containsNullability get() = !numberBound && nominalBound == null
+	override val containsNullability get() = !numberBound && nominalBounds.isEmpty()
 	internal override fun providers(target: TargetLayout): Map<CompilerDataProviders, ProviderResult<*>> {
 		val providers = super.providers(target)
 		val text = when {
 			numberBound -> ProviderResult.ScalarText(this)
-			nominalBound != null -> ProviderResult.ClassText(this)
+			nominalBounds.isNotEmpty() -> ProviderResult.ClassText(this)
 			else -> return providers
 		}
 		return providers + (CompilerDataProviders.STR to text)
 	}
 	override fun llvmValue(context: LLVMContextRef, target: TargetLayout): LLVMTypeRef = throw GenericErrors.compilation(parameter.span)
 }
+
+internal fun ValueType.parameterPayload(): CTypeParameter? = ((this as? CNullable)?.payload ?: this) as? CTypeParameter
 
 /** Numeric operations can be checked on a bound parameter before its format is known. */
 internal val ValueType.supportsNumericOperations: Boolean get() = numeric || (this is CTypeParameter && numberBound)

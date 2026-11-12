@@ -1,19 +1,25 @@
-using parser.Ast: SourceUnit, FunctionDeclaration, BindingDeclaration, Expression
+using cloth.collections.List: List
+using parser.Ast: SourceUnit, FunctionDeclaration, Expression
+using parser.ParseCursor: ParseCursor, ParseFailure
+using parser.declarations.FunctionHeaderParser: FunctionHeader, parseFunctionHeader
+using parser.declarations.ParameterDeclaration: deleteParameters
+using parser.statements.BindingDeclaration: BindingDeclaration
+using parser.statements.ReturnStatement: ReturnStatement
+using parser.statements.Statement: Statement, deleteStatements
+using parser.types.TypeParser: parsePlainTypeAnnotation
+using parser.types.TypeReference: TypeReference
 using token.Keywords: Keywords
 using token.Operators: Operators
-using token.Token: Token, TokenType, jsonQuoted
+using token.Token: Token, TokenType
 using token.TokenList: TokenList
 
-pub typedef<class> ParseFailure (pub def<string> code, pub def<string> message, pub def<Token> token) {
-    operator ::str() = "{\n  \"code\": " + jsonQuoted(code) + ",\n  \"span\": " + jsonQuoted(token.span::str) + ",\n  \"message\": " + jsonQuoted(message) + "\n}"
-}
-
-pub typedef<class> Parser (def<TokenList> tokens) {
-    def<usize> cursor = 0
+pub typedef<class> Parser (TokenList tokens) {
+    def<ParseCursor> cursor = ParseCursor::new(tokens)
     def<int> powerPrecedence = 30
     pub def<ParseFailure?> failure = null
 
     ~Parser {
+        cursor::delete
         if (failure != null) failure::delete
     }
 
@@ -21,133 +27,94 @@ pub typedef<class> Parser (def<TokenList> tokens) {
     // the caller. On failure the parser deletes the partial tree.
     pub mt<SourceUnit?> parse() {
         def unit := SourceUnit::new
-        skipNewlines()
-        while (peek().type != TokenType.EOF) {
+        cursor.skipNewlines()
+        while (cursor.peek().type != TokenType.EOF) {
             def<FunctionDeclaration?> declaration := parseFunction()
-            if (declaration == null) {
-                unit::delete
-                return null
-            }
+            if (declaration == null) return failUnit(unit)
             unit.functions.append(declaration)
-            if (peek().type != TokenType.NewLine && peek().type != TokenType.EOF) {
-                expected("a newline or end of file after a brace-bodied function")
-                unit::delete
-                return null
+            def next := cursor.peek()
+            if (next.type != TokenType.NewLine && next.type != TokenType.EOF) {
+                cursor.expected("a newline or end of file after a brace-bodied function")
+                return failUnit(unit)
             }
-            skipNewlines()
+            cursor.skipNewlines()
         }
         return unit
     }
 
-    mt<Token> peek() = tokens.get(cursor)
-
-    mt<Token> advance() {
-        def token := peek()
-        cursor++
-        return token
-    }
-
-    mt<bool> atOperator(Operators symbol) {
-        def token := peek()
-        return token.type == TokenType.Operator && token.lexeme == symbol
-    }
-
-    mt<bool> atKeyword(Keywords keyword) {
-        def token := peek()
-        return token.type == TokenType.Keyword && token.lexeme == keyword
-    }
-
-    mt skipNewlines() {
-        while (peek().type == TokenType.NewLine) advance()
-    }
-
-    mt<bool> atSeparator() = peek().type == TokenType.NewLine || atOperator(Operators.SEMICOLON)
-
-    mt fail(string code, string message) {
-        failure = ParseFailure::new(code, message, peek())
-    }
-
-    mt<string> found() {
-        def token := peek()
-        if (token.type == TokenType.EOF) return "end of file"
-        if (token.type == TokenType.NewLine) return "a newline"
-        return #"'{token.lexeme}'"
-    }
-
-    mt expected(string description) = fail("C2000", #"Expected {description}, found {found()}")
-
-    mt<bool> expectOperator(Operators symbol) {
-        if (atOperator(symbol)) {
-            advance()
-            return true
-        }
-        expected(#"'{symbol::str}'")
-        return false
-    }
-
-    mt<Token?> expectIdentifier(string description) {
-        if (peek().type == TokenType.Identifier) return advance()
-        expected(description)
+    mt<SourceUnit?> failUnit(SourceUnit unit) {
+        unit::delete
+        failure = cursor.takeFailure()
         return null
     }
 
-    mt<FunctionDeclaration?> parseFunction() {
-        def<Token?> visibility = null
-        if (atKeyword(Keywords.PUBLIC)) visibility = advance()
-        if (!atKeyword(Keywords.FUNCTION)) {
-            expected(#"a '{Keywords.FUNCTION::str}' declaration")
-            return null
-        }
-        def keyword := advance()
-        def<Token?> name := expectIdentifier("a function name")
-        if (name == null) return null
-        if (!expectOperator(Operators.PAREN_OPEN)) return null
-        skipNewlines()
-        if (!expectOperator(Operators.PAREN_CLOSE)) return null
-        skipNewlines()
-        if (!expectOperator(Operators.BRACE_OPEN)) return null
+    mt<bool> atSeparator() = cursor.peek().type == TokenType.NewLine || cursor.atOperator(Operators.SEMICOLON)
 
-        def declaration := FunctionDeclaration::new(visibility, keyword, name)
-        if (!parseBody(declaration)) {
-            declaration::delete
+    mt<FunctionDeclaration?> parseFunction() {
+        def<FunctionHeader?> header := parseFunctionHeader(cursor)
+        if (header == null) return null
+        cursor.skipNewlines()
+        def<Token?> opening := cursor.expectOperator(Operators.BRACE_OPEN)
+        if (opening == null) {
+            deleteParameters(header.parameters)
             return null
         }
-        return declaration
+
+        def statements := List<Statement>::new
+        def<Token?> closing := parseBody(statements)
+        if (closing == null) {
+            deleteStatements(statements)
+            deleteParameters(header.parameters)
+            return null
+        }
+        def bodySpan := opening.span.through(closing.span)
+        return FunctionDeclaration::new(
+            header.visibility, header.keyword, header.returnTypes, header.name,
+            header.parameters, statements, bodySpan
+        )
     }
 
-    mt<bool> parseBody(FunctionDeclaration declaration) {
-        while (peek().type != TokenType.EOF && !atOperator(Operators.BRACE_CLOSE)) {
+    mt<Token?> parseBody(List<Statement> statements) {
+        while (cursor.peek().type != TokenType.EOF && !cursor.atOperator(Operators.BRACE_CLOSE)) {
             if (atSeparator()) {
-                advance()
+                cursor.advance()
                 continue
             }
-            def<BindingDeclaration?> binding := parseBinding()
-            if (binding == null) return false
-            declaration.bindings.append(binding)
-            if (!atSeparator() && !atOperator(Operators.BRACE_CLOSE) && peek().type != TokenType.EOF) {
-                fail("C2001", #"Expected a newline or '{Operators.SEMICOLON::str}' after statement, found {found()}")
-                return false
+            def<Statement?> statement := parseStatement()
+            if (statement == null) return null
+            statements.append(statement)
+            if (!atSeparator() && !cursor.atOperator(Operators.BRACE_CLOSE) && cursor.peek().type != TokenType.EOF) {
+                cursor.fail("C2001", #"Expected a newline or '{Operators.SEMICOLON::str}' after statement, found {cursor.found()}")
+                return null
             }
         }
-        return expectOperator(Operators.BRACE_CLOSE)
+        return cursor.expectOperator(Operators.BRACE_CLOSE)
+    }
+
+    mt<Statement?> parseStatement() {
+        if (cursor.atKeyword(Keywords.DEFINITION)) return parseBinding()
+        if (cursor.atKeyword(Keywords.RETURN)) return ReturnStatement::new(cursor.advance())
+        cursor.expected(#"a '{Keywords.DEFINITION::str}' binding or '{Keywords.RETURN::str}'")
+        return null
     }
 
     mt<BindingDeclaration?> parseBinding() {
-        if (!atKeyword(Keywords.DEFINITION)) {
-            expected(#"a '{Keywords.DEFINITION::str}' binding")
-            return null
+        def keyword := cursor.advance()
+        def<TypeReference?> type = null
+        if (cursor.atOperator(Operators.LESS)) {
+            type = parsePlainTypeAnnotation(cursor)
+            if (type == null) return null
         }
-        def keyword := advance()
-        def<Token?> name := expectIdentifier("a binding name")
+        def<Token?> name := cursor.expectIdentifier("a binding name")
         if (name == null) return null
-        if (!atOperator(Operators.ASSIGN) && !atOperator(Operators.FINAL_ASSIGN)) {
-            expected(#"'{Operators.ASSIGN::str}' or '{Operators.FINAL_ASSIGN::str}'")
+        if (!cursor.atOperator(Operators.ASSIGN) && !cursor.atOperator(Operators.FINAL_ASSIGN)) {
+            cursor.expected(#"'{Operators.ASSIGN::str}' or '{Operators.FINAL_ASSIGN::str}'")
             return null
         }
-        def assignment := advance()
+        def assignment := cursor.advance()
         def<Expression?> initializer := parseExpression(0)
         if (initializer == null) return null
-        return BindingDeclaration::new(keyword, name, assignment, initializer)
+        return BindingDeclaration::new(keyword, type, name, assignment, initializer)
     }
 
     mt<int> binaryPrecedence(string spelling) {
@@ -166,16 +133,16 @@ pub typedef<class> Parser (def<TokenList> tokens) {
         if (initial == null) return null
         def<Expression> left = initial
         while (true) {
-            def symbol := peek()
+            def symbol := cursor.peek()
             if (symbol.type != TokenType.Operator || endsExpression(symbol.lexeme)) return left
             def precedence := binaryPrecedence(symbol.lexeme)
             if (precedence == 0) {
-                fail("C2003", #"Unsupported operator '{symbol.lexeme}'")
+                cursor.fail("C2003", #"Unsupported operator '{symbol.lexeme}'")
                 left::delete
                 return null
             }
             if (precedence < minimumPrecedence) return left
-            advance()
+            cursor.advance()
             def rightPrecedence := if (symbol.lexeme == Operators.MUL_MUL) precedence else precedence + 1
             def<Expression?> right := parseExpression(rightPrecedence)
             if (right == null) {
@@ -187,28 +154,28 @@ pub typedef<class> Parser (def<TokenList> tokens) {
     }
 
     mt<Expression?> parsePrefix() {
-        def token := peek()
-        if (atOperator(Operators.PLUS) || atOperator(Operators.MINUS)) {
-            advance()
+        def token := cursor.peek()
+        if (cursor.atOperator(Operators.PLUS) || cursor.atOperator(Operators.MINUS)) {
+            cursor.advance()
             def<Expression?> operand := parseExpression(powerPrecedence)
             if (operand == null) return null
             return Expression::new(token, [operand])
         }
-        if (atOperator(Operators.PAREN_OPEN)) {
-            advance()
+        if (cursor.atOperator(Operators.PAREN_OPEN)) {
+            cursor.advance()
             def<Expression?> expression := parseExpression(0)
             if (expression == null) return null
-            if (!expectOperator(Operators.PAREN_CLOSE)) {
+            if (cursor.expectOperator(Operators.PAREN_CLOSE) == null) {
                 expression::delete
                 return null
             }
             return expression
         }
         if (token.type == TokenType.Identifier || token.type == TokenType.IntegerLiteral || token.type == TokenType.FloatingPointLiteral) {
-            advance()
+            cursor.advance()
             return Expression::new(token, [])
         }
-        fail("C2006", #"Expected a number, binding name, or '{Operators.PAREN_OPEN::str}', got {found()}")
+        cursor.fail("C2006", #"Expected a number, binding name, or '{Operators.PAREN_OPEN::str}', got {cursor.found()}")
         return null
     }
 }
