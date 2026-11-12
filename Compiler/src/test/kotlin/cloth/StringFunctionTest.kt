@@ -442,7 +442,9 @@ class StringFunctionTest {
 					val fields = if (oversizedArray) 4 else 2
 					val invalid = PointerPointer<LLVMValueRef>(fields.toLong()).use {
 						it.put(0, LLVMConstNull(pointer)); it.put(1, LLVMConstInt(size, -1, 0))
-						if (oversizedArray) { it.put(2, LLVMConstInt(size, -1, 0)); it.put(3, LLVMConstNull(pointer)) }
+						if (oversizedArray) {
+							it.put(2, LLVMConstInt(size, -1, 0)); it.put(3, LLVMConstNull(pointer))
+						}
 						LLVMConstStructInContext(context, it, fields, 0)
 					}
 					val copy = LLVMGetNamedFunction(module, if (oversizedArray) "cloth.rt.array.copy.0" else "cloth.rt.string.copy")

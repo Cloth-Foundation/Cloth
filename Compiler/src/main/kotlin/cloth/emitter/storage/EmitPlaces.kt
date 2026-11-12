@@ -1,10 +1,6 @@
 package cloth.emitter.storage
 
-import cloth.data.CNullable
-import cloth.data.CStruct
-import cloth.data.ClassField
-import cloth.data.StructField
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
@@ -106,6 +102,7 @@ internal class EmitPlaces(
 					resolve = { replay(builder, parent(), listOf(part)) }
 					location = resolve()
 				}
+
 				is PlaceStep.Index -> {
 					val wrapper = location.type as? CNullable
 					if (wrapper != null) EmitMemory(context, builder, abi).guard(stored.isPresent(location.address, wrapper), "Nullable stored place is no longer present")
@@ -128,6 +125,7 @@ internal class EmitPlaces(
 								fields.put(0, LLVMPointerTypeInContext(context, 0)); fields.put(1, types.value(step.array))
 								LLVMStructTypeInContext(context, fields, 2, 0)
 							}
+
 							fun pack(place: PlaceAddress): LLVMValueRef = LLVMBuildInsertValue(builder, LLVMBuildInsertValue(builder, LLVMGetUndef(carrier), place.address, 0, "selected_address"), checkNotNull(place.parent).value, 1, "selected_parent")
 							val chosen = checkNotNull(nullable.choose(dynamic, carrier, { pack(replay(builder, root(), prefix)) }, {
 								arrays.validateIndex(before, index, indexType)
@@ -135,12 +133,14 @@ internal class EmitPlaces(
 							}))
 							PlaceAddress(LLVMBuildExtractValue(builder, chosen, 0, "selected_address"), step.array.element, ArrayParent(LLVMBuildExtractValue(builder, chosen, 1, "selected_parent"), step.array, arrays.checkedIndex(index, indexType)))
 						}
-						}
+					}
 					location = resolve()
 				}
 			}
 			return action(LocalPath(saved, location, resolve))
-		} finally { views.asReversed().forEach(bindings::endSelection) }
+		} finally {
+			views.asReversed().forEach(bindings::endSelection)
+		}
 	}
 
 	private fun replay(using: LLVMBuilderRef, root: PlaceAddress, steps: List<SavedStep>, indices: List<LLVMValueRef> = steps.mapNotNull { it.index }): PlaceAddress {
@@ -333,7 +333,7 @@ internal class EmitPlaces(
 	}
 
 	fun <T> withArrayMutation(receiver: MethodReceiver, action: (() -> ArrayTarget) -> T): T = when (receiver) {
-		is MethodReceiver.Stored -> {
+		is MethodReceiver.Stored           -> {
 			val place = receiver.place
 			val parent = bindings.structAccess(place.root)
 			val dynamic = parent?.resolver?.let { LLVMBuildIsNotNull(builder, it, "class_backed_array") }
@@ -344,6 +344,7 @@ internal class EmitPlaces(
 				}
 			}
 		}
+
 		is MethodReceiver.StoredInInstance -> {
 			val captured = captureInstance(receiver.place)
 			action {
@@ -351,7 +352,8 @@ internal class EmitPlaces(
 				ArrayTarget(replay(builder, PlaceAddress(root.address, captured.field.type), captured.path.steps), root.arena)
 			}
 		}
-		else -> throw InternalErrors.invariant("Array mutation requires a stored receiver")
+
+		else                               -> throw InternalErrors.invariant("Array mutation requires a stored receiver")
 	}
 
 	fun publishArrayMutation(target: ArrayTarget, value: LLVMValueRef) {
@@ -374,7 +376,7 @@ internal class EmitPlaces(
 
 		return when (target) {
 			is StoredWrite   -> write(target.initial, bindings.ownerArena(target.root))
-			is LocalWrite -> {
+			is LocalWrite    -> {
 				val access = target.receiver
 				if (access == null) write(target.path.resolve(), bindings.ownerArena(target.root))
 				else {
@@ -387,6 +389,7 @@ internal class EmitPlaces(
 					value
 				}
 			}
+
 			is InstanceWrite -> {
 				val (access, field, path) = target.instance
 				if (path.steps.isEmpty()) functions.classStorage.replace(builder, access, field, value)

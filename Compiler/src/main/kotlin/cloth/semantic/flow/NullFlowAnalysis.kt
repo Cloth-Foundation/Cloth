@@ -1,26 +1,16 @@
 package cloth.semantic.flow
 
 import cloth.builtin.BuiltinFunctions
-import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.builtin.attachments.ArrayMutation
+import cloth.builtin.attachments.PrimitiveAttachments
 import cloth.data.*
-import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.CallableSignature
-import cloth.parser.declaration.ExpressionBody
-import cloth.parser.declaration.IntrinsicBody
-import cloth.parser.declaration.executableBody
+import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.semantic.OperatorRules
 import cloth.semantic.generics.completesTypeArguments
 import cloth.semantic.symbols.*
-import cloth.semantic.typing.FunctionSemanticModel
-import cloth.semantic.typing.boundMemberGroups
-import cloth.semantic.typing.boundViews
-import cloth.semantic.typing.checkedBoundMethod
-import cloth.semantic.typing.checkedIdentity
-import cloth.semantic.typing.completesTypeArguments
-import cloth.semantic.typing.genericMethodCandidates
+import cloth.semantic.typing.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import java.math.BigInteger
@@ -42,8 +32,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		val descendantsOnly: Boolean = false,
 	) {
 
-		fun invalidates(proof: Place): Boolean = root == proof.root && path.size <= proof.path.size &&
-			(!descendantsOnly || path.size < proof.path.size) && path.indices.all { index ->
+		fun invalidates(proof: Place): Boolean = root == proof.root && path.size <= proof.path.size && (!descendantsOnly || path.size < proof.path.size) && path.indices.all { index ->
 			val write = path[index]
 			val checked = proof.path[index]
 			write == checked || write is Segment.Index && write.constant == null && checked is Segment.Index
@@ -101,9 +90,9 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun common(paths: List<Set<Place>>, fallback: Set<Place>) = paths.reduceOrNull { left, right -> left intersect right } ?: fallback
 	private fun knownPresent(value: Expression, needsResult: Boolean = true): Boolean {
 		val mayInfer = when (value) {
-			is CallExpression -> canInferCall(value)
+			is CallExpression       -> canInferCall(value)
 			is MemberCallExpression -> canInferMember(value)
-			else -> false
+			else                    -> false
 		}
 		if (mayInfer) {
 			if (!needsResult) return false
@@ -111,11 +100,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		return value in presentResults
 	}
+
 	private fun ValueType.mayBeAbsent() = this is CNullable || (this is CTypeParameter && containsNullability)
 	private fun nullable(symbol: BindingSymbol) = if (model.declarations.genericViews == null) symbol.declaredType?.hasNullability == true else (when (symbol) {
 		is ReceiverSymbol, is ReceiverFieldSymbol -> model.typeOf(symbol)
-		else -> model.bindings[symbol] ?: symbol.declaredType?.let { model.declarations.genericViews.resolvedTypes[it] }
+		else                                      -> model.bindings[symbol] ?: symbol.declaredType?.let { model.declarations.genericViews.resolvedTypes[it] }
 	})?.mayBeAbsent() ?: (symbol.declaredType?.hasNullability == true)
+
 	private fun presentAnnotation(type: cloth.parser.type.TypeReference): Boolean {
 		val resolved = model.declarations.genericViews?.resolvedTypes?.get(type)
 		return if (resolved == null) !type.hasNullability && type.name.lexeme != Keywords.VOID.toString()
@@ -128,20 +119,20 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun receiverHint(expression: Expression, unwrapNullable: Boolean = true): ValueType? {
 		val declared = when (expression) {
 			is StringLiteral, is InterpolatedString -> ValueType.STRING
-			is ClassCreationExpression -> model.declarations.classCreations[expression]?.owner ?: inferredCallResult(expression)
-			is NameExpression          -> binding(expression)?.let { symbol ->
+			is ClassCreationExpression              -> model.declarations.classCreations[expression]?.owner ?: model.declarations.guaranteedCreations[expression]?.first()?.constructedType ?: inferredCallResult(expression)
+			is NameExpression                       -> binding(expression)?.let { symbol ->
 				when (symbol) {
 					is ReceiverSymbol, is ReceiverFieldSymbol -> model.typeOf(symbol)
 					else                                      -> model.bindings[symbol] ?: (symbol as? LocalSymbol)?.let(::localHint)
 				}
 			}
 
-			is FieldAccessExpression   -> model.declarations.enumCases[expression]?.owner ?: (nominalHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
-			is IndexExpression         -> (receiverHint(expression.array) as? CArray)?.element
-			is GuardedReceiver         -> receiverHint(expression.source, unwrapNullable = false)?.let { (it as? CNullable)?.payload ?: it }
-			is CallExpression          -> callHints(expression).distinct().singleOrNull()
-			is MemberCallExpression    -> memberHints(expression).distinct().singleOrNull()
-			else                       -> null
+			is FieldAccessExpression                -> model.declarations.enumCases[expression]?.owner ?: (nominalHint(expression.receiver) as? CMemberType)?.field(expression.name.lexeme)?.type
+			is IndexExpression                      -> (receiverHint(expression.array) as? CArray)?.element
+			is GuardedReceiver                      -> receiverHint(expression.source, unwrapNullable = false)?.let { (it as? CNullable)?.payload ?: it }
+			is CallExpression                       -> callHints(expression).distinct().singleOrNull()
+			is MemberCallExpression                 -> memberHints(expression).distinct().singleOrNull()
+			else                                    -> null
 		}
 		if (!unwrapNullable) return declared
 		val payload = (declared as? CNullable)?.payload ?: declared
@@ -152,22 +143,21 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		val supplied = call.typeArguments
 		return when (val group = model.declarations.candidatesOf(call)) {
 			is FunctionGroupSymbol -> supplied?.let(group::completesTypeArguments) ?: group.overloads.any { it.typeParameterCount != 0 }
-			is MethodGroupSymbol -> supplied?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
-			else -> false
+			is MethodGroupSymbol   -> supplied?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
+			else                   -> false
 		}
 	}
 
-	private fun canInferMember(call: MemberCallExpression): Boolean =
-		call.name.lexeme in genericMethodNames && canInferMember(call, nominalHint(call.receiver))
+	private fun canInferMember(call: MemberCallExpression): Boolean = call.name.lexeme in genericMethodNames && canInferMember(call, nominalHint(call.receiver))
 
-	private fun canInferMember(call: MemberCallExpression, owner: ValueType?): Boolean =
-		when (owner) {
-			is CClass, is CStruct -> model.declarations.methodGroup(owner, call.name.lexeme)?.let { group ->
-				call.typeArguments?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
-			} == true
-			null -> call.name.lexeme in genericMethodNames
-			else -> false
-		}
+	private fun canInferMember(call: MemberCallExpression, owner: ValueType?): Boolean = when (owner) {
+		is CClass, is CStruct -> model.declarations.methodGroup(owner, call.name.lexeme)?.let { group ->
+			call.typeArguments?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
+		} == true
+
+		null                  -> call.name.lexeme in genericMethodNames
+		else                  -> false
+	}
 
 	private fun inferredCallResult(call: CallSite): ValueType? {
 		model.presence.inferredResultsUsed.add(call)
@@ -177,10 +167,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun callCandidates(call: CallExpression): List<CallableContractSymbol> {
 		if (canInferCall(call)) return emptyList()
 		return when (val group = model.declarations.candidatesOf(call)) {
-			is FunctionGroupSymbol -> group.overloads
-			is MethodGroupSymbol -> call.typeArguments?.let { model.genericMethodCandidates(call, it, group, classOwner, report = false) } ?: group.overloads
+			is FunctionGroupSymbol        -> group.overloads
+			is MethodGroupSymbol          -> call.typeArguments?.let { model.genericMethodCandidates(call, it, group, classOwner, report = false) } ?: group.overloads
 			is InterfaceMethodGroupSymbol -> group.overloads
-			else -> emptyList()
+			else                          -> emptyList()
 		}
 	}
 
@@ -211,25 +201,26 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			}
 			when (val initializer = local.declaration.initializer) {
 				is ClassCreationExpression, is NameExpression, is CallExpression, is MemberCallExpression, is StringLiteral, is InterpolatedString -> receiverHint(initializer, unwrapNullable = false)
-				else -> null
+				else                                                                                                                               -> null
 			}
-		} finally { hinting.remove(local) }
+		} finally {
+			hinting.remove(local)
+		}
 	}
 
 	private fun nominalReceiver(value: Expression): Boolean {
 		if (nominalHint(value) is CMemberType) return true
 		val source = (binding(value) as? LocalSymbol)?.declaration?.initializer ?: value
 		val hints = when (source) {
-			is NameExpression -> return source !== value && nominalReceiver(source)
-			is CallExpression -> callHints(source)
+			is NameExpression       -> return source !== value && nominalReceiver(source)
+			is CallExpression       -> callHints(source)
 			is MemberCallExpression -> memberHints(source)
-			else -> return false
+			else                    -> return false
 		}
 		return hints.isNotEmpty() && hints.all { it.classBackedType() != null || ((it as? CNullable)?.payload ?: it) is CMemberType }
 	}
 
-	private fun nominalHint(value: Expression, hint: ValueType? = receiverHint(value)): ValueType? =
-		model.boundViews(value, hint).classBackedType() ?: hint?.classBackedType() ?: hint
+	private fun nominalHint(value: Expression, hint: ValueType? = receiverHint(value)): ValueType? = model.boundViews(value, hint).classBackedType() ?: hint?.classBackedType() ?: hint
 
 	private fun methods(call: MemberCallExpression, hint: ValueType? = receiverHint(call.receiver)): List<CallableContractSymbol> {
 		val bounds = model.boundViews(call.receiver, hint)
@@ -243,9 +234,9 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		}
 		if (bounds.isNotEmpty()) return model.declarations.boundMemberGroups(bounds, call.name.lexeme).flatMap { group ->
 			when (group) {
-				is MethodGroupSymbol -> group.overloads
+				is MethodGroupSymbol          -> group.overloads
 				is InterfaceMethodGroupSymbol -> group.overloads
-				else -> emptyList()
+				else                          -> emptyList()
 			}
 		}.distinct()
 		return when (owner) {
@@ -395,8 +386,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		classOwner = model.declarations.classOwners[function]
 		function.parameters.forEach { it.defaultValue?.let { value -> expression(value, emptySet()) } }
 		when (val body = function.executableBody) {
-			is BlockBody      -> statements(body.statements, emptySet())
-			is ExpressionBody -> expression(body.expression, emptySet())
+			is BlockBody           -> statements(body.statements, emptySet())
+			is ExpressionBody      -> expression(body.expression, emptySet())
 			null, is IntrinsicBody -> Unit
 		}
 	}
@@ -612,17 +603,17 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(after)
 			}
 
-			is GuardedAccessExpression -> {
+			is GuardedAccessExpression                                 -> {
 				val receiver = expression(value.receiver, initial, sourceType = true)
 				val subject = stable(value.receiver)
 				val present = receiver.after + listOfNotNull(subject)
 				val absent = forget(receiver.after, listOfNotNull(subject))
 				val accessed = expression(value.continuation, present)
 				Outcome(when {
-					!flow.of(value.receiver).canFallThrough -> receiver.after
+					!flow.of(value.receiver).canFallThrough     -> receiver.after
 					!flow.of(value.continuation).canFallThrough -> absent
-					knownPresent(value.receiver) -> accessed.after
-					else -> absent intersect accessed.after
+					knownPresent(value.receiver)                -> accessed.after
+					else                                        -> absent intersect accessed.after
 				})
 			}
 
@@ -655,6 +646,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				val operand = expression(value.operand, initial)
 				if (model.declarations.unboundStateName(value.target) == null) operand else Outcome(forgetAliases(operand.after))
 			}
+
 			is TypeCheckExpression                                     -> {
 				model.declarations.valueTargetOf(value)?.let { return expression(it, initial) }
 				val after = expression(value.operand, initial).after
@@ -703,13 +695,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				Outcome(when {
 					mayCall -> forgetAliases(remaining)
 					aliases -> remaining.filterNot { canAlias(it) && it.path.any { segment -> segment is Segment.Index } }.toSet()
-					else -> remaining
+					else    -> remaining
 				})
 			}
 
 			is ClassCreationExpression                                 -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
 			is ClassDeletionExpression                                 -> Outcome(forgetAliases(expression(value.receiver, initial).after))
-			is StateCallExpression, is StateTransitionExpression        -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
+			is StateCallExpression, is StateTransitionExpression       -> Outcome(forgetAliases(value.eagerOperands().fold(initial) { facts, arg -> expression(arg, facts).after }))
 			is ResultListExpression, is ArrayLiteral, is StructLiteral -> Outcome(value.eagerOperands().fold(initial) { facts, item -> expression(item, facts).after })
 			is IndexExpression                                         -> expression(value.index, expression(value.array, initial).after)
 			is InterpolatedString                                      -> Outcome(value.parts.fold(initial) { facts, part ->
@@ -754,54 +746,54 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		val result = mutableSetOf<Place>()
 		fun visit(value: Expression) {
 			when (value) {
-				is NameExpression           -> this.block(binding(value))?.let { result.addAll(writes(it)) }
-				is FunctionBlockExpression  -> Unit
-				is BinaryExpression         -> {
+				is NameExpression                                    -> this.block(binding(value))?.let { result.addAll(writes(it)) }
+				is FunctionBlockExpression                           -> Unit
+				is BinaryExpression                                  -> {
 					visit(value.left); visit(value.right)
 				}
 
-				is ElvisExpression          -> {
+				is ElvisExpression                                   -> {
 					visit(value.left); visit(value.fallback)
 				}
 
-				is GuardedAccessExpression -> {
+				is GuardedAccessExpression                           -> {
 					visit(value.receiver); visit(value.continuation)
 				}
 
-				is UnaryExpression          -> visit(value.operand)
-				is CastExpression           -> visit(value.operand)
-				is TypeCheckExpression      -> visit(model.declarations.valueTargetOf(value) ?: value.operand)
-				is ProviderAccessExpression -> visit(value.receiver)
-				is CallExpression           -> {
+				is UnaryExpression                                   -> visit(value.operand)
+				is CastExpression                                    -> visit(value.operand)
+				is TypeCheckExpression                               -> visit(model.declarations.valueTargetOf(value) ?: value.operand)
+				is ProviderAccessExpression                          -> visit(value.receiver)
+				is CallExpression                                    -> {
 					value.arguments.forEach(::visit)
 					result.addAll(implicitMethodWrites(value))
 				}
 
-				is MemberCallExpression     -> {
+				is MemberCallExpression                              -> {
 					visit(value.receiver); value.arguments.forEach(::visit)
 					val mayUseGenericContract = value.typeArguments != null || canInferMember(value)
 					result.addAll(methodWrites(place(value.receiver), methods(value), mayUseGenericContract) + arrayWrites(value))
 				}
 
-				is ClassCreationExpression  -> value.arguments.forEach(::visit)
-				is ClassDeletionExpression  -> visit(value.receiver)
+				is ClassCreationExpression                           -> value.arguments.forEach(::visit)
+				is ClassDeletionExpression                           -> visit(value.receiver)
 				is StateCallExpression, is StateTransitionExpression -> value.eagerOperands().forEach(::visit)
 
-				is ResultListExpression     -> value.values.forEach(::visit)
-				is ArrayLiteral             -> value.elements.forEach(::visit)
-				is StructLiteral            -> value.fields.forEach(::visit)
-				is FieldAccessExpression    -> visit(value.receiver)
-				is IndexExpression          -> {
+				is ResultListExpression                              -> value.values.forEach(::visit)
+				is ArrayLiteral                                      -> value.elements.forEach(::visit)
+				is StructLiteral                                     -> value.fields.forEach(::visit)
+				is FieldAccessExpression                             -> visit(value.receiver)
+				is IndexExpression                                   -> {
 					visit(value.array); visit(value.index)
 				}
 
-				is InterpolatedString       -> value.parts.forEach(::visit)
-				is IfExpression             -> {
+				is InterpolatedString                                -> value.parts.forEach(::visit)
+				is IfExpression                                      -> {
 					value.branches.forEach { visit(it.condition); result.addAll(writtenStatements(it.statements, ::visit)) }
 					value.otherwise?.let { result.addAll(writtenStatements(it, ::visit)) }
 				}
 
-				else                        -> Unit
+				else                                                 -> Unit
 			}
 		}
 		result.addAll(writtenStatements(body, ::visit))

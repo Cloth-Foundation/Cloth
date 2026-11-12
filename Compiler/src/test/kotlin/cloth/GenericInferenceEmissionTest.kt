@@ -6,6 +6,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 
 class GenericInferenceEmissionTest {
+
 	@Test
 	fun `partial arguments and type defaults lower to closed call contracts`(@TempDir directory: Path) {
 		val source = """

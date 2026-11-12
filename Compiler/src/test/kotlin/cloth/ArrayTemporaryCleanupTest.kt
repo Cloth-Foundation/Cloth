@@ -24,6 +24,7 @@ class ArrayTemporaryCleanupTest {
 	private val make = "fn<int[]> make(int n) = [n, n]"
 	private val read = "fn<int> read(int[] a) = a[0]"
 	private val texts = "fn<string[]> texts() = [\"é中😀\", \"Cloth\"]"
+
 	// Two arena-header words and four control words (including observations).
 	private val pairBytes = NativeCABI.native().pointerBits / 8 * 6L + 8
 	private val blockBytes = NativeCABI.native().pointerBits / 8 * 6L + 256

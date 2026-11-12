@@ -30,6 +30,15 @@ carriers, nullable wide arguments/results and complete absent nullable-array fie
 witnesses in closed generic slots. Copies/removals retain shape after source
 destruction; incompatible reappearance still fails at the ordinary shape guard.
 
+A nullable bound such as `T: Base? & Named?` or `T: Number?` proves the
+nullable shape and the payload's requirements. An ordinary presence check
+exposes the exact payload and its bound operations.
+[GEN-5 Stage 3](../cloth-generics/references/nullable-bounds-stage-3.md)
+
+Array bounds check nullability at each suffix position. `Number?[]`
+requires nullable elements, and `Number[]?` requires a nullable array.
+[GEN-5 Stage 4](../cloth-generics/references/array-bounds-stage-4.md)
+
 [Arbitrary integer Stage 4](../cloth-numerics/references/arbitrary-width-storage.md)
 integrates nullable payloads through 65536 bits. Stored values use byte presence
 and inline native-limb bytes; expression values carry presence and an independent

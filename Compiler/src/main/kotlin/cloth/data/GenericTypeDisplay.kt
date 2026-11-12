@@ -8,6 +8,7 @@ import cloth.token.Operators
 internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: Boolean = false): String {
 	class Arguments(val values: Iterator<ValueType>, var first: Boolean = true)
 	class Suffixes(val arrays: List<CArray>, val nullable: List<Boolean>, var index: Int = 0)
+
 	val pending = ArrayDeque<Any>().also { it.add(root) }
 	val text = StringBuilder()
 	var truncated = false
@@ -18,6 +19,7 @@ internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: 
 		truncated = true
 		pending.clear()
 	}
+
 	fun append(value: String) {
 		if (truncated) return
 		if (text.length + value.length <= limit) text.append(value)
@@ -27,20 +29,24 @@ internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: 
 		}
 	}
 	while (pending.isNotEmpty() && !truncated) {
-		if (text.length == limit) { ellipsis(); break }
+		if (text.length == limit) {
+			ellipsis(); break
+		}
 		when (val item = pending.removeLast()) {
-			is String -> append(item)
+			is String    -> append(item)
 			is Arguments -> if (item.values.hasNext()) {
 				if (!item.first) append("${Operators.COMMA} ")
 				item.first = false
 				pending.add(item)
 				pending.add(item.values.next())
 			}
-			is Suffixes -> if (item.index < item.arrays.size) {
+
+			is Suffixes  -> if (item.index < item.arrays.size) {
 				val index = item.index++
 				append("${Operators.BRACKET_OPEN}${item.arrays[index].size ?: ""}${Operators.BRACKET_CLOSE}" + if (item.nullable[item.nullable.lastIndex - index]) Operators.QUESTION.toString() else "")
 				if (text.length < limit) pending.add(item)
 			}
+
 			is ValueType -> when {
 				item is CArray || item is CNullable && item.payload is CArray -> {
 					var base = item
@@ -55,8 +61,12 @@ internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: 
 					pending.add(Suffixes(arrays, nullable))
 					pending.add(base)
 				}
-				item is CNullable -> { pending.add(Operators.QUESTION.toString()); pending.add(item.payload) }
-				item is CMemberType -> {
+
+				item is CNullable                                             -> {
+					pending.add(Operators.QUESTION.toString()); pending.add(item.payload)
+				}
+
+				item is CMemberType                                           -> {
 					append(item.qualifiedName)
 					if (item.typeArguments.isNotEmpty() && text.length < limit) {
 						append(Operators.LESS.toString())
@@ -64,7 +74,8 @@ internal fun genericTypeDisplay(root: CMemberType, limit: Int = 4096, metadata: 
 						pending.add(Arguments(item.typeArguments.iterator()))
 					}
 				}
-				else -> append(if (metadata) item.metadataSpelling else item.spelling)
+
+				else                                                          -> append(if (metadata) item.metadataSpelling else item.spelling)
 			}
 		}
 	}

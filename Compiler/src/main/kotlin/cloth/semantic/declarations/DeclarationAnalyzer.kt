@@ -2,13 +2,7 @@ package cloth.semantic.declarations
 
 import cloth.ast.SourceUnit
 import cloth.builtin.BuiltinFunctions
-import cloth.data.CClass
-import cloth.data.CEnum
-import cloth.data.CInterface
-import cloth.data.CTypeParameter
-import cloth.data.ClassField
-import cloth.data.EnumField
-import cloth.data.sameDeclaration
+import cloth.data.*
 import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
@@ -18,15 +12,10 @@ import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
 import cloth.semantic.forStepperExpression
+import cloth.semantic.generics.*
 import cloth.semantic.placeRoot
 import cloth.semantic.storedRoot
 import cloth.semantic.symbols.*
-import cloth.semantic.generics.GenericAnalyzer
-import cloth.semantic.generics.GenericBodyViews
-import cloth.semantic.generics.acceptsTypeArguments
-import cloth.semantic.generics.completesTypeArguments
-import cloth.semantic.generics.typeArgumentCounts
-import cloth.semantic.generics.GenericSemanticAnalysis
 import cloth.semantic.typing.ArgumentBinder
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
@@ -115,7 +104,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				defaultScope.declare(parameter)
 			}
 			when (val declaration = callable.declaration) {
-				is PrimaryConstructorDeclaration -> {
+				is PrimaryConstructorDeclaration  -> {
 					val definition = model.classDefinitions.getValue(model.classOwners.getValue(declaration))
 					definition.baseCall?.let { base ->
 						val resolver = BodyResolver(model, null, preInitialization = true, classOwner = definition.owner)
@@ -127,7 +116,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					}
 				}
 
-				is ConstructorDeclaration        -> {
+				is ConstructorDeclaration         -> {
 					val delegation = BodyResolver(model, null, preInitialization = true, classOwner = model.classOwners[declaration])
 					ArgumentBinder.validate(declaration.delegation.suppliedArguments)
 					declaration.delegation.arguments.forEach { delegation.expression(it, defaultScope) }
@@ -137,15 +126,15 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					BodyResolver(model, receiver, initializingStatePayload = true).expression(declaration.expression, defaultScope)
 				}
 
-				else                             -> Unit
+				else                              -> Unit
 			}
 			when (val body = callable.declaration.executableBody) {
-				is BlockBody      -> {
+				is BlockBody           -> {
 					model.blockScopes[body] = scope
 					resolver.statements(body.statements, scope)
 				}
 
-				is ExpressionBody -> resolver.expression(body.expression, scope)
+				is ExpressionBody      -> resolver.expression(body.expression, scope)
 				null, is IntrinsicBody -> Unit
 			}
 		}
@@ -267,12 +256,12 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 		private fun readOnlyDefaultRoot(operand: Expression): BindingSymbol? {
 			if (!defaultContext) return null
 			return when (operand) {
-				is CastExpression        -> readOnlyDefaultRoot(operand.operand)
+				is CastExpression          -> readOnlyDefaultRoot(operand.operand)
 				is GuardedAccessExpression -> readOnlyDefaultRoot(operand.continuation)
-				is GuardedReceiver       -> readOnlyDefaultRoot(operand.source)
-				is FieldAccessExpression -> readOnlyDefaultRoot(operand.receiver)
-				is IndexExpression       -> readOnlyDefaultRoot(operand.array)
-				else                     -> model.storedRoot(operand)?.takeIf { it is ParameterSymbol || it is ReceiverSymbol }
+				is GuardedReceiver         -> readOnlyDefaultRoot(operand.source)
+				is FieldAccessExpression   -> readOnlyDefaultRoot(operand.receiver)
+				is IndexExpression         -> readOnlyDefaultRoot(operand.array)
+				else                       -> model.storedRoot(operand)?.takeIf { it is ParameterSymbol || it is ReceiverSymbol }
 			}
 		}
 
@@ -469,13 +458,14 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 				}
 
 				is ClassCreationExpression                                                                                           -> {
-					if (model.genericViews?.inferredCreation(expression) == null) {
+					val guarantees = model.genericViews?.constructorGuaranteesFor(expression).orEmpty()
+					if (guarantees.isNotEmpty()) model.guaranteedCreations[expression] = guarantees
+					else if (model.genericViews?.inferredCreation(expression) == null) {
 						val receiver = expression.receiver as? NameExpression
 						if (receiver?.name?.lexeme == model.objectRoot.spelling) throw SemanticErrors.classLifecycle("'${model.objectRoot.spelling}' is an implicit base and has no source constructor", receiver.span)
 						val target = expression.receiver
 						val type = if (target is TypeReceiverExpression) model.typeResolver().resolve(target.annotation)
 						else namedTypeReceiver(target, scope, alwaysType = true)
-						if (type is CTypeParameter && type.constructorSignatures.isNotEmpty()) throw GenericErrors.guaranteedConstruction(expression.span)
 						val definition = (type as? CClass)?.let { model.classDefinitions[it] } ?: throw SemanticErrors.classLifecycle("'${Keywords.NEW}' requires a class type receiver", expression.receiver.span)
 						model.classCreations[expression] = definition
 					}
@@ -542,11 +532,12 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					expression(expression.fallback, scope)
 				}
 
-				is GuardedAccessExpression -> {
+				is GuardedAccessExpression                                                                                           -> {
 					expression(expression.receiver, scope)
 					expression(expression.continuation, scope)
 				}
-				is GuardedReceiver -> Unit
+
+				is GuardedReceiver                                                                                                   -> Unit
 
 				is BinaryExpression                                                                                                  -> {
 					receiverValue(expression.left, scope)
@@ -557,6 +548,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					if (model.unboundStateName(expression.target) != null) receiverValue(expression.operand, scope)
 					else expression(expression.operand, scope)
 				}
+
 				is TypeCheckExpression                                                                                               -> {
 					val target = expression.target
 					val name = target.name
@@ -564,9 +556,9 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					val value = if (bare && model.genericViews?.resolvedTypes?.containsKey(target) != true && model.namedType(name) == null) lexical(name, scope) ?: receiverField(receiver, name) else null
 					val candidate = expression.valueCandidate
 					val comparison = when {
-						value is BindingSymbol -> NameExpression(name)
+						value is BindingSymbol                                                                 -> NameExpression(name)
 						candidate != null && typeReceiverName(candidate, scope)?.let(model::namedType) == null -> candidate
-						else -> null
+						else                                                                                   -> null
 					}
 					if (comparison != null) {
 						val check = BinaryExpression(expression.operand, expression.operator, comparison)

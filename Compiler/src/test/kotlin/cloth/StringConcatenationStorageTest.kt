@@ -12,6 +12,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class StringConcatenationStorageTest {
+
 	private fun assertNative(source: String, directory: Path, name: String) {
 		for (abi in structRunners()) {
 			assertEquals(processCompletion().replace("\r\n", "\n"), runStructProgram(abi, source, directory.resolve("${name}_${abi.layout.sizeBits}")))

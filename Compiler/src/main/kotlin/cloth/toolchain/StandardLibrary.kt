@@ -11,11 +11,11 @@ import cloth.settings.OutputKind
 import cloth.settings.StandardLibrarySelection
 import cloth.util.ExecutableFormat
 import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.DirectoryIteratorException
+import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
-import java.util.Properties
+import java.util.*
 
 /** An explicit command-layer selection. The compilation API never discovers this object. */
 class StandardLibrary private constructor(val sourceRoot: Path, private val protectedInputs: List<Path>) {
@@ -34,8 +34,7 @@ class StandardLibrary private constructor(val sourceRoot: Path, private val prot
 			roots + SourceModule("StandardLibrary", sourceRoot, SourceModuleRole.STANDARD_LIBRARY)
 		}
 		protectOutput(request.outputFile, request.outputKind)
-		return CompilationRequest(request.sourceFile, request.outputFile, modules, request.outputKind,
-			request.entryFunction, request.targetTriple, request.linkOptions)
+		return CompilationRequest(request.sourceFile, request.outputFile, modules, request.outputKind, request.entryFunction, request.targetTriple, request.linkOptions)
 	}
 
 	private fun protectOutput(output: Path, kind: OutputKind) {
@@ -50,10 +49,11 @@ class StandardLibrary private constructor(val sourceRoot: Path, private val prot
 	}
 
 	companion object {
+
 		/** Only default selection consults the launcher context or release descriptor. */
 		fun select(selection: StandardLibrarySelection, invocationDirectory: Path): StandardLibrary? = when (selection) {
-			StandardLibrarySelection.Default -> default()
-			StandardLibrarySelection.Disabled -> null
+			StandardLibrarySelection.Default     -> default()
+			StandardLibrarySelection.Disabled    -> null
 			is StandardLibrarySelection.Explicit -> fromLocation(invocationDirectory.resolve(selection.path).toAbsolutePath().normalize())
 		}
 
@@ -62,14 +62,16 @@ class StandardLibrary private constructor(val sourceRoot: Path, private val prot
 		/** Location is supplied by the launcher/development task, never inferred from cwd. */
 		fun fromContext(home: String?, layout: String?): StandardLibrary {
 			if (home.isNullOrBlank()) throw StandardLibraryErrors.selection("Missing toolchain home. Use an installed launcher or a configured development task.")
-			val path = try { Path.of(home) } catch (failure: InvalidPathException) {
+			val path = try {
+				Path.of(home)
+			} catch (failure: InvalidPathException) {
 				throw StandardLibraryErrors.selection("Invalid toolchain home path", cause = failure)
 			}
 			if (!path.isAbsolute) throw StandardLibraryErrors.selection("Toolchain home must be absolute", path)
 			val directory = when (layout) {
-				"installed" -> "stdlib"
+				"installed"   -> "stdlib"
 				"development" -> "Standard-Library"
-				else -> throw StandardLibraryErrors.selection("Toolchain layout must be 'installed' or 'development'", path)
+				else          -> throw StandardLibraryErrors.selection("Toolchain layout must be 'installed' or 'development'", path)
 			}
 			return fromLocation(path, directory, installed = layout == "installed")
 		}
@@ -85,8 +87,11 @@ class StandardLibrary private constructor(val sourceRoot: Path, private val prot
 				if (installed) {
 					val descriptor = exact(root, "toolchain.properties", false).toRealPath()
 					val properties = Properties()
-					try { Files.newBufferedReader(descriptor, Charsets.UTF_8).use(properties::load) }
-					catch (failure: IllegalArgumentException) { throw StandardLibraryErrors.selection("Invalid release properties", descriptor, failure) }
+					try {
+						Files.newBufferedReader(descriptor, Charsets.UTF_8).use(properties::load)
+					} catch (failure: IllegalArgumentException) {
+						throw StandardLibraryErrors.selection("Invalid release properties", descriptor, failure)
+					}
 					if (properties.getProperty("format") != "1") throw StandardLibraryErrors.selection("Unsupported toolchain descriptor format; expected 1", descriptor)
 					for (field in listOf("compiler.version", "stdlib.version", "stdlib.revision")) {
 						if (properties.getProperty(field).isNullOrBlank()) throw StandardLibraryErrors.selection("Missing nonblank release field '$field'", descriptor)
@@ -102,8 +107,7 @@ class StandardLibrary private constructor(val sourceRoot: Path, private val prot
 		}
 
 		private fun exact(parent: Path, name: String, directory: Boolean): Path {
-			val path = Files.newDirectoryStream(parent).use { entries -> entries.firstOrNull { it.fileName.toString() == name } }
-				?: throw StandardLibraryErrors.selection("Required entry '$name' is missing with that exact case", parent)
+			val path = Files.newDirectoryStream(parent).use { entries -> entries.firstOrNull { it.fileName.toString() == name } } ?: throw StandardLibraryErrors.selection("Required entry '$name' is missing with that exact case", parent)
 			if (directory) {
 				if (!Files.isDirectory(path)) throw StandardLibraryErrors.selection("Required entry '$name' must be a directory", path)
 			} else {

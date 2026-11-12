@@ -1,10 +1,6 @@
 package cloth
 
-import cloth.data.CArray
-import cloth.data.CFloat
-import cloth.data.CInt
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.semantic.typing.FunctionAnalyzer
@@ -14,13 +10,13 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericInferenceTypingTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 
-	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic =
-		assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
-			assertEquals(code, it.diagnosticCode, it.summary)
-			assertLocated(it)
-		}
+	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
+		assertEquals(code, it.diagnosticCode, it.summary)
+		assertLocated(it)
+	}
 
 	@Test
 	fun `typed evidence sets numeric context and literal-only evidence uses ordinary defaults`() {

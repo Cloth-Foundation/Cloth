@@ -283,6 +283,18 @@ interface applications. It preserves the exact argument type.
 implements widening, ranked calls, and checked identity through the bounds.
 [Combined bounds design](../../cloth-generics/references/semantics.md#combined-bounds-design)
 
+A nullable generic bound requires a nullable argument with a qualifying
+payload. Presence proofs expose the exact payload type and its bound operations.
+Combined nominal requirements check the same payload.
+[Nullable bound design](../../cloth-generics/references/semantics.md#nullable-bound-design) ·
+[GEN-5 Stage 3](../../cloth-generics/references/nullable-bounds-stage-3.md)
+
+Array bounds require the declared extent and nullable position at each layer.
+The exact element type governs reads and writes, including through a
+`Number` element requirement.
+[Array bound design](../../cloth-generics/references/semantics.md#array-bound-design) ·
+[GEN-5 Stage 4](../../cloth-generics/references/array-bounds-stage-4.md)
+
 [GEN-2 Stage 1](../../cloth-functions/references/generic-methods-stage-1.md)
 parses ordinary class and struct methods with their own type parameters and
 calls such as `box.pair<string>("label")`. Method parameter names must be
@@ -558,6 +570,9 @@ The constrained Test.co example belongs to later capability work.
 - A `new(...)` generic bound requires an accessible constructor with the
   exact ordered parameter types. A standalone guarantee permits widening
   to `Object`. [Constructor guarantee declarations](../../cloth-generics/references/constructor-guarantees-stage-1.md)
+- `T::new(...)` selects a declared guarantee and returns the exact type `T`.
+  The guarantee supplies labels and defaults, and the matched constructor
+  receives every argument. [Construction through guarantees](../../cloth-generics/references/constructor-guarantees-stage-2.md)
 - Defaults and delegation arguments resolve before instance initialization.
   Defaults can read earlier resolved parameters, and the delegation arguments
   can read the secondary constructor's parameters. `self` becomes available

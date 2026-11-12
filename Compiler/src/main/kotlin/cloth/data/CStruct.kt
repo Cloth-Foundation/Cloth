@@ -22,6 +22,7 @@ class CStruct internal constructor(
 	override val indirect get() = true
 	override lateinit var fields: List<StructField>
 		private set
+
 	// Field discovery/cycle checking finishes before storage queries. Cache each
 	// descriptor's answer so shared closed field DAGs are not traversed exponentially.
 	private var bufferedValue: Boolean? = null
@@ -39,6 +40,7 @@ class CStruct internal constructor(
 	}
 
 	internal override fun field(name: String): StructField? = fieldsByName[name]
+
 	/** Inline, pointer-free witnesses outlive a nullable array field's presence. */
 	internal val nullableArrayFields get() = fields.filter { (it.type as? CNullable)?.payload is CArray }
 	internal fun shapeIndex(field: StructField): Int = fields.size + nullableArrayFields.indexOf(field).also { require(it >= 0) }

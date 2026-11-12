@@ -30,8 +30,7 @@ class StateAttachmentTest {
 		for ((name, source) in sources) Files.writeString(root.resolve(name), source.trimIndent())
 	}
 
-	private fun request(root: Path, output: String = "unused.o", kind: OutputKind = OutputKind.OBJECT, triple: String? = null) =
-		CompilationRequest(root.resolve("Main.co"), root.resolve(output), listOf(SourceModule("Game", root)), outputKind = kind, targetTriple = triple)
+	private fun request(root: Path, output: String = "unused.o", kind: OutputKind = OutputKind.OBJECT, triple: String? = null) = CompilationRequest(root.resolve("Main.co"), root.resolve(output), listOf(SourceModule("Game", root)), outputKind = kind, targetTriple = triple)
 
 	private val sources = mapOf(
 		"Contract.co" to """

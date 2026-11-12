@@ -3,6 +3,15 @@ package cloth.data
 import cloth.diagnostics.GenericErrors
 import cloth.token.Operators
 import java.util.IdentityHashMap
+import kotlin.collections.ArrayDeque
+import kotlin.collections.asReversed
+import kotlin.collections.emptyList
+import kotlin.collections.forEach
+import kotlin.collections.getValue
+import kotlin.collections.isNotEmpty
+import kotlin.collections.listOf
+import kotlin.collections.set
+import kotlin.collections.sumOf
 
 /** Canonical metadata is exact, never the bounded diagnostic spelling. Check the
  * expanded UTF-8 length on the argument DAG before allocating its flattened text.
@@ -18,9 +27,9 @@ internal fun genericTypeMetadata(root: CMemberType): String {
 		if (lengths.containsKey(type)) continue
 		val children = when (type) {
 			is CMemberType -> type.typeArguments
-			is CArray -> listOf(type.element)
-			is CNullable -> listOf(type.payload)
-			else -> emptyList()
+			is CArray      -> listOf(type.element)
+			is CNullable   -> listOf(type.payload)
+			else           -> emptyList()
 		}
 		if (!visited) {
 			pending.add(type to true)
@@ -28,11 +37,10 @@ internal fun genericTypeMetadata(root: CMemberType): String {
 			continue
 		}
 		val length = when (type) {
-			is CMemberType -> bytes(type.qualifiedName) + if (children.isEmpty()) 0 else
-				bytes("${Operators.LESS}${Operators.GREATER}") + (children.size - 1L) * bytes("${Operators.COMMA} ") + children.sumOf { lengths.getValue(it) }
-			is CArray -> lengths.getValue(type.element) + bytes("${Operators.BRACKET_OPEN}${type.size ?: ""}${Operators.BRACKET_CLOSE}")
-			is CNullable -> lengths.getValue(type.payload) + bytes(Operators.QUESTION.toString())
-			else -> bytes(type.metadataSpelling)
+			is CMemberType -> bytes(type.qualifiedName) + if (children.isEmpty()) 0 else bytes("${Operators.LESS}${Operators.GREATER}") + (children.size - 1L) * bytes("${Operators.COMMA} ") + children.sumOf { lengths.getValue(it) }
+			is CArray      -> lengths.getValue(type.element) + bytes("${Operators.BRACKET_OPEN}${type.size ?: ""}${Operators.BRACKET_CLOSE}")
+			is CNullable   -> lengths.getValue(type.payload) + bytes(Operators.QUESTION.toString())
+			else           -> bytes(type.metadataSpelling)
 		}
 		// Saturate intermediate sums, so even a huge shared DAG stays cheap to measure.
 		lengths[type] = minOf(length, GENERIC_METADATA_BYTES + 1L)

@@ -1,0 +1,45 @@
+// Main.co : Written by GROK
+// Floyd's Tortoise and Hare — O(N) time, O(1) extra space, input not modified.
+
+fn<int> findDuplicate(int[] nums) {
+    // Phase 1 — locate a meeting point inside the cycle
+    def tortoise = nums[0]
+    def hare = nums[0]
+
+    while (true) {
+        tortoise = nums[tortoise]
+        hare = nums[nums[hare]]
+        if (tortoise == hare) { break }
+    }
+
+    // Phase 2 — find the entrance to the cycle (the duplicated value)
+    tortoise = nums[0]
+    while (tortoise != hare) {
+        tortoise = nums[tortoise]
+        hare = nums[hare]
+    }
+
+    return tortoise
+}
+
+fn<int> main() {
+    // Valid instance: values in 0..3, length 5, duplicate = 1
+    // Graph from start has the classic rho shape whose entrance is the duplicate.
+    def nums = [1, 2, 3, 0, 1]
+    def duplicate = findDuplicate(nums)
+
+    println(#"Array: {nums}")
+    println(#"Duplicate: {duplicate}")
+
+    if (nums[0] != 1 || nums[4] != 1) { return 1 }   // array unchanged
+    if (duplicate != 1) { return 2 }
+
+    // Second valid instance: duplicate = 2
+    def nums2 = [2, 0, 1, 2]
+    def d2 = findDuplicate(nums2)
+    println(#"Array: {nums2}")
+    println(#"Duplicate: {d2}")
+    if (d2 != 2) { return 3 }
+
+    return 0
+}

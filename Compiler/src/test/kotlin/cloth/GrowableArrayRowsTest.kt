@@ -12,11 +12,14 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GrowableArrayRowsTest {
+
 	private fun native(directory: Path, name: String, source: String, expected: String = "", failure: String? = null) {
 		for (abi in structRunners()) {
 			val actual = runStructProgram(abi, source, directory.resolve("${name}_${abi.layout.sizeBits}"), if (failure == null) 0 else 1)
 			if (failure == null) assertEquals(expected + processCompletion().replace("\r\n", "\n"), actual)
-			else { assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:")) }
+			else {
+				assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:"))
+			}
 		}
 	}
 
@@ -73,16 +76,7 @@ class GrowableArrayRowsTest {
 
 	@Test
 	fun `dynamic incompatible rows fail after remove clear null and whole replacement`(@TempDir directory: Path) {
-		val cases = listOf(
-			"def<int[][]> rows = []; rows.append(wide()); rows.clear(); rows.append(short())",
-			"def<int[][]> rows = []; rows.insert(0, wide()); rows.removeAt(0); rows.insert(0, short())",
-			"def<int[][]> rows = []; rows.append(wide()); rows = []; rows.append(short())",
-			"def<int[][]?> rows = []; if (rows != null) rows.append(wide()); rows = null; rows = []; if (rows != null) rows.append(short())",
-			"def<int[]?[]> rows = []; rows.append(null); rows.insert(0, wide()); rows.removeAt(0); rows.append(short())",
-			"def<int[]?[]> rows = []; rows.append(wide()); rows[0] = null; rows.clear(); rows.append(short())",
-			"def<int[]?[]?> rows = []; if (rows != null) rows.append(wide()); rows = null; rows = [null]; if (rows != null) rows.insert(0, short())",
-			"def<int[]?[]> rows = []; rows.append(wide()); def<int[]?[]> copy = rows; copy.clear(); copy.append(short())"
-		)
+		val cases = listOf("def<int[][]> rows = []; rows.append(wide()); rows.clear(); rows.append(short())", "def<int[][]> rows = []; rows.insert(0, wide()); rows.removeAt(0); rows.insert(0, short())", "def<int[][]> rows = []; rows.append(wide()); rows = []; rows.append(short())", "def<int[][]?> rows = []; if (rows != null) rows.append(wide()); rows = null; rows = []; if (rows != null) rows.append(short())", "def<int[]?[]> rows = []; rows.append(null); rows.insert(0, wide()); rows.removeAt(0); rows.append(short())", "def<int[]?[]> rows = []; rows.append(wide()); rows[0] = null; rows.clear(); rows.append(short())", "def<int[]?[]?> rows = []; if (rows != null) rows.append(wide()); rows = null; rows = [null]; if (rows != null) rows.insert(0, short())", "def<int[]?[]> rows = []; rows.append(wide()); def<int[]?[]> copy = rows; copy.clear(); copy.append(short())")
 		for ((i, body) in cases.withIndex()) native(directory, "mismatch_$i", "fn<int[]> wide() = [1, 2]\nfn<int[]> short() = [3]\nfn main() { $body; println(\"unreachable\") }", failure = "Array shape mismatch")
 	}
 
@@ -103,10 +97,7 @@ class GrowableArrayRowsTest {
 			    println(zeros)
 			}
 		""", "[[3, 4]]\n[[]]\n")
-		for ((i, body) in listOf(
-			"def<int[][2]?> rows = []; if (rows != null) rows.clear(); rows = null; rows = []; if (rows != null) rows.append(short())",
-			"def<int[][]> rows = []; rows.append([]); rows.removeAt(0); rows.append(short())"
-		).withIndex()) native(directory, "explicit_bad_$i", "fn<int[]> short() = [1]\nfn main() { $body; println(\"unreachable\") }", failure = if (i == 0) "Array size mismatch" else "Array shape mismatch")
+		for ((i, body) in listOf("def<int[][2]?> rows = []; if (rows != null) rows.clear(); rows = null; rows = []; if (rows != null) rows.append(short())", "def<int[][]> rows = []; rows.append([]); rows.removeAt(0); rows.append(short())").withIndex()) native(directory, "explicit_bad_$i", "fn<int[]> short() = [1]\nfn main() { $body; println(\"unreachable\") }", failure = if (i == 0) "Array size mismatch" else "Array shape mismatch")
 	}
 
 	@Test
@@ -189,10 +180,7 @@ class GrowableArrayRowsTest {
 
 	@Test
 	fun `dynamic field shape mismatches retain the learned witness after null`(@TempDir directory: Path) {
-		for ((i, body) in listOf(
-			"def<Grid> grid = { [] }; if (grid.rows != null) grid.rows.append(wide()); grid.rows = null; grid.rows = []; if (grid.rows != null) grid.rows.append(short())",
-			"def holder = Holder::new([]); if (holder.rows != null) holder.rows.insert(0, wide()); holder.rows = null; holder.rows = []; if (holder.rows != null) holder.rows.append(short())"
-		).withIndex()) native(directory, "field_bad_$i", """
+		for ((i, body) in listOf("def<Grid> grid = { [] }; if (grid.rows != null) grid.rows.append(wide()); grid.rows = null; grid.rows = []; if (grid.rows != null) grid.rows.append(short())", "def holder = Holder::new([]); if (holder.rows != null) holder.rows.insert(0, wide()); holder.rows = null; holder.rows = []; if (holder.rows != null) holder.rows.append(short())").withIndex()) native(directory, "field_bad_$i", """
 			typedef<struct> Grid { int[][]? rows }
 			pub typedef<class> Holder (pub def<int[][]?> rows)
 			fn<int[]> wide() = [1, 2]

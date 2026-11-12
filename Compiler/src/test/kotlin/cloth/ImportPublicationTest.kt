@@ -11,12 +11,7 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.expression.BinaryExpression
-import cloth.parser.expression.Expression
-import cloth.parser.expression.FloatingPointLiteral
-import cloth.parser.expression.IntegerLiteral
-import cloth.parser.expression.NameExpression
-import cloth.parser.expression.UnaryExpression
+import cloth.parser.expression.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ReturnStatement
 import cloth.semantic.ProgramAnalyzer
@@ -38,12 +33,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.assertContains
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class ImportPublicationTest {
 
@@ -288,11 +278,13 @@ class ImportPublicationTest {
 						val assignment = if (statement.mutable) Operators.ASSIGN else Operators.FINAL_ASSIGN
 						"(${Keywords.DEFINITION}$annotation ${statement.name.lexeme} $assignment ${renderExpression(statement.initializer)})"
 					}
-					is ReturnStatement -> {
+
+					is ReturnStatement    -> {
 						assertNull(statement.value)
 						"(${statement.keyword.lexeme})"
 					}
-					else -> error("Unexpected statement in Bootstrap fixture: $statement")
+
+					else                  -> error("Unexpected statement in Bootstrap fixture: $statement")
 				}
 			}
 			(header + statements).joinToString(" ", "(", ")")
@@ -301,12 +293,12 @@ class ImportPublicationTest {
 	}
 
 	private fun renderExpression(expression: Expression): String = when (expression) {
-		is NameExpression          -> expression.name.lexeme
-		is IntegerLiteral           -> expression.token.lexeme
-		is FloatingPointLiteral     -> expression.token.lexeme
-		is UnaryExpression          -> "(${expression.operator.lexeme} ${renderExpression(expression.operand)})"
-		is BinaryExpression         -> "(${expression.operator.lexeme} ${renderExpression(expression.left)} ${renderExpression(expression.right)})"
-		else                        -> error("Unexpected expression in Bootstrap fixture: $expression")
+		is NameExpression       -> expression.name.lexeme
+		is IntegerLiteral       -> expression.token.lexeme
+		is FloatingPointLiteral -> expression.token.lexeme
+		is UnaryExpression      -> "(${expression.operator.lexeme} ${renderExpression(expression.operand)})"
+		is BinaryExpression     -> "(${expression.operator.lexeme} ${renderExpression(expression.left)} ${renderExpression(expression.right)})"
+		else                    -> error("Unexpected expression in Bootstrap fixture: $expression")
 	}
 
 	private fun execute(executable: Path, arguments: List<String>, status: Int = 0): String {
@@ -322,7 +314,6 @@ class ImportPublicationTest {
 			process.outputStream.close()
 		}
 	}
-
 
 }
 

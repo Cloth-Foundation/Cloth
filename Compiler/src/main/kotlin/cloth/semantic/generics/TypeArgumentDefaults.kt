@@ -10,22 +10,19 @@ import cloth.parser.type.maximumTypeArgumentNesting
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
 
-internal fun List<TypeParameterDeclaration>.typeArgumentCounts(): IntRange =
-	(indexOfLast { it.defaultType == null } + 1)..size
+internal fun List<TypeParameterDeclaration>.typeArgumentCounts(): IntRange = (indexOfLast { it.defaultType == null } + 1)..size
 
-internal fun List<TypeParameterDeclaration>.acceptsTypeArgumentCount(count: Int): Boolean =
-	count in typeArgumentCounts()
+internal fun List<TypeParameterDeclaration>.acceptsTypeArgumentCount(count: Int): Boolean = count in typeArgumentCounts()
 
-internal fun FunctionSymbol.acceptsTypeArguments(count: Int): Boolean =
-	declaration.typeParameters?.parameters?.acceptsTypeArgumentCount(count) == true
+internal fun FunctionSymbol.acceptsTypeArguments(count: Int): Boolean = declaration.typeParameters?.parameters?.acceptsTypeArgumentCount(count) == true
 
-internal fun FunctionGroupSymbol.completesTypeArguments(supplied: TypeArgumentList): Boolean =
-	supplied.hasPlaceholders || overloads.any {
-		it.typeParameterCount > supplied.arguments.size && it.acceptsTypeArguments(supplied.arguments.size)
-	}
+internal fun FunctionGroupSymbol.completesTypeArguments(supplied: TypeArgumentList): Boolean = supplied.hasPlaceholders || overloads.any {
+	it.typeParameterCount > supplied.arguments.size && it.acceptsTypeArguments(supplied.arguments.size)
+}
 
 /** Complete arguments in declaration order using the types already selected to the left. */
 internal class TypeArgumentDefaults(private val names: GenericNameModel) {
+
 	private val resolving = mutableSetOf<TypeParameterSymbol>()
 
 	fun complete(

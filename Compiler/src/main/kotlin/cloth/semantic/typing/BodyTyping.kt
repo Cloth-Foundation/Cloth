@@ -1,16 +1,12 @@
 package cloth.semantic.typing
 
-import cloth.data.*
 import cloth.builtin.attachments.ArrayMutation
+import cloth.data.*
 import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.StateErrors
-import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.CallableSignature
-import cloth.parser.declaration.ExpressionBody
-import cloth.parser.declaration.IntrinsicBody
-import cloth.parser.declaration.executableBody
+import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
@@ -80,14 +76,14 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	fun checkBody() {
 		when (val body = function.executableBody) {
-			is BlockBody      -> {
+			is BlockBody           -> {
 				check(body.statements)
 				if (hasReturnContract && returnResults != ResultShape.Empty && facts.controlFlow.of(body).canFallThrough) {
 					throw SemanticErrors.missingReturn(function, body)
 				}
 			}
 
-			is ExpressionBody -> checkExpressionBody(body)
+			is ExpressionBody      -> checkExpressionBody(body)
 			null, is IntrinsicBody -> Unit
 		}
 	}
@@ -320,6 +316,12 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	fun bindConstructor(expression: CallSite, constructors: List<ConstructorSymbol>): ResolvedCall.Source = facts.constructorCalls[expression] ?: overloads.source(expression, constructors).also { facts.constructorCalls[expression] = it }
 
 	override fun creationType(expression: ClassCreationExpression): ValueType {
+		facts.declarations.guaranteedCreations[expression]?.let { guarantees ->
+			return facts.guaranteedConstructions.getOrPut(expression) {
+				val checked = facts.checkedConstructorGuarantee(expression, guarantees)
+				overloads.guaranteedConstruction(expression, checked?.let(::listOf) ?: guarantees)
+			}.type.returns
+		}
 		facts.declarations.classCreations[expression]?.let { return bindConstructor(expression, it.constructors).type.returns }
 		val selected = facts.constructorCalls[expression] ?: run {
 			val definition = checkNotNull(facts.declarations.genericViews?.inferredCreation(expression))
@@ -396,8 +398,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	}
 
 	private fun stateTarget(owner: CClass, name: Token): StateDefinition {
-		val state = facts.declarations.states[owner]?.supported?.get(name.lexeme)
-			?: throw StateErrors.target("Class '${owner.spelling}' does not support state '${name.lexeme}'", name)
+		val state = facts.declarations.states[owner]?.supported?.get(name.lexeme) ?: throw StateErrors.target("Class '${owner.spelling}' does not support state '${name.lexeme}'", name)
 		if (state.declaration.visibility == null && !state.owner.sameDeclaration(classOwner)) {
 			throw SemanticErrors.privateClassMember(name, state.name)
 		}
@@ -427,22 +428,21 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		facts.calls[expression]?.let { return it.type.results }
 		val target = facts.declarations.candidatesOf(expression)
 		val selected = when (target) {
-			is FunctionGroupSymbol -> overloads.function(expression, target)
+			is FunctionGroupSymbol        -> overloads.function(expression, target)
 			is InterfaceMethodGroupSymbol -> overloads.interfaceCall(expression, target, ObjectReceiver.Self(facts.declarations.implicitReceivers.getValue(expression)))
-			is MethodGroupSymbol   -> {
+			is MethodGroupSymbol          -> {
 				val self = facts.declarations.implicitReceivers.getValue(expression)
 				val receiver = if (self.owner is CClass) MethodReceiver.Instance(ObjectReceiver.Self(self)) else MethodReceiver.Stored(StoredPlace(self, emptyList()))
 				overloads.method(expression, expression.typeArguments, target, classOwner, receiver)
 			}
 
-			is BuiltinGroupSymbol  -> ResolvedCall.Builtin(overloads.builtin(expression, target.definition, ::validateFormatter))
+			is BuiltinGroupSymbol         -> ResolvedCall.Builtin(overloads.builtin(expression, target.definition, ::validateFormatter))
 		}
 		facts.recordCall(expression, selected)
 		return selected.type.results
 	}
 
-	override fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape =
-		resolveMemberCall(expression, receiver).also { facts.recordInferredResult(expression, it) }
+	override fun memberCallResults(expression: MemberCallExpression, receiver: ValueType): ResultShape = resolveMemberCall(expression, receiver).also { facts.recordInferredResult(expression, it) }
 
 	private fun resolveMemberCall(expression: MemberCallExpression, receiver: ValueType): ResultShape {
 		facts.selectedBoundMemberCall(expression)?.let { return it.type.results }
@@ -483,8 +483,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		return selected.type.results
 	}
 
-	private fun objectReceiver(expression: Expression): ObjectReceiver =
-		facts.declarations.directReceiverOf(expression)?.let { ObjectReceiver.Self(it) } ?: ObjectReceiver.Explicit(expression)
+	private fun objectReceiver(expression: Expression): ObjectReceiver = facts.declarations.directReceiverOf(expression)?.let { ObjectReceiver.Self(it) } ?: ObjectReceiver.Explicit(expression)
 
 	private fun checkMethodReceiver(expression: MemberCallExpression) {
 		if (expression in facts.declarations.readOnlyDefaultReceivers) {
@@ -499,12 +498,12 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		checkMethodReceiver(expression)
 		val access = objectReceiver(expression.receiver)
 		val selected = when (val contract = checked?.contract) {
-			is MethodSymbol -> overloads.source(expression, listOf(contract), MethodReceiver.Instance(access))
+			is MethodSymbol          -> overloads.source(expression, listOf(contract), MethodReceiver.Instance(access))
 			is InterfaceMethodSymbol -> overloads.interfaceCall(expression, InterfaceMethodGroupSymbol(checked.view as CInterface, listOf(contract)), access)
-			else -> overloads.boundMember(expression, groups, classOwner, access)
+			else                     -> overloads.boundMember(expression, groups, classOwner, access)
 		}
 		when (selected) {
-			is ResolvedCall.Source -> facts.recordMemberCall(expression, selected)
+			is ResolvedCall.Source    -> facts.recordMemberCall(expression, selected)
 			is ResolvedCall.Interface -> facts.interfaceMemberCalls[expression] = selected
 		}
 		return selected.type.results
@@ -526,8 +525,8 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val place = if (instance == null) storedPlace(expression.receiver) else null
 		val source = when {
 			instance != null -> MethodReceiver.StoredInInstance(instance)
-			place != null -> MethodReceiver.Stored(place)
-			else -> MethodReceiver.Temporary(expression.receiver)
+			place != null    -> MethodReceiver.Stored(place)
+			else             -> MethodReceiver.Temporary(expression.receiver)
 		}
 		val bound = model.memberCalls.getValue(expression)
 		model.arrayMutations[expression] = ArrayMutationPlan(operation, type, source, bound.arguments.drop(1), bound.overload.returns)

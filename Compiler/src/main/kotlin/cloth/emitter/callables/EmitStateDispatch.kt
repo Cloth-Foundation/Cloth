@@ -7,7 +7,8 @@ import cloth.emitter.types.EmitRuntimeError
 import cloth.semantic.declarations.StateCatalog
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.typing.ResolvedStateCall
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMModuleRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Each entry resolves a shared contract before reading the object's current activation. */
@@ -24,8 +25,7 @@ internal class EmitStateDispatch(
 
 	fun entry(plan: ResolvedStateCall): EmittedCallable = entries.getOrPut(plan.owner to plan.contract) {
 		val name = "cloth.state.dispatch.${entries.size}.${plan.contract.name.lexeme}"
-		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }
-			.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
+		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
 	}
 
 	private fun emitEntry(plan: ResolvedStateCall, entry: EmittedCallable) {

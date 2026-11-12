@@ -2,7 +2,6 @@ package cloth
 
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
-import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.semantic.typing.FunctionAnalyzer
@@ -12,9 +11,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class GenericCallableImportsTest {
+
 	private fun analyze(root: Path, sources: Map<String, String>) = run {
 		for ((name, text) in sources) {
 			val path = root.resolve(name)
@@ -38,22 +41,21 @@ class GenericCallableImportsTest {
 
 	@Test
 	fun `definition private helper functions and caller private actual types retain their scopes`(@TempDir root: Path) {
-		analyze(root, mapOf(
-			"Library.co" to "fn<int> helper() = 1\npub typedef<class> Box<T> { pub mt<T> read(T value) { helper(); return value } }",
-			"Main.co" to "using Library : Box\ntypedef<class> Hidden {}\nfn main() { def b = Box<Hidden>::new; def h = Hidden::new; b.read(h); h::delete; b::delete }"
-		))
+		analyze(root, mapOf("Library.co" to "fn<int> helper() = 1\npub typedef<class> Box<T> { pub mt<T> read(T value) { helper(); return value } }", "Main.co" to "using Library : Box\ntypedef<class> Hidden {}\nfn main() { def b = Box<Hidden>::new; def h = Hidden::new; b.read(h); h::delete; b::delete }"))
 	}
 
 	@Test
 	fun `public generic subclasses cannot inherit a public method exposing a private type`(@TempDir root: Path) {
-		val error = assertFailsWith<ClothDiagnostic> { analyze(root, mapOf(
-			"Library.co" to """
+		val error = assertFailsWith<ClothDiagnostic> {
+			analyze(root, mapOf(
+				"Library.co" to """
 				typedef<struct> Secret { int value }
 				typedef<class> Base<T> { pub mt<Secret> expose() { return { 41 } } }
 				pub typedef<class> Child<T> : Base<T>()
 			""",
-			"Main.co" to "using Library : Child\nfn main() {}",
-		)) }
+				"Main.co" to "using Library : Child\nfn main() {}",
+			))
+		}
 		assertEquals(DiagnosticCode.PRIVATE_GENERIC_SIGNATURE, error.diagnosticCode)
 		assertContains(error.summary, "'Secret'")
 		assertLocated(error)
@@ -61,14 +63,16 @@ class GenericCallableImportsTest {
 
 	@Test
 	fun `public generic subclasses check substituted inherited field types`(@TempDir root: Path) {
-		val error = assertFailsWith<ClothDiagnostic> { analyze(root, mapOf(
-			"Library.co" to """
+		val error = assertFailsWith<ClothDiagnostic> {
+			analyze(root, mapOf(
+				"Library.co" to """
 				typedef<struct> Secret { int value }
 				pub typedef<class> Base<T> (pub def<T> value)
 				pub typedef<class> Child<T> : Base<Secret>({ 42 })
 			""",
-			"Main.co" to "using Library : Child\nfn main() {}",
-		)) }
+				"Main.co" to "using Library : Child\nfn main() {}",
+			))
+		}
 		assertEquals(DiagnosticCode.PRIVATE_GENERIC_SIGNATURE, error.diagnosticCode)
 		assertContains(error.summary, "'Secret'")
 		assertLocated(error)
@@ -76,14 +80,16 @@ class GenericCallableImportsTest {
 
 	@Test
 	fun `public generic subclasses check inferred results of inherited public operators`(@TempDir root: Path) {
-		val error = assertFailsWith<ClothDiagnostic> { analyze(root, mapOf(
-			"Library.co" to """
+		val error = assertFailsWith<ClothDiagnostic> {
+			analyze(root, mapOf(
+				"Library.co" to """
 				typedef<struct> Secret { int value }
 				typedef<class> Base<T> (def<Secret> hidden) { pub operator +(int other) = hidden }
 				pub typedef<class> Child<T> : Base<T>({ 42 })
 			""",
-			"Main.co" to "using Library : Child\nfn main() {}",
-		)) }
+				"Main.co" to "using Library : Child\nfn main() {}",
+			))
+		}
 		assertEquals(DiagnosticCode.PRIVATE_GENERIC_SIGNATURE, error.diagnosticCode)
 		assertContains(error.summary, "'Secret'")
 		assertLocated(error)
@@ -119,10 +125,9 @@ class GenericCallableImportsTest {
 
 	@Test
 	fun `unused imported generic bodies fail in the original source`(@TempDir root: Path) {
-		val error = assertFailsWith<ClothDiagnostic> { analyze(root, mapOf(
-			"Library.co" to "pub typedef<class> Box<T> { pub mt<T> read(T value) = missing }",
-			"Main.co" to "using Library : Box\nfn main() {}"
-		)) }
+		val error = assertFailsWith<ClothDiagnostic> {
+			analyze(root, mapOf("Library.co" to "pub typedef<class> Box<T> { pub mt<T> read(T value) = missing }", "Main.co" to "using Library : Box\nfn main() {}"))
+		}
 		assertEquals(DiagnosticCode.UNKNOWN_NAME, error.diagnosticCode)
 		assertTrue(error.sourceLabels.first().span.source!!.name.endsWith("Library.co"))
 	}

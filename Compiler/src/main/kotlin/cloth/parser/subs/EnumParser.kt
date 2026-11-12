@@ -1,7 +1,7 @@
 package cloth.parser.subs
 
-import cloth.diagnostics.SyntaxErrors
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.token.Keywords

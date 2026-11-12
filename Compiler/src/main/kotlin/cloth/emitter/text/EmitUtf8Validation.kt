@@ -29,8 +29,7 @@ internal class EmitUtf8Validation(
 
 	fun terminatedLength(builder: LLVMBuilderRef, data: LLVMValueRef): LLVMValueRef = scan(builder, data, null)
 
-	fun isValid(builder: LLVMBuilderRef, data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef =
-		LLVMBuildICmp(builder, LLVMIntNE, scan(builder, data, length), count(-1), "valid_utf8")
+	fun isValid(builder: LLVMBuilderRef, data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef = LLVMBuildICmp(builder, LLVMIntNE, scan(builder, data, length), count(-1), "valid_utf8")
 
 	private fun scan(builder: LLVMBuilderRef, data: LLVMValueRef, length: LLVMValueRef?): LLVMValueRef {
 		val counted = length != null

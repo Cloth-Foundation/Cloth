@@ -144,8 +144,7 @@ class ExpressionParser(val parser: Parser) {
 		return StateCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
 	}
 
-	private fun isImplicitBinding(token: Token): Boolean =
-		token.type == TokenType.Keyword && (token.lexeme == Keywords.SELF.toString() || parser.inStateBody && token.lexeme == Keywords.STATE.toString())
+	private fun isImplicitBinding(token: Token): Boolean = token.type == TokenType.Keyword && (token.lexeme == Keywords.SELF.toString() || parser.inStateBody && token.lexeme == Keywords.STATE.toString())
 
 	fun parsePrimary(allowWhileTrailer: Boolean = false): Expression {
 		val token = parser.peek()

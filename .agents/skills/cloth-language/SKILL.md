@@ -153,7 +153,9 @@ captures implementation scope and regression evidence.
 | Generic class/struct checking and native values/storage/metadata; List source integration | [cloth-generics](../cloth-generics/SKILL.md) |
 | Generic bounds, satisfaction checks, and bound operations | [GEN-1 Stage 1](../cloth-generics/references/constraints-stage-1.md), [GEN-1 Stage 2](../cloth-generics/references/constraints-stage-2.md), [GEN-1 Stage 3](../cloth-generics/references/constraints-stage-3.md) |
 | Combined generic bounds, widening, and call contracts | [GEN-4 Stage 1](../cloth-generics/references/combined-bounds-stage-1.md), [GEN-4 Stage 2](../cloth-generics/references/combined-bounds-stage-2.md), [GEN-4 Stage 3](../cloth-generics/references/combined-bounds-stage-3.md) |
-| Constructor guarantee syntax, exact signatures, and access proof | [GEN-5 Stage 1](../cloth-generics/references/constructor-guarantees-stage-1.md) |
+| Constructor guarantees, access proof, and calls through a type parameter | [GEN-5 Stage 1](../cloth-generics/references/constructor-guarantees-stage-1.md), [GEN-5 Stage 2](../cloth-generics/references/constructor-guarantees-stage-2.md) |
+| Nullable class, interface, and Number bounds and exact payload operations | [GEN-5 Stage 3](../cloth-generics/references/nullable-bounds-stage-3.md) |
+| Array bounds, exact elements, and nullable suffix composition | [GEN-5 Stage 4](../cloth-generics/references/array-bounds-stage-4.md) |
 | Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
 | Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |

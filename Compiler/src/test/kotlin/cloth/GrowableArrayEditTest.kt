@@ -6,14 +6,20 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GrowableArrayEditTest {
+
 	private fun native(directory: Path, name: String, source: String, expected: String = "", failure: String? = null) {
 		for (abi in structRunners()) {
 			val actual = runStructProgram(abi, source, directory.resolve("${name}_${abi.layout.sizeBits}"), if (failure == null) 0 else 1)
 			if (failure == null) assertEquals(expected + processCompletion().replace("\r\n", "\n"), actual)
-			else { assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:")) }
+			else {
+				assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:"))
+			}
 		}
 	}
 

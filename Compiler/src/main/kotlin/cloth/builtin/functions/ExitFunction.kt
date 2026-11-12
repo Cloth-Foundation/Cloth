@@ -1,10 +1,6 @@
 package cloth.builtin.functions
 
-import cloth.builtin.BuiltinBody
-import cloth.builtin.BuiltinFunction
-import cloth.builtin.BuiltinOverload
-import cloth.builtin.BuiltinParameter
-import cloth.builtin.BuiltinProperties
+import cloth.builtin.*
 import cloth.data.ValueType
 
 internal class ExitFunction(properties: BuiltinProperties) : BuiltinFunction(properties) {

@@ -129,8 +129,77 @@ before comparing identities.
 
 `T: new(float health)` requires an accessible constructor with one
 `float` parameter. Guarantees can stand alone or join nominal bounds.
-Calls through `T::new(...)` follow in Stage 2.
-[Constructor guarantee checking](../.agents/skills/cloth-generics/references/constructor-guarantees-stage-1.md)
+Inside the generic body, `T::new(...)` uses the selected guarantee's
+parameter labels and omitted defaults. Specialization calls the exact
+constructor and returns `T`.
+
+```cloth
+typedef<class> Player (pub def<float> health) {}
+
+fn<T> spawn<T: new(opt<float> amount ?: 100f)>() = T::new()
+
+fn main() {
+    def<Player> player = spawn<Player>()
+    println(player.health)
+    player::delete
+}
+```
+
+[Constructor guarantee checking](../.agents/skills/cloth-generics/references/constructor-guarantees-stage-1.md) ·
+[Construction through guarantees](../.agents/skills/cloth-generics/references/constructor-guarantees-stage-2.md)
+
+### Nullable bounds
+
+`T: Base?` accepts a nullable type whose payload satisfies `Base`, such as
+`Player?` when `Player` extends `Base`. Write `T: Base? & Named?` to check
+both nominal requirements. A presence check exposes the exact payload,
+and member lookup uses the bound's contract.
+
+`T: Number?` accepts nullable numeric types such as `int<8>?` and `float?`.
+The proven-present payload supports ordinary `Number` operations.
+
+```cloth
+fn<T> twice<T: Number?>(T value) {
+    if (value == null) return null
+    def payload = value
+    return payload + payload
+}
+
+fn main() {
+    println(twice<int<8>?>(4))
+    println(twice<int<8>?>(null))
+}
+```
+
+[Nullable bounds and combined nominal example](../.agents/skills/cloth-generics/references/nullable-bounds-stage-3.md)
+
+### Array bounds
+
+`T: int[]` requires a growable array of `int`. `T: int[4]` requires a
+declared extent of four. `T: Base[]` requires the exact element type `Base`.
+`T: Number[]` admits growable arrays of numeric types and keeps the exact
+element type for indexed reads and mutations.
+
+```cloth
+fn<T> bump<T: Number[]>(T values) {
+    def first = values[0]
+    values[0] = first + first
+    values.append(first)
+    return values
+}
+
+fn main() {
+    def<int<8>[]> numbers = [3]
+    println(bump(numbers))
+    println(numbers)
+}
+```
+
+The bound also checks nullable positions. `Number?[]` has nullable numeric
+elements. `Number[]?` is a nullable array. A fixed array literal
+infers a fixed extent. Use an explicitly growable type argument to receive
+it as a growable array.
+[Array bounds and nullable row example](../.agents/skills/cloth-generics/references/array-bounds-stage-4.md)
 
 ## Generic functions
 
@@ -231,7 +300,7 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover calls through constructor guarantees, generic dispatch contracts,
+Follow-ups cover generic dispatch contracts,
 variance, generic enums and states,
 and higher-kinded types. Direct collection
 indexing, indexed assignment and foreach require their own protocol. Keep the

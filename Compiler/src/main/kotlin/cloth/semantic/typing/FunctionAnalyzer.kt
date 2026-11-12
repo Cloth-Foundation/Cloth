@@ -17,9 +17,10 @@ import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.FileBindings
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
-import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.flow.checkArrayShapes
+import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.symbols.CallableContractSymbol
+import cloth.semantic.symbols.ConstructorGuaranteeSymbol
 import cloth.semantic.symbols.ConstructorSymbol
 import cloth.semantic.symbols.MethodSymbol
 import cloth.source.SourceGraph
@@ -69,9 +70,10 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 				throw SemanticErrors.operatorDeclaration(message, operator.returnTypes.single().span)
 			}
 			FunctionType(parameters, when {
-				function is ConstructorSymbol -> ResultShape.of(function.owner)
-				fixed != null                 -> ResultShape.of(fixed)
-				else                          -> ResultShape.of(results)
+				function is ConstructorSymbol          -> ResultShape.of(function.owner)
+				function is ConstructorGuaranteeSymbol -> ResultShape.of(function.constructedType)
+				fixed != null                          -> ResultShape.of(fixed)
+				else                                   -> ResultShape.of(results)
 			})
 		}
 		val selectors = buildMap {
@@ -93,6 +95,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 				presence.analyzeExpressions(declarations.initializationExpressions(function.declaration))
 			}
 		}
+
 		val views = declarations.genericViews
 		val canonical = declarations.callableContracts.filter { views?.isCanonicalBoundBody(it) == true }.toSet()
 		val concrete = declarations.concreteContracts
@@ -124,7 +127,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			val returnResults = bodyResults(function, model)
 			val checker = BodyTyping(model, function.declaration, returnResults)
 			when (val declaration = function.declaration) {
-				is PrimaryConstructorDeclaration -> {
+				is PrimaryConstructorDeclaration  -> {
 					val definition = declarations.classDefinitions.getValue(declarations.classOwners.getValue(declaration))
 					definition.baseCall?.let { clause ->
 						definition.owner.base?.let { declarations.classDefinitions[it] }?.let { checker.bindConstructor(clause, it.constructors) }
@@ -134,7 +137,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 					}
 				}
 
-				is ConstructorDeclaration        -> {
+				is ConstructorDeclaration         -> {
 					val owner = declarations.classOwners.getValue(declaration)
 					val primary = declarations.classDefinitions.getValue(owner).primary
 					checker.bindConstructor(declaration.delegation, listOf(primary))
@@ -145,11 +148,14 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 					checker.checkStatePayload(declaration.expression, state)
 				}
 
-				else                             -> Unit
+				else                              -> Unit
 			}
 			checker.checkBody()
 		}
 	}
 
-	private fun bodyResults(function: CallableContractSymbol, model: FunctionSemanticModel) = if (function is ConstructorSymbol) ResultShape.Empty else model.typeOf(function).results
+	private fun bodyResults(function: CallableContractSymbol, model: FunctionSemanticModel) = when (function) {
+		is ConstructorSymbol, is ConstructorGuaranteeSymbol -> ResultShape.Empty
+		else                                                -> model.typeOf(function).results
+	}
 }

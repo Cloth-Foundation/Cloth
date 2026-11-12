@@ -7,13 +7,7 @@ import cloth.emitter.storage.EmitClassRuntime
 import cloth.emitter.storage.ObjectAccess
 import cloth.emitter.storage.ReceiverAccess
 import cloth.semantic.ResultShape
-import cloth.semantic.symbols.CallableContractSymbol
-import cloth.semantic.symbols.ConstructorSymbol
-import cloth.semantic.symbols.DestructorSymbol
-import cloth.semantic.symbols.InterfaceMethodSymbol
-import cloth.semantic.symbols.MethodSymbol
-import cloth.semantic.symbols.StateActivationSymbol
-import cloth.semantic.symbols.StateMethodContractSymbol
+import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionType
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -37,8 +31,7 @@ internal class EmittedCallable(
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
-	private val objectReceiver = callable is InterfaceMethodSymbol || callable is StateMethodContractSymbol || usesActivation ||
-		(callable is MethodSymbol || callable is DestructorSymbol) && callable.receiver?.owner?.classBackedType() != null
+	private val objectReceiver = callable is InterfaceMethodSymbol || callable is StateMethodContractSymbol || usesActivation || (callable is MethodSymbol || callable is DestructorSymbol) && callable.receiver?.owner?.classBackedType() != null
 	val enumReceiver = callable is MethodSymbol && callable.owner is CEnum
 	val replayableStruct = hasClasses && callable is MethodSymbol && callable.owner is CStruct
 	private val prefix = when {
@@ -52,8 +45,7 @@ internal class EmittedCallable(
 	val needsResultArena = type.results.values.any { it.indirect }
 	private val arenaSlot = explicitEnd.takeIf { needsResultArena }
 	private val flagStart = explicitEnd + if (needsResultArena) 1 else 0
-	private val omissionSlots = if (acceptsOmissions) callable.parameters.indices.filter { callable.parameters[it].declaration.optional }
-		.mapIndexed { offset, parameter -> parameter to flagStart + offset }.toMap() else emptyMap()
+	private val omissionSlots = if (acceptsOmissions) callable.parameters.indices.filter { callable.parameters[it].declaration.optional }.mapIndexed { offset, parameter -> parameter to flagStart + offset }.toMap() else emptyMap()
 	val hasOmissions: Boolean get() = omissionSlots.isNotEmpty()
 	private val parameterTypes = prefix + type.parameters.map(results::abiType) + listOfNotNull(pointer.takeIf { needsResultArena }) + List(omissionSlots.size) { flag }
 
@@ -73,6 +65,7 @@ internal class EmittedCallable(
 		check(usesActivation)
 		return LLVMGetParam(reference, 2)
 	}
+
 	fun enumValue(): LLVMValueRef = LLVMGetParam(reference, 0)
 	fun structAccess(): ReceiverAccess = ReceiverAccess(
 		LLVMGetParam(reference, 0), LLVMGetParam(reference, 1),

@@ -6,6 +6,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 
 class GenericMethodEmissionTest {
+
 	@Test
 	fun `generic method receivers defaults results and recursion use the native ABI`(@TempDir directory: Path) {
 		val source = """

@@ -29,7 +29,6 @@ import cloth.semantic.symbols.BindingSymbol
 import cloth.semantic.symbols.LocalSymbol
 import cloth.semantic.symbols.ParameterSymbol
 import cloth.semantic.symbols.ReceiverFieldSymbol
-import cloth.semantic.symbols.ReceiverSymbol
 import cloth.semantic.typing.*
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -206,10 +205,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun stringReturnArena(): LLVMValueRef = frame.stringReturnArena()
 
 	fun adaptValue(value: LLVMValueRef, source: ValueType, destination: ValueType): LLVMValueRef = when {
-		source == destination                                                    -> value
-		source is CArray && destination is CArray && destination.accepts(source) -> value
+		source == destination                                                               -> value
+		source is CArray && destination is CArray && destination.accepts(source)            -> value
 		(destination is CClass || destination is CInterface) && destination.accepts(source) -> value
-		else                                                                     -> nullable.adapt(value, source, destination)
+		else                                                                                -> nullable.adapt(value, source, destination)
 	}
 
 	fun adaptResults(value: LLVMValueRef, source: ResultShape, destination: ResultShape): LLVMValueRef {
@@ -221,9 +220,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitMemberCall(call: MemberCallExpression): LLVMValueRef? {
 		when (val selected = functionSemantics.selectedBoundMemberCall(call)) {
-			is ResolvedCall.Source -> return functions.emitCall(selected, call.arguments, this, builder)
+			is ResolvedCall.Source    -> return functions.emitCall(selected, call.arguments, this, builder)
 			is ResolvedCall.Interface -> return functions.emitCall(selected, call.arguments, this, builder)
-			null -> Unit
+			null                      -> Unit
 		}
 		semantics.arrayMutations[call]?.let { return emitArrayMutation(call, it) }
 		val selected = semantics.memberCalls.getValue(call)
@@ -289,9 +288,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitCall(call: CallExpression): LLVMValueRef? = when (val selected = functionSemantics.selectedCall(call)) {
-		is ResolvedCall.Source  -> functions.emitCall(selected, call.arguments, this, builder)
+		is ResolvedCall.Source    -> functions.emitCall(selected, call.arguments, this, builder)
 		is ResolvedCall.Interface -> functions.emitCall(selected, call.arguments, this, builder)
-		is ResolvedCall.Builtin -> {
+		is ResolvedCall.Builtin   -> {
 			// Arguments and text providers may borrow buffers until the operation consumes them.
 			temporaryDepth++
 			try {
@@ -366,11 +365,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return if (field is ClassField) valueTransfer.snapshot(read, semantics.typeOf(expression)) else read
 	}
 
-	private fun classFieldAddress(expression: FieldAccessExpression, field: ClassField): LLVMValueRef =
-		functions.classStorage.locate(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.receiver)), field).address
+	private fun classFieldAddress(expression: FieldAccessExpression, field: ClassField): LLVMValueRef = functions.classStorage.locate(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.receiver)), field).address
 
-	private fun readPayload(expression: Expression, value: LLVMValueRef): LLVMValueRef =
-		if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
+	private fun readPayload(expression: Expression, value: LLVMValueRef): LLVMValueRef = if (semantics.payloadReads.containsKey(expression)) nullable.payload(value) else value
 
 	private fun emitEnumPayload(receiver: LLVMValueRef, field: EnumField, expression: Expression): LLVMValueRef {
 		val value = functions.enumPayload(builder, receiver, field, ::stringReturnArena)
@@ -572,33 +569,33 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emitInternal(expression: Expression): LLVMValueRef? {
 		return when (expression) {
-			is StructLiteral            -> emitStructLiteral(expression)
-			is FieldAccessExpression    -> emitFieldRead(expression)
-			is NullLiteral              -> (semantics.typeOf(expression) as? CNullable)?.let(nullable::absent) ?: LLVMConstNull(types.value(ValueType.Null))
-			is ElvisExpression          -> emitElvis(expression)
-			is GuardedAccessExpression  -> emitGuardedAccess(expression)
-			is GuardedReceiver          -> guardedValues.getValue(expression)
-			is ResultListExpression     -> {
+			is StructLiteral             -> emitStructLiteral(expression)
+			is FieldAccessExpression     -> emitFieldRead(expression)
+			is NullLiteral               -> (semantics.typeOf(expression) as? CNullable)?.let(nullable::absent) ?: LLVMConstNull(types.value(ValueType.Null))
+			is ElvisExpression           -> emitElvis(expression)
+			is GuardedAccessExpression   -> emitGuardedAccess(expression)
+			is GuardedReceiver           -> guardedValues.getValue(expression)
+			is ResultListExpression      -> {
 				// Snapshot each buffered position before subsequent expressions can mutate
 				// its source. Even discarded positions execute and retain runtime guards.
 				val snapshots = expression.values.map { item -> valueTransfer.snapshot(emitValue(item), semantics.typeOf(item)) }
 				if (terminated()) null else valueTransfer.freshResults(results.pack(builder, snapshots, semantics.resultOf(expression)), semantics.resultOf(expression))
 			}
 
-			is ProviderAccessExpression -> if (semantics.typeOf(expression) == ValueType.NEVER) emit(expression.receiver)
+			is ProviderAccessExpression  -> if (semantics.typeOf(expression) == ValueType.NEVER) emit(expression.receiver)
 			else emitProvider(semantics.providerAccess(expression))
 
-			is ArrayLiteral             -> {
+			is ArrayLiteral              -> {
 				val type = semantics.typeOf(expression) as? CArray
 				if (type == null) {
 					expression.elements.forEach { emitValue(it) }; null
 				} else arrays.literal(type.element, expression.elements.map { item -> { valueTransfer.transfer(adaptValue(emitValue(item), semantics.typeOf(item), type.element), type.element) } })
 			}
 
-			is IndexExpression          -> emitIndex(expression)
+			is IndexExpression           -> emitIndex(expression)
 
-			is IfExpression             -> emitConditional(expression, requireValue = semantics.resultOf(expression) !in setOf(ResultShape.Empty, ResultShape.Never))
-			is TypeCheckExpression      -> {
+			is IfExpression              -> emitConditional(expression, requireValue = semantics.resultOf(expression) !in setOf(ResultShape.Empty, ResultShape.Never))
+			is TypeCheckExpression       -> {
 				semantics.valueCheckOf(expression)?.let { return emitOperator(it.operator, it.application.eagerOperands()) }
 				functionSemantics.stateTests[expression]?.let { state ->
 					return functions.states.matches(builder, emitObjectAccess(ObjectReceiver.Explicit(expression.operand)), state)
@@ -618,30 +615,35 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				} else LLVMConstInt(boolType, if (source == target) 1L else 0L, 0)
 			}
 
-			is NameExpression           -> emitName(expression)
+			is NameExpression            -> emitName(expression)
 
-			is MemberCallExpression     -> emitMemberCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
-			is CallExpression           -> emitCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
-			is StateCallExpression      -> {
+			is MemberCallExpression      -> emitMemberCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
+			is CallExpression            -> emitCall(expression)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
+			is StateCallExpression       -> {
 				val plan = functionSemantics.stateCalls[expression]
 				if (plan == null) emit(expression.receiver)
-				else functions.emitStateCall(plan, expression.receiver, expression.arguments, this, builder)
-					?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
+				else functions.emitStateCall(plan, expression.receiver, expression.arguments, this, builder)?.let { valueTransfer.freshResults(it, semantics.resultOf(expression)) }
 			}
-			is ClassCreationExpression  -> functions.emitCall(functionSemantics.selectedConstructor(expression), expression.arguments, this, builder)
-			is ClassDeletionExpression  -> emitDelete(expression)
+
+			is ClassCreationExpression   -> {
+				val guarantee = functionSemantics.guaranteedConstructions[expression]
+				if (guarantee != null) functions.emitGuaranteedConstruction(guarantee, expression.arguments, this, builder)
+				else functions.emitCall(functionSemantics.selectedConstructor(expression), expression.arguments, this, builder)
+			}
+
+			is ClassDeletionExpression   -> emitDelete(expression)
 			is StateTransitionExpression -> emitTransition(expression.receiver, expression.payload, functionSemantics.stateTransitions[expression])
-			is IntegerLiteral           -> {
+			is IntegerLiteral            -> {
 				val type = semantics.typeOf(expression)
 				if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).constant(expression.value, type.bits)
 				else LLVMConstIntOfString(types.value(type), expression.value.toString(), 10.toByte())
 			}
 
-			is FloatingPointLiteral     -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
-			is BooleanLiteral           -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
-			is CharacterLiteral         -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
-			is StringLiteral            -> strings.literal(expression.value, expression.span)
-			is InterpolatedString       -> {
+			is FloatingPointLiteral      -> LLVMConstRealOfString(types.value(semantics.typeOf(expression)), expression.value)
+			is BooleanLiteral            -> LLVMConstInt(boolType, if (expression.value) 1L else 0L, 0)
+			is CharacterLiteral          -> LLVMConstInt(types.value(ValueType.CHAR), expression.value.toLong(), 0)
+			is StringLiteral             -> strings.literal(expression.value, expression.span)
+			is InterpolatedString        -> {
 				var result: LLVMValueRef? = null
 				for (part in expression.parts) {
 					if (part is StringLiteral && part.value.isEmpty()) continue
@@ -655,16 +657,19 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				result ?: strings.literal("")
 			}
 
-			is CastExpression           -> {
+			is CastExpression            -> {
 				val state = functionSemantics.stateTransitions[expression]
 				when {
-					state != null -> emitTransition(expression.operand, null, state)
-					semantics.typeOf(expression) == ValueType.VOID -> { emit(expression.operand); null }
-					else -> casts.emit(expression, emitValue(expression.operand))
+					state != null                                  -> emitTransition(expression.operand, null, state)
+					semantics.typeOf(expression) == ValueType.VOID -> {
+						emit(expression.operand); null
+					}
+
+					else                                           -> casts.emit(expression, emitValue(expression.operand))
 				}
 			}
 
-			is UnaryExpression          -> {
+			is UnaryExpression           -> {
 				semantics.operatorOf(expression)?.let { return emitOperator(it, expression.eagerOperands()) }
 				val operand = emitValue(expression.operand)
 				when (expression.operator.lexeme) {
@@ -684,7 +689,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				}
 			}
 
-			is BinaryExpression         -> {
+			is BinaryExpression          -> {
 				semantics.operatorOf(expression)?.let { return emitOperator(it, expression.eagerOperands()) }
 				semantics.operatorContextOf(expression)?.let { return emitOperatorContext(expression, it) }
 				semantics.classComparisons[expression]?.let { return emitClassComparison(expression, it) }
@@ -699,7 +704,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				emitBinaryOperands(expression.operator, left, right, semantics.typeOf(expression.left), semantics.typeOf(expression.right))
 			}
 
-			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
+			else                         -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
 	}
 
@@ -717,9 +722,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private fun emitRead(expression: Expression, borrowString: Boolean): LLVMValueRef {
 		if (!borrowString) return emitValue(expression)
 		val value = when (expression) {
-			is NameExpression -> emitName(expression, borrowString = true)
+			is NameExpression  -> emitName(expression, borrowString = true)
 			is IndexExpression -> emitIndex(expression, borrowString = true)
-			else -> return emitValue(expression)
+			else               -> return emitValue(expression)
 		}
 		if (terminated()) throw Terminated()
 		return checkNotNull(value)
@@ -749,7 +754,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			return if (fresh) valueTransfer.freshArray(value, type)
 			else if (!borrowString && ((type as? CNullable)?.payload ?: type) == ValueType.STRING) valueTransfer.snapshot(value, type)
 			else value
-		} finally { bindings.endSelection(selection) }
+		} finally {
+			bindings.endSelection(selection)
+		}
 	}
 
 	/** The caller immediately consumes the count or snapshots the selected value.
@@ -758,30 +765,34 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	 */
 	private fun emitImmediateClassProjection(expression: Expression): LLVMValueRef? {
 		return when (expression) {
-			is NameExpression -> {
+			is NameExpression        -> {
 				val symbol = functionSemantics.declarations.names[expression] as? ReceiverFieldSymbol ?: return null
 				if (symbol.field !is ClassField || expression in projectedValues) return null
 				readPayload(expression, bindings.read(symbol))
 			}
+
 			is FieldAccessExpression -> {
 				val field = semantics.fields[expression] ?: return null
 				val address = when (field) {
-					is ClassField -> classFieldAddress(expression, field)
+					is ClassField  -> classFieldAddress(expression, field)
 					is StructField -> {
 						val owner = semantics.typeOf(expression.receiver) as? CStruct ?: return null
 						val value = emitImmediateClassProjection(expression.receiver) ?: return null
 						stored.fieldAddress(value, owner, field)
 					}
-					else -> return null
+
+					else           -> return null
 				}
 				readPayload(expression, stored.load(address, field.type))
 			}
-			is IndexExpression -> {
+
+			is IndexExpression       -> {
 				if (!isImmediateIndex(expression.index)) return null
 				val array = emitImmediateClassProjection(expression.array) ?: return null
 				arrays.index(array, semantics.typeOf(expression), emitValue(expression.index), semantics.typeOf(expression.index))
 			}
-			else -> null
+
+			else                     -> null
 		}
 	}
 
@@ -789,10 +800,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		is IntegerLiteral -> true
 		is NameExpression -> when (val symbol = functionSemantics.declarations.names[expression]) {
 			is ParameterSymbol -> true
-			is LocalSymbol -> symbol.declaration.initializer !is FunctionBlockExpression
-			else -> false
+			is LocalSymbol     -> symbol.declaration.initializer !is FunctionBlockExpression
+			else               -> false
 		}
-		else -> false
+
+		else              -> false
 	}
 
 	private fun emitOperator(operator: ResolvedOperator, operands: List<Expression>): LLVMValueRef? = functions.emitCall(operator.call, operands, this, builder, operatorReceiver = operator.receiverIndex)?.let { valueTransfer.freshResults(it, operator.call.type.results) }
@@ -954,9 +966,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				emitter.classes.check(builder, b)
 				val overload = plan.identityOverride
 				when {
-					overload == null -> LLVMBuildICmp(builder, LLVMIntEQ, left, right, "checked_identity")
+					overload == null            -> LLVMBuildICmp(builder, LLVMIntEQ, left, right, "checked_identity")
 					overload.receiverIndex == 0 -> emitter.compareWithOverride(builder, overload.call.callable, a, right)
-					else -> emitter.compareWithOverride(builder, overload.call.callable, b, left)
+					else                        -> emitter.compareWithOverride(builder, overload.call.callable, b, left)
 				}
 			}
 		}

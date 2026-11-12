@@ -1,19 +1,15 @@
 package cloth.semantic.symbols
 
 import cloth.builtin.BuiltinDefinition
-import cloth.data.CClass
-import cloth.data.CInterface
-import cloth.data.CMemberType
-import cloth.data.InstanceField
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.GenericErrors
 import cloth.parser.declaration.*
 import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.ForStatement
 import cloth.parser.type.TypeReference
-import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.semantic.generics.GenericMethodTemplate
+import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.token.*
 import java.math.BigInteger
 
@@ -24,6 +20,7 @@ data class SignatureType(val name: String, val unsigned: Boolean, val width: Big
 		get() = exact?.spelling ?: ((if (unsigned) "${Keywords.UNSIGNED} " else "") + name + (width?.takeUnless { it == defaultWidth && name in numericNames }?.let { "${Operators.LESS}$it${Operators.GREATER}" } ?: "") + (if (nullable) Operators.QUESTION.toString() else "") + arraySizes.mapIndexed { index, size -> "${Operators.BRACKET_OPEN}${size ?: ""}${Operators.BRACKET_CLOSE}" + if (arrayNullability.getOrNull(index) == true) Operators.QUESTION.toString() else "" }.joinToString(""))
 
 	companion object {
+
 		internal fun resolved(type: ValueType) = SignatureType(type.keyword.toString(), false, null, 0, exact = type)
 
 		private val numericNames = setOf(Keywords.INTEGER.toString(), Keywords.FLOAT.toString())
@@ -85,8 +82,10 @@ internal class StateMethodContractSymbol(owner: CClass, override val declaration
 internal class ConstructorGuaranteeSymbol(
 	override val declaration: ConstructorGuaranteeDeclaration,
 	parameterTypes: List<ValueType>,
+	val constructedType: ValueType,
 	val declaringClass: CClass?,
 ) : CallableContractSymbol {
+
 	override val name get() = declaration.name
 	override val parameters = declaration.parameters.map(::ParameterSymbol)
 	override val signature = FunctionSignature(name.lexeme, parameterTypes.map(SignatureType::resolved))
@@ -109,6 +108,7 @@ internal class StateInitialPayloadSymbol(owner: CClass, override val declaration
 }
 
 class FunctionSymbol(override val declaration: FunctionDeclaration, private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+
 	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 	internal val typeParameterCount get() = declaration.typeParameters?.parameters?.size ?: 0
 
@@ -118,6 +118,7 @@ class FunctionSymbol(override val declaration: FunctionDeclaration, private val 
 }
 
 class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemberType, override val receiver: ReceiverSymbol = ReceiverSymbol(owner, declaration.keyword), private val nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+
 	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 
 	override val name get() = declaration.name
@@ -127,6 +128,7 @@ class MethodSymbol(override val declaration: MethodDeclaration, val owner: CMemb
 }
 
 internal class ConstructorSymbol(override val declaration: CallableDeclaration, val owner: CClass, nominal: (TypeReference) -> CMemberType? = { null }) : CallableSymbol {
+
 	internal var signatureResolver: ((TypeReference) -> SignatureType)? = null
 
 	override val name get() = declaration.name
@@ -153,6 +155,7 @@ class FunctionGroupSymbol(val overloads: List<FunctionSymbol>) : CallableGroupSy
 class MethodGroupSymbol internal constructor(val overloads: List<MethodSymbol>, internal val templates: List<GenericMethodTemplate>) : CallableGroupSymbol {
 
 	constructor(overloads: List<MethodSymbol>) : this(overloads, emptyList())
+
 	override val name get() = overloads.firstOrNull()?.name ?: templates.first().declaration.name
 }
 

@@ -5,7 +5,9 @@ import cloth.settings.OutputKind
 import java.nio.file.Path
 import java.util.*
 
-enum class SourceModuleRole { REGULAR, STANDARD_LIBRARY }
+enum class SourceModuleRole { REGULAR,
+	STANDARD_LIBRARY
+}
 
 /** A logical identity, explicit root and namespace role; the id is not an import prefix. */
 data class SourceModule @JvmOverloads constructor(

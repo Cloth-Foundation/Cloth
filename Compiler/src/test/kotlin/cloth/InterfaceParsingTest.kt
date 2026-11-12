@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class InterfaceParsingTest {
-	private fun text(span: TokenSpan): String =
-		checkNotNull(span.source).text.lines()[span.startLine - 1].substring(span.startColumn - 1, span.endColumn - 1)
+
+	private fun text(span: TokenSpan): String = checkNotNull(span.source).text.lines()[span.startLine - 1].substring(span.startColumn - 1, span.endColumn - 1)
 
 	@Test
 	fun `interface declarations distinguish required signatures and explicit defaults`() {

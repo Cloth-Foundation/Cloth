@@ -1,0 +1,10 @@
+[project]
+name = "Floyd"
+version = "0.0.1"
+entryPoint = "App.Main.main"
+
+[modules]
+App = "app"
+
+[output]
+directory = "build"

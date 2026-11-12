@@ -45,10 +45,10 @@ class CClass internal constructor(
 	internal var implementedInterfaces: Set<CInterface> = emptySet()
 	internal fun ancestry(): Sequence<CClass> = generateSequence(this) { it.base }
 	override fun accepts(actual: ValueType): Boolean = super.accepts(actual) || when (actual) {
-		is CClass -> this in actual.ancestry()
-		is CInterface -> objectRoot
+		is CClass         -> this in actual.ancestry()
+		is CInterface     -> objectRoot
 		is CTypeParameter -> actual.nominalBounds.any(::accepts)
-		else -> false
+		else              -> false
 	}
 
 	// The implicit root has no fields. A source base occupies the first slot.

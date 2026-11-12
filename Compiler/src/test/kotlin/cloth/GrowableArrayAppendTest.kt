@@ -1,21 +1,25 @@
 package cloth
 
-import cloth.diagnostics.ClothDiagnostic
-import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GrowableArrayAppendTest {
+
 	private fun native(directory: Path, name: String, source: String, expected: String = "", status: Int = 0) {
 		for (abi in structRunners()) {
 			val output = runStructProgram(abi, source, directory.resolve("${name}_${abi.layout.sizeBits}"), status)
 			if (status == 0) assertEquals(expected + processCompletion().replace("\r\n", "\n"), output)
-			else { assertContains(output, expected); assertFalse(output.contains("unreachable")); assertFalse(output.contains("PEC:")) }
+			else {
+				assertContains(output, expected); assertFalse(output.contains("unreachable")); assertFalse(output.contains("PEC:"))
+			}
 		}
 	}
 
@@ -309,14 +313,7 @@ class GrowableArrayAppendTest {
 
 	@Test
 	fun `rectangular mutators pass the former backend boundary`(@TempDir directory: Path) {
-		val sources = listOf(
-			"fn main() { def<int[][]> values = []; values.insert(0, [1]) }",
-			"fn main() { def<int[][]> values = [[1]]; values.removeAt(0) }",
-			"fn main() { def<int[][]> values = [[1]]; values.clear() }",
-			"pub typedef<class> Holder (pub def<int[][]> values)\nfn main() { def holder = Holder::new([]); holder.values.clear() }",
-			"typedef<struct> Holder { int[][] values }\nfn main() { def<Holder> holder = { [[1]] }; holder.values.append([2]) }",
-			"fn main() { def<int[][]> values = [[1]]; values.append([2]) }"
-		)
+		val sources = listOf("fn main() { def<int[][]> values = []; values.insert(0, [1]) }", "fn main() { def<int[][]> values = [[1]]; values.removeAt(0) }", "fn main() { def<int[][]> values = [[1]]; values.clear() }", "pub typedef<class> Holder (pub def<int[][]> values)\nfn main() { def holder = Holder::new([]); holder.values.clear() }", "typedef<struct> Holder { int[][] values }\nfn main() { def<Holder> holder = { [[1]] }; holder.values.append([2]) }", "fn main() { def<int[][]> values = [[1]]; values.append([2]) }")
 		for ((index, source) in sources.withIndex()) {
 			assertTrue(Files.size(LLVMEmitter().compileObject(structUnit(source), directory.resolve("rectangular_$index.o"))) > 0)
 		}

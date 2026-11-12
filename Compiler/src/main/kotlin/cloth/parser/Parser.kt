@@ -119,14 +119,14 @@ class Parser(private val tokens: List<Token>) {
 		val (kind, payload) = delimited.angles {
 			val token = peek()
 			val kind = when {
-				atKeyword(Keywords.CLASS)                          -> advance()
-				atKeyword(Keywords.STRUCT) && finalKeyword == null -> advance()
-				atKeyword(Keywords.ENUM) && finalKeyword == null   -> advance()
-				atKeyword(Keywords.INTERFACE) && finalKeyword == null -> advance()
+				atKeyword(Keywords.CLASS)                                    -> advance()
+				atKeyword(Keywords.STRUCT) && finalKeyword == null           -> advance()
+				atKeyword(Keywords.ENUM) && finalKeyword == null             -> advance()
+				atKeyword(Keywords.INTERFACE) && finalKeyword == null        -> advance()
 				atKeyword(Keywords.STATE) && finalKeyword == null && !nested -> advance()
-				finalKeyword != null                               -> throw SyntaxErrors.expected("'${Keywords.CLASS}' as the type declaration kind after '${Keywords.FINAL}'", token)
-				nested                                             -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', '${Keywords.ENUM}', or '${Keywords.INTERFACE}' as the nested type declaration kind", token)
-				else                                               -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', '${Keywords.ENUM}', '${Keywords.INTERFACE}', or '${Keywords.STATE}' as the type declaration kind", token)
+				finalKeyword != null                                         -> throw SyntaxErrors.expected("'${Keywords.CLASS}' as the type declaration kind after '${Keywords.FINAL}'", token)
+				nested                                                       -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', '${Keywords.ENUM}', or '${Keywords.INTERFACE}' as the nested type declaration kind", token)
+				else                                                         -> throw SyntaxErrors.expected("'${Keywords.STRUCT}', '${Keywords.CLASS}', '${Keywords.ENUM}', '${Keywords.INTERFACE}', or '${Keywords.STATE}' as the type declaration kind", token)
 			}
 			val payload = if (kind.lexeme == Keywords.STATE.toString()) {
 				if (visibility != null) throw SyntaxErrors.expected("state visibility after the '${Keywords.TYPEDEF}' header", visibility)
@@ -138,11 +138,11 @@ class Parser(private val tokens: List<Token>) {
 			kind to payload
 		}
 		return when (kind.lexeme) {
-			Keywords.CLASS.toString() -> classParser.parse(keyword, visibility, finalKeyword)
-			Keywords.ENUM.toString()  -> enumParser.parse(keyword, visibility)
+			Keywords.CLASS.toString()     -> classParser.parse(keyword, visibility, finalKeyword)
+			Keywords.ENUM.toString()      -> enumParser.parse(keyword, visibility)
 			Keywords.INTERFACE.toString() -> interfaceParser.parse(keyword, kind, visibility)
-			Keywords.STATE.toString() -> classParser.parseTopLevelState(keyword, kind, checkNotNull(payload))
-			else                      -> structParser.parse(keyword, visibility)
+			Keywords.STATE.toString()     -> classParser.parseTopLevelState(keyword, kind, checkNotNull(payload))
+			else                          -> structParser.parse(keyword, visibility)
 		}
 	}
 

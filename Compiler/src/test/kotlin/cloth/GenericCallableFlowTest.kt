@@ -1,16 +1,23 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.CNullable
+import cloth.data.CStruct
+import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.parser.declaration.*
-import cloth.parser.expression.*
-import cloth.parser.statement.*
+import cloth.parser.expression.Expression
+import cloth.parser.statement.ReturnStatement
 import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GenericCallableFlowTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(source) }.also { assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it) }
 

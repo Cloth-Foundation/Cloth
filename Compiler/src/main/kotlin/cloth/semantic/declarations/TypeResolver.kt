@@ -1,8 +1,8 @@
 package cloth.semantic.declarations
 
 import cloth.data.*
-import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.SemanticErrors
 import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
 import cloth.target.TargetLayout
@@ -45,6 +45,10 @@ internal class TypeResolver(val target: TargetLayout, private val operatorWidth:
 				else                          -> (if (substitutedType != null) substitutedType.invoke(annotation) else if (contextualNamedType != null) contextualNamedType.invoke(annotation.name) else namedType(name)) ?: throw SemanticErrors.type(annotation)
 			}
 		}
+		return withSuffixes(annotation, base)
+	}
+
+	internal fun withSuffixes(annotation: TypeReference, base: ValueType): ValueType {
 		if (base == ValueType.VOID && annotation.arraySuffixes.isNotEmpty()) throw SemanticErrors.voidType(annotation.span)
 		// A nullable actual parameter already supplies the presence carrier for T?.
 		val scalar = if (annotation.nullable != null && base !is CNullable) CNullable(base) else base

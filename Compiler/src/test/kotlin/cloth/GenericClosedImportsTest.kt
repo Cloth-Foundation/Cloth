@@ -2,8 +2,13 @@ package cloth
 
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
-import cloth.data.*
-import cloth.semantic.generics.*
+import cloth.data.CArray
+import cloth.data.CClass
+import cloth.data.CNullable
+import cloth.data.CStruct
+import cloth.semantic.generics.ClosedTypeAnalyzer
+import cloth.semantic.generics.ClosedTypeModel
+import cloth.semantic.generics.ClosedTypePattern
 import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
 import org.junit.jupiter.api.Test
@@ -13,6 +18,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericClosedImportsTest {
+
 	private fun analyze(root: Path, sources: Map<String, String>): ClosedTypeModel {
 		for ((name, source) in sources) {
 			val path = root.resolve(name)
@@ -25,10 +31,7 @@ class GenericClosedImportsTest {
 
 	@Test
 	fun `private helpers resolve in their definition file while actual types stay caller private`(@TempDir root: Path) {
-		val model = analyze(root, mapOf(
-			"lib/Box.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> Box<T> { def<Slot<T>?> value = null; pub mt<T> read(T input) = input }",
-			"Main.co" to "using lib.Box : Box\ntypedef<class> Hidden {}\ntypedef<struct> Slot<T> { string wrong }\nfn take(Box<Hidden> value) {}"
-		))
+		val model = analyze(root, mapOf("lib/Box.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> Box<T> { def<Slot<T>?> value = null; pub mt<T> read(T input) = input }", "Main.co" to "using lib.Box : Box\ntypedef<class> Hidden {}\ntypedef<struct> Slot<T> { string wrong }\nfn take(Box<Hidden> value) {}"))
 		val box = model.parameterTypes().single() as CClass
 		val slot = (box.fields.single().type as CNullable).payload as CStruct
 		val hidden = box.typeArguments.single()
@@ -40,11 +43,7 @@ class GenericClosedImportsTest {
 
 	@Test
 	fun `same spelled private templates keep distinct closed identities despite matching display text`(@TempDir root: Path) {
-		val model = analyze(root, mapOf(
-			"A.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> A<T> { def<Slot<T>?> value = null }",
-			"B.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> B<T> { def<Slot<T>?> value = null }",
-			"Main.co" to "using A : A\nusing B : B\nfn take(A<int> a, B<int> b) {}"
-		))
+		val model = analyze(root, mapOf("A.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> A<T> { def<Slot<T>?> value = null }", "B.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> B<T> { def<Slot<T>?> value = null }", "Main.co" to "using A : A\nusing B : B\nfn take(A<int> a, B<int> b) {}"))
 		val slots = model.parameterTypes().map { ((it as CClass).fields.single().type as CNullable).payload as CStruct }
 		assertEquals(slots[0].metadataSpelling, slots[1].metadataSpelling)
 		assertNotSame(slots[0], slots[1])
@@ -54,11 +53,7 @@ class GenericClosedImportsTest {
 
 	@Test
 	fun `circular and repeated graph routes reuse closed instances and signatures`(@TempDir root: Path) {
-		val model = analyze(root, mapOf(
-			"A.co" to "using Bridge : bridge\npub typedef<class> A<T> {}\npub fn<A<int>> make() = null",
-			"Bridge.co" to "using A : A\npub fn<A<int<32>>> bridge() = null",
-			"Main.co" to "using A : A\nusing A : *\nusing Bridge : bridge\nfn take(A<int> value) {}"
-		))
+		val model = analyze(root, mapOf("A.co" to "using Bridge : bridge\npub typedef<class> A<T> {}\npub fn<A<int>> make() = null", "Bridge.co" to "using A : A\npub fn<A<int<32>>> bridge() = null", "Main.co" to "using A : A\nusing A : *\nusing Bridge : bridge\nfn take(A<int> value) {}"))
 		assertEquals(1, model.instances.size)
 		val results = model.functions.filter { it.results.isNotEmpty() }.map { (it.results.single() as ClosedTypePattern.Exact).type }
 		assertEquals(2, results.size)

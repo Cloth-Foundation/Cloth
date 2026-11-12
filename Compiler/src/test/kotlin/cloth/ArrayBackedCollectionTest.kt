@@ -12,6 +12,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class ArrayBackedCollectionTest {
+
 	private val strings = Files.readString(Path.of("examples/ArrayBackedList.co"))
 	private val rows = Files.readString(Path.of("examples/ArrayBackedRows.co"))
 	private val stringType = strings.substringBefore("fn<int> main()")
@@ -21,7 +22,9 @@ class ArrayBackedCollectionTest {
 		for (abi in structRunners()) {
 			val actual = runStructProgram(abi, source, directory.resolve("${name}_${abi.layout.sizeBits}"), if (failure == null) 0 else 1)
 			if (failure == null) assertEquals(expected + processCompletion().replace("\r\n", "\n"), actual)
-			else { assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:")) }
+			else {
+				assertTrue(actual.startsWith(expected), actual); assertContains(actual, failure); assertFalse(actual.contains("unreachable")); assertFalse(actual.contains("PEC:"))
+			}
 		}
 	}
 

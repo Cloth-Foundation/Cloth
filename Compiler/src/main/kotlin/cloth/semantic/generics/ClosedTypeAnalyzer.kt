@@ -23,6 +23,48 @@ import cloth.target.TargetLayout
 import cloth.token.Token
 import cloth.token.TokenSpan
 import java.util.IdentityHashMap
+import kotlin.collections.ArrayDeque
+import kotlin.collections.List
+import kotlin.collections.Map
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
+import kotlin.collections.all
+import kotlin.collections.any
+import kotlin.collections.buildList
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.contains
+import kotlin.collections.drop
+import kotlin.collections.emptyList
+import kotlin.collections.filter
+import kotlin.collections.filterIsInstance
+import kotlin.collections.filterNot
+import kotlin.collections.first
+import kotlin.collections.firstOrNull
+import kotlin.collections.forEach
+import kotlin.collections.getOrPut
+import kotlin.collections.getValue
+import kotlin.collections.groupBy
+import kotlin.collections.isNotEmpty
+import kotlin.collections.iterator
+import kotlin.collections.last
+import kotlin.collections.linkedSetOf
+import kotlin.collections.listOf
+import kotlin.collections.map
+import kotlin.collections.mapIndexed
+import kotlin.collections.mapNotNull
+import kotlin.collections.mapTo
+import kotlin.collections.maxOfOrNull
+import kotlin.collections.mutableListOf
+import kotlin.collections.mutableMapOf
+import kotlin.collections.mutableSetOf
+import kotlin.collections.orEmpty
+import kotlin.collections.plus
+import kotlin.collections.reversed
+import kotlin.collections.set
+import kotlin.collections.toList
+import kotlin.collections.toMap
+import kotlin.collections.zip
 
 internal const val maximumGenericDependencyDepth = 64
 internal const val maximumGenericInstances = 4096
@@ -32,6 +74,7 @@ internal class GenericAnalysisRestart : RuntimeException(null, null, false, fals
 
 /** Discover closed requirements with a worklist, then validate complete layout graphs. */
 class ClosedTypeAnalyzer(private val target: TargetLayout) {
+
 	fun analyze(unit: SourceUnit): ClosedTypeModel = analyze(FileBindings.single(unit))
 	internal fun analyze(graph: SourceGraph): ClosedTypeModel = analyze(FileBindings.graph(graph))
 	internal fun analyze(files: FileBindings, names: GenericNameModel = GenericAnalyzer(target).analyze(files)): ClosedTypeModel {
@@ -42,8 +85,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		return worklist(files, names, checkCallBounds = true).model
 	}
 
-	internal fun worklist(files: FileBindings, names: GenericNameModel, symbolic: Boolean = false, checkCallBounds: Boolean = false): Worklist =
-		Worklist(files, names, target, symbolic, checkCallBounds).also { it.initialize() }
+	internal fun worklist(files: FileBindings, names: GenericNameModel, symbolic: Boolean = false, checkCallBounds: Boolean = false): Worklist = Worklist(files, names, target, symbolic, checkCallBounds).also { it.initialize() }
 
 	internal class Worklist(
 		private val files: FileBindings,
@@ -52,6 +94,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private val symbolic: Boolean,
 		checkCallBounds: Boolean,
 	) {
+
 		private data class ConstructorApplication(val instance: ClosedTypeInstance, val supplied: TypeArgumentSpans, val caller: GenericBindings)
 
 		val model = ClosedTypeModel(names, target, symbolic, files)
@@ -149,8 +192,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		}
 
-		private fun hasContract(key: ClosedCallableKey) =
-			key in model.callableInstances || key in model.callableCandidates || key in model.rejectedCallables
+		private fun hasContract(key: ClosedCallableKey) = key in model.callableInstances || key in model.callableCandidates || key in model.rejectedCallables
 
 		private fun complete() {
 			do {
@@ -168,9 +210,56 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			model.catalog.values.forEach { it.state = ClosedTypeState.COMPLETE }
 		}
 
-		private fun symbolicArguments(declaration: Declaration) = names.parametersOf(declaration).map { parameter ->
-			val numberBound = parameter.declaration.typeBounds.any { names.nameOf(it) === NumberBoundName }
-			CTypeParameter(parameter.owner, parameter.declaration, parameter.index, numberBound = numberBound)
+		private fun symbolicArguments(declaration: Declaration): List<ValueType> {
+			val parameters = names.parametersOf(declaration)
+			if (parameters.isEmpty()) return emptyList()
+			val resolved = mutableMapOf<TypeParameterSymbol, ValueType>()
+			val active = mutableSetOf<TypeParameterSymbol>()
+			fun argument(parameter: TypeParameterSymbol): ValueType = resolved.getOrPut(parameter) {
+				val bounds = parameter.declaration.typeBounds
+				val array = bounds.firstOrNull { it.arraySuffixes.isNotEmpty() }
+				if (array == null) {
+					val number = bounds.any { names.nameOf(it) === NumberBoundName }
+					val nullable = bounds.any { it.nullable != null }
+					val projection = if (nullable) listOf(TypeParameterProjection.PAYLOAD) else emptyList()
+					val exact = CTypeParameter(parameter.owner, parameter.declaration, parameter.index, number, projection)
+					if (nullable) CNullable(exact) else exact
+				} else {
+					if (!active.add(parameter)) throw GenericErrors.cyclicArrayBound(parameter.name, array.span)
+					if (active.size > maximumTypeArgumentNesting) throw GenericErrors.nesting(array.span, maximumTypeArgumentNesting)
+					try {
+						val bound = arrayBound(array)
+						if (bound.numericElement) {
+							val element = CTypeParameter(parameter.owner, parameter.declaration, parameter.index, numberBound = true, projection = elementProjection(bound.shape))
+							resolver().withSuffixes(array, element)
+						} else bound.shape
+					} finally {
+						active.remove(parameter)
+					}
+				}
+			}
+
+			val context = GenericBindings(bindings.environment, bindings.chain, bindings.argumentDepth, deferredArgument = { parameter ->
+				if (parameter.owner === declaration) argument(parameter) else null
+			})
+			return withBindings(context) { parameters.map(::argument) }
+		}
+
+		private fun elementProjection(shape: ValueType): List<TypeParameterProjection> = buildList {
+			var type = shape
+			while (true) type = when (val part = type) {
+				is CArray    -> {
+					add(TypeParameterProjection.ELEMENT)
+					part.element
+				}
+
+				is CNullable -> {
+					add(TypeParameterProjection.PAYLOAD)
+					part.payload
+				}
+
+				else         -> break
+			}
 		}
 
 		private fun bindOwner(owner: Declaration?) {
@@ -195,17 +284,20 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			val pattern = pattern(use.type)
 			if (pattern is ClosedTypePattern.Exact) use.receiver?.let { bindings.receivers[it] = pattern.type }
 		}
+
 		private fun pattern(annotation: TypeReference): ClosedTypePattern = bindings.facts.getOrPut(annotation) {
 			if (annotation.capturesWidth) ClosedTypePattern.OperatorWidth(annotation) else ClosedTypePattern.Exact(resolve(annotation))
 		}
+
 		private fun resolve(annotation: TypeReference, probeApplications: MutableMap<NominalApplicationKey, CMemberType>? = null): ValueType {
 			(bindings.facts[annotation] as? ClosedTypePattern.Exact)?.let { return it.type }
 			return resolver(probeApplications).resolve(annotation).also { bindings.facts[annotation] = ClosedTypePattern.Exact(it) }
 		}
+
 		private fun resolver(probeApplications: MutableMap<NominalApplicationKey, CMemberType>? = null) = TypeResolver(target, substitutedType = { annotation ->
 			when (val identity = names.names[annotation]) {
-				is TypeParameterSymbol -> bindings.environment[identity] ?: throw InternalErrors.invariant("Unsolved owner parameter '${identity.name.lexeme}' in a closed type")
-				else -> {
+				is TypeParameterSymbol -> bindings.argumentOf(identity) ?: throw InternalErrors.invariant("Unsolved owner parameter '${identity.name.lexeme}' in a closed type")
+				else                   -> {
 					val definition = (identity as? NominalTypeName)?.type ?: files.nominal(annotation.name)
 					definition?.let {
 						val application = annotation.application ?: return@let it
@@ -221,11 +313,10 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		})
 
-		private fun register(type: CMemberType, definition: CMemberType, arguments: List<ValueType>, bindings: GenericBindings): ClosedTypeInstance =
-			ClosedTypeInstance(type, definition, arguments, bindings).also {
-				model.catalog[type] = it
-				work.addLast { define(it) }
-			}
+		private fun register(type: CMemberType, definition: CMemberType, arguments: List<ValueType>, bindings: GenericBindings): ClosedTypeInstance = ClosedTypeInstance(type, definition, arguments, bindings).also {
+			model.catalog[type] = it
+			work.addLast { define(it) }
+		}
 
 		private fun <T> withBindings(instance: GenericBindings, define: () -> T): T {
 			val previous = bindings
@@ -243,49 +334,44 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			checkDefaultTypes(instance.definition.declaration)
 			val signatures = instance.signatureList
 			when (val type = instance.type) {
-				is CClass -> {
+				is CClass     -> {
 					defineClass(type)
 					signatures.add(signature(PrimaryConstructorDeclaration(type.declaration)))
 					val members = type.declaration.members.filterIsInstance<CallableDeclaration>()
 					members.filterNot { it is MethodDeclaration && it.typeParameters != null }.mapTo(signatures, ::signature)
-					if (symbolic && type.typeArguments.isNotEmpty() && type.isCanonicalApplication()) {
+					if (symbolic && type.typeArguments.isNotEmpty() && model.isCanonicalApplication(type)) {
 						registerConstructorTemplates(type, signatures)
 					}
 					registerMethods(type, members.filterIsInstance<MethodDeclaration>())
 				}
-				is CStruct -> {
+
+				is CStruct    -> {
 					defineStruct(type)
 					type.declaration.methods.filter { it.typeParameters == null }.mapTo(signatures, ::signature)
 					registerMethods(type, type.declaration.methods)
 				}
-				is CEnum -> {
+
+				is CEnum      -> {
 					EnumModel.defineFields(type, resolver())
 					type.declaration.operators.mapTo(signatures, ::signature)
 				}
+
 				is CInterface -> type.declaration.methods.mapTo(signatures, ::signature)
 			}
 			bindOwner(instance.definition.declaration)
 		}
 
 		private fun registerConstructorTemplates(owner: CClass, signatures: List<ClosedCallableSignature>) {
-			val slots = owner.typeArguments.map { it as CTypeParameter }
-			model.constructorTemplates[owner.declaration] = signatures
-				.filter { it.declaration is PrimaryConstructorDeclaration || it.declaration is ConstructorDeclaration }
-				.map { signature ->
-					val parameters = signature.parameters.map {
-						when (it) {
-							is ClosedTypePattern.Exact -> it.type
-							is ClosedTypePattern.OperatorWidth -> throw SemanticErrors.type(it.annotation)
-						}
-					}
-					GenericConstructorTemplate(signature.declaration as CallableDeclaration, GenericParameterPatterns(parameters, slots))
+			model.constructorTemplates[owner.declaration] = signatures.filter { it.declaration is PrimaryConstructorDeclaration || it.declaration is ConstructorDeclaration }.map { signature ->
+					val declaration = signature.declaration as CallableDeclaration
+					GenericConstructorTemplate(declaration, signatureKeys.inferencePatterns(declaration, owner.declaration))
 				}
 		}
 
 		private fun registerMethods(owner: CMemberType, declarations: List<MethodDeclaration>) {
 			val methods = declarations.filter { it.typeParameters != null }
 			if (methods.isEmpty()) return
-			val canonical = owner.isCanonicalApplication()
+			val canonical = model.isCanonicalApplication(owner)
 			val seen = mutableMapOf<GenericMethodSignature, MethodDeclaration>()
 			model.methodTemplates[owner] = methods.map { declaration ->
 				val count = names.parametersOf(declaration).size
@@ -302,9 +388,9 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 		private fun argumentDepth(type: ValueType): Int {
 			var value = type
 			while (true) value = when (value) {
-				is CArray -> value.element
+				is CArray    -> value.element
 				is CNullable -> value.payload
-				else -> return (value as? CMemberType)?.let { model.catalog[it]?.bindings?.argumentDepth } ?: 0
+				else         -> return (value as? CMemberType)?.let { model.catalog[it]?.bindings?.argumentDepth } ?: 0
 			}
 		}
 
@@ -316,6 +402,8 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				val type = definition.application(key.arguments)
 				register(type, definition, key.arguments, context)
 			}
+			// An exact array bound can reuse an application registered by an earlier type use.
+			if (suppliedArguments == null) instance.bindings.canonical = true
 			if (suppliedArguments != null && names.parametersOf(definition.declaration).any { parameter ->
 					parameter.declaration.bounds.any { it is ConstructorBound }
 				}) constructorApplications.add(ConstructorApplication(instance, suppliedArguments, bindings))
@@ -335,10 +423,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 						if (key is ClosedFunctionKey) {
 							model.functionList.add(signature)
 							if (suppliedArguments == null) {
-								model.functionPatterns[key.declaration] = GenericParameterPatterns(
-									signature.parameters.map { (it as ClosedTypePattern.Exact).type },
-									key.arguments.map { it as CTypeParameter },
-								)
+								model.functionPatterns[key.declaration] = signatureKeys.inferencePatterns(declaration)
 							}
 						}
 						bindOwner(declaration)
@@ -406,26 +491,26 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				val argument = bindings.environment.getValue(parameter)
 				val bounds = resolveBounds(parameter)
 				val constructors = recordConstructorBounds(parameter, bounds)
-				val nominal = bounds.filterIsInstance<GenericBound.Nominal>().map { it.type }.let {
+				val nominal = bounds.mapNotNull { it.nominalType }.let {
 					if (constructors.isNotEmpty() && it.isEmpty()) listOf(model.objectRoot) else it
 				}
+				// Only the canonical declaration supplies guarantees for a symbolic argument.
+				val exact = if (bindings.canonical) argument.parameterPayload() else null
 				if (nominal.isNotEmpty()) {
 					bindings.nominalBounds[parameter.declaration] = nominal
-					// Only the canonical declaration supplies guarantees for a symbolic argument.
-					if (supplied == null) (argument as CTypeParameter).nominalBounds = nominal
+					exact?.nominalBounds = nominal
 				}
-				if (supplied == null && constructors.isNotEmpty()) (argument as CTypeParameter).constructorSignatures = constructors.map { it.parameterTypes }
+				if (constructors.isNotEmpty()) exact?.constructorSignatures = constructors.map { it.parameterTypes }
 				if (bounds.size > 1 || (supplied != null && bounds.isNotEmpty())) {
 					boundChecks.add(GenericBoundCheck(parameter, argument, bounds, supplied?.arguments?.get(parameter.index)))
 				}
 			}
 		}
 
-		private fun recordConstructorBounds(parameter: TypeParameterSymbol, bounds: List<GenericBound>): List<GenericBound.Constructor> =
-			bounds.filterIsInstance<GenericBound.Constructor>().also { if (it.isNotEmpty()) bindings.constructorBounds[parameter] = it }
+		private fun recordConstructorBounds(parameter: TypeParameterSymbol, bounds: List<GenericBound>): List<GenericBound.Constructor> = bounds.filterIsInstance<GenericBound.Constructor>().also { if (it.isNotEmpty()) bindings.constructorBounds[parameter] = it }
 
 		private fun checkDefaultTypes(declaration: Declaration) {
-			if (!symbolic || bindings.suppliedArguments != null) return
+			if (!symbolic || !bindings.canonical) return
 			for (parameter in names.parametersOf(declaration)) {
 				val default = parameter.declaration.defaultType ?: continue
 				val type = resolve(default)
@@ -437,16 +522,29 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		}
 
-		private fun resolveBounds(parameter: TypeParameterSymbol, probeApplications: MutableMap<NominalApplicationKey, CMemberType>? = null): List<GenericBound> =
-			parameter.declaration.bounds.map { reference ->
-				when (reference) {
-					is TypeReference -> if (names.nameOf(reference) === NumberBoundName) GenericBound.Number(reference.span)
-					else GenericBound.Nominal(reference.span, resolve(reference, probeApplications) as CMemberType)
-					is ConstructorBound -> GenericBound.Constructor(reference.declaration, reference.declaration.parameters.map {
-						resolve(it.type, probeApplications).also { type -> if (type == ValueType.VOID) throw SemanticErrors.voidType(it.type.span) }
-					})
+		private fun arrayBound(reference: TypeReference, probeApplications: MutableMap<NominalApplicationKey, CMemberType>? = null): GenericBound.Array {
+			val numeric = names.nameOf(reference) === NumberBoundName
+			// The numeric proof uses the suffix shape and checks the actual element independently.
+			val shape = if (numeric) resolver().withSuffixes(reference, ValueType.INT) else resolve(reference, probeApplications)
+			return GenericBound.Array(shape, numeric, reference)
+		}
+
+		private fun resolveBounds(parameter: TypeParameterSymbol, probeApplications: MutableMap<NominalApplicationKey, CMemberType>? = null): List<GenericBound> = parameter.declaration.bounds.map { reference ->
+			when (reference) {
+				is TypeReference    -> if (reference.arraySuffixes.isNotEmpty()) arrayBound(reference, probeApplications) else {
+					val payload = if (names.nameOf(reference) === NumberBoundName) GenericBound.Number(reference.span)
+					else {
+						val type = resolve(reference, probeApplications)
+						GenericBound.Nominal(reference.span, ((type as? CNullable)?.payload ?: type) as CMemberType)
+					}
+					if (reference.nullable != null) GenericBound.Nullable(payload) else payload
 				}
+
+				is ConstructorBound -> GenericBound.Constructor(reference.declaration, reference.declaration.parameters.map {
+					resolve(it.type, probeApplications).also { type -> if (type == ValueType.VOID) throw SemanticErrors.voidType(it.type.span) }
+				})
 			}
+		}
 
 		private fun checkBounds() {
 			// Parent edges and interface conformance are complete before proofs run.
@@ -473,12 +571,13 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				val type = pending.removeFirst()
 				if (type === model.objectRoot || !seen.add(type)) continue
 				val known = when (type) {
-					is CClass -> model.interfaces.classes[type]?.implementations?.keys
+					is CClass     -> model.interfaces.classes[type]?.implementations?.keys
 					is CInterface -> {
 						yield(type)
 						model.interfaces.contracts[type]?.ancestors
 					}
-					else -> throw InternalErrors.invariant("Expected a class or interface bound")
+
+					else          -> throw InternalErrors.invariant("Expected a class or interface bound")
 				}
 				if (known != null) yieldAll(known)
 				else pending.addAll(probeBoundParents(type, checkNotNull(probeApplications)))
@@ -489,9 +588,9 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			// An overload can require applications outside the argument's ancestry.
 			// Read their parent clauses without publishing candidate-only types.
 			val parents = when (type) {
-				is CClass -> type.declaration.parents.map { it.type }
+				is CClass     -> type.declaration.parents.map { it.type }
 				is CInterface -> type.declaration.parents
-				else -> throw InternalErrors.invariant("Expected a class or interface bound")
+				else          -> throw InternalErrors.invariant("Expected a class or interface bound")
 			}
 			val environment = names.parametersOf(type.declaration).zip(type.typeArguments).toMap()
 			return withBindings(GenericBindings(environment)) {
@@ -499,18 +598,19 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 			}
 		}
 
-		private fun signature(declaration: CallableSignature): ClosedCallableSignature = ClosedCallableSignature(declaration,
-			declaration.parameters.map { pattern(it.type) }, declaration.returnTypes.map(::pattern),
-			(declaration as? MethodDeclaration)?.operator?.selector?.let(::pattern))
+		private fun signature(declaration: CallableSignature): ClosedCallableSignature = ClosedCallableSignature(declaration, declaration.parameters.map { pattern(it.type) }, declaration.returnTypes.map(::pattern), (declaration as? MethodDeclaration)?.operator?.selector?.let(::pattern))
 
 		private fun defineClass(owner: CClass) {
 			val declaration = owner.declaration
 			var base = files.objectRoot
 			var clause: ClassParentClause? = null
 			for (parent in declaration.parents) when (val type = resolve(parent.type)) {
-				is CClass -> { base = type; clause = parent }
+				is CClass     -> {
+					base = type; clause = parent
+				}
+
 				is CInterface -> Unit
-				else -> throw SemanticErrors.classMember("'${parent.type.name.lexeme}' is not a class base", parent.type.name.span)
+				else          -> throw SemanticErrors.classMember("'${parent.type.name.lexeme}' is not a class base", parent.type.name.span)
 			}
 			if (base.declaration.finalKeyword != null) throw SemanticErrors.classMember("Cannot inherit from final class '${base.name.lexeme}'", checkNotNull(clause).type.name.span, base.name)
 			if (base === files.objectRoot && clause?.constructorArguments?.isNotEmpty() == true) throw SemanticErrors.classMember("'${base.spelling}' takes no base arguments", clause.span)
@@ -554,9 +654,11 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 
 		private fun validateStructs() {
 			class Frame(val owner: CStruct) {
+
 				val fields = owner.fields.iterator()
 				var field: StructField? = null
 			}
+
 			val complete = mutableSetOf<CStruct>()
 			for (owner in model.nominalTypes.filterIsInstance<CStruct>()) {
 				if (owner in complete) continue

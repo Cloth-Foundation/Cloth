@@ -16,6 +16,7 @@ import org.bytedeco.llvm.global.LLVM.*
 
 /** Storage for resolved binding symbols in the current function. */
 internal class EmitBindings(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val entry: LLVMBasicBlockRef, private val abi: NativeCABI, private val classes: EmitClassStorage? = null, private val receivers: EmitReceiverAccess? = null, private val frame: EmitFunctionFrame? = null, val managedStrings: Set<BindingSymbol> = emptySet(), val relocatableArrays: Boolean = false) {
+
 	private val target = abi.layout
 
 	private data class Storage(val name: String, val type: ValueType, val address: LLVMValueRef, val nullableShape: LLVMValueRef?, val ownerArena: LLVMValueRef? = null, val receiver: ReceiverLocation? = null, val stringArena: LLVMValueRef? = null, val struct: StructParent? = null)
@@ -23,8 +24,10 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	private val bindings = mutableMapOf<BindingSymbol, Storage>()
 	private val objects = mutableMapOf<ReceiverSymbol, ObjectAccess>()
 	private val structReceivers = mutableMapOf<ReceiverSymbol, ReceiverAccess>()
+
 	internal open class ArrayView(val type: ValueType, val address: LLVMValueRef, val arena: LLVMValueRef)
 	internal class ArraySelection(val root: BindingSymbol, type: ValueType, address: LLVMValueRef, arena: LLVMValueRef, val followsBinding: LLVMValueRef) : ArrayView(type, address, arena)
+
 	private val arraySelections = mutableListOf<ArraySelection>()
 	private val types = LLVMTypes(context, target)
 	private val nullable = EmitNullable(context, builder, target)

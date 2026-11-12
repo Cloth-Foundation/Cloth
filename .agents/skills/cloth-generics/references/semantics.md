@@ -184,8 +184,11 @@ arguments and passes the complete argument list to the matched constructor.
 Write a default as in `T: Entity<T> & new(opt<float> health ?: 100f)`.
 Defaults use constructor-default scope. They can read earlier parameters of
 the guarantee and names in its defining scope. They have no instance receiver.
-[GEN-5 Stage 1](constructor-guarantees-stage-1.md) implements declaration
-checking and specialization proof.
+
+GEN-5 Stage 1 implements declaration checking and specialization proof.
+Stage 2 implements the calls, with exact `T` results and ordinary class
+lifetime. [GEN-5 Stage 1](constructor-guarantees-stage-1.md) ·
+[GEN-5 Stage 2](constructor-guarantees-stage-2.md)
 
 ## Nullable bound design
 
@@ -199,11 +202,13 @@ A presence proof exposes the exact non-null payload type. If `T` is
 
 `T: Number?` requires a nullable type whose exact payload satisfies
 `Number`. A presence proof exposes that payload with ordinary `Number`
-operations.
+operations. The numeric requirement stands alone.
 
 Combine nullable bounds as in `T: Base? & INamed?`. Each requirement checks
 the same nullable type argument, whose payload must satisfy both `Base`
-and `INamed`.
+and `INamed`. Every requirement in the list must agree on whether the
+argument is nullable. Declaration checking rejects mixed nullable and
+non-nullable requirements. [GEN-5 Stage 3](nullable-bounds-stage-3.md)
 
 ## Array bound design
 
@@ -225,7 +230,9 @@ Writes and appends use the array's exact element type.
 Nullable and array suffixes compose in ordinary type order. `Number?[]`
 requires a growable array of nullable numeric elements. `Number[]?` requires
 a nullable growable array of numeric elements. Check the nullable position
-and declared array shape at each level.
+and declared array shape at each level. A dependent element such as `E` in
+`T: E[]` uses the exact substituted type. Array requirements stand alone in
+the bound list. [GEN-5 Stage 4](array-bounds-stage-4.md)
 
 ## Interface bound design
 

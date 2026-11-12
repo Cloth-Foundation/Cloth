@@ -5,12 +5,12 @@ import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.type.TypeReference
-import cloth.semantic.symbols.*
 import cloth.semantic.generics.GenericBodyViews
 import cloth.semantic.generics.GenericMethodSignature
 import cloth.semantic.generics.GenericMethodTemplate
 import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.interfaces.InterfaceRequirement
+import cloth.semantic.symbols.*
 import cloth.target.TargetLayout
 import cloth.token.Operators
 import cloth.token.Token
@@ -51,9 +51,9 @@ class DeclarationModel internal constructor(
 	internal val callableContracts: List<CallableContractSymbol> = callables + bodylessContracts
 	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + bodylessContracts
 	private val interfaceGroups = interfaces.contracts.mapValues { (owner, contract) ->
-		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }
-			.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
+		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
 	}
+
 	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else files.primary.types[name]
 	internal fun namedType(name: Token): CMemberType? = files.nominal(name)
 	internal fun fileScopeOf(name: Token): LexicalScope = files.context(name).scope
@@ -64,13 +64,14 @@ class DeclarationModel internal constructor(
 	}
 
 	internal fun initializationExpressions(declaration: CallableSignature): List<Expression> = when (declaration) {
-		is PrimaryConstructorDeclaration -> {
+		is PrimaryConstructorDeclaration  -> {
 			val definition = classDefinitions.getValue(classOwners.getValue(declaration))
 			definition.baseCall?.arguments.orEmpty() + definition.fieldInitializers.map { it.expression }
 		}
-		is ConstructorDeclaration        -> declaration.delegation.arguments
+
+		is ConstructorDeclaration         -> declaration.delegation.arguments
 		is StateInitialPayloadDeclaration -> listOf(declaration.expression)
-		else                             -> emptyList()
+		else                              -> emptyList()
 	}
 
 	internal val enumCases = IdentityHashMap<FieldAccessExpression, EnumCase>()
@@ -131,18 +132,20 @@ class DeclarationModel internal constructor(
 	internal fun enumFormatter(owner: CEnum): MethodSymbol = formatterOverride(owner) ?: enumNameReader(owner)
 
 	internal fun formattingMayCallUserCode(type: ValueType): Boolean = when (type) {
-		is CNullable -> formattingMayCallUserCode(type.payload)
-		is CArray    -> formattingMayCallUserCode(type.element)
-		is CTypeParameter -> type.nominalBounds.isNotEmpty() && classDefinitions.values.any { definition ->
+		is CNullable             -> formattingMayCallUserCode(type.payload)
+		is CArray                -> formattingMayCallUserCode(type.element)
+		is CTypeParameter        -> type.nominalBounds.isNotEmpty() && classDefinitions.values.any { definition ->
 			type.nominalBounds.all { it.accepts(definition.owner) } && formatterOverride(definition.owner) != null
 		}
+
 		is CClass, is CInterface -> classDefinitions.values.any { type.accepts(it.owner) && formatterOverride(it.owner) != null }
-		is CEnum     -> formatterOverride(type) != null
-		else         -> false
+		is CEnum                 -> formatterOverride(type) != null
+		else                     -> false
 	}
 
 	internal val namedTypeReceivers = IdentityHashMap<Expression, ValueType>()
 	internal val classCreations = IdentityHashMap<ClassCreationExpression, ClassDefinition>()
+	internal val guaranteedCreations = IdentityHashMap<ClassCreationExpression, List<ConstructorGuaranteeSymbol>>()
 	internal val fieldRoots = IdentityHashMap<FieldWriteStatement, BindingSymbol>()
 	internal val functionSymbols = IdentityHashMap<FunctionDeclaration, FunctionSymbol>()
 	internal val methodSymbols = IdentityHashMap<MethodDeclaration, MethodSymbol>()
@@ -172,8 +175,7 @@ class DeclarationModel internal constructor(
 
 	fun symbolOf(declaration: FunctionDeclaration): FunctionSymbol = functionSymbols.getValue(declaration)
 	fun symbolOf(declaration: MethodDeclaration): MethodSymbol = methodSymbols.getValue(declaration)
-	internal fun symbolOf(body: VirtualMethodBody): MethodSymbol =
-		symbolOf(checkNotNull(genericViews).viewOf(body.declaration, body.owner) as MethodDeclaration)
+	internal fun symbolOf(body: VirtualMethodBody): MethodSymbol = symbolOf(checkNotNull(genericViews).viewOf(body.declaration, body.owner) as MethodDeclaration)
 
 	internal fun virtualFamilyOf(method: MethodSymbol): VirtualMethodFamily? {
 		if (method.declaration.virtualPrefix == null && method.declaration.overridePrefix == null) return null
@@ -181,6 +183,7 @@ class DeclarationModel internal constructor(
 		val views = genericViews ?: return null
 		return views.types.virtualMethods.familyOf(owner, views.originalOf(method.declaration) as MethodDeclaration)
 	}
+
 	fun symbolOf(declaration: ParameterDeclaration): ParameterSymbol = parameterSymbols.getValue(declaration)
 	fun symbolOf(declaration: BindingDeclaration): LocalSymbol = localSymbols.getValue(declaration)
 	fun symbolsOf(declaration: BindingGroupDeclaration): List<GroupLocalSymbol?> = groupSymbols.getValue(declaration)
@@ -188,24 +191,22 @@ class DeclarationModel internal constructor(
 	fun scopeOf(statement: ForStatement): LexicalScope = loopScopes.getValue(statement)
 	fun bodyScopeOf(statement: LoopStatement): LexicalScope = loopBodyScopes.getValue(statement)
 	fun symbolOf(expression: NameExpression): Symbol = names.getValue(expression)
+
 	/** An immediate cast of self still accesses the receiver. A stored alias only has the identity. */
 	internal fun directReceiverOf(expression: Expression): ReceiverSymbol? {
 		val original = generateSequence(expression) { (it as? CastExpression)?.operand }.last()
 		return (original as? NameExpression)?.let { names[it] as? ReceiverSymbol }
 	}
+
 	fun candidatesOf(call: CallExpression): CallableGroupSymbol = calls.getValue(call)
 	internal fun methodGroup(owner: CMemberType, name: String): MethodGroupSymbol? {
 		if (owner !is CClass) return methodGroups[owner]?.get(name)
-		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }
-			.distinctBy { it.signature }
-			.map { method -> virtualFamilyOf(method)?.let { symbolOf(it.base) } ?: method }
-			.toList()
+		val methods = owner.ancestry().flatMap { methodGroups[it]?.get(name)?.overloads.orEmpty() }.distinctBy { it.signature }.map { method -> virtualFamilyOf(method)?.let { symbolOf(it.base) } ?: method }.toList()
 		val templates = methodTemplates(owner, name)
 		return if (methods.isEmpty() && templates.isEmpty()) null else MethodGroupSymbol(methods, templates)
 	}
 
-	internal fun methodTemplate(owner: CMemberType, source: MethodDeclaration): GenericMethodTemplate? =
-		genericViews?.types?.methodTemplates?.get(owner)?.get(source.name.lexeme)?.firstOrNull { it.declaration === source }
+	internal fun methodTemplate(owner: CMemberType, source: MethodDeclaration): GenericMethodTemplate? = genericViews?.types?.methodTemplates?.get(owner)?.get(source.name.lexeme)?.firstOrNull { it.declaration === source }
 
 	private fun methodTemplates(owner: CClass, name: String): List<GenericMethodTemplate> {
 		if (genericViews?.types?.methodTemplates.isNullOrEmpty()) return emptyList()
@@ -218,9 +219,9 @@ class DeclarationModel internal constructor(
 			}
 		}
 	}
+
 	internal fun interfaceGroup(owner: CInterface, name: String): InterfaceMethodGroupSymbol? = interfaceGroups[owner]?.get(name)
-	internal fun memberGroup(owner: CMemberType, name: String): CallableGroupSymbol? =
-		if (owner is CInterface) interfaceGroup(owner, name) else methodGroup(owner, name)
+	internal fun memberGroup(owner: CMemberType, name: String): CallableGroupSymbol? = if (owner is CInterface) interfaceGroup(owner, name) else methodGroup(owner, name)
 
 	fun targetOf(statement: AssignmentStatement): BindingSymbol = assignments.getValue(statement)
 	fun targetsOf(statement: MultiAssignmentStatement): List<BindingSymbol?> = multiAssignments.getValue(statement)

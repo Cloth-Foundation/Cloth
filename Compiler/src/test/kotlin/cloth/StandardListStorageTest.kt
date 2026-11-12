@@ -8,15 +8,18 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
 
 /** Every probe loads the actual public List from a separate marked source module. */
 class StandardListStorageTest {
+
 	private val harness = GrowableArrayStorageTest()
 	private val observers = "fn<usize> liveBytes() = 0\nfn<usize> allocationCount() = 0\n"
 	private fun model(root: Path, abi: NativeCABI, source: String) = standardListRequest(root, observers + source.trimIndent(), abi.targetTriple).let {
 		FunctionAnalyzer(abi.layout).analyze(SourceGraphLoader.load(standardListModules(it, it.modules, OutputKind.OBJECT)))
 	}
+
 	private fun native(root: Path, source: String) {
 		for (abi in structRunners()) harness.probe(abi, root.resolve("probe_${abi.layout.sizeBits}"), model = model(root.resolve("source_${abi.layout.sizeBits}"), abi, source)) {
 			exposeLiveBytes(); exposeAllocations()

@@ -5,10 +5,10 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
-import cloth.semantic.typing.FunctionAnalyzer
+import cloth.parser.declaration.FunctionDeclaration
 import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.symbols.SignatureType
-import cloth.parser.declaration.FunctionDeclaration
+import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -16,6 +16,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericStageBoundaryTest {
+
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary)
 		assertLocated(it)
@@ -23,11 +24,7 @@ class GenericStageBoundaryTest {
 
 	@Test
 	fun `well named generic declarations now complete semantic checking`() {
-		for (source in listOf(
-			"typedef<class> Box<T> {}\nfn main() {}",
-			"typedef<struct> Slot<T> { T value }\nfn main() {}",
-			"typedef<class> Box<T> {}\nfn main() { Box<int>::new }"
-		)) assertNotNull(FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)).declarations.genericViews)
+		for (source in listOf("typedef<class> Box<T> {}\nfn main() {}", "typedef<struct> Slot<T> { T value }\nfn main() {}", "typedef<class> Box<T> {}\nfn main() { Box<int>::new }")) assertNotNull(FunctionAnalyzer(nativeTestLayout).analyze(structUnit(source)).declarations.genericViews)
 	}
 
 	@Test

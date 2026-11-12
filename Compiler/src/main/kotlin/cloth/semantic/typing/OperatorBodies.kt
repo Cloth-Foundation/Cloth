@@ -8,10 +8,10 @@ import cloth.parser.expression.CallSite
 import cloth.semantic.ResultShape
 import cloth.semantic.flow.ClassLifetimeAnalysis
 import cloth.semantic.flow.NullFlowAnalysis
-import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.flow.checkArrayShapes
+import cloth.semantic.flow.checkCallableMetadata
 import cloth.semantic.symbols.MethodSymbol
-import java.util.IdentityHashMap
+import java.util.*
 
 internal class CallResultFlowRestart : RuntimeException(null, null, false, false)
 

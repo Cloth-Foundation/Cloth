@@ -20,6 +20,12 @@ applications. [GEN-4 Stage 3](references/combined-bounds-stage-3.md) adds
 widening, overload selection across the bounds, and checked object operations.
 [GEN-5 Stage 1](references/constructor-guarantees-stage-1.md) adds constructor
 guarantee syntax, exact signature proof, and application-site access checks.
+[GEN-5 Stage 2](references/constructor-guarantees-stage-2.md) implements
+`T::new(...)` with the selected guarantee's labels and defaults.
+[GEN-5 Stage 3](references/nullable-bounds-stage-3.md) checks nullable
+nominal and numeric bounds and exposes the exact payload after a presence proof.
+[GEN-5 Stage 4](references/array-bounds-stage-4.md) checks declared array
+shape, exact element types, numeric leaves, and composed nullable suffixes.
 
 The first generic class/struct slice and public source List are complete through
 [Stage 6 integration and publication](references/stage-6.md). Start with the

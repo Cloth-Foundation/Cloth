@@ -2,8 +2,8 @@ package cloth.parser.declaration
 
 import cloth.parser.expression.Expression
 import cloth.parser.statement.Statement
-import cloth.parser.type.TypeReference
 import cloth.parser.type.TypeParameterList
+import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
 
@@ -36,12 +36,12 @@ sealed interface CallableDeclaration : CallableSignature {
 
 internal val CallableSignature.executableBody: FunctionBody?
 	get() = when (this) {
-		is CallableDeclaration -> body
-		is InterfaceMethodDeclaration -> fallback?.body
+		is CallableDeclaration             -> body
+		is InterfaceMethodDeclaration      -> fallback?.body
 		is ConstructorGuaranteeDeclaration -> null
-		is StateMethodContractDeclaration -> null
-		is StateActivationDeclaration -> initializer.body
-		is StateInitialPayloadDeclaration -> null
+		is StateMethodContractDeclaration  -> null
+		is StateActivationDeclaration      -> initializer.body
+		is StateInitialPayloadDeclaration  -> null
 	}
 
 data class ConstructorGuaranteeDeclaration(
@@ -49,6 +49,7 @@ data class ConstructorGuaranteeDeclaration(
 	override val parameters: List<ParameterDeclaration>,
 	override val span: TokenSpan,
 ) : CallableSignature {
+
 	override val name get() = keyword
 	override val returnTypes: List<TypeReference> get() = emptyList()
 }
@@ -101,6 +102,7 @@ data class ExpressionBody(override val equals: Token, val expression: Expression
 
 /** An explicit body supplied by the selected standard library's compiler bindings. */
 data class IntrinsicBody(override val equals: Token, val operation: Token) : FunctionBody {
+
 	val id get() = operation.lexeme.removeSurrounding("\"")
 	override val span get() = equals.span.through(operation.span)
 }

@@ -12,6 +12,7 @@ import cloth.token.Token
 import cloth.token.TokenType
 
 internal class InterfaceParser(private val parser: Parser) {
+
 	fun parse(keyword: Token, kind: Token, visibility: Token?): InterfaceDeclaration {
 		val name = parser.expect(TokenType.Identifier, "an interface name")
 		val parameters = parser.typeParser.parseTypeParameters()

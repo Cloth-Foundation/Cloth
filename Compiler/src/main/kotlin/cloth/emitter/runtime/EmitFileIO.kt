@@ -20,6 +20,7 @@ internal class EmitFileIO(
 	private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI,
 	owner: CClass, private val classes: EmitClassRuntime, private val strings: EmitStringArena, private val results: EmitResults,
 ) {
+
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val integer = abi.intType.llvmValue(context, abi.layout)
 	private val size = abi.sizeType.llvmValue(context, abi.layout)
@@ -42,8 +43,8 @@ internal class EmitFileIO(
 	private val fclose by lazy { external("fclose", integer, pointer) }
 	private val errno by lazy {
 		val name = when (abi.executableFormat) {
-			ExecutableFormat.PE -> "_errno"
-			ExecutableFormat.ELF -> "__errno_location"
+			ExecutableFormat.PE     -> "_errno"
+			ExecutableFormat.ELF    -> "__errno_location"
 			ExecutableFormat.MACH_O -> "__error"
 		}
 		external(name, pointer)
@@ -100,9 +101,7 @@ internal class EmitFileIO(
 			val code = LLVMBuildLoad2(builder, integer, call(builder, errno, "errno_address"), "open_errno")
 			// All supported CRTs use these values for ENOENT, EACCES and EPERM.
 			val missing = LLVMBuildICmp(builder, LLVMIntEQ, code, int(2), "file_missing")
-			val denied = LLVMBuildOr(builder,
-				LLVMBuildICmp(builder, LLVMIntEQ, code, int(13), "file_access_denied"),
-				LLVMBuildICmp(builder, LLVMIntEQ, code, int(1), "file_not_permitted"), "permission_denied")
+			val denied = LLVMBuildOr(builder, LLVMBuildICmp(builder, LLVMIntEQ, code, int(13), "file_access_denied"), LLVMBuildICmp(builder, LLVMIntEQ, code, int(1), "file_not_permitted"), "permission_denied")
 			val other = LLVMBuildSelect(builder, denied, failure(FileIoError.PERMISSION_DENIED), failure(FileIoError.OPEN_FAILED), "open_failure")
 			LLVMBuildSelect(builder, missing, failure(FileIoError.NOT_FOUND), other, "file_open_error")
 		}
@@ -145,8 +144,7 @@ internal class EmitFileIO(
 		}, { null })
 	}
 
-	private fun slot(builder: LLVMBuilderRef, receiver: ObjectAccess): LLVMValueRef =
-		LLVMBuildStructGEP2(builder, layout, classes.instance(builder, receiver), 1, "file_stream_slot")
+	private fun slot(builder: LLVMBuilderRef, receiver: ObjectAccess): LLVMValueRef = LLVMBuildStructGEP2(builder, layout, classes.instance(builder, receiver), 1, "file_stream_slot")
 
 	private fun errorValue(builder: LLVMBuilderRef, error: FileIoError, type: CNullable): LLVMValueRef {
 		val enum = type.payload as CEnum
@@ -188,10 +186,8 @@ internal class EmitFileIO(
 		return Routine(function, signature, convention)
 	}
 
-	private fun call(builder: LLVMBuilderRef, callee: Routine, name: String, vararg arguments: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
-			arguments.forEachIndexed { index, argument -> values.put(index.toLong(), argument) }
-			LLVMBuildCall2(builder, callee.signature, callee.function, values, arguments.size, name)
-				.also { LLVMSetInstructionCallConv(it, callee.convention) }
-		}
+	private fun call(builder: LLVMBuilderRef, callee: Routine, name: String, vararg arguments: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
+		arguments.forEachIndexed { index, argument -> values.put(index.toLong(), argument) }
+		LLVMBuildCall2(builder, callee.signature, callee.function, values, arguments.size, name).also { LLVMSetInstructionCallConv(it, callee.convention) }
+	}
 }

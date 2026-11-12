@@ -69,9 +69,7 @@ private class Discovery(private val modules: List<SourceModule>) {
 			// Existing LOADING targets keep back-edges; existing LOADED targets are also reused.
 		}
 		val library = modules.singleOrNull { it.role == SourceModuleRole.STANDARD_LIBRARY }
-		val libraryPaths = if (library == null) emptyMap() else edges.filter { it.moduleId == library.id }
-			.groupBy({ it.to }, { library.sourceRoot.relativize(it.selectedPath).joinToString("/") })
-			.mapValues { (_, paths) -> paths.toSet() }
+		val libraryPaths = if (library == null) emptyMap() else edges.filter { it.moduleId == library.id }.groupBy({ it.to }, { library.sourceRoot.relativize(it.selectedPath).joinToString("/") }).mapValues { (_, paths) -> paths.toSet() }
 		return SourceGraph(primary.node, slots.map { it.node }, edges, libraryPaths)
 	}
 

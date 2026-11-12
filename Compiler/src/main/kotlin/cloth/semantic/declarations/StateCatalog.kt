@@ -12,7 +12,7 @@ import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionType
 import cloth.token.Token
 import cloth.token.TokenSpan
-import java.util.IdentityHashMap
+import java.util.*
 
 internal class StateDefinition(
 	val owner: CClass,
@@ -24,6 +24,7 @@ internal class StateDefinition(
 	val activation: StateActivationSymbol?,
 	val initialPayload: StateInitialPayloadSymbol?,
 ) {
+
 	val name get() = declaration.name
 	val initial get() = selection.initial
 }
@@ -90,6 +91,7 @@ internal class StateCatalog(files: FileBindings, owners: Set<CClass>, views: Gen
 	private data class Members(val initializer: StateInitializerDeclaration?, val methods: Map<FunctionSignature, MethodDeclaration>)
 
 	private inner class Builder(private val files: FileBindings, private val owners: Set<CClass>, private val views: GenericBodyViews?, private val resolver: TypeResolver) {
+
 		private val hosts = IdentityHashMap<TopLevelStateDeclaration, CMemberType>().apply {
 			for (state in files.topLevelStates) {
 				val host = resolver.resolve(state.host)
@@ -120,7 +122,7 @@ internal class StateCatalog(files: FileBindings, owners: Set<CClass>, views: Gen
 					throw StateErrors.declaration("Class '${owner.spelling}' can select only one default state", prefix.keyword, checkNotNull(prior.initial).keyword)
 				}
 				val state = when (selection) {
-					is NestedStateDeclaration -> define(owner, selection, selection, owner)
+					is NestedStateDeclaration     -> define(owner, selection, selection, owner)
 					is StateAttachmentDeclaration -> attach(owner, selection)
 				}
 				if (prefix != null) initial = state
@@ -159,8 +161,7 @@ internal class StateCatalog(files: FileBindings, owners: Set<CClass>, views: Gen
 		private fun signatureType(type: TypeReference) = SignatureType.resolved(resolver.resolve(type))
 
 		private fun attach(owner: CClass, selection: StateAttachmentDeclaration): StateDefinition {
-			val origin = files.state(selection.name)
-				?: throw StateErrors.attachment("Unknown top-level state '${selection.name.lexeme}'", selection.name)
+			val origin = files.state(selection.name) ?: throw StateErrors.attachment("Unknown top-level state '${selection.name.lexeme}'", selection.name)
 			val host = hosts.getValue(origin)
 			if (!host.accepts(owner)) {
 				throw StateErrors.attachment("Class '${owner.spelling}' does not satisfy '${host.spelling}' for state '${origin.name.lexeme}'", selection.name, origin.host.name)
@@ -177,7 +178,8 @@ internal class StateCatalog(files: FileBindings, owners: Set<CClass>, views: Gen
 					initializer?.let { throw StateErrors.declaration("A state can declare only one entry initializer", member.keyword, it.keyword) }
 					initializer = member
 				}
-				is MethodDeclaration -> {
+
+				is MethodDeclaration           -> {
 					member.operator?.let { throw StateErrors.contract("A state method requires a name", member.name) }
 					member.parameters.firstOrNull { it.optional }?.let {
 						throw StateErrors.contract("Declare state-method defaults on the host class contract", it.name)

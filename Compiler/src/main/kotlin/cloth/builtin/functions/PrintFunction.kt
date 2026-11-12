@@ -1,10 +1,6 @@
 package cloth.builtin.functions
 
-import cloth.builtin.BuiltinBody
-import cloth.builtin.BuiltinFunction
-import cloth.builtin.BuiltinOverload
-import cloth.builtin.BuiltinParameter
-import cloth.builtin.BuiltinProperties
+import cloth.builtin.*
 import cloth.data.ValueType
 
 internal open class PrintFunction(properties: BuiltinProperties, newline: Boolean = false) : BuiltinFunction(properties) {

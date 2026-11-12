@@ -30,13 +30,13 @@ import kotlin.test.assertTrue
 
 /** Compile the Cloth scanner once per available native profile, then use the Kotlin lexer as its oracle. */
 class BootstrapLexerTest {
+
 	private val frontend = Path.of("Bootstrap/Frontend").toAbsolutePath()
 
-	private fun request(source: Path, output: Path, target: String, kind: OutputKind = OutputKind.EXECUTABLE) =
-		StandardLibrary.default().attachTo(CompilationRequest(
-			source, output, listOf(SourceModule("Frontend", frontend), SourceModule("Driver", source.parent)),
-			outputKind = kind, targetTriple = target,
-		))
+	private fun request(source: Path, output: Path, target: String, kind: OutputKind = OutputKind.EXECUTABLE) = StandardLibrary.default().attachTo(CompilationRequest(
+		source, output, listOf(SourceModule("Frontend", frontend), SourceModule("Driver", source.parent)),
+		outputKind = kind, targetTriple = target,
+	))
 
 	@Test
 	fun `Bootstrap scans the same tokens spans and first errors as the Kotlin lexer`(@TempDir directory: Path) {
@@ -83,8 +83,7 @@ class BootstrapLexerTest {
 				val (name, input) = case
 				val arguments = if ('\u0000' in input) listOf(input.replace("\u0000", "<NUL>"), "nul") else listOf(input)
 				val output = directory.resolve("process-output.txt")
-				val process = ProcessBuilder(listOf(executable.toString()) + arguments.map { launchArgument(it, abi.windows) })
-					.redirectErrorStream(true).redirectOutput(output.toFile()).start()
+				val process = ProcessBuilder(listOf(executable.toString()) + arguments.map { launchArgument(it, abi.windows) }).redirectErrorStream(true).redirectOutput(output.toFile()).start()
 				try {
 					assertTrue(process.waitFor(30, TimeUnit.SECONDS), "$name on ${abi.targetTriple} timed out")
 					val actual = Files.readString(output).replace("\r\n", "\n")
@@ -149,12 +148,14 @@ class BootstrapLexerTest {
 						}.orEmpty()
 						"\"${Keywords.DEFINITION} ${statement.name.lexeme} ${statement.name.span}$annotation\""
 					}
-					is ReturnStatement -> {
+
+					is ReturnStatement    -> {
 						assertNull(statement.value)
 						assertSame(kotlinSource, statement.span.source)
 						"\"${statement.keyword.lexeme} ${statement.span}\""
 					}
-					else -> error("Unexpected statement in Bootstrap fixture: $statement")
+
+					else                  -> error("Unexpected statement in Bootstrap fixture: $statement")
 				}
 			}
 		}
@@ -378,14 +379,14 @@ class BootstrapLexerTest {
 	private fun quoted(text: String) = buildString {
 		append('"')
 		for (character in text) when (character) {
-			'"' -> append("\\\"")
-			'\\' -> append("\\\\")
-			'\b' -> append("\\b")
+			'"'      -> append("\\\"")
+			'\\'     -> append("\\\\")
+			'\b'     -> append("\\b")
 			'\u000c' -> append("\\f")
-			'\n' -> append("\\n")
-			'\r' -> append("\\r")
-			'\t' -> append("\\t")
-			else -> if (character < ' ') append("\\u${character.code.toString(16).padStart(4, '0')}") else append(character)
+			'\n'     -> append("\\n")
+			'\r'     -> append("\\r")
+			'\t'     -> append("\\t")
+			else     -> if (character < ' ') append("\\u${character.code.toString(16).padStart(4, '0')}") else append(character)
 		}
 		append('"')
 	}

@@ -19,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class InterfaceIntegrationTest {
+
 	private val example = Path.of("examples/Interfaces.co")
 	private val project = Path.of("examples/Interfaces").toAbsolutePath()
 	private val completion get() = processCompletion().replace("\r\n", "\n")

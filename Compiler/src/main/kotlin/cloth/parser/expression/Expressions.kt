@@ -2,8 +2,8 @@ package cloth.parser.expression
 
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.statement.Statement
-import cloth.parser.type.TypeReference
 import cloth.parser.type.TypeArgumentList
+import cloth.parser.type.TypeReference
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan

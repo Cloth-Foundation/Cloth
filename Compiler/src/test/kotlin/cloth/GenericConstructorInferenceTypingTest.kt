@@ -14,13 +14,13 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericConstructorInferenceTypingTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 
-	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic =
-		assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
-			assertEquals(code, it.diagnosticCode, it.summary)
-			assertLocated(it)
-		}
+	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
+		assertEquals(code, it.diagnosticCode, it.summary)
+		assertLocated(it)
+	}
 
 	@Test
 	fun `named arguments infer literal context and reuse the explicit constructor`() {

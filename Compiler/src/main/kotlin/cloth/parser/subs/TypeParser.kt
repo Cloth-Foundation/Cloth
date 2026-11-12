@@ -1,22 +1,17 @@
 package cloth.parser.subs
 
-import cloth.diagnostics.SyntaxErrors
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.ConstructorGuaranteeDeclaration
-import cloth.parser.type.ConstructorBound
-import cloth.parser.type.TypeReference
-import cloth.parser.type.TypeArgumentList
-import cloth.parser.type.TypeParameterDeclaration
-import cloth.parser.type.TypeParameterBound
-import cloth.parser.type.TypeParameterList
-import cloth.parser.type.maximumTypeArgumentNesting
+import cloth.parser.type.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenType
 
 class TypeParser(private val parser: Parser) {
+
 	private var argumentDepth = 0
 
 	internal fun <T> parseParents(description: String, clause: (TypeReference, Token) -> T): List<T> {
@@ -50,7 +45,7 @@ class TypeParser(private val parser: Parser) {
 				add(TypeParameterDeclaration(name, bounds, defaultType))
 				parser.skipNewlines()
 				when (parser.peek().lexeme) {
-					Operators.ELVIS.toString() -> throw GenericErrors.syntax("Type defaults written with '${Operators.ELVIS}'", parser.peek())
+					Operators.ELVIS.toString()   -> throw GenericErrors.syntax("Type defaults written with '${Operators.ELVIS}'", parser.peek())
 					Operators.GREATER.toString() -> break
 				}
 				parser.expect(Operators.COMMA)
@@ -106,11 +101,11 @@ class TypeParser(private val parser: Parser) {
 		while (true) {
 			val token = parser.peek(offset++)
 			when {
-				token.lexeme == Operators.LESS.toString() -> depth++
-				token.lexeme == Operators.GREATER.toString() -> if (--depth == 0) break
-				token.type in setOf(TokenType.Identifier, TokenType.Keyword, TokenType.IntegerLiteral, TokenType.NewLine) -> Unit
+				token.lexeme == Operators.LESS.toString()                                                                                                                                                                          -> depth++
+				token.lexeme == Operators.GREATER.toString()                                                                                                                                                                       -> if (--depth == 0) break
+				token.type in setOf(TokenType.Identifier, TokenType.Keyword, TokenType.IntegerLiteral, TokenType.NewLine)                                                                                                          -> Unit
 				token.lexeme in setOf(Operators.COMMA.toString(), Operators.DOT.toString(), Operators.QUESTION.toString(), Operators.BRACKET_OPEN.toString(), Operators.BRACKET_CLOSE.toString(), Operators.UNDERSCORE.toString()) -> Unit
-				else -> return null
+				else                                                                                                                                                                                                               -> return null
 			}
 		}
 		return offset
@@ -132,7 +127,9 @@ class TypeParser(private val parser: Parser) {
 	private fun suffixEnd(start: Int): Int? {
 		var offset = start
 		while (true) {
-			if (parser.peek(offset).lexeme == Operators.QUESTION.toString()) { offset++; continue }
+			if (parser.peek(offset).lexeme == Operators.QUESTION.toString()) {
+				offset++; continue
+			}
 			if (parser.peek(offset).lexeme != Operators.BRACKET_OPEN.toString()) return offset
 			offset++
 			if (parser.peek(offset).type == TokenType.IntegerLiteral) offset++
@@ -144,10 +141,10 @@ class TypeParser(private val parser: Parser) {
 		if (parser.peek().type != TokenType.Identifier) return false
 		val offset = nameEnd()
 		val end = when (parser.peek(offset).lexeme) {
-			Operators.LESS.toString() -> applicationEnd(offset)
-			Operators.QUESTION.toString() -> suffixEnd(offset)
+			Operators.LESS.toString()         -> applicationEnd(offset)
+			Operators.QUESTION.toString()     -> suffixEnd(offset)
 			Operators.BRACKET_OPEN.toString() -> if (parser.peek(offset + 1).lexeme == Operators.BRACKET_CLOSE.toString()) suffixEnd(offset) else null
-			else -> null
+			else                              -> null
 		}
 		return end?.let { parser.peek(it).lexeme == Operators.COLON_COLON.toString() } == true
 	}
@@ -157,9 +154,9 @@ class TypeParser(private val parser: Parser) {
 		val offset = nameEnd()
 		if (offset == 1 || startsNamedTypeReceiver() || startsCallTypeArguments(offset - 1)) return false
 		return when (parser.peek(offset).lexeme) {
-			Operators.LESS.toString() -> applicationEnd(offset)?.let(::typeCanEndAt) == true
+			Operators.LESS.toString()     -> applicationEnd(offset)?.let(::typeCanEndAt) == true
 			Operators.QUESTION.toString() -> true
-			else -> false
+			else                          -> false
 		}
 	}
 

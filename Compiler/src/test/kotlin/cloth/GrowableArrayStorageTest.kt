@@ -1,15 +1,19 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CArray
+import cloth.data.CInt
+import cloth.data.CString
+import cloth.data.CUSize
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI
 import cloth.emitter.NativeLinker
 import cloth.emitter.ToolchainResolver
 import cloth.emitter.callables.EmitFunctions
-import cloth.emitter.storage.*
+import cloth.emitter.storage.EmitArray
+import cloth.emitter.storage.EmitMemory
 import cloth.emitter.text.EmitString
-import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.FunctionAnalyzer
+import cloth.semantic.typing.FunctionSemanticModel
 import cloth.settings.LinkOptions
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -18,10 +22,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** Private helper probes deliberately do not lower Cloth's public mutator calls. */
 class GrowableArrayStorageTest {
+
 	private val values = """
 		typedef<struct> Cell { string label, int[] items, int[]?[]? rows, int<129> wide }
 		typedef<enum> Shade { Light, Dark }
@@ -249,8 +257,9 @@ class GrowableArrayStorageTest {
 		val executable = abi.executableFormat.executablePath(output)
 		NativeLinker.link(objectFile, executable, ToolchainResolver.native(abi, LinkOptions()))
 		val result = runExecutable(executable, if (expectedFailure == null) 0 else 1).replace("\r\n", "\n")
-		if (expectedFailure != null) { assertContains(result, expectedFailure); assertFalse(result.contains("unreachable")) }
-		else assertEquals("balanced\n", result)
+		if (expectedFailure != null) {
+			assertContains(result, expectedFailure); assertFalse(result.contains("unreachable"))
+		} else assertEquals("balanced\n", result)
 	}
 
 	internal fun emitProbe(abi: NativeCABI, output: Path, source: String, failAt: Long? = null, model: FunctionSemanticModel? = null, body: Probe.() -> Unit): String {
@@ -272,7 +281,9 @@ class GrowableArrayStorageTest {
 				emitter.verify(module)
 				ir = LLVMPrintModuleToString(module).string
 				emitter.emitObject(module, output)
-			} finally { LLVMDisposeBuilder(builder) }
+			} finally {
+				LLVMDisposeBuilder(builder)
+			}
 		}
 		return ir
 	}
@@ -281,6 +292,7 @@ class GrowableArrayStorageTest {
 		val context: LLVMContextRef, val module: LLVMModuleRef, val builder: LLVMBuilderRef,
 		val functions: EmitFunctions, val semantics: FunctionSemanticModel, val abi: NativeCABI,
 	) {
+
 		val size = CUSize(abi.layout.sizeBits).llvmValue(context, abi.layout)
 		val pointer = LLVMPointerTypeInContext(context, 0)
 		val memory = EmitMemory(context, builder, abi)
@@ -295,7 +307,11 @@ class GrowableArrayStorageTest {
 		private val owners = global("test.outstanding")
 		private val movement = global("test.moved")
 		private val shifts = global("test.shifted")
-		init { LLVMPositionBuilderAtEnd(builder, entry) }
+
+		init {
+			LLVMPositionBuilderAtEnd(builder, entry)
+		}
+
 		fun count(value: Long) = LLVMConstInt(size, value, 0)
 		fun allocations() = LLVMBuildLoad2(builder, size, allocated, "allocations")
 		fun live() = LLVMBuildLoad2(builder, size, current, "live_bytes")
@@ -307,13 +323,16 @@ class GrowableArrayStorageTest {
 		fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(parameters.size.toLong()).use { values ->
 			parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }; LLVMFunctionType(result, values, parameters.size, 0)
 		}
+
 		fun call(type: LLVMTypeRef, function: LLVMValueRef, vararg arguments: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(arguments.size.toLong()).use { values ->
 			arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }; LLVMBuildCall2(builder, type, function, values, arguments.size, "")
 		}
+
 		fun sourceCall(name: String, destination: LLVMValueRef?, vararg arguments: LLVMValueRef): LLVMValueRef? {
 			val source = semantics.declarations.functions.single { it.name.lexeme == name }
 			return functions.callable(source).call(builder, returnArena = destination?.let { { it } }) { arguments.forEachIndexed { index, value -> argument(index, value) } }
 		}
+
 		fun exposeLiveBytes() = exposeMetric("liveBytes", ::live)
 		fun exposeAllocations() = exposeMetric("allocationCount", ::allocations)
 		private fun exposeMetric(name: String, metric: () -> LLVMValueRef) {
@@ -326,14 +345,19 @@ class GrowableArrayStorageTest {
 			LLVMBuildRet(builder, metric())
 			LLVMPositionBuilderAtEnd(builder, previous)
 		}
-		fun incoming(phi: LLVMValueRef, vararg entries: Pair<LLVMBasicBlockRef, LLVMValueRef>) = PointerPointer<LLVMValueRef>(entries.size.toLong()).use { values -> PointerPointer<LLVMBasicBlockRef>(entries.size.toLong()).use { blocks ->
-			entries.forEachIndexed { index, (block, value) -> values.put(index.toLong(), value); blocks.put(index.toLong(), block) }; LLVMAddIncoming(phi, values, blocks, entries.size)
-		} }
+
+		fun incoming(phi: LLVMValueRef, vararg entries: Pair<LLVMBasicBlockRef, LLVMValueRef>) = PointerPointer<LLVMValueRef>(entries.size.toLong()).use { values ->
+			PointerPointer<LLVMBasicBlockRef>(entries.size.toLong()).use { blocks ->
+				entries.forEachIndexed { index, (block, value) -> values.put(index.toLong(), value); blocks.put(index.toLong(), block) }; LLVMAddIncoming(phi, values, blocks, entries.size)
+			}
+		}
+
 		private fun offset(data: LLVMValueRef, amount: Long) = PointerPointer<LLVMValueRef>(1L).use { values -> values.put(0, count(amount)); LLVMBuildInBoundsGEP2(builder, LLVMInt8TypeInContext(context), data, values, 1, "tracked_bytes") }
 		private fun update(slot: LLVMValueRef, amount: LLVMValueRef, subtract: Boolean = false) {
 			val previous = LLVMBuildLoad2(builder, size, slot, "previous_metric")
 			LLVMBuildStore(builder, if (subtract) LLVMBuildSub(builder, previous, amount, "decreased_metric") else LLVMBuildAdd(builder, previous, amount, "increased_metric"), slot)
 		}
+
 		/** Preserve malloc alignment, count requested live bytes, and poison every free. */
 		fun installAllocator(failAt: Long?) {
 			// Count actual live-byte memcpy operations in the private reserve helpers.
@@ -356,7 +380,9 @@ class GrowableArrayStorageTest {
 								if (growth && operation.startsWith("llvm.memcpy.")) moves.add(instruction)
 								// The first memmove is the live ordered shift. A later
 								// struct store may copy the newly supplied element too.
-								if (edit && !foundShift && operation.startsWith("llvm.memmove.")) { shifted.add(instruction); foundShift = true }
+								if (edit && !foundShift && operation.startsWith("llvm.memmove.")) {
+									shifted.add(instruction); foundShift = true
+								}
 							}
 							instruction = LLVMGetNextInstruction(instruction)
 						}

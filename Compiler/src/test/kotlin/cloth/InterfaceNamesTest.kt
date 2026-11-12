@@ -5,7 +5,10 @@ import cloth.api.CompilationRequest
 import cloth.data.CInterface
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.FunctionDeclaration
+import cloth.parser.declaration.InterfaceDeclaration
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.BindingDeclaration
@@ -21,6 +24,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class InterfaceNamesTest {
+
 	private val target = genericTarget()
 
 	@Test

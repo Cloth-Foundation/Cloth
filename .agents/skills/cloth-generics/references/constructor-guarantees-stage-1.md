@@ -37,8 +37,8 @@ determines constructor accessibility, including for caller-private classes.
 An already established proof can be forwarded in a generic body or type
 default.
 
-Stage 2 adds calls through `T::new(...)`. At this milestone C4033
-identifies a construction call through a guaranteed type parameter.
+Stage 2 implements calls through `T::new(...)`.
+[Stage 2 integration](constructor-guarantees-stage-2.md) ·
 [Constructor guarantee design](semantics.md#constructor-guarantee-design)
 
 ## Compiler ownership

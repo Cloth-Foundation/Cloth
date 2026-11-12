@@ -17,7 +17,9 @@ import kotlin.test.*
 
 /** Selection contracts that must work without a native backend or an installation. */
 class StandardLibrarySelectionTest {
-	@TempDir lateinit var temporary: Path
+
+	@TempDir
+	lateinit var temporary: Path
 
 	private fun failure(code: DiagnosticCode, action: () -> Unit): ClothDiagnostic {
 		val result = assertFailsWith<ClothDiagnostic>(block = action)
@@ -43,7 +45,8 @@ class StandardLibrarySelectionTest {
 		}
 	}
 
-	@Test fun `flags select immutable modes and keep C runtime linkage independent`() {
+	@Test
+	fun `flags select immutable modes and keep C runtime linkage independent`() {
 		assertEquals(StandardLibrarySelection.Default, CompilerSettings(emptyArray()).standardLibrary)
 		val explicit = CompilerSettings(arrayOf("--stdlib", "first", "--runtime=static", "--stdlib=last with spaces"))
 		assertEquals(StandardLibrarySelection.Explicit(Path.of("last with spaces")), explicit.standardLibrary)
@@ -54,14 +57,16 @@ class StandardLibrarySelectionTest {
 		assertEquals(StandardLibrarySelection.Explicit(Path.of("-checkout")), CompilerSettings(arrayOf("--stdlib=-checkout")).standardLibrary)
 	}
 
-	@Test fun `each override occurrence must contain a nonblank valid path`() {
+	@Test
+	fun `each override occurrence must contain a nonblank valid path`() {
 		for (args in listOf(arrayOf("--stdlib"), arrayOf("--stdlib="), arrayOf("--stdlib", " "), arrayOf("--stdlib", "--no-stdlib"), arrayOf("--stdlib=", "--stdlib=valid"))) {
 			failure(DiagnosticCode.MISSING_OPTION_VALUE) { CompilerSettings(args) }
 		}
 		failure(DiagnosticCode.INVALID_PATH) { CompilerSettings(arrayOf("--stdlib=bad\u0000path", "--stdlib=valid")) }
 	}
 
-	@Test fun `override and disable conflict in either order and disable accepts no value`() {
+	@Test
+	fun `override and disable conflict in either order and disable accepts no value`() {
 		for (args in listOf(arrayOf("--stdlib=checkout", "--no-stdlib"), arrayOf("--no-stdlib", "--stdlib", "checkout"))) {
 			assertContains(failure(DiagnosticCode.INVALID_OPTION_VALUE) { CompilerSettings(args) }.summary, "cannot be combined")
 		}
@@ -70,14 +75,16 @@ class StandardLibrarySelectionTest {
 		}
 	}
 
-	@Test fun `standalone positional separator preserves option shaped filenames`() {
+	@Test
+	fun `standalone positional separator preserves option shaped filenames`() {
 		val settings = CompilerSettings(arrayOf("--", "--no-stdlib", "--stdlib=literal"))
 		assertEquals(StandardLibrarySelection.Default, settings.standardLibrary)
 		assertEquals("--no-stdlib", settings.getSourceFile().path)
 		assertEquals("--stdlib=literal", settings.getOutputFile()!!.path)
 	}
 
-	@Test fun `relative override selects only the final root without default context or release metadata`() {
+	@Test
+	fun `relative override selects only the final root without default context or release metadata`() {
 		val root = library(temporary.resolve("checkout with spaces 移"))
 		withContext(null, null) {
 			val settings = CompilerSettings(arrayOf("--stdlib=missing", "--stdlib", temporary.relativize(root).toString()))
@@ -89,7 +96,8 @@ class StandardLibrarySelectionTest {
 		}
 	}
 
-	@Test fun `override and disable bypass invalid default properties and structure`() {
+	@Test
+	fun `override and disable bypass invalid default properties and structure`() {
 		val root = library(temporary.resolve("checkout"))
 		Files.writeString(temporary.resolve("toolchain.properties"), "format=invalid\n")
 		withContext(temporary.toString(), "installed") {
@@ -103,7 +111,8 @@ class StandardLibrarySelectionTest {
 		}
 	}
 
-	@Test fun `invalid explicit selection never falls back to a valid default`() {
+	@Test
+	fun `invalid explicit selection never falls back to a valid default`() {
 		library(temporary.resolve("Standard-Library"))
 		val incomplete = Files.createDirectory(temporary.resolve("incomplete"))
 		withContext(temporary.toString(), "development") {
@@ -116,7 +125,8 @@ class StandardLibrarySelectionTest {
 		}
 	}
 
-	@Test fun `explicit selection protects its markers but consumes no release descriptor`() {
+	@Test
+	fun `explicit selection protects its markers but consumes no release descriptor`() {
 		val root = library(temporary.resolve("checkout"))
 		val selected = StandardLibrary.select(StandardLibrarySelection.Explicit(root), temporary)!!
 		for (input in listOf(root.resolve("module.toml"), root.resolve("cloth/Library.co"))) {

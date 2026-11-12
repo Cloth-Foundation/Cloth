@@ -13,9 +13,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class StandardListTest {
+
 	private fun native(root: Path, source: String, expected: String, failure: String? = null) {
 		for (abi in structRunners()) {
 			val directory = root.resolve("target_${abi.layout.sizeBits}")
@@ -129,11 +133,7 @@ class StandardListTest {
 	@Test
 	fun `private caller types in separate modules retain distinct List metadata`(@TempDir root: Path) {
 		for (abi in structRunners()) {
-			val request = standardListRequest(root.resolve("target_${abi.layout.sizeBits}"), mapOf(
-				"A.co" to standardListImport + "typedef<struct> Hidden { int value }\npub fn<typeinfo> a() = List<Hidden>::type",
-				"B.co" to standardListImport + "typedef<struct> Hidden { int value }\npub fn<typeinfo> b() = List<Hidden>::type",
-				"Main.co" to "using A : a\nusing B : b\nfn main() { println(a() == b()); println(a() == a()); println(a()); println(b()) }"
-			), abi.targetTriple)
+			val request = standardListRequest(root.resolve("target_${abi.layout.sizeBits}"), mapOf("A.co" to standardListImport + "typedef<struct> Hidden { int value }\npub fn<typeinfo> a() = List<Hidden>::type", "B.co" to standardListImport + "typedef<struct> Hidden { int value }\npub fn<typeinfo> b() = List<Hidden>::type", "Main.co" to "using A : a\nusing B : b\nfn main() { println(a() == b()); println(a() == a()); println(a()); println(b()) }"), abi.targetTriple)
 			assertEquals("false\ntrue\nList<Hidden>\nList<Hidden>\n" + processCompletion().replace("\r\n", "\n"), runExecutable(ClothCompiler.compile(request).artifact).replace("\r\n", "\n"))
 		}
 	}

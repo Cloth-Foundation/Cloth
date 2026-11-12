@@ -104,9 +104,7 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 		if (options.msvcTools != null || options.windowsSDK != null || options.windowsSDKVersion != null) throw ToolchainErrors.options("MSVC/Windows SDK options require a Windows target")
 		val darwin = abi.profile == NativeCABI.Profile.DARWIN_LP64
 		if (darwin && options.runtime == RuntimeLinkage.STATIC) throw ToolchainErrors.options("Static system C runtime linking is not supported on macOS")
-		val executable = (options.linker?.toString() ?: env("CC"))?.let(::program)
-			?: findOnPath("cc")
-			?: if (darwin) regularFile(macToolchainPath("--find", "clang")) else program("clang")
+		val executable = (options.linker?.toString() ?: env("CC"))?.let(::program) ?: findOnPath("cc") ?: if (darwin) regularFile(macToolchainPath("--find", "clang")) else program("clang")
 		val banner = probe(listOf(executable.toString(), "--version"))
 		val clang = banner.contains("clang", ignoreCase = true)
 		if (!clang && !banner.contains("gcc", ignoreCase = true) && !banner.contains("Free Software Foundation", ignoreCase = true)) throw ToolchainErrors.driver("Unsupported C linker driver '$executable'; expected GCC or Clang")
@@ -168,8 +166,7 @@ internal class ToolchainResolver(private val environment: Map<String, String> = 
 	}
 
 	private fun macToolchainPath(vararg arguments: String): Path {
-		val xcrun = findOnPath("xcrun")
-			?: if (hostFormat == ExecutableFormat.MACH_O) regularFile(Path.of("/usr/bin/xcrun")) else throw ToolchainErrors.executable("xcrun")
+		val xcrun = findOnPath("xcrun") ?: if (hostFormat == ExecutableFormat.MACH_O) regularFile(Path.of("/usr/bin/xcrun")) else throw ToolchainErrors.executable("xcrun")
 		return Path.of(probe(listOf(xcrun.toString(), "--sdk", "macosx", *arguments)).trim())
 	}
 

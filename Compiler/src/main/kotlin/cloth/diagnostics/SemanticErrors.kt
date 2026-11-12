@@ -2,11 +2,7 @@ package cloth.diagnostics
 
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinParameter
-import cloth.data.CFloat
-import cloth.data.CInteger
-import cloth.data.CMemberType
-import cloth.data.EnumField
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.parser.declaration.BlockBody
 import cloth.parser.declaration.CallableSignature
 import cloth.parser.declaration.StructFieldDeclaration
@@ -16,11 +12,7 @@ import cloth.parser.expression.Expression
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
 import cloth.semantic.SemanticException
-import cloth.semantic.symbols.CallableContractSymbol
-import cloth.semantic.symbols.CallableSymbol
-import cloth.semantic.symbols.ConstructorSymbol
-import cloth.semantic.symbols.FunctionSymbol
-import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.symbols.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
@@ -122,10 +114,10 @@ object SemanticErrors {
 	internal fun memberAmbiguous(name: Token, span: TokenSpan) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Member call '${name.lexeme}' is ambiguous", span, "Use explicit argument types to select one overload.")
 	private fun callSignature(candidate: CallableContractSymbol): String {
 		val parameters = when (candidate) {
-			is FunctionSymbol -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
-			is MethodSymbol -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
+			is FunctionSymbol    -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
+			is MethodSymbol      -> if (candidate.signatureResolver == null) candidate.declaration.typeParameters else null
 			is ConstructorSymbol -> if (candidate.signatureResolver == null) candidate.owner.declaration.typeParameters else null
-			else -> null
+			else                 -> null
 		} ?: return candidate.signature.spelling
 		val typeParameters = parameters.parameters.joinToString(", ", "<", ">") { it.name.lexeme }
 		val values = candidate.parameters.joinToString(", ", "(", ")") { it.declaredType.spelling }
@@ -136,8 +128,7 @@ object SemanticErrors {
 	fun callArity(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.CALL_ARITY, call, candidates, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", "Use an argument count accepted by one of these declarations.")
 	fun noMatchingCall(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.NO_MATCHING_CALL, call, candidates, "No overload of '${call.name.lexeme}' accepts these arguments", "Argument types must match exactly. Numeric literals can receive parameter context; typed values need explicit casts.")
 	fun ambiguousCall(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous", "Use explicit casts to select the intended parameter types.")
-	internal fun ambiguousBoundCall(call: CallSite, candidates: List<CallableContractSymbol>) =
-		callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous across the receiver's bounds", "Widen the receiver to the class or interface view whose call contract you want.")
+	internal fun ambiguousBoundCall(call: CallSite, candidates: List<CallableContractSymbol>) = callIssue(DiagnosticCode.AMBIGUOUS_CALL, call, candidates, "Call to '${call.name.lexeme}' is ambiguous across the receiver's bounds", "Widen the receiver to the class or interface view whose call contract you want.")
 	internal fun builtinArity(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.CALL_ARITY, "No overload of '${call.name.lexeme}' takes ${call.arguments.size} arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinNoMatch(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.NO_MATCHING_CALL, "No overload of '${call.name.lexeme}' accepts these arguments", call.span, "Built-in signatures: ${definition.signatures}")
 	internal fun builtinAmbiguous(call: CallExpression, definition: BuiltinDefinition<*>) = issue(DiagnosticCode.AMBIGUOUS_CALL, "Call to '${call.name.lexeme}' is ambiguous", call.span, "Use explicit casts. Built-in signatures: ${definition.signatures}")
@@ -146,9 +137,10 @@ object SemanticErrors {
 		when (parameter) {
 			BuiltinParameter.Text      -> "Printing uses the value's str provider. Arrays require printable elements."
 			BuiltinParameter.NativeInt -> "Pass a signed or unsigned integer, isize, or usize."
-			is BuiltinParameter.Exact   -> "Argument types must match exactly; typed numeric values need explicit casts."
+			is BuiltinParameter.Exact  -> "Argument types must match exactly; typed numeric values need explicit casts."
 		},
 	)
+
 	fun voidValue(span: TokenSpan) = issue(DiagnosticCode.VOID_VALUE, "A ${Keywords.VOID} expression cannot supply a value", span)
 	fun voidType(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot be used as a parameter, binding or array element type", span)
 	fun voidResult(span: TokenSpan) = issue(DiagnosticCode.VOID_TYPE, "Void cannot occupy a position in a multiple-result contract", span, "Use '${Operators.LESS}${Keywords.VOID}${Operators.GREATER}' for no results, or list only value types for multiple results.")

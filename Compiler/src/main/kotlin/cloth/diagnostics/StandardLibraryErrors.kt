@@ -4,6 +4,7 @@ import java.nio.file.Path
 
 /** Shared command-layer failures; they are rendered once by either frontend. */
 object StandardLibraryErrors {
+
 	fun conflictingOptions(usage: String) = ClothDiagnostic(
 		DiagnosticCode.INVALID_OPTION_VALUE,
 		"Options '--stdlib' and '--no-stdlib' cannot be combined",

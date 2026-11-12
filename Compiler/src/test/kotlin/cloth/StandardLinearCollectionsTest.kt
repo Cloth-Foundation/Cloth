@@ -4,7 +4,6 @@ import cloth.api.ClothCompiler
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
 import cloth.api.SourceModuleRole
-import cloth.emitter.NativeCABI
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
@@ -12,9 +11,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class StandardLinearCollectionsTest {
+
 	private val imports = """
 		using cloth.collections.Deque : Deque
 		using cloth.collections.Queue : Queue
@@ -22,11 +24,9 @@ class StandardLinearCollectionsTest {
 	""".trimIndent()
 	private val library = SourceModule("StandardLibrary", standardListRoot, SourceModuleRole.STANDARD_LIBRARY)
 
-	private fun request(root: Path, source: Path, triple: String, kind: OutputKind = OutputKind.EXECUTABLE) =
-		CompilationRequest(source, root.resolve("out/program"), listOf(SourceModule("App", source.parent), library), kind, targetTriple = triple)
+	private fun request(root: Path, source: Path, triple: String, kind: OutputKind = OutputKind.EXECUTABLE) = CompilationRequest(source, root.resolve("out/program"), listOf(SourceModule("App", source.parent), library), kind, targetTriple = triple)
 
-	private fun source(root: Path, body: String): Path =
-		Files.writeString(Files.createDirectories(root).resolve("Main.co"), imports + "\n\n" + body.trimIndent())
+	private fun source(root: Path, body: String): Path = Files.writeString(Files.createDirectories(root).resolve("Main.co"), imports + "\n\n" + body.trimIndent())
 
 	@Test
 	fun exampleRunsAndEmitsObjects(@TempDir root: Path) {

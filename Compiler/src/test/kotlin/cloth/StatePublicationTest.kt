@@ -17,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class StatePublicationTest {
+
 	@Test
 	fun `published state examples verify executable IR and startup objects on all profiles`(@TempDir directory: Path) {
 		val examples = Path.of("examples").toAbsolutePath()

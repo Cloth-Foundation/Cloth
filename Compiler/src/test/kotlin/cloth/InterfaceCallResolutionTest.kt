@@ -23,6 +23,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class InterfaceCallResolutionTest {
+
 	private val declarations = """
 		typedef<interface> Parent {
 		    mt<int, string> collect(opt<int> first ?: 4, opt<string> second ?: "parent", int key)

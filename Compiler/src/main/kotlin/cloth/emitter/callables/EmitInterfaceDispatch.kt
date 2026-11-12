@@ -8,12 +8,12 @@ import cloth.semantic.interfaces.InterfaceImplementation
 import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.semantic.typing.ResolvedCall
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMModuleRef
 
-internal fun InterfaceModel.dispatchTargets(plan: ResolvedCall.Interface): List<Pair<CClass, InterfaceImplementation>> =
-	classes.mapNotNull { (owner, conformance) ->
-		conformance.implementations[plan.owner]?.get(plan.contract.requirement)?.let { owner to it }
-	}
+internal fun InterfaceModel.dispatchTargets(plan: ResolvedCall.Interface): List<Pair<CClass, InterfaceImplementation>> = classes.mapNotNull { (owner, conformance) ->
+	conformance.implementations[plan.owner]?.get(plan.contract.requirement)?.let { owner to it }
+}
 
 /** A private entry per static interface slot, shared by every call site. */
 internal class EmitInterfaceDispatch(
@@ -23,12 +23,12 @@ internal class EmitInterfaceDispatch(
 	private val results: EmitResults,
 	private val functions: EmitFunctions,
 ) {
+
 	private val slots = mutableMapOf<Pair<CInterface, InterfaceRequirement>, EmittedCallable>()
 
 	fun entry(plan: ResolvedCall.Interface): EmittedCallable = slots.getOrPut(plan.owner to plan.contract.requirement) {
 		val name = "cloth.interface.dispatch.${slots.size}.${plan.contract.name.lexeme}"
-		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }
-			.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
+		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
 	}
 
 	private fun emitEntry(plan: ResolvedCall.Interface, entry: EmittedCallable) {
@@ -39,7 +39,8 @@ internal class EmitInterfaceDispatch(
 					val view = views.viewOf(implementation.declaration, implementation.owner) as MethodDeclaration
 					declarations.symbolOf(view)
 				}
-				is InterfaceImplementation.Default -> declarations.interfaceMethods.getValue(implementation.requirement)
+
+				is InterfaceImplementation.Default     -> declarations.interfaceMethods.getValue(implementation.requirement)
 			}
 			owner to functions.callable(symbol)
 		}

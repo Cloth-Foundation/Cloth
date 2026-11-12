@@ -192,10 +192,9 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		return memory.elementBytes(memory.count(1), storage, "Class instance exceeds native allocation size")
 	}
 
-	fun allocateStorage(builder: LLVMBuilderRef, bytes: LLVMValueRef, name: String, failure: String): LLVMValueRef =
-		call(builder, malloc, name, bytes).also { storage ->
-			EmitMemory(context, builder, abi).guard(LLVMBuildIsNotNull(builder, storage, "allocated"), failure)
-		}
+	fun allocateStorage(builder: LLVMBuilderRef, bytes: LLVMValueRef, name: String, failure: String): LLVMValueRef = call(builder, malloc, name, bytes).also { storage ->
+		EmitMemory(context, builder, abi).guard(LLVMBuildIsNotNull(builder, storage, "allocated"), failure)
+	}
 
 	fun freeStorage(builder: LLVMBuilderRef, storage: LLVMValueRef) {
 		call(builder, free, "", storage)
@@ -218,8 +217,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildStore(builder, tag, address(builder, slot, initializedClassField))
 	}
 
-	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef =
-		LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), initializedClassField), "initialized_class")
+	fun classTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef = LLVMBuildLoad2(builder, indexType, address(builder, checkedSlot(builder, access), initializedClassField), "initialized_class")
 
 	fun virtualClassTag(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef {
 		val slot = checkedSlot(builder, access)
@@ -258,7 +256,9 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 	}
 
 	private companion object {
+
 		const val destroyingField = 3
+
 		// Once beginDelete validates the concrete class, this slot holds the current destructor class.
 		const val concreteOrDestructorClassField = 4
 		const val initializedClassField = 5

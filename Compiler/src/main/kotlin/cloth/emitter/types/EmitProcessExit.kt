@@ -17,11 +17,11 @@ internal class EmitProcessExit(private val context: LLVMContextRef, private val 
 	private val module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 
 	fun normalize(value: LLVMValueRef, type: CInteger): LLVMValueRef = when {
-		type.indirect               -> EmitWideInteger(context, builder, abi).loadScalar(value, abi.intType)
-		type.bits > abi.intType.bits -> LLVMBuildTrunc(builder, value, intType, "narrow_exit_status")
+		type.indirect                 -> EmitWideInteger(context, builder, abi).loadScalar(value, abi.intType)
+		type.bits > abi.intType.bits  -> LLVMBuildTrunc(builder, value, intType, "narrow_exit_status")
 		type.bits == abi.intType.bits -> value
-		type.unsigned               -> LLVMBuildZExt(builder, value, intType, "widen_exit_status")
-		else                        -> LLVMBuildSExt(builder, value, intType, "widen_exit_status")
+		type.unsigned                 -> LLVMBuildZExt(builder, value, intType, "widen_exit_status")
+		else                          -> LLVMBuildSExt(builder, value, intType, "widen_exit_status")
 	}
 
 	fun report(status: LLVMValueRef) {

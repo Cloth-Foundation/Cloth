@@ -10,11 +10,7 @@ import cloth.parser.declaration.InterfaceMethodDeclaration
 import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
-import cloth.semantic.generics.ClosedTypeModel
-import cloth.semantic.generics.GenericNameModel
-import cloth.semantic.generics.NominalTypeName
-import cloth.semantic.generics.fixedResults
-import cloth.semantic.generics.fixedSignature
+import cloth.semantic.generics.*
 import cloth.semantic.interfaces.InterfaceImplementation.ClassMethod
 import cloth.semantic.interfaces.InterfaceImplementation.Default
 import cloth.semantic.symbols.FunctionSignature
@@ -24,6 +20,7 @@ import cloth.token.TokenSpan
 /** Check the original parent edges before substitution can expand a generic cycle. */
 internal fun interfaceParentOrder(definitions: List<CInterface>, names: GenericNameModel): Map<CInterface, Int> {
 	class Frame(val owner: CInterface, val via: TokenSpan?, val parents: Iterator<TypeReference> = owner.declaration.parents.iterator())
+
 	val complete = linkedMapOf<CInterface, Int>()
 	for (definition in definitions) {
 		if (definition in complete) continue
@@ -52,6 +49,7 @@ internal fun interfaceParentOrder(definitions: List<CInterface>, names: GenericN
 
 /** Resolve static contracts and body targets after all signature types have been substituted. */
 internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) {
+
 	private data class Route(val type: CInterface, val clause: TokenSpan, val via: TokenSpan = clause)
 
 	private val closures = mutableMapOf<CMemberType, Map<CInterface, Route>>()
@@ -138,8 +136,7 @@ internal class InterfaceConformanceAnalyzer(private val types: ClosedTypeModel) 
 		)
 	}
 
-	private fun requirements(closure: Map<CInterface, Route>): List<InterfaceRequirement> =
-		closure.values.flatMap { declared.getValue(it.type) }
+	private fun requirements(closure: Map<CInterface, Route>): List<InterfaceRequirement> = closure.values.flatMap { declared.getValue(it.type) }
 
 	private fun mostSpecific(members: List<InterfaceRequirement>): List<InterfaceRequirement> = members.filter { member ->
 		members.none { other -> closures.getValue(other.owner)[member.owner.definition]?.type === member.owner }

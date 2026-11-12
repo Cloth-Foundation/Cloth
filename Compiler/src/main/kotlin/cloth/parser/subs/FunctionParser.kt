@@ -1,7 +1,7 @@
 package cloth.parser.subs
 
-import cloth.diagnostics.SyntaxErrors
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.SyntaxErrors
 import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.parser.expression.IfExpression
@@ -10,11 +10,7 @@ import cloth.parser.statement.ReturnStatement
 import cloth.parser.statement.Statement
 import cloth.parser.type.TypeParameterList
 import cloth.parser.type.TypeReference
-import cloth.token.Keywords
-import cloth.token.Operators
-import cloth.token.Token
-import cloth.token.TokenSpan
-import cloth.token.TokenType
+import cloth.token.*
 
 class FunctionParser(private val parser: Parser) {
 
@@ -82,9 +78,9 @@ class FunctionParser(private val parser: Parser) {
 		val signatureEnd = parser.currentIndex
 		parser.skipNewlines()
 		val fallback = when (parser.peek().lexeme) {
-			Operators.ASSIGN.toString() -> parseInterfaceFallback()
+			Operators.ASSIGN.toString()     -> parseInterfaceFallback()
 			Operators.BRACE_OPEN.toString() -> throw SyntaxErrors.expected("'${Operators.ASSIGN} ${Keywords.DEFAULT}' before an interface method body", parser.peek())
-			else -> {
+			else                            -> {
 				parser.currentIndex = signatureEnd
 				null
 			}
@@ -107,8 +103,9 @@ class FunctionParser(private val parser: Parser) {
 				}
 				ExpressionBody(equals, expression, equals.span.through(parser.previous().span))
 			}
+
 			Operators.BRACE_OPEN.toString() -> parseBlockBody()
-			else -> throw SyntaxErrors.expected("a parenthesized expression or a block after '${Keywords.DEFAULT}'", parser.peek())
+			else                            -> throw SyntaxErrors.expected("a parenthesized expression or a block after '${Keywords.DEFAULT}'", parser.peek())
 		}
 		return InterfaceMethodFallback(equals, keyword, body)
 	}
@@ -175,8 +172,7 @@ class FunctionParser(private val parser: Parser) {
 				Operators.BRACE_OPEN.toString() -> parser.parseBlock()
 				Operators.ASSIGN.toString()     -> {
 					val equals = parser.advance()
-					if (allowIntrinsic && parser.peek().type == TokenType.Identifier && parser.peek().lexeme == "intrinsic" &&
-						parser.peek(1).type == TokenType.StringLiteral) {
+					if (allowIntrinsic && parser.peek().type == TokenType.Identifier && parser.peek().lexeme == "intrinsic" && parser.peek(1).type == TokenType.StringLiteral) {
 						parser.advance()
 						return@inBody IntrinsicBody(equals, parser.advance())
 					}

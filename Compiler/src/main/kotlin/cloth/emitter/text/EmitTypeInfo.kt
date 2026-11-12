@@ -11,7 +11,7 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import java.math.BigInteger
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Immutable, interned module-owned descriptors. No native handles escape into ValueType recipes.
  * Canonical closed descriptors distinguish nominal types; displayed text stays unqualified.
@@ -21,11 +21,13 @@ internal class EmitTypeInfo(
 	private val abi: NativeCABI, private val strings: EmitString,
 	private val types: Types,
 ) {
+
 	/** One registry per emitted module, shared by every callable's string services.
 	 * Closed descriptors already encode declaration identity and ordered exact arguments.
 	 * Number them without flattening an argument DAG or using diagnostic display text.
 	 */
 	internal class Types {
+
 		private val nominals = IdentityHashMap<CMemberType, Int>()
 		fun identity(type: CMemberType): Int = nominals.getOrPut(type) { nominals.size }
 	}

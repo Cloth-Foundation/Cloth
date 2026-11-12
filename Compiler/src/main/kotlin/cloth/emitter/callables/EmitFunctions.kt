@@ -3,8 +3,8 @@ package cloth.emitter.callables
 import cloth.builtin.BuiltinStorageContract
 import cloth.data.*
 import cloth.diagnostics.BackendErrors
-import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.InternalErrors
 import cloth.emitter.LLVMTypes
 import cloth.emitter.NativeCABI
 import cloth.emitter.runtime.EmitLibraryIntrinsics
@@ -15,12 +15,7 @@ import cloth.emitter.types.EmitCast
 import cloth.emitter.types.EmitExpression
 import cloth.emitter.types.EmitPower
 import cloth.emitter.types.EmitRuntimeError
-import cloth.parser.declaration.BlockBody
-import cloth.parser.declaration.ConstructorDeclaration
-import cloth.parser.declaration.ExpressionBody
-import cloth.parser.declaration.IntrinsicBody
-import cloth.parser.declaration.PrimaryConstructorDeclaration
-import cloth.parser.declaration.executableBody
+import cloth.parser.declaration.*
 import cloth.parser.expression.Expression
 import cloth.semantic.ClassDeletionPlan
 import cloth.semantic.MethodReceiver
@@ -28,10 +23,7 @@ import cloth.semantic.ObjectReceiver
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.symbols.*
-import cloth.semantic.typing.FunctionSemanticModel
-import cloth.semantic.typing.ResolvedCall
-import cloth.semantic.typing.ResolvedOperator
-import cloth.semantic.typing.ResolvedStateCall
+import cloth.semantic.typing.*
 import cloth.token.Operators
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
@@ -39,8 +31,7 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 internal val FunctionSemanticModel.nativeBodies: List<CallableContractSymbol>
-	get() = callableBodies + declarations.interfaceMethods.values.filter { it.declaration.fallback != null } +
-		declarations.states.callables.filter { it is MethodSymbol || it is StateActivationSymbol }
+	get() = callableBodies + declarations.interfaceMethods.values.filter { it.declaration.fallback != null } + declarations.states.callables.filter { it is MethodSymbol || it is StateActivationSymbol }
 
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
@@ -73,6 +64,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		EmitInterfaceDispatch(context, module, semantics.declarations, results, this)
 	}
 	private val virtualEntries = IdentityHashMap<MethodSymbol, EmittedCallable>()
+	private val guaranteeEntries = IdentityHashMap<ConstructorGuaranteeSymbol, EmittedCallable>()
 	private val stateDispatch by lazy {
 		EmitStateDispatch(context, module, abi, semantics.declarations.states, results, this)
 	}
@@ -99,7 +91,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	fun callable(function: CallableContractSymbol): EmittedCallable = functions.getValue(function)
 	fun reference(function: CallableSymbol): LLVMValueRef = callable(function).reference
 	fun signature(function: CallableSymbol): LLVMTypeRef = callable(function).signature
-	fun deferDispatch(body: () -> Unit) { dispatchBodies.addLast(body) }
+	fun deferDispatch(body: () -> Unit) {
+		dispatchBodies.addLast(body)
+	}
 
 	fun emitAll() {
 		if (semantics.declarations.allStructs.isNotEmpty()) StructStorageLayout(context, module, semantics).validate()
@@ -122,8 +116,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			) { classes }
 		}
 		for ((index, state) in stateDefinitions.withIndex()) if (state.initial != null) {
-			initialStates[state] = LLVMAddFunction(module, "cloth.state.initial.$index.${state.name.lexeme}", initialStateType)
-				.also { LLVMSetLinkage(it, LLVMInternalLinkage) }
+			initialStates[state] = LLVMAddFunction(module, "cloth.state.initial.$index.${state.name.lexeme}", initialStateType).also { LLVMSetLinkage(it, LLVMInternalLinkage) }
 		}
 		for (function in bodies) emitBody(function)
 		for ((state, function) in initialStates) emitInitialState(state, function)
@@ -136,11 +129,12 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		val family = declarations.virtualFamilyOf(method) ?: return null
 		return virtualEntries.getOrPut(method) {
 			val name = "cloth.virtual.dispatch.${virtualEntries.size}.${method.name.lexeme}"
-			EmittedCallable(context, module, name, method, semantics.typeOf(method), hasClasses, results) { classes }
-				.also { entry -> deferDispatch {
-					val targets = family.implementations.map { (owner, body) -> owner to callable(declarations.symbolOf(body)) }
-					emitClassDispatch(entry, method, targets, "Current class level does not provide the virtual method", classes::virtualClassTag)
-				} }
+			EmittedCallable(context, module, name, method, semantics.typeOf(method), hasClasses, results) { classes }.also { entry ->
+					deferDispatch {
+						val targets = family.implementations.map { (owner, body) -> owner to callable(declarations.symbolOf(body)) }
+						emitClassDispatch(entry, method, targets, "Current class level does not provide the virtual method", classes::virtualClassTag)
+					}
+				}
 		}
 	}
 
@@ -239,7 +233,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 					}
 				}
 
-				is IntrinsicBody -> intrinsics.emit(function, signature.results, builder, arguments, objectAccess, frame)
+				is IntrinsicBody  -> intrinsics.emit(function, signature.results, builder, arguments, objectAccess, frame)
 			}
 			frame.finish()
 		} finally {
@@ -248,9 +242,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	}
 
 	private fun bindings(builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, semantics: FunctionSemanticModel, frame: EmitFunctionFrame): EmitBindings {
-		val rebindings = (semantics.declarations.assignments.values + semantics.declarations.multiAssignments.values.flatMap { it.filterNotNull() })
-			.filterNot { it is ReceiverFieldSymbol }
-			.filter { ((semantics.bindings[it] as? CNullable)?.payload ?: semantics.bindings[it]) == ValueType.STRING }.toSet()
+		val rebindings = (semantics.declarations.assignments.values + semantics.declarations.multiAssignments.values.flatMap { it.filterNotNull() }).filterNot { it is ReceiverFieldSymbol }.filter { ((semantics.bindings[it] as? CNullable)?.payload ?: semantics.bindings[it]) == ValueType.STRING }.toSet()
 		return EmitBindings(context, builder, entry, abi, if (hasClasses) classStorage else null, if (hasClasses) receivers else null, frame, rebindings, relocatableArrays = hasArrayMutations)
 	}
 
@@ -262,48 +254,47 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 
 	fun bindDispatchArguments(contract: CallableContractSymbol, callable: EmittedCallable, builder: LLVMBuilderRef, entry: LLVMBasicBlockRef, frame: EmitFunctionFrame): List<LLVMValueRef> {
 		val bindings = bindings(builder, entry, semantics, frame)
-		bindings.bindObject(checkNotNull(contract.receiver), checkNotNull(callable.objectAccess()))
+		contract.receiver?.let { bindings.bindObject(it, checkNotNull(callable.objectAccess())) }
 		val expressions = expressions(builder, bindings, semantics, callable.type.results, frame)
 		return bindParameters(contract, callable, builder, bindings, expressions)
 	}
 
-	private fun bindParameters(function: CallableContractSymbol, callable: EmittedCallable, builder: LLVMBuilderRef, bindings: EmitBindings, expressions: EmitExpression): List<LLVMValueRef> =
-		function.parameters.mapIndexed { index, parameter ->
-			val type = callable.type.parameters[index]
-			val omitted = callable.omissionFlag(index)
-			val argument = if (omitted == null) callable.parameter(builder, index) else {
-				val fallback = checkNotNull(parameter.declaration.defaultValue)
-				val suppliedBlock = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_supplied")
-				val defaultBlock = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_default")
-				val merge = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_ready")
-				LLVMBuildCondBr(builder, omitted, defaultBlock, suppliedBlock)
-				LLVMPositionBuilderAtEnd(builder, suppliedBlock)
-				// Omitted placeholders are never decoded, copied, or shape-checked.
-				val supplied = callable.parameter(builder, index)
-				val suppliedEnd = LLVMGetInsertBlock(builder)
-				LLVMBuildBr(builder, merge)
-				LLVMPositionBuilderAtEnd(builder, defaultBlock)
-				val fallbackValue = expressions.emit(fallback)
-				val resolved = if (expressions.terminated()) null else {
-					expressions.valueTransfer.transfer(expressions.adaptValue(checkNotNull(fallbackValue), expressions.typeOf(fallback), type), type)
-				}
-				val defaultEnd = if (resolved == null) null else LLVMGetInsertBlock(builder).also { LLVMBuildBr(builder, merge) }
-				LLVMPositionBuilderAtEnd(builder, merge)
-				if (defaultEnd == null) supplied else {
-					val phi = LLVMBuildPhi(builder, llvmTypes.value(type), "parameter_value")
-					PointerPointer<LLVMValueRef>(2L).use { values ->
-						PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-							values.put(0, supplied); values.put(1, resolved)
-							blocks.put(0, suppliedEnd); blocks.put(1, defaultEnd)
-							LLVMAddIncoming(phi, values, blocks, 2)
-						}
-					}
-					phi
-				}
+	private fun bindParameters(function: CallableContractSymbol, callable: EmittedCallable, builder: LLVMBuilderRef, bindings: EmitBindings, expressions: EmitExpression): List<LLVMValueRef> = function.parameters.mapIndexed { index, parameter ->
+		val type = callable.type.parameters[index]
+		val omitted = callable.omissionFlag(index)
+		val argument = if (omitted == null) callable.parameter(builder, index) else {
+			val fallback = checkNotNull(parameter.declaration.defaultValue)
+			val suppliedBlock = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_supplied")
+			val defaultBlock = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_default")
+			val merge = LLVMAppendBasicBlockInContext(context, callable.reference, "parameter_ready")
+			LLVMBuildCondBr(builder, omitted, defaultBlock, suppliedBlock)
+			LLVMPositionBuilderAtEnd(builder, suppliedBlock)
+			// Omitted placeholders are never decoded, copied, or shape-checked.
+			val supplied = callable.parameter(builder, index)
+			val suppliedEnd = LLVMGetInsertBlock(builder)
+			LLVMBuildBr(builder, merge)
+			LLVMPositionBuilderAtEnd(builder, defaultBlock)
+			val fallbackValue = expressions.emit(fallback)
+			val resolved = if (expressions.terminated()) null else {
+				expressions.valueTransfer.transfer(expressions.adaptValue(checkNotNull(fallbackValue), expressions.typeOf(fallback), type), type)
 			}
-			bindings.declare(parameter, type, argument)
-			argument
+			val defaultEnd = if (resolved == null) null else LLVMGetInsertBlock(builder).also { LLVMBuildBr(builder, merge) }
+			LLVMPositionBuilderAtEnd(builder, merge)
+			if (defaultEnd == null) supplied else {
+				val phi = LLVMBuildPhi(builder, llvmTypes.value(type), "parameter_value")
+				PointerPointer<LLVMValueRef>(2L).use { values ->
+					PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+						values.put(0, supplied); values.put(1, resolved)
+						blocks.put(0, suppliedEnd); blocks.put(1, defaultEnd)
+						LLVMAddIncoming(phi, values, blocks, 2)
+					}
+				}
+				phi
+			}
 		}
+		bindings.declare(parameter, type, argument)
+		argument
+	}
 
 	private fun initialize(constructor: ConstructorSymbol, allocation: ConstructorAllocation, builder: LLVMBuilderRef, bindings: EmitBindings, expressions: EmitExpression): LLVMValueRef? {
 		val owner = constructor.owner
@@ -575,6 +566,51 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		return if (transfer) expressions.valueTransfer.transfer(adapted, parameter) else expressions.valueTransfer.snapshot(adapted, parameter)
 	}
 
+	fun emitGuaranteedConstruction(
+		plan: ResolvedGuaranteedConstruction,
+		supplied: List<Expression>,
+		expressions: EmitExpression,
+		builder: LLVMBuilderRef,
+	): LLVMValueRef? {
+		val constructor = checkNotNull(plan.constructor)
+		if (plan.binding.omittedParameters.isEmpty()) {
+			return emitCall(ResolvedCall.Source(constructor, plan.type, plan.binding), supplied, expressions, builder)
+		}
+		val entry = guaranteeEntries.getOrPut(plan.contract) {
+			val name = "cloth.constructor.guarantee.${guaranteeEntries.size}"
+			EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses, results) { classes }.also { entry -> deferDispatch { emitConstructorGuarantee(entry, plan.contract, constructor) } }
+		}
+		return entry.call(builder, omittedParameters = plan.binding.omittedParameters) {
+			supplied.forEachIndexed { index, expression ->
+				val destination = plan.binding.parameterForArgument[index]
+				argument(destination, evaluateArgument(expressions, expression, plan.type.parameters[destination], transfer = true))
+			}
+		}
+	}
+
+	private fun emitConstructorGuarantee(entry: EmittedCallable, contract: ConstructorGuaranteeSymbol, constructor: ConstructorSymbol) {
+		val builder = LLVMCreateBuilderInContext(context)
+		try {
+			val start = LLVMAppendBasicBlockInContext(context, entry.reference, "entry")
+			LLVMPositionBuilderAtEnd(builder, start)
+			val frame = EmitFunctionFrame(context, builder, start, entry.type.results, LLVMGetReturnType(entry.signature), stringStorage, entry.callerArena)
+			val arguments = bindDispatchArguments(contract, entry, builder, start, frame)
+			val target = callable(constructor)
+			if (target.type != entry.type) throw InternalErrors.invariant("Proven constructor differs from its guarantee")
+			val identity = checkNotNull(target.call(builder) {
+				arguments.forEachIndexed(::argument)
+				setAllocation(constructorAllocation(builder, constructor.owner))
+			})
+			activateInitial(builder, identity, constructor.owner)
+			frame.emitReturn(results.encode(builder, identity, entry.type.results))
+			frame.finish()
+		} finally {
+			LLVMDisposeBuilder(builder)
+		}
+	}
+
+	private fun constructorAllocation(builder: LLVMBuilderRef, owner: CClass) = ConstructorAllocation(classes.instanceBytes(builder, intrinsics.instanceStorage(owner)), classTag(owner))
+
 	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef, allocation: ConstructorAllocation? = null, operatorReceiver: Int? = null): LLVMValueRef? {
 		val selected = plan.callable
 		val type = plan.type
@@ -610,10 +646,10 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 			structReceiver?.let { setReceiver(it()) }
 			if (selected is ConstructorSymbol) {
-				val concrete = allocation ?: ConstructorAllocation(classes.instanceBytes(builder, intrinsics.instanceStorage(selected.owner)), classTag(selected.owner))
-				setAllocation(concrete)
+				setAllocation(allocation ?: constructorAllocation(builder, selected.owner))
 			}
 		}
+
 		val receiver = plan.receiver
 		val result = if (operatorReceiver == null && receiver != null && receiver !is MethodReceiver.Instance && !target.enumReceiver) {
 			expressions.withReceiver(receiver, (selected as MethodSymbol).owner as CStruct) { invoke(it) }
@@ -632,13 +668,13 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 				for ((call, bound) in calls) if (bound.overload.storage == BuiltinStorageContract.MUTATING_RECEIVER && body.types.arrayMutations[call]?.let(EmitArrayMutation::supported) != true) throw BackendErrors.arrayMutation(call.name.span)
 			}
 			fun supported(type: ValueType): Boolean = when (type) {
-				is CArray    -> type.element != ValueType.VOID && supported(type.element)
-				is CNullable -> supported(type.payload)
-				is CStruct   -> true // Field types and layouts are validated at their declarations.
-				is CClass    -> true
+				is CArray     -> type.element != ValueType.VOID && supported(type.element)
+				is CNullable  -> supported(type.payload)
+				is CStruct    -> true // Field types and layouts are validated at their declarations.
+				is CClass     -> true
 				is CInterface -> true
-				is CEnum     -> true
-				else         -> type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
+				is CEnum      -> true
+				else          -> type.numeric || type in setOf(ValueType.VOID, ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO)
 			}
 			for (function in semantics.nativeBodies) {
 				val type = semantics.typeOf(function)

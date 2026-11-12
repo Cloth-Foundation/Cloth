@@ -4,19 +4,25 @@ import cloth.data.CClass
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
-import cloth.semantic.generics.*
+import cloth.semantic.generics.ClosedTypeAnalyzer
+import cloth.semantic.generics.ClosedTypeState
 import cloth.token.Keywords
 import cloth.token.Operators
 import org.junit.jupiter.api.Test
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class GenericInstantiationLimitsTest {
+
 	private fun analyze(source: String) = ClosedTypeAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary)
 		assertLocated(it)
 		assertTrue(it.sourceLabels.size >= 2)
 	}
+
 	private fun chain(count: Int): String = (0 until count).joinToString("\n") { index ->
 		val next = if (index == count - 1) 0 else index + 1
 		"${Keywords.TYPEDEF}${Operators.LESS}${Keywords.CLASS}${Operators.GREATER} N$index${Operators.LESS}T${Operators.GREATER} (${Keywords.DEFINITION}${Operators.LESS}N$next${Operators.LESS}T${Operators.GREATER}${Operators.QUESTION}${Operators.GREATER} next ${Operators.ELVIS} ${Keywords.NULL})"

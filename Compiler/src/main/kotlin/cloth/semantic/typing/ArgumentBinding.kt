@@ -20,10 +20,9 @@ internal data class BindingAttempt(val binding: ArgumentBinding? = null, val pro
 
 internal object ArgumentBinder {
 
-	fun failure(call: CallSite, group: List<CallableContractSymbol>, problem: BindingProblem?) =
-		if (call.suppliedArguments.all { it.label == null } && group.all { fn -> fn.parameters.none { it.declaration.optional } }) {
-			SemanticErrors.callArity(call, group)
-		} else checkNotNull(problem).diagnostic()
+	fun failure(call: CallSite, group: List<CallableContractSymbol>, problem: BindingProblem?) = if (call.suppliedArguments.all { it.label == null } && group.all { fn -> fn.parameters.none { it.declaration.optional } }) {
+		SemanticErrors.callArity(call, group)
+	} else checkNotNull(problem).diagnostic()
 
 	fun validate(arguments: List<CallArgument>) {
 		val labels = mutableMapOf<String, Token>()

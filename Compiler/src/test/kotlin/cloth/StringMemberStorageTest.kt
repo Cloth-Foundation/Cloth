@@ -4,8 +4,8 @@ import cloth.builtin.BuiltinBody
 import cloth.builtin.BuiltinOverload
 import cloth.builtin.BuiltinStorageContract
 import cloth.builtin.attachments.PrimitiveAttachments
-import cloth.data.ValueType
 import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.diagnostics.SourceFile
 import cloth.emitter.LLVMEmitter
 import cloth.emitter.NativeCABI

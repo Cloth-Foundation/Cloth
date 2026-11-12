@@ -1,8 +1,8 @@
 package cloth.parser.expression
 
+import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
-import cloth.parser.type.TypeReference
 
 data class ClassCreationExpression(
 	val receiver: Expression,

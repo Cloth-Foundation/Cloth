@@ -7,7 +7,6 @@ import cloth.lexer.Lexer
 import cloth.parser.Parser
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
-import cloth.parser.statement.BindingDeclaration
 import cloth.parser.statement.ExpressionStatement
 import cloth.parser.type.ConstructorBound
 import cloth.token.TokenSpan
@@ -15,6 +14,7 @@ import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class GenericParsingTest {
+
 	private fun unit(source: String) = Parser(Lexer(SourceFile("generic-syntax.co", source.trimIndent())).scanTokens()).parse()
 	private fun type(source: String) = (unit("fn<$source> value() = null").declarations.single() as FunctionDeclaration).returnTypes.single()
 	private fun expression(source: String) = ((unit("fn main() { $source }").declarations.single() as FunctionDeclaration).body as BlockBody).statements.single().let { (it as ExpressionStatement).expression }
@@ -183,12 +183,7 @@ class GenericParsingTest {
 
 	@Test
 	fun `empty parameter lists and malformed argument lists fail at the first syntax error`() {
-		for (source in listOf(
-			"typedef<class> Box<> {}", "typedef<struct> Box<T,> {}", "typedef<class> Box<T U> {}",
-			"fn<Box<int,>> f() = null", "fn<Box<int> f() = null", "fn main() { Box<int,>::type }",
-			"fn work<>() {}", "fn main() { work<int,>(1) }",
-			"typedef<class> Box { mt work<>() {} }", "fn main() { box.work<int,>(1) }"
-		)) {
+		for (source in listOf("typedef<class> Box<> {}", "typedef<struct> Box<T,> {}", "typedef<class> Box<T U> {}", "fn<Box<int,>> f() = null", "fn<Box<int> f() = null", "fn main() { Box<int,>::type }", "fn work<>() {}", "fn main() { work<int,>(1) }", "typedef<class> Box { mt work<>() {} }", "fn main() { box.work<int,>(1) }")) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.EXPECTED_TOKEN, error.diagnosticCode, source)
 			assertLocated(error)
@@ -211,8 +206,7 @@ class GenericParsingTest {
 		assertEquals("T: Entity<T>", text(entity.span))
 		assertEquals("U", text(slot[1].span))
 		assertTrue(slot[1].bounds.isEmpty())
-		assertEquals(listOf("Entity<T>", "Object", "Number", "IHealth<float>"),
-			listOf(entity, slot[0], health, read).map { text(it.bounds.single().span) })
+		assertEquals(listOf("Entity<T>", "Object", "Number", "IHealth<float>"), listOf(entity, slot[0], health, read).map { text(it.bounds.single().span) })
 	}
 
 	@Test

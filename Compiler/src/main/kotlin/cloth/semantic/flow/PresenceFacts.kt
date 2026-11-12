@@ -1,11 +1,7 @@
 package cloth.semantic.flow
 
 import cloth.data.*
-import cloth.parser.expression.CallSite
-import cloth.parser.expression.Expression
-import cloth.parser.expression.FieldAccessExpression
-import cloth.parser.expression.MemberCallExpression
-import cloth.parser.expression.NameExpression
+import cloth.parser.expression.*
 import cloth.parser.statement.UpdateStatement
 import java.util.*
 
@@ -29,7 +25,6 @@ internal class PresenceFacts {
 			declared.canNarrowTo(target) && (opensInterface || !target.accepts(payload))
 		}
 		val interfaces = candidates.filterIsInstance<CInterface>()
-		return candidates.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() }
-			?: interfaces.singleOrNull { candidate -> interfaces.all { it.accepts(candidate) } }
+		return candidates.filterIsInstance<CClass>().maxByOrNull { it.ancestry().count() } ?: interfaces.singleOrNull { candidate -> interfaces.all { it.accepts(candidate) } }
 	}
 }

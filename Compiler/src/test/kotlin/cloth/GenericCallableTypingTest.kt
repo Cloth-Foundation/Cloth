@@ -1,12 +1,14 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.ValueType
+import cloth.data.hasTypeParameters
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-import cloth.parser.declaration.*
-import cloth.parser.expression.*
-import cloth.parser.statement.*
-import cloth.semantic.generics.*
+import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.ExpressionBody
+import cloth.parser.declaration.MethodDeclaration
+import cloth.parser.expression.Expression
 import cloth.semantic.typing.FunctionAnalyzer
 import cloth.token.Keywords
 import cloth.token.Operators
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class GenericCallableTypingTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(source) }.also { assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it) }
 
@@ -120,12 +123,7 @@ class GenericCallableTypingTest {
 	@Test
 	fun `public primary secondary and struct signatures reject private helpers even unused`() {
 		val helper = "typedef<struct> Helper<T> { T value }\n"
-		for (declaration in listOf(
-			"pub typedef<class> Box<T> (def<Helper<T>?> value ?: null)",
-			"pub typedef<class> Box<T> { Box(Helper<T> value) : () {} }",
-			"pub typedef<struct> Box<T> { Helper<T>? value }",
-			"pub typedef<struct> Box<T> { T value; mt<Helper<T>?> read() = null }"
-		)) failure(helper + declaration + "\nfn main() {}", DiagnosticCode.PRIVATE_GENERIC_SIGNATURE)
+		for (declaration in listOf("pub typedef<class> Box<T> (def<Helper<T>?> value ?: null)", "pub typedef<class> Box<T> { Box(Helper<T> value) : () {} }", "pub typedef<struct> Box<T> { Helper<T>? value }", "pub typedef<struct> Box<T> { T value; mt<Helper<T>?> read() = null }")) failure(helper + declaration + "\nfn main() {}", DiagnosticCode.PRIVATE_GENERIC_SIGNATURE)
 	}
 
 	@Test

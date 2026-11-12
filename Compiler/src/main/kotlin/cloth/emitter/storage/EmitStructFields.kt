@@ -1,10 +1,15 @@
 package cloth.emitter.storage
 
-import cloth.data.*
+import cloth.data.CArray
+import cloth.data.CNullable
+import cloth.data.CStruct
+import cloth.data.StructField
 import cloth.emitter.NativeCABI
 import cloth.target.TargetLayout
-import org.bytedeco.llvm.LLVM.*
-import org.bytedeco.llvm.global.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
+import org.bytedeco.llvm.global.LLVM.LLVMBuildStructGEP2
 
 internal data class StructParent(val address: LLVMValueRef, val type: CStruct, val field: StructField)
 
@@ -12,6 +17,7 @@ internal data class StructParent(val address: LLVMValueRef, val type: CStruct, v
  * when the field becomes absent and its owned buffer chain is later released.
  */
 internal class EmitStructFields(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, abi: NativeCABI, private val target: TargetLayout = abi.layout) {
+
 	private val arrays = EmitArray(context, builder, abi, target)
 	private val nullable = EmitNullable(context, builder, target)
 	private val stored = EmitStoredValue(context, builder, target)
@@ -39,5 +45,8 @@ internal class EmitStructFields(private val context: LLVMContextRef, private val
 		return result
 	}
 
-	private companion object { const val shapeError = "Array shape mismatch: assignment must preserve the field's initial shape" }
+	private companion object {
+
+		const val shapeError = "Array shape mismatch: assignment must preserve the field's initial shape"
+	}
 }

@@ -39,50 +39,50 @@ internal class NativeCABI private constructor(val targetTriple: String, val prof
 	val targetFeatures: String get() = if (architecture == Architecture.X86) "+sse2" else ""
 
 	fun printArgument(type: ValueType): ValueType = when (type) {
-		is CTypeParameter -> throw InternalErrors.invariant("An unsolved type parameter has no native print argument")
-		is CStruct      -> throw InternalErrors.invariant("Structs have no native print argument")
+		is CTypeParameter        -> throw InternalErrors.invariant("An unsolved type parameter has no native print argument")
+		is CStruct               -> throw InternalErrors.invariant("Structs have no native print argument")
 		is CClass, is CInterface -> throw InternalErrors.invariant("Class identities require text adaptation")
-		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
-		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
-		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
-		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
-		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
-		ValueType.Null  -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
-		ValueType.Void  -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no printable value")
-		is CFloat       -> doubleType
-		is CInteger     -> {
+		is CEnum                 -> throw InternalErrors.invariant("Enums require text adaptation")
+		CTypeInfo                -> throw InternalErrors.invariant("Type metadata requires normalized text output")
+		ValueType.Never          -> throw InternalErrors.invariant("A non-continuing expression has no printable value")
+		is CArray                -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
+		is CNullable             -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
+		ValueType.Null           -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
+		ValueType.Void           -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no printable value")
+		is CFloat                -> doubleType
+		is CInteger              -> {
 			require(type.bits <= longLongType.bits) { "Native printing does not support ${type.spelling} on '$targetTriple'" }
 			CInt(if (type.bits <= intType.bits) intType.bits else longLongType.bits, type.unsigned)
 		}
 
-		CBool           -> type
-		CChar           -> throw InternalErrors.invariant("Characters require UTF-8 byte output instead of a native printf argument")
-		CString         -> throw InternalErrors.invariant("Strings require length-aware UTF-8 byte output instead of a native printf argument")
+		CBool                    -> type
+		CChar                    -> throw InternalErrors.invariant("Characters require UTF-8 byte output instead of a native printf argument")
+		CString                  -> throw InternalErrors.invariant("Strings require length-aware UTF-8 byte output instead of a native printf argument")
 	}
 
 	/** The C conversion specifier matching the argument representation selected above. */
 	fun printSpecifier(type: ValueType): String = when (val argument = printArgument(type)) {
-		is CTypeParameter -> throw InternalErrors.invariant("An unsolved type parameter has no native print format")
-		is CStruct      -> throw InternalErrors.invariant("Structs have no native print format")
+		is CTypeParameter        -> throw InternalErrors.invariant("An unsolved type parameter has no native print format")
+		is CStruct               -> throw InternalErrors.invariant("Structs have no native print format")
 		is CClass, is CInterface -> throw InternalErrors.invariant("Class identities require text adaptation")
-		is CEnum        -> throw InternalErrors.invariant("Enums require text adaptation")
-		CTypeInfo       -> throw InternalErrors.invariant("Type metadata requires normalized text output")
-		ValueType.Never -> throw InternalErrors.invariant("A non-continuing expression has no print format")
-		is CArray       -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
-		is CNullable    -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
-		ValueType.Null  -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
-		ValueType.Void  -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no print format")
-		is CFloat       -> "g"
-		is CInteger     -> when {
+		is CEnum                 -> throw InternalErrors.invariant("Enums require text adaptation")
+		CTypeInfo                -> throw InternalErrors.invariant("Type metadata requires normalized text output")
+		ValueType.Never          -> throw InternalErrors.invariant("A non-continuing expression has no print format")
+		is CArray                -> throw InternalErrors.invariant("Arrays require recursive text adaptation")
+		is CNullable             -> throw InternalErrors.invariant("Nullable printing requires presence-aware text adaptation")
+		ValueType.Null           -> throw InternalErrors.invariant("Bare ${Keywords.NULL} formatting has no C vararg payload")
+		ValueType.Void           -> throw InternalErrors.invariant("A ${Keywords.VOID} statement has no print format")
+		is CFloat                -> "g"
+		is CInteger              -> when {
 			argument.unsigned && argument.bits > intType.bits -> "llu"
 			argument.unsigned                                 -> "u"
 			argument.bits > intType.bits                      -> "lld"
 			else                                              -> "d"
 		}
 
-		CBool           -> "s"
-		CChar           -> throw InternalErrors.invariant("Characters require UTF-8 byte output instead of a native printf specifier")
-		CString         -> throw InternalErrors.invariant("Strings require length-aware UTF-8 byte output instead of a native printf specifier")
+		CBool                    -> "s"
+		CChar                    -> throw InternalErrors.invariant("Characters require UTF-8 byte output instead of a native printf specifier")
+		CString                  -> throw InternalErrors.invariant("Strings require length-aware UTF-8 byte output instead of a native printf specifier")
 	}
 
 	companion object {

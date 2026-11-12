@@ -1,10 +1,10 @@
 package cloth.parser.declaration
 
-import cloth.parser.expression.ConstructorDelegation
 import cloth.parser.expression.CallArgument
+import cloth.parser.expression.ConstructorDelegation
 import cloth.parser.expression.Expression
-import cloth.parser.type.TypeReference
 import cloth.parser.type.TypeParameterList
+import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
 

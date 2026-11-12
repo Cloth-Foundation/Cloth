@@ -1,9 +1,9 @@
 package cloth.builtin.attachments
 
 import cloth.builtin.*
+import cloth.data.CArray
 import cloth.data.CFloat
 import cloth.data.CInteger
-import cloth.data.CArray
 import cloth.data.ValueType
 import cloth.target.TargetLayout
 import cloth.token.Operators
@@ -54,6 +54,7 @@ internal object PrimitiveAttachments {
 	val BOOL = BoolAttachments()
 	val CHAR = CharAttachments()
 	private val integers = ConcurrentHashMap<Pair<CInteger, Int>, IntegerAttachments>()
+
 	// Nominal array elements must not keep source graphs alive in a global cache.
 	private fun arrays(type: CArray, sizeBits: Int) = ArrayAttachments(type, sizeBits)
 	private fun integers(type: CInteger, sizeBits: Int) = integers.computeIfAbsent(type to sizeBits) { IntegerAttachments(type, sizeBits) }

@@ -1,6 +1,8 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.GENERIC_METADATA_BYTES
+import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.emitter.LLVMEmitter
@@ -15,9 +17,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 
 class GenericNativeLimitsTest {
+
 	@Test
 	fun `symbolic checking models remain ineligible for native output`(@TempDir directory: Path) {
 		val abi = NativeCABI.native()
@@ -49,8 +54,7 @@ class GenericNativeLimitsTest {
 	@Test
 	fun `expanded metadata failure stops before object creation on every target`(@TempDir directory: Path) {
 		val owners = (0..24).joinToString("\n") { i ->
-			val field = if (i == 24) "${Keywords.METHOD}${Operators.LESS}${Keywords.TYPEINFO}${Operators.GREATER} info() = T${Operators.COLON_COLON}type" else
-				"${Keywords.DEFINITION}${Operators.LESS}G${i + 1}${Operators.LESS}Pair${Operators.LESS}T${Operators.COMMA} T${Operators.GREATER}${Operators.GREATER}${Operators.QUESTION}${Operators.GREATER} next = ${Keywords.NULL}"
+			val field = if (i == 24) "${Keywords.METHOD}${Operators.LESS}${Keywords.TYPEINFO}${Operators.GREATER} info() = T${Operators.COLON_COLON}type" else "${Keywords.DEFINITION}${Operators.LESS}G${i + 1}${Operators.LESS}Pair${Operators.LESS}T${Operators.COMMA} T${Operators.GREATER}${Operators.GREATER}${Operators.QUESTION}${Operators.GREATER} next = ${Keywords.NULL}"
 			"${Keywords.TYPEDEF}${Operators.LESS}${Keywords.CLASS}${Operators.GREATER} G$i${Operators.LESS}T${Operators.GREATER} ${Operators.BRACE_OPEN} $field ${Operators.BRACE_CLOSE}"
 		}
 		val ast = structUnit("typedef<class> Pair<A, B> {}\n$owners\nfn main() { def value = G0<int>::new; value::delete }")

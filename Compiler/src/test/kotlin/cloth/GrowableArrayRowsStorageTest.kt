@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
 
 class GrowableArrayRowsStorageTest {
+
 	private val harness = GrowableArrayStorageTest()
 	private val observers = "fn<usize> liveBytes() = 0\nfn<usize> allocationCount() = 0\n"
 	private fun native(directory: Path, name: String, source: String) {

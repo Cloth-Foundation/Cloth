@@ -11,11 +11,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-internal fun genericAcceptanceSources(): List<String> = Regex("```cloth\\R(.*?)```", RegexOption.DOT_MATCHES_ALL)
-	.findAll(Files.readString(Path.of(".agents/skills/cloth-generics/references/acceptance-fixtures.md")))
-	.map { it.groupValues[1] }.toList()
+internal fun genericAcceptanceSources(): List<String> = Regex("```cloth\\R(.*?)```", RegexOption.DOT_MATCHES_ALL).findAll(Files.readString(Path.of(".agents/skills/cloth-generics/references/acceptance-fixtures.md"))).map { it.groupValues[1] }.toList()
 
 internal fun genericSourceFiles(root: Path, sources: Map<String, String>): FileBindings {
 	for ((name, text) in sources) {
@@ -27,6 +28,7 @@ internal fun genericSourceFiles(root: Path, sources: Map<String, String>): FileB
 }
 
 class GenericEmissionTest {
+
 	private val abiValues = genericAcceptanceSources()[0] + """
 		typedef<enum> Shade { Light, Dark }
 		typedef<struct> Packed<T> { T value, int<129>? wide }
@@ -158,6 +160,214 @@ class GenericEmissionTest {
 			}
 		"""
 		native(directory, "constructor_proof", source, "80\n")
+	}
+
+	@Test
+	fun `guaranteed construction evaluates imported defaults before delegating and activating`(@TempDir directory: Path) {
+		val files = genericSourceFiles(directory, mapOf(
+			"Lib.co" to """
+				fn<string> mark(string label) { println(label); return label }
+				pub fn<T> make<T: new(string head, opt<string> middle ?: mark(head + "M"), opt<string> next ?: mark(middle + "N"), string tail)>() {
+				    return T::new(tail=mark("B"), head=mark("A"))
+				}
+				pub fn<T> forward<T: new(string head, string middle, string next, string tail)>() = make<T>()
+			""",
+			"Main.co" to """
+				using Lib: forward
+				fn<string> unexpected() { println("concrete default"); return "wrong" }
+				typedef<class> LocalOnly (pub def<string> text) {
+				    LocalOnly(string first, opt<string> second ?: unexpected(), opt<string> third ?: unexpected(), string last) : (first + second + third + last) {
+				        if (self is Ready) exit(1)
+				        println("constructor")
+				    }
+				    default: (self.text)
+				    pub state<string> Ready { init { println(state) } }
+				    ~LocalOnly { println(self is Ready) }
+				}
+				fn main() {
+				    def<LocalOnly> value = forward<LocalOnly>()
+				    if (!(value is Ready) || value.text != "AAMAMNB") exit(2)
+				    value::delete
+				}
+			""",
+		))
+		for (abi in structRunners()) {
+			val binary = LLVMEmitter(abi).compile(ProgramAnalyzer(abi.layout).analyze(files.fork()), directory.resolve("guarantee_${abi.layout.sizeBits}"))
+			assertEquals("B\nA\nAM\nAMN\nconstructor\nAAMAMNB\ntrue\n" + processCompletion().replace("\r\n", "\n"), runExecutable(binary).replace("\r\n", "\n"))
+		}
+	}
+
+	@Test
+	fun `guaranteed calls keep their source contract when signatures or receivers coincide`(@TempDir directory: Path) {
+		native(directory, "guarantee_selection", """
+			typedef<class> Ticket (int id, pub def<string> text) {
+			    Ticket() : (0, "zero") {}
+			}
+			fn<T> choose<A, B, T: new(A first, opt<string> tag ?: "left") & new(B second, opt<string> label ?: "right")>(B value) = T::new(value)
+			fn<T> bare<T: new()>() = T::new
+			fn<T> parens<T: new()>() = T::new()
+			typedef<class> Factory<T: new(int value, opt<string> label ?: "owner")> {
+			    pub mt<T> make<U: new(int other, opt<string> title ?: "method")>(int value) = T::new(value)
+			    pub mt<U> other<U: new(int number, string title)>() = U::new(title="explicit", number=8)
+			}
+			fn main() {
+			    def<Ticket> picked = choose<int, int, Ticket>(7)
+			    def<Ticket> empty = bare<Ticket>()
+			    def<Ticket> emptyAgain = parens<Ticket>()
+			    def factory = Factory<Ticket>::new
+			    def<Ticket> fromOwner = factory.make<Ticket>(9)
+			    def<Ticket> explicit = factory.other<Ticket>()
+			    println(picked.text); println(empty.text); println(emptyAgain.text)
+			    println(fromOwner.text); println(explicit.text)
+			    picked::delete; empty::delete; emptyAgain::delete
+			    fromOwner::delete; explicit::delete; factory::delete
+			}
+		""", "right\nzero\nzero\nowner\nexplicit\n")
+	}
+
+	@Test
+	fun `nullable bound payloads retain exact types and declaration site dispatch`(@TempDir directory: Path) {
+		native(directory, "nullable_bounds", """
+			typedef<interface> Named {
+			    mt<string> name(opt<string> label ?: "interface") = default (label)
+			}
+			typedef<class> Base (pub def<int> id) {
+			    virtual: pub mt<string> describe(opt<string> label ?: "base") = label
+			    pub mt<U> echo<U>(U value) = value
+			}
+			typedef<class> Player : Base(19), Named {
+			    pub def<int> id = 99
+			    override: pub mt<string> describe(string text) = "Player " + text
+			    pub mt<string> describe() = "overload"
+			}
+			typedef<class> Box<T: Number?> (pub def<T> value) {
+			    pub mt<U> doubled<U: Number?>(U number) = twice(number)
+			}
+			fn<string> show<T: Base? & Named?>(T source) {
+			    if (source == null) return "none"
+			    def payload = source
+			    println(payload::type)
+			    println(payload.id)
+			    return payload.describe() + " " + payload.name()
+			}
+			fn<string> throughInterface<T: Named?>(T value) {
+			    if (value == null) return "none"
+			    return value.name(label="view")
+			}
+			fn<int> throughMethod<T: Base?, N: Number?>(T value, N number) {
+			    if (value == null || number == null) return 0
+			    return value.echo(number) -> int
+			}
+			fn<T> twice<T: Number?>(T value) {
+			    if (value == null) return null
+			    def payload = value
+			    return payload + payload
+			}
+			fn<int> choose<T: Number?>(T value) = 1
+			fn<int> choose<T: Number>(T value, opt<bool> unused ?: false) = 2
+			fn report(int<8>? amount, Player? player, Named? view) {
+			    def box = Box::new(amount)
+			    println(box.doubled(box.value))
+			    println(choose(amount))
+			    println(show(player))
+			    println(throughInterface(view))
+			    println(throughMethod(player, amount))
+			    box::delete
+			}
+			fn main() {
+			    def player = Player::new
+			    report(4, player, player)
+			    report(null, null, null)
+			    println(choose(4))
+			    player::delete
+			}
+		""", "8\n1\nPlayer\n19\nPlayer base interface\nview\n4\nnull\n1\nnone\nnone\n0\n2\n")
+	}
+
+	@Test
+	fun `array bound shapes use ordinary mutation and preserve the exact numeric element`(@TempDir directory: Path) {
+		native(directory, "array_bounds", """
+			typedef<class> Base { pub mt<U> echo<U: Number>(U value) = value }
+			typedef<class> Writer<T: int[]> (pub def<T> data) {
+			    pub mt add(int value) { self.data.append(value) }
+			}
+			fn<T> bump<T: Number[]>(T values) {
+			    def copy = values
+			    def first = copy[0]
+			    copy[0] = first + first
+			    copy.append(first)
+			    return copy
+			}
+			fn<T> fixed<T: int[4]>(T values) {
+			    values[3] = values[0] + values[1]
+			    return values
+			}
+			fn<T> elements<T: Number?[]>(T values) {
+			    def first = values[0] ?: exit(3)
+			    values[0] = null
+			    values.append(first)
+			    return values
+			}
+			fn<T> rows<T: Number[]?[2]?>(T values) {
+			    if (values == null) return null
+			    def row = values[0] ?: exit(4)
+			    row[1] = row[0] + row[1]
+			    values.append(row)
+			    values[0] = null
+			    return values
+			}
+			fn<int> through<R: Base, T: Number[]?>(R receiver, T values) {
+			    if (values == null) return 0
+			    values.append(values[0])
+			    return receiver.echo(values[1]) -> int
+			}
+			fn<int> choose<T: Number[]>(T values) = 1
+			fn<int> choose<T: Number[2]>(T values, opt<bool> unused ?: false) = 2
+			fn main() {
+			    def<int<8>[]> narrow = [3]
+			    def<float[]> real = [1.5f]
+			    def<int[]> ordinary = [8]
+			    def writer = Writer::new(ordinary)
+			    writer.add(9)
+			    println(writer.data)
+			    println(ordinary)
+			    println(bump(narrow))
+			    println(narrow)
+			    println(bump(real))
+			    println(fixed([2, 3, 1, 0]))
+			    println(elements<int<8>?[]>([4, null]))
+			    println(rows<int<8>[]?[2]?>([[1, 2], null]))
+			    println(rows<int<8>[]?[2]?>(null))
+			    def base = Base::new
+			    println(through<Base, int<8>[]?>(base, narrow))
+			    println(choose(narrow))
+			    println(choose([1, 2]))
+			    base::delete
+			    writer::delete
+			}
+		""", "[8, 9]\n[8]\n[6, 3]\n[3]\n[3, 1.5]\n[2, 3, 1, 5]\n[null, null, 4]\n[null, null, [1, 3]]\nnull\n3\n1\n2\n")
+	}
+
+	@Test
+	fun `array bound mutation checks retained row shape at runtime`(@TempDir directory: Path) {
+		val source = """
+			fn<int[]> short() = [9]
+			fn edit<T: Number[]?[]>(T rows, T incoming) {
+			    rows[0] = null
+			    rows.append(incoming[0])
+			    println("unreachable")
+			}
+			fn main() {
+			    def<int[]?[]> rows = [[1, 2]]
+			    def<int[]?[]> incoming = [short()]
+			    edit(rows, incoming)
+			}
+		"""
+		for (abi in structRunners()) {
+			val output = runStructProgram(abi, source, directory.resolve("bound_shape_${abi.layout.sizeBits}"), status = 1)
+			assertContains(output, "Array shape mismatch")
+			assertFalse("unreachable" in output)
+		}
 	}
 
 	@Test
@@ -476,19 +686,14 @@ class GenericEmissionTest {
 
 	@Test
 	fun `same spelled private actuals keep distinct metadata inside a shared generic template`(@TempDir directory: Path) {
-		val files = genericSourceFiles(directory, mapOf(
-			"Box.co" to "pub typedef<class> Box<T> { pub mt<typeinfo> argument() = T::type }",
-			"A.co" to "using Box : Box\ntypedef<struct> Hidden { int value }\npub fn<typeinfo> a() = Box<Hidden>::type\npub fn<typeinfo> aa() = Box<Hidden>[]?::type",
-			"B.co" to "using Box : Box\ntypedef<struct> Hidden { int value }\npub fn<typeinfo> b() = Box<Hidden>::type\npub fn<typeinfo> bb() = Box<Hidden>[]?::type",
-			"Main.co" to """
+		val files = genericSourceFiles(directory, mapOf("Box.co" to "pub typedef<class> Box<T> { pub mt<typeinfo> argument() = T::type }", "A.co" to "using Box : Box\ntypedef<struct> Hidden { int value }\npub fn<typeinfo> a() = Box<Hidden>::type\npub fn<typeinfo> aa() = Box<Hidden>[]?::type", "B.co" to "using Box : Box\ntypedef<struct> Hidden { int value }\npub fn<typeinfo> b() = Box<Hidden>::type\npub fn<typeinfo> bb() = Box<Hidden>[]?::type", "Main.co" to """
 				using A : a, aa
 				using B : b, bb
 				fn main() {
 				    println(a() == b()); println(aa() == bb())
 				    println(a() == a()); println(a()); println(b())
 				}
-			"""
-		))
+			"""))
 		for (abi in structRunners()) {
 			val binary = LLVMEmitter(abi).compile(ProgramAnalyzer(abi.layout).analyze(files.fork()), directory.resolve("private_${abi.layout.sizeBits}"))
 			assertEquals("false\nfalse\ntrue\nBox<Hidden>\nBox<Hidden>\n" + processCompletion().replace("\r\n", "\n"), runExecutable(binary).replace("\r\n", "\n"))

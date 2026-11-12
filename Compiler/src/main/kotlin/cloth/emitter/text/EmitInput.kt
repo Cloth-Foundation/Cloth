@@ -130,17 +130,15 @@ internal class EmitInput(
 		LLVMBuildRet(builder, nullable.wrap(owned, text))
 	}
 
-	private fun address(builder: LLVMBuilderRef, data: LLVMValueRef, index: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(1L).use { indices ->
-			indices.put(0, index)
-			LLVMBuildInBoundsGEP2(builder, byte, data, indices, 1, "input_address")
-		}
+	private fun address(builder: LLVMBuilderRef, data: LLVMValueRef, index: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(1L).use { indices ->
+		indices.put(0, index)
+		LLVMBuildInBoundsGEP2(builder, byte, data, indices, 1, "input_address")
+	}
 
-	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef =
-		PointerPointer<LLVMTypeRef>(maxOf(1, parameters.size).toLong()).use { values ->
-			parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
-			LLVMFunctionType(result, values, parameters.size, 0)
-		}
+	private fun signature(result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMTypeRef = PointerPointer<LLVMTypeRef>(maxOf(1, parameters.size).toLong()).use { values ->
+		parameters.forEachIndexed { index, type -> values.put(index.toLong(), type) }
+		LLVMFunctionType(result, values, parameters.size, 0)
+	}
 
 	private fun external(name: String, result: LLVMTypeRef, vararg parameters: LLVMTypeRef): LLVMValueRef {
 		val type = signature(result, *parameters)
@@ -150,9 +148,8 @@ internal class EmitInput(
 		return existing
 	}
 
-	private fun call(builder: LLVMBuilderRef, function: LLVMValueRef, vararg arguments: LLVMValueRef): LLVMValueRef =
-		PointerPointer<LLVMValueRef>(maxOf(1, arguments.size).toLong()).use { values ->
-			arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
-			LLVMBuildCall2(builder, LLVMGlobalGetValueType(function), function, values, arguments.size, "")
-		}
+	private fun call(builder: LLVMBuilderRef, function: LLVMValueRef, vararg arguments: LLVMValueRef): LLVMValueRef = PointerPointer<LLVMValueRef>(maxOf(1, arguments.size).toLong()).use { values ->
+		arguments.forEachIndexed { index, value -> values.put(index.toLong(), value) }
+		LLVMBuildCall2(builder, LLVMGlobalGetValueType(function), function, values, arguments.size, "")
+	}
 }

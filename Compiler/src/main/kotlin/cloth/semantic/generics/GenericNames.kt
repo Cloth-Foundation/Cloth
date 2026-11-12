@@ -1,7 +1,9 @@
 package cloth.semantic.generics
 
 import cloth.ast.SourceUnit
-import cloth.data.*
+import cloth.data.CClass
+import cloth.data.CInterface
+import cloth.data.CMemberType
 import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InterfaceErrors
 import cloth.diagnostics.SemanticErrors
@@ -9,12 +11,7 @@ import cloth.diagnostics.SourceLabel
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
-import cloth.parser.type.ConstructorBound
-import cloth.parser.type.TypeParameterBound
-import cloth.parser.type.TypeParameterDeclaration
-import cloth.parser.type.TypeParameterList
-import cloth.parser.type.TypeReference
-import cloth.parser.type.maximumTypeArgumentNesting
+import cloth.parser.type.*
 import cloth.semantic.declarations.FileBindings
 import cloth.semantic.flow.eagerOperands
 import cloth.source.SourceGraph
@@ -23,18 +20,20 @@ import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.TokenSpan
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Name identities only. These do not describe closed types or native layouts. */
 sealed interface TypeNameIdentity
 data class BuiltinTypeName(val keyword: Keywords) : TypeNameIdentity
 data class NominalTypeName(val type: CMemberType) : TypeNameIdentity
 data object NumberBoundName : TypeNameIdentity {
+
 	val spelling = "Number"
 }
 
 /** Parameters with identical spelling in different owners remain different symbols. */
 class TypeParameterSymbol internal constructor(val owner: Declaration, val declaration: TypeParameterDeclaration, val index: Int) : TypeNameIdentity {
+
 	val name get() = declaration.name
 }
 
@@ -49,12 +48,14 @@ internal data class GenericTypeUse(
 	val boundFor: TypeParameterSymbol? = null,
 	val defaultFor: TypeParameterSymbol? = null,
 ) {
+
 	val owner get() = scope.owner
 }
 
 internal data class GenericFunctionUse(val call: CallExpression, val owner: Declaration?)
 
 class GenericNameModel internal constructor(val target: TargetLayout) {
+
 	internal val owners = IdentityHashMap<Declaration, List<TypeParameterSymbol>>()
 	internal val names = IdentityHashMap<TypeReference, TypeNameIdentity>()
 	internal val receivers = IdentityHashMap<NameExpression, TypeNameIdentity>()
@@ -71,16 +72,20 @@ class GenericNameModel internal constructor(val target: TargetLayout) {
 	fun parametersOf(owner: Declaration): List<TypeParameterSymbol> = owners[owner].orEmpty()
 	fun nameOf(reference: TypeReference): TypeNameIdentity = names.getValue(reference)
 	fun receiverName(expression: NameExpression): TypeNameIdentity? = receivers[expression]
-	internal fun requireImplemented() { genericSpan?.let { throw GenericErrors.compilation(it) } }
+	internal fun requireImplemented() {
+		genericSpan?.let { throw GenericErrors.compilation(it) }
+	}
 }
 
 /** Bind generic syntax in original source contexts before any closed layouts exist. */
 class GenericAnalyzer(private val target: TargetLayout) {
+
 	fun analyze(unit: SourceUnit): GenericNameModel = analyze(FileBindings.single(unit))
 	internal fun analyze(graph: SourceGraph): GenericNameModel = analyze(FileBindings.graph(graph))
 	internal fun analyze(files: FileBindings): GenericNameModel = Names(files, target).analyze()
 
 	private class Names(private val files: FileBindings, target: TargetLayout) {
+
 		private val model = GenericNameModel(target)
 		private val fileScope = GenericTypeScope(null, emptyMap())
 		private val uses get() = model.uses
@@ -89,9 +94,9 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		fun analyze(): GenericNameModel {
 			for (declaration in files.declarations) {
 				val (name, list) = when (declaration) {
-					is TypeDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
+					is TypeDeclaration     -> declaration.name to (declaration.typeParameters ?: continue)
 					is FunctionDeclaration -> declaration.name to (declaration.typeParameters ?: continue)
-					else -> continue
+					else                   -> continue
 				}
 				registerParameters(declaration, name, list)
 			}
@@ -119,22 +124,26 @@ class GenericAnalyzer(private val target: TargetLayout) {
 						throw InterfaceErrors.header("'${parent.name.lexeme}' is not an interface parent", parent.span)
 					}
 				}
-				is ClassDeclaration -> {
+
+				is ClassDeclaration     -> {
 					var classBase: ClassParentClause? = null
 					for (parent in declaration.parents) when ((model.nameOf(parent.type) as? NominalTypeName)?.type) {
-						is CClass -> {
+						is CClass     -> {
 							classBase?.let {
 								throw InterfaceErrors.header("A class can declare only one class base", parent.span, SourceLabel(it.span, "first class base here"))
 							}
 							classBase = parent
 						}
+
 						is CInterface -> if (parent.constructorArguments != null) {
 							throw InterfaceErrors.header("An interface clause takes no constructor arguments", parent.span)
 						}
-						else -> throw InterfaceErrors.header("'${parent.type.name.lexeme}' is not a class or interface parent", parent.type.span)
+
+						else          -> throw InterfaceErrors.header("'${parent.type.name.lexeme}' is not a class or interface parent", parent.type.span)
 					}
 				}
-				else -> Unit
+
+				else                    -> Unit
 			}
 		}
 
@@ -160,7 +169,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			val scope = GenericTypeScope(owner, enclosing.names + local.associateBy { it.name.lexeme })
 			for (parameter in local) {
 				for (bound in parameter.declaration.bounds) when (bound) {
-					is TypeReference -> use(bound, scope, boundFor = parameter)
+					is TypeReference    -> use(bound, scope, boundFor = parameter)
 					is ConstructorBound -> callable(bound.declaration, scope, emptySet())
 				}
 				use(parameter.declaration.defaultType, scope, argument = true, defaultFor = parameter)
@@ -186,20 +195,31 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		}
 
 		private fun resolveBound(type: TypeReference, parameters: Map<String, TypeParameterSymbol>, bounds: List<TypeParameterBound>) {
-			if (type.bareIdentifier?.lexeme == NumberBoundName.spelling) {
-				if (bounds.size > 1) throw GenericErrors.combinedNumberBound(type.span)
-				model.names[type] = NumberBoundName
+			val number = type.name.lexeme == NumberBoundName.spelling && !type.unsigned && type.width == null && type.application == null
+			val identity = if (number) NumberBoundName.also { model.names[type] = it } else resolve(type, parameters)
+			if (type.arraySuffixes.isNotEmpty()) {
+				if (bounds.size > 1) throw GenericErrors.combinedArrayBound(type.span)
 				return
 			}
-			val nominal = (resolve(type, parameters) as? NominalTypeName)?.type
-			if ((nominal !is CClass && nominal !is CInterface) || type.unsigned || type.hasNullability || type.arraySuffixes.isNotEmpty()) {
+			if (number) {
+				if (bounds.size > 1) throw GenericErrors.combinedNumberBound(type.spelling, type.span)
+				return
+			}
+			val nominal = (identity as? NominalTypeName)?.type
+			if ((nominal !is CClass && nominal !is CInterface) || type.unsigned) {
 				throw GenericErrors.bound(type.span)
 			}
-			if (nominal is CClass && bounds.size > 1) {
-				val previousClass = bounds.asSequence().takeWhile { it !== type }.filterIsInstance<TypeReference>().firstOrNull {
-					(model.names[it] as? NominalTypeName)?.type is CClass
+			val previous = bounds.asSequence().takeWhile { it !== type }.filterIsInstance<TypeReference>()
+			if (type.nullable != null) {
+				val present = previous.firstOrNull { it.nullable == null } ?: bounds.firstOrNull { it is ConstructorBound }
+				if (present != null) throw GenericErrors.mixedNullableBounds(type.span, present.span)
+			} else {
+				previous.firstOrNull { it.nullable != null }?.let { throw GenericErrors.mixedNullableBounds(it.span, type.span) }
+			}
+			if (nominal is CClass) {
+				previous.firstOrNull { (model.names[it] as? NominalTypeName)?.type is CClass }?.let {
+					throw GenericErrors.multipleClassBounds(type.span, it.span)
 				}
-				if (previousClass != null) throw GenericErrors.multipleClassBounds(type.span, previousClass.span)
 			}
 		}
 
@@ -217,8 +237,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			if (parameter != null && defaultFor != null && parameter.owner === defaultFor.owner && parameter.index >= defaultFor.index) {
 				throw GenericErrors.argument("The default for '${defaultFor.name.lexeme}' can only use earlier type parameters", type.span)
 			}
-			val identity = parameter ?: builtinTypes.firstOrNull { it.toString() == type.name.lexeme }?.let(::BuiltinTypeName)
-				?: files.nominal(type.name)?.let(::NominalTypeName) ?: throw SemanticErrors.type(type)
+			val identity = parameter ?: builtinTypes.firstOrNull { it.toString() == type.name.lexeme }?.let(::BuiltinTypeName) ?: files.nominal(type.name)?.let(::NominalTypeName) ?: throw SemanticErrors.type(type)
 			if (identity is TypeParameterSymbol && type.application != null) throw GenericErrors.argument("Type parameter '${type.name.lexeme}' is not a generic declaration", type.span)
 			if (identity is NominalTypeName) {
 				val typeParameters = identity.type.declaration.typeParameters?.parameters.orEmpty()
@@ -238,23 +257,26 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		private fun declaration(declaration: Declaration) {
 			val parameters = scopeOf(declaration)
 			when (declaration) {
-				is FunctionDeclaration -> callable(declaration, parameters, emptySet())
-				is StructDeclaration -> {
+				is FunctionDeclaration      -> callable(declaration, parameters, emptySet())
+				is StructDeclaration        -> {
 					declaration.fields.forEach { use(it.type, parameters) }
 					val fields = declaration.fields.map { it.name.lexeme }.toSet()
 					declaration.methods.forEach { callable(it, parameters, fields) }
 				}
-				is InterfaceDeclaration -> {
+
+				is InterfaceDeclaration     -> {
 					interfaceSyntax(declaration.kind.span)
 					declaration.parents.forEach { use(it, parameters) }
 					declaration.methods.forEach { callable(it, parameters, emptySet()) }
 				}
+
 				is TopLevelStateDeclaration -> {
 					use(declaration.host, parameters)
 					val fields = (files.nominal(declaration.host.name) as? CClass)?.declaration?.let(::classFields).orEmpty()
 					stateBody(declaration, parameters, fields)
 				}
-				is ClassDeclaration -> {
+
+				is ClassDeclaration         -> {
 					if (declaration.parents.size > 1) hasMultipleClassParents = true
 					val fields = classFields(declaration)
 					var header = emptySet<String>()
@@ -268,32 +290,40 @@ class GenericAnalyzer(private val target: TargetLayout) {
 						parent.constructorArguments.orEmpty().forEach { expression(it.expression, parameters, header) }
 					}
 					for (member in declaration.members) when (member) {
-						is NestedStateDeclaration -> {
+						is NestedStateDeclaration         -> {
 							member.initial?.payload?.let { expression(it, parameters, fields) }
 							stateBody(member, parameters, fields)
 						}
-						is StateAttachmentDeclaration -> member.initial?.payload?.let { expression(it, parameters, fields) }
+
+						is StateAttachmentDeclaration     -> member.initial?.payload?.let { expression(it, parameters, fields) }
 						is StateMethodContractDeclaration -> callable(member, parameters, fields)
-						is ClassFieldDeclaration -> { use(member.type, parameters); expression(member.initializer, parameters, fields + header) }
-						is CallableDeclaration -> {
+						is ClassFieldDeclaration          -> {
+							use(member.type, parameters); expression(member.initializer, parameters, fields + header)
+						}
+
+						is CallableDeclaration            -> {
 							if (member is ConstructorDeclaration) member.delegation.arguments.forEach { expression(it, parameters, member.parameters.map { it.name.lexeme }.toSet()) }
 							callable(member, parameters, fields)
 						}
 					}
 				}
-				is EnumDeclaration -> {
-					for (field in declaration.fields) { use(field.type, parameters); field.default?.let { expression(it, parameters, emptySet()) } }
+
+				is EnumDeclaration          -> {
+					for (field in declaration.fields) {
+						use(field.type, parameters); field.default?.let { expression(it, parameters, emptySet()) }
+					}
 					declaration.cases.forEach { case -> case.values.forEach { expression(it, parameters, emptySet()) } }
 					declaration.operators.forEach { callable(it, parameters, declaration.fields.map { it.name.lexeme }.toSet()) }
 				}
-				else -> Unit
+
+				else                        -> Unit
 			}
 		}
 
 		private fun stateBody(declaration: StateBodyDeclaration, parameters: GenericTypeScope, fields: Set<String>) {
 			use(declaration.payloadType, parameters)
 			for (member in declaration.members) when (member) {
-				is MethodDeclaration -> callable(member, parameters, fields)
+				is MethodDeclaration           -> callable(member, parameters, fields)
 				is StateInitializerDeclaration -> statements(member.body.statements, parameters, fields)
 			}
 		}
@@ -325,8 +355,8 @@ class GenericAnalyzer(private val target: TargetLayout) {
 				values = values + parameter.name.lexeme
 			}
 			when (val body = declaration.executableBody) {
-				is BlockBody -> statements(body.statements, parameters, values)
-				is ExpressionBody -> expression(body.expression, parameters, values)
+				is BlockBody           -> statements(body.statements, parameters, values)
+				is ExpressionBody      -> expression(body.expression, parameters, values)
 				null, is IntrinsicBody -> Unit
 			}
 		}
@@ -334,31 +364,50 @@ class GenericAnalyzer(private val target: TargetLayout) {
 		private fun statements(statements: List<Statement>, parameters: GenericTypeScope, outer: Set<String>) {
 			val values = outer.toMutableSet()
 			for (statement in statements) when (statement) {
-				is BindingDeclaration -> { use(statement.type, parameters); expression(statement.initializer, parameters, values); values.add(statement.name.lexeme) }
-				is BindingGroupDeclaration -> {
+				is BindingDeclaration                    -> {
+					use(statement.type, parameters); expression(statement.initializer, parameters, values); values.add(statement.name.lexeme)
+				}
+
+				is BindingGroupDeclaration               -> {
 					statement.types.forEach { use(it, parameters) }; expression(statement.initializer, parameters, values)
 					statement.targets.filterIsInstance<ReceivingTarget.Named>().forEach { values.add(it.token.lexeme) }
 				}
-				is ExpressionStatement -> expression(statement.expression, parameters, values)
-				is AssignmentStatement -> expression(statement.value, parameters, values)
-				is MultiAssignmentStatement -> expression(statement.value, parameters, values)
-				is ElementAssignmentStatement -> { expression(statement.target, parameters, values); expression(statement.value, parameters, values) }
-				is FieldWriteStatement -> { expression(statement.target, parameters, values); statement.value?.let { expression(it, parameters, values) } }
-				is ReturnStatement -> statement.value?.let { expression(it, parameters, values) }
-				is ForStatement -> {
+
+				is ExpressionStatement                   -> expression(statement.expression, parameters, values)
+				is AssignmentStatement                   -> expression(statement.value, parameters, values)
+				is MultiAssignmentStatement              -> expression(statement.value, parameters, values)
+				is ElementAssignmentStatement            -> {
+					expression(statement.target, parameters, values); expression(statement.value, parameters, values)
+				}
+
+				is FieldWriteStatement                   -> {
+					expression(statement.target, parameters, values); statement.value?.let { expression(it, parameters, values) }
+				}
+
+				is ReturnStatement                       -> statement.value?.let { expression(it, parameters, values) }
+				is ForStatement                          -> {
 					use(statement.binding.type, parameters)
 					when (val source = statement.source) {
 						is ForSource.Elements -> expression(source.expression, parameters, values)
-						is ForSource.Range -> { expression(source.start, parameters, values); expression(source.end, parameters, values) }
+						is ForSource.Range    -> {
+							expression(source.start, parameters, values); expression(source.end, parameters, values)
+						}
 					}
 					val child = values + statement.binding.name.lexeme
 					statement.stepper?.value?.let { expression(it, parameters, child) }
 					statements(statement.body.statements, parameters, child)
 				}
-				is WhileStatement -> { expression(statement.condition, parameters, values); statements(statement.body.statements, parameters, values) }
-				is DoWhileStatement -> { statements(statement.body.statements, parameters, values); expression(statement.condition, parameters, values) }
+
+				is WhileStatement                        -> {
+					expression(statement.condition, parameters, values); statements(statement.body.statements, parameters, values)
+				}
+
+				is DoWhileStatement                      -> {
+					statements(statement.body.statements, parameters, values); expression(statement.condition, parameters, values)
+				}
+
 				is UpdateStatement, is LoopJumpStatement -> Unit
-				else -> Unit
+				else                                     -> Unit
 			}
 		}
 
@@ -374,8 +423,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			val name = annotation?.name ?: target.typeNameCandidate { true }
 			val template = name?.takeUnless { it.lexeme in parameters.names }?.let(files::nominal) as? CClass
 			val list = template?.declaration?.typeParameters
-			val partial = annotation != null && supplied?.hasPlaceholders == true &&
-				!annotation.hasNullability && annotation.arraySuffixes.isEmpty() && !annotation.unsigned
+			val partial = annotation != null && supplied?.hasPlaceholders == true && !annotation.hasNullability && annotation.arraySuffixes.isEmpty() && !annotation.unsigned
 			if (template != null && list != null && (annotation == null || partial)) {
 				if (supplied != null && !list.parameters.acceptsTypeArgumentCount(supplied.arguments.size)) {
 					throw GenericErrors.arity(checkNotNull(name), supplied.arguments.size, list.parameters.typeArgumentCounts(), template.name)
@@ -395,7 +443,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		private fun expression(expression: Expression, parameters: GenericTypeScope, values: Set<String>) {
 			when (expression) {
-				is CallExpression -> {
+				is CallExpression           -> {
 					expression.typeArguments?.let { arguments ->
 						if (model.genericSpan == null) model.genericSpan = arguments.span
 						model.functionUses.add(GenericFunctionUse(expression, parameters.owner))
@@ -403,7 +451,8 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					}
 					expression.arguments.forEach { expression(it, parameters, values) }
 				}
-				is MemberCallExpression -> {
+
+				is MemberCallExpression     -> {
 					expression(expression.receiver, parameters, values)
 					expression.typeArguments?.let { arguments ->
 						genericMethodSyntax(arguments.span)
@@ -411,30 +460,48 @@ class GenericAnalyzer(private val target: TargetLayout) {
 					}
 					expression.arguments.forEach { expression(it, parameters, values) }
 				}
-				is TypeReceiverExpression -> use(expression.annotation, parameters)
-				is CastExpression -> { expression(expression.operand, parameters, values); useTarget(expression.target, parameters) }
-				is TypeCheckExpression -> {
+
+				is TypeReceiverExpression   -> use(expression.annotation, parameters)
+				is CastExpression           -> {
+					expression(expression.operand, parameters, values); useTarget(expression.target, parameters)
+				}
+
+				is TypeCheckExpression      -> {
 					expression(expression.operand, parameters, values)
 					val target = expression.target
 					val candidate = expression.valueCandidate
 					if (candidate != null && candidate.typeNameCandidate { it.lexeme !in values }?.let(files::nominal) == null) expression(candidate, parameters, values)
 					else if (target.bareIdentifier == null || target.name.lexeme in parameters.names || target.name.lexeme !in values || files.nominal(target.name) != null) useTarget(target, parameters)
 				}
-				is FunctionBlockExpression -> callable(expression.declaration, parameters, values)
-				is IfExpression -> {
-					for (branch in expression.branches) { expression(branch.condition, parameters, values); statements(branch.statements, parameters, values) }
+
+				is FunctionBlockExpression  -> callable(expression.declaration, parameters, values)
+				is IfExpression             -> {
+					for (branch in expression.branches) {
+						expression(branch.condition, parameters, values); statements(branch.statements, parameters, values)
+					}
 					expression.otherwise?.let { statements(it, parameters, values) }
 				}
-				is ElvisExpression -> { expression(expression.left, parameters, values); expression(expression.fallback, parameters, values) }
-				is GuardedAccessExpression -> { expression(expression.receiver, parameters, values); expression(expression.continuation, parameters, values) }
+
+				is ElvisExpression          -> {
+					expression(expression.left, parameters, values); expression(expression.fallback, parameters, values)
+				}
+
+				is GuardedAccessExpression  -> {
+					expression(expression.receiver, parameters, values); expression(expression.continuation, parameters, values)
+				}
+
 				is ProviderAccessExpression -> receiver(expression.receiver, parameters, values)
-				is ClassCreationExpression -> creation(expression, parameters, values)
-				is StateCallExpression -> { receiver(expression.receiver, parameters, values); expression.arguments.forEach { expression(it, parameters, values) } }
-				else -> expression.eagerOperands().forEach { expression(it, parameters, values) }
+				is ClassCreationExpression  -> creation(expression, parameters, values)
+				is StateCallExpression      -> {
+					receiver(expression.receiver, parameters, values); expression.arguments.forEach { expression(it, parameters, values) }
+				}
+
+				else                        -> expression.eagerOperands().forEach { expression(it, parameters, values) }
 			}
 		}
 
 		companion object {
+
 			private val builtinTypes = setOf(Keywords.INTEGER, Keywords.FLOAT, Keywords.BOOLEAN, Keywords.STRING, Keywords.CHARACTER, Keywords.VOID, Keywords.TYPEINFO, Keywords.USIZE, Keywords.ISIZE)
 		}
 	}

@@ -18,12 +18,9 @@ internal fun standardListRequest(root: Path, sources: Map<String, String>, targe
 		Files.createDirectories(file.parent)
 		Files.writeString(file, source.trimIndent())
 	}
-	return CompilationRequest(root.resolve("Main.co"), root.resolve("out/program"), listOf(
-		SourceModule("App", root), SourceModule("StandardLibrary", standardListRoot, SourceModuleRole.STANDARD_LIBRARY)
-	), targetTriple = targetTriple)
+	return CompilationRequest(root.resolve("Main.co"), root.resolve("out/program"), listOf(SourceModule("App", root), SourceModule("StandardLibrary", standardListRoot, SourceModuleRole.STANDARD_LIBRARY)), targetTriple = targetTriple)
 }
 
 internal fun standardListRequest(root: Path, source: String, targetTriple: String? = null): CompilationRequest = standardListRequest(root, mapOf("Main.co" to standardListImport + source.trimIndent()), targetTriple)
 
-internal fun standardListModules(request: CompilationRequest, modules: List<SourceModule>, kind: OutputKind = request.outputKind) =
-	CompilationRequest(request.sourceFile, request.outputFile, modules, outputKind = kind, targetTriple = request.targetTriple)
+internal fun standardListModules(request: CompilationRequest, modules: List<SourceModule>, kind: OutputKind = request.outputKind) = CompilationRequest(request.sourceFile, request.outputFile, modules, outputKind = kind, targetTriple = request.targetTriple)

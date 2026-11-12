@@ -24,11 +24,13 @@ internal class EmitMemory(
 	// LLVM allocated objects must fit a signed pointer index, even for unsigned counts.
 	val maximumBytes: BigInteger = maximum.min(BigInteger.ONE.shiftLeft(target.pointerBits - 1) - BigInteger.ONE)
 	fun count(value: Long): LLVMValueRef = LLVMConstInt(size, value, 0)
+
 	/** Raw byte spans use the string layout, never the array ownership descriptor. */
 	fun bytes(data: LLVMValueRef, length: LLVMValueRef): LLVMValueRef {
 		val value = LLVMBuildInsertValue(builder, LLVMGetUndef(CString.llvmValue(context, target)), data, 0, "buffer_data")
 		return LLVMBuildInsertValue(builder, value, length, 1, "buffer_length")
 	}
+
 	fun constant(value: BigInteger): LLVMValueRef {
 		require(value.signum() >= 0 && value <= maximum) { "Native count is outside the selected target range" }
 		return LLVMConstIntOfString(size, value.toString(), 10.toByte())

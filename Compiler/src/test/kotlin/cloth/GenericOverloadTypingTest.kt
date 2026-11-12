@@ -1,10 +1,9 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.ValueType
+import cloth.data.hasTypeParameters
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
-import cloth.parser.declaration.*
-import cloth.parser.expression.*
 import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -12,6 +11,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericOverloadTypingTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(source) }.also { assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it) }
 

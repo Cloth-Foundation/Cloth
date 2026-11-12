@@ -10,11 +10,12 @@ import cloth.semantic.generics.fixedSignature
 import cloth.semantic.symbols.FunctionSignature
 import cloth.token.Keywords
 import cloth.token.Operators
-import java.util.IdentityHashMap
+import java.util.*
 
 internal class VirtualMethodBody(val owner: CClass, val declaration: MethodDeclaration)
 
 internal class VirtualMethodFamily(val base: VirtualMethodBody, val results: ResultShape) {
+
 	private val targets = linkedMapOf<CClass, VirtualMethodBody>()
 	val implementations: Map<CClass, VirtualMethodBody> get() = targets
 
@@ -25,11 +26,13 @@ internal class VirtualMethodFamily(val base: VirtualMethodBody, val results: Res
 
 /** Match each override against its closed base signature and retain one family per overload. */
 internal class VirtualMethods private constructor(private val families: Map<CClass, Map<MethodDeclaration, VirtualMethodFamily>>) {
+
 	fun familyOf(owner: CClass, declaration: MethodDeclaration) = families[owner]?.get(declaration)
 
 	private data class ActiveMethod(val family: VirtualMethodFamily, val body: VirtualMethodBody)
 
 	companion object {
+
 		val Empty = VirtualMethods(emptyMap())
 
 		fun analyze(types: ClosedTypeModel, baseOrder: List<CClass>): VirtualMethods {

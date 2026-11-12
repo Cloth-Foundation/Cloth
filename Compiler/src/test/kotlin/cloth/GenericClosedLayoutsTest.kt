@@ -1,14 +1,16 @@
 package cloth
 
-import cloth.data.*
+import cloth.data.CClass
 import cloth.emitter.NativeCABI
 import cloth.semantic.generics.ClosedTypeAnalyzer
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 /** Native LLVM type-shape checks only: no generic program or generic object is emitted. */
 class GenericClosedLayoutsTest {
+
 	@Test
 	fun `closed fields form independent concrete LLVM storage on all nine ABI profiles`() {
 		val ast = genericUnit("""

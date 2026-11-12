@@ -8,16 +8,19 @@ import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 
 class GenericTypeArgumentCompletionTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 
-	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic =
-		assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
-			assertEquals(code, it.diagnosticCode, it.summary)
-			assertLocated(it)
-		}
+	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
+		assertEquals(code, it.diagnosticCode, it.summary)
+		assertLocated(it)
+	}
 
 	@Test
 	fun `explicit slots receive ordinary conversions while placeholders infer independently`() {
@@ -50,8 +53,7 @@ class GenericTypeArgumentCompletionTest {
 			}
 		""")
 		val keys = assertNotNull(model.declarations.genericViews).functions.keys
-		assertEquals(setOf("echo" to ValueType.INT, "echo" to CInt(8), "empty" to ValueType.STRING),
-			keys.map { it.template.name.lexeme to it.arguments.single() }.toSet())
+		assertEquals(setOf("echo" to ValueType.INT, "echo" to CInt(8), "empty" to ValueType.STRING), keys.map { it.template.name.lexeme to it.arguments.single() }.toSet())
 	}
 
 	@Test

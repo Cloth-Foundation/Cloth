@@ -2,35 +2,15 @@ package cloth.semantic.declarations
 
 import cloth.ast.ImportSelection
 import cloth.ast.SourceUnit
-import cloth.data.CClass
-import cloth.data.CEnum
-import cloth.data.CInterface
-import cloth.data.CMemberType
-import cloth.data.CStruct
-import cloth.diagnostics.ImportErrors
-import cloth.diagnostics.InternalErrors
-import cloth.diagnostics.SemanticErrors
-import cloth.diagnostics.SourceFile
-import cloth.diagnostics.StateErrors
-import cloth.parser.declaration.ClassDeclaration
-import cloth.parser.declaration.Declaration
-import cloth.parser.declaration.EnumDeclaration
-import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.declaration.InterfaceDeclaration
-import cloth.parser.declaration.StateClassMember
-import cloth.parser.declaration.StructDeclaration
-import cloth.parser.declaration.TopLevelStateDeclaration
-import cloth.parser.declaration.TypeDeclaration
+import cloth.data.*
+import cloth.diagnostics.*
+import cloth.parser.declaration.*
+import cloth.semantic.checkIntrinsicDeclarations
 import cloth.semantic.symbols.FunctionGroupSymbol
 import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.LexicalScope
-import cloth.semantic.checkIntrinsicDeclarations
 import cloth.source.SourceGraph
-import cloth.token.Keywords
-import cloth.token.Operators
-import cloth.token.Token
-import cloth.token.TokenSpan
-import cloth.token.TokenType
+import cloth.token.*
 import java.util.*
 
 internal class FileContext(val unit: SourceUnit, val standardLibraryPaths: Set<String> = emptySet()) {
@@ -50,13 +30,12 @@ internal class FileContext(val unit: SourceUnit, val standardLibraryPaths: Set<S
 internal class FileExport(val type: CMemberType?, val functions: FunctionGroupSymbol?, val state: TopLevelStateDeclaration?)
 
 private class NestedTypeScope(val declaration: Declaration, val qualifiedName: String) {
+
 	val types = linkedMapOf<String, CMemberType>()
 
 	fun contains(use: TokenSpan): Boolean {
 		val owner = declaration.span
-		return use.source === owner.source &&
-			(use.startLine > owner.startLine || use.startLine == owner.startLine && use.startColumn >= owner.startColumn) &&
-			(use.endLine < owner.endLine || use.endLine == owner.endLine && use.endColumn <= owner.endColumn)
+		return use.source === owner.source && (use.startLine > owner.startLine || use.startLine == owner.startLine && use.startColumn >= owner.startColumn) && (use.endLine < owner.endLine || use.endLine == owner.endLine && use.endColumn <= owner.endColumn)
 	}
 }
 
@@ -111,10 +90,10 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 			// Export only this file's public declarations, never received imports.
 			for (declaration in file.unit.declarations) {
 				val name = when (declaration) {
-					is TypeDeclaration -> declaration.name.takeIf { declaration.visibility != null }
-					is FunctionDeclaration -> declaration.name.takeIf { declaration.visibility != null }
+					is TypeDeclaration          -> declaration.name.takeIf { declaration.visibility != null }
+					is FunctionDeclaration      -> declaration.name.takeIf { declaration.visibility != null }
 					is TopLevelStateDeclaration -> declaration.name.takeIf { declaration.visibility != null }
-					else                   -> null
+					else                        -> null
 				} ?: continue
 				val publicFunctions = groups[name.lexeme].orEmpty().filter { it.declaration.visibility != null }
 				val publicType = file.types[name.lexeme]?.takeIf { it.declaration.visibility != null }
@@ -130,9 +109,9 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 	private fun registerType(file: FileContext, declaration: TypeDeclaration, owner: NestedTypeScope? = null) {
 		val enclosingName = owner?.qualifiedName
 		val type = when (declaration) {
-			is StructDeclaration -> CStruct(declaration, enclosingName = enclosingName).also { structs[declaration] = it }
-			is ClassDeclaration -> CClass(declaration, enclosingName = enclosingName).also { classes[declaration] = it }
-			is EnumDeclaration -> CEnum(declaration, enclosingName).also { enums[declaration] = it }
+			is StructDeclaration    -> CStruct(declaration, enclosingName = enclosingName).also { structs[declaration] = it }
+			is ClassDeclaration     -> CClass(declaration, enclosingName = enclosingName).also { classes[declaration] = it }
+			is EnumDeclaration      -> CEnum(declaration, enclosingName).also { enums[declaration] = it }
 			is InterfaceDeclaration -> CInterface(declaration, enclosingName = enclosingName)
 		}
 		val name = type.name.lexeme
@@ -159,8 +138,7 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 
 	fun context(name: Token): FileContext = name.span.source?.let { sources[it] } ?: files.singleOrNull() ?: throw InternalErrors.invariant("No defining file context for '${name.lexeme}'")
 
-	private fun lexicalType(file: FileContext, use: Token, name: String): CMemberType? = scopesByFile[file]?.asReversed()
-		?.firstNotNullOfOrNull { scope -> scope.types[name]?.takeIf { scope.contains(use.span) } } ?: file.types[name]
+	private fun lexicalType(file: FileContext, use: Token, name: String): CMemberType? = scopesByFile[file]?.asReversed()?.firstNotNullOfOrNull { scope -> scope.types[name]?.takeIf { scope.contains(use.span) } } ?: file.types[name]
 
 	fun nominal(name: Token): CMemberType? {
 		if (name.lexeme == objectRoot.spelling) return objectRoot
@@ -184,12 +162,13 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 		if (type === objectRoot) return null
 		var declaration: Declaration? = type.declaration
 		while (declaration != null) when (declaration) {
-			is TypeDeclaration -> {
+			is TypeDeclaration          -> {
 				if (declaration.visibility == null) return declaration.name
 				declaration = enclosingScopes[declaration]?.declaration
 			}
+
 			is TopLevelStateDeclaration -> return if (declaration.visibility == null) declaration.name else null
-			else -> break
+			else                        -> break
 		}
 		return null
 	}
@@ -199,14 +178,15 @@ internal class FileBindings private constructor(val files: List<FileContext>, pr
 		while (true) {
 			val enclosing = (declaration as? TypeDeclaration)?.let(enclosingScopes::get)
 			val visibility = when (declaration) {
-				is TypeDeclaration -> declaration.visibility
+				is TypeDeclaration          -> declaration.visibility
 				is TopLevelStateDeclaration -> declaration.visibility
-				else -> return true
+				else                        -> return true
 			}
 			if (visibility == null && !(enclosing?.contains(use) ?: (declaration.span.source === use.source))) return false
 			declaration = enclosing?.declaration ?: return true
 		}
 	}
+
 	fun state(name: Token): TopLevelStateDeclaration? = context(name).states[name.lexeme]
 	internal fun fork(): FileBindings = graph?.let { graph(it) } ?: single(primary.unit)
 

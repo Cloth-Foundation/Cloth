@@ -13,19 +13,18 @@ import cloth.parser.statement.BindingGroupDeclaration
 import cloth.parser.statement.MultiAssignmentStatement
 import cloth.semantic.ReceptionKind
 import cloth.semantic.typing.FunctionAnalyzer
-import cloth.semantic.typing.ResolvedCall
 import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 internal fun analyzeInterfaces(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 
-internal fun interfaceFailure(source: String, code: DiagnosticCode): ClothDiagnostic =
-	assertFailsWith<ClothDiagnostic>(source) { analyzeInterfaces(source) }.also {
-		assertEquals(code, it.diagnosticCode, it.summary)
-		assertLocated(it)
-	}
+internal fun interfaceFailure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic>(source) { analyzeInterfaces(source) }.also {
+	assertEquals(code, it.diagnosticCode, it.summary)
+	assertLocated(it)
+}
 
 class InterfaceTypingTest {
+
 	private val types = """
 		typedef<interface> Read<T> { mt<T> read() }
 		typedef<interface> Extra<T> : Read<T> {}

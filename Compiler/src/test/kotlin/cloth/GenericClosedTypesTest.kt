@@ -6,12 +6,15 @@ import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.SourceFile
 import cloth.lexer.Lexer
 import cloth.parser.Parser
-import cloth.parser.declaration.*
+import cloth.parser.declaration.BlockBody
+import cloth.parser.declaration.MethodDeclaration
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.parser.statement.BindingDeclaration
-import cloth.parser.type.TypeReference
-import cloth.semantic.generics.*
+import cloth.semantic.generics.ClosedTypeAnalyzer
+import cloth.semantic.generics.ClosedTypeModel
+import cloth.semantic.generics.ClosedTypePattern
+import cloth.semantic.generics.ClosedTypeState
 import cloth.target.TargetLayout
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -21,6 +24,7 @@ internal fun genericTarget(bits: Int = 64) = TargetLayout("closed-generics-$bits
 internal fun ClosedTypeModel.parameterTypes() = functions.last().parameters.map { (it as ClosedTypePattern.Exact).type }
 
 class GenericClosedTypesTest {
+
 	private fun analyze(source: String) = ClosedTypeAnalyzer(genericTarget()).analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(source) }.also { assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it) }
 
@@ -154,12 +158,7 @@ class GenericClosedTypesTest {
 
 	@Test
 	fun `direct indirect wrapped and mixed ordinary struct cycles retain C3080`() {
-		for (declarations in listOf(
-			"typedef<struct> Loop<T> { Loop<T> value }",
-			"typedef<struct> Loop<T> { Loop<T>?[]? value }",
-			"typedef<struct> Loop<T> { Other<T> value }\ntypedef<struct> Other<T> { Loop<T>? value }",
-			"typedef<struct> Loop<T> { Ordinary value }\ntypedef<struct> Ordinary { Loop<int> value }"
-		)) failure("$declarations\nfn take(Loop<int> value) {}", DiagnosticCode.RECURSIVE_STRUCT)
+		for (declarations in listOf("typedef<struct> Loop<T> { Loop<T> value }", "typedef<struct> Loop<T> { Loop<T>?[]? value }", "typedef<struct> Loop<T> { Other<T> value }\ntypedef<struct> Other<T> { Loop<T>? value }", "typedef<struct> Loop<T> { Ordinary value }\ntypedef<struct> Ordinary { Loop<int> value }")) failure("$declarations\nfn take(Loop<int> value) {}", DiagnosticCode.RECURSIVE_STRUCT)
 	}
 
 	@Test

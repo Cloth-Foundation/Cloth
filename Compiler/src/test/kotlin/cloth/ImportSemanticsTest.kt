@@ -7,9 +7,9 @@ import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.diagnostics.DiagnosticReporter
 import cloth.parser.declaration.ClassDeclaration
+import cloth.parser.declaration.ExpressionBody
 import cloth.parser.declaration.FunctionDeclaration
 import cloth.parser.declaration.InterfaceDeclaration
-import cloth.parser.declaration.ExpressionBody
 import cloth.parser.expression.NameExpression
 import cloth.parser.expression.ProviderAccessExpression
 import cloth.semantic.generics.ClosedTypeAnalyzer

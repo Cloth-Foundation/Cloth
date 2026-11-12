@@ -7,11 +7,14 @@ import cloth.data.ValueType
 import cloth.emitter.NativeCABI
 import cloth.semantic.ArrayMutationPlan
 import cloth.semantic.MethodReceiver
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMBuilderRef
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 
 /** Source lowering's supported slice is shared by validation and emission. */
 internal class EmitArrayMutation(private val context: LLVMContextRef, private val builder: LLVMBuilderRef, private val abi: NativeCABI, private val storage: EmitArrayStorage) {
+
 	data class Result(val value: LLVMValueRef, val removed: LLVMValueRef? = null)
 
 	fun emit(operation: ArrayMutation, arena: LLVMValueRef, value: LLVMValueRef, type: CArray, arguments: List<LLVMValueRef>, receive: ((LLVMValueRef, ValueType) -> LLVMValueRef)?): Result {
@@ -48,10 +51,11 @@ internal class EmitArrayMutation(private val context: LLVMContextRef, private va
 	}
 
 	companion object {
+
 		fun supported(plan: ArrayMutationPlan): Boolean = when (plan.receiver) {
 			is MethodReceiver.Stored, is MethodReceiver.StoredInInstance -> true
-			is MethodReceiver.Temporary -> true
-			else -> false
+			is MethodReceiver.Temporary                                  -> true
+			else                                                         -> false
 		}
 	}
 }

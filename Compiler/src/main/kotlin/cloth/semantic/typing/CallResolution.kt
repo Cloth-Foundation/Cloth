@@ -3,32 +3,21 @@ package cloth.semantic.typing
 import cloth.builtin.BoundBuiltinCall
 import cloth.builtin.BuiltinDefinition
 import cloth.builtin.BuiltinOverload
+import cloth.data.CClass
 import cloth.data.CInterface
 import cloth.data.ProviderResult
-import cloth.data.CClass
 import cloth.data.ValueType
 import cloth.diagnostics.GenericErrors
+import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.semantic.SemanticException
-import cloth.parser.expression.CallExpression
-import cloth.parser.expression.CallSite
-import cloth.parser.expression.ClassCreationExpression
-import cloth.parser.expression.Expression
-import cloth.parser.expression.MemberCallExpression
-import cloth.parser.expression.StateCallExpression
+import cloth.parser.expression.*
 import cloth.parser.type.TypeArgumentList
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
+import cloth.semantic.SemanticException
 import cloth.semantic.generics.TypeArgumentSpans
 import cloth.semantic.generics.completesTypeArguments
-import cloth.semantic.symbols.CallableContractSymbol
-import cloth.semantic.symbols.CallableGroupSymbol
-import cloth.semantic.symbols.CallableSymbol
-import cloth.semantic.symbols.FunctionGroupSymbol
-import cloth.semantic.symbols.InterfaceMethodGroupSymbol
-import cloth.semantic.symbols.InterfaceMethodSymbol
-import cloth.semantic.symbols.MethodGroupSymbol
-import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.symbols.*
 
 /** A contextual mismatch rejects a candidate. Located diagnostics still stop analysis. */
 internal inline fun <T> probeCandidate(check: () -> T): T? = try {
@@ -42,8 +31,7 @@ internal class CallResolution(
 	private val typingIn: (FunctionSemanticModel, Boolean) -> ExpressionTyping,
 ) {
 
-	fun source(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source =
-		resolve(expression, group) { callable, type, binding -> ResolvedCall.Source(callable, type, binding, receiver) }
+	fun source(expression: CallSite, group: List<CallableSymbol>, receiver: MethodReceiver? = null): ResolvedCall.Source = resolve(expression, group) { callable, type, binding -> ResolvedCall.Source(callable, type, binding, receiver) }
 
 	fun function(expression: CallExpression, group: FunctionGroupSymbol): ResolvedCall.Source {
 		expression.typeArguments?.let { supplied ->
@@ -89,6 +77,15 @@ internal class CallResolution(
 		return selected
 	}
 
+	fun guaranteedConstruction(expression: ClassCreationExpression, group: List<ConstructorGuaranteeSymbol>): ResolvedGuaranteedConstruction = resolve(expression, group) { contract, type, binding ->
+		val constructor = (contract.constructedType as? CClass)?.let { owner ->
+			facts.declarations.classDefinitions.getValue(owner).constructors.singleOrNull {
+				facts.declaredTypeOf(it).parameters == type.parameters
+			} ?: throw InternalErrors.invariant("Missing proven constructor for '${owner.spelling}'")
+		}
+		ResolvedGuaranteedConstruction(contract, constructor, type, binding)
+	}
+
 	fun boundMember(
 		expression: MemberCallExpression,
 		groups: List<CallableGroupSymbol>,
@@ -109,8 +106,7 @@ internal class CallResolution(
 		if (supplied != null) {
 			throw GenericErrors.callArity(expression.name, supplied.span, supplied.arguments.size, listOf(0), groups.first().name)
 		}
-		val ordinary: List<CallableContractSymbol> = methods?.overloads.orEmpty()
-			.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) } + interfaces.keys
+		val ordinary: List<CallableContractSymbol> = methods?.overloads.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) } + interfaces.keys
 		val templates = methods?.templates.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
 		return resolve(expression, ordinary, noMatch = { failure ->
 			if (templates.isEmpty()) throw failure()
@@ -122,7 +118,7 @@ internal class CallResolution(
 		}) { contract, type, binding ->
 			when (contract) {
 				is InterfaceMethodSymbol -> ResolvedCall.Interface(interfaces.getValue(contract), contract, type, binding, receiver)
-				else -> ResolvedCall.Source(contract as MethodSymbol, type, binding, sourceReceiver)
+				else                     -> ResolvedCall.Source(contract as MethodSymbol, type, binding, sourceReceiver)
 			}
 		}
 	}
@@ -150,11 +146,9 @@ internal class CallResolution(
 		}
 	}
 
-	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface =
-		resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
+	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface = resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
 
-	fun state(expression: StateCallExpression, group: List<CallableContractSymbol>, owner: CClass): ResolvedStateCall =
-		resolve(expression, group) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
+	fun state(expression: StateCallExpression, group: List<CallableContractSymbol>, owner: CClass): ResolvedStateCall = resolve(expression, group) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
 
 	private fun <T : CallableContractSymbol, R> resolve(
 		expression: CallSite,

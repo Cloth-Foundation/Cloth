@@ -15,6 +15,7 @@ import cloth.token.Keywords
 
 /** Declaration checking and closed checking have independent catalogs, symbols and facts. */
 internal class GenericSemanticAnalysis(private val target: TargetLayout) {
+
 	fun declarations(files: FileBindings, names: GenericNameModel): DeclarationModel {
 		visibility(files, names)
 		val analyzer = ClosedTypeAnalyzer(target)
@@ -29,11 +30,11 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		val templates = checkFunctions(templateFiles, symbolic)
 		for (method in templates.callableBodies.filterIsInstance<MethodSymbol>()) {
 			val declaration = method.owner.declaration
-			val canonical = method.owner.typeArguments.isNotEmpty() && method.owner.isCanonicalApplication()
+			val canonical = method.owner.typeArguments.isNotEmpty() && symbolic.model.isCanonicalApplication(method.owner)
 			val public = when (declaration) {
-				is ClassDeclaration -> templateFiles.privateTypeName(method.owner) == null && method.declaration.visibility != null
+				is ClassDeclaration  -> templateFiles.privateTypeName(method.owner) == null && method.declaration.visibility != null
 				is StructDeclaration -> templateFiles.privateTypeName(method.owner) == null
-				else -> false
+				else                 -> false
 			}
 			if (canonical && public && method.declaration.operator != null && method.declaration.returnTypes.isEmpty()) {
 				checkExposedTypes(method.name, templates.typeOf(method).results.values, templateFiles)
@@ -56,7 +57,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				val semantics = FunctionAnalyzer(target).analyze(declarations)
 				if (types.symbolic) {
 					// Declaration checking uses the widest admitted operator format.
-					for (method in declarations.widthTemplates) if (method.owner.hasTypeParameters()) {
+					for (method in declarations.widthTemplates) if (method.owner.hasTypeParameters() || method.owner.typeArguments.isNotEmpty() && types.isCanonicalApplication(method.owner)) {
 						semantics.widestSpecialization(method)
 					}
 					inheritedClassVisibility(semantics, files)
@@ -73,7 +74,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 
 	private fun interfaceVisibility(types: ClosedTypeModel, files: FileBindings) {
 		for ((owner, contract) in types.interfaces.contracts) {
-			if (files.privateTypeName(owner) != null || !owner.isCanonicalApplication()) continue
+			if (files.privateTypeName(owner) != null || !types.isCanonicalApplication(owner)) continue
 			for (method in contract.methods.values) {
 				val exposed = method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
 				checkExposedTypes(method.declaration.name, exposed, files)
@@ -87,7 +88,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 		val types = checkNotNull(declarations.genericViews).types
 		val signatureKeys = GenericSignatureKeys(types.names)
 		for (owner in declarations.classDefinitions.keys) {
-			if (files.privateTypeName(owner) != null || owner.typeArguments.isEmpty() || !owner.isCanonicalApplication()) continue
+			if (files.privateTypeName(owner) != null || owner.typeArguments.isEmpty() || !types.isCanonicalApplication(owner)) continue
 			for (base in owner.ancestry().drop(1)) {
 				for (field in base.fields) {
 					if (field.visibility != null && owner.field(field.name.lexeme) === field) {
@@ -145,13 +146,14 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			val type = pending.removeLast()
 			if (!seen.add(type)) continue
 			when (type) {
-				is CNullable -> pending.add(type.payload)
-				is CArray -> pending.add(type.element)
+				is CNullable   -> pending.add(type.payload)
+				is CArray      -> pending.add(type.element)
 				is CMemberType -> {
 					files.privateTypeName(type)?.let { throw GenericErrors.privateSignature(use, it) }
 					pending.addAll(type.typeArguments)
 				}
-				else -> Unit
+
+				else           -> Unit
 			}
 		}
 	}
@@ -162,6 +164,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			nominal?.let(files::privateTypeName)?.let { throw GenericErrors.privateSignature(type.name, it) }
 			type.typeArguments.forEach(::surface)
 		}
+
 		fun callable(member: CallableDeclaration) {
 			names.parametersOf(member).forEach {
 				it.declaration.bounds.flatMap { bound -> bound.signatureTypes() }.forEach(::surface)
@@ -171,12 +174,13 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			member.returnTypes.forEach(::surface)
 			(member as? MethodDeclaration)?.operator?.selector?.let(::surface)
 		}
+
 		val publicTypes = files.typeOrder.filter { files.privateTypeName(it) == null }.mapTo(java.util.Collections.newSetFromMap(java.util.IdentityHashMap())) { it.declaration }
 		for (declaration in files.declarations) {
 			val public = when (declaration) {
 				is FunctionDeclaration -> declaration.visibility != null
-				is TypeDeclaration -> declaration in publicTypes
-				else -> false
+				is TypeDeclaration     -> declaration in publicTypes
+				else                   -> false
 			}
 			val parameters = names.parametersOf(declaration)
 			if (!public) continue
@@ -187,20 +191,22 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			}
 			when (declaration) {
 				is FunctionDeclaration -> if (genericOwner) callable(declaration)
-				is ClassDeclaration -> {
+				is ClassDeclaration    -> {
 					if (genericOwner) declaration.parameters.forEach { surface(it.parameter.type) }
 					for (member in declaration.members) when (member) {
-						is ClassFieldDeclaration -> if (genericOwner && member.visibility != null) surface(member.type)
-						is MethodDeclaration -> if (member.visibility != null && (genericOwner || member.typeParameters != null)) callable(member)
+						is ClassFieldDeclaration  -> if (genericOwner && member.visibility != null) surface(member.type)
+						is MethodDeclaration      -> if (member.visibility != null && (genericOwner || member.typeParameters != null)) callable(member)
 						is ConstructorDeclaration -> if (genericOwner) callable(member)
-						else -> Unit
+						else                      -> Unit
 					}
 				}
-				is StructDeclaration -> {
+
+				is StructDeclaration   -> {
 					if (genericOwner) declaration.fields.forEach { surface(it.type) }
 					declaration.methods.filter { genericOwner || it.typeParameters != null }.forEach(::callable)
 				}
-				else -> Unit
+
+				else                   -> Unit
 			}
 		}
 	}

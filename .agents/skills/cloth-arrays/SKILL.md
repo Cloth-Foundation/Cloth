@@ -30,6 +30,10 @@ Read [confirmed array semantics](references/semantics.md) for the language contr
 Use [buffer lifetimes](../cloth-buffer-lifetimes/SKILL.md) when changing copying,
 argument snapshots, returned storage, or cleanup.
 
+Generic array bounds check exact declared extents and element identities.
+Numeric elements retain their exact type through indexing and mutation.
+[GEN-5 Stage 4](../cloth-generics/references/array-bounds-stage-4.md)
+
 The [growable-array contract](references/growable-arrays.md) confirms:
 `T[]` grows, `T[N]` stays fixed, literal inference stays sized, `:=`/`final`
 permit length mutation, and temporary receivers follow ordinary method rules.

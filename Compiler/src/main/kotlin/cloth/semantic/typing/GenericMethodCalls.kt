@@ -13,20 +13,16 @@ import cloth.semantic.generics.typeArgumentCounts
 import cloth.semantic.symbols.MethodGroupSymbol
 import cloth.semantic.symbols.MethodSymbol
 
-internal fun methodVisible(owner: CMemberType, caller: CClass?, isPublic: Boolean) =
-	owner !is CClass || owner.sameDeclaration(caller) || isPublic
+internal fun methodVisible(owner: CMemberType, caller: CClass?, isPublic: Boolean) = owner !is CClass || owner.sameDeclaration(caller) || isPublic
 
-internal fun MethodGroupSymbol.typeArgumentError(call: CallSite, supplied: TypeArgumentList?) =
-	GenericErrors.callArity(call.name, supplied?.span ?: call.name.span, supplied?.arguments?.size ?: 0, buildList {
-		if (overloads.isNotEmpty()) add(0)
-		templates.forEach { addAll(checkNotNull(it.declaration.typeParameters).parameters.typeArgumentCounts()) }
-	}.distinct().sorted(), name)
+internal fun MethodGroupSymbol.typeArgumentError(call: CallSite, supplied: TypeArgumentList?) = GenericErrors.callArity(call.name, supplied?.span ?: call.name.span, supplied?.arguments?.size ?: 0, buildList {
+	if (overloads.isNotEmpty()) add(0)
+	templates.forEach { addAll(checkNotNull(it.declaration.typeParameters).parameters.typeArgumentCounts()) }
+}.distinct().sorted(), name)
 
-internal fun MethodGroupSymbol.matchingTypeArguments(supplied: TypeArgumentList) =
-	templates.filter { checkNotNull(it.declaration.typeParameters).parameters.acceptsTypeArgumentCount(supplied.arguments.size) }
+internal fun MethodGroupSymbol.matchingTypeArguments(supplied: TypeArgumentList) = templates.filter { checkNotNull(it.declaration.typeParameters).parameters.acceptsTypeArgumentCount(supplied.arguments.size) }
 
-internal fun MethodGroupSymbol.completesTypeArguments(supplied: TypeArgumentList): Boolean =
-	supplied.hasPlaceholders || matchingTypeArguments(supplied).any { it.signature.typeParameterCount > supplied.arguments.size }
+internal fun MethodGroupSymbol.completesTypeArguments(supplied: TypeArgumentList): Boolean = supplied.hasPlaceholders || matchingTypeArguments(supplied).any { it.signature.typeParameterCount > supplied.arguments.size }
 
 internal fun FunctionSemanticModel.genericMethodCandidates(
 	call: CallSite,

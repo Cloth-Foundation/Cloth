@@ -110,16 +110,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	}
 
 	private fun ordinaryOperandContext(expression: Expression, floating: Boolean): ValueType? = when (expression) {
-		is NameExpression           -> nameType(expression).takeIf { if (floating) it.floating else it.integer }
-		is CastExpression           -> castHint(expression).takeIf { if (floating) it.floating else it.integer }
-		is CallExpression           -> callType(expression).takeIf { if (floating) it.floating else it.integer }
+		is NameExpression                               -> nameType(expression).takeIf { if (floating) it.floating else it.integer }
+		is CastExpression                               -> castHint(expression).takeIf { if (floating) it.floating else it.integer }
+		is CallExpression                               -> callType(expression).takeIf { if (floating) it.floating else it.integer }
 		is MemberCallExpression, is StateCallExpression -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
-		is IndexExpression          -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
-		is FieldAccessExpression    -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
-		is ProviderAccessExpression -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
-		is UnaryExpression          -> if (expression.operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString())) operandContext(expression.operand, floating) else null
-		is BinaryExpression         -> if (expression.operator.lexeme in arithmeticOperators) operandContext(expression.left, floating) ?: operandContext(expression.right, floating) else null
-		else                        -> null
+		is IndexExpression                              -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
+		is FieldAccessExpression                        -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
+		is ProviderAccessExpression                     -> typeOf(expression).takeIf { if (floating) it.floating else it.integer }
+		is UnaryExpression                              -> if (expression.operator.lexeme in setOf(Operators.PLUS.toString(), Operators.MINUS.toString())) operandContext(expression.operand, floating) else null
+		is BinaryExpression                             -> if (expression.operator.lexeme in arithmeticOperators) operandContext(expression.left, floating) ?: operandContext(expression.right, floating) else null
+		else                                            -> null
 	}
 
 	private fun integer(literal: IntegerLiteral, expected: ValueType?, negative: Boolean = false): ValueType {
@@ -197,9 +197,9 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	/** Context fixes the element identity; literal extents remain expression facts. */
 	private fun ValueType.literalElement(actual: ValueType): ValueType = when {
-		this is CNullable -> CNullable(payload.literalElement((actual as? CNullable)?.payload ?: actual))
+		this is CNullable                  -> CNullable(payload.literalElement((actual as? CNullable)?.payload ?: actual))
 		this is CArray && actual is CArray -> CArray(element.literalElement(actual.element), actual.size)
-		else -> this
+		else                               -> this
 	}
 
 	/** Endpoint/element type discovery never uses the body or stepper as context. */
@@ -282,11 +282,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	fun resultOf(expression: Expression, expected: ResultShape? = null, requireValue: Boolean = true, contextualFloat: Boolean = expected?.values?.any { it.suppliesFloatingContext() } == true, allowVoidResult: Boolean = false, receptionContext: ReceptionContext? = null, floatingLiteralType: CFloat? = null, preserveResultOnExit: Boolean = false): ResultShape {
 		model.metadata.remove(expression)
 		val result = when (expression) {
-			is CallExpression                                                     -> callResults(expression)
-			is StateCallExpression                                                -> intrinsic { stateCallResults(expression) }
-			is MemberCallExpression                                               -> intrinsic { memberCallResults(expression, typeOf(expression.receiver, preserveResultOnExit = preserveResultOnExit)) }
-			is GuardedAccessExpression                                            -> intrinsic { guardedAccessResults(expression) }
-			is ResultListExpression                                               -> {
+			is CallExpression                                                                                                    -> callResults(expression)
+			is StateCallExpression                                                                                               -> intrinsic { stateCallResults(expression) }
+			is MemberCallExpression                                                                                              -> intrinsic { memberCallResults(expression, typeOf(expression.receiver, preserveResultOnExit = preserveResultOnExit)) }
+			is GuardedAccessExpression                                                                                           -> intrinsic { guardedAccessResults(expression) }
+			is ResultListExpression                                                                                              -> {
 				val values = expression.values.mapIndexed { index, value ->
 					val context = receptionContext?.positional?.getOrNull(index) ?: expected?.values?.getOrNull(index)
 					val floating = contextualFloat && (context == null || context.suppliesFloatingContext())
@@ -295,13 +295,13 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (values.any { it == ValueType.NEVER }) ResultShape.Never else ResultShape.of(values)
 			}
 
-			is IfExpression                                                       -> conditionalResults(expression, expected, requireValue, contextualFloat, allowVoidResult, receptionContext, floatingLiteralType)
+			is IfExpression                                                                                                      -> conditionalResults(expression, expected, requireValue, contextualFloat, allowVoidResult, receptionContext, floatingLiteralType)
 			is CastExpression if unboundStateName(expression.target) == null && resolveType(expression.target) == ValueType.VOID -> {
 				resultOf(expression.operand, requireValue = false)
 				ResultShape.Empty
 			}
 
-			else                                                                  -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), contextualFloat, floatingLiteralType, preserveResultOnExit))
+			else                                                                                                                 -> ResultShape.of(scalarTypeOf(expression, receptionContext?.broadcast ?: expected?.scalarOrNull(), contextualFloat, floatingLiteralType, preserveResultOnExit))
 		}
 		val completed = if (completion(expression).canFallThrough) result else ResultShape.Never
 		if (requireValue && !allowVoidResult && completed == ResultShape.Empty) reject { SemanticErrors.voidValue(expression.span) }
@@ -312,17 +312,17 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun guardedAccessResults(expression: GuardedAccessExpression): ResultShape {
 		val receiver = typeOf(expression.receiver, preserveResultOnExit = true)
 		val payload = when (receiver) {
-			is CNullable -> receiver.payload
+			is CNullable    -> receiver.payload
 			ValueType.NEVER -> ValueType.NEVER
-			else -> throw SemanticErrors.guardedReceiver(receiver, expression.operator)
+			else            -> throw SemanticErrors.guardedReceiver(receiver, expression.operator)
 		}
 		model.recordType(expression.payload, payload)
 		// A terminating argument still leaves the absent path with the method's nullable result type.
 		val result = resultOf(expression.continuation, requireValue = false, preserveResultOnExit = true)
 		if (receiver == ValueType.NEVER) return ResultShape.Never
 		return when (result) {
-			is ResultShape.Single -> ResultShape.of(result.type as? CNullable ?: CNullable(result.type))
-			is ResultShape.Multiple -> throw SemanticErrors.scalarResults(result, expression.continuation.span)
+			is ResultShape.Single                -> ResultShape.of(result.type as? CNullable ?: CNullable(result.type))
+			is ResultShape.Multiple              -> throw SemanticErrors.scalarResults(result, expression.continuation.span)
 			ResultShape.Empty, ResultShape.Never -> ResultShape.Empty
 		}
 	}
@@ -493,16 +493,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun scalarTypeOf(expression: Expression, expected: ValueType?, contextualFloat: Boolean, floatingLiteralType: CFloat?, preserveResultOnExit: Boolean): ValueType {
 		model.metadata.remove(expression)
 		val type = when (expression) {
-			is StructLiteral            -> structLiteralType(expression, expected)
-			is GuardedReceiver          -> model.typeOf(expression)
-			is FieldAccessExpression    -> intrinsic { fieldType(expression, preserveResultOnExit) }
-			is NullLiteral              -> expected as? CNullable ?: ValueType.Null
-			is ElvisExpression          -> elvisType(expression, expected, contextualFloat, floatingLiteralType)
-			is TypeReceiverExpression   -> throw SemanticErrors.typeReceiver(expression.span)
-			is ClassCreationExpression  -> intrinsic { creationType(expression) }
-			is ClassDeletionExpression  -> intrinsic { deletionType(expression) }
+			is StructLiteral             -> structLiteralType(expression, expected)
+			is GuardedReceiver           -> model.typeOf(expression)
+			is FieldAccessExpression     -> intrinsic { fieldType(expression, preserveResultOnExit) }
+			is NullLiteral               -> expected as? CNullable ?: ValueType.Null
+			is ElvisExpression           -> elvisType(expression, expected, contextualFloat, floatingLiteralType)
+			is TypeReceiverExpression    -> throw SemanticErrors.typeReceiver(expression.span)
+			is ClassCreationExpression   -> intrinsic { creationType(expression) }
+			is ClassDeletionExpression   -> intrinsic { deletionType(expression) }
 			is StateTransitionExpression -> intrinsic { stateTransitionType(expression) }
-			is ProviderAccessExpression -> {
+			is ProviderAccessExpression  -> {
 				val receiver = expression.receiver
 				val named = namedTypeReceiver(receiver)
 				val typeReceiver = named != null || receiver is TypeReceiverExpression
@@ -550,7 +550,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 			}
 
-			is ArrayLiteral             -> {
+			is ArrayLiteral              -> {
 				val context = ((expected as? CNullable)?.payload ?: expected) as? CArray
 				if (context?.size != null && context.size != expression.elements.size.toBigInteger()) reject { SemanticErrors.array("Expected ${context.size} array elements, got ${expression.elements.size}; every element must be initialized", expression.span) }
 				val elementContext = context?.element ?: arrayElementContext(expression.elements, contextualFloat)
@@ -570,7 +570,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				else CArray(element ?: elementContext ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
 			}
 
-			is IndexExpression          -> {
+			is IndexExpression           -> {
 				val array = typeOf(expression.array, preserveResultOnExit = preserveResultOnExit)
 				val index = typeOf(expression.index)
 				if (array !is CArray && array != ValueType.NEVER) reject { SemanticErrors.index("Indexing requires an array", expression.array.span) }
@@ -578,19 +578,19 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				(array as? CArray)?.element ?: ValueType.NEVER
 			}
 
-			is IntegerLiteral           -> integer(expression, expected)
-			is FloatingPointLiteral     -> {
+			is IntegerLiteral            -> integer(expression, expected)
+			is FloatingPointLiteral      -> {
 				val type = if (contextualFloat) floatingLiteralType ?: ((if (expected is CNullable) expected.payload else expected) as? CFloat) ?: ValueType.FLOAT else ValueType.FLOAT
 				if (!inferenceDefaults && !type.acceptsLiteral(expression.value.toBigDecimal())) reject { SemanticErrors.floating(expression.token.lexeme, type, expression.span) }
 				type
 			}
 
-			is BooleanLiteral           -> ValueType.BOOL
-			is CharacterLiteral         -> ValueType.CHAR
-			is StringLiteral            -> ValueType.STRING
-			is NameExpression           -> nameType(expression)
-			is CallExpression           -> callType(expression)
-			is InterpolatedString       -> {
+			is BooleanLiteral            -> ValueType.BOOL
+			is CharacterLiteral          -> ValueType.CHAR
+			is StringLiteral             -> ValueType.STRING
+			is NameExpression            -> nameType(expression)
+			is CallExpression            -> callType(expression)
+			is InterpolatedString        -> {
 				for (part in expression.parts) {
 					val type = typeOf(part)
 					if (type == ValueType.NEVER) continue
@@ -602,7 +602,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				ValueType.STRING
 			}
 
-			is TypeCheckExpression      -> {
+			is TypeCheckExpression       -> {
 				valueCheck(expression)?.let { check ->
 					val type = typeOf(check)
 					model.recordValueCheck(expression, check)
@@ -621,7 +621,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				ValueType.BOOL
 			}
 
-			is CastExpression           -> {
+			is CastExpression            -> {
 				if (unboundStateName(expression.target) != null && checkBareTransition(expression, typeOf(expression.operand))) return ValueType.VOID
 				val target = resolveType(expression.target)
 				val source = typeOf(expression.operand, expected = (target as? CNullable)?.takeIf { expression.operand is NullLiteral }, requireValue = target != ValueType.VOID)
@@ -636,7 +636,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				target
 			}
 
-			is UnaryExpression          -> overloadedType(expression) ?: run {
+			is UnaryExpression           -> overloadedType(expression) ?: run {
 				val operand = if (expression.operator.lexeme == Operators.MINUS.toString() && expression.operand is IntegerLiteral) integer(expression.operand, expected, negative = true)
 				else typeOf(expression.operand, if (expression.operator.lexeme == Operators.NOT.toString()) null else expected, contextualFloat = contextualFloat, floatingLiteralType = floatingLiteralType.takeUnless { expression.operator.lexeme == Operators.NOT.toString() })
 				if (operand is CNullable || operand == ValueType.Null) throw SemanticErrors.nullablePayload(operand, expression.operand.span)
@@ -646,7 +646,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				operand
 			}
 
-			is BinaryExpression         -> overloadedType(expression) ?: run {
+			is BinaryExpression          -> overloadedType(expression) ?: run {
 				if (expression.operator.lexeme == Keywords.IS.toString()) reject {
 					SemanticErrors.operatorMatch(expression.operator, expression.span, emptyList(), ambiguous = false)
 				}
@@ -711,7 +711,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				}
 			}
 
-			else                        -> throw InternalErrors.invariant("Unsupported expression: $expression")
+			else                         -> throw InternalErrors.invariant("Unsupported expression: $expression")
 		}
 		return type
 	}
@@ -743,10 +743,10 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val message = "Type '${receiver.spelling}' has no field '${expression.name.lexeme}'"
 		val owner = boundViews(expression.receiver, receiver).classBackedType() ?: (receiver as? CMemberType) ?: receiver.classBackedType()
 		val field = owner?.field(expression.name.lexeme) ?: throw when (owner) {
-			is CClass -> SemanticErrors.classMember(message, expression.name.span)
-			is CEnum  -> SemanticErrors.enumMember(message, expression.name.span)
+			is CClass     -> SemanticErrors.classMember(message, expression.name.span)
+			is CEnum      -> SemanticErrors.enumMember(message, expression.name.span)
 			is CInterface -> SemanticErrors.unknownField(owner, expression.name)
-			else      -> SemanticErrors.structField(message, expression.name.span)
+			else          -> SemanticErrors.structField(message, expression.name.span)
 		}
 		validateFieldAccess(field, expression.name)
 		model.fields[expression] = field
@@ -811,17 +811,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		return if (fallback is CNullable || fallback == ValueType.Null) left else left.payload
 	}
 
-	private fun castHint(expression: CastExpression): ValueType =
-		if (unboundStateName(expression.target) == null) resolveType(expression.target) else typeOf(expression, requireValue = false)
+	private fun castHint(expression: CastExpression): ValueType = if (unboundStateName(expression.target) == null) resolveType(expression.target) else typeOf(expression, requireValue = false)
 
 	/** Only inspect fixed source contracts; literals keep the peer payload's context. */
 	private fun equalityHint(value: Expression): ValueType? = when (value) {
-		is NameExpression                                                                             -> nameType(value)
-		is CallExpression                                                                             -> callType(value)
-		is MemberCallExpression, is StateCallExpression                                               -> typeOf(value)
-		is CastExpression                                                                             -> castHint(value)
+		is NameExpression                                                                                                         -> nameType(value)
+		is CallExpression                                                                                                         -> callType(value)
+		is MemberCallExpression, is StateCallExpression                                                                           -> typeOf(value)
+		is CastExpression                                                                                                         -> castHint(value)
 		is IndexExpression, is FieldAccessExpression, is ProviderAccessExpression, is ElvisExpression, is GuardedAccessExpression -> typeOf(value)
-		else                                                                                          -> null
+		else                                                                                                                      -> null
 	}
 
 	private fun nullableEquality(expression: BinaryExpression, contextualFloat: Boolean): ValueType? {

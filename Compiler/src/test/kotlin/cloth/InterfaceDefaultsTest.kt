@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class InterfaceDefaultsTest {
+
 	private val completion get() = processCompletion().replace("\r\n", "\n")
 
 	private val closedDefaults = """

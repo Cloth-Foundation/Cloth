@@ -4,6 +4,7 @@ import cloth.parser.declaration.IntrinsicBody
 import cloth.semantic.SemanticException
 
 internal object IntrinsicErrors {
+
 	fun invalid(body: IntrinsicBody, reason: String) = SemanticException(
 		DiagnosticCode.INVALID_INTRINSIC_BINDING, "Invalid compiler binding '${body.id}': $reason",
 		listOf(SourceLabel(body.operation.span, "binding declared here")),

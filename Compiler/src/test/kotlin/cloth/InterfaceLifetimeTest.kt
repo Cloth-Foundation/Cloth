@@ -6,6 +6,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 
 class InterfaceLifetimeTest {
+
 	private val item = """
 		typedef<interface> Read { mt<int> read(int extra) }
 		typedef<class> Item (pub def<int> value) : Read {

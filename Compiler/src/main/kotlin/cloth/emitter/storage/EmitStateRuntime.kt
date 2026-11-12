@@ -42,15 +42,12 @@ internal class EmitStateRuntime(
 	private fun references(builder: LLVMBuilderRef, activation: LLVMValueRef) = LLVMBuildStructGEP2(builder, header, activation, 0, "state_owners")
 	private fun tagAddress(builder: LLVMBuilderRef, activation: LLVMValueRef) = LLVMBuildStructGEP2(builder, header, activation, 1, "state_tag_address")
 	fun arena(builder: LLVMBuilderRef, activation: LLVMValueRef): LLVMValueRef = LLVMBuildStructGEP2(builder, header, activation, 2, "state_arena")
-	fun payload(builder: LLVMBuilderRef, activation: LLVMValueRef, type: ValueType): LLVMValueRef =
-		LLVMBuildStructGEP2(builder, layout(type), activation, 1, "state_payload")
+	fun payload(builder: LLVMBuilderRef, activation: LLVMValueRef, type: ValueType): LLVMValueRef = LLVMBuildStructGEP2(builder, layout(type), activation, 1, "state_payload")
 
-	fun current(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef =
-		LLVMBuildLoad2(builder, pointer, classes.stateSlot(builder, access), "active_state")
+	fun current(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef = LLVMBuildLoad2(builder, pointer, classes.stateSlot(builder, access), "active_state")
 
 	fun tagOf(state: StateDefinition): LLVMValueRef = tags.getValue(state)
-	fun tagOf(builder: LLVMBuilderRef, activation: LLVMValueRef): LLVMValueRef =
-		LLVMBuildLoad2(builder, index, tagAddress(builder, activation), "active_state_tag")
+	fun tagOf(builder: LLVMBuilderRef, activation: LLVMValueRef): LLVMValueRef = LLVMBuildLoad2(builder, index, tagAddress(builder, activation), "active_state_tag")
 
 	fun matches(builder: LLVMBuilderRef, access: ObjectAccess, state: StateDefinition): LLVMValueRef {
 		val activation = current(builder, access)

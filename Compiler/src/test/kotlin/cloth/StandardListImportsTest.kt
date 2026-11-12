@@ -3,7 +3,10 @@ package cloth
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
 import cloth.api.SourceModuleRole
-import cloth.data.*
+import cloth.data.CArray
+import cloth.data.CClass
+import cloth.data.CStruct
+import cloth.data.ValueType
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.semantic.typing.FunctionAnalyzer
@@ -18,6 +21,7 @@ import kotlin.test.*
 
 /** Actual source-module integration, without native backend binaries. */
 class StandardListImportsTest {
+
 	private fun analyze(request: CompilationRequest) = FunctionAnalyzer(genericTarget()).analyze(SourceGraphLoader.load(request))
 	private fun failure(request: CompilationRequest, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic> { analyze(request) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary); assertLocated(it)
@@ -40,21 +44,18 @@ class StandardListImportsTest {
 
 	@Test
 	fun `repeated wildcard imports circular graph routes and class aliases reuse one closed List`(@TempDir root: Path) {
-		val request = standardListRequest(root, mapOf(
-			"Main.co" to """
+		val request = standardListRequest(root, mapOf("Main.co" to """
 				using cloth.collections.List : List
 				using cloth.collections.List : *
 				using Bridge : made, info
 				pub fn<int> marker() = 7
 				fn main() { def values = made(); def alias = values; alias.append(marker()); info(); values::delete }
-			""",
-			"Bridge.co" to """
+			""", "Bridge.co" to """
 				using Main : marker
 				using cloth.collections.List : List
 				pub fn<List<int>> made() { marker(); return List<int>::new }
 				pub fn<typeinfo> info() = List<int<32>>::type
-			"""
-		))
+			"""))
 		val graph = SourceGraphLoader.load(request)
 		assertEquals(3, graph.sources.size)
 		assertTrue(graph.edges.any { it.backEdge })
@@ -96,10 +97,7 @@ class StandardListImportsTest {
 
 	@Test
 	fun `actual List requires inference evidence and checks explicit arguments and invariance`(@TempDir root: Path) {
-		for ((index, input) in listOf("List::new" to DiagnosticCode.GENERIC_INFERENCE_FAILED,
-			"List<int, string>::new" to DiagnosticCode.GENERIC_ARITY,
-			"List<void>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT,
-			"List<opt<int>>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT).withIndex()) {
+		for ((index, input) in listOf("List::new" to DiagnosticCode.GENERIC_INFERENCE_FAILED, "List<int, string>::new" to DiagnosticCode.GENERIC_ARITY, "List<void>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT, "List<opt<int>>::new" to DiagnosticCode.INVALID_GENERIC_ARGUMENT).withIndex()) {
 			failure(standardListRequest(root.resolve("input_$index"), "fn main() { ${input.first} }"), input.second)
 		}
 		failure(standardListRequest(root.resolve("invariant"), """

@@ -57,8 +57,7 @@ tasks.test {
 	useJUnitPlatform()
 	workingDir(rootProject.projectDir)
 	// Native Bootstrap fixtures live outside this project's source set.
-	inputs.files(rootProject.fileTree("Bootstrap") { include("**/*.co") })
-		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(rootProject.fileTree("Bootstrap") { include("**/*.co") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.dir(rootProject.file("examples/StandardLibrary")).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("examples/Collections") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(rootProject.fileTree("examples/Interfaces") { include("**/*.co", "**/*.toml") }).withPathSensitivity(PathSensitivity.RELATIVE)

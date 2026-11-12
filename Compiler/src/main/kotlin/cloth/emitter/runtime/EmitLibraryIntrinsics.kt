@@ -5,18 +5,15 @@ import cloth.data.CNullable
 import cloth.emitter.NativeCABI
 import cloth.emitter.callables.EmitFunctionFrame
 import cloth.emitter.callables.EmitResults
-import cloth.emitter.storage.EmitClassRuntime
-import cloth.emitter.storage.EmitMemory
-import cloth.emitter.storage.EmitNullable
-import cloth.emitter.storage.EmitStringArena
-import cloth.emitter.storage.ObjectAccess
+import cloth.emitter.storage.*
 import cloth.emitter.text.EmitUtf8Validation
 import cloth.semantic.LibraryIntrinsic
 import cloth.semantic.ResultShape
 import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.symbols.MethodSymbol
 import org.bytedeco.llvm.LLVM.*
-import org.bytedeco.llvm.global.LLVM.*
+import org.bytedeco.llvm.global.LLVM.LLVMBuildExtractValue
+import org.bytedeco.llvm.global.LLVM.LLVMBuildSelect
 
 /** Lower checked standard-library bodies through the ordinary callable ABI. */
 internal class EmitLibraryIntrinsics(
@@ -24,12 +21,11 @@ internal class EmitLibraryIntrinsics(
 	private val bindings: Map<CallableContractSymbol, LibraryIntrinsic>, strings: EmitStringArena, results: EmitResults,
 	classes: () -> EmitClassRuntime,
 ) {
-	private val fileOwner = bindings.entries.firstOrNull { it.value == LibraryIntrinsic.FILE_OPEN || it.value == LibraryIntrinsic.FILE_READ }
-		?.let { (it.key as MethodSymbol).owner as CClass }
+
+	private val fileOwner = bindings.entries.firstOrNull { it.value == LibraryIntrinsic.FILE_OPEN || it.value == LibraryIntrinsic.FILE_READ }?.let { (it.key as MethodSymbol).owner as CClass }
 	private val file by lazy { EmitFileIO(context, module, abi, checkNotNull(fileOwner), classes(), strings, results) }
 
-	fun instanceStorage(owner: CClass): LLVMTypeRef =
-		if (owner === fileOwner) file.layout else owner.instanceStorage(context, abi.layout)
+	fun instanceStorage(owner: CClass): LLVMTypeRef = if (owner === fileOwner) file.layout else owner.instanceStorage(context, abi.layout)
 
 	fun releaseInstance(owner: CClass, builder: LLVMBuilderRef, receiver: ObjectAccess) {
 		if (owner === fileOwner) file.release(builder, receiver)
@@ -41,8 +37,8 @@ internal class EmitLibraryIntrinsics(
 	) {
 		when (bindings.getValue(callable)) {
 			LibraryIntrinsic.DECODE_UTF8 -> decode(builder, arguments.single(), result.values.single() as CNullable, frame)
-			LibraryIntrinsic.FILE_OPEN -> file.open(builder, checkNotNull(receiver), arguments.single(), result.values.single() as CNullable, frame)
-			LibraryIntrinsic.FILE_READ -> file.read(builder, checkNotNull(receiver), arguments.single(), result, frame)
+			LibraryIntrinsic.FILE_OPEN   -> file.open(builder, checkNotNull(receiver), arguments.single(), result.values.single() as CNullable, frame)
+			LibraryIntrinsic.FILE_READ   -> file.read(builder, checkNotNull(receiver), arguments.single(), result, frame)
 		}
 	}
 

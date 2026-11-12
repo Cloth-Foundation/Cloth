@@ -6,9 +6,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GrowableStructArrayStorageTest {
+
 	private val holder = """
 		typedef<struct> Holder {
 		    int[] items, string[]?[]? rows;

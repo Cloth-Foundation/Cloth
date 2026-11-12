@@ -1,11 +1,6 @@
 package cloth.builtin
 
-import cloth.data.CInt
-import cloth.data.CInteger
-import cloth.data.ProviderReceiver
-import cloth.data.ProviderResult
-import cloth.data.ValueType
-import cloth.data.implicitText
+import cloth.data.*
 import cloth.diagnostics.InternalErrors
 import cloth.emitter.types.BuiltinEmissionContext
 import cloth.target.TargetLayout
@@ -75,19 +70,16 @@ internal sealed interface BuiltinParameter {
 			return BuiltinArgument(actual, ValueType.STRING, text)
 		}
 
-		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef =
-			argument.text?.emit(context.providers, ProviderReceiver.Value(argument.sourceType, value)) ?: value
+		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef = argument.text?.emit(context.providers, ProviderReceiver.Value(argument.sourceType, value)) ?: value
 	}
 
 	/** Accepts every Cloth integer identity and lowers it to the target's C int. */
 	data object NativeInt : BuiltinParameter {
 
 		override val spelling = "integer"
-		override fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument? =
-			if (actual is CInteger || actual == ValueType.NEVER) BuiltinArgument(actual, CInt(target.cIntBits)) else null
+		override fun bind(actual: ValueType, target: TargetLayout): BuiltinArgument? = if (actual is CInteger || actual == ValueType.NEVER) BuiltinArgument(actual, CInt(target.cIntBits)) else null
 
-		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef =
-			context.processExit.normalize(value, argument.sourceType as CInteger)
+		override fun adapt(context: BuiltinEmissionContext, argument: BuiltinArgument, value: LLVMValueRef): LLVMValueRef = context.processExit.normalize(value, argument.sourceType as CInteger)
 	}
 }
 

@@ -16,16 +16,23 @@ import cloth.settings.OutputKind
 import cloth.source.SourceGraphLoader
 import cloth.toolchain.StandardLibrary
 import org.bytedeco.javacpp.PointerPointer
-import org.bytedeco.llvm.LLVM.*
+import org.bytedeco.llvm.LLVM.LLVMContextRef
+import org.bytedeco.llvm.LLVM.LLVMModuleRef
+import org.bytedeco.llvm.LLVM.LLVMTypeRef
+import org.bytedeco.llvm.LLVM.LLVMValueRef
 import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class FileIOTest {
+
 	@Test
 	fun `read only files own one cursor and return independent counted bytes`(@TempDir directory: Path) {
 		val input = Files.write(directory.resolve("二进制 bytes.bin"), byteArrayOf(0, 13, 10, 26, 0xFF.toByte()))
@@ -159,6 +166,7 @@ class FileIOTest {
 				argument.put(0, LLVMBuildGlobalStringPtr(builder, message, "probe_message"))
 				LLVMBuildCall2(builder, putsType, puts, argument, 1, "")
 			}
+
 			fun define(name: String): LLVMValueRef {
 				val function = LLVMGetNamedFunction(module, name)
 				val probeName = "cloth.test.$name"

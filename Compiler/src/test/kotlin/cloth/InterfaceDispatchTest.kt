@@ -11,6 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class InterfaceDispatchTest {
+
 	private val dispatch = """
 		fn<int> unexpected() { println("default ran"); return 100 }
 		typedef<interface> Read {

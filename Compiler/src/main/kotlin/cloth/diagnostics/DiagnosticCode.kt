@@ -62,6 +62,7 @@ enum class DiagnosticCode(val id: String) {
 	IMPORT_NAME_NOT_FOUND("C3102"),
 	IMPORT_PRIVATE_NAME("C3103"),
 	IMPORT_NAME_CONFLICT("C3104"),
+
 	// C3105 retired after whole-program import emission.
 	RESERVED_STANDARD_LIBRARY_PATH("C3106"),
 	INVALID_ARRAY_MUTATION("C3107"),
@@ -129,6 +130,7 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_MAIN_PARAMETERS("C3036"),
 	INVALID_MAIN_RETURN("C3037"),
 	UNSUPPORTED_FUNCTION_ABI("C4030"),
+
 	// C4031 retired after arbitrary integer lowering and decimal text integration.
 	UNSUPPORTED_ARRAY_MUTATION("C4032"),
 	UNSUPPORTED_GENERIC_TYPES("C4033"),

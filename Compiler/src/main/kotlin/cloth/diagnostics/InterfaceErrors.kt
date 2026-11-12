@@ -7,13 +7,12 @@ import cloth.token.Token
 import cloth.token.TokenSpan
 
 internal object InterfaceErrors {
-	fun header(message: String, span: TokenSpan, related: SourceLabel? = null) =
-		SemanticException(DiagnosticCode.INVALID_INTERFACE_HEADER, message, listOfNotNull(SourceLabel(span, "invalid parent clause"), related))
+
+	fun header(message: String, span: TokenSpan, related: SourceLabel? = null) = SemanticException(DiagnosticCode.INVALID_INTERFACE_HEADER, message, listOfNotNull(SourceLabel(span, "invalid parent clause"), related))
 
 	fun cycle(declaration: Token, closing: TokenSpan, path: List<TokenSpan>) = SemanticException(
 		DiagnosticCode.INTERFACE_INHERITANCE_CYCLE, "Interface inheritance cycle involving '${declaration.lexeme}'",
-		listOf(SourceLabel(closing, "parent closes this cycle"), SourceLabel(declaration.span, "interface declared here")) +
-			path.map { SourceLabel(it, "parent on the cycle") },
+		listOf(SourceLabel(closing, "parent closes this cycle"), SourceLabel(declaration.span, "interface declared here")) + path.map { SourceLabel(it, "parent on the cycle") },
 	)
 
 	fun applications(owner: String, first: String, second: String, sources: List<SourceLabel>) = SemanticException(

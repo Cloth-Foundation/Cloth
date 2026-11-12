@@ -2,11 +2,7 @@ package cloth
 
 import cloth.api.CompilationRequest
 import cloth.api.SourceModule
-import cloth.data.CArray
-import cloth.data.CClass
-import cloth.data.CInterface
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.semantic.generics.ClosedTypeAnalyzer
@@ -21,12 +17,14 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class InterfaceSemanticsTest {
+
 	private val analyzer = ClosedTypeAnalyzer(genericTarget())
 	private fun analyze(source: String) = analyzer.analyze(genericUnit(source))
 	private fun failure(source: String, code: DiagnosticCode) = assertFailsWith<ClothDiagnostic>(source) { analyze(source) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary)
 		assertLocated(it)
 	}
+
 	private fun ClosedTypeModel.targets(owner: CClass) = interfaces.classes.getValue(owner).implementations
 	private fun ClosedTypeModel.classNamed(name: String) = nominalTypes.filterIsInstance<CClass>().single { it.name.lexeme == name }
 

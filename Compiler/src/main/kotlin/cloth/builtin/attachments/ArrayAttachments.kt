@@ -16,6 +16,7 @@ internal enum class ArrayMutation(val spelling: String, val changesLength: Boole
 	RESERVE("reserve", changesLength = false);
 
 	companion object {
+
 		fun named(name: String): ArrayMutation? = entries.firstOrNull { it.spelling == name }
 	}
 }
@@ -30,10 +31,10 @@ internal class ArrayAttachments(type: CArray, sizeBits: Int) : PrimitiveAttachme
 		val element = BuiltinParameter.Exact(type.element)
 		for (operation in ArrayMutation.entries) {
 			val parameters = when (operation) {
-				ArrayMutation.APPEND -> listOf(element)
-				ArrayMutation.INSERT -> listOf(index, element)
+				ArrayMutation.APPEND                           -> listOf(element)
+				ArrayMutation.INSERT                           -> listOf(index, element)
 				ArrayMutation.REMOVE_AT, ArrayMutation.RESERVE -> listOf(index)
-				ArrayMutation.CLEAR -> emptyList()
+				ArrayMutation.CLEAR                            -> emptyList()
 			}
 			register(operation.spelling, parameters, if (operation == ArrayMutation.REMOVE_AT) type.element else ValueType.VOID, BuiltinStorageContract.MUTATING_RECEIVER) { _, _ ->
 				throw InternalErrors.invariant("Array mutation requires receiver-aware storage lowering")

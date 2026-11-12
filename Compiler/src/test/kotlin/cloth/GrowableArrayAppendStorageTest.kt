@@ -1,15 +1,16 @@
 package cloth
 
 import cloth.emitter.NativeCABI
-import org.bytedeco.llvm.global.LLVM.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
 
 /** Run real Cloth mutators with allocator/movement instrumentation and poisoned frees. */
 class GrowableArrayAppendStorageTest {
+
 	private val harness = GrowableArrayStorageTest()
 	private val observer = "fn<usize> liveBytes() = 0\n"
 	private fun native(directory: Path, name: String, source: String, check: GrowableArrayStorageTest.Probe.() -> Unit = {}) {

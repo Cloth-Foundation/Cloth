@@ -24,8 +24,8 @@ internal fun checkCallableMetadata(function: CallableContractSymbol, model: Func
 	val metadata = MetadataAnalysis(model, function.parameters)
 	model.declarations.initializationExpressions(function.declaration).forEach(metadata::expression)
 	when (val body = function.declaration.executableBody) {
-		is BlockBody      -> metadata.statements(body.statements)
-		is ExpressionBody -> metadata.expression(body.expression)
+		is BlockBody           -> metadata.statements(body.statements)
+		is ExpressionBody      -> metadata.expression(body.expression)
 		null, is IntrinsicBody -> Unit
 	}
 }
@@ -237,8 +237,8 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 				}
 			}
 
-			is GuardedReceiver -> model.metadata[value.source]
-			is GuardedAccessExpression -> {
+			is GuardedReceiver          -> model.metadata[value.source]
+			is GuardedAccessExpression  -> {
 				expression(value.receiver)
 				val skipped = snapshot()
 				expression(value.continuation)

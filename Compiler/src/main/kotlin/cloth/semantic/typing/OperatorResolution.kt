@@ -1,10 +1,6 @@
 package cloth.semantic.typing
 
-import cloth.data.CClass
-import cloth.data.classBackedType
-import cloth.data.CMemberType
-import cloth.data.CNullable
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression

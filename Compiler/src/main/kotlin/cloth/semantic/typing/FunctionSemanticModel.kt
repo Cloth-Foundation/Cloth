@@ -3,18 +3,17 @@ package cloth.semantic.typing
 import cloth.data.ValueType
 import cloth.parser.expression.*
 import cloth.parser.statement.Statement
+import cloth.parser.type.TypeArgumentList
 import cloth.semantic.ClassDeletionPlan
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.StateDefinition
-import cloth.semantic.declarations.TypeResolver
 import cloth.semantic.flow.ControlFlowModel
 import cloth.semantic.flow.PresenceFacts
 import cloth.semantic.generics.ClosedCallableKey
 import cloth.semantic.generics.GenericCallableRequest
 import cloth.semantic.generics.TypeArgumentSpans
 import cloth.semantic.generics.sourceSpans
-import cloth.parser.type.TypeArgumentList
 import cloth.semantic.scalar
 import cloth.semantic.symbols.*
 
@@ -47,6 +46,7 @@ class FunctionSemanticModel internal constructor(
 	internal val sourceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Source> = facts.identityMap { it.sourceMemberCalls }
 	internal val interfaceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Interface> = facts.identityMap { it.interfaceMemberCalls }
 	internal val constructorCalls: MutableMap<CallSite, ResolvedCall.Source> = facts.identityMap { it.constructorCalls }
+	internal val guaranteedConstructions: MutableMap<ClassCreationExpression, ResolvedGuaranteedConstruction> = facts.identityMap { it.guaranteedConstructions }
 	internal val classDeletions: MutableMap<ClassDeletionExpression, ClassDeletionPlan> = facts.identityMap { it.classDeletions }
 	internal val stateCalls: MutableMap<StateCallExpression, ResolvedStateCall> = facts.identityMap { it.stateCalls }
 	internal val stateTests: MutableMap<TypeCheckExpression, StateDefinition> = facts.identityMap { it.stateTests }
@@ -58,13 +58,11 @@ class FunctionSemanticModel internal constructor(
 
 	internal fun allBodyModels(): Sequence<FunctionSemanticModel> = sequenceOf(this) + callables.publishedMethods().asSequence().map(::bodyOf)
 	internal fun boundDeclarationModels(template: FunctionSemanticModel): Sequence<FunctionSemanticModel> {
-		val models = generateSequence(template) { it.enclosingBody }
-			.flatMap { it.allBodyModels() + it.inferredBoundBodies.values.asSequence() }
+		val models = generateSequence(template) { it.enclosingBody }.flatMap { it.allBodyModels() + it.inferredBoundBodies.values.asSequence() }
 		return if (operatorWidth == null) models else models.sortedBy { it.operatorWidth != operatorWidth }
 	}
 
-	internal fun canonicalBoundMethod(method: MethodSymbol): MethodSymbol? =
-		declarations.genericViews?.canonicalBoundMethod(method.declaration)?.let(declarations::symbolOf)
+	internal fun canonicalBoundMethod(method: MethodSymbol): MethodSymbol? = declarations.genericViews?.canonicalBoundMethod(method.declaration)?.let(declarations::symbolOf)
 
 	fun typeOf(expression: Expression) = types.typeOf(expression)
 	fun resultOf(expression: Expression) = types.resultOf(expression)
@@ -77,8 +75,7 @@ class FunctionSemanticModel internal constructor(
 	}
 
 	fun typeOf(function: FunctionSymbol): FunctionType = declaredTypeOf(function)
-	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType =
-		contracts.signatures[callable] ?: declarations.genericViews?.candidateType(callable) ?: contracts.signatures.getValue(callable)
+	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType = contracts.signatures[callable] ?: declarations.genericViews?.candidateType(callable) ?: contracts.signatures.getValue(callable)
 	internal val intrinsics get() = contracts.intrinsics
 	internal fun contextSelectorType(method: MethodSymbol): ValueType? = contracts.contextSelectors[method]
 
@@ -109,8 +106,7 @@ class FunctionSemanticModel internal constructor(
 		}
 	}
 
-	internal fun inferredResult(call: CallSite): ResultShape? =
-		if (localCallResults != null) localCallResults[call] else declarations.genericViews?.inferredResult(call)
+	internal fun inferredResult(call: CallSite): ResultShape? = if (localCallResults != null) localCallResults[call] else declarations.genericViews?.inferredResult(call)
 
 	private fun publishInferredResults() {
 		if (!publishInference) return
@@ -139,8 +135,7 @@ class FunctionSemanticModel internal constructor(
 		return supplied.arguments.map(types.typeResolver::resolve)
 	}
 
-	internal fun genericCallableRequests(): Sequence<GenericCallableRequest> =
-		allBodyModels().flatMap { it.callableRequests.values.asSequence() }
+	internal fun genericCallableRequests(): Sequence<GenericCallableRequest> = allBodyModels().flatMap { it.callableRequests.values.asSequence() }
 
 	internal fun selectedCall(call: CallExpression): ResolvedCall = calls.getValue(call)
 	internal fun selectedMemberCall(call: MemberCallExpression): ResolvedCall.Source? = sourceMemberCalls[call]
@@ -176,11 +171,10 @@ class FunctionSemanticModel internal constructor(
 		return body
 	}
 
-	private fun fresh(width: Int?, enclosing: FunctionSemanticModel? = enclosingBody) =
-		FunctionSemanticModel(
-			declarations, contracts, controlFlow, presence, operatorBodies, width, enclosing,
-			publishInference = false, localCallResults = localCallResults,
-		)
+	private fun fresh(width: Int?, enclosing: FunctionSemanticModel? = enclosingBody) = FunctionSemanticModel(
+		declarations, contracts, controlFlow, presence, operatorBodies, width, enclosing,
+		publishInference = false, localCallResults = localCallResults,
+	)
 
 	/** Dropping a trial discards all its body and callable facts. */
 	internal fun trial() = Trial()

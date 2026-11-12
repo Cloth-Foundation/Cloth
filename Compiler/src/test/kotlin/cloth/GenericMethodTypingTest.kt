@@ -9,13 +9,13 @@ import org.junit.jupiter.api.Test
 import kotlin.test.*
 
 class GenericMethodTypingTest {
+
 	private fun analyze(source: String) = FunctionAnalyzer(genericTarget()).analyze(genericUnit(source))
 
-	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic =
-		assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
-			assertEquals(code, it.diagnosticCode, it.summary)
-			assertLocated(it)
-		}
+	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
+		assertEquals(code, it.diagnosticCode, it.summary)
+		assertLocated(it)
+	}
 
 	@Test
 	fun `owner and method arguments identify independent specialization bodies`() {

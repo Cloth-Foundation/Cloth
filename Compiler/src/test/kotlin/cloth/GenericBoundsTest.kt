@@ -13,13 +13,13 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericBoundsTest {
+
 	private val target = genericTarget()
 	private fun analyze(source: String) = FunctionAnalyzer(target).analyze(genericUnit(source))
-	private fun failure(source: String, code: DiagnosticCode = DiagnosticCode.UNSATISFIED_GENERIC_BOUND): ClothDiagnostic =
-		assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
-			assertEquals(code, it.diagnosticCode, it.summary)
-			assertLocated(it)
-		}
+	private fun failure(source: String, code: DiagnosticCode = DiagnosticCode.UNSATISFIED_GENERIC_BOUND): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
+		assertEquals(code, it.diagnosticCode, it.summary)
+		assertLocated(it)
+	}
 
 	@Test
 	fun `Number accepts exact numeric types and forwards through declarations and calls`() {
@@ -156,6 +156,7 @@ class GenericBoundsTest {
 	fun `written duplicates use resolved identities before substitution`() {
 		for ((declaration, written) in listOf(
 			"typedef<interface> Named {}" to "Named & Named",
+			"typedef<interface> Named {}" to "Named? & Named?",
 			"typedef<interface> View<N = int> {}" to "View<> & View<int<32>>",
 		)) {
 			val ast = genericUnit("$declaration\nfn keep<T: $written>(T value) {}")
@@ -183,7 +184,7 @@ class GenericBoundsTest {
 			typedef<class> Base<X> : Named<X> {}
 			typedef<interface> Tagged<X> : View<Shape<X, float>> {}
 		""".trimIndent()
-		for (written in listOf("View<X> & View<int> & View<float>", "Base<X> & Tagged<Y>")) {
+		for (written in listOf("View<X> & View<int> & View<float>", "Base<X> & Tagged<Y>", "Base<X>? & Tagged<Y>?")) {
 			val ast = genericUnit(source + "\nfn unused<X, Y, T: $written>() {}")
 			val bounds = assertNotNull(assertIs<FunctionDeclaration>(ast.declarations.last()).typeParameters).parameters.last().bounds
 			val error = assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(target).analyze(ast) }
@@ -380,7 +381,159 @@ class GenericBoundsTest {
 		failure("fn unused<T: new(opt<float> first ?: other, float other)>() {}", DiagnosticCode.INVALID_PARAMETER_DEFAULT)
 		failure("typedef<class> Factory<T: new(opt<float> health ?: self.baseHealth)> { def<float> baseHealth = 100f }", DiagnosticCode.PARTIAL_CLASS_INSTANCE)
 		failure("fn unused<T: new(opt<float> health ?: \"wrong\")>() {}", DiagnosticCode.TYPE_MISMATCH)
-		failure("fn<T> make<T: new()>() = T::new()", DiagnosticCode.UNSUPPORTED_GENERIC_TYPES)
+	}
+
+	@Test
+	fun `guaranteed construction uses ordinary argument binding and ranking`() {
+		analyze("""
+			typedef<class> Player (pub def<int> health, string label) {
+			    Player(int startingHealth) : (startingHealth, "player") {}
+			}
+			fn<T> make<T: new(int amount) & new(int amount, opt<string> label ?: "name")>(int amount) = T::new(amount=amount)
+			fn<Player> use() = make<Player>(100)
+		""")
+		failure("fn<T> make<T: new(int health)>() = T::new(amount=100)", DiagnosticCode.INVALID_ARGUMENT_BINDING)
+		failure("fn<T> make<T: new(int health)>() = T::new(\"wrong\")", DiagnosticCode.NO_MATCHING_CALL)
+		val tie = failure("""
+			fn<T> make<T: new(int health, opt<bool> ready ?: true) & new(int health, opt<string> name ?: "player")>() = T::new(100)
+		""", DiagnosticCode.AMBIGUOUS_CALL)
+		assertEquals(3, tie.sourceLabels.size)
+	}
+
+	@Test
+	fun `nullable bounds prove the payload and require a nullable type argument`() {
+		val source = """
+			typedef<interface> Named<N: Number> { mt<N> code() = default (0 -> N) }
+			typedef<class> Base (pub def<int> count) {}
+			typedef<class> Player : Base(1), Named<int> {}
+			typedef<struct> Slot<T: Number? = int<8>?> { T value }
+			fn<T> keep<T: Base? & Named<int>?>(T value) {
+			    if (value == null) return null
+			    def payload = value
+			    def<Base> view = payload
+			    def<Named<int>> named = payload
+			    if (payload.count > payload.code()) return payload
+			    return null
+			}
+			fn<T> forward<T: Base? & Named<int>? = Player?>(T value) = keep<T>(value)
+			fn<T> doubled<T: Number? = int<8>?>(T value) {
+			    if (value == null) return null
+			    def payload = value
+			    return payload + payload
+			}
+			fn<T?> lift<T: Number>(T value) = doubled<T?>(value)
+			fn<T> numeric<T: Number?>(T value) = doubled(value)
+		""".trimIndent()
+		analyze(source + """
+
+			fn use(Player? item, int<8>? small, float? real, Slot<> slot) {
+			    def<Player?> same = forward(item)
+			    def<Player?> absent = forward<>(null)
+			    def<int<8>?> integer = numeric(small)
+			    def<float?> floating = doubled(real)
+			    def<int<8>?> inferred = doubled(slot.value)
+			    def<int?> lifted = lift(4)
+			}
+		""")
+		for (type in listOf("int", "bool?", "int[]?", "int?[]")) {
+			val error = failure(source + "\nfn use($type value) { doubled(value) }")
+			assertContains(error.summary, "'Number?'")
+		}
+		for (type in listOf("Player", "Base?", "Named<int>?")) {
+			failure(source + "\nfn use($type value) { keep<$type>(value) }")
+		}
+		failure(source + "\nfn inspect<T: Base?>(T value) = value.count", DiagnosticCode.NULLABLE_PAYLOAD_ACCESS)
+		failure(source + "\nfn inspect<T: Number?>(T value) { def copy = value }", DiagnosticCode.EXPLICIT_NULLABLE_TYPE)
+		failure(source + "\nfn inspect<T: Number? = int>() {}")
+	}
+
+	@Test
+	fun `nullable bounds apply ordinary declared wrapper inference and dependent conflict checks`() {
+		val source = """
+			typedef<interface> Named<N> {}
+			typedef<class> Player : Named<int> {}
+			typedef<class> Box<T: Number?> (T? value) {}
+			typedef<class> Tools { pub mt<U> read<U: Number?>(U? value) = value }
+			fn<T> read<T: Number?>(T? value) = value
+			fn inspect<A, B, T: Named<A>? & Named<B>?>(A first, B second, T value) {}
+		""".trimIndent()
+		analyze(source + """
+
+			fn use(Player? player, int? n, Tools tools) {
+			    def<int?> explicit = read<int?>(n)
+			    def<int?> method = tools.read<int?>(n)
+			    def<Box<int?>> box = Box<int?>::new(n)
+			    inspect(1, 2, player)
+			}
+		""")
+		for (call in listOf("read(n)", "tools.read(n)", "Box::new(n)")) {
+			failure(source + "\nfn use(int? n, Tools tools) { $call }")
+		}
+		val conflict = failure(source + "\nfn use(Player? player) { inspect(1, 2f, player) }", DiagnosticCode.CONFLICTING_INTERFACE_APPLICATION)
+		assertEquals(3, conflict.sourceLabels.size)
+	}
+
+	@Test
+	fun `array bounds check declared shape and exact elements before call reception`() {
+		val source = """
+			typedef<class> Base {}
+			typedef<class> Child : Base {}
+			fn<T> append<T: Base[]>(T values, Base value) { values.append(value); return values }
+			fn<T> fixed<T: int[4]>(T values) { values[0] = values[1]; return values }
+			fn<T> doubled<T: Number[] = int[]>(T values) {
+			    values[0] = values[0] + values[0]
+			    values.append(values[0])
+			    return values
+			}
+			fn<T> forward<T: Number[]>(T values) = doubled(values)
+			fn<T> appendExact<E, T: E[]>(E value, T values) { values.append(value); return values }
+			fn<T> later<T: E[], E>(T values, E value) = appendExact<E, T>(value, values)
+		""".trimIndent()
+		analyze(source + """
+
+			fn use(Base[] objects, Child child, int[4] four, int<8>[] numbers, float[] reals) {
+			    def<Base[]> appended = append(objects, child)
+			    def<int[4]> sized = fixed(four)
+			    def<int<8>[]> small = forward(numbers)
+			    def<float[]> floating = doubled(reals)
+			    def<int[]> fallback = doubled<>([2])
+			    def<Base[]> dependent = later<Base[], Base>(objects, child)
+			}
+		""")
+		for ((bound, actual) in listOf(
+			"int[]" to "int[4]", "int[4]" to "int[3]", "int[4]" to "int[]", "Base[]" to "Child[]",
+			"Number[]" to "bool[]", "Number[]" to "int?[]", "Number[]" to "int[]?",
+			"Number?[]" to "int[]", "Number[]?" to "int?[]", "Number[]?[2]?" to "int[][2]?",
+			"Number[]?[2]?" to "int[]?[3]?", "Number[][2]" to "int[][]",
+		)) {
+			val error = failure(source + "\nfn checked<T: $bound>(T value) {}\nfn use($actual value) { checked(value) }")
+			assertContains(error.summary, "'$bound'")
+		}
+		failure(source + "\nfn use() { def<int[]> short = [1, 2]; fixed<int[4]>(short) }", DiagnosticCode.INVALID_ARRAY)
+		failure("fn inspect<T: int[4]>(T values) { values.append(0) }", DiagnosticCode.INVALID_ARRAY_MUTATION)
+		failure("fn inspect<T: Number[]>(T values) { values[0] = 1 }", DiagnosticCode.INVALID_ARRAY)
+	}
+
+	@Test
+	fun `array bounds validate dependent shape definitions and canonical defaults`() {
+		failure("fn check<A: B[], B: A[]>(A values) {}", DiagnosticCode.INVALID_GENERIC_BOUND)
+		failure("""
+			typedef<class> Rows<T: Bag<int[]>[]> {}
+			typedef<class> Bag<T: int[] = float[]> {}
+		""")
+		failure("typedef<struct> Hidden { int value }\npub fn expose<T: Hidden[]>() {}", DiagnosticCode.PRIVATE_GENERIC_SIGNATURE)
+		analyze("""
+			typedef<struct> Packet<E> { E value }
+			typedef<class> Box<T: int[]> (pub def<T> values) {
+			    pub mt<U> echo<U: T[]>(U input) = input
+			}
+			fn<T> keep<E, T: Packet<E>[]?>(T value) = value
+			fn use(int[] values, int[][] matrix, Packet<int>[]? packets) {
+			    def box = Box::new(values)
+			    def<int[][]> echo = box.echo(matrix)
+			    def<Packet<int>[]?> preserved = keep<int, _>(packets)
+			}
+		""")
 	}
 
 	@Test

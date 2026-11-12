@@ -1,7 +1,7 @@
 package cloth.emitter.callables
 
-import cloth.data.ValueType
 import cloth.data.CArray
+import cloth.data.ValueType
 import cloth.emitter.storage.EmitStringArena
 import cloth.semantic.ResultShape
 import org.bytedeco.javacpp.PointerPointer
@@ -39,6 +39,7 @@ internal class EmitFunctionFrame(private val context: LLVMContextRef, private va
 		strings.release(builder, arena)
 		strings.arrays.observe(builder, arena, value, type, view)
 	}
+
 	fun replaceArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.replaceElement(builder, array, type, index, value, fallback)
 	fun adoptArrayElement(array: LLVMValueRef, type: CArray, index: LLVMValueRef, value: LLVMValueRef, element: CArray, fallback: LLVMValueRef): LLVMValueRef = strings.arrays.adoptElement(builder, array, type, index, value, element, fallback)
 

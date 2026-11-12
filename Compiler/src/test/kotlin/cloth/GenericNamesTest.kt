@@ -321,7 +321,7 @@ class GenericNamesTest {
 		val prefix = "typedef<interface> IHealth<N> {}\n"
 		failure(prefix + "fn read<T: IHealth>() {}", DiagnosticCode.RAW_GENERIC_TYPE)
 		failure(prefix + "fn read<T: IHealth<int, float>>() {}", DiagnosticCode.GENERIC_ARITY)
-		for (bound in listOf("int", "Object?", "Object[]", "unsigned Object", "T", "Slot")) {
+		for (bound in listOf("int", "int?", "unsigned Object", "T", "Slot")) {
 			failure("typedef<struct> Slot { int value }\nfn read<T: $bound>() {}", DiagnosticCode.INVALID_GENERIC_BOUND)
 		}
 	}
@@ -365,12 +365,48 @@ class GenericNamesTest {
 		assertEquals(DiagnosticCode.INVALID_GENERIC_BOUND, error.diagnosticCode)
 		assertEquals(listOf(bounds[2].span, bounds[0].span), error.sourceLabels.map { it.span })
 
-		for (list in listOf("Number & Named", "Named & Number", "Named & int", "Named & Tagged?", "Named & Tagged[]")) {
+		for (list in listOf("Number & Named", "Named & Number", "Named & int", "Named & Tagged?", "Named & Tagged[]",
+			"Number? & Named?", "Named? & Number?", "Named? & Tagged", "First? & Second?", "new() & Named?", "Named? & new()")) {
 			failure(declarations + "\nfn inspect<T: $list>(T value) {}", DiagnosticCode.INVALID_GENERIC_BOUND)
 		}
 		failure(declarations + "\nfn inspect<T: Named & Missing>(T value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
 		val interfaceOnly = unit(declarations + "\nfn inspect<T: Named & Tagged>(T value) {}")
 		assertTrue(GenericAnalyzer(target).analyze(interfaceOnly).hasBounds)
+	}
+
+	@Test
+	fun `nullable bounds keep numeric and nominal name identities`() {
+		val ast = unit("""
+			typedef<class> Number {}
+			typedef<interface> Named<N> {}
+			fn inspect<N: Number?, T: Object? & Named<int>?>(N value, T owner, Number ordinary) {}
+		""")
+		val model = GenericAnalyzer(target).analyze(ast)
+		val function = assertIs<FunctionDeclaration>(ast.declarations.last())
+		val (numeric, nominal) = model.parametersOf(function)
+		val number = numeric.declaration.typeBounds.single()
+		assertEquals("Number?", number.spelling)
+		assertSame(NumberBoundName, model.nameOf(number))
+		assertEquals(listOf("Object", "Named"), nominal.declaration.typeBounds.map { assertIs<NominalTypeName>(model.nameOf(it)).type.name.lexeme })
+		assertSame(ast.declarations.first(), assertIs<NominalTypeName>(model.nameOf(function.parameters.last().type)).type.declaration)
+	}
+
+	@Test
+	fun `array bounds resolve the element name and retain each suffix`() {
+		val ast = unit("""
+			typedef<class> Number {}
+			typedef<class> Box<E> {}
+			fn inspect<E, T: E[]?, U: Number?[2]?[]?, V: Box<E>[4]>(T first, U second, V third, Number[] ordinary) {}
+		""")
+		val model = GenericAnalyzer(target).analyze(ast)
+		val function = assertIs<FunctionDeclaration>(ast.declarations.last())
+		val (element, dependent, numeric, nominal) = model.parametersOf(function)
+		val bounds = listOf(dependent, numeric, nominal).map { it.declaration.typeBounds.single() }
+		assertEquals(listOf("E[]?", "Number?[2]?[]?", "Box<E>[4]"), bounds.map { it.spelling })
+		assertSame(element, model.nameOf(bounds[0]))
+		assertSame(NumberBoundName, model.nameOf(bounds[1]))
+		assertSame(ast.declarations[1], assertIs<NominalTypeName>(model.nameOf(bounds[2])).type.declaration)
+		assertSame(ast.declarations[0], assertIs<NominalTypeName>(model.nameOf(function.parameters.last().type)).type.declaration)
 	}
 
 	@Test

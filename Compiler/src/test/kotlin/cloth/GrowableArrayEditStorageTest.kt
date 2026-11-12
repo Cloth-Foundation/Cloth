@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.*
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
 
 class GrowableArrayEditStorageTest {
+
 	private val harness = GrowableArrayStorageTest()
 	private val observers = "fn<usize> liveBytes() = 0\nfn<usize> allocationCount() = 0\n"
 	private fun native(directory: Path, name: String, source: String, check: GrowableArrayStorageTest.Probe.() -> Unit = {}) {
@@ -129,13 +131,7 @@ class GrowableArrayEditStorageTest {
 
 	@Test
 	fun `removal and clear invalidate active reads before accessing freed child buffers`(@TempDir directory: Path) {
-		val sources = listOf(
-			"fn<bool> sample() { def<string[]> values = [\"old\"]; def<usize> index = { values.clear(); return 0 }; println(values[index]); println(\"unreachable\"); return true }",
-			"typedef<struct> Cell { int[] values }\ntypedef<struct> Holder { Cell[] cells }\nfn<bool> sample() { def<Holder> holder = { [{ [1] }] }; def<usize> index = { holder.cells.clear(); return 0 }; println(holder.cells[0].values[index]); println(\"unreachable\"); return true }",
-			"typedef<struct> Cell { int[] values }\ntypedef<struct> Holder { Cell[] cells }\nfn<bool> sample() { def<Holder> holder = { [{ [1] }] }; def<usize> index = { holder.cells.removeAt(0); return 0 }; println(holder.cells[0].values[index]); println(\"unreachable\"); return true }",
-			"typedef<struct> Cell { int[1] values }\nfn<bool> sample() { def<Cell[]> cells = [{ [1] }]; def<usize> index = { cells.clear(); return 0 }; println(cells[0].values[index]); println(\"unreachable\"); return true }",
-			"typedef<struct> Cell { int[][] values }\nfn<bool> sample() { def<Cell[]> cells = [{ [[1]] }]; def<usize> index = { cells.clear(); return 0 }; println(cells[0].values[index]); println(\"unreachable\"); return true }"
-		)
+		val sources = listOf("fn<bool> sample() { def<string[]> values = [\"old\"]; def<usize> index = { values.clear(); return 0 }; println(values[index]); println(\"unreachable\"); return true }", "typedef<struct> Cell { int[] values }\ntypedef<struct> Holder { Cell[] cells }\nfn<bool> sample() { def<Holder> holder = { [{ [1] }] }; def<usize> index = { holder.cells.clear(); return 0 }; println(holder.cells[0].values[index]); println(\"unreachable\"); return true }", "typedef<struct> Cell { int[] values }\ntypedef<struct> Holder { Cell[] cells }\nfn<bool> sample() { def<Holder> holder = { [{ [1] }] }; def<usize> index = { holder.cells.removeAt(0); return 0 }; println(holder.cells[0].values[index]); println(\"unreachable\"); return true }", "typedef<struct> Cell { int[1] values }\nfn<bool> sample() { def<Cell[]> cells = [{ [1] }]; def<usize> index = { cells.clear(); return 0 }; println(cells[0].values[index]); println(\"unreachable\"); return true }", "typedef<struct> Cell { int[][] values }\nfn<bool> sample() { def<Cell[]> cells = [{ [[1]] }]; def<usize> index = { cells.clear(); return 0 }; println(cells[0].values[index]); println(\"unreachable\"); return true }")
 		for (abi in structRunners()) for ((index, source) in sources.withIndex()) {
 			harness.probe(abi, directory.resolve("invalid_${abi.layout.sizeBits}_$index"), source, expectedFailure = "Array index out of bounds") { sourceCall("sample", null) }
 		}

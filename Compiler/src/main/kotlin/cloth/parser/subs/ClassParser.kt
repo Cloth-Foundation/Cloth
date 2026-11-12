@@ -69,10 +69,10 @@ internal class ClassParser(private val parser: Parser) {
 			}
 			val initial = if (parser.atKeyword(Keywords.DEFAULT)) parseInitialState() else null
 			val methodPrefix = when {
-				initial != null -> null
+				initial != null                     -> null
 				parser.atKeyword(Keywords.OVERRIDE) -> Keywords.OVERRIDE
-				parser.atKeyword(Keywords.VIRTUAL) -> Keywords.VIRTUAL
-				else -> null
+				parser.atKeyword(Keywords.VIRTUAL)  -> Keywords.VIRTUAL
+				else                                -> null
 			}
 			val prefixSpan = methodPrefix?.let {
 				parser.advance().span.through(parser.expect(Operators.COLON).span).also { parser.skipNewlines() }
@@ -94,6 +94,7 @@ internal class ClassParser(private val parser: Parser) {
 					allowIntrinsic = true,
 					allowTypeParameters = methodPrefix == null,
 				)
+
 				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
 				parser.atKeyword(Keywords.STATE)                                 -> parseState(visibility, initial)
 				visibility == null && at(Operators.TILDE)                        -> parseDestructor(owner)
@@ -101,8 +102,7 @@ internal class ClassParser(private val parser: Parser) {
 				else                                                             -> throw SyntaxErrors.expected("a class member", parser.peek())
 			}
 			add(member)
-			val allowsTerminator = member is ClassFieldDeclaration || member is StateMethodContractDeclaration || member is StateAttachmentDeclaration ||
-				member is MethodDeclaration && member.body.equals != null
+			val allowsTerminator = member is ClassFieldDeclaration || member is StateMethodContractDeclaration || member is StateAttachmentDeclaration || member is MethodDeclaration && member.body.equals != null
 			finishMember(allowsTerminator, Keywords.CLASS)
 		}
 	}
@@ -139,8 +139,7 @@ internal class ClassParser(private val parser: Parser) {
 			return StateMethodContractDeclaration(keyword, visibility, name, types, parameters, start.through(parser.previous().span))
 		}
 
-		val payload = types.singleOrNull()
-			?: throw SyntaxErrors.expected("one payload type in a nested '${Keywords.STATE}' declaration", types.getOrNull(1)?.name ?: typeStart)
+		val payload = types.singleOrNull() ?: throw SyntaxErrors.expected("one payload type in a nested '${Keywords.STATE}' declaration", types.getOrNull(1)?.name ?: typeStart)
 		val name = parser.expect(TokenType.Identifier, "a state name")
 		parser.skipNewlines()
 		val members = parseStateBody()
@@ -160,10 +159,10 @@ internal class ClassParser(private val parser: Parser) {
 					}
 					val visibility = parseVisibility()
 					val member = when {
-						parser.atKeyword(Keywords.FUNCTION) -> throw SyntaxErrors.functionInType(parser.peek())
-						parser.atKeyword(Keywords.METHOD) -> parser.functionParser.parseMethod(visibility)
+						parser.atKeyword(Keywords.FUNCTION)                   -> throw SyntaxErrors.functionInType(parser.peek())
+						parser.atKeyword(Keywords.METHOD)                     -> parser.functionParser.parseMethod(visibility)
 						visibility == null && parser.atKeyword(Keywords.INIT) -> StateInitializerDeclaration(parser.advance(), parser.functionParser.parseBlockBody())
-						else -> throw SyntaxErrors.expected("an '${Keywords.INIT}' block or a '${Keywords.METHOD}' declaration", parser.peek())
+						else                                                  -> throw SyntaxErrors.expected("an '${Keywords.INIT}' block or a '${Keywords.METHOD}' declaration", parser.peek())
 					}
 					add(member)
 					finishMember(member is MethodDeclaration && member.body.equals != null, Keywords.STATE)

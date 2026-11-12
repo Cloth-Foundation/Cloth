@@ -8,9 +8,7 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
-import cloth.semantic.symbols.CallableContractSymbol
-import cloth.semantic.symbols.CallableSymbol
-import cloth.semantic.symbols.InterfaceMethodSymbol
+import cloth.semantic.symbols.*
 import cloth.token.Operators
 
 internal sealed interface ResolvedCall {
@@ -18,6 +16,7 @@ internal sealed interface ResolvedCall {
 	val type: FunctionType
 
 	sealed interface Bound : ResolvedCall {
+
 		val binding: ArgumentBinding
 	}
 
@@ -47,6 +46,14 @@ internal sealed interface ResolvedCall {
 internal data class ResolvedStateCall(
 	val owner: CClass,
 	val contract: CallableContractSymbol,
+	val type: FunctionType,
+	val binding: ArgumentBinding,
+)
+
+internal data class ResolvedGuaranteedConstruction(
+	val contract: ConstructorGuaranteeSymbol,
+	// A declaration-site check can select the guarantee before the concrete type is known.
+	val constructor: ConstructorSymbol?,
 	val type: FunctionType,
 	val binding: ArgumentBinding,
 )

@@ -1,24 +1,9 @@
 package cloth.semantic.generics
 
-import cloth.data.CClass
-import cloth.data.CEnum
-import cloth.data.CInterface
-import cloth.data.CMemberType
-import cloth.data.CStruct
-import cloth.data.CTypeParameter
-import cloth.data.ValueType
+import cloth.data.*
 import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.SemanticErrors
-import cloth.parser.declaration.CallableSignature
-import cloth.parser.declaration.CallableDeclaration
-import cloth.parser.declaration.ClassDeclaration
-import cloth.parser.declaration.ClassParentClause
-import cloth.parser.declaration.ConstructorDeclaration
-import cloth.parser.declaration.PrimaryConstructorDeclaration
-import cloth.parser.declaration.Declaration
-import cloth.parser.declaration.FunctionDeclaration
-import cloth.parser.declaration.MethodDeclaration
-import cloth.parser.declaration.TypeDeclaration
+import cloth.parser.declaration.*
 import cloth.parser.expression.CallSite
 import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeArgumentList
@@ -28,16 +13,17 @@ import cloth.semantic.ResultShape
 import cloth.semantic.declarations.FileBindings
 import cloth.semantic.declarations.VirtualMethods
 import cloth.semantic.interfaces.InterfaceModel
-import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.FunctionSignature
+import cloth.semantic.symbols.FunctionSymbol
 import cloth.semantic.symbols.MethodSymbol
 import cloth.semantic.symbols.SignatureType
 import cloth.target.TargetLayout
 import cloth.token.TokenSpan
-import java.util.IdentityHashMap
+import java.util.*
 
 /** Existing operator-width templates remain patterns until a call supplies a width. */
 sealed interface ClosedTypePattern {
+
 	data class Exact(val type: ValueType) : ClosedTypePattern
 	data class OperatorWidth(val annotation: TypeReference) : ClosedTypePattern
 }
@@ -61,7 +47,10 @@ internal fun ClosedCallableSignature.fixedResults() = ResultShape.of(results.map
 	type
 })
 
-enum class ClosedTypeState { DECLARED, RESOLVING, COMPLETE }
+enum class ClosedTypeState { DECLARED,
+	RESOLVING,
+	COMPLETE
+}
 
 internal class GenericBindings(
 	val environment: Map<TypeParameterSymbol, ValueType> = emptyMap(),
@@ -69,7 +58,13 @@ internal class GenericBindings(
 	val argumentDepth: Int = 0,
 	val suppliedArguments: TypeArgumentSpans? = null,
 	val defaultOrigin: TypeArgumentOrigin? = null,
+	private val deferredArgument: ((TypeParameterSymbol) -> ValueType?)? = null,
 ) {
+
+	var canonical = suppliedArguments == null
+	fun argumentOf(parameter: TypeParameterSymbol): ValueType? = environment[parameter] ?: deferredArgument?.invoke(parameter)
+
+	// Nominal capabilities of the exact type or its guaranteed nullable payload.
 	val nominalBounds = IdentityHashMap<TypeParameterDeclaration, List<CMemberType>>()
 	val constructorBounds = IdentityHashMap<TypeParameterSymbol, List<GenericBound.Constructor>>()
 	val facts = IdentityHashMap<TypeReference, ClosedTypePattern>()
@@ -80,12 +75,14 @@ internal class GenericBindings(
 internal data class TypeArgumentOrigin(val span: TokenSpan, val caller: GenericBindings)
 
 internal sealed interface ClosedCallableKey {
+
 	val declaration: CallableDeclaration
 	val arguments: List<ValueType>
 	val owner: CMemberType? get() = null
 }
 
 internal data class ClosedFunctionKey(val template: FunctionSymbol, override val arguments: List<ValueType>) : ClosedCallableKey {
+
 	override val declaration get() = template.declaration
 }
 
@@ -99,11 +96,13 @@ internal class GenericMethodTemplate(
 	val signature: GenericMethodSignature,
 	slots: List<CTypeParameter>,
 ) {
+
 	val symbol by lazy { MethodSymbol(declaration, owner) }
 	val patterns = GenericParameterPatterns(signature.valueParameters.parameterTypes.map { checkNotNull(it.exact) }, slots)
 }
 
 internal data class ClosedMethodKey(val template: GenericMethodTemplate, override val arguments: List<ValueType>) : ClosedCallableKey {
+
 	override val declaration get() = template.declaration
 	override val owner get() = template.owner
 }
@@ -116,33 +115,29 @@ internal data class ClosedConstructorKey(
 	override val declaration: CallableDeclaration,
 	override val arguments: List<ValueType>,
 ) : ClosedCallableKey {
+
 	val application get() = NominalApplicationKey(definition, arguments)
 }
 
 internal data class NominalApplicationKey(val definition: CMemberType, val arguments: List<ValueType>)
 
 internal fun CMemberType.application(arguments: List<ValueType>): CMemberType = when (this) {
-	is CClass -> CClass(declaration, this, arguments)
-	is CStruct -> CStruct(declaration, genericDefinition = this, typeArguments = arguments)
+	is CClass     -> CClass(declaration, this, arguments)
+	is CStruct    -> CStruct(declaration, genericDefinition = this, typeArguments = arguments)
 	is CInterface -> CInterface(declaration, this, arguments)
-	is CEnum -> throw GenericErrors.arity(name, arguments.size, 0, name)
+	is CEnum      -> throw GenericErrors.arity(name, arguments.size, 0, name)
 }
 
 internal fun CMemberType.genericDefinition(): CMemberType = when (this) {
-	is CClass -> genericDefinition ?: this
-	is CStruct -> genericDefinition ?: this
+	is CClass     -> genericDefinition ?: this
+	is CStruct    -> genericDefinition ?: this
 	is CInterface -> definition
-	is CEnum -> this
-}
-
-internal fun CMemberType.isCanonicalApplication() = typeArguments.withIndex().all { (index, type) ->
-	type is CTypeParameter && type.owner === declaration && type.index == index
+	is CEnum      -> this
 }
 
 internal data class TypeArgumentSpans(val span: TokenSpan, val arguments: List<TokenSpan>, val defaulted: Set<Int> = emptySet())
 
-internal fun TypeArgumentList.sourceSpans(count: Int = arguments.size) =
-	TypeArgumentSpans(span, List(count) { arguments.getOrNull(it)?.span ?: span }, (arguments.size until count).toSet())
+internal fun TypeArgumentList.sourceSpans(count: Int = arguments.size) = TypeArgumentSpans(span, List(count) { arguments.getOrNull(it)?.span ?: span }, (arguments.size until count).toSet())
 
 internal data class GenericCallableRequest(val key: ClosedCallableKey, val supplied: TypeArgumentSpans, val caller: GenericBindings)
 
@@ -155,6 +150,7 @@ class ClosedTypeInstance internal constructor(
 	val arguments: List<ValueType>,
 	internal val bindings: GenericBindings,
 ) {
+
 	var state: ClosedTypeState = ClosedTypeState.DECLARED
 		internal set
 	internal val signatureList = mutableListOf<ClosedCallableSignature>()
@@ -163,6 +159,7 @@ class ClosedTypeInstance internal constructor(
 
 /** Target-scoped semantic types and declaration signatures, without callable body facts. */
 class ClosedTypeModel internal constructor(val names: GenericNameModel, val target: TargetLayout, val symbolic: Boolean, private val files: FileBindings) {
+
 	internal val catalog = linkedMapOf<CMemberType, ClosedTypeInstance>()
 	internal val applications = linkedMapOf<NominalApplicationKey, ClosedTypeInstance>()
 	internal val definitions by lazy {
@@ -186,20 +183,17 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	val nominalTypes: List<CMemberType> get() = catalog.keys.toList()
 	val functions: List<ClosedCallableSignature> get() = functionList + callableCandidates.filterKeys { it is ClosedFunctionKey }.values.map { it.signature }
 	fun instanceOf(type: CMemberType): ClosedTypeInstance = catalog.getValue(type)
-	internal fun hasConstructor(type: CClass, parameters: List<ValueType>): Boolean =
-		catalog[type]?.signatureList?.any { signature ->
-			(signature.declaration is PrimaryConstructorDeclaration || signature.declaration is ConstructorDeclaration) &&
-				signature.parameters.size == parameters.size && signature.parameters.indices.all { index ->
-					(signature.parameters[index] as? ClosedTypePattern.Exact)?.type == parameters[index]
-				}
-		} == true
+	internal fun isCanonicalApplication(type: CMemberType): Boolean = type.typeArguments.isEmpty() || instanceOf(type).bindings.canonical
+	internal fun hasConstructor(type: CClass, parameters: List<ValueType>): Boolean = catalog[type]?.signatureList?.any { signature ->
+		(signature.declaration is PrimaryConstructorDeclaration || signature.declaration is ConstructorDeclaration) && signature.parameters.size == parameters.size && signature.parameters.indices.all { index ->
+			(signature.parameters[index] as? ClosedTypePattern.Exact)?.type == parameters[index]
+		}
+	} == true
 
 	internal fun candidateFailure(key: ClosedCallableKey, supplied: TypeArgumentSpans, caller: GenericBindings): GenericBoundFailure? {
 		rejectedCallables[key]?.let { return it }
 		val owner = if (key is ClosedConstructorKey) key.definition.declaration else key.declaration
-		val callee = callableInstances[key] ?: callableCandidates[key]?.bindings
-			?: (key as? ClosedConstructorKey)?.let { applications[it.application]?.bindings }
-			?: constructorProbeBindings[key] ?: return null
+		val callee = callableInstances[key] ?: callableCandidates[key]?.bindings ?: (key as? ClosedConstructorKey)?.let { applications[it.application]?.bindings } ?: constructorProbeBindings[key] ?: return null
 		return constructorAccessFailure(owner, callee, supplied, caller)
 	}
 
@@ -235,7 +229,6 @@ class ClosedTypeModel internal constructor(val names: GenericNameModel, val targ
 	fun patternOf(reference: TypeReference, owner: CMemberType? = null): ClosedTypePattern = owner?.let { catalog.getValue(it).bindings.facts[reference] } ?: rootBindings.facts.getValue(reference)
 	fun typeOf(reference: TypeReference, owner: CMemberType? = null): ValueType = (patternOf(reference, owner) as ClosedTypePattern.Exact).type
 	fun receiverTypeOf(expression: NameExpression, owner: CMemberType? = null): ValueType? = owner?.let { catalog.getValue(it).bindings.receivers[expression] } ?: rootBindings.receivers[expression]
-	internal fun baseClauseOf(owner: CClass): ClassParentClause? =
-		owner.declaration.parents.firstOrNull { typeOf(it.type, owner) === owner.base }
+	internal fun baseClauseOf(owner: CClass): ClassParentClause? = owner.declaration.parents.firstOrNull { typeOf(it.type, owner) === owner.base }
 	internal fun requireImplemented() = names.requireImplemented()
 }

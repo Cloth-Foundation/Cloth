@@ -105,8 +105,7 @@ class GuardedAccessTest {
 	@Test
 	fun `chains evaluate reached receivers and arguments once and preserve nullable results`(@TempDir directory: Path) {
 		val source = Files.writeString(directory.resolve("guarded.co"), program)
-		val expected = listOf("RFF", "RHFF", "RHAAabc", "RHDDno text", "Rnull", "RI8", "R2", "RHELLO", "once", "true", "skipped", "7", "H8", "null", "boxed")
-			.joinToString(System.lineSeparator(), postfix = System.lineSeparator()) + processCompletion()
+		val expected = listOf("RFF", "RHFF", "RHAAabc", "RHDDno text", "Rnull", "RI8", "R2", "RHELLO", "once", "true", "skipped", "7", "H8", "null", "boxed").joinToString(System.lineSeparator(), postfix = System.lineSeparator()) + processCompletion()
 		for (abi in structRunners()) {
 			val artifact = ClothCompiler.compile(CompilationRequest(source, directory.resolve("guarded_${abi.layout.sizeBits}"), targetTriple = abi.targetTriple)).artifact
 			assertEquals(expected, runExecutable(artifact))

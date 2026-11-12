@@ -108,6 +108,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 		indices.put(0, LLVMConstInt(size, amount, 1))
 		LLVMBuildInBoundsGEP2(builder, byte, value, indices, 1, "allocation_bytes")
 	}
+
 	private fun cleanupAddress(builder: LLVMBuilderRef, node: LLVMValueRef) = offset(builder, node, (target.pointerBits / 8).toLong())
 
 	/** The callback receives the node and either a new arena head, or null to destroy it. */
@@ -219,7 +220,9 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 			LLVMPositionBuilderAtEnd(body, free)
 			call(body, type, external("free", type), "", node)
 			LLVMBuildRetVoid(body)
-		} finally { LLVMDisposeBuilder(body) }
+		} finally {
+			LLVMDisposeBuilder(body)
+		}
 		return function
 	}
 
@@ -260,13 +263,17 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				val following = LLVMBuildLoad2(body, pointer, node, "next_allocation")
 				LLVMBuildStore(body, LLVMBuildSelect(body, LLVMBuildIsNull(body, following, "last_moved_node"), previous, following, "combined_next"), node)
 				LLVMBuildBr(body, check)
-				PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-					values.put(0, head); values.put(1, following); blocks.put(0, entry); blocks.put(1, next)
-					LLVMAddIncoming(node, values, blocks, 2)
-				} }
+				PointerPointer<LLVMValueRef>(2L).use { values ->
+					PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+						values.put(0, head); values.put(1, following); blocks.put(0, entry); blocks.put(1, next)
+						LLVMAddIncoming(node, values, blocks, 2)
+					}
+				}
 				LLVMPositionBuilderAtEnd(body, done)
 				LLVMBuildRetVoid(body)
-			} finally { LLVMDisposeBuilder(body) }
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
 		}
 		call(builder, type, function, "", destination, source)
 	}
@@ -296,15 +303,19 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				LLVMBuildCondBr(body, LLVMBuildICmp(body, LLVMIntEQ, node, LLVMGetParam(function, 1), "selected_allocation"), found, next)
 				LLVMPositionBuilderAtEnd(body, next)
 				LLVMBuildBr(body, check)
-				PointerPointer<LLVMValueRef>(2L).use { values -> PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
-					values.put(0, LLVMGetParam(function, 0)); values.put(1, node)
-					blocks.put(0, entry); blocks.put(1, next)
-					LLVMAddIncoming(link, values, blocks, 2)
-				} }
+				PointerPointer<LLVMValueRef>(2L).use { values ->
+					PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+						values.put(0, LLVMGetParam(function, 0)); values.put(1, node)
+						blocks.put(0, entry); blocks.put(1, next)
+						LLVMAddIncoming(link, values, blocks, 2)
+					}
+				}
 				LLVMPositionBuilderAtEnd(body, found)
 				LLVMBuildStore(body, LLVMBuildLoad2(body, pointer, node, "next_allocation"), link)
 				LLVMBuildRet(body, node)
-			} finally { LLVMDisposeBuilder(body) }
+			} finally {
+				LLVMDisposeBuilder(body)
+			}
 		}
 		return call(builder, type, function, "detached_allocation", arena, offset(builder, payload, -headerBytes(alignment).toLong()))
 	}
