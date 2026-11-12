@@ -4,6 +4,7 @@ import cloth.api.ClothCompiler
 import cloth.api.CompilationRequest
 import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
+import cloth.emitter.LLVMEmitter
 import cloth.semantic.ProgramAnalyzer
 import cloth.settings.OutputKind
 import org.junit.jupiter.api.Test
@@ -13,6 +14,128 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class VirtualMethodsTest {
+
+	@Test
+	fun `generic virtual dispatch keeps base defaults and follows the current class level`(@TempDir directory: Path) {
+		val source = Files.writeString(directory.resolve("Main.co"), """
+			fn<string> mark(string text) { println(text); return text }
+			typedef<class> Entity<E> (pub def<E> saved) {
+			    Entity(E saved, bool trace) : (saved) {
+			        if (trace) println(self.label<int>(value=3, label="C", suffix="!"))
+			    }
+			    ~Entity { println(self.label<int>(value=1, label="D", suffix="!")) }
+			    virtual: pub mt<string> label<T: Number = int>(opt<T> value ?: 1 -> T, opt<string> label ?: mark("default"), opt<string> suffix ?: mark(label + "!")) {
+			        return #"entity {value} {suffix}"
+			    }
+			    virtual: pub mt<E, T> pair<T>(T value) = self.saved, value
+			    pub mt<string> forward<T: Number>(T value) = label(value=value, label="D", suffix="!")
+			}
+			typedef<class> Player<E> (E saved) : Entity<E>(saved, true) {
+			    Player(E saved, bool trace) : (saved) {
+			        if (trace) println(self.label<int>(value=3, label="C", suffix="!"))
+			    }
+			    ~Player { println(self.forward(1)) }
+			    override: pub mt<string> label<U>(U item, string first, string last) = #"player {item + item} {last}"
+			    override: pub mt<E, U> pair<U>(U item) { println("pair override"); return self.saved, item }
+			}
+			fn main() {
+			    def player = Player<string>::new("seed", true)
+			    def<Entity<string>> root = player
+			    println(root.label())
+			    println(player.label<float>(value=1.5f, suffix=mark("suffix"), label=mark("label")))
+			    println(player.label<_>(value=2))
+			    def<string[]> words = ["word"]
+			    def<string, string[]> saved, returned = root.pair(words)
+			    words[0] = "changed"
+			    println(saved)
+			    println(returned)
+			    root::delete
+			}
+		""".trimIndent())
+		val expected = """
+			entity 3 !
+			player 6 !
+			default
+			default!
+			player 2 default!
+			suffix
+			label
+			player 3 suffix
+			default
+			default!
+			player 4 default!
+			pair override
+			seed
+			[word]
+			player 2 !
+			entity 1 !
+		""".trimIndent() + "\n" + processCompletion().replace("\r\n", "\n")
+		for (abi in structRunners()) {
+			val request = CompilationRequest(source, directory.resolve("generic_virtual_${abi.layout.sizeBits}"), targetTriple = abi.targetTriple)
+			assertEquals(expected, runExecutable(ClothCompiler.compile(request).artifact).replace("\r\n", "\n"), abi.targetTriple)
+		}
+		for ((index, triple) in structTargetTriples.withIndex()) {
+			val request = CompilationRequest(source, directory.resolve("generic_virtual_$index.o"), outputKind = OutputKind.OBJECT, targetTriple = triple)
+			assertTrue(Files.size(ClothCompiler.compile(request).artifact) > 0, triple)
+		}
+	}
+
+	@Test
+	fun `generic virtual dispatch forwards constructor proofs across files`(@TempDir directory: Path) {
+		val files = genericSourceFiles(directory, mapOf(
+			"Lib.co" to """
+				fn<N> seed<N: Number>() = 7 -> N
+				pub typedef<class> Entity<A: Number> {
+				    virtual: pub mt<T> make<S: Number, T: new(opt<A> first ?: seed<A>(), opt<S> second ?: seed<S>())>() = T::new()
+				}
+				pub typedef<class> Player : Entity<int> {
+				    override: pub mt<U> make<R, U>() { println("override"); return U::new() }
+				}
+			""",
+			"Main.co" to """
+				using Lib: Entity, Player
+				fn<int> seed<N>() = 0
+				typedef<class> Local (pub def<int> left, pub def<float> right) {}
+				fn main() {
+				    def<Entity<int>> root = Player::new
+				    def<Local> item = root.make<float, Local>()
+				    println(item.left)
+				    println(item.right)
+				    item::delete
+				    root::delete
+				}
+			""",
+		))
+		for (abi in structRunners()) {
+			val program = ProgramAnalyzer(abi.layout).analyze(files.fork())
+			val binary = LLVMEmitter(abi).compile(program, directory.resolve("virtual_constructor_${abi.layout.sizeBits}"))
+			assertEquals("override\n7\n7\n" + processCompletion().replace("\r\n", "\n"), runExecutable(binary).replace("\r\n", "\n"))
+		}
+	}
+
+	@Test
+	fun `generic virtual dispatch checks liveness after explicit arguments and base defaults`(@TempDir directory: Path) {
+		val declarations = """
+			typedef<class> Entity {
+			    virtual: pub mt<T> read<T: Number>(Entity alias, opt<T> value ?: discard(alias) -> T) = value
+			}
+			typedef<class> Player : Entity {
+			    override: pub mt<U> read<U>(Entity alias, U item) {
+			        println("override ran")
+			        return item
+			    }
+			}
+			fn<int> discard(Entity value) { value::delete; return 4 }
+		""".trimIndent()
+		for ((index, arguments) in listOf("player", "player, value=discard(player)").withIndex()) {
+			val source = declarations + "\nfn main() { def player = Player::new; println(player.read<int>($arguments)) }"
+			for (abi in structRunners()) {
+				val output = runStructProgram(abi, source, directory.resolve("stale_generic_${abi.layout.sizeBits}_$index"), status = 1)
+				assertContains(output, "Class object is no longer live")
+				assertFalse(output.contains("override ran"), output)
+			}
+		}
+	}
 
 	@Test
 	fun `virtual calls follow construction and destruction levels and use closed overloads`(@TempDir directory: Path) {

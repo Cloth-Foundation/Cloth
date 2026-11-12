@@ -247,6 +247,28 @@ precedence, and lookup uses the receiver's static type. A matching child
 declaration hides the inherited signature before candidate bounds are checked.
 [Method inference](../.agents/skills/cloth-generics/references/method-inference-stage-2.md)
 
+Generic `virtual:` and `override:` declarations use exact parameter and
+ordered result types. The override inherits the virtual declaration's bounds
+by position and can rename its type parameters. Calls use the base
+declaration's type defaults, labels, and value defaults. The receiver's
+current class level selects the body specialized with those type arguments.
+[Generic virtual call example](../.agents/skills/cloth-functions/references/generic-virtual-stage-2.md)
+
+Interface requirements and default bodies can declare method type parameters.
+Class overrides inherit the bounds by position. A child interface redeclaring
+the method writes the matching bounds explicitly. Calls through an interface
+view use its bounds, labels, and defaults. They support explicit type
+arguments, inference, and `_` slots. Runtime dispatch uses the selected
+type arguments for the class override or interface default body.
+[Generic interface call example](../.agents/skills/cloth-interfaces/references/generic-interface-stage-4.md)
+
+State methods can declare method type parameters in `mt` bodies and in a
+shared host signature such as `pub state<T> ::attack<T: Number>(T value)`.
+The host signature supplies bounds and defaults. Calls such as
+`player::attack<int>(1)` specialize the selected overload, and the active
+state supplies its body after argument evaluation.
+[Generic state method example](../.agents/skills/cloth-language/references/generic-state-stage-5.md)
+
 ## Generic constructors
 
 With `Box<T>` declared as above, `Box::new(value=7)` infers `Box<int>` from

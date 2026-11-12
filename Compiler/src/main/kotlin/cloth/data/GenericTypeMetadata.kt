@@ -4,14 +4,6 @@ import cloth.diagnostics.GenericErrors
 import cloth.token.Operators
 import java.util.IdentityHashMap
 import kotlin.collections.ArrayDeque
-import kotlin.collections.asReversed
-import kotlin.collections.emptyList
-import kotlin.collections.forEach
-import kotlin.collections.getValue
-import kotlin.collections.isNotEmpty
-import kotlin.collections.listOf
-import kotlin.collections.set
-import kotlin.collections.sumOf
 
 /** Canonical metadata is exact, never the bounded diagnostic spelling. Check the
  * expanded UTF-8 length on the argument DAG before allocating its flattened text.

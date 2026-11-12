@@ -10,12 +10,6 @@ import org.bytedeco.llvm.LLVM.LLVMTypeRef
 import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.collections.ArrayDeque
-import kotlin.collections.List
-import kotlin.collections.Map
-import kotlin.collections.emptyList
-import kotlin.collections.fold
-import kotlin.collections.isNotEmpty
-import kotlin.collections.plus
 
 internal enum class TypeParameterProjection { ELEMENT,
 	PAYLOAD

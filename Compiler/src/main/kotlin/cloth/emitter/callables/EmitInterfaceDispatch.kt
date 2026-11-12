@@ -1,21 +1,15 @@
 package cloth.emitter.callables
 
-import cloth.data.CClass
 import cloth.data.CInterface
 import cloth.parser.declaration.MethodDeclaration
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.interfaces.InterfaceImplementation
-import cloth.semantic.interfaces.InterfaceModel
-import cloth.semantic.interfaces.InterfaceRequirement
+import cloth.semantic.symbols.InterfaceMethodSymbol
 import cloth.semantic.typing.ResolvedCall
 import org.bytedeco.llvm.LLVM.LLVMContextRef
 import org.bytedeco.llvm.LLVM.LLVMModuleRef
 
-internal fun InterfaceModel.dispatchTargets(plan: ResolvedCall.Interface): List<Pair<CClass, InterfaceImplementation>> = classes.mapNotNull { (owner, conformance) ->
-	conformance.implementations[plan.owner]?.get(plan.contract.requirement)?.let { owner to it }
-}
-
-/** A private entry per static interface slot, shared by every call site. */
+/** A private entry per static interface view and specialized contract. */
 internal class EmitInterfaceDispatch(
 	private val context: LLVMContextRef,
 	private val module: LLVMModuleRef,
@@ -24,17 +18,17 @@ internal class EmitInterfaceDispatch(
 	private val functions: EmitFunctions,
 ) {
 
-	private val slots = mutableMapOf<Pair<CInterface, InterfaceRequirement>, EmittedCallable>()
+	private val slots = mutableMapOf<Pair<CInterface, InterfaceMethodSymbol>, EmittedCallable>()
 
-	fun entry(plan: ResolvedCall.Interface): EmittedCallable = slots.getOrPut(plan.owner to plan.contract.requirement) {
+	fun entry(plan: ResolvedCall.Interface): EmittedCallable = slots.getOrPut(plan.owner to plan.contract) {
 		val name = "cloth.interface.dispatch.${slots.size}.${plan.contract.name.lexeme}"
 		EmittedCallable(context, module, name, plan.contract, plan.type, hasClasses = true, results = results) { functions.classes }.also { entry -> functions.deferDispatch { emitEntry(plan, entry) } }
 	}
 
 	private fun emitEntry(plan: ResolvedCall.Interface, entry: EmittedCallable) {
 		val views = checkNotNull(declarations.genericViews)
-		val targets = declarations.interfaces.dispatchTargets(plan).map { (owner, implementation) ->
-			val symbol = when (implementation) {
+		val targets = declarations.interfaces.dispatchTargets(plan.owner, plan.contract.requirement).map { (owner, implementation) ->
+			val symbol = views.interfaceTarget(plan.contract, implementation) ?: when (implementation) {
 				is InterfaceImplementation.ClassMethod -> {
 					val view = views.viewOf(implementation.declaration, implementation.owner) as MethodDeclaration
 					declarations.symbolOf(view)

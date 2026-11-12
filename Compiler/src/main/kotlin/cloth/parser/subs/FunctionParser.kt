@@ -74,7 +74,7 @@ class FunctionParser(private val parser: Parser) {
 	}
 
 	internal fun parseInterfaceMethod(): InterfaceMethodDeclaration {
-		val (keyword, name, returns, parameters) = methodHeader()
+		val (keyword, name, returns, parameters, typeParameters) = methodHeader(allowTypeParameters = true)
 		val signatureEnd = parser.currentIndex
 		parser.skipNewlines()
 		val fallback = when (parser.peek().lexeme) {
@@ -85,7 +85,7 @@ class FunctionParser(private val parser: Parser) {
 				null
 			}
 		}
-		return InterfaceMethodDeclaration(keyword, name, returns, parameters, fallback, keyword.span.through(parser.previous().span))
+		return InterfaceMethodDeclaration(keyword, name, returns, parameters, fallback, keyword.span.through(parser.previous().span), typeParameters)
 	}
 
 	private fun parseInterfaceFallback(): InterfaceMethodFallback {

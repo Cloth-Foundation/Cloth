@@ -24,6 +24,7 @@ data class InterfaceMethodDeclaration(
 	override val parameters: List<ParameterDeclaration>,
 	val fallback: InterfaceMethodFallback?,
 	override val span: TokenSpan,
+	val typeParameters: TypeParameterList? = null,
 ) : CallableSignature
 
 data class InterfaceMethodFallback(val equals: Token, val keyword: Token, val body: FunctionBody)

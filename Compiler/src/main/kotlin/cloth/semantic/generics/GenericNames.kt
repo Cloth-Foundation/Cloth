@@ -170,7 +170,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			for (parameter in local) {
 				for (bound in parameter.declaration.bounds) when (bound) {
 					is TypeReference    -> use(bound, scope, boundFor = parameter)
-					is ConstructorBound -> callable(bound.declaration, scope, emptySet())
+					is ConstructorBound -> callable(bound.declaration, GenericTypeScope(bound.declaration, scope.names), emptySet())
 				}
 				use(parameter.declaration.defaultType, scope, argument = true, defaultFor = parameter)
 			}
@@ -337,15 +337,21 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		private fun callable(declaration: CallableSignature, enclosing: GenericTypeScope, outer: Set<String>) {
 			val method = declaration as? MethodDeclaration
-			val parameters = method?.typeParameters?.let { list ->
+			val typeParameters = when (declaration) {
+				is MethodDeclaration              -> declaration.typeParameters
+				is InterfaceMethodDeclaration     -> declaration.typeParameters
+				is StateMethodContractDeclaration -> declaration.typeParameters
+				else                              -> null
+			}
+			val parameters = typeParameters?.let { list ->
 				genericMethodSyntax(list.span)
-				registerParameters(method, method.name, list, enclosing.names)
-				scopeOf(method, enclosing)
+				registerParameters(declaration, declaration.name, list, enclosing.names)
+				scopeOf(declaration, enclosing)
 			} ?: enclosing
 			declaration.returnTypes.forEach { use(it, parameters) }
 			if (method != null) {
 				method.overridePrefix?.let(::interfaceSyntax)
-				if (method.virtualPrefix != null) model.hasVirtualMethods = true
+				if (method.virtualPrefix != null || method.overridePrefix != null && method.typeParameters != null) model.hasVirtualMethods = true
 				method.operator?.selector?.let { use(it, parameters) }
 			}
 			var values = outer
@@ -493,7 +499,12 @@ class GenericAnalyzer(private val target: TargetLayout) {
 				is ProviderAccessExpression -> receiver(expression.receiver, parameters, values)
 				is ClassCreationExpression  -> creation(expression, parameters, values)
 				is StateCallExpression      -> {
-					receiver(expression.receiver, parameters, values); expression.arguments.forEach { expression(it, parameters, values) }
+					receiver(expression.receiver, parameters, values)
+					expression.typeArguments?.let { arguments ->
+						genericMethodSyntax(arguments.span)
+						arguments.arguments.filterNot { it.isPlaceholder }.forEach { use(it, parameters, argument = true) }
+					}
+					expression.arguments.forEach { expression(it, parameters, values) }
 				}
 
 				else                        -> expression.eagerOperands().forEach { expression(it, parameters, values) }

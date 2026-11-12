@@ -92,7 +92,7 @@ internal class ClassParser(private val parser: Parser) {
 					overridePrefix = prefixSpan.takeIf { methodPrefix == Keywords.OVERRIDE },
 					virtualPrefix = prefixSpan.takeIf { methodPrefix == Keywords.VIRTUAL },
 					allowIntrinsic = true,
-					allowTypeParameters = methodPrefix == null,
+					allowTypeParameters = true,
 				)
 
 				parser.atKeyword(Keywords.OPERATOR)                              -> parser.functionParser.parseOperator(visibility)
@@ -135,8 +135,9 @@ internal class ClassParser(private val parser: Parser) {
 			if (initial != null) throw SyntaxErrors.expected("a state name", parser.peek())
 			parser.advance()
 			val name = parser.expect(TokenType.Identifier, "a state-method name")
+			val typeParameters = parser.typeParser.parseTypeParameters()
 			val parameters = parser.functionParser.parseParameters()
-			return StateMethodContractDeclaration(keyword, visibility, name, types, parameters, start.through(parser.previous().span))
+			return StateMethodContractDeclaration(keyword, visibility, name, types, parameters, start.through(parser.previous().span), typeParameters)
 		}
 
 		val payload = types.singleOrNull() ?: throw SyntaxErrors.expected("one payload type in a nested '${Keywords.STATE}' declaration", types.getOrNull(1)?.name ?: typeStart)
@@ -160,7 +161,7 @@ internal class ClassParser(private val parser: Parser) {
 					val visibility = parseVisibility()
 					val member = when {
 						parser.atKeyword(Keywords.FUNCTION)                   -> throw SyntaxErrors.functionInType(parser.peek())
-						parser.atKeyword(Keywords.METHOD)                     -> parser.functionParser.parseMethod(visibility)
+						parser.atKeyword(Keywords.METHOD)                     -> parser.functionParser.parseMethod(visibility, allowTypeParameters = true)
 						visibility == null && parser.atKeyword(Keywords.INIT) -> StateInitializerDeclaration(parser.advance(), parser.functionParser.parseBlockBody())
 						else                                                  -> throw SyntaxErrors.expected("an '${Keywords.INIT}' block or a '${Keywords.METHOD}' declaration", parser.peek())
 					}

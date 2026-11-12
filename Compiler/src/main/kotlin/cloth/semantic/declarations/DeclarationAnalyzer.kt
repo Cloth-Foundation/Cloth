@@ -215,7 +215,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 
 		private fun callGroup(call: CallExpression, group: CallableGroupSymbol): CallableGroupSymbol {
 			val arguments = call.typeArguments
-			if (group is MethodGroupSymbol) return group
+			if (group is MethodGroupSymbol || group is InterfaceMethodGroupSymbol) return group
 			if (group !is FunctionGroupSymbol) {
 				if (arguments != null) throw GenericErrors.callArity(call.name, arguments.span, arguments.arguments.size, listOf(0), group.name)
 				return group

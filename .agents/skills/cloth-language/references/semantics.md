@@ -311,6 +311,25 @@ signature hiding precedes bound checks, and calls use the selected static
 contract. Each method specialization includes the exact declaring owner.
 [GEN-2 Stage 3](../../cloth-functions/references/generic-methods-stage-3.md)
 
+Generic virtual overrides inherit the base declaration's method bounds by
+position. They can rename the method type parameters and must match the
+value parameter and ordered result types.
+[GEN-6 Stage 1](../../cloth-functions/references/generic-virtual-stage-1.md)
+Calls specialize the base contract and use the same arguments for the body
+selected by the receiver's class level.
+[GEN-6 Stage 2](../../cloth-functions/references/generic-virtual-stage-2.md)
+
+Generic interface declarations supply method bounds to class overrides by
+position. Calls use the static interface's labels and defaults, and the
+selected implementation receives the same method type arguments.
+[GEN-6 Stage 3](../../cloth-interfaces/references/generic-interface-stage-3.md) ·
+[GEN-6 Stage 4](../../cloth-interfaces/references/generic-interface-stage-4.md)
+
+Generic state bodies inherit explicit host bounds by position. Inferred
+state contracts require agreement on method bounds. The shared contract
+selects the method arguments, and the active state selects the body.
+[GEN-6 Stage 5](generic-state-stage-5.md)
+
 GEN-3 infers the complete type argument list for top-level functions,
 ordinary class and struct methods, and named generic class constructors
 from supplied values. A matching ordinary overload takes precedence for

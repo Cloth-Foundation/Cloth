@@ -68,6 +68,9 @@ fn<int> attackIfAlive(Player player) {
   Its bodies take the same required parameter types and result shape and
   can use local parameter names. Inherited contracts retain their original
   declaration owner. A state's body can be absent for a published overload.
+  Generic contracts compare method type parameters by position. An explicit
+  host contract supplies bounds and defaults. Inference requires matching
+  bounds on the state bodies. [GEN-6 Stage 5](generic-state-stage-5.md)
 - Bind supplied arguments and omissions with the ordinary argument binder.
   The checked call retains the receiver's static class, the contract and its
   ordered results. Shared defaults use the declaring file's scope, earlier

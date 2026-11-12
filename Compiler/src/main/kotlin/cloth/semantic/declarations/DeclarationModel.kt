@@ -46,12 +46,16 @@ class DeclarationModel internal constructor(
 			}
 		}
 	}
+	internal val interfaceContracts = interfaceMethods.values + genericViews?.interfaceContracts?.values.orEmpty()
 	internal val states = StateCatalog(files, classDefinitions.keys, genericViews, typeResolver())
-	private val bodylessContracts = interfaceMethods.values + states.callables + genericViews?.constructorGuarantees.orEmpty()
+	private val bodylessContracts = interfaceContracts + states.callables + genericViews?.constructorGuarantees.orEmpty()
 	internal val callableContracts: List<CallableContractSymbol> = callables + bodylessContracts
 	internal val concreteContracts: List<CallableContractSymbol> get() = concreteCallables + bodylessContracts
 	private val interfaceGroups = interfaces.contracts.mapValues { (owner, contract) ->
-		contract.methods.values.map(interfaceMethods::getValue).groupBy { it.name.lexeme }.mapValues { (_, overloads) -> InterfaceMethodGroupSymbol(owner, overloads) }
+		contract.requirements.values.groupBy { it.declaration.name.lexeme }.mapValues { (_, methods) ->
+			val (ordinary, templates) = methods.partition { it.key.typeParameterCount == 0 }
+			InterfaceMethodGroupSymbol(owner, ordinary.map(interfaceMethods::getValue), templates)
+		}
 	}
 
 	internal fun namedType(name: String): CMemberType? = if (name == objectRoot.spelling) objectRoot else files.primary.types[name]
@@ -177,12 +181,14 @@ class DeclarationModel internal constructor(
 	fun symbolOf(declaration: MethodDeclaration): MethodSymbol = methodSymbols.getValue(declaration)
 	internal fun symbolOf(body: VirtualMethodBody): MethodSymbol = symbolOf(checkNotNull(genericViews).viewOf(body.declaration, body.owner) as MethodDeclaration)
 
-	internal fun virtualFamilyOf(method: MethodSymbol): VirtualMethodFamily? {
+	private fun virtualFamilyOf(method: MethodSymbol): VirtualMethodFamily<VirtualMethodBody>? {
 		if (method.declaration.virtualPrefix == null && method.declaration.overridePrefix == null) return null
 		val owner = method.owner as? CClass ?: return null
 		val views = genericViews ?: return null
 		return views.types.virtualMethods.familyOf(owner, views.originalOf(method.declaration) as MethodDeclaration)
 	}
+
+	internal fun virtualTargets(method: MethodSymbol): Map<CClass, MethodSymbol>? = virtualFamilyOf(method)?.implementations?.mapValues { (_, body) -> symbolOf(body) } ?: genericViews?.virtualTargets(method)
 
 	fun symbolOf(declaration: ParameterDeclaration): ParameterSymbol = parameterSymbols.getValue(declaration)
 	fun symbolOf(declaration: BindingDeclaration): LocalSymbol = localSymbols.getValue(declaration)
@@ -209,12 +215,15 @@ class DeclarationModel internal constructor(
 	internal fun methodTemplate(owner: CMemberType, source: MethodDeclaration): GenericMethodTemplate? = genericViews?.types?.methodTemplates?.get(owner)?.get(source.name.lexeme)?.firstOrNull { it.declaration === source }
 
 	private fun methodTemplates(owner: CClass, name: String): List<GenericMethodTemplate> {
-		if (genericViews?.types?.methodTemplates.isNullOrEmpty()) return emptyList()
+		val types = genericViews?.types ?: return emptyList()
+		if (types.methodTemplates.isEmpty()) return emptyList()
 		return buildList {
 			val hidden = mutableSetOf<GenericMethodSignature>()
 			for (ancestor in owner.ancestry()) {
 				val own = methodGroups[ancestor]?.get(name)?.templates.orEmpty()
-				addAll(own.filter { it.signature !in hidden })
+				for (template in own.filter { it.signature !in hidden }) {
+					add(types.virtualMethods.genericFamilyOf(template)?.base ?: template)
+				}
 				own.mapTo(hidden) { it.signature }
 			}
 		}

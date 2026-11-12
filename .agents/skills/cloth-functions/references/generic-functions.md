@@ -54,8 +54,34 @@ from supplied values, as in `box.pair("label")`.
 [Explicit method specialization](generic-methods-stage-3.md) ·
 [Method inference](../../cloth-generics/references/method-inference-stage-2.md)
 
-Virtual, interface, and state methods have
-[separate follow-up work](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types).
+GEN-6 covers method-owned type parameters on virtual, interface, and state
+methods. [Open questions plan](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)
+[Generic interface implementation bounds](../../cloth-interfaces/references/design.md#generic-interface-implementation-bounds)
+[Generic state contracts and calls](../../cloth-language/references/generic-state-stage-5.md)
+
+### Generic virtual overrides
+
+The virtual declaration owns the bounds of its method type parameters.
+An override declares its own type parameter names and inherits the
+corresponding bounds by position. Its body can use those bounds.
+Type argument defaults belong to the virtual declaration. The override
+declares the same value parameter and ordered result types after substituting
+the enclosing arguments and renaming its method type parameters.
+
+```cloth
+typedef<class> Entity {
+    virtual: pub mt<T> echo<T: Number>(T value) = value
+}
+
+typedef<class> Player : Entity {
+    override: pub mt<U> echo<U>(U value) = value + value
+}
+```
+
+GEN-6 Stage 1 checks the declarations and their bodies. Stage 2 specializes
+the base contract and dispatches to the effective body at the current class
+level. [GEN-6 Stage 1](generic-virtual-stage-1.md) ·
+[GEN-6 Stage 2](generic-virtual-stage-2.md)
 
 ## Same-count overload design
 

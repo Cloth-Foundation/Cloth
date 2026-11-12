@@ -29,13 +29,12 @@ internal class EmitStateDispatch(
 	}
 
 	private fun emitEntry(plan: ResolvedStateCall, entry: EmittedCallable) {
-		val targets = catalog.definitions.mapNotNull { state ->
-			if (!plan.owner.accepts(state.owner) && !state.owner.accepts(plan.owner)) return@mapNotNull null
-			val method = state.methods[plan.contract.signature] ?: return@mapNotNull null
+		val targets = catalog.dispatchStates(plan.owner).mapNotNull { state ->
+			val method = state.target(plan) ?: return@mapNotNull null
 			val body = functions.callable(method)
 			if (body.type != plan.type) throw InternalErrors.invariant("State dispatch target differs from its shared contract")
 			state to body
-		}
+		}.toList()
 		val builder = LLVMCreateBuilderInContext(context)
 		try {
 			fun block(name: String) = LLVMAppendBasicBlockInContext(context, entry.reference, name)

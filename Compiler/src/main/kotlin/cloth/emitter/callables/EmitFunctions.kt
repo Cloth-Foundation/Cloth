@@ -31,7 +31,7 @@ import org.bytedeco.llvm.global.LLVM.*
 import java.util.*
 
 internal val FunctionSemanticModel.nativeBodies: List<CallableContractSymbol>
-	get() = callableBodies + declarations.interfaceMethods.values.filter { it.declaration.fallback != null } + declarations.states.callables.filter { it is MethodSymbol || it is StateActivationSymbol }
+	get() = callableBodies + declarations.interfaceContracts.filter { it.declaration.fallback != null } + declarations.states.callables.filter { it is MethodSymbol || it is StateActivationSymbol }
 
 /** All signatures are declared before any body, including recursive overloads. */
 internal class EmitFunctions(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val semantics: FunctionSemanticModel) {
@@ -125,16 +125,15 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	}
 
 	private fun virtualEntry(method: MethodSymbol): EmittedCallable? {
-		val declarations = semantics.declarations
-		val family = declarations.virtualFamilyOf(method) ?: return null
-		return virtualEntries.getOrPut(method) {
-			val name = "cloth.virtual.dispatch.${virtualEntries.size}.${method.name.lexeme}"
-			EmittedCallable(context, module, name, method, semantics.typeOf(method), hasClasses, results) { classes }.also { entry ->
-					deferDispatch {
-						val targets = family.implementations.map { (owner, body) -> owner to callable(declarations.symbolOf(body)) }
-						emitClassDispatch(entry, method, targets, "Current class level does not provide the virtual method", classes::virtualClassTag)
-					}
-				}
+		virtualEntries[method]?.let { return it }
+		val targets = semantics.declarations.virtualTargets(method) ?: return null
+		val name = "cloth.virtual.dispatch.${virtualEntries.size}.${method.name.lexeme}"
+		return EmittedCallable(context, module, name, method, semantics.typeOf(method), hasClasses, results) { classes }.also { entry ->
+			virtualEntries[method] = entry
+			deferDispatch {
+				val implementations = targets.map { (owner, body) -> owner to callable(body) }
+				emitClassDispatch(entry, method, implementations, "Current class level does not provide the virtual method", classes::virtualClassTag)
+			}
 		}
 	}
 

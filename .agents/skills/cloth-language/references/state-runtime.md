@@ -91,6 +91,8 @@ fn main() {
   callable ABI. State and interface entries share a worklist so their
   defaults can invoke each other's dispatch.
   [Callable lowering](../../../../Compiler/src/main/kotlin/cloth/emitter/callables/EmitFunctions.kt)
+  Generic calls use the selected method type arguments in the active body's
+  specialization. [GEN-6 Stage 5](generic-state-stage-5.md)
 
 ## Flow checks and errors
 

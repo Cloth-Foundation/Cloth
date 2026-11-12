@@ -8,6 +8,7 @@ import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
+import cloth.semantic.generics.ClosedStateContractKey
 import cloth.semantic.symbols.*
 import cloth.token.Operators
 
@@ -48,6 +49,7 @@ internal data class ResolvedStateCall(
 	val contract: CallableContractSymbol,
 	val type: FunctionType,
 	val binding: ArgumentBinding,
+	val specialization: ClosedStateContractKey? = null,
 )
 
 internal data class ResolvedGuaranteedConstruction(

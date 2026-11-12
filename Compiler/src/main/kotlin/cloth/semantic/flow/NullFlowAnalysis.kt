@@ -46,7 +46,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private val hinting = Collections.newSetFromMap(IdentityHashMap<LocalSymbol, Boolean>())
 	private val jumpFacts = IdentityHashMap<LoopJumpStatement, Set<Place>>()
 	private val methodsByName = (model.declarations.methods.filter { it.declaration.typeParameters == null } + model.declarations.interfaceMethods.values).groupBy { it.name.lexeme }
-	private val genericMethodNames = model.declarations.genericViews?.types?.methodTemplates?.values.orEmpty().flatMap { it.keys }.toSet()
+	private val genericInterfaceMethodNames = model.declarations.interfaces.contracts.values.flatMap { contract ->
+		contract.requirements.keys.filter { it.typeParameterCount != 0 }.map { it.valueParameters.name }
+	}.toSet()
+	private val genericMethodNames = genericInterfaceMethodNames + model.declarations.genericViews?.types?.methodTemplates?.values.orEmpty().flatMap { it.keys }
 	private val hasClasses = model.declarations.classDefinitions.isNotEmpty() || model.declarations.interfaces.contracts.isNotEmpty()
 	private var classOwner: CClass? = null
 	private val flow get() = model.controlFlow
@@ -92,6 +95,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		val mayInfer = when (value) {
 			is CallExpression       -> canInferCall(value)
 			is MemberCallExpression -> canInferMember(value)
+			is StateCallExpression  -> true
 			else                    -> false
 		}
 		if (mayInfer) {
@@ -132,6 +136,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is GuardedReceiver                      -> receiverHint(expression.source, unwrapNullable = false)?.let { (it as? CNullable)?.payload ?: it }
 			is CallExpression                       -> callHints(expression).distinct().singleOrNull()
 			is MemberCallExpression                 -> memberHints(expression).distinct().singleOrNull()
+			is StateCallExpression                  -> inferredCallResult(expression)
 			else                                    -> null
 		}
 		if (!unwrapNullable) return declared
@@ -142,21 +147,25 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun canInferCall(call: CallExpression): Boolean {
 		val supplied = call.typeArguments
 		return when (val group = model.declarations.candidatesOf(call)) {
-			is FunctionGroupSymbol -> supplied?.let(group::completesTypeArguments) ?: group.overloads.any { it.typeParameterCount != 0 }
-			is MethodGroupSymbol   -> supplied?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
-			else                   -> false
+			is FunctionGroupSymbol        -> supplied?.let(group::completesTypeArguments) ?: group.overloads.any { it.typeParameterCount != 0 }
+			is MethodGroupSymbol          -> supplied?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
+			is InterfaceMethodGroupSymbol -> group.templates.isNotEmpty()
+			else                          -> false
 		}
 	}
 
 	private fun canInferMember(call: MemberCallExpression): Boolean = call.name.lexeme in genericMethodNames && canInferMember(call, nominalHint(call.receiver))
 
-	private fun canInferMember(call: MemberCallExpression, owner: ValueType?): Boolean = when (owner) {
-		is CClass, is CStruct -> model.declarations.methodGroup(owner, call.name.lexeme)?.let { group ->
+	private fun canInferMember(call: MemberCallExpression, owner: ValueType?): Boolean {
+		val name = call.name.lexeme
+		if (owner == null) return name in genericMethodNames
+		if (name in genericInterfaceMethodNames) {
+			val views = model.boundViews(call.receiver, receiverHint(call.receiver)).filterIsInstance<CInterface>()
+			if ((listOfNotNull(owner as? CInterface) + views).any { model.declarations.interfaceGroup(it, name)?.templates?.isNotEmpty() == true }) return true
+		}
+		return (owner is CClass || owner is CStruct) && model.declarations.methodGroup(owner, name)?.let { group ->
 			call.typeArguments?.let(group::completesTypeArguments) ?: group.templates.isNotEmpty()
 		} == true
-
-		null                  -> call.name.lexeme in genericMethodNames
-		else                  -> false
 	}
 
 	private fun inferredCallResult(call: CallSite): ValueType? {
@@ -200,8 +209,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				model.declarations.namedType(annotation.name)?.let { return if (annotation.hasNullability) CNullable(it) else it }
 			}
 			when (val initializer = local.declaration.initializer) {
-				is ClassCreationExpression, is NameExpression, is CallExpression, is MemberCallExpression, is StringLiteral, is InterpolatedString -> receiverHint(initializer, unwrapNullable = false)
-				else                                                                                                                               -> null
+				is ClassCreationExpression, is NameExpression, is CallExpression, is MemberCallExpression, is StateCallExpression, is StringLiteral, is InterpolatedString -> receiverHint(initializer, unwrapNullable = false)
+				else                                                                                                                                                       -> null
 			}
 		} finally {
 			hinting.remove(local)

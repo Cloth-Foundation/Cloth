@@ -131,6 +131,11 @@ captures implementation scope and regression evidence.
 | Compiler-backed standard-library callables, `Path`, read-only `File` and UTF-8 decoding | [file I/O and bindings](../cloth-toolchains/references/file-io.md) |
 | Class declarations, constructors, lifecycle and alias safety | [basic class publication](references/class-publication.md), [class execution and lifetime](references/class-lifetime.md) |
 | Ordinary class virtual methods, override checking and lifecycle dispatch | [Virtual method implementation](references/class-inheritance.md#virtual-method-implementation) |
+| Generic virtual declarations, exact override matching, and inherited bounds | [GEN-6 Stage 1](../cloth-functions/references/generic-virtual-stage-1.md) |
+| Generic virtual calls, closed dispatch targets, and lifecycle checks | [GEN-6 Stage 2](../cloth-functions/references/generic-virtual-stage-2.md) |
+| Generic interface requirements, default bodies, and inherited method bounds | [GEN-6 Stage 3](../cloth-interfaces/references/generic-interface-stage-3.md) |
+| Generic interface calls, type defaults, and specialized dispatch targets | [GEN-6 Stage 4](../cloth-interfaces/references/generic-interface-stage-4.md) |
+| Generic state contracts, attached body scopes, and specialized dispatch | [GEN-6 Stage 5](references/generic-state-stage-5.md) |
 | Nested nominal types, lexical and qualified lookup, privacy and generic identity | [nested types](references/nested-types.md) |
 | Nested state declarations, shared call contracts, activation, transitions, dispatch and state facts | [state syntax and checking](references/state-syntax.md), [activation and dispatch](references/state-runtime.md) |
 | Top-level state declarations, class and interface host contracts, imported attachments and attached defaults | [state attachments](references/state-attachments.md) |

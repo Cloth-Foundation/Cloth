@@ -54,6 +54,8 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			val views = GenericBodyViews(types, templates, worklist)
 			try {
 				val declarations = DeclarationAnalyzer(target).prepared(files, views)
+				worklist.prepareStates(declarations.states)
+				if (types.symbolic) stateVisibility(declarations, files, types)
 				val semantics = FunctionAnalyzer(target).analyze(declarations)
 				if (types.symbolic) {
 					// Declaration checking uses the widest admitted operator format.
@@ -73,11 +75,31 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 	}
 
 	private fun interfaceVisibility(types: ClosedTypeModel, files: FileBindings) {
+		val keys = GenericSignatureKeys(types.names)
 		for ((owner, contract) in types.interfaces.contracts) {
 			if (files.privateTypeName(owner) != null || !types.isCanonicalApplication(owner)) continue
-			for (method in contract.methods.values) {
-				val exposed = method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
+			for (method in contract.requirements.values) {
+				val exposed = if (method.key.typeParameterCount == 0) {
+					method.signature.parameterTypes.map { checkNotNull(it.exact) } + method.results.values
+				} else keys.exposedTypes(method.declaration, types.instanceOf(method.owner).bindings.environment)
 				checkExposedTypes(method.declaration.name, exposed, files)
+			}
+		}
+		for ((override, requirement) in types.interfaces.genericOverrides) {
+			if (override.declaration.visibility == null || files.privateTypeName(override.owner) != null || !types.isCanonicalApplication(override.owner)) continue
+			val exposed = keys.exposedBounds(requirement.declaration, types.instanceOf(requirement.owner).bindings.environment)
+			checkExposedTypes(override.declaration.name, exposed, files)
+		}
+	}
+
+	private fun stateVisibility(declarations: DeclarationModel, files: FileBindings, types: ClosedTypeModel) {
+		val checked = mutableSetOf<cloth.semantic.declarations.GenericStateContract>()
+		for (owner in declarations.classDefinitions.keys) {
+			if (files.privateTypeName(owner) != null || !types.isCanonicalApplication(owner)) continue
+			for (contract in declarations.states[owner]?.genericContracts?.values.orEmpty()) {
+				if (!contract.public || !checked.add(contract)) continue
+				val exposed = types.signatureKeys.exposedTypes(contract.declaration, types.instanceOf(contract.owner).bindings.environment)
+				checkExposedTypes(contract.declaration.name, exposed, files)
 			}
 		}
 	}
@@ -165,7 +187,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 			type.typeArguments.forEach(::surface)
 		}
 
-		fun callable(member: CallableDeclaration) {
+		fun callable(member: CallableSignature) {
 			names.parametersOf(member).forEach {
 				it.declaration.bounds.flatMap { bound -> bound.signatureTypes() }.forEach(::surface)
 				it.declaration.defaultType?.let(::surface)
@@ -190,8 +212,8 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				it.declaration.defaultType?.let(::surface)
 			}
 			when (declaration) {
-				is FunctionDeclaration -> if (genericOwner) callable(declaration)
-				is ClassDeclaration    -> {
+				is FunctionDeclaration  -> if (genericOwner) callable(declaration)
+				is ClassDeclaration     -> {
 					if (genericOwner) declaration.parameters.forEach { surface(it.parameter.type) }
 					for (member in declaration.members) when (member) {
 						is ClassFieldDeclaration  -> if (genericOwner && member.visibility != null) surface(member.type)
@@ -201,12 +223,14 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 					}
 				}
 
-				is StructDeclaration   -> {
+				is StructDeclaration    -> {
 					if (genericOwner) declaration.fields.forEach { surface(it.type) }
 					declaration.methods.filter { genericOwner || it.typeParameters != null }.forEach(::callable)
 				}
 
-				else                   -> Unit
+				is InterfaceDeclaration -> declaration.methods.filter { it.typeParameters != null }.forEach(::callable)
+
+				else                    -> Unit
 			}
 		}
 	}

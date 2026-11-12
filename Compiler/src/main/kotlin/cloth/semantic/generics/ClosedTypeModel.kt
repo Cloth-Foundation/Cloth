@@ -11,6 +11,8 @@ import cloth.parser.type.TypeParameterDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.FileBindings
+import cloth.semantic.declarations.GenericStateContract
+import cloth.semantic.declarations.GenericStateMethod
 import cloth.semantic.declarations.VirtualMethods
 import cloth.semantic.interfaces.InterfaceModel
 import cloth.semantic.symbols.FunctionSignature
@@ -59,6 +61,7 @@ internal class GenericBindings(
 	val suppliedArguments: TypeArgumentSpans? = null,
 	val defaultOrigin: TypeArgumentOrigin? = null,
 	private val deferredArgument: ((TypeParameterSymbol) -> ValueType?)? = null,
+	val inheritedBounds: InheritedMethodBounds? = null,
 ) {
 
 	var canonical = suppliedArguments == null
@@ -76,7 +79,7 @@ internal data class TypeArgumentOrigin(val span: TokenSpan, val caller: GenericB
 
 internal sealed interface ClosedCallableKey {
 
-	val declaration: CallableDeclaration
+	val declaration: CallableSignature
 	val arguments: List<ValueType>
 	val owner: CMemberType? get() = null
 }
@@ -87,6 +90,8 @@ internal data class ClosedFunctionKey(val template: FunctionSymbol, override val
 }
 
 internal data class GenericMethodSignature(val typeParameterCount: Int, val valueParameters: FunctionSignature)
+
+internal data class InheritedMethodBounds(val owner: CMemberType, val declaration: CallableSignature)
 
 internal data class GenericParameterPatterns(val types: List<ValueType>, val slots: List<CTypeParameter>)
 
@@ -102,6 +107,24 @@ internal class GenericMethodTemplate(
 }
 
 internal data class ClosedMethodKey(val template: GenericMethodTemplate, override val arguments: List<ValueType>) : ClosedCallableKey {
+
+	override val declaration get() = template.declaration
+	override val owner get() = template.owner
+}
+
+internal data class ClosedInterfaceMethodKey(
+	override val owner: CInterface,
+	override val declaration: InterfaceMethodDeclaration,
+	override val arguments: List<ValueType>,
+) : ClosedCallableKey
+
+internal data class ClosedStateContractKey(val template: GenericStateContract, override val arguments: List<ValueType>) : ClosedCallableKey {
+
+	override val declaration get() = template.declaration
+	override val owner get() = template.owner
+}
+
+internal data class ClosedStateMethodKey(val template: GenericStateMethod, override val arguments: List<ValueType>) : ClosedCallableKey {
 
 	override val declaration get() = template.declaration
 	override val owner get() = template.owner
@@ -139,7 +162,12 @@ internal data class TypeArgumentSpans(val span: TokenSpan, val arguments: List<T
 
 internal fun TypeArgumentList.sourceSpans(count: Int = arguments.size) = TypeArgumentSpans(span, List(count) { arguments.getOrNull(it)?.span ?: span }, (arguments.size until count).toSet())
 
-internal data class GenericCallableRequest(val key: ClosedCallableKey, val supplied: TypeArgumentSpans, val caller: GenericBindings)
+internal data class GenericCallableRequest(
+	val key: ClosedCallableKey,
+	val supplied: TypeArgumentSpans,
+	val caller: GenericBindings,
+	val dispatchView: CMemberType? = null,
+)
 
 internal data class GenericCallableCandidate(val bindings: GenericBindings, val signature: ClosedCallableSignature)
 
@@ -160,6 +188,7 @@ class ClosedTypeInstance internal constructor(
 /** Target-scoped semantic types and declaration signatures, without callable body facts. */
 class ClosedTypeModel internal constructor(val names: GenericNameModel, val target: TargetLayout, val symbolic: Boolean, private val files: FileBindings) {
 
+	internal val signatureKeys = GenericSignatureKeys(names)
 	internal val catalog = linkedMapOf<CMemberType, ClosedTypeInstance>()
 	internal val applications = linkedMapOf<NominalApplicationKey, ClosedTypeInstance>()
 	internal val definitions by lazy {

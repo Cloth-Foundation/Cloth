@@ -6,6 +6,8 @@ import cloth.diagnostics.ClothDiagnostic
 import cloth.diagnostics.DiagnosticCode
 import cloth.semantic.typing.FunctionAnalyzer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import kotlin.test.*
 
 class GenericMethodTypingTest {
@@ -15,6 +17,138 @@ class GenericMethodTypingTest {
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { analyze(source) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary)
 		assertLocated(it)
+	}
+
+	@Test
+	fun `generic overrides inherit bounds by position across specialized base classes`() {
+		val model = analyze("""
+			typedef<interface> Named<N> { mt<N> code() }
+			typedef<class> Item<N> (pub def<N> value) {}
+			typedef<class> Entity<A> {
+			    virtual: pub mt<T, int> echo<T: Number = int>(T value, opt<int> count ?: 1) = value, count
+			    virtual: pub mt<A> read<T: Item<A> & Named<A>>(T value) = value.code()
+			    virtual: pub mt<T> keep<T: Named<A> & Named<int>>(T value) = value
+			    virtual: pub mt<T> update<T: Number[]?>(T values) = values
+			    virtual: pub mt<T> append<T: A[]>(T values) = values
+			}
+			typedef<class> Middle<B> : Entity<B> {
+			    override: pub mt<U, int> echo<U>(U item, int repeats) = item + item, repeats
+			    override: pub mt<B> read<U>(U item) = item.value
+			    override: pub mt<U> update<U>(U items) {
+			        if (items == null) return null
+			        items.append(items[0] + items[0])
+			        return items
+			    }
+			    override: pub mt<U> append<U>(U items) { items.append(items[0]); return items }
+			}
+			typedef<class> Player : Middle<int> {
+			    override: pub mt<V, int> echo<V>(V item, int count) = -item, count
+			    override: pub mt<int> read<V>(V item) = item.code()
+			    override: pub mt<V> keep<V>(V item) = item
+			}
+		""")
+		val declarations = model.declarations
+		val player = declarations.classes.getValue("Player").owner
+		val template = assertNotNull(declarations.methodGroup(player, "read")).templates.single()
+		assertEquals("Entity<int>", template.owner.spelling)
+		assertEquals("value", template.declaration.parameters.single().name.lexeme)
+	}
+
+	@Test
+	fun `generic virtual bases can combine class and constructor bounds`() {
+		analyze("""
+			typedef<class> Value {}
+			typedef<class> Entity {
+			    virtual: pub mt<T> make<T: Value & new()>() = T::new()
+			}
+		""")
+	}
+
+	@Test
+	fun `inherited constructor guarantees retain their defining file and method parameters`(@TempDir root: Path) {
+		val files = genericSourceFiles(root, mapOf(
+			"Lib.co" to """
+				fn<N> seed<N: Number>() = 7 -> N
+				pub typedef<class> Entity<A: Number> {
+				    virtual: pub mt<T> make<S: Number, T: new(opt<A> first ?: seed<A>(), opt<S> second ?: seed<S>())>() = T::new()
+				}
+			""",
+			"Main.co" to """
+				using Lib: Entity
+				fn<string> seed<N>() = "caller"
+				typedef<class> Player : Entity<int> {
+				    override: pub mt<U> make<R, U>() = U::new()
+				}
+			""",
+		))
+		FunctionAnalyzer(genericTarget()).analyze(files)
+	}
+
+	@Test
+	fun `generic virtual overrides require exact public contracts`() {
+		val base = "typedef<class> Entity { virtual: pub mt<T, int> echo<T: Number>(T value, int count) = value, count }"
+		for (method in listOf(
+			"pub mt<U, int> echo<U>(U item, int count) = item, count",
+			"override: mt<U, int> echo<U>(U item, int count) = item, count",
+			"override: pub mt<U, int> echo<U, V>(U item, int count) = item, count",
+			"override: pub mt<U, int> echo<U>(U item, bool count) = item, 0",
+			"override: pub mt<int, U> echo<U>(U item, int count) = count, item",
+			"override: pub mt<U, int> echo<U: Number>(U item, int count) = item, count",
+			"override: pub mt<U, int> echo<U = int>(U item, int count) = item, count",
+			"override: pub mt<U, int> echo<U>(U item, opt<int> count ?: 1) = item, count",
+		)) {
+			failure("$base\ntypedef<class> Player : Entity { $method }", DiagnosticCode.INVALID_VIRTUAL_METHOD)
+		}
+		failure("typedef<class> Entity { virtual: mt<T> echo<T>(T value) = value }", DiagnosticCode.INVALID_VIRTUAL_METHOD)
+		failure("typedef<class> Player { override: pub mt<T> echo<T>(T value) = value }", DiagnosticCode.INVALID_VIRTUAL_METHOD)
+		failure("""
+			typedef<class> Entity<A> {
+			    virtual: pub mt<T> echo<T>(A key, T value) = value
+			    virtual: pub mt<T> echo<T>(int key, T value) = value
+			}
+			typedef<class> Player : Entity<int> { override: pub mt<U> echo<U>(int key, U value) = value }
+		""", DiagnosticCode.INVALID_VIRTUAL_METHOD)
+		failure("""
+			typedef<class> Entity { virtual: pub mt<T> echo<T>(T value) = value }
+			typedef<class> Player : Entity { override: pub mt<U> echo<U>(U item) = item + item }
+		""", DiagnosticCode.BINARY_OPERANDS)
+	}
+
+	@Test
+	fun `generic virtual calls bind the base contract and share a closed dispatch family`() {
+		val source = """
+			typedef<class> Entity {
+			    virtual: pub mt<T> echo<T: Number = int>(T value, opt<int> count ?: 1) = value
+			}
+			typedef<class> Player : Entity {
+			    override: pub mt<U> echo<U>(U item, int times) = item + item
+			}
+			typedef<class> Visitor : Player {}
+		""".trimIndent()
+		val model = analyze(source + """
+
+			fn<T> forward<R: Entity, T: Number>(R receiver, T value) = receiver.echo(value=value)
+			fn use(Entity root, Player child, Visitor visitor) {
+			    def<int> explicit = root.echo<int>(value=4)
+			    def<int> inferred = child.echo(value=4)
+			    def<int> defaulted = visitor.echo<>(value=4)
+			    def<int> forwarded = forward(child, 4)
+			}
+		""")
+		val declarations = model.declarations
+		val views = assertNotNull(declarations.genericViews)
+		val methods = views.methods.values.filter { it.name.lexeme == "echo" }.associateBy { it.owner.spelling }
+		assertEquals(setOf("Entity", "Player"), methods.keys)
+		val root = methods.getValue("Entity")
+		val replacement = methods.getValue("Player")
+		assertEquals(listOf("value", "count"), root.parameters.map { it.name.lexeme })
+		assertEquals(ValueType.INT, model.typeOf(root).returns)
+		val targets = assertNotNull(declarations.virtualTargets(root)).mapKeys { (owner, _) -> owner.spelling }
+		assertSame(root, targets.getValue("Entity"))
+		assertSame(replacement, targets.getValue("Player"))
+		assertSame(replacement, targets.getValue("Visitor"))
+		failure(source + "\nfn use(Player receiver) { receiver.echo<string>(value=\"text\") }", DiagnosticCode.UNSATISFIED_GENERIC_BOUND)
+		failure(source + "\nfn use(Player receiver) { receiver.echo<int>(item=4) }", DiagnosticCode.INVALID_ARGUMENT_BINDING)
 	}
 
 	@Test

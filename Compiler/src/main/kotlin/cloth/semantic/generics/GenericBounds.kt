@@ -100,12 +100,13 @@ internal class GenericBoundCheck(
 	private val argument: ValueType,
 	private val bounds: List<GenericBound>,
 	val use: TokenSpan?,
+	private val checkWrittenDuplicates: Boolean = use == null,
 ) {
 
 	fun failure(hasConstructor: (CClass, List<ValueType>) -> Boolean, interfacesOf: (CMemberType) -> Sequence<CInterface>): GenericBoundFailure? {
 		if (bounds.size > 1) {
-			val written = if (use == null) mutableMapOf<CMemberType, TokenSpan>() else null
-			val constructorSignatures = if (use == null) mutableMapOf<List<ValueType>, TokenSpan>() else null
+			val written = if (checkWrittenDuplicates) mutableMapOf<CMemberType, TokenSpan>() else null
+			val constructorSignatures = if (checkWrittenDuplicates) mutableMapOf<List<ValueType>, TokenSpan>() else null
 			val interfaces = mutableMapOf<CInterface, MutableMap<CInterface, TokenSpan>>()
 			for (bound in bounds) {
 				if (bound is GenericBound.Constructor) {

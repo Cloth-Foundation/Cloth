@@ -6,11 +6,10 @@ import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.*
 import cloth.parser.type.TypeArgumentList
 import cloth.parser.type.TypeParameterDeclaration
+import cloth.semantic.declarations.GenericStateContract
 import cloth.semantic.generics.*
-import cloth.semantic.symbols.CallableSymbol
-import cloth.semantic.symbols.ConstructorSymbol
-import cloth.semantic.symbols.FunctionSymbol
-import cloth.semantic.symbols.MethodSymbol
+import cloth.semantic.interfaces.InterfaceRequirement
+import cloth.semantic.symbols.*
 import cloth.token.TokenSpan
 
 /** Infer exact arguments from written values before checking the substituted call contracts. */
@@ -20,7 +19,7 @@ internal class GenericCallInference(
 ) {
 
 	private class Template(
-		val symbol: CallableSymbol,
+		val symbol: CallableContractSymbol,
 		val parameters: List<TypeParameterDeclaration>,
 		val patterns: GenericParameterPatterns,
 		val key: (List<ValueType>) -> ClosedCallableKey,
@@ -38,12 +37,25 @@ internal class GenericCallInference(
 		Template(template, checkNotNull(template.declaration.typeParameters).parameters, views.functionPatterns(template)) {
 			ClosedFunctionKey(template, it)
 		}
+	}).sourceCandidates()
+
+	private fun method(template: GenericMethodTemplate) = Template(template.symbol, checkNotNull(template.declaration.typeParameters).parameters, template.patterns) {
+		ClosedMethodKey(template, it)
+	}
+
+	fun methods(call: CallSite, supplied: TypeArgumentList?, templates: List<GenericMethodTemplate>) = candidates(call, supplied, templates.map(::method)).sourceCandidates()
+
+	fun members(call: CallSite, supplied: TypeArgumentList?, methods: List<GenericMethodTemplate>, interfaces: List<InterfaceRequirement>) = candidates(call, supplied, methods.map(::method) + interfaces.map { requirement ->
+		val declaration = requirement.declaration
+		Template(InterfaceMethodSymbol(requirement, declaration), checkNotNull(declaration.typeParameters).parameters, requirement.patterns) {
+			ClosedInterfaceMethodKey(requirement.owner, declaration, it)
+		}
 	})
 
-	fun methods(call: CallSite, supplied: TypeArgumentList?, templates: List<GenericMethodTemplate>) = candidates(call, supplied, templates.map { template ->
-		Template(template.symbol, checkNotNull(template.declaration.typeParameters).parameters, template.patterns) {
-			ClosedMethodKey(template, it)
-		}
+	fun states(call: StateCallExpression, templates: List<GenericStateContract>) = candidates(call, call.typeArguments, templates.map { template ->
+		val source = template.source
+		val symbol = StateMethodContractSymbol(template.owner, source, template.signature.valueParameters)
+		Template(symbol, checkNotNull(source.typeParameters).parameters, template.patterns) { ClosedStateContractKey(template, it) }
 	})
 
 	fun constructors(call: ClassCreationExpression, definition: CClass): Map<CallableSymbol, TypeArgumentSpans> {
@@ -55,10 +67,12 @@ internal class GenericCallInference(
 				ClosedConstructorKey(definition, index, template.declaration, it)
 			}
 		}
-		return candidates(call, supplied, templates)
+		return candidates(call, supplied, templates).sourceCandidates()
 	}
 
-	private fun candidates(call: CallSite, supplied: TypeArgumentList?, templates: List<Template>): Map<CallableSymbol, TypeArgumentSpans> {
+	private fun Map<CallableContractSymbol, TypeArgumentSpans>.sourceCandidates() = mapKeys { (symbol, _) -> symbol as CallableSymbol }
+
+	private fun candidates(call: CallSite, supplied: TypeArgumentList?, templates: List<Template>): Map<CallableContractSymbol, TypeArgumentSpans> {
 		ArgumentBinder.validate(call.suppliedArguments)
 		var firstProblem: BindingProblem? = null
 		val bound = templates.mapNotNull { template ->
@@ -123,7 +137,7 @@ internal class GenericCallInference(
 		if (!collect(fillMissing = true) { index -> if (hints[index].value == null) defaults[index].value else null }) return null
 		val symbol = template.symbol
 		val declaration = (symbol as? ConstructorSymbol)?.owner?.declaration ?: symbol.declaration
-		val owner = (symbol as? MethodSymbol)?.owner
+		val owner = if (symbol is ConstructorSymbol) null else symbol.receiver?.owner
 		val arguments = views.completeTypeArguments(call, declaration, owner, evidence.map { it?.type })
 		if (arguments.size < evidence.size) {
 			if (report) {

@@ -27,6 +27,14 @@ ordinary class-backed interfaces and closed generic contracts across files.
 [Design record](references/design.md) · [Implementation plan](../../../todo/interfaces-plan.md) ·
 [Public interface guide](../../../README.md#interfaces) · [Test.co](../../../examples/Test.co)
 
+GEN-6 Stage 3 checks method-owned type parameters on interface signatures
+and default bodies. A class override inherits the method's bounds by
+position. Stage 4 specializes calls through interface views and dispatches
+to the corresponding class override or interface fallback.
+[GEN-6 Stage 3](references/generic-interface-stage-3.md) ·
+[GEN-6 Stage 4](references/generic-interface-stage-4.md) ·
+[Generic interface implementation bounds](references/design.md#generic-interface-implementation-bounds)
+
 ## Preserve the interface boundary
 
 - A required interface method is a signature with no body. Expression fallbacks

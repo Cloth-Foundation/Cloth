@@ -59,6 +59,8 @@ checks host eligibility and adds each attachment to the class catalog.
 keeps one body view per attaching class, including closed generic hosts.
 Each view preserves the original source tokens and has independent typing
 and state target facts. Executable bodies are checked per attachment.
+Method-owned bounds and specializations also use the attaching class's
+shared state contract. [GEN-6 Stage 5](generic-state-stage-5.md)
 [BodyTyping](../../../../Compiler/src/main/kotlin/cloth/semantic/typing/BodyTyping.kt)
 uses the attachment scope for direct receiver state operations.
 

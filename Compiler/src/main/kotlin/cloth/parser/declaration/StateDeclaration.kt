@@ -1,6 +1,7 @@
 package cloth.parser.declaration
 
 import cloth.parser.expression.Expression
+import cloth.parser.type.TypeParameterList
 import cloth.parser.type.TypeReference
 import cloth.token.Token
 import cloth.token.TokenSpan
@@ -63,6 +64,7 @@ data class StateMethodContractDeclaration(
 	override val returnTypes: List<TypeReference>,
 	override val parameters: List<ParameterDeclaration>,
 	override val span: TokenSpan,
+	val typeParameters: TypeParameterList? = null,
 ) : StateClassMember, CallableSignature
 
 sealed interface StateMember {

@@ -24,6 +24,13 @@ Hide inherited signatures before checking bounds and specialize by the
 declaring owner, method declaration, and explicit arguments.
 [GEN-2 Stage 3](references/generic-methods-stage-3.md)
 
+GEN-6 Stage 1 matches generic virtual overrides by position and checks their
+bodies with the base declaration's bounds.
+[GEN-6 Stage 1](references/generic-virtual-stage-1.md)
+Stage 2 specializes the base call contract and dispatches the matching
+body using the receiver's current class level.
+[GEN-6 Stage 2](references/generic-virtual-stage-2.md)
+
 GEN-3 infers function and ordinary method type arguments when ordinary
 overloads have no match. Named generic classes infer owner arguments from
 `::new(...)` values. Reuse argument placement, candidate trials, and the

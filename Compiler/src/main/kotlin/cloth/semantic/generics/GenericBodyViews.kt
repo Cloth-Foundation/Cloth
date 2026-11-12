@@ -10,6 +10,9 @@ import cloth.parser.type.TypeParameterDeclaration
 import cloth.parser.type.TypeReference
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.ClassDefinition
+import cloth.semantic.interfaces.InterfaceImplementation
+import cloth.semantic.interfaces.InterfaceRequirement
+import cloth.semantic.interfaces.specialize
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.FunctionType
@@ -22,6 +25,12 @@ class GenericBodyViews internal constructor(
 	private var worklist: ClosedTypeAnalyzer.Worklist? = null,
 ) {
 
+	private class CanonicalBodies {
+
+		val expressions = IdentityHashMap<Expression, Expression>()
+		val callables = IdentityHashMap<CallableSignature, CallableSignature>()
+	}
+
 	internal val resolvedTypes = IdentityHashMap<TypeReference, ValueType>()
 	internal val receivers = IdentityHashMap<NameExpression, ValueType>()
 	private val owners = IdentityHashMap<CMemberType, Declaration>()
@@ -29,10 +38,11 @@ class GenericBodyViews internal constructor(
 	private val originals = IdentityHashMap<Any, Any>()
 	private val boundContexts = IdentityHashMap<Expression, GenericBindings>()
 	private val callContexts = IdentityHashMap<CallSite, GenericBindings>()
-	private val canonicalExpressions = IdentityHashMap<Expression, Expression>()
-	private val canonicalCallables = IdentityHashMap<CallableSignature, CallableSignature>()
-	private val callableKeys = IdentityHashMap<CallableSymbol, ClosedCallableKey>()
-	private val candidateSymbols = mutableMapOf<ClosedCallableKey, CallableSymbol>()
+	private val canonicalBodies = CanonicalBodies()
+	private val canonicalStates = IdentityHashMap<ClassDeclaration, CanonicalBodies>()
+	private val stateScopes = IdentityHashMap<Any, ClassDeclaration>()
+	private val callableKeys = IdentityHashMap<CallableContractSymbol, ClosedCallableKey>()
+	private val candidateSymbols = mutableMapOf<ClosedCallableKey, CallableContractSymbol>()
 	private val candidateContracts = IdentityHashMap<CallableContractSymbol, FunctionType>()
 
 	init {
@@ -65,15 +75,42 @@ class GenericBodyViews internal constructor(
 		}
 	}
 
+	internal val interfaceContracts = buildMap {
+		for ((key, bindings) in types.callableInstances) if (key is ClosedInterfaceMethodKey) {
+			val method = interfaceSymbol(key, View(bindings).interfaceMethod(key.declaration))
+			callableKeys[method] = key
+			put(key, method)
+		}
+	}
+
+	internal val stateContracts = buildMap {
+		for ((key, bindings) in types.callableInstances) if (key is ClosedStateContractKey) {
+			val contract = stateSymbol(key, View(bindings, stateScope = key.owner.declaration).stateContract(key.template.source))
+			callableKeys[contract] = key
+			put(key, contract)
+		}
+	}
+
+	internal val stateMethods = buildMap {
+		for ((key, bindings) in types.callableInstances) if (key is ClosedStateMethodKey) {
+			val view = View(bindings, stateScope = key.owner.declaration).method(key.declaration)
+			val method = MethodSymbol(view, key.template.host).also { it.signatureResolver = ::signatureType }
+			put(key, method)
+		}
+	}
+
 	private val guaranteeSymbols = IdentityHashMap<GenericBound.Constructor, ConstructorGuaranteeSymbol>()
 	internal val constructorGuarantees = buildList {
-		fun addGuarantees(owner: Declaration, bindings: GenericBindings, declaringClass: CClass?) {
+		fun addGuarantees(owner: Declaration, bindings: GenericBindings, declaringClass: CClass?, stateScope: ClassDeclaration? = null) {
 			if (bindings.constructorBounds.isEmpty()) return
-			val view = View(bindings)
+			val inherited = bindings.inheritedBounds
+			// Inherited default expressions retain their source contract's canonical body.
+			val view = View(bindings, recordsCanonical = inherited == null, stateScope = stateScope)
 			for (parameter in types.names.parametersOf(owner)) {
 				for (bound in bindings.constructorBounds[parameter].orEmpty()) {
 					val symbol = ConstructorGuaranteeSymbol(
-						view.constructorGuarantee(bound.declaration), bound.parameterTypes, bindings.environment.getValue(parameter), declaringClass,
+						view.constructorGuarantee(bound.declaration), bound.parameterTypes, bindings.environment.getValue(parameter),
+						(inherited?.owner ?: declaringClass) as? CClass,
 					)
 					guaranteeSymbols[bound] = symbol
 					add(symbol)
@@ -81,7 +118,19 @@ class GenericBodyViews internal constructor(
 			}
 		}
 		for (instance in types.catalog.values) addGuarantees(instance.definition.declaration, instance.bindings, instance.type as? CClass)
-		for ((key, bindings) in types.callableInstances) addGuarantees(key.declaration, bindings, key.owner as? CClass)
+		for ((key, bindings) in types.callableInstances) {
+			val declaringClass = when (key) {
+				is ClosedStateContractKey -> key.template.declaringClass
+				is ClosedStateMethodKey   -> key.template.declaringClass
+				else                      -> key.owner as? CClass
+			}
+			val stateScope = when (key) {
+				is ClosedStateContractKey -> key.owner.declaration
+				is ClosedStateMethodKey   -> ((bindings.inheritedBounds?.owner as? CClass) ?: key.owner).declaration
+				else                      -> null
+			}
+			addGuarantees(key.declaration, bindings, declaringClass, stateScope)
+		}
 	}
 
 	internal fun constructorGuaranteesFor(call: ClassCreationExpression): List<ConstructorGuaranteeSymbol> {
@@ -97,13 +146,23 @@ class GenericBodyViews internal constructor(
 
 	internal fun candidateType(symbol: CallableContractSymbol): FunctionType? = candidateContracts[symbol]
 
-	private fun candidate(key: ClosedCallableKey): CallableSymbol = candidateSymbols.getOrPut(key) {
+	private fun interfaceSymbol(key: ClosedInterfaceMethodKey, view: InterfaceMethodDeclaration): InterfaceMethodSymbol = InterfaceMethodSymbol(
+		types.interfaces.requirementOf(key.owner, key.declaration), view,
+		FunctionSignature.of(view, resolved = ::signatureType),
+	)
+
+	private fun stateSymbol(key: ClosedStateContractKey, view: StateMethodContractDeclaration): StateMethodContractSymbol = StateMethodContractSymbol(key.owner, view, FunctionSignature.of(view, resolved = ::signatureType))
+
+	private fun candidate(key: ClosedCallableKey): CallableContractSymbol = candidateSymbols.getOrPut(key) {
 		val candidate = types.callableCandidates[key] ?: throw InternalErrors.invariant("Missing generic call candidate for '${key.declaration.name.lexeme}'")
 		val view = View(candidate.bindings)
 		val symbol = when (key) {
-			is ClosedFunctionKey    -> FunctionSymbol(view.functionSignature(key.declaration)).also { it.signatureResolver = ::signatureType }
-			is ClosedMethodKey      -> MethodSymbol(view.methodSignature(key.declaration), key.owner).also { it.signatureResolver = ::signatureType }
-			is ClosedConstructorKey -> ConstructorSymbol(key.declaration, key.definition).also { constructor ->
+			is ClosedFunctionKey        -> FunctionSymbol(view.functionSignature(key.declaration)).also { it.signatureResolver = ::signatureType }
+			is ClosedMethodKey          -> MethodSymbol(view.methodSignature(key.declaration), key.owner).also { it.signatureResolver = ::signatureType }
+			is ClosedInterfaceMethodKey -> interfaceSymbol(key, view.interfaceMethodSignature(key.declaration))
+			is ClosedStateContractKey   -> stateSymbol(key, view.stateContract(key.template.source, includeDefaults = false))
+			is ClosedStateMethodKey     -> throw InternalErrors.invariant("A state implementation is selected at dispatch")
+			is ClosedConstructorKey     -> ConstructorSymbol(key.declaration, key.definition).also { constructor ->
 				constructor.signatureResolver = { reference ->
 					SignatureType.resolved((candidate.bindings.facts.getValue(reference) as ClosedTypePattern.Exact).type)
 				}
@@ -151,14 +210,14 @@ class GenericBodyViews internal constructor(
 		call: CallSite,
 		inferred: List<Pair<ClosedCallableKey, TypeArgumentSpans>>,
 		classes: Map<CClass, ClassDefinition>,
-	): Map<CallableSymbol, TypeArgumentSpans> {
+	): Map<CallableContractSymbol, TypeArgumentSpans> {
 		val caller = callContexts[call] ?: types.rootBindings
-		fun instance(key: ClosedCallableKey): CallableSymbol? = when (key) {
-			is ClosedFunctionKey    -> functions[key]
-			is ClosedMethodKey      -> methods[key]
+		fun instance(key: ClosedCallableKey): CallableContractSymbol? = when (key) {
 			is ClosedConstructorKey -> (types.applications[key.application]?.type as? CClass)?.let {
 				classes[it]?.constructors?.get(key.index)
 			}
+
+			else                    -> callableInstance(key)
 		}
 		worklist?.prepareCallables(inferred.filter { (key, _) -> instance(key) == null }.map { (key, spans) ->
 			GenericCallableRequest(key, spans, caller)
@@ -171,6 +230,15 @@ class GenericBodyViews internal constructor(
 		if (viable.isNotEmpty()) return viable
 		val (key, spans) = inferred.first()
 		throw checkNotNull(types.candidateFailure(key, spans, caller)).diagnostic(spans)
+	}
+
+	private fun callableInstance(key: ClosedCallableKey): CallableContractSymbol? = when (key) {
+		is ClosedFunctionKey        -> functions[key]
+		is ClosedMethodKey          -> methods[key]
+		is ClosedInterfaceMethodKey -> interfaceContracts[key]
+		is ClosedStateContractKey   -> stateContracts[key]
+		is ClosedStateMethodKey     -> stateMethods[key]
+		is ClosedConstructorKey     -> null
 	}
 
 	/** A signature-only constructor becomes a real call after its winning owner is interned. */
@@ -206,6 +274,31 @@ class GenericBodyViews internal constructor(
 		report: Boolean,
 	): MethodSymbol? {
 		val key = canonical.callableKeys.getValue(selected) as ClosedMethodKey
+		val arguments = rebindArguments(call, key.arguments, canonical)
+		return methodCandidates(listOf(template), arguments, call.typeArgumentSpans(arguments.size), call, report, constructorAccessChecked = true).singleOrNull()
+	}
+
+	internal fun inferredBoundInterfaceMethod(
+		call: MemberCallExpression,
+		requirement: InterfaceRequirement,
+		selected: InterfaceMethodSymbol,
+		canonical: GenericBodyViews,
+		report: Boolean,
+	): InterfaceMethodSymbol? {
+		val key = canonical.callableKeys.getValue(selected) as ClosedInterfaceMethodKey
+		val arguments = rebindArguments(call, key.arguments, canonical)
+		val specialized = ClosedInterfaceMethodKey(requirement.owner, requirement.declaration, arguments)
+		val spans = call.typeArgumentSpans(arguments.size)
+		val caller = callContexts.getValue(call)
+		worklist?.prepareCallables(listOf(GenericCallableRequest(specialized, spans, caller)), constructorAccessChecked = true)
+		types.rejectedCallables[specialized]?.let {
+			if (report) throw it.diagnostic(spans)
+			return null
+		}
+		return interfaceContracts[specialized] ?: candidate(specialized) as InterfaceMethodSymbol
+	}
+
+	private fun rebindArguments(call: MemberCallExpression, arguments: List<ValueType>, canonical: GenericBodyViews): List<ValueType> {
 		val caller = callContexts.getValue(call)
 		val rebound = IdentityHashMap<ValueType, ValueType>()
 		fun rebind(type: ValueType): ValueType = rebound.getOrPut(type) {
@@ -229,16 +322,29 @@ class GenericBodyViews internal constructor(
 			}
 		}
 
-		val arguments = key.arguments.map(::rebind)
-		return methodCandidates(listOf(template), arguments, call.typeArgumentSpans(arguments.size), call, report, constructorAccessChecked = true).singleOrNull()
+		return arguments.map(::rebind)
 	}
 
 	private fun CallSite.typeArgumentSpans(count: Int) = TypeArgumentSpans(span, List(count) { span })
 
-	internal fun callableRequest(call: CallSite, supplied: TypeArgumentSpans?, selected: CallableSymbol): GenericCallableRequest? {
+	internal fun callableRequest(call: CallSite, supplied: TypeArgumentSpans?, selected: CallableContractSymbol, dispatchView: CMemberType?): GenericCallableRequest? {
 		val key = callableKeys[selected] ?: return null
-		if (key is ClosedConstructorKey || key in types.callableInstances) return null
-		return GenericCallableRequest(key, supplied ?: call.typeArgumentSpans(key.arguments.size), callContexts[call] ?: types.rootBindings)
+		if (key is ClosedConstructorKey || key in types.callableInstances && (types.symbolic || dispatchView == null)) return null
+		return GenericCallableRequest(key, supplied ?: call.typeArgumentSpans(key.arguments.size), callContexts[call] ?: types.rootBindings, dispatchView)
+	}
+
+	internal fun stateSpecialization(contract: CallableContractSymbol): ClosedStateContractKey? = callableKeys[contract] as? ClosedStateContractKey
+
+	internal fun interfaceTarget(contract: InterfaceMethodSymbol, implementation: InterfaceImplementation): CallableContractSymbol? {
+		val key = callableKeys[contract] as? ClosedInterfaceMethodKey ?: return null
+		return checkNotNull(callableInstance(implementation.specialize(key.arguments)))
+	}
+
+	internal fun virtualTargets(method: MethodSymbol): Map<CClass, MethodSymbol>? {
+		val key = callableKeys[method] as? ClosedMethodKey ?: return null
+		val family = types.virtualMethods.genericFamilyOf(key.template) ?: return null
+		if (family.base !== key.template) throw InternalErrors.invariant("Generic virtual call requires the base contract")
+		return family.implementations.mapValues { (_, template) -> methods.getValue(ClosedMethodKey(template, key.arguments)) }
 	}
 
 	internal fun inferredResult(call: CallSite): ResultShape? = (callContexts[call] ?: types.rootBindings).inferredResults[originalOf(call) as CallSite]
@@ -258,10 +364,15 @@ class GenericBodyViews internal constructor(
 	fun originalOf(node: Any): Any = originals[node] ?: node
 	fun viewOf(node: Any, owner: CMemberType): Any = copies.getValue(owner).getValue(node)
 	internal fun signatureType(reference: TypeReference): SignatureType = resolvedTypes[reference]?.let(SignatureType::resolved) ?: SignatureType.of(reference)
+	private fun canonicalFor(scope: ClassDeclaration?): CanonicalBodies? = if (scope == null) canonicalBodies else canonicalStates[scope]
+
 	internal fun isCanonicalBoundBody(callable: CallableContractSymbol): Boolean {
 		if (!types.symbolic) return false
-		if (canonicalCallables[originalOf(callable.declaration) as CallableSignature] === callable.declaration) return true
+		val body = callable.declaration
+		if (canonicalFor(stateScopes[body])?.callables?.get(originalOf(body) as CallableSignature) === body) return true
 		if ((callable.declaration as? MethodDeclaration)?.typeParameters != null) return false
+		if ((callable.declaration as? InterfaceMethodDeclaration)?.typeParameters != null) return false
+		if ((callable.declaration as? StateMethodContractDeclaration)?.typeParameters != null) return false
 		val owner = callable.receiver?.owner ?: return false
 		return types.catalog[owner]?.bindings?.let { it.canonical && it.nominalBounds.isNotEmpty() } == true
 	}
@@ -269,27 +380,35 @@ class GenericBodyViews internal constructor(
 	internal fun checkedExpression(view: Expression): Expression? {
 		if (view !in boundContexts) return null
 		val declarations = templates?.declarations?.genericViews ?: this
-		return declarations.canonicalExpressions[originalOf(view) as Expression]?.takeUnless { it === view }
+		return declarations.canonicalFor(stateScopes[view])?.expressions?.get(originalOf(view) as Expression)?.takeUnless { it === view }
 	}
 
 	internal fun specializedBounds(view: Expression, parameter: TypeParameterDeclaration): List<CMemberType>? = boundContexts[view]?.nominalBounds?.get(parameter)
 
-	internal fun canonicalBoundMethod(declaration: MethodDeclaration): MethodDeclaration? = (canonicalCallables[originalOf(declaration) as MethodDeclaration] as? MethodDeclaration)?.takeUnless { it === declaration }
+	internal fun canonicalBoundMethod(declaration: MethodDeclaration): MethodDeclaration? = (canonicalFor(stateScopes[declaration])?.callables?.get(originalOf(declaration) as MethodDeclaration) as? MethodDeclaration)?.takeUnless { it === declaration }
 
 	private fun view(owner: CMemberType) = View(types.instanceOf(owner).bindings, copies.getOrPut(owner) { IdentityHashMap() })
 
-	private inner class View(private val bindings: GenericBindings, private val cache: IdentityHashMap<Any, Any> = IdentityHashMap()) {
+	private inner class View(
+		private val bindings: GenericBindings,
+		private val cache: IdentityHashMap<Any, Any> = IdentityHashMap(),
+		recordsCanonical: Boolean = true,
+		private val stateScope: ClassDeclaration? = null,
+	) {
 
-		private val canonical = types.symbolic && bindings.canonical && bindings.nominalBounds.isNotEmpty()
+		private val checkedBodies = if (recordsCanonical && types.symbolic && bindings.canonical && bindings.nominalBounds.isNotEmpty()) {
+			if (stateScope == null) canonicalBodies else canonicalStates.getOrPut(stateScope, ::CanonicalBodies)
+		} else null
 
 		@Suppress("UNCHECKED_CAST")
 		private fun <T : Any> copy(source: T, create: () -> T): T = cache.getOrPut(source) {
 			create().also { view ->
 				originals[view] = source
-				if (canonical && source is CallableSignature && view is CallableSignature) canonicalCallables[source] = view
+				if (stateScope != null && (view is CallableSignature || view is Expression)) stateScopes[view] = stateScope
+				if (source is CallableSignature && view is CallableSignature) checkedBodies?.callables?.put(source, view)
 				if (source is Expression && view is Expression && bindings.nominalBounds.isNotEmpty()) {
 					boundContexts[view] = bindings
-					if (canonical) canonicalExpressions[source] = view
+					checkedBodies?.expressions?.put(source, view)
 				}
 			}
 		} as T
@@ -328,8 +447,15 @@ class GenericBodyViews internal constructor(
 		)
 
 		private fun stateMember(source: StateMember): StateMember = when (source) {
-			is MethodDeclaration           -> method(source)
+			is MethodDeclaration           -> if (source.typeParameters == null) method(source) else source
 			is StateInitializerDeclaration -> copy(source) { source.copy(body = body(source.body) as BlockBody) }
+		}
+
+		fun stateContract(source: StateMethodContractDeclaration, includeDefaults: Boolean = true): StateMethodContractDeclaration = copy(source) {
+			source.copy(
+				returnTypes = source.returnTypes.map(::type),
+				parameters = source.parameters.map { if (includeDefaults) parameter(it) else it.copy(type = type(it.type)) },
+			)
 		}
 
 		fun state(source: TopLevelStateDeclaration): TopLevelStateDeclaration = copy(source) {
@@ -351,7 +477,7 @@ class GenericBodyViews internal constructor(
 						}
 
 						is StateAttachmentDeclaration     -> copy(member) { member.copy(initial = member.initial?.let { it.copy(payload = it.payload?.let(::expression)) }) }
-						is StateMethodContractDeclaration -> copy(member) { member.copy(returnTypes = member.returnTypes.map(::type), parameters = member.parameters.map(::parameter)) }
+						is StateMethodContractDeclaration -> if (member.typeParameters == null) stateContract(member) else member
 						is ClassFieldDeclaration          -> copy(member) { member.copy(type = type(member.type), initializer = expression(member.initializer)) }
 						is MethodDeclaration              -> if (member.typeParameters == null) method(member) else member
 						is ConstructorDeclaration         -> copy(member) { member.copy(parameters = member.parameters.map(::parameter), delegation = delegation(member.delegation), body = body(member.body) as BlockBody) }
@@ -371,15 +497,22 @@ class GenericBodyViews internal constructor(
 		fun owner(source: InterfaceDeclaration): InterfaceDeclaration = copy(source) {
 			source.copy(
 				parents = source.parents.map(::type),
-				methods = source.methods.map { member ->
-					copy(member) {
-						member.copy(
-							returnTypes = member.returnTypes.map(::type),
-							parameters = member.parameters.map(::parameter),
-							fallback = member.fallback?.let { it.copy(body = body(it.body)) },
-						)
-					}
-				},
+				methods = source.methods.map { if (it.typeParameters == null) interfaceMethod(it) else it },
+			)
+		}
+
+		fun interfaceMethod(source: InterfaceMethodDeclaration): InterfaceMethodDeclaration = copy(source) {
+			source.copy(
+				returnTypes = source.returnTypes.map(::type),
+				parameters = source.parameters.map(::parameter),
+				fallback = source.fallback?.let { it.copy(body = body(it.body)) },
+			)
+		}
+
+		fun interfaceMethodSignature(source: InterfaceMethodDeclaration): InterfaceMethodDeclaration = copy(source) {
+			source.copy(
+				returnTypes = source.returnTypes.map(::type),
+				parameters = source.parameters.map { it.copy(type = type(it.type)) },
 			)
 		}
 
@@ -449,7 +582,12 @@ class GenericBodyViews internal constructor(
 
 				is ClassCreationExpression   -> source.copy(receiver = expression(source.receiver), suppliedArguments = arguments(source.suppliedArguments)).also { callContexts[it] = bindings }
 				is ClassDeletionExpression   -> source.copy(receiver = expression(source.receiver))
-				is StateCallExpression       -> source.copy(receiver = expression(source.receiver), suppliedArguments = arguments(source.suppliedArguments))
+				is StateCallExpression       -> source.copy(
+					receiver = expression(source.receiver),
+					suppliedArguments = arguments(source.suppliedArguments),
+					typeArguments = source.typeArguments?.let { it.copy(arguments = it.arguments.map(::type)) },
+				).also { callContexts[it] = bindings }
+
 				is ConstructorDelegation     -> delegation(source)
 				is FunctionBlockExpression   -> source.copy(declaration = function(source.declaration))
 				is IfExpression              -> source.copy(branches = source.branches.map { it.copy(condition = expression(it.condition), statements = it.statements.map(::statement)) }, otherwise = source.otherwise?.map(::statement))

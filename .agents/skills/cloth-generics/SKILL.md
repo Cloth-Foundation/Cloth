@@ -26,6 +26,20 @@ guarantee syntax, exact signature proof, and application-site access checks.
 nominal and numeric bounds and exposes the exact payload after a presence proof.
 [GEN-5 Stage 4](references/array-bounds-stage-4.md) checks declared array
 shape, exact element types, numeric leaves, and composed nullable suffixes.
+Generic virtual overrides inherit those bounds by method type parameter
+position. [GEN-6 Stage 1](../cloth-functions/references/generic-virtual-stage-1.md)
+Generic virtual calls specialize a base contract and its effective overrides
+with the same ordered type arguments.
+[GEN-6 Stage 2](../cloth-functions/references/generic-virtual-stage-2.md)
+Generic interface declarations check bounds on requirements, fallback
+bodies, and class overrides.
+[GEN-6 Stage 3](../cloth-interfaces/references/generic-interface-stage-3.md)
+Generic interface calls use the static interface contract and dispatch
+with the selected method arguments.
+[GEN-6 Stage 4](../cloth-interfaces/references/generic-interface-stage-4.md)
+Generic state methods use one shared contract per overload and specialize
+the corresponding bodies for the receiver's supported states.
+[GEN-6 Stage 5](../cloth-language/references/generic-state-stage-5.md)
 
 The first generic class/struct slice and public source List are complete through
 [Stage 6 integration and publication](references/stage-6.md). Start with the

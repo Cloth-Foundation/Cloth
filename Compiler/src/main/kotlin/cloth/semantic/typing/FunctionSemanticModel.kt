@@ -1,5 +1,6 @@
 package cloth.semantic.typing
 
+import cloth.data.CMemberType
 import cloth.data.ValueType
 import cloth.parser.expression.*
 import cloth.parser.statement.Statement
@@ -41,7 +42,7 @@ class FunctionSemanticModel internal constructor(
 	private val facts = FactCopies<FunctionSemanticModel>()
 	internal val bindings: MutableMap<BindingSymbol, ValueType> = facts.identityMap { it.bindings }
 	internal val calls: MutableMap<CallExpression, ResolvedCall> = facts.identityMap { it.calls }
-	private val callableRequests: MutableMap<ClosedCallableKey, GenericCallableRequest> = facts.orderedMap { it.callableRequests }
+	private val callableRequests: MutableMap<Pair<ClosedCallableKey, CMemberType?>, GenericCallableRequest> = facts.orderedMap { it.callableRequests }
 	private val inferredResults: MutableMap<CallSite, ResultShape> = facts.identityMap { it.inferredResults }
 	internal val sourceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Source> = facts.identityMap { it.sourceMemberCalls }
 	internal val interfaceMemberCalls: MutableMap<MemberCallExpression, ResolvedCall.Interface> = facts.identityMap { it.interfaceMemberCalls }
@@ -125,9 +126,9 @@ class FunctionSemanticModel internal constructor(
 		requestCallable(call, supplied?.sourceSpans(), callable)
 	}
 
-	internal fun requestCallable(call: CallSite, supplied: TypeArgumentSpans?, callable: CallableSymbol) {
-		val request = declarations.genericViews?.callableRequest(call, supplied, callable) ?: return
-		callableRequests.putIfAbsent(request.key, request)
+	internal fun requestCallable(call: CallSite, supplied: TypeArgumentSpans?, callable: CallableContractSymbol, dispatchView: CMemberType? = null) {
+		val request = declarations.genericViews?.callableRequest(call, supplied, callable, dispatchView) ?: return
+		callableRequests.putIfAbsent(request.key to request.dispatchView, request)
 	}
 
 	internal fun methodTypeArguments(supplied: TypeArgumentList, report: Boolean): List<ValueType>? {

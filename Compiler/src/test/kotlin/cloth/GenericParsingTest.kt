@@ -263,14 +263,10 @@ class GenericParsingTest {
 	}
 
 	@Test
-	fun `alternate default syntax enums and dispatched generic methods retain a syntax boundary`() {
+	fun `alternate default syntax and generic enums retain a syntax boundary`() {
 		for (source in listOf(
 			"typedef<struct> Box<T ?: int> {}", "fn work<T: Number ?: int>() {}",
 			"typedef<enum> Mode<T> { One }",
-			"typedef<class> Box { virtual: pub mt work<T>() {} }",
-			"typedef<class> Box : Base { override: pub mt work<T>() {} }",
-			"typedef<class> Box { state<void> Alive { mt work<T>() {} } }",
-			"typedef<interface> Box { mt work<T>() }",
 		)) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { unit(source) }
 			assertEquals(DiagnosticCode.UNSUPPORTED_GENERIC_SYNTAX, error.diagnosticCode, source)

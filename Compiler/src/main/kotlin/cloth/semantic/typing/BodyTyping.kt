@@ -2,7 +2,6 @@ package cloth.semantic.typing
 
 import cloth.builtin.attachments.ArrayMutation
 import cloth.data.*
-import cloth.diagnostics.GenericErrors
 import cloth.diagnostics.InternalErrors
 import cloth.diagnostics.SemanticErrors
 import cloth.diagnostics.StateErrors
@@ -352,12 +351,18 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		if (expression.receiver in facts.declarations.readOnlyValueReceivers) {
 			throw SemanticErrors.parameterDefault("A default cannot call a state method through a read-only receiver", expression.name.span)
 		}
-		val candidates = facts.declarations.states[owner]?.contracts?.values.orEmpty().filter { it.callable.name.lexeme == expression.name.lexeme }
-		if (candidates.isEmpty()) throw StateErrors.target("Class '${owner.spelling}' has no state method '${expression.name.lexeme}'", expression.name)
+		val states = facts.declarations.states[owner]
+		val candidates = states?.contracts?.values.orEmpty().filter { it.callable.name.lexeme == expression.name.lexeme }
+		val templates = states?.genericContracts?.values.orEmpty().filter { it.declaration.name.lexeme == expression.name.lexeme }
+		if (candidates.isEmpty() && templates.isEmpty()) throw StateErrors.target("Class '${owner.spelling}' has no state method '${expression.name.lexeme}'", expression.name)
 		val visible = candidates.filter { it.public || it.owner.sameDeclaration(classOwner) }.map { it.callable }
-		if (visible.isEmpty()) throw SemanticErrors.privateClassMember(expression.name, candidates.first().callable.name)
-		val selected = overloads.state(expression, visible, owner)
+		val generic = templates.filter { it.public || it.owner.sameDeclaration(classOwner) }
+		if (visible.isEmpty() && generic.isEmpty()) {
+			throw SemanticErrors.privateClassMember(expression.name, candidates.firstOrNull()?.callable?.name ?: templates.first().declaration.name)
+		}
+		val selected = overloads.state(expression, visible, generic, owner)
 		facts.stateCalls[expression] = selected
+		facts.recordInferredResult(expression, selected.type.results)
 		return selected.type.results
 	}
 
@@ -457,7 +462,6 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val group = facts.declarations.memberGroup(owner, expression.name.lexeme) ?: throw SemanticErrors.unknownMember(owner, expression.name)
 		checkMethodReceiver(expression)
 		if (group is InterfaceMethodGroupSymbol) {
-			expression.typeArguments?.let { throw GenericErrors.callArity(expression.name, it.span, it.arguments.size, listOf(0), group.name) }
 			val selected = overloads.interfaceCall(expression, group, objectReceiver(expression.receiver))
 			facts.interfaceMemberCalls[expression] = selected
 			return selected.type.results
@@ -499,7 +503,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val access = objectReceiver(expression.receiver)
 		val selected = when (val contract = checked?.contract) {
 			is MethodSymbol          -> overloads.source(expression, listOf(contract), MethodReceiver.Instance(access))
-			is InterfaceMethodSymbol -> overloads.interfaceCall(expression, InterfaceMethodGroupSymbol(checked.view as CInterface, listOf(contract)), access)
+			is InterfaceMethodSymbol -> overloads.interfaceCall(expression, contract, checked.view as CInterface, access)
 			else                     -> overloads.boundMember(expression, groups, classOwner, access)
 		}
 		when (selected) {

@@ -26,6 +26,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class GenericNamesTest {
+
 	private val target = TargetLayout("generic-names-64", pointerBits = 64, cLongBits = 64)
 	private fun unit(source: String) = Parser(Lexer(SourceFile("generic-names.co", source.trimIndent())).scanTokens()).parse()
 	private fun graph(root: Path, sources: Map<String, String>): SourceGraph {
@@ -36,6 +37,7 @@ class GenericNamesTest {
 		}
 		return SourceGraphLoader.load(CompilationRequest(root.resolve("Main.co"), root.resolve("not-created/out.o"), listOf(SourceModule("M", root)), outputKind = OutputKind.OBJECT))
 	}
+
 	private fun failure(source: String, code: DiagnosticCode): ClothDiagnostic = assertFailsWith<ClothDiagnostic> { GenericAnalyzer(target).analyze(unit(source)) }.also {
 		assertEquals(code, it.diagnosticCode, it.summary)
 		assertLocated(it)
@@ -365,8 +367,7 @@ class GenericNamesTest {
 		assertEquals(DiagnosticCode.INVALID_GENERIC_BOUND, error.diagnosticCode)
 		assertEquals(listOf(bounds[2].span, bounds[0].span), error.sourceLabels.map { it.span })
 
-		for (list in listOf("Number & Named", "Named & Number", "Named & int", "Named & Tagged?", "Named & Tagged[]",
-			"Number? & Named?", "Named? & Number?", "Named? & Tagged", "First? & Second?", "new() & Named?", "Named? & new()")) {
+		for (list in listOf("Number & Named", "Named & Number", "Named & int", "Named & Tagged?", "Named & Tagged[]", "Number? & Named?", "Named? & Number?", "Named? & Tagged", "First? & Second?", "new() & Named?", "Named? & new()")) {
 			failure(declarations + "\nfn inspect<T: $list>(T value) {}", DiagnosticCode.INVALID_GENERIC_BOUND)
 		}
 		failure(declarations + "\nfn inspect<T: Named & Missing>(T value) {}", DiagnosticCode.UNSUPPORTED_TYPE)
@@ -460,11 +461,7 @@ class GenericNamesTest {
 
 	@Test
 	fun `circular imports and repeated routes retain original generic parameter owners`(@TempDir root: Path) {
-		val graph = graph(root, mapOf(
-			"Main.co" to "using A: Box\nusing B: use\nfn main() { Box<int>::new; use() }",
-			"A.co" to "using B: use\npub typedef<class> Box<T> { pub mt<T> identity(T value) = value }",
-			"B.co" to "using A: Box\npub fn use() { Box<string>::new }"
-		))
+		val graph = graph(root, mapOf("Main.co" to "using A: Box\nusing B: use\nfn main() { Box<int>::new; use() }", "A.co" to "using B: use\npub typedef<class> Box<T> { pub mt<T> identity(T value) = value }", "B.co" to "using A: Box\npub fn use() { Box<string>::new }"))
 		val model = GenericAnalyzer(target).analyze(graph)
 		val owner = graph.sources.single { it.path.fileName.toString() == "A.co" }.unit.declarations.single() as ClassDeclaration
 		assertSame(owner, model.parametersOf(owner).single().owner)
@@ -475,11 +472,7 @@ class GenericNamesTest {
 
 	@Test
 	fun `same spelled private templates and caller private actual types retain separate identities`(@TempDir root: Path) {
-		val graph = graph(root, mapOf(
-			"Main.co" to "using A: Public\nusing B: work\ntypedef<class> Hidden {}\nfn main() { Public<Hidden>::new; work() }",
-			"A.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> Public<T> { def<Slot<T>[]> values = [] }",
-			"B.co" to "typedef<struct> Slot<T> { T value }\npub fn work() { def<Slot<int>> value = { 1 } }"
-		))
+		val graph = graph(root, mapOf("Main.co" to "using A: Public\nusing B: work\ntypedef<class> Hidden {}\nfn main() { Public<Hidden>::new; work() }", "A.co" to "typedef<struct> Slot<T> { T value }\npub typedef<class> Public<T> { def<Slot<T>[]> values = [] }", "B.co" to "typedef<struct> Slot<T> { T value }\npub fn work() { def<Slot<int>> value = { 1 } }"))
 		val model = GenericAnalyzer(target).analyze(graph)
 		val slots = model.names.values.filterIsInstance<NominalTypeName>().map { it.type }.filter { it.spelling == "Slot" }.distinct()
 		assertEquals(2, slots.size)

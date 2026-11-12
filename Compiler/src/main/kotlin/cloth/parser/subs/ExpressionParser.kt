@@ -138,10 +138,12 @@ class ExpressionParser(val parser: Parser) {
 			return ClassCreationExpression(receiver, keyword, arguments, receiver.span.through(parser.previous().span))
 		}
 		if (parser.atKeyword(Keywords.DELETE)) return ClassDeletionExpression(receiver, parser.advance())
+		val genericCall = parser.typeParser.startsCallTypeArguments()
 		val name = parser.expect(TokenType.Identifier, "a compiler data or state-method name")
+		val typeArguments = if (genericCall) parser.typeParser.arguments() else null
 		if (parser.peek().lexeme != Operators.PAREN_OPEN.toString()) return ProviderAccessExpression(receiver, name)
 		val arguments = parseArgumentList()
-		return StateCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span))
+		return StateCallExpression(receiver, name, arguments, receiver.span.through(parser.previous().span), typeArguments)
 	}
 
 	private fun isImplicitBinding(token: Token): Boolean = token.type == TokenType.Keyword && (token.lexeme == Keywords.SELF.toString() || parser.inStateBody && token.lexeme == Keywords.STATE.toString())

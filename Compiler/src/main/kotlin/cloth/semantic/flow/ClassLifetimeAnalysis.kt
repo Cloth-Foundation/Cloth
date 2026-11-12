@@ -454,7 +454,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				check(handle, state, value.receiver.span, permitted)
 				val active = handle?.let { state.active[it.identity] }
 				val target = active?.state
-				if (target != null && (active.ordinaryAccess || permitted) && plan.contract.signature !in target.methods) {
+				if (target != null && (active.ordinaryAccess || permitted) && !target.implements(plan)) {
 					throw StateErrors.dispatch(value.name, plan.contract.signature.spelling, target.name)
 				}
 			}

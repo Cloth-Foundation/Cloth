@@ -58,7 +58,7 @@ internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression
 			is ResolvedCall.Interface -> {
 				val index = parameter.nominalBounds.indexOf(selected.owner)
 				val bound = bounds[index] as CInterface
-				rebindInterfaceMethod(bound, selected.contract)
+				rebindInterfaceMethod(bound, selected.contract, body, call, report)
 			}
 
 			null                      -> null
@@ -66,13 +66,24 @@ internal fun FunctionSemanticModel.checkedBoundMethod(call: MemberCallExpression
 	}
 }
 
-private fun FunctionSemanticModel.rebindInterfaceMethod(bound: CInterface, selected: InterfaceMethodSymbol): BoundMethod {
+private fun FunctionSemanticModel.rebindInterfaceMethod(
+	bound: CInterface,
+	selected: InterfaceMethodSymbol,
+	body: FunctionSemanticModel,
+	call: MemberCallExpression,
+	report: Boolean,
+): BoundMethod? {
 	val source = selected.requirement.declaration
-	val method = declarations.interfaceMethods.values.firstOrNull {
-		it.requirement.declaration === source && (it.owner === bound || it.owner in bound.ancestors)
-	} ?: throw InternalErrors.invariant("Missing bound interface requirement '${source.name.lexeme}'")
+	val contracts = declarations.interfaces.contracts
+	val contract = contracts.getValue(bound)
+	val current = contract.requirements.values.firstOrNull { it.declaration === source }
+	val requirement = current ?: bound.ancestors.asSequence().flatMap { contracts.getValue(it).requirements.values.asSequence() }.firstOrNull { it.declaration === source } ?: throw InternalErrors.invariant("Missing bound interface requirement '${source.name.lexeme}'")
+	val method = if (source.typeParameters == null) declarations.interfaceMethods.getValue(requirement) else {
+		val canonical = checkNotNull(body.declarations.genericViews)
+		checkNotNull(declarations.genericViews).inferredBoundInterfaceMethod(call, requirement, selected, canonical, report) ?: return null
+	}
 	// Substitution may merge inherited slots in the bound's interface view.
-	val view = if (method.requirement in declarations.interfaces.contracts.getValue(bound).methods.values) bound else method.owner
+	val view = if (current != null) bound else method.owner
 	return BoundMethod(view, method)
 }
 

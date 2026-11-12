@@ -238,6 +238,54 @@ results exactly. Class labels and optionality belong to the direct class call
 contract. Stage 5 applies that separation to native omission evaluation and
 fallback execution. [Stage 2 conformance](stage-2.md) · [Stage 5 defaults](stage-5.md)
 
+A generic interface call also takes its type argument defaults from its
+static interface declaration. If matching inherited methods give a child
+different type defaults after substitution, the child declares its own
+contract. Parent views keep their individual defaults.
+[GEN-6 Stage 4](generic-interface-stage-4.md)
+
+## Generic interface implementation bounds
+
+An interface requirement owns the bounds on its method type parameters.
+A class override declares its own type parameter names and inherits the
+corresponding bounds by position. The inherited bounds apply when Cloth
+checks the implementation body.
+
+```cloth
+typedef<interface> IMeasure {
+    mt<T> echo<T: Number>(T value)
+}
+
+typedef<class> Measure : IMeasure {
+    override: pub mt<U> echo<U>(U value) = value + value
+}
+```
+
+When one class override matches several interface requirements, their bounds
+must agree after substituting each interface's enclosing type arguments and
+matching method type parameters by position. Different bounds produce one
+conformance error with both requirements labeled.
+
+If those bounds contain constructor guarantees, a shared override needs the
+same guarantee labels and one defining declaration for each default. A
+diamond through one shared requirement preserves that declaration. Competing
+defaults produce one conformance error with both requirements labeled.
+
+A public generic method inherited from a base class can satisfy a newly
+implemented interface when the signature and declared method bounds match
+the requirement. Compare the bounds after enclosing type substitution and
+by method type parameter position.
+
+A child interface redeclaring a generic method writes its bounds explicitly.
+For example, a child of `INumeric` can supply a default for `echo<T: Number>`
+with `mt<U> echo<U: Number>(U value) = default (value + value)`. Cloth checks
+that the bounds agree with the parent after enclosing type substitution and
+positional matching.
+
+GEN-6 Stage 3 checks declarations, conformance, and default bodies.
+[Stage 3 implementation and verification](generic-interface-stage-3.md) ·
+[Open questions plan](../../../../todo/open-questions-plan.md#generics-interfaces-and-nominal-types)
+
 ## Class-backed value contracts
 
 The first release uses the existing class object protocol for interface views.

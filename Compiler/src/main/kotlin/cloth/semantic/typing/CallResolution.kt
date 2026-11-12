@@ -15,8 +15,12 @@ import cloth.parser.type.TypeArgumentList
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.SemanticException
+import cloth.semantic.declarations.GenericStateContract
 import cloth.semantic.generics.TypeArgumentSpans
+import cloth.semantic.generics.acceptsTypeArgumentCount
 import cloth.semantic.generics.completesTypeArguments
+import cloth.semantic.generics.typeArgumentCounts
+import cloth.semantic.interfaces.InterfaceRequirement
 import cloth.semantic.symbols.*
 
 /** A contextual mismatch rejects a candidate. Located diagnostics still stop analysis. */
@@ -91,36 +95,68 @@ internal class CallResolution(
 		groups: List<CallableGroupSymbol>,
 		classOwner: CClass?,
 		receiver: ObjectReceiver,
+	): ResolvedCall.Bound = memberContracts(expression, expression.typeArguments, groups, classOwner, receiver)
+
+	private fun memberContracts(
+		expression: CallSite,
+		supplied: TypeArgumentList?,
+		groups: List<CallableGroupSymbol>,
+		classOwner: CClass?,
+		receiver: ObjectReceiver,
 	): ResolvedCall.Bound {
 		val methods = groups.filterIsInstance<MethodGroupSymbol>().singleOrNull()
-		val interfaces = buildMap<InterfaceMethodSymbol, CInterface> {
-			for (group in groups.filterIsInstance<InterfaceMethodGroupSymbol>()) {
-				for (contract in group.overloads) putIfAbsent(contract, group.owner)
-			}
-		}
-		val supplied = expression.typeArguments
+		val interfaceGroups = groups.filterIsInstance<InterfaceMethodGroupSymbol>()
 		val sourceReceiver = MethodReceiver.Instance(receiver)
-		if (methods != null && (interfaces.isEmpty() || supplied != null)) {
+		if (methods != null && (interfaceGroups.isEmpty() || supplied != null && interfaceGroups.all { it.templates.isEmpty() })) {
 			return method(expression, supplied, methods, classOwner, sourceReceiver)
 		}
-		if (supplied != null) {
-			throw GenericErrors.callArity(expression.name, supplied.span, supplied.arguments.size, listOf(0), groups.first().name)
-		}
-		val ordinary: List<CallableContractSymbol> = methods?.overloads.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) } + interfaces.keys
-		val templates = methods?.templates.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
-		return resolve(expression, ordinary, noMatch = { failure ->
-			if (templates.isEmpty()) throw failure()
-			inferSource(expression, sourceReceiver) { GenericCallInference(facts, typingIn).methods(expression, null, templates) }
-		}, ambiguity = { best ->
-			val views = best.map { (it as? InterfaceMethodSymbol)?.let(interfaces::getValue) }
-			if (views.distinct().size > 1) SemanticErrors.ambiguousBoundCall(expression, best)
-			else SemanticErrors.ambiguousCall(expression, best)
-		}) { contract, type, binding ->
-			when (contract) {
-				is InterfaceMethodSymbol -> ResolvedCall.Interface(interfaces.getValue(contract), contract, type, binding, receiver)
-				else                     -> ResolvedCall.Source(contract as MethodSymbol, type, binding, sourceReceiver)
+
+		val interfaceViews = buildMap<InterfaceRequirement, CInterface> {
+			for (group in interfaceGroups) {
+				for (contract in group.overloads) putIfAbsent(contract.requirement, group.owner)
+				for (template in group.templates) putIfAbsent(template, group.owner)
 			}
 		}
+		val ordinaryMethods = methods?.overloads.orEmpty().filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		val ordinaryInterfaces = interfaceGroups.flatMap { it.overloads }.distinct()
+		val ordinary = if (supplied == null) ordinaryMethods + ordinaryInterfaces else emptyList()
+		val classTemplates = if (supplied == null) methods?.templates.orEmpty() else methods?.matchingTypeArguments(supplied).orEmpty()
+		val genericMethods = classTemplates.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		val interfaceTemplates = interfaceViews.keys.filter { it.key.typeParameterCount != 0 }
+		val genericInterfaces = if (supplied == null) interfaceTemplates else interfaceTemplates.filter {
+			checkNotNull(it.declaration.typeParameters).parameters.acceptsTypeArgumentCount(supplied.arguments.size)
+		}
+		if (supplied != null && genericMethods.isEmpty() && genericInterfaces.isEmpty()) {
+			if (classTemplates.isNotEmpty()) throw SemanticErrors.privateClassMember(expression.name, classTemplates.first().declaration.name)
+			val counts = buildList {
+				if (ordinaryMethods.isNotEmpty() || ordinaryInterfaces.isNotEmpty()) add(0)
+				for (template in methods?.templates.orEmpty()) addAll(checkNotNull(template.declaration.typeParameters).parameters.typeArgumentCounts())
+				for (template in interfaceTemplates) addAll(checkNotNull(template.declaration.typeParameters).parameters.typeArgumentCounts())
+			}.distinct().sorted()
+			throw GenericErrors.callArity(expression.name, supplied.span, supplied.arguments.size, counts, groups.first().name)
+		}
+
+		fun view(contract: InterfaceMethodSymbol): CInterface = interfaceViews.getValue(contract.requirement)
+		fun resolved(contract: CallableContractSymbol, type: FunctionType, binding: ArgumentBinding): ResolvedCall.Bound = when (contract) {
+			is InterfaceMethodSymbol -> ResolvedCall.Interface(view(contract), contract, type, binding, receiver)
+			else                     -> ResolvedCall.Source(contract as MethodSymbol, type, binding, sourceReceiver)
+		}
+
+		fun ambiguity(best: List<CallableContractSymbol>): SemanticException {
+			val views = best.map { (it as? InterfaceMethodSymbol)?.let(::view) }
+			return if (views.distinct().size > 1) SemanticErrors.ambiguousBoundCall(expression, best)
+			else SemanticErrors.ambiguousCall(expression, best)
+		}
+		return resolve(expression, ordinary, ambiguity = ::ambiguity, selectedCall = ::resolved, noMatch = { failure ->
+			if (genericMethods.isEmpty() && genericInterfaces.isEmpty()) throw failure()
+			val candidates = GenericCallInference(facts, typingIn).members(expression, supplied, genericMethods, genericInterfaces)
+			resolve(expression, candidates.keys.toList(), ambiguity = ::ambiguity, selectedCall = ::resolved).also { selected ->
+				when (selected) {
+					is ResolvedCall.Source    -> facts.requestCallable(expression, candidates.getValue(selected.callable), selected.callable)
+					is ResolvedCall.Interface -> facts.requestCallable(expression, candidates.getValue(selected.contract), selected.contract, selected.owner)
+				}
+			}
+		})
 	}
 
 	private fun inferSource(
@@ -146,9 +182,49 @@ internal class CallResolution(
 		}
 	}
 
-	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface = resolve(expression, group.overloads) { contract, type, binding -> ResolvedCall.Interface(group.owner, contract, type, binding, receiver) }
+	fun interfaceCall(expression: CallSite, group: InterfaceMethodGroupSymbol, receiver: ObjectReceiver): ResolvedCall.Interface {
+		val supplied = when (expression) {
+			is CallExpression       -> expression.typeArguments
+			is MemberCallExpression -> expression.typeArguments
+			else                    -> null
+		}
+		return memberContracts(expression, supplied, listOf(group), null, receiver) as ResolvedCall.Interface
+	}
 
-	fun state(expression: StateCallExpression, group: List<CallableContractSymbol>, owner: CClass): ResolvedStateCall = resolve(expression, group) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
+	fun interfaceCall(expression: CallSite, contract: InterfaceMethodSymbol, view: CInterface, receiver: ObjectReceiver): ResolvedCall.Interface = resolve(expression, listOf(contract)) { selected, type, binding ->
+		facts.requestCallable(expression, null, selected, view)
+		ResolvedCall.Interface(view, selected, type, binding, receiver)
+	}
+
+	fun state(
+		expression: StateCallExpression,
+		group: List<CallableContractSymbol>,
+		templates: List<GenericStateContract>,
+		owner: CClass,
+	): ResolvedStateCall {
+		val supplied = expression.typeArguments
+		val ordinary = if (supplied == null) group else emptyList()
+		val generic = if (supplied == null) templates else templates.filter {
+			checkNotNull(it.source.typeParameters).parameters.acceptsTypeArgumentCount(supplied.arguments.size)
+		}
+		if (supplied != null && generic.isEmpty()) {
+			val counts = buildList {
+				if (group.isNotEmpty()) add(0)
+				for (template in templates) addAll(checkNotNull(template.source.typeParameters).parameters.typeArgumentCounts())
+			}.distinct().sorted()
+			val name = templates.firstOrNull()?.declaration?.name ?: group.first().name
+			throw GenericErrors.callArity(expression.name, supplied.span, supplied.arguments.size, counts, name)
+		}
+		return resolve(expression, ordinary, noMatch = { failure ->
+			if (generic.isEmpty()) throw failure()
+			val candidates = GenericCallInference(facts, typingIn).states(expression, generic)
+			resolve(expression, candidates.keys.toList()) { contract, type, binding ->
+				val key = checkNotNull(facts.declarations.genericViews?.stateSpecialization(contract))
+				facts.requestCallable(expression, candidates.getValue(contract), contract, owner)
+				ResolvedStateCall(owner, contract, type, binding, key)
+			}
+		}) { contract, type, binding -> ResolvedStateCall(owner, contract, type, binding) }
+	}
 
 	private fun <T : CallableContractSymbol, R> resolve(
 		expression: CallSite,

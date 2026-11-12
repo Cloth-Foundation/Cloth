@@ -91,6 +91,13 @@ typedef<class> Player : Entity {
 `player.describe(label="scout")` binds `label` from `Entity` and passes
 `"scout"` to `Player`'s `text` parameter.
 
+Generic virtual overrides inherit the base method's type parameter bounds
+by position. [GEN-6 Stage 1](../../cloth-functions/references/generic-virtual-stage-1.md)
+Generic virtual calls select type arguments from the base contract. Runtime
+selects the matching specialized body at the same lifecycle class level as
+an ordinary virtual call.
+[GEN-6 Stage 2](../../cloth-functions/references/generic-virtual-stage-2.md)
+
 ## Virtual method implementation
 
 `ClassParser` retains the `virtual:` prefix on a class method. The Kotlin and

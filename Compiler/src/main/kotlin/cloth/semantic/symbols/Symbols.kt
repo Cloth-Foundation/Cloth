@@ -63,11 +63,14 @@ sealed interface CallableSymbol : CallableContractSymbol {
 	override val declaration: CallableDeclaration
 }
 
-internal class InterfaceMethodSymbol(val requirement: InterfaceRequirement, override val declaration: InterfaceMethodDeclaration) : CallableContractSymbol {
+internal class InterfaceMethodSymbol(
+	val requirement: InterfaceRequirement,
+	override val declaration: InterfaceMethodDeclaration,
+	override val signature: FunctionSignature = requirement.signature,
+) : CallableContractSymbol {
 
 	val owner: CInterface get() = requirement.owner
 	override val name get() = declaration.name
-	override val signature get() = requirement.signature
 	override val parameters = declaration.parameters.map(::ParameterSymbol)
 	override val receiver = ReceiverSymbol(owner, declaration.keyword)
 }
@@ -159,9 +162,13 @@ class MethodGroupSymbol internal constructor(val overloads: List<MethodSymbol>, 
 	override val name get() = overloads.firstOrNull()?.name ?: templates.first().declaration.name
 }
 
-internal class InterfaceMethodGroupSymbol(val owner: CInterface, val overloads: List<InterfaceMethodSymbol>) : CallableGroupSymbol {
+internal class InterfaceMethodGroupSymbol(
+	val owner: CInterface,
+	val overloads: List<InterfaceMethodSymbol>,
+	val templates: List<InterfaceRequirement> = emptyList(),
+) : CallableGroupSymbol {
 
-	override val name get() = overloads.first().name
+	override val name get() = overloads.firstOrNull()?.name ?: templates.first().declaration.name
 }
 
 /** Name is the actual use token, not a fabricated built-in declaration location. */
