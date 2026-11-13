@@ -678,6 +678,13 @@ object identity and remain subject to the deletion rules below.
   implementation choices. Cloth does not expose pointer or reference syntax to
   the programmer.
 
+The [owning collections contract](../../cloth-collections/SKILL.md#owning-collections)
+defines transfer and exclusive deletion authority for `OwningList<T>`.
+[COLL-2 Stage 1](../../cloth-collections/references/ownership-runtime.md)
+adds private authority checks to ordinary class lifetime handling.
+[COLL-2 Stage 2](../../cloth-collections/references/owning-list.md) supplies the
+public list, snapshot iteration, and ordered cleanup.
+
 ## States and method dispatch
 
 - Subclasses inherit the states declared by their base class.

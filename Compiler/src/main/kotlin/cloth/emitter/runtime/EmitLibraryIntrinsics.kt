@@ -4,6 +4,7 @@ import cloth.data.CClass
 import cloth.data.CNullable
 import cloth.emitter.NativeCABI
 import cloth.emitter.callables.EmitFunctionFrame
+import cloth.emitter.callables.EmitFunctions
 import cloth.emitter.callables.EmitResults
 import cloth.emitter.storage.*
 import cloth.emitter.text.EmitUtf8Validation
@@ -19,11 +20,11 @@ import org.bytedeco.llvm.global.LLVM.LLVMBuildSelect
 internal class EmitLibraryIntrinsics(
 	private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI,
 	private val bindings: Map<CallableContractSymbol, LibraryIntrinsic>, strings: EmitStringArena, results: EmitResults,
-	classes: () -> EmitClassRuntime,
+	private val functions: EmitFunctions,
 ) {
 
 	private val fileOwner = bindings.entries.firstOrNull { it.value == LibraryIntrinsic.FILE_OPEN || it.value == LibraryIntrinsic.FILE_READ }?.let { (it.key as MethodSymbol).owner as CClass }
-	private val file by lazy { EmitFileIO(context, module, abi, checkNotNull(fileOwner), classes(), strings, results) }
+	private val file by lazy { EmitFileIO(context, module, abi, checkNotNull(fileOwner), functions.classes, strings, results) }
 
 	fun instanceStorage(owner: CClass): LLVMTypeRef = if (owner === fileOwner) file.layout else owner.instanceStorage(context, abi.layout)
 
@@ -39,6 +40,30 @@ internal class EmitLibraryIntrinsics(
 			LibraryIntrinsic.DECODE_UTF8 -> decode(builder, arguments.single(), result.values.single() as CNullable, frame)
 			LibraryIntrinsic.FILE_OPEN   -> file.open(builder, checkNotNull(receiver), arguments.single(), result.values.single() as CNullable, frame)
 			LibraryIntrinsic.FILE_READ   -> file.read(builder, checkNotNull(receiver), arguments.single(), result, frame)
+			LibraryIntrinsic.OWNERSHIP_ACQUIRE -> {
+				functions.classes.acquireOwnership(builder, checkNotNull(receiver).identity, arguments.single())
+				frame.emitReturn(null)
+			}
+
+			LibraryIntrinsic.OWNERSHIP_RELEASE -> {
+				functions.classes.releaseOwnership(builder, checkNotNull(receiver).identity, arguments.single())
+				frame.emitReturn(null)
+			}
+
+			LibraryIntrinsic.OWNERSHIP_DELETE -> {
+				functions.deleteOwned(builder, checkNotNull(receiver), arguments.single())
+				frame.emitReturn(null)
+			}
+
+			LibraryIntrinsic.OWNERSHIP_CHECK_MUTATION -> {
+				functions.classes.checkOwnershipMutation(builder, checkNotNull(receiver))
+				frame.emitReturn(null)
+			}
+
+			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP -> {
+				functions.classes.setOwnershipCleanup(builder, checkNotNull(receiver), arguments.single())
+				frame.emitReturn(null)
+			}
 		}
 	}
 

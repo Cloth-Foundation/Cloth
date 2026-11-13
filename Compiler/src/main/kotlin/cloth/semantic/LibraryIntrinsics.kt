@@ -9,9 +9,18 @@ import cloth.semantic.symbols.CallableContractSymbol
 import cloth.semantic.typing.FunctionType
 import cloth.token.Keywords
 
-internal enum class LibraryIntrinsic(val id: String, val source: String, val owner: String? = null) { DECODE_UTF8("text.utf8.decode", "cloth/text/Utf8.co"),
+private const val owningList = "OwningList"
+private const val owningListSource = "cloth/collections/$owningList.co"
+
+internal enum class LibraryIntrinsic(val id: String, val source: String, val owner: String? = null, val usesOwnership: Boolean = false) {
+	DECODE_UTF8("text.utf8.decode", "cloth/text/Utf8.co"),
 	FILE_OPEN("io.file.open", "cloth/io/fs/File.co", "File"),
-	FILE_READ("io.file.read", "cloth/io/fs/File.co", "File");
+	FILE_READ("io.file.read", "cloth/io/fs/File.co", "File"),
+	OWNERSHIP_ACQUIRE("collections.ownership.acquire", owningListSource, owningList, usesOwnership = true),
+	OWNERSHIP_RELEASE("collections.ownership.release", owningListSource, owningList, usesOwnership = true),
+	OWNERSHIP_DELETE("collections.ownership.delete", owningListSource, owningList, usesOwnership = true),
+	OWNERSHIP_CHECK_MUTATION("collections.ownership.check_mutation", owningListSource, owningList, usesOwnership = true),
+	OWNERSHIP_SET_CLEANUP("collections.ownership.set_cleanup", owningListSource, owningList, usesOwnership = true);
 
 	companion object {
 
@@ -39,7 +48,12 @@ internal fun checkIntrinsicDeclarations(files: List<FileContext>): Map<Intrinsic
 		if (operation.source !in file.standardLibraryPaths || operation.owner != owner?.name?.lexeme || !topLevel) {
 			throw IntrinsicErrors.invalid(body, "requires the registered declaration in ${operation.source}" + (operation.owner?.let { " on class '$it'" } ?: ""))
 		}
-		if (callable is FunctionDeclaration && callable.typeParameters != null || owner != null && (owner.typeParameters != null || owner.finalKeyword == null) || callable is MethodDeclaration && (callable.virtualPrefix != null || callable.overridePrefix != null) || callable.parameters.any { it.optional }) {
+		if (operation.usesOwnership && (callable !is MethodDeclaration || callable.visibility != null || callable.typeParameters != null)) {
+			throw IntrinsicErrors.invalid(body, "requires a private method with no method type parameters")
+		}
+		val invalidOwner = owner != null && (owner.finalKeyword == null || owner.typeParameters != null && !operation.usesOwnership)
+		val dispatchMethod = callable is MethodDeclaration && (callable.virtualPrefix != null || callable.overridePrefix != null)
+		if (invalidOwner || dispatchMethod || callable is FunctionDeclaration && callable.typeParameters != null || callable.parameters.any { it.optional }) {
 			throw IntrinsicErrors.invalid(body, "requires a concrete function or ordinary method on a '${Keywords.FINAL}' class with required parameters")
 		}
 		declarations.putIfAbsent(operation, body)?.let { throw IntrinsicErrors.duplicate(body, it) }
@@ -63,6 +77,9 @@ internal fun bindIntrinsics(declarations: DeclarationModel, signatures: Map<Call
 		val operation = declarations.files.intrinsicBodies.getValue(body)
 		val expected = when (operation) {
 			LibraryIntrinsic.DECODE_UTF8                           -> FunctionType(listOf(LibraryIntrinsic.bytes), CNullable(ValueType.STRING))
+			LibraryIntrinsic.OWNERSHIP_ACQUIRE, LibraryIntrinsic.OWNERSHIP_RELEASE, LibraryIntrinsic.OWNERSHIP_DELETE -> FunctionType(listOf(declarations.objectRoot), ResultShape.Empty)
+			LibraryIntrinsic.OWNERSHIP_CHECK_MUTATION              -> FunctionType(emptyList(), ResultShape.Empty)
+			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP                 -> FunctionType(listOf(ValueType.BOOL), ResultShape.Empty)
 			LibraryIntrinsic.FILE_OPEN, LibraryIntrinsic.FILE_READ -> {
 				val errors = declarations.files.context(callable.name).localTypes["FileError"] as? CEnum
 				if (errors == null || FileIoError.entries.any { it.spelling !in errors.cases }) {

@@ -42,8 +42,9 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	private val stateDefinitions = semantics.declarations.states.definitions
 	private val tracksStates = stateDefinitions.isNotEmpty() || semantics.declarations.states.callables.any { it is StateMethodContractSymbol }
 	private val tracksIndexValidation = semantics.declarations.methods.any { OperatorRules.isIndexValidator(it.declaration) }
-	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates, tracksIndexValidation) }
-	private val intrinsics by lazy { EmitLibraryIntrinsics(context, module, abi, semantics.intrinsics, stringStorage, results) { classes } }
+	private val tracksOwnership = semantics.intrinsics.values.any { it.usesOwnership }
+	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates, tracksIndexValidation, tracksOwnership) }
+	private val intrinsics by lazy { EmitLibraryIntrinsics(context, module, abi, semantics.intrinsics, stringStorage, results, this) }
 	internal val states by lazy { EmitStateRuntime(context, module, abi, classes, stringStorage, stateDefinitions) }
 	private val initialStates = mutableMapOf<StateDefinition, LLVMValueRef>()
 	private val initialStateType by lazy {
@@ -379,8 +380,16 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	}
 
 	fun delete(plan: ClassDeletionPlan, identity: LLVMValueRef, builder: LLVMBuilderRef) {
-		val access = classes.beginDelete(builder, identity)
-		val candidates = classTags.keys.filter(plan.owner::accepts)
+		delete(builder, identity, plan.owner)
+	}
+
+	fun deleteOwned(builder: LLVMBuilderRef, owner: ObjectAccess, identity: LLVMValueRef) {
+		delete(builder, identity, semantics.declarations.objectRoot, owner)
+	}
+
+	private fun delete(builder: LLVMBuilderRef, identity: LLVMValueRef, view: CMemberType, owner: ObjectAccess? = null) {
+		val access = classes.beginDelete(builder, identity, owner)
+		val candidates = classTags.keys.filter(view::accepts)
 		if (candidates.size == 1) destroy(builder, access, candidates.single())
 		else {
 			val tag = classes.classTag(builder, access)

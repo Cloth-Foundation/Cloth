@@ -6,7 +6,7 @@ Select public declarations explicitly with `using`; availability adds no names
 to a file's scope. Reached files compile with the application into its native
 executable or object.
 
-The library supplies generic List, Deque, Queue, and Stack classes.
+The library supplies generic List, OwningList, Deque, Queue, and Stack classes.
 [Collection APIs](../Standard-Library/cloth/collections/README.md)
 
 The examples demonstrate the imported collections, including independent array

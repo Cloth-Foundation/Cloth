@@ -59,6 +59,56 @@ tracks a general collection count provider under
 - `:=`/`final` protect the binding and permit mutation. `List<T>` opts into
   checked bracket access with its source `[]`, `[]=`, and `[]?` declarations.
 
+## Owning collections
+
+The standard-library [`OwningList<T>`](../../../Standard-Library/cloth/collections/OwningList.co) takes
+responsibility for deleting owned class objects. User-defined types can wrap
+it. The list accepts non-null class types and class-backed interface views.
+Ownership follows the same underlying identity across all views.
+Successful insertion transfers deletion authority to the collection. The
+original binding and other aliases can still read, call methods on, and mutate
+the object while it is live. Only the collection can delete the object while it
+owns it. Deletion invalidates those aliases under the ordinary class lifetime
+rules. [Class lifetime](../cloth-language/references/semantics.md#object-lifetime-and-nullability)
+
+Cloth rejects unauthorized deletion at compile time when it can prove the
+object is still owned and the deletion lacks the owner's authority. Otherwise
+it checks deletion authority at runtime when ownership or authority is uncertain.
+
+Insertion rejects an object the current list or another collection already
+owns, even when the caller passes an alias. Each owned object occupies one
+slot. A transfer must go through the current owner. An owning list can own
+another owning list. Cloth rejects a provably invalid insertion at compile
+time, including an existing owner or an ownership cycle. It checks at runtime
+when ownership is uncertain.
+`removeAt(index)` returns the live object and transfers deletion responsibility
+to the caller. The caller can delete it or insert it into another owning
+collection. Ordinary deletion rules apply to every live alias until the object
+is owned again.
+
+`get(index)` returns an ordinary checked class alias. Callers can store it,
+pass it, and mutate the object while it is live. The collection retains
+deletion authority while it owns the object. Deleting the object invalidates
+the alias. Bracket reads and snapshot foreach also yield ordinary checked
+aliases. Insertion and removal use methods.
+
+`clear()` deletes every object still owned by the collection and leaves the
+collection empty and usable. `::delete` deletes those objects as part of
+destroying the collection. Both operations run the owned objects' destructors
+in current list order, from first element to last. Ordinary lifetime checks
+apply to aliases of each deleted object. While the list is deleting its owned
+objects, reject insertion, removal, `clear()`, or `::delete` on that list,
+including calls through aliases from an element's destructor.
+During `clear()`, the list detaches all entries before the first destructor.
+An element's destructor sees `size()` return zero, and `get(0)` fails the
+ordinary index bounds check. The list retains deletion authority over the
+detached entries until it deletes them.
+Bootstrap's `TokenList` is the concrete example for this design.
+[Stage 1 runtime and verification](references/ownership-runtime.md) ·
+[Stage 2 source integration](references/owning-list.md) ·
+[Design decisions](../../../todo/open-questions-plan.md#collections-operators-and-control-flow) ·
+[Implementation stages](../../../todo/open-questions-plan.md#coll-2-implementation-stages)
+
 ## Extend and verify the actual library
 
 Use [cloth-generics](../cloth-generics/SKILL.md) for parameter scope, closed

@@ -8,16 +8,24 @@ import org.bytedeco.llvm.global.LLVM.*
 internal data class ObjectAccess(val identity: LLVMValueRef, val duringDestruction: LLVMValueRef)
 
 /** The table outlives individual instances. Its addresses never cross a source call. */
-internal class EmitClassRuntime(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val tracksStates: Boolean, val tracksIndexValidation: Boolean) {
+internal class EmitClassRuntime(
+	private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI,
+	private val tracksStates: Boolean, val tracksIndexValidation: Boolean, private val tracksOwnership: Boolean,
+) {
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
 	internal val indexType = LLVMInt32TypeInContext(context)
 	private val identityType = LLVMInt64TypeInContext(context)
+	private val noOwner = LLVMConstNull(identityType)
 	internal val size = LLVMIntTypeInContext(context, abi.layout.sizeBits)
 	private val indexValidationField = if (tracksStates) activeStateField + 1 else activeStateField
+	private val ownershipField = if (tracksIndexValidation) indexValidationField + 1 else indexValidationField
+	private val ownershipCleanupField = ownershipField + 1
 	private val slotType = run {
-		val layout = listOf(pointer, indexType, indexType, flag, indexType, indexType) + listOfNotNull(pointer.takeIf { tracksStates }, flag.takeIf { tracksIndexValidation })
+		val layout = listOf(pointer, indexType, indexType, flag, indexType, indexType) + listOfNotNull(
+			pointer.takeIf { tracksStates }, flag.takeIf { tracksIndexValidation }, identityType.takeIf { tracksOwnership }, flag.takeIf { tracksOwnership },
+		)
 		PointerPointer<LLVMTypeRef>(layout.size.toLong()).use { fields ->
 			layout.forEachIndexed { index, type -> fields.put(index.toLong(), type) }
 			LLVMStructTypeInContext(context, fields, layout.size, 0)
@@ -30,6 +38,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 	private val lookup by lazy { emitLookup() }
 	private val allocate by lazy { emitAllocate() }
 	private val release by lazy { emitRelease() }
+	private val acquireOwnership by lazy { emitAcquireOwnership() }
 	private val malloc by lazy { external("malloc", pointer, size) }
 	private val realloc by lazy { external("realloc", pointer, pointer, size) }
 	private val free by lazy { external("free", LLVMVoidTypeInContext(context), pointer) }
@@ -164,6 +173,10 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildStore(builder, integer(-1), address(builder, slot, initializedClassField))
 		if (tracksStates) LLVMBuildStore(builder, LLVMConstNull(pointer), address(builder, slot, activeStateField))
 		if (tracksIndexValidation) LLVMBuildStore(builder, permission(false), address(builder, slot, indexValidationField))
+		if (tracksOwnership) {
+			LLVMBuildStore(builder, noOwner, address(builder, slot, ownershipField))
+			LLVMBuildStore(builder, permission(false), address(builder, slot, ownershipCleanupField))
+		}
 		val generation = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "instance_generation")
 		val upper = LLVMBuildShl(builder, memory.resize(generation, identityType), LLVMConstInt(identityType, 32, 0), "upper_generation")
 		LLVMBuildRet(builder, LLVMBuildOr(builder, upper, memory.resize(index, identityType), "instance_identity"))
@@ -175,6 +188,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		val storage = address(builder, slot, 0)
 		freeStorage(builder, LLVMBuildLoad2(builder, pointer, storage, "deleted_storage"))
 		LLVMBuildStore(builder, LLVMConstNull(pointer), storage)
+		if (tracksOwnership) LLVMBuildStore(builder, noOwner, address(builder, slot, ownershipField))
 		val generationAddress = address(builder, slot, 1)
 		val generation = LLVMBuildLoad2(builder, indexType, generationAddress, "deleted_generation")
 		val reusable = block(function, "recycle_slot")
@@ -187,6 +201,80 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildBr(builder, done)
 		LLVMPositionBuilderAtEnd(builder, done)
 		LLVMBuildRetVoid(builder)
+	}
+
+	private fun emitAcquireOwnership() = helper("acquire_ownership", LLVMVoidTypeInContext(context), identityType, identityType) { builder, function ->
+		val owner = LLVMGetParam(function, 0)
+		val item = LLVMGetParam(function, 1)
+		checkOwnershipMutation(builder, ObjectAccess(owner, permission(false)))
+		val itemSlot = writableSlot(builder, ObjectAccess(item, permission(false)))
+		checkOwner(builder, itemSlot, noOwner, "Class object already has an owner")
+
+		val entry = LLVMGetInsertBlock(builder)
+		val walk = block(function, "check_ancestor")
+		val claim = block(function, "claim_ownership")
+		LLVMBuildBr(builder, walk)
+		LLVMPositionBuilderAtEnd(builder, walk)
+		val ancestor = LLVMBuildPhi(builder, identityType, "ancestor_identity")
+		val memory = EmitMemory(context, builder, abi)
+		memory.guard(LLVMBuildICmp(builder, LLVMIntNE, ancestor, item, "acyclic_ownership"), "Collection insertion would create an ownership cycle")
+		// An ancestor can be destroying during nested cleanup. Only its owner link is read.
+		val ancestorSlot = checkedSlot(builder, ObjectAccess(ancestor, permission(true)))
+		val next = ownerOf(builder, ancestorSlot)
+		val advance = LLVMGetInsertBlock(builder)
+		LLVMBuildCondBr(builder, LLVMBuildICmp(builder, LLVMIntNE, next, noOwner, "has_ancestor"), walk, claim)
+		PointerPointer<LLVMValueRef>(2L).use { values ->
+			PointerPointer<LLVMBasicBlockRef>(2L).use { blocks ->
+				values.put(0, owner); values.put(1, next)
+				blocks.put(0, entry); blocks.put(1, advance)
+				LLVMAddIncoming(ancestor, values, blocks, 2)
+			}
+		}
+		LLVMPositionBuilderAtEnd(builder, claim)
+		LLVMBuildStore(builder, owner, address(builder, itemSlot, ownershipField))
+		LLVMBuildRetVoid(builder)
+	}
+
+	private fun ownerOf(builder: LLVMBuilderRef, slot: LLVMValueRef): LLVMValueRef = LLVMBuildLoad2(builder, identityType, address(builder, slot, ownershipField), "deletion_owner")
+
+	private fun checkOwner(builder: LLVMBuilderRef, slot: LLVMValueRef, expected: LLVMValueRef, message: String) {
+		val matches = LLVMBuildICmp(builder, LLVMIntEQ, ownerOf(builder, slot), expected, "matching_owner")
+		EmitMemory(context, builder, abi).guard(matches, message)
+	}
+
+	private fun writableSlot(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef {
+		val slot = checkedSlot(builder, access)
+		if (tracksIndexValidation) checkValidationFlag(builder, address(builder, slot, indexValidationField))
+		return slot
+	}
+
+	fun acquireOwnership(builder: LLVMBuilderRef, owner: LLVMValueRef, item: LLVMValueRef) {
+		check(tracksOwnership)
+		call(builder, acquireOwnership, "", owner, item)
+	}
+
+	fun releaseOwnership(builder: LLVMBuilderRef, owner: LLVMValueRef, item: LLVMValueRef) {
+		check(tracksOwnership)
+		checkOwnershipMutation(builder, ObjectAccess(owner, permission(false)))
+		val slot = writableSlot(builder, ObjectAccess(item, permission(false)))
+		checkOwner(builder, slot, owner, "Only the owning collection can release this object")
+		LLVMBuildStore(builder, noOwner, address(builder, slot, ownershipField))
+	}
+
+	private fun checkOwnershipCleanup(builder: LLVMBuilderRef, slot: LLVMValueRef) {
+		val active = LLVMBuildLoad2(builder, flag, address(builder, slot, ownershipCleanupField), "cleaning_up")
+		EmitMemory(context, builder, abi).guard(LLVMBuildNot(builder, active, "outside_cleanup"), "Owning list mutation during cleanup")
+	}
+
+	fun checkOwnershipMutation(builder: LLVMBuilderRef, owner: ObjectAccess) {
+		check(tracksOwnership)
+		checkOwnershipCleanup(builder, writableSlot(builder, owner))
+	}
+
+	fun setOwnershipCleanup(builder: LLVMBuilderRef, owner: ObjectAccess, active: LLVMValueRef) {
+		check(tracksOwnership)
+		val slot = writableSlot(builder, owner)
+		LLVMBuildStore(builder, active, address(builder, slot, ownershipCleanupField))
 	}
 
 	fun instanceBytes(builder: LLVMBuilderRef, storage: LLVMTypeRef): LLVMValueRef {
@@ -262,9 +350,14 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		return LLVMBuildLoad2(builder, pointer, address(builder, slot, 0), "object_storage")
 	}
 
-	fun beginDelete(builder: LLVMBuilderRef, identity: LLVMValueRef): ObjectAccess {
-		val slot = checkedSlot(builder, ObjectAccess(identity, permission(false)))
-		if (tracksIndexValidation) checkValidationFlag(builder, address(builder, slot, indexValidationField))
+	fun beginDelete(builder: LLVMBuilderRef, identity: LLVMValueRef, owner: ObjectAccess? = null): ObjectAccess {
+		check(owner == null || tracksOwnership)
+		val slot = writableSlot(builder, ObjectAccess(identity, permission(false)))
+		if (tracksOwnership) {
+			checkOwnershipCleanup(builder, slot)
+			owner?.let { writableSlot(builder, it) }
+			checkOwner(builder, slot, owner?.identity ?: noOwner, "Class object deletion requires ownership authority")
+		}
 		val concrete = LLVMBuildLoad2(builder, indexType, address(builder, slot, concreteOrDestructorClassField), "concrete_class")
 		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, initializedClassField), "initialized_class")
 		val complete = LLVMBuildICmp(builder, LLVMIntEQ, initialized, concrete, "construction_complete")
