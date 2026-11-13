@@ -18,7 +18,7 @@ class ExpressionParser(val parser: Parser) {
 
 		while (true) {
 			val operator = parser.peek()
-			if (stopAtAssignment && operator.lexeme in Parser.assignmentOperators && (operator.lexeme == Operators.ASSIGN.toString() || operator.lexeme == Operators.FINAL_ASSIGN.toString() || left is ProviderAccessExpression || left.hasFieldTarget())) break
+			if (stopAtAssignment && operator.lexeme in Parser.assignmentOperators) break
 			if (operator.type == TokenType.Keyword && operator.lexeme == Keywords.IS.toString()) {
 				if (TYPE_CHECK_PRECEDENCE < minimumPrecedence) break
 				parser.advance()

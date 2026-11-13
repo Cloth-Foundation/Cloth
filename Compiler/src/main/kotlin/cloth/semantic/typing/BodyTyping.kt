@@ -17,7 +17,6 @@ import cloth.semantic.symbols.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
-import cloth.token.TokenType
 
 internal class BodyTyping(private val facts: FunctionSemanticModel, private val function: CallableSignature, private val returnResults: ResultShape, private val hasReturnContract: Boolean = true, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe) {
 
@@ -183,8 +182,11 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 				else if (type != ValueType.NEVER) {
 					storedPlace(statement.target)?.let { model.storedElementWrites[statement] = it }
 				}
-				val actual = typeOf(statement.value, type)
-				if (type != ValueType.NEVER && !compatible(actual, type)) reject { SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value.span) }
+				val value = statement.compound ?: statement.value
+				val actual = value?.let { typeOf(it, type) } ?: postfixType(statement.target, statement.operator, type)
+				if (type != ValueType.NEVER && !compatible(actual, type)) reject {
+					SemanticErrors.array("Array element requires '${type.spelling}', got '${actual.spelling}'", statement.value?.span ?: statement.target.span)
+				}
 				model.recordType(statement, type)
 			}
 
@@ -215,26 +217,16 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val declared = model.payloadReads[target] ?: readType
 		val instance = instancePlace(target)
 		val stored = if (instance == null && declared != ValueType.NEVER) storedPlace(target) ?: throw SemanticErrors.fieldTarget(target.span) else null
-		val operator = Operators.fromCharacterRequired(statement.operator.lexeme)
 		val value = statement.value
 		val actual = when {
-			value == null                -> {
-				if (readType is CNullable) throw SemanticErrors.nullablePayload(readType, target.span)
-				if (!readType.supportsNumericOperations && readType != ValueType.NEVER) reject { SemanticErrors.unary(statement.operator, target, readType, boolean = false) }
-				readType
-			}
-
-			operator == Operators.ASSIGN -> {
+			value == null              -> postfixType(target, statement.operator, readType)
+			statement.compound == null -> {
 				model.payloadReads.remove(target)
 				model.recordResult(target, ResultShape.of(declared))
 				typeOf(value, declared)
 			}
 
-			else                         -> {
-				val base = Token(TokenType.Operator, statement.operator.span, operator.compoundAssignmentBase().toString())
-				// Use ordinary arithmetic checks. The synthetic expression is never lowered.
-				typeOf(BinaryExpression(target, base, value), declared)
-			}
+			else                       -> typeOf(statement.compound, declared)
 		}
 		if (declared != ValueType.NEVER && !declared.accepts(actual)) reject {
 			SemanticErrors.structField("Field assignment requires '${declared.spelling}', got '${actual.spelling}'", value?.span ?: target.span)
@@ -242,6 +234,12 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		model.recordResult(statement, ResultShape.of(declared))
 		if (instance != null) model.instanceWrites[statement] = instance
 		if (stored != null) model.fieldWrites[statement] = FieldWritePlan(stored, declared)
+	}
+
+	private fun postfixType(target: Expression, operator: Token, type: ValueType): ValueType {
+		if (type is CNullable) throw SemanticErrors.nullablePayload(type, target.span)
+		if (!type.supportsNumericOperations && type != ValueType.NEVER) reject { SemanticErrors.unary(operator, target, type, boolean = false) }
+		return type
 	}
 
 	private fun instancePlace(expression: Expression): InstancePlace? = when (expression) {

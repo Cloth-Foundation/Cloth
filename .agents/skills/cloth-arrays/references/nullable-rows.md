@@ -29,8 +29,9 @@ rows[1] = [3, 4] // The established width survives null.
 Null rows supply no shape witness. Present empty rows supply length zero.
 Explicit extents constrain present rows before any witness. Known literal/type
 mismatches fail during compilation; unknown extents use first-error runtime
-guards. Jagged rows, implicit nullable inference, unchecked payload reads and
-array equality remain unsupported.
+guards. Jagged rows, implicit nullable inference and unchecked payload reads
+remain outside this contract. [Array equality](semantics.md#array-equality)
+compares retained extents and each row's presence before reading its payload.
 
 ## Source ownership and invariants
 

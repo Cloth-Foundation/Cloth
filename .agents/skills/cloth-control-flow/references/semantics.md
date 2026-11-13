@@ -78,11 +78,29 @@ For repeated strict-bool testing, see [implemented while loops](while-loops.md).
 - An `if` can also stand alone as a statement. In that context it has no implied
   return. Branch value production in an initializer does not imply returning
   from the enclosing function or method.
-- Exhaustiveness requirements for value-producing conditionals, branch result
-  type rules, and value selection in branches containing multiple statements
-  have not been separately confirmed. See [development status](../../cloth-language/references/development.md)
-  for the initial implementation's final-`else`, matching-type, final-expression
-  rules and the remaining design questions.
+- A value-producing conditional requires a final `else`. This applies to
+  complementary tests such as `flag` and `!flag`. A statement conditional
+  can omit `else`.
+- Continuing branches yield the same number of ordered results. Inferred
+  result types agree exactly at each position. An explicit receiving type
+  supplies ordinary reception context. For example, `def<Entity> chosen =
+  if (flag) player else entity` can receive both a `Player` and an `Entity`
+  when `Player` extends `Entity`.
+- A continuing branch yields its final expression after running its earlier
+  statements in order. A branch that exits contributes no value. A return
+  exits the enclosing function or block. When all branches exit, the chain
+  produces no value.
+
+### FLOW-1 verification
+
+On 2026-11-12, 95 tests passed on Windows x64 with Java 25 across
+`ConditionalsTest`, `MultiReturnTypingTest`, `MultiReturnEmissionTest`,
+`FunctionReturnsTest`, `ClassValueIntegrationTest` and `NullableBuffersTest`.
+The compiler ran a fixture that printed `11` from a multi-statement branch,
+`2` from an early return, and `entity` through an explicit `Entity` receiving
+type. A complementary-test chain without a final `else` failed with `C3013`.
+An inferred conditional with `Player` and `Entity` branches failed with
+`C3016`.
 
 ## Do-while loops (execution and proven cleanup implemented)
 

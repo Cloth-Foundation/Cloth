@@ -69,7 +69,7 @@ class ArraysTest {
 		failure("fn test() {\n def a = [1, 2]\n a = [3]\n}", DiagnosticCode.INVALID_ARRAY)
 		failure("fn test() {\n def a := [1]\n a = [2]\n}", DiagnosticCode.IMMUTABLE_BINDING)
 		failure("fn take(int[] a) {}\nfn test() { take([true]) }", DiagnosticCode.NO_MATCHING_CALL)
-		failure("fn test() { [1] == [1] }", DiagnosticCode.INCOMPARABLE_TYPES)
+		failure("fn test(int[] a, float[] b) { a == b }", DiagnosticCode.INCOMPARABLE_TYPES)
 		failure("fn test() { [1][true] }", DiagnosticCode.INVALID_INDEX)
 		failure("fn test() { 1[0] }", DiagnosticCode.INVALID_INDEX)
 	}

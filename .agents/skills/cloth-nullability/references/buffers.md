@@ -44,9 +44,11 @@ nullable destinations, rectangular shapes, independent array values and lifetime
   Each call has independent parameter shape
   storage. Present values still enforce explicit extents, including discarded
   results; absent values perform no payload/shape/copy operation.
-- Null tests work for whole arrays. Array-to-array equality remains unsupported.
+- Null tests work for whole arrays. Nullable array equality uses ordinary
+  presence comparison and compares shape and elements for two present arrays.
   Nullable string equality uses ordinary Unicode string content equality when
   both present and presence comparison otherwise.
+  [Array equality](../../cloth-arrays/references/semantics.md#array-equality)
 - Print/interpolation and recursive array text render absent values/elements as
   `null`. Explicit nullable `::str`, indexing and buffered value `::size` still
   require a presence proof or non-null fallback. `::type` retains declared

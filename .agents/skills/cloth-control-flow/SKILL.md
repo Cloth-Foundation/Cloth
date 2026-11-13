@@ -24,8 +24,10 @@ wide source counters, stable bounds and inline updates through the cap, with
 stack checkpoints for repeated membership tests, safe bodies and steppers.
 
 Read [confirmed checks and conditional semantics](references/semantics.md).
-Keep confirmed language decisions distinct from the current implementation's
-final-else, branch compatibility and final-expression policies.
+Value-producing conditionals require a final `else`. Inferred branch types
+agree at each ordered result position. An explicit receiving type supplies
+ordinary reception context. Each continuing branch yields its final
+expression.
 
 [ExpressionOperands](../../../Compiler/src/main/kotlin/cloth/semantic/flow/ExpressionOperands.kt)
 provides eager children in source order, including the operands of a resolved
@@ -188,9 +190,9 @@ syntax without treating it as a class-execution acceptance test.
   enclosing body, never the loop being initialized.
 
 - Standalone conditionals have no implicit result/output or enclosing return.
-  Value-producing chains currently require a final else and compatible branch
-  results, taking the final expression on continuing branches. Returns exit the
-  actual enclosing function/block; non-continuing branches contribute no value.
+  A value-producing chain requires a final `else` and compatible branch
+  results. Each continuing branch yields its final expression. A return
+  exits the enclosing function or block.
 - Conditions are bool. Type-check skipped alternatives/bodies and enforce lexical
   scope/shadowing rules even when a condition is constant. At runtime evaluate
   conditions once in order and execute only the selected branch.
@@ -223,7 +225,6 @@ Example: [Conditionals.co](../../../examples/Conditionals.co).
 Use `ConditionalsTest`, boolean cases in `BindingsTest`, `FunctionReturnsTest`,
 `FunctionBlocksTest`, and the affected multi-return suites. Existing tests check
 skipped-code errors, scopes, side effects, early returns, actual phi predecessors
-and statement silence. Recorded evidence is in
+and statement silence. Recorded evidence is in the
+[FLOW-1 verification](references/semantics.md#flow-1-verification) and
 [development history](../cloth-language/references/development.md#earlier-milestone-snapshots).
-Exhaustiveness and branch-result policy beyond confirmed examples remain open
-language questions even though the bounded implementation has concrete rules.

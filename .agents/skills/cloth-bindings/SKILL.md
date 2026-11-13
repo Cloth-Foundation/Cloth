@@ -24,9 +24,10 @@ result list; use [arrays](../cloth-arrays/SKILL.md) for shape and copy rules.
   reception is selected by RHS result shape, not the superficial RHS syntax.
 - Compound `+=`, `-=`, `*=`, `/=`, `%=` read the target before the once-only RHS.
   They can be the single statement in a [void `=` body](../cloth-functions/references/semantics.md#function-return-contracts).
-  `++`/`--` are standalone postfix statements. Named bindings and writable field
-  paths support compound assignments and updates. Array element targets without
-  a field in the path use the separate plain indexed `=` path.
+  `++`/`--` are standalone postfix statements. Named bindings, writable field
+  paths, and indexed array targets support compound assignments and updates.
+  [Indexed update contract](../cloth-arrays/references/semantics.md#indexed-compound-assignment) ·
+  [Stage 1 implementation](../cloth-arrays/references/indexed-updates-stage-1.md)
 - Binding-only immutability permits array element writes and does not imply future
   class objects are frozen. A deferred function-block binding is not an ordinary
   stored result; use the [function skill](../cloth-functions/SKILL.md).

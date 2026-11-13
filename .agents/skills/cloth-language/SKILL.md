@@ -155,6 +155,8 @@ captures implementation scope and regression evidence.
 | Nullable strings/whole arrays/elements, retained shapes and buffer lifetimes | [nullable buffer integration](../cloth-nullability/references/buffers.md) |
 | Nullable rectangular rows, shared shape witnesses and nested row writes | [nullable row integration](../cloth-arrays/references/nullable-rows.md) |
 | Arrays, fixed/growable shapes, indexing, typed mutations and independent values | [cloth-arrays](../cloth-arrays/SKILL.md) |
+| Indexed compound assignments, postfix updates and saved place selection | [ARRAY-1 Stage 1](../cloth-arrays/references/indexed-updates-stage-1.md) |
+| Array equality, nullable comparisons, retained shapes and operand snapshots | [ARRAY-1 Stage 2](../cloth-arrays/references/array-equality-stage-2.md) |
 | Generic class/struct checking and native values/storage/metadata; List source integration | [cloth-generics](../cloth-generics/SKILL.md) |
 | Generic bounds, satisfaction checks, and bound operations | [GEN-1 Stage 1](../cloth-generics/references/constraints-stage-1.md), [GEN-1 Stage 2](../cloth-generics/references/constraints-stage-2.md), [GEN-1 Stage 3](../cloth-generics/references/constraints-stage-3.md) |
 | Combined generic bounds, widening, and call contracts | [GEN-4 Stage 1](../cloth-generics/references/combined-bounds-stage-1.md), [GEN-4 Stage 2](../cloth-generics/references/combined-bounds-stage-2.md), [GEN-4 Stage 3](../cloth-generics/references/combined-bounds-stage-3.md) |

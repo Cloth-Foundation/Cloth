@@ -376,6 +376,8 @@ equality, nominal enum case identity, `::name`, type-only `::values`, and enum f
 operator context ranking, captured numeric widths, and narrowing boundaries.
 [Operator publication](operator-publication.md) links the runnable examples
 and target verification.
+The [array equality contract](../../cloth-arrays/references/semantics.md#array-equality)
+defines element compatibility, operand snapshots, and shape comparison.
 
 ## Conditional expressions and statements
 
@@ -425,6 +427,8 @@ Read [Cloth bindings and assignments](../../cloth-bindings/references/semantics.
 
 Read [Cloth bindings and assignments](../../cloth-bindings/references/semantics.md#compound-assignments-and-update-operators) and its
 [feature skill](../../cloth-bindings/SKILL.md).
+The [indexed update contract](../../cloth-arrays/references/semantics.md#indexed-compound-assignment)
+defines target selection, old-value capture, and stores for array elements.
 
 ## Target-sized unsigned integer (usize)
 

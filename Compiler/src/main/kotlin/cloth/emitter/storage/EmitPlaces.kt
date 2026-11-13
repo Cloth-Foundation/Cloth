@@ -43,13 +43,13 @@ internal class EmitPlaces(
 	private data class CapturedInstance(val access: ObjectAccess, val field: ClassField, val path: CapturedPath)
 	private data class LocalPath(val steps: List<SavedStep>, val initial: PlaceAddress, val resolve: () -> PlaceAddress)
 	internal data class ArrayTarget(val place: PlaceAddress, val arena: LLVMValueRef, val localRoot: BindingSymbol? = null)
-	internal sealed class CapturedWrite(val initial: PlaceAddress, val replayed: Boolean)
-	private class InstanceWrite(val instance: CapturedInstance) : CapturedWrite(instance.path.initial, replayed = true)
-	private class StoredWrite(val root: BindingSymbol, initial: PlaceAddress) : CapturedWrite(initial, replayed = false)
-	private class LocalWrite(val root: BindingSymbol, val path: LocalPath, val receiver: ReceiverAccess?, val dynamic: LLVMValueRef?) : CapturedWrite(path.initial, replayed = true)
+	internal sealed class CapturedWrite(val initial: PlaceAddress)
+	private class InstanceWrite(val instance: CapturedInstance) : CapturedWrite(instance.path.initial)
+	private class StoredWrite(val root: BindingSymbol, initial: PlaceAddress) : CapturedWrite(initial)
+	private class LocalWrite(val root: BindingSymbol, val path: LocalPath, val receiver: ReceiverAccess?, val dynamic: LLVMValueRef?) : CapturedWrite(path.initial)
 	private class ReceiverWrite(
 		val access: ReceiverAccess, val rootType: ValueType, val dynamic: LLVMValueRef, val path: CapturedPath,
-	) : CapturedWrite(path.initial, replayed = true)
+	) : CapturedWrite(path.initial)
 
 	fun load(place: PlaceAddress): LLVMValueRef {
 		val raw = stored.load(place.address, place.type)

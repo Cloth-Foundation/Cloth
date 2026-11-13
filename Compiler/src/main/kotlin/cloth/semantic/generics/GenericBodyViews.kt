@@ -525,7 +525,7 @@ class GenericBodyViews internal constructor(
 				is ExpressionStatement        -> source.copy(expression = expression(source.expression))
 				is AssignmentStatement        -> source.copy(value = expression(source.value))
 				is MultiAssignmentStatement   -> source.copy(value = expression(source.value))
-				is ElementAssignmentStatement -> source.copy(target = expression(source.target) as IndexExpression, value = expression(source.value))
+				is ElementAssignmentStatement -> source.copy(target = expression(source.target) as IndexExpression, value = source.value?.let(::expression))
 				is FieldWriteStatement        -> source.copy(target = expression(source.target), value = source.value?.let(::expression))
 				is UpdateStatement            -> source.copy()
 				is ReturnStatement            -> source.copy(value = source.value?.let(::expression))

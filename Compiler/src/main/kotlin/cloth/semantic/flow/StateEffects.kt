@@ -18,6 +18,7 @@ internal class StateEffects(private val model: FunctionSemanticModel) {
 
 	fun changesAt(value: Expression): Boolean {
 		if (value in model.stateTransitions || types.operatorOf(value) != null || types.operatorContextOf(value) != null) return true
+		if (value is BinaryExpression && types.arrayEqualities[value]?.mayCallUserCode(declarations) == true) return true
 		return when (value) {
 			is ClassCreationExpression, is ClassDeletionExpression, is StateCallExpression -> true
 			is NameExpression                                                              -> (declarations.names[value] as? LocalSymbol)?.declaration?.initializer is FunctionBlockExpression
@@ -53,8 +54,8 @@ internal class StateEffects(private val model: FunctionSemanticModel) {
 			is BindingGroupDeclaration    -> mayChange(item.initializer)
 			is AssignmentStatement        -> mayChange(item.value)
 			is MultiAssignmentStatement   -> mayChange(item.value)
-			is FieldWriteStatement        -> mayChange(item.target) || item.value?.let(::mayChange) == true
-			is ElementAssignmentStatement -> mayChange(item.target) || mayChange(item.value)
+			is FieldWriteStatement        -> mayChangeWrite(item.target, item.compound, item.value)
+			is ElementAssignmentStatement -> mayChangeWrite(item.target, item.compound, item.value)
 			is ReturnStatement            -> item.value?.let(::mayChange) == true
 			is WhileStatement             -> mayChange(item.condition) || mayChange(item.body.statements)
 			is DoWhileStatement           -> mayChange(item.body.statements) || mayChange(item.condition)
@@ -69,4 +70,6 @@ internal class StateEffects(private val model: FunctionSemanticModel) {
 			else                          -> false
 		}
 	}
+
+	private fun mayChangeWrite(target: Expression, compound: BinaryExpression?, value: Expression?): Boolean = mayChange(target) || value?.let(::mayChange) == true || compound?.let(::changesAt) == true
 }

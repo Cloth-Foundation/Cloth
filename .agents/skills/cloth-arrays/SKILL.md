@@ -157,9 +157,19 @@ formatting is implemented for print, interpolation and `::str`; read the
 Enum type `::values` produces an ordinary fixed-size array of nominal enum cases;
 preserve the same independent copies, return snapshots and foreach traversal.
 [Enum enumeration](../cloth-language/references/value-operators.md#enum-values-and-formatting)
-Snapshot foreach is implemented through Stage 4. Indexed compound updates and
-array equality are not implemented.
-These implementation policies do not settle the remaining language decisions.
+Snapshot foreach is implemented through Stage 4. ARRAY-1 Stage 1 executes
+indexed compound assignments and standalone postfix updates on the same targets
+as plain indexed `=`. Capture the old element before the RHS, then revalidate
+the selected destination before storing when its storage can move.
+[Indexed update contract](references/semantics.md#indexed-compound-assignment) ·
+[Stage 1 implementation and verification](references/indexed-updates-stage-1.md)
+
+ARRAY-1 Stage 2 executes `==` and `!=` with exact leaf types, nullable
+presence, retained shape, and ordinary element equality. Capture both values
+in source order and compare shape before visiting elements. Use the same
+checked comparison for `!=` and negate its result.
+[Array equality contract](references/semantics.md#array-equality) ·
+[Stage 2 implementation and verification](references/array-equality-stage-2.md)
 
 [String `toChars()`](../cloth-strings/references/scalar-methods.md) produces an
 independent dynamic `char[]` using checked scalar-count storage and ordinary

@@ -204,7 +204,7 @@ class NullableBuffersTest {
 
 	@Test
 	fun `nullable inference payload access and array conversions stay strict`() {
-		val cases = listOf("fn f(string? text) { def copy = text }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "fn f(string[]? data) { def copy = data }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "fn f(string? text) { println(text::str) }" to DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "fn f(string[]? data) { println(data::size) }" to DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "fn f(string[]? data) { println(data[0]) }" to DiagnosticCode.INVALID_INDEX, "fn f(int?[] data) {}\nfn test(int[] data) = f(data)" to DiagnosticCode.NO_MATCHING_CALL, "fn f() { def<int[][]?> data = [[1]]; data = null; data = [[1, 2]] }" to DiagnosticCode.INVALID_ARRAY, "fn f(int[]? a, int[]? b) = a == b" to DiagnosticCode.INCOMPARABLE_TYPES)
+		val cases = listOf("fn f(string? text) { def copy = text }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "fn f(string[]? data) { def copy = data }" to DiagnosticCode.EXPLICIT_NULLABLE_TYPE, "fn f(string? text) { println(text::str) }" to DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "fn f(string[]? data) { println(data::size) }" to DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "fn f(string[]? data) { println(data[0]) }" to DiagnosticCode.INVALID_INDEX, "fn f(int?[] data) {}\nfn test(int[] data) = f(data)" to DiagnosticCode.NO_MATCHING_CALL, "fn f() { def<int[][]?> data = [[1]]; data = null; data = [[1, 2]] }" to DiagnosticCode.INVALID_ARRAY, "fn<bool> f(int[]? a, float[]? b) = a == b" to DiagnosticCode.INCOMPARABLE_TYPES)
 		for ((source, code) in cases) {
 			val error = assertFailsWith<ClothDiagnostic>(source) { FunctionAnalyzer(nativeTestLayout).analyze(parse(source)) }
 			assertEquals(code, error.diagnosticCode, source)

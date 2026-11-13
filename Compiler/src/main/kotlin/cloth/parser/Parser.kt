@@ -254,19 +254,17 @@ class Parser(private val tokens: List<Token>) {
 			throw SyntaxErrors.readOnlyProvider(expression.name)
 		}
 		if (peek().lexeme == Operators.FINAL_ASSIGN.toString()) throw SyntaxErrors.reassignment(peek())
-		if (peek().lexeme in assignmentOperators && expression.hasFieldTarget()) {
+		if (peek().lexeme in assignmentOperators) {
+			val fieldTarget = expression.hasFieldTarget()
+			if (!fieldTarget && expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
 			val operator = advance()
 			val value = when (operator.lexeme) {
 				in updateOperators          -> null
 				Operators.ASSIGN.toString() -> parseResults(allowWhileTrailer = allowWhileTrailer)
 				else                        -> expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer)
 			}
-			return FieldWriteStatement(expression, operator, value)
-		}
-		if (peek().lexeme == Operators.ASSIGN.toString()) {
-			if (expression !is IndexExpression) throw SyntaxErrors.expected("an indexed array assignment target", peek())
-			advance()
-			return ElementAssignmentStatement(expression, parseResults(allowWhileTrailer = allowWhileTrailer))
+			return if (fieldTarget) FieldWriteStatement(expression, operator, value)
+			else ElementAssignmentStatement(expression as IndexExpression, operator, value)
 		}
 		return ExpressionStatement(parseResults(expression, expressionStart, allowWhileTrailer, multiline = multilineResults))
 	}

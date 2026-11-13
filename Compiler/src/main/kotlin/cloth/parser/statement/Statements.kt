@@ -1,5 +1,6 @@
 package cloth.parser.statement
 
+import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IndexExpression
 import cloth.parser.type.TypeReference
@@ -43,15 +44,24 @@ data class MultiAssignmentStatement(val targets: List<ReceivingTarget>, val valu
 	override val span get() = names.first().span.through(value.span)
 }
 
-data class ElementAssignmentStatement(val target: IndexExpression, val value: Expression) : Statement {
+data class ElementAssignmentStatement(val target: IndexExpression, val operator: Token, val value: Expression?) : Statement {
 
-	override val span get() = target.span.through(value.span)
+	internal val compound = compoundExpression(target, operator, value)
+	override val span get() = target.span.through(value?.span ?: operator.span)
 }
 
 /** Retain the original place and operator so lowering can evaluate the path once. */
 data class FieldWriteStatement(val target: Expression, val operator: Token, val value: Expression?) : Statement {
 
+	internal val compound = compoundExpression(target, operator, value)
 	override val span get() = target.span.through(value?.span ?: operator.span)
+}
+
+/** Check the binary operation with its source operands. Emission supplies the saved place value. */
+private fun compoundExpression(target: Expression, operator: Token, value: Expression?): BinaryExpression? {
+	if (value == null || operator.lexeme == Operators.ASSIGN.toString()) return null
+	val base = Operators.fromCharacterRequired(operator.lexeme).compoundAssignmentBase()
+	return BinaryExpression(target, Token(operator.type, operator.span, base.toString()), value)
 }
 
 data class UpdateStatement(val name: Token, val operator: Token) : Statement {

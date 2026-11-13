@@ -161,11 +161,18 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 				}
 
 				is ElementAssignmentStatement            -> {
-					expression(item.target); expression(item.value); check(source(item.target).orEmpty(), source(item.value), item.value); rowWrite(item.target, item.value)
+					expression(item.target)
+					item.value?.let { value ->
+						expression(value)
+						val received = item.compound ?: value
+						check(source(item.target).orEmpty(), source(received), value)
+						rowWrite(item.target, received)
+					}
 				}
 
 				is FieldWriteStatement                   -> {
-					expression(item.target); item.value?.let { expression(it); check(typeShape(item.target).orEmpty(), source(it), it) }
+					expression(item.target)
+					item.value?.let { expression(it); check(typeShape(item.target).orEmpty(), source(item.compound ?: it), it) }
 				}
 
 				is ExpressionStatement                   -> tail = expression(item.expression)

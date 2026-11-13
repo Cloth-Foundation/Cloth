@@ -131,6 +131,75 @@ Array syntax and construction were confirmed on 2026-10-30:
   policies that have not been separately confirmed as language design, including
   empty arrays and bounds failures.
 
+## Indexed compound assignment
+
+On 2026-11-12 the user confirmed that `items[i] += rhs()` reads the element
+before evaluating `rhs()`. Evaluate the target and indices once under the
+ordinary indexed-write rules. Save the checked element value, evaluate the
+right-hand side once, apply the operator, and store through the same selection.
+The ordinary place and bounds checks apply again before the store.
+
+If the element starts at `10` and `rhs()` writes `20` to it and returns `1`,
+the compound assignment stores `11`.
+
+Compound assignments and standalone postfix `++` and `--` accept the same
+indexed targets as plain `=`, subject to their ordinary operator type rules.
+For `make()[0] += 1` or `make()[0]++`, evaluate `make()` once, update the
+selected element, and discard the temporary value after the statement.
+Postfix updates select and read once, apply the ordinary numeric update,
+and store through that selection.
+
+[Existing indexed-place rules](growable-arrays-stage-5.md#selections-and-scratch-across-destructive-effects) ·
+[Compound and postfix operators](../../cloth-bindings/references/semantics.md#compound-assignments-and-update-operators)
+
+## Array equality
+
+On 2026-11-12 the user confirmed that array equality compares current shape
+and corresponding elements. A fixed `int[2]` and a growable `int[]` both
+holding `[1, 2]` compare equal. Appending a third element to the growable
+array makes them compare unequal.
+
+Shape comparison includes every axis, even when there are no present rows.
+Two known extents must match, two unknown extents agree, and a known extent
+differs from an unknown one. For example, two empty `int[][]` values that
+retained row widths of two and three after `clear()` compare unequal.
+
+Array equality requires the same element type and permits differences in
+declared extents. `int[] == float[]` is a type error even though scalar
+`int` and `float` values can be compared.
+
+A typed array operand supplies element context to an array literal on the
+other side. For `int<8>[] values`, `values == [1]` checks `1` as `int<8>`
+under the ordinary literal range rules, and `values == []` uses `int<8>`
+for the empty literal. A populated dimension supplies its own length. An
+empty outer dimension inherits any declared inner extents from the typed
+operand. For `int[0][2] rows`, `rows == []` compares equal with row width two.
+Runtime witnesses belong to each captured value. An empty literal compared
+with an unsized `int[][]` peer leaves its row width unknown.
+
+`==` uses ordinary equality for corresponding elements. A struct element
+type requires an applicable `==` overload. This is checked at compile time,
+including for empty arrays.
+[Struct equality](../../cloth-language/references/value-operators.md#equality)
+
+Array `!=` negates array `==`, using the same shape checks and element `==`
+operations.
+
+An array may be compared to a compatible nullable array, and two compatible
+nullable arrays may be compared without a presence proof. Two absent arrays
+compare equal. One absent array and one present array compare unequal. Two
+present arrays use the shape and element rules above. Both operands evaluate
+once from left to right. Capture each array's presence, shape and contents
+when its operand evaluates. Later operand effects leave the captured value
+intact. Class and interface elements retain their ordinary object identities.
+A comparison with literal `null` checks presence.
+
+For two present arrays, compare shapes before calling any element operators.
+When shapes match, compare corresponding elements in index order, recursively
+through nested rows. Stop at the first unequal pair.
+
+[Stage 2 implementation and verification](array-equality-stage-2.md)
+
 ## Nullable rectangular rows
 
 The user chose Cloth's rectangular row rules after reviewing C#'s independent,

@@ -113,7 +113,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun typeOf(expression: Expression) = semantics.typeOf(expression)
-	private val projectedValues = java.util.IdentityHashMap<NameExpression, LLVMValueRef>()
+	private val capturedOperands = java.util.IdentityHashMap<Expression, LLVMValueRef>()
 	private val guardedValues = java.util.IdentityHashMap<GuardedReceiver, LLVMValueRef>()
 	private fun directAccess(expression: Expression): ObjectAccess? = functionSemantics.declarations.directReceiverOf(expression)?.let(bindings::objectAccess)
 
@@ -313,27 +313,46 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
 		val instance = semantics.instanceWrites[statement]
 		val receiver = semantics.storedElementWrites[statement]
+		val compound = statement.compound
+		val value = statement.value
+		val mayMove = (compound ?: value)?.let { !temporaryAnalysis.hasNoPublication(it) } == true
 		if (instance != null || receiver != null && (bindings.relocatableArrays || bindings.structAccess(receiver.root) != null)) {
-			places.withWrite(instance, receiver, mayMove = !temporaryAnalysis.hasNoPublication(statement.value)) { target ->
-				val type = target.initial.type
-				val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
-				places.commit(target, value, type)
+			places.withWrite(instance, receiver, mayMove = mayMove) { target ->
+				val stored = emitPlaceValue(statement.target, statement.operator, value, compound, target.initial)
+				places.commit(target, stored, target.initial.type)
 			}
-		} else emitOrdinaryElementAssignment(statement)
+		} else emitOrdinaryElementAssignment(statement, mayMove)
 	} catch (_: Terminated) {
 		null
 	}
 
-	private fun emitOrdinaryElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef {
-		// Resolve the complete target once, including each bounds check, before the RHS.
-		val array = emitValue(statement.target.array)
-		val index = emitValue(statement.target.index)
-		val type = semantics.typeOf(statement.target)
-		val parentType = semantics.typeOf(statement.target.array) as CArray
-		val address = arrays.checkedAddress(array, type, index, semantics.typeOf(statement.target.index))
-		val ownerArena = functionSemantics.declarations.storedRoot(statement.target)?.let(bindings::ownerArena)
-		val value = adaptValue(emitValue(statement.value), semantics.typeOf(statement.value), type)
-		return valueTransfer.storeElement(address, ArrayParent(array, parentType, arrays.checkedIndex(index, semantics.typeOf(statement.target.index))), value, ownerArena)
+	private fun emitOrdinaryElementAssignment(statement: ElementAssignmentStatement, mayMove: Boolean): LLVMValueRef {
+		val target = statement.target
+		val array = emitValue(target.array)
+		val parentType = semantics.typeOf(target.array) as CArray
+		// A computed descriptor can still borrow storage, for example through an
+		// Elvis result. Observe it across effects just like a stored selection.
+		val selection = if (mayMove || !temporaryAnalysis.hasNoPublication(target.index)) bindings.observeValue(array, parentType) else null
+		try {
+			val index = emitValue(target.index)
+			val indexType = semantics.typeOf(target.index)
+			val type = semantics.typeOf(target)
+			fun resolve(): EmitPlaces.PlaceAddress {
+				val current = selection?.let { stored.load(it.address, it.type) } ?: array
+				val address = arrays.checkedAddress(current, type, index, indexType)
+				val parent = ArrayParent(current, parentType, arrays.checkedIndex(index, indexType))
+				return EmitPlaces.PlaceAddress(address, type, parent)
+			}
+
+			if (selection != null) arrays.validateIndex(array, index, indexType)
+			val initial = resolve()
+			val value = emitPlaceValue(target, statement.operator, statement.value, statement.compound, initial)
+			val destination = if (selection != null && mayMove) resolve() else initial
+			val ownerArena = functionSemantics.declarations.storedRoot(target)?.let(bindings::ownerArena)
+			return valueTransfer.storeElement(destination.address, checkNotNull(destination.parent), value, ownerArena)
+		} finally {
+			bindings.endSelection(selection)
+		}
 	}
 
 	private fun emitStructLiteral(expression: StructLiteral): LLVMValueRef {
@@ -385,27 +404,33 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			emitValue(statement.target)
 			throw InternalErrors.invariant("Continuing field write has no stored place")
 		}
-		places.withWrite(instance, plan?.place, mayMove = statement.value?.let { !temporaryAnalysis.hasNoPublication(it) } == true) { target ->
-			val location = target.initial
-			val type = plan?.type ?: location.type
-			val op = Operators.fromCharacterRequired(statement.operator.lexeme)
-			val source = statement.value
-			val valueType = if (op == Operators.ASSIGN) semantics.typeOf(checkNotNull(source)) else semantics.typeOf(statement.target)
-			val value = if (op == Operators.ASSIGN) emitValue(checkNotNull(source)) else {
-				val raw = places.load(location)
-				val payload = if (location.type is CNullable) nullable.payload(raw) else raw
-				val old = if (target.replayed) valueTransfer.snapshot(payload, valueType) else payload
-				if (source == null) emitNumericUpdate(old, valueType, op == Operators.PLUS_PLUS)
-				else {
-					val right = emitValue(source)
-					val base = Token(statement.operator.type, statement.operator.span, op.compoundAssignmentBase().toString())
-					emitBinaryOperands(base, old, right, valueType, semantics.typeOf(source))
-				}
-			}
-			places.commit(target, adaptValue(value, valueType, type), type)
+		val mayMove = (statement.compound ?: statement.value)?.let { !temporaryAnalysis.hasNoPublication(it) } == true
+		places.withWrite(instance, plan?.place, mayMove = mayMove) { target ->
+			val value = emitPlaceValue(statement.target, statement.operator, statement.value, statement.compound, target.initial)
+			places.commit(target, value, target.initial.type)
 		}
 	} catch (_: Terminated) {
 		null
+	}
+
+	private fun emitPlaceValue(target: Expression, operator: Token, value: Expression?, compound: BinaryExpression?, location: EmitPlaces.PlaceAddress): LLVMValueRef {
+		if (value != null && compound == null) return adaptValue(emitValue(value), semantics.typeOf(value), location.type)
+
+		val readType = semantics.typeOf(target)
+		val old = readPayload(target, places.load(location))
+		if (compound == null) {
+			val updated = emitNumericUpdate(old, readType, operator.lexeme == Operators.PLUS_PLUS.toString())
+			return adaptValue(updated, readType, location.type)
+		}
+
+		// The checked binary expression can call an overload. Its left operand
+		// reads the saved value even when the RHS replaces the original storage.
+		capturedOperands[target] = valueTransfer.snapshot(old, readType)
+		return try {
+			adaptValue(emitValue(compound), semantics.typeOf(compound), location.type)
+		} finally {
+			capturedOperands.remove(target)
+		}
 	}
 
 	/** Each read expands a fresh evaluation in the physical function frame. Captures
@@ -548,6 +573,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 
 	private fun emit(expression: Expression, discard: Boolean, consume: ((LLVMValueRef) -> Unit)? = null): LLVMValueRef? {
 		if (terminated()) return null
+		capturedOperands[expression]?.let { value ->
+			consume?.invoke(value)
+			return value
+		}
 		fun produce(): LLVMValueRef? = try {
 			val mutation = (expression as? MemberCallExpression)?.let { semantics.arrayMutations[it] }
 			val value = if (discard && consume == null && mutation != null) emitArrayMutation(expression, mutation, needResult = false) else emitInternal(expression)
@@ -694,6 +723,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				semantics.operatorContextOf(expression)?.let { return emitOperatorContext(expression, it) }
 				semantics.classComparisons[expression]?.let { return emitClassComparison(expression, it) }
 				semantics.valueComparisons[expression]?.let { return emitValueComparison(expression, it) }
+				semantics.arrayEqualities[expression]?.let { return emitArrayEquality(expression, it) }
 				if (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null) return emitRangeMembership(expression)
 				semantics.nullableComparisons[expression]?.let { return emitNullableEquality(expression, it) }
 				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
@@ -709,7 +739,6 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitName(expression: NameExpression, borrowString: Boolean = false): LLVMValueRef? {
-		projectedValues[expression]?.let { return it }
 		val symbol = functionSemantics.declarations.symbolOf(expression) as? BindingSymbol ?: throw InternalErrors.invariant("Value name has no binding symbol")
 		val field = (symbol as? ReceiverFieldSymbol)?.field
 		if (field is EnumField) return emitEnumPayload(bindings.read(symbol.receiver), field, expression)
@@ -720,6 +749,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitRead(expression: Expression, borrowString: Boolean): LLVMValueRef {
+		capturedOperands[expression]?.let { return it }
 		if (!borrowString) return emitValue(expression)
 		val value = when (expression) {
 			is NameExpression  -> emitName(expression, borrowString = true)
@@ -767,7 +797,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		return when (expression) {
 			is NameExpression        -> {
 				val symbol = functionSemantics.declarations.names[expression] as? ReceiverFieldSymbol ?: return null
-				if (symbol.field !is ClassField || expression in projectedValues) return null
+				if (symbol.field !is ClassField || expression in capturedOperands) return null
 				readPayload(expression, bindings.read(symbol))
 			}
 
@@ -816,11 +846,11 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				val projection = plan.projections[index]
 				val value = if (projection == null) emitValue(operand) else checkNotNull(emitOperator(projection, listOf(operand)))
 				val name = names[index]
-				projectedValues[name] = valueTransfer.snapshot(value, semantics.typeOf(name))
+				capturedOperands[name] = valueTransfer.snapshot(value, semantics.typeOf(name))
 			}
 			return emitValue(plan.application)
 		} finally {
-			names.forEach(projectedValues::remove)
+			names.forEach(capturedOperands::remove)
 		}
 	}
 
@@ -977,7 +1007,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private fun emitValueComparison(expression: BinaryExpression, plan: ValueComparisonPlan): LLVMValueRef {
 		val unequal = plan.operation == Operators.NOT_EQUAL
 		val overload = plan.overload
-		return emitPresenceComparison(expression, unequal, snapshot = overload != null) { left, right ->
+		return emitPresenceComparison(expression, unequal, capture = { operand ->
+			val value = emitValue(operand)
+			if (overload == null) value else valueTransfer.snapshot(value, semantics.typeOf(operand))
+		}) { left, right ->
 			if (overload == null) LLVMBuildICmp(builder, if (unequal) LLVMIntNE else LLVMIntEQ, left, right, "enum_case_comparison")
 			else {
 				val result = functions.compareValueWithOverride(builder, overload, left, right, ::stringReturnArena)
@@ -986,13 +1019,45 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
-	private fun emitPresenceComparison(expression: BinaryExpression, unequal: Boolean, snapshot: Boolean = false, comparePresent: (LLVMValueRef, LLVMValueRef) -> LLVMValueRef): LLVMValueRef {
-		// Both expressions are captured before inspecting presence, preserving effects.
-		fun capture(operand: Expression): LLVMValueRef {
-			val value = emitValue(operand)
-			return if (snapshot) valueTransfer.snapshot(value, semantics.typeOf(operand)) else value
-		}
+	private fun emitArrayEquality(expression: BinaryExpression, plan: ArrayEqualityPlan): LLVMValueRef {
+		val operands = frame.storedArena()
+		val release = { frame.releaseStored(operands) }
+		// A deferred return can leave a capture behind until this site runs again.
+		release()
+		cleanupRegions.add(release)
+		try {
+			val equal = emitPresenceComparison(expression, unequal = false, capture = { operand ->
+				temporaryRegion(temporaryAnalysis.hasNoPublication(operand)) {
+					val value = emitValue(operand)
+					valueTransfer.consumeFreshArray(value)
+					frame.copyValue(value, semantics.typeOf(operand), operands)
+				}
+			}) { left, right ->
+				val comparison = EmitArrayEquality(context, builder, abi) { a, b, type ->
+					when {
+						plan.elementOverride != null   -> functions.compareValueWithOverride(builder, plan.elementOverride, a, b) { operands }
+						type.classBackedType() != null -> {
+							val permission = functions.classes.permission(false)
+							functions.compareClasses(builder, ObjectAccess(a, permission), ObjectAccess(b, permission), Operators.EQUAL)
+						}
 
+						else                           -> emitScalarEquality(a, b, type)
+					}
+				}
+				comparison.compare(left, right, plan.left, plan.right)
+			}
+			return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "array_not_equal") else equal
+		} finally {
+			cleanupRegions.removeAt(cleanupRegions.lastIndex)
+			if (!terminated()) release()
+		}
+	}
+
+	private fun emitPresenceComparison(
+		expression: BinaryExpression, unequal: Boolean, capture: (Expression) -> LLVMValueRef = ::emitValue,
+		comparePresent: (LLVMValueRef, LLVMValueRef) -> LLVMValueRef,
+	): LLVMValueRef {
+		// Both expressions are captured before inspecting presence, preserving effects.
 		val left = capture(expression.left)
 		val right = capture(expression.right)
 		val leftType = semantics.typeOf(expression.left)
@@ -1016,19 +1081,21 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private fun emitNullableEquality(expression: BinaryExpression, payloadType: ValueType): LLVMValueRef {
 		val unequal = expression.operator.lexeme == Operators.NOT_EQUAL.toString()
 		return emitPresenceComparison(expression, unequal) { a, b ->
-			val equal = when (payloadType) {
-				is CFloat          -> {
-					val working = EmitHalf.arithmeticType(payloadType)
-					LLVMBuildFCmp(builder, LLVMRealOEQ, casts.toFloating(a, payloadType, working), casts.toFloating(b, payloadType, working), "nullable_float_equal")
-				}
-
-				ValueType.TYPEINFO -> strings.metadata.equal(a, b)
-				ValueType.STRING   -> strings.equal(a, b)
-				else               -> if (payloadType is CInteger && payloadType.bits > 64) EmitWideInteger(context, builder, abi).compare(a, b, payloadType, Operators.EQUAL)
-				else LLVMBuildICmp(builder, LLVMIntEQ, a, b, "nullable_payload_equal")
-			}
+			val equal = emitScalarEquality(a, b, payloadType)
 			if (unequal) LLVMBuildNot(builder, equal, "nullable_not_equal") else equal
 		}
+	}
+
+	private fun emitScalarEquality(a: LLVMValueRef, b: LLVMValueRef, type: ValueType): LLVMValueRef = when (type) {
+		is CFloat          -> {
+			val working = EmitHalf.arithmeticType(type)
+			LLVMBuildFCmp(builder, LLVMRealOEQ, casts.toFloating(a, type, working), casts.toFloating(b, type, working), "scalar_float_equal")
+		}
+
+		ValueType.TYPEINFO -> strings.metadata.equal(a, b)
+		ValueType.STRING   -> strings.equal(a, b)
+		else               -> if (type is CInteger && type.bits > 64) EmitWideInteger(context, builder, abi).compare(a, b, type, Operators.EQUAL)
+		else LLVMBuildICmp(builder, LLVMIntEQ, a, b, "scalar_equal")
 	}
 
 	fun emitConditional(expression: IfExpression, requireValue: Boolean): LLVMValueRef? {

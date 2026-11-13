@@ -14,6 +14,7 @@ import cloth.parser.expression.IndexExpression
 import cloth.parser.expression.IntegerLiteral
 import cloth.parser.statement.ElementAssignmentStatement
 import cloth.semantic.typing.FunctionAnalyzer
+import cloth.token.Operators
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -230,8 +231,18 @@ class ArrayAssignmentTest {
 	}
 
 	@Test
-	fun `indexed assignment is a statement and does not introduce compound syntax`() {
-		for (source in listOf("a[0] := 1", "a[0] += 1", "a[0]++", "def x = a[0] = 1", "a[0] =", "a[0] = 1 = 2")) {
+	fun `indexed updates retain the original operator and remain statements`() {
+		val statements = parseMain("def a = [[1]]\na[0][0] += 1\na[0][0]++").mainStatements
+		val compound = assertIs<ElementAssignmentStatement>(statements[1])
+		assertIs<IndexExpression>(compound.target.array)
+		assertEquals(Operators.PLUS_EQUAL.toString(), compound.operator.lexeme)
+		assertIs<IntegerLiteral>(compound.value)
+		val postfix = assertIs<ElementAssignmentStatement>(statements[2])
+		assertEquals(Operators.PLUS_PLUS.toString(), postfix.operator.lexeme)
+		assertNull(postfix.value)
+		assertEquals(postfix.operator.span.endColumn, postfix.span.endColumn)
+
+		for (source in listOf("a[0] := 1", "def x = a[0] = 1", "def x = a[0] += 1", "def x = a[0]++", "++a[0]", "a[0] +=", "a[0] = 1 = 2")) {
 			val diagnostic = assertFailsWith<ClothDiagnostic> { parse("fn main() {\n def a = [1]\n $source\n}") }
 			assertLocated(diagnostic)
 		}

@@ -291,6 +291,10 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		if (comparison == Operators.EQUAL || comparison == Operators.NOT_EQUAL) {
 			val declarations = model.declarations
 			if (!declarations.hasOperator(comparison.toString()) && !declarations.hasOperator(Operators.EQUAL.toString())) return false
+			val arrays = operands.mapNotNull { receiverHint(it).arrayPayload() }
+			if (arrays.isNotEmpty()) return arrays.any(declarations::arrayEqualityMayCall)
+			// Literal element types may still be unknown during this pass.
+			if (operands.any { it is ArrayLiteral } && declarations.hasOperator(Operators.EQUAL.toString())) return true
 			if (value is BinaryExpression && (contextMayCall(value.left, value.right, operator.lexeme) || contextMayCall(value.right, value.left, operator.lexeme))) return true
 			val hints = operands.map { nominalHint(it) }
 			if (!operands.zip(hints).all { (operand, hint) -> hint is CMemberType || hint == null && unknownCouldCarryReceiver(operand) }) return false
@@ -460,12 +464,8 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				after
 			}
 
-			is ElementAssignmentStatement -> forgetWrite(expression(item.value, expression(item.target, facts).after).after, place(item.target))
-			is FieldWriteStatement        -> {
-				val afterTarget = expression(item.target, facts).after
-				val after = item.value?.let { expression(it, afterTarget).after } ?: afterTarget
-				forgetWrite(after, place(item.target))
-			}
+			is ElementAssignmentStatement -> write(item.target, item.compound, item.value, facts)
+			is FieldWriteStatement        -> write(item.target, item.compound, item.value, facts)
 
 			is UpdateStatement            -> {
 				val binding = model.declarations.targetOf(item)
@@ -479,6 +479,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			else                          -> facts
 		}
 		return facts
+	}
+
+	private fun write(target: Expression, compound: BinaryExpression?, value: Expression?, facts: Set<Place>): Set<Place> {
+		val afterTarget = expression(target, facts).after
+		val afterValue = value?.let { expression(it, afterTarget).after } ?: afterTarget
+		val afterOperation = if (compound != null && operatorMayCall(compound)) forgetAliases(afterValue) else afterValue
+		return forgetWrite(afterOperation, place(target))
 	}
 
 	private fun loop(item: ForStatement, initial: Set<Place>): Set<Place> {
@@ -847,7 +854,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			is BindingGroupDeclaration    -> visit(item.initializer)
 			is ElementAssignmentStatement -> {
 				place(item.target)?.let(::add)
-				visit(item.target); visit(item.value)
+				visit(item.target); item.value?.let(visit)
 			}
 
 			is FieldWriteStatement        -> {

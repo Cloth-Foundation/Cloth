@@ -172,7 +172,7 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 			}
 
 			is ElementAssignmentStatement -> {
-				expression(item.target); expression(item.value); null
+				expression(item.target); item.value?.let { expression(it) }; null
 			}
 
 			is FieldWriteStatement        -> {

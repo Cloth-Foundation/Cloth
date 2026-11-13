@@ -383,7 +383,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 				is AssignmentStatement                   -> expression(statement.value, parameters, values)
 				is MultiAssignmentStatement              -> expression(statement.value, parameters, values)
 				is ElementAssignmentStatement            -> {
-					expression(statement.target, parameters, values); expression(statement.value, parameters, values)
+					expression(statement.target, parameters, values); statement.value?.let { expression(it, parameters, values) }
 				}
 
 				is FieldWriteStatement                   -> {

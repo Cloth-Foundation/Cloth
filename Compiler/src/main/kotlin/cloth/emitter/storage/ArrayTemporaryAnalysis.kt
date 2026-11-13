@@ -60,10 +60,10 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 			is UpdateStatement            -> !publishes(types.typeOf(statement))
 			is FieldWriteStatement        -> types.fieldWrites[statement]?.let { plan ->
 				// Only inline writes without buffer publication can release this region.
-				!publishes(plan.type) && plan.place.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.value?.let { effects(it).safe } ?: true)
-			} ?: independentInstanceWrite(statement, statement.value)
+				!publishes(plan.type) && plan.place.steps.all { it !is PlaceStep.Index || effects(it.index).safe } && (statement.compound ?: statement.value)?.let { effects(it).safe } != false
+			} ?: independentInstanceWrite(statement, statement.compound ?: statement.value)
 
-			is ElementAssignmentStatement -> independentInstanceWrite(statement, statement.value)
+			is ElementAssignmentStatement -> independentInstanceWrite(statement, statement.compound ?: statement.value)
 
 			is ExpressionStatement        -> when (val expression = statement.expression) {
 				is IfExpression -> expression.branches.all { effects(it.condition).safe && canReclaimIteration(it.statements) } && (expression.otherwise?.let(::canReclaimIteration) ?: true)
@@ -103,6 +103,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 		if (expression is TypeCheckExpression && types.valueCheckOf(expression) != null) return unknown
 		if (expression is NameExpression && types.projectedOperandOf(expression) != null) return Effects()
 		if (types.operatorOf(expression) != null) return unknown
+		if (expression is BinaryExpression && types.arrayEqualities[expression]?.mayCallUserCode(functions.declarations) == true) return unknown
 		if (expression is BinaryExpression && expression.left !is NullLiteral && expression.right !is NullLiteral && types.classComparisons[expression]?.checksLiveness == true) return unknown
 		if (expression is BinaryExpression && types.valueComparisons[expression]?.overload != null) return unknown
 		if (expression is FieldAccessExpression && functions.declarations.enumCases.containsKey(expression)) return Effects()

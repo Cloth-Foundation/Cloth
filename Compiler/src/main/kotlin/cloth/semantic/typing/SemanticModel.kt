@@ -40,6 +40,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val operatorContexts: MutableMap<Expression, ResolvedOperatorContext> = facts.identityMap { it.operatorContexts }
 	internal val classComparisons: MutableMap<BinaryExpression, ClassComparisonPlan> = facts.identityMap { it.classComparisons }
 	internal val valueComparisons: MutableMap<BinaryExpression, ValueComparisonPlan> = facts.identityMap { it.valueComparisons }
+	internal val arrayEqualities: MutableMap<BinaryExpression, ArrayEqualityPlan> = facts.identityMap { it.arrayEqualities }
 	internal val payloadReads: MutableMap<Expression, CNullable> = facts.identityMap { it.payloadReads }
 	internal val nullableComparisons: MutableMap<BinaryExpression, ValueType> = facts.identityMap { it.nullableComparisons }
 	internal val updatePayloads: MutableMap<UpdateStatement, CNullable> = facts.identityMap { it.updatePayloads }

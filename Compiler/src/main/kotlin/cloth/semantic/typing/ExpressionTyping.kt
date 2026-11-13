@@ -656,7 +656,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 					if (operation != Operators.IDENTITY && (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null)) {
 						return intrinsic { rangeMembership(expression) }
 					}
-					val nullable = nullableEquality(expression, contextualFloat)
+					val nullable = nullableEquality(expression, operation, contextualFloat)
 					if (nullable != null) return nullable
 				}
 				val numeric = expression.operator.lexeme in arithmeticOperators || expression.operator.lexeme in comparisonOperators
@@ -670,6 +670,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				} else null
 				val left = typeOf(expression.left, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
+				arrayEquality(expression, operation, left, right)?.let { return it }
 				equalityContextType(expression, operation, left, right)?.let { return it }
 				classComparison(expression, operation, left, right)?.let { return it }
 				valueComparison(expression, operation, left, right)?.let { return it }
@@ -823,22 +824,100 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		else                                                                                                                      -> null
 	}
 
-	private fun nullableEquality(expression: BinaryExpression, contextualFloat: Boolean): ValueType? {
+	private fun nullableEquality(expression: BinaryExpression, operation: Operators, contextualFloat: Boolean): ValueType? {
 		val leftHint = equalityHint(expression.left)
 		val rightHint = equalityHint(expression.right)
+		val comparesNull = expression.left is NullLiteral || expression.right is NullLiteral
+		if (!comparesNull && operation in OperatorRules.equality) {
+			arrayLiteralEquality(expression, operation, leftHint, rightHint)?.let { return it }
+		}
 		val context = (leftHint as? CNullable) ?: (rightHint as? CNullable)
-		if (context == null && expression.left !is NullLiteral && expression.right !is NullLiteral) return null
-		val left = typeOf(expression.left, if (expression.left is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
-		val right = typeOf(expression.right, if (expression.right is NullLiteral) context else context?.payload, contextualFloat = contextualFloat)
-		val operation = Operators.fromCharacterRequired(expression.operator.lexeme)
+		if (context == null && !comparesNull) return null
+		val payloadContext = context?.payload?.takeUnless { it is CArray && operation in OperatorRules.equality }
+		val left = typeOf(expression.left, if (expression.left is NullLiteral) context else payloadContext, contextualFloat = contextualFloat)
+		val right = typeOf(expression.right, if (expression.right is NullLiteral) context else payloadContext, contextualFloat = contextualFloat)
+		arrayEquality(expression, operation, left, right)?.let { return it }
 		classComparison(expression, operation, left, right)?.let { return it }
 		valueComparison(expression, operation, left, right)?.let { return it }
 		val wrapper = left as? CNullable ?: right as? CNullable
 		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
 		val unsupportedPayload = (payload is CTypeParameter && !payload.numberBound) || payload is CArray || payload is CMemberType
-		if (!wrapper.accepts(left) || !wrapper.accepts(right) || unsupportedPayload && expression.left !is NullLiteral && expression.right !is NullLiteral) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		if (!wrapper.accepts(left) || !wrapper.accepts(right) || unsupportedPayload && !comparesNull) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
+		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
+	}
+
+	private fun arrayLiteralEquality(expression: BinaryExpression, operation: Operators, leftHint: ValueType?, rightHint: ValueType?): ValueType? {
+		val left = expression.left
+		val right = expression.right
+		if (left !is ArrayLiteral && right !is ArrayLiteral) return null
+		if (listOfNotNull(leftHint, rightHint).any { it != ValueType.NEVER && it.arrayPayload() == null }) return null
+
+		fun literal(value: ArrayLiteral, peer: CArray?): ValueType = typeOf(value, peer?.let { CArray(comparisonLiteralElement(it.element, value.elements)) })
+
+		if (left !is ArrayLiteral) {
+			val type = leftHint?.takeIf { model.checkedResultOf(left) != null } ?: typeOf(left)
+			return arrayEquality(expression, operation, type, literal(right as ArrayLiteral, type.arrayPayload()))
+		}
+		if (right !is ArrayLiteral) {
+			val type = rightHint?.takeIf { model.checkedResultOf(right) != null } ?: typeOf(right)
+			return arrayEquality(expression, operation, literal(left, type.arrayPayload()), type)
+		}
+
+		// Prefer typed elements over numeric literal defaults. A literal with no
+		// element evidence can still use the type inferred by the other literal.
+		val leftElementHint = arrayElementHint(left, contextualFloat = true).arrayPayload()
+		val rightElementHint = arrayElementHint(right, contextualFloat = true).arrayPayload()
+		if (leftElementHint != null && rightElementHint != null && leftElementHint.withoutArrayExtents() != rightElementHint.withoutArrayExtents()) {
+			return arrayEquality(expression, operation, typeOf(left), typeOf(right))
+		}
+		val peer = leftElementHint ?: rightElementHint
+		if (peer != null && !peer.containsNullability) return arrayEquality(expression, operation, literal(left, peer), literal(right, peer))
+		if (!left.hasElementEvidence() && right.hasElementEvidence()) {
+			val type = typeOf(right)
+			return arrayEquality(expression, operation, literal(left, type.arrayPayload()), type)
+		}
+		val type = typeOf(left)
+		return arrayEquality(expression, operation, type, literal(right, type.arrayPayload()))
+	}
+
+	private fun ArrayLiteral.hasElementEvidence(): Boolean = elements.any { element ->
+		when (element) {
+			is ArrayLiteral                  -> element.hasElementEvidence()
+			is NullLiteral, is StructLiteral -> false
+			else                             -> true
+		}
+	}
+
+	/** Retain a declared extent when there is no present row to supply it. */
+	private fun comparisonLiteralElement(type: ValueType, elements: List<Expression>): ValueType = when (type) {
+		is CNullable -> CNullable(comparisonLiteralElement(type.payload, elements.filterNot { it is NullLiteral }))
+		is CArray    -> when {
+			elements.isEmpty()                   -> type
+			elements.any { it !is ArrayLiteral } -> type.withoutArrayExtents()
+			else                                 -> CArray(comparisonLiteralElement(type.element, elements.flatMap { (it as ArrayLiteral).elements }))
+		}
+
+		else         -> type
+	}
+
+	private fun arrayEquality(expression: BinaryExpression, operation: Operators, left: ValueType, right: ValueType): ValueType? {
+		if (operation !in OperatorRules.equality || expression.left is NullLiteral || expression.right is NullLiteral) return null
+		val leftArray = left.arrayPayload() ?: right.arrayPayload()?.takeIf { left == ValueType.NEVER } ?: return null
+		val rightArray = right.arrayPayload() ?: leftArray.takeIf { right == ValueType.NEVER } ?: return null
+		fun incomparable(): Nothing = reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+		if (leftArray.withoutArrayExtents() != rightArray.withoutArrayExtents()) incomparable()
+
+		val leaf = leftArray.equalityLeaf()
+		val classView = leaf.classBackedType()
+		val overload = when {
+			classView != null                                                                                                     -> classComparisonOverride(expression, Operators.EQUAL, classView, classView)
+			leaf is CMemberType                                                                                                   -> valueComparisonOverride(expression, Operators.EQUAL, leaf) ?: if (leaf is CEnum) null else incomparable()
+			leaf.supportsNumericOperations || leaf in setOf(ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO) -> null
+			else                                                                                                                  -> incomparable()
+		}
+		model.arrayEqualities[expression] = ArrayEqualityPlan(leftArray, rightArray, overload)
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
 	}
 

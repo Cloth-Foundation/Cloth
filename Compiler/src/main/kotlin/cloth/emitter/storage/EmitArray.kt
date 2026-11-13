@@ -105,6 +105,24 @@ internal class EmitArray(private val context: LLVMContextRef, private val builde
 	 */
 	fun current(value: LLVMValueRef, type: CArray): LLVMValueRef = if (!type.hasNullableRows) value else mergeShape(value, shapeReference(value, type, shapePointer(value, type)), type, rectangularShapeError, binding = true)
 
+	/** Compare known counts and the presence of a witness at each axis. */
+	fun equalShape(left: LLVMValueRef, right: LLVMValueRef, type: CArray): LLVMValueRef {
+		var equal = known(true)
+		for (dimension in type.arrayDimensions.indices) {
+			val a = LLVMBuildExtractValue(builder, left, dimension + 1, "left_extent")
+			val b = LLVMBuildExtractValue(builder, right, dimension + 1, "right_extent")
+			val sameCount = LLVMBuildICmp(builder, LLVMIntEQ, extentCount(a, dimension), extentCount(b, dimension), "equal_extent_count")
+			val sameExtent = if (dimension == 0) sameCount else {
+				val aUnknown = unknown(a, dimension)
+				val bUnknown = unknown(b, dimension)
+				val samePresence = LLVMBuildICmp(builder, LLVMIntEQ, aUnknown, bUnknown, "equal_extent_presence")
+				LLVMBuildAnd(builder, samePresence, LLVMBuildOr(builder, aUnknown, sameCount, "matching_or_unknown_extent"), "equal_extent")
+			}
+			equal = LLVMBuildAnd(builder, equal, sameExtent, "equal_shape")
+		}
+		return equal
+	}
+
 	/** Attach an owned subtree to its receiving value's shared constraints. Never
 	 * use this on borrowed storage: copies need independent shape cells as well as data.
 	 */

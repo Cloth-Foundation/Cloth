@@ -185,20 +185,8 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
 			is MultiAssignmentStatement   -> receive(item.value, declarations.targetsOf(item), model.types.receptionOf(item), state)
 			is UpdateStatement            -> fieldBinding(declarations.targetOf(item), state, item.span)
-			is FieldWriteStatement        -> {
-				val target = item.target as? FieldAccessExpression
-				if (target != null && model.types.fields[target] is ClassField) {
-					val handle = expression(target.receiver, state)
-					check(handle, state, target.span, directSelf(target.receiver))
-					item.value?.let { expression(it, state) }
-					if (item.value?.let { flow.of(it).canFallThrough } != false) check(handle, state, target.span, directSelf(target.receiver))
-				} else {
-					expression(item.target, state)
-					if (flow.of(item.target).canFallThrough) item.value?.let { expression(it, state) }
-				}
-			}
-
-			is ElementAssignmentStatement -> arguments(listOf(item.target, item.value), state)
+			is FieldWriteStatement        -> write(item, item.target, item.compound, item.value, state)
+			is ElementAssignmentStatement -> write(item, item.target, item.compound, item.value, state)
 			is ReturnStatement            -> item.value?.let { expression(it, state) }
 			is LoopJumpStatement          -> jumpStates[item] = state.fork()
 			is WhileStatement             -> {
@@ -336,6 +324,24 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		}
 		if (instance) check(receiver, state, source.span, directSelf(source))
 		return newHandle(model.types.scalarTypeOrNull(value))
+	}
+
+	private fun write(statement: Statement, target: Expression, compound: BinaryExpression?, value: Expression?, state: State) {
+		val owner = model.types.instanceWrites[statement]?.receiver
+		val read = compound ?: target
+		expression(read, state)
+		if (!continues(read, state)) return
+		val selected = when (owner) {
+			is ObjectReceiver.Explicit -> observed[owner.expression]
+			is ObjectReceiver.Self     -> state.bindings[owner.symbol]
+			null                       -> null
+		}
+		if (compound == null && value != null) {
+			expression(value, state)
+			if (!continues(value, state)) return
+		}
+		val self = owner is ObjectReceiver.Self || owner is ObjectReceiver.Explicit && directSelf(owner.expression)
+		check(selected, state, target.span, self)
 	}
 
 	private fun expression(value: Expression, state: State): Handle? {

@@ -107,7 +107,7 @@ class ControlFlowModel(private val declarations: DeclarationModel? = null) {
 			is BindingGroupDeclaration    -> of(statement.initializer)
 			is AssignmentStatement        -> of(statement.value)
 			is MultiAssignmentStatement   -> of(statement.value)
-			is ElementAssignmentStatement -> of(statement.target).then(of(statement.value))
+			is ElementAssignmentStatement -> of(statement.target).then(statement.value?.let(::of) ?: ControlFlow.FALLTHROUGH)
 			is ExpressionStatement        -> of(statement.expression)
 			is UpdateStatement            -> ControlFlow.FALLTHROUGH
 			else                          -> throw InternalErrors.invariant("Unsupported statement during flow analysis: $statement")

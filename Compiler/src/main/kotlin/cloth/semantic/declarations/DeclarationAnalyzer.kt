@@ -295,7 +295,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					if (defaultRoot is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter fields are read-only in defaults", statement.target.span)
 					checkReceiverWrite(defaultRoot ?: root, statement.target.span)
 					if (root != null) model.fieldRoots[statement] = root
-					statement.value?.let { expression(it, scope) }
+					statement.value?.let { if (statement.compound != null) receiverValue(it, scope) else expression(it, scope) }
 				}
 
 				is DoWhileStatement           -> {
@@ -394,7 +394,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					val defaultRoot = readOnlyDefaultRoot(statement.target)
 					if (defaultRoot is ParameterSymbol) throw SemanticErrors.parameterDefault("Earlier parameter arrays are read-only in defaults", statement.target.span)
 					checkReceiverWrite(defaultRoot ?: binding, statement.target.span)
-					expression(statement.value, scope)
+					statement.value?.let { if (statement.compound != null) receiverValue(it, scope) else expression(it, scope) }
 				}
 
 				is UpdateStatement            -> model.updates[statement] = assignmentTarget(statement.name, scope)
