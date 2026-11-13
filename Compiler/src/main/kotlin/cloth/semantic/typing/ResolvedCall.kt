@@ -60,7 +60,8 @@ internal data class ResolvedGuaranteedConstruction(
 	val binding: ArgumentBinding,
 )
 
-internal data class ResolvedOperator(val call: ResolvedCall.Source, val receiverIndex: Int)
+internal data class ResolvedOperator(val call: ResolvedCall.Source, val receiverIndex: Int, val indexValidator: MethodSymbol? = null)
+internal data class ResolvedIndexWrite(val setter: ResolvedCall.Source, val validator: MethodSymbol)
 internal data class BoundValueCheck(val application: BinaryExpression, val operator: ResolvedOperator)
 internal data class ResolvedOperatorContext(val application: BinaryExpression, val projections: List<ResolvedOperator?>)
 internal data class ProjectedOperand(val type: ValueType, val original: Expression?)

@@ -96,6 +96,9 @@ class DeclarationModel internal constructor(
 	internal val enumOwners = IdentityHashMap<CallableSignature, CEnum>().apply {
 		for (callable in callables) (callable.receiver?.owner as? CEnum)?.let { put(callable.declaration, it) }
 	}
+	internal val structOwners = IdentityHashMap<CallableSignature, CStruct>().apply {
+		for (callable in callables) (callable.receiver?.owner as? CStruct)?.let { put(callable.declaration, it) }
+	}
 	private val operatorGroups = methods.filter { it.declaration.operator != null }.groupBy { it.name.lexeme }
 	private val methodGroups = buildMap {
 		val ordinary = methods.filter { it.declaration.operator == null && it.declaration.typeParameters == null }.groupBy { it.owner }

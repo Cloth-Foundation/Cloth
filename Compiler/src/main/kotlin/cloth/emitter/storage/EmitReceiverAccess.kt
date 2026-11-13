@@ -5,7 +5,7 @@ import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.llvm.LLVM.*
 import org.bytedeco.llvm.global.LLVM.*
 
-internal data class ReceiverLocation(val address: LLVMValueRef, val arena: LLVMValueRef, val root: LLVMValueRef, val repack: LLVMValueRef)
+internal data class ReceiverLocation(val address: LLVMValueRef, val arena: LLVMValueRef, val root: LLVMValueRef, val repack: LLVMValueRef, val validation: LLVMValueRef?)
 internal data class ReceiverAccess(val address: LLVMValueRef, val arena: LLVMValueRef, val resolver: LLVMValueRef? = null, val environment: LLVMValueRef? = null)
 
 /** A class-backed struct receiver replays its saved projections whenever it accesses storage. */
@@ -13,7 +13,8 @@ internal class EmitReceiverAccess(private val context: LLVMContextRef, private v
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	val absent: LLVMValueRef get() = LLVMConstNull(pointer)
-	private val locationType = aggregate(List(4) { pointer })
+	private val tracksIndexValidation = classes.runtime.tracksIndexValidation
+	private val locationType = aggregate(List(if (tracksIndexValidation) 5 else 4) { pointer })
 	private val resolveType = PointerPointer<LLVMTypeRef>(1L).use { parameters ->
 		parameters.put(0, pointer)
 		LLVMFunctionType(locationType, parameters, 1, 0)
@@ -27,14 +28,14 @@ internal class EmitReceiverAccess(private val context: LLVMContextRef, private v
 
 	private fun pack(builder: LLVMBuilderRef, location: ReceiverLocation): LLVMValueRef {
 		var result = LLVMGetUndef(locationType)
-		for ((index, value) in listOf(location.address, location.arena, location.root, location.repack).withIndex()) {
+		for ((index, value) in (listOf(location.address, location.arena, location.root, location.repack) + listOfNotNull(location.validation)).withIndex()) {
 			result = LLVMBuildInsertValue(builder, result, value, index, "receiver_location")
 		}
 		return result
 	}
 
 	fun resolve(builder: LLVMBuilderRef, access: ReceiverAccess): ReceiverLocation {
-		val fixed = ReceiverLocation(access.address, access.arena, absent, absent)
+		val fixed = ReceiverLocation(access.address, access.arena, absent, absent, absent.takeIf { tracksIndexValidation })
 		val resolver = access.resolver ?: return fixed
 		val dynamic = LLVMBuildIsNotNull(builder, resolver, "class_backed_receiver")
 		val selected = checkNotNull(EmitNullable(context, builder, abi.layout).choose(dynamic, locationType, {
@@ -45,7 +46,22 @@ internal class EmitReceiverAccess(private val context: LLVMContextRef, private v
 		}, { pack(builder, fixed) }))
 
 		fun get(index: Int) = LLVMBuildExtractValue(builder, selected, index, "receiver_part")
-		return ReceiverLocation(get(0), get(1), get(2), get(3))
+		return ReceiverLocation(get(0), get(1), get(2), get(3), if (tracksIndexValidation) get(4) else null)
+	}
+
+	fun checkWritable(builder: LLVMBuilderRef, location: ReceiverLocation) {
+		val validation = location.validation ?: return
+		EmitNullable(context, builder, abi.layout).choose(LLVMBuildIsNotNull(builder, validation, "has_validation_flag"), null, {
+			classes.runtime.checkValidationFlag(builder, validation)
+			null
+		}, { null })
+	}
+
+	fun statePayload(builder: LLVMBuilderRef, address: LLVMValueRef, arena: LLVMValueRef, validation: LLVMValueRef): ReceiverAccess {
+		val location = ReceiverLocation(address, arena, absent, absent, validation)
+		return capture(builder, location, listOf(address, arena, validation)) { _, values ->
+			ReceiverLocation(values[0], values[1], absent, absent, values[2])
+		}
 	}
 
 	fun capture(builder: LLVMBuilderRef, initial: ReceiverLocation, values: List<LLVMValueRef>, resolve: (LLVMBuilderRef, List<LLVMValueRef>) -> ReceiverLocation): ReceiverAccess {

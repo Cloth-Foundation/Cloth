@@ -22,6 +22,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val fieldWrites: MutableMap<FieldWriteStatement, FieldWritePlan> = facts.identityMap { it.fieldWrites }
 	internal val instanceWrites: MutableMap<Statement, InstancePlace> = facts.identityMap { it.instanceWrites }
 	internal val storedElementWrites: MutableMap<ElementAssignmentStatement, StoredPlace> = facts.identityMap { it.storedElementWrites }
+	internal val indexWrites: MutableMap<Statement, ResolvedIndexWrite> = facts.identityMap { it.indexWrites }
 
 	private val expressionResults: MutableMap<Expression, ResultShape> = facts.identityMap { it.expressionResults }
 	private val statementResults: MutableMap<Statement, ResultShape> = facts.identityMap { it.statementResults }
@@ -45,6 +46,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val nullableComparisons: MutableMap<BinaryExpression, ValueType> = facts.identityMap { it.nullableComparisons }
 	internal val updatePayloads: MutableMap<UpdateStatement, CNullable> = facts.identityMap { it.updatePayloads }
 	internal val loops: MutableMap<ForStatement, ForLoopPlan> = facts.identityMap { it.loops }
+	internal val collectionLoops: MutableMap<ForStatement, CollectionForeachPlan> = facts.identityMap { it.collectionLoops }
 	internal val loopJumps: MutableMap<LoopJumpStatement, LoopTarget> = facts.identityMap { it.loopJumps }
 	fun targetOf(statement: LoopJumpStatement): LoopTarget = loopJumps.getValue(statement)
 	fun loopOf(statement: ForStatement): ForLoopPlan = loops.getValue(statement)

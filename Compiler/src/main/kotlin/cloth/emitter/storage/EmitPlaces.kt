@@ -226,7 +226,7 @@ internal class EmitPlaces(
 
 	private fun instanceLocation(using: LLVMBuilderRef, access: ObjectAccess, field: ClassField): ReceiverLocation {
 		val storage = functions.classStorage.locate(using, access, field)
-		return ReceiverLocation(storage.address, storage.arena ?: functions.receivers.absent, storage.address, functions.classStorage.repacker(field.type))
+		return ReceiverLocation(storage.address, storage.arena ?: functions.receivers.absent, storage.address, functions.classStorage.repacker(field.type), functions.classes.indexValidationAddress(using, access))
 	}
 
 	private fun structPayload(using: LLVMBuilderRef, location: PlaceAddress): LLVMValueRef {
@@ -242,7 +242,10 @@ internal class EmitPlaces(
 			val parent = bindings.structAccess(place.root)
 			if (parent == null) {
 				val location = resolvePlace(place)
-				ReceiverAccess(structPayload(builder, location), bindings.ownerArena(place.root) ?: expressions.stringReturnArena())
+				val address = structPayload(builder, location)
+				val arena = bindings.ownerArena(place.root) ?: expressions.stringReturnArena()
+				val validation = bindings.validationOf(place.root)
+				if (validation == null) ReceiverAccess(address, arena) else functions.receivers.statePayload(builder, address, arena, validation)
 			} else if (place.steps.isEmpty()) {
 				functions.receivers.resolve(builder, parent)
 				parent
@@ -317,7 +320,10 @@ internal class EmitPlaces(
 				action {
 					val address = structPayload(builder, path.resolve())
 					val arena = bindings.ownerArena(place.root) ?: expressions.stringReturnArena()
-					if (parent?.resolver == null) ReceiverAccess(address, arena) else {
+					if (parent?.resolver == null) {
+						val validation = bindings.validationOf(place.root)
+						if (validation == null) ReceiverAccess(address, arena) else functions.receivers.statePayload(builder, address, arena, validation)
+					} else {
 						val base = functions.receivers.resolve(builder, parent)
 						val captured = functions.receivers.capture(builder, base.copy(address = address), listOf(parent.address, parent.arena, parent.resolver, checkNotNull(parent.environment)) + path.steps.mapNotNull { it.index }) { using, values ->
 							val root = functions.receivers.resolve(using, ReceiverAccess(values[0], values[1], values[2], values[3]))
@@ -340,6 +346,8 @@ internal class EmitPlaces(
 			val rootType = functionSemantics.typeOf(place.root)
 			withLocalPath({ PlaceAddress(bindings.address(place.root), rootType) }, place.steps, dynamic) { path ->
 				action {
+					parent?.let { functions.receivers.checkWritable(builder, functions.receivers.resolve(builder, it)) }
+					bindings.checkWritablePayload(place.root)
 					ArrayTarget(path.resolve(), bindings.ownerArena(place.root) ?: expressions.stringReturnArena(), place.root.takeIf { place.steps.isEmpty() })
 				}
 			}
@@ -349,6 +357,7 @@ internal class EmitPlaces(
 			val captured = captureInstance(receiver.place)
 			action {
 				val root = instanceLocation(builder, captured.access, captured.field)
+				functions.receivers.checkWritable(builder, root)
 				ArrayTarget(replay(builder, PlaceAddress(root.address, captured.field.type), captured.path.steps), root.arena)
 			}
 		}
@@ -375,13 +384,19 @@ internal class EmitPlaces(
 		}
 
 		return when (target) {
-			is StoredWrite   -> write(target.initial, bindings.ownerArena(target.root))
+			is StoredWrite   -> {
+				bindings.checkWritablePayload(target.root)
+				write(target.initial, bindings.ownerArena(target.root))
+			}
+
 			is LocalWrite    -> {
+				bindings.checkWritablePayload(target.root)
 				val access = target.receiver
 				if (access == null) write(target.path.resolve(), bindings.ownerArena(target.root))
 				else {
 					nullable.choose(checkNotNull(target.dynamic), null, {
 						val root = functions.receivers.resolve(builder, access)
+						functions.receivers.checkWritable(builder, root)
 						write(target.path.resolve(), root.arena)
 						if (type.buffered) functions.receivers.compact(builder, root)
 						null
@@ -395,6 +410,7 @@ internal class EmitPlaces(
 				if (path.steps.isEmpty()) functions.classStorage.replace(builder, access, field, value)
 				else {
 					val root = instanceLocation(builder, access, field)
+					functions.receivers.checkWritable(builder, root)
 					write(replay(builder, PlaceAddress(root.address, field.type), path.steps), root.arena)
 					if (type.buffered) functions.receivers.compact(builder, root)
 				}
@@ -405,6 +421,7 @@ internal class EmitPlaces(
 				val receivers = functions.receivers
 				nullable.choose(target.dynamic, null, {
 					val root = receivers.resolve(builder, target.access)
+					receivers.checkWritable(builder, root)
 					write(replay(builder, PlaceAddress(root.address, target.rootType), target.path.steps), root.arena)
 					if (type.buffered) receivers.compact(builder, root)
 					null

@@ -77,7 +77,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	}
 
 	fun canReclaimLoop(statement: ForStatement): Boolean = canReclaimIteration(statement.body.statements) && when (val source = statement.source) {
-		is ForSource.Elements -> effects(source.expression).safe
+		is ForSource.Elements -> statement !in types.collectionLoops && effects(source.expression).safe
 		is ForSource.Range    -> effects(source.start).safe && effects(source.end).safe && (statement.stepper?.value?.let { effects(it).safe } ?: true)
 	}
 

@@ -64,6 +64,7 @@ class ImportPublicationTest {
 					"Frontend/parser/statements/ReturnStatement.co",
 					"Frontend/token/Token.co", "Frontend/token/TokenList.co", "Frontend/token/Keywords.co",
 					"Frontend/token/Operators.co", "Frontend/source/SourceFile.co", "../Standard-Library/cloth/collections/List.co",
+					"../Standard-Library/cloth/collections/Snapshot.co",
 					"../Standard-Library/cloth/io/fs/File.co", "../Standard-Library/cloth/io/path/Path.co", "../Standard-Library/cloth/text/Utf8.co",
 				)
 			}

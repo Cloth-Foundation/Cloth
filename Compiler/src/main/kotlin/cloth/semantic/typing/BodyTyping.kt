@@ -17,17 +17,33 @@ import cloth.semantic.symbols.*
 import cloth.token.Keywords
 import cloth.token.Operators
 import cloth.token.Token
+import cloth.token.TokenSpan
 
-internal class BodyTyping(private val facts: FunctionSemanticModel, private val function: CallableSignature, private val returnResults: ResultShape, private val hasReturnContract: Boolean = true, private val probe: Boolean = false) : ExpressionTyping(facts.types, probe) {
+internal class BodyTyping(
+	private val facts: FunctionSemanticModel,
+	private val function: CallableSignature,
+	private val returnResults: ResultShape,
+	private val hasReturnContract: Boolean = true,
+	private val probe: Boolean = false,
+	private val validatingIndex: Boolean = function is MethodDeclaration && OperatorRules.isIndexValidator(function),
+) : ExpressionTyping(facts.types, probe) {
 
 	override fun namedTypeReceiver(expression: Expression) = facts.declarations.namedTypeReceivers[expression]
-	private val overloads = CallResolution(facts, ::typingIn)
-	private val operators = OperatorResolution(facts, ::typingIn, ::reject, probe)
-
-	private fun typingIn(model: FunctionSemanticModel, probe: Boolean) = BodyTyping(model, function, returnResults, hasReturnContract, probe)
-
 	private val classOwner = facts.declarations.classOwners[function]
+	private val overloads = CallResolution(facts, ::typingIn)
+	private val operators = OperatorResolution(facts, ::typingIn, ::reject, probe, classOwner)
+
+	private fun typingIn(model: FunctionSemanticModel, probe: Boolean) = BodyTyping(model, function, returnResults, hasReturnContract, probe, validatingIndex)
+
+	override fun collectionForeach(source: Expression, type: ValueType) = operators.foreach(source, type)
+
 	override fun fieldPresent(expression: FieldAccessExpression) = expression in facts.presence.fields
+	override fun indexType(expression: IndexExpression, receiver: ValueType): ValueType = when {
+		receiver is CClass                                  -> operators.index(expression, receiver)
+		receiver is CNullable && receiver.payload is CClass -> throw SemanticErrors.nullablePayload(receiver, expression.array.span)
+		else                                                -> super.indexType(expression, receiver)
+	}
+
 	override fun boundViews(expression: Expression, actual: ValueType): List<CMemberType> = facts.boundViews(expression, actual).also { bounds ->
 		val payload = (actual as? CNullable)?.payload ?: actual
 		val bound = bounds.firstOrNull { !it.accepts(payload) }
@@ -40,6 +56,16 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		if (field is ClassField && field.visibility == null && !field.owner.sameDeclaration(classOwner)) throw SemanticErrors.privateClassMember(name, field.name)
 		if (field is EnumField && field.declaration.visibility == null && field.owner != facts.declarations.enumOwners[function]) {
 			throw SemanticErrors.enumMember("Enum payload field '${name.lexeme}' is private", name.span)
+		}
+		if (field is StructField && field.declaration.privateKeyword != null && field.owner.declaration !== facts.declarations.structOwners[function]?.declaration) {
+			throw SemanticErrors.structField("Struct field '${name.lexeme}' is private to '${field.owner.qualifiedName}'", name.span, field.declaration.span)
+		}
+	}
+
+	override fun validateStructConstruction(type: CStruct, expression: StructLiteral) {
+		val field = type.fields.firstOrNull { it.declaration.privateKeyword != null } ?: return
+		if (expression.span.source !== type.name.span.source) reject {
+			SemanticErrors.structLiteral("Struct '${type.spelling}' can be constructed with a brace literal only in its defining file because it has private fields", expression.span, field.declaration.span)
 		}
 	}
 
@@ -135,7 +161,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 				val block = statement.initializer as? FunctionBlockExpression
 				if (block != null) {
 					val contract = expected ?: throw SemanticErrors.blockReturnType(statement.name)
-					BodyTyping(facts, block.declaration, ResultShape.of(contract), hasReturnContract).checkBody()
+					BodyTyping(facts, block.declaration, ResultShape.of(contract), hasReturnContract, validatingIndex = validatingIndex).checkBody()
 					facts.bindings[symbol] = contract
 					model.recordType(statement, contract)
 					model.recordType(block, contract)
@@ -152,6 +178,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 			is AssignmentStatement        -> {
 				val symbol = facts.declarations.targetOf(statement)
+				checkValidatorFieldWrite(symbol, statement.name.span)
 				val type = facts.typeOf(symbol)
 				val actual = typeOf(statement.value, type)
 				if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.value, symbol.name) }
@@ -160,11 +187,14 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 			is MultiAssignmentStatement   -> {
 				val targets = facts.declarations.targetsOf(statement)
+				targets.forEachIndexed { index, target -> checkValidatorFieldWrite(target, statement.targets[index].token.span) }
 				assignmentPlan(statement, targets.map { it?.let(facts::typeOf) }, targets.map { it?.name })
 			}
 
 			is UpdateStatement            -> {
-				val declared = facts.typeOf(facts.declarations.targetOf(statement))
+				val target = facts.declarations.targetOf(statement)
+				checkValidatorFieldWrite(target, statement.span)
+				val declared = facts.typeOf(target)
 				val type = if (declared is CNullable) {
 					if (statement !in facts.presence.updates) throw SemanticErrors.nullablePayload(declared, statement.span)
 					model.updatePayloads[statement] = declared
@@ -175,11 +205,14 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 			}
 
 			is ElementAssignmentStatement -> {
+				if (checkIndexWrite(statement, statement.target, statement.operator, statement.value, statement.compound)) return
 				val type = typeOf(statement.target)
 				checkWritablePayload(statement.target)
 				val instance = instancePlace(statement.target)
+				checkValidatorWrite(instance?.receiver, statement.target.span)
 				if (instance != null) model.instanceWrites[statement] = instance
 				else if (type != ValueType.NEVER) {
+					checkIndexedValueWrite(statement.target.array)
 					storedPlace(statement.target)?.let { model.storedElementWrites[statement] = it }
 				}
 				val value = statement.compound ?: statement.value
@@ -212,10 +245,13 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private fun checkFieldWrite(statement: FieldWriteStatement) {
 		val target = statement.target
+		if (target is IndexExpression && checkIndexWrite(statement, target, statement.operator, statement.value, statement.compound)) return
 		val readType = typeOf(target)
 		checkWritablePayload(target)
 		val declared = model.payloadReads[target] ?: readType
 		val instance = instancePlace(target)
+		checkValidatorWrite(instance?.receiver, target.span)
+		if (instance == null) checkIndexedValueWrite(target)
 		val stored = if (instance == null && declared != ValueType.NEVER) storedPlace(target) ?: throw SemanticErrors.fieldTarget(target.span) else null
 		val value = statement.value
 		val actual = when {
@@ -234,6 +270,28 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		model.recordResult(statement, ResultShape.of(declared))
 		if (instance != null) model.instanceWrites[statement] = instance
 		if (stored != null) model.fieldWrites[statement] = FieldWritePlan(stored, declared)
+	}
+
+	private fun checkIndexWrite(statement: Statement, target: IndexExpression, operator: Token, value: Expression?, compound: BinaryExpression?): Boolean {
+		val receiver = typeOf(target.array, preserveResultOnExit = true) as? CClass ?: return false
+		checkValidatorWrite(target.array, target.span)
+		val write = if (value != null && compound == null) {
+			operators.indexWrite(target, receiver, value).also {
+				model.recordType(target, it.setter.type.parameters.last())
+			}
+		} else {
+			val readType = typeOf(target, preserveResultOnExit = true)
+			val getter = checkNotNull(model.operatorOf(target))
+			val updated = if (compound == null) postfixType(target, operator, readType) else typeOf(compound, readType, preserveResultOnExit = true)
+			val write = operators.indexWrite(target, receiver, compound ?: target, listOf(getter.call.type.parameters.single(), updated))
+			if (getter.indexValidator !== write.validator) {
+				throw SemanticErrors.index("An indexed update requires the getter and setter to share one '[]?' validator. Use a separate read and write", target.span)
+			}
+			write
+		}
+		model.indexWrites[statement] = write
+		model.recordType(statement, write.setter.type.parameters.last())
+		return true
 	}
 
 	private fun postfixType(target: Expression, operator: Token, type: ValueType): ValueType {
@@ -271,6 +329,30 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		}
 	}
 
+	private fun checkValidatorFieldWrite(symbol: BindingSymbol?, span: TokenSpan) {
+		if (symbol is ReceiverFieldSymbol) checkValidatorWrite(ObjectReceiver.Self(symbol.receiver), span)
+	}
+
+	private fun checkValidatorWrite(receiver: ObjectReceiver?, span: TokenSpan) {
+		if (validatingIndex && receiver?.isSelf() == true) {
+			throw SemanticErrors.operatorDeclaration("The '[]?' index validator has a read-only receiver", span)
+		}
+	}
+
+	private fun checkValidatorWrite(receiver: Expression, span: TokenSpan) = checkValidatorWrite(objectReceiver(receiver), span)
+
+	private fun indexedValueInPath(expression: Expression): IndexExpression? = when (expression) {
+		is IndexExpression       -> if (model.operatorOf(expression) != null) expression else indexedValueInPath(expression.array)
+		is FieldAccessExpression -> indexedValueInPath(expression.receiver)
+		else                     -> null
+	}
+
+	private fun checkIndexedValueWrite(expression: Expression) {
+		indexedValueInPath(expression)?.let { read ->
+			throw SemanticErrors.index("Bind the indexed value before editing it. Replacing the element requires '[]='", read.span)
+		}
+	}
+
 	private fun enumPayloadPlace(expression: Expression): Expression? = when (expression) {
 		is FieldAccessExpression -> if (model.fields[expression] is EnumField) expression else enumPayloadPlace(expression.receiver)
 		is GuardedReceiver       -> enumPayloadPlace(expression.source)
@@ -280,7 +362,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	}
 
 	private fun storedPlace(expression: Expression): StoredPlace? {
-		if (enumPayloadPlace(expression) != null) return null
+		if (enumPayloadPlace(expression) != null || indexedValueInPath(expression) != null) return null
 		val root = facts.declarations.storedRoot(expression) ?: return null
 		fun steps(place: Expression): List<PlaceStep> = when (place) {
 			is NameExpression        -> (facts.declarations.symbolOf(place) as? ReceiverFieldSymbol)?.let { listOf(PlaceStep.Field(it.field)) }.orEmpty()
@@ -332,6 +414,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 		val receiver = typeOf(expression.receiver)
 		if (receiver == ValueType.NEVER) return receiver
 		val owner = receiver.classBackedType() ?: throw SemanticErrors.classLifecycle("'${Keywords.DELETE}' requires a class object", expression.receiver.span)
+		checkValidatorWrite(expression.receiver, expression.span)
 		facts.classDeletions[expression] = ClassDeletionPlan(owner, receiver is CNullable)
 		return ValueType.VOID
 	}
@@ -410,6 +493,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private fun bindTransition(site: Expression, receiver: Expression, source: ValueType, target: Token, payload: Expression?) {
 		val owner = stateReceiver(source, receiver, target)
+		checkValidatorWrite(receiver, target.span)
 		if (receiver in facts.declarations.readOnlyValueReceivers) {
 			throw SemanticErrors.parameterDefault("A default cannot transition an object through a read-only receiver", target.span)
 		}
@@ -514,7 +598,10 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 	private fun arrayMutation(expression: MemberCallExpression, type: CArray): ResultShape {
 		val operation = checkNotNull(ArrayMutation.named(expression.name.lexeme))
 		if (type.size != null) throw SemanticErrors.arrayMutation("Method '${operation.spelling}' requires a growable array, got '${type.spelling}'", expression.name.span)
-		if (operation.changesLength && expression.receiver is IndexExpression) throw SemanticErrors.arrayMutation("An embedded rectangular row cannot change its shape; copy it to an independent growable binding first", expression.receiver.span)
+		if (operation.changesLength && expression.receiver is IndexExpression) {
+			checkIndexedValueWrite(expression.receiver)
+			throw SemanticErrors.arrayMutation("An embedded rectangular row cannot change its shape; copy it to an independent growable binding first", expression.receiver.span)
+		}
 		if (expression in facts.declarations.readOnlyDefaultReceivers) throw SemanticErrors.parameterDefault("A default cannot mutate an array through a read-only receiver", expression.name.span)
 		checkWritablePayload(expression.receiver)
 		val result = super.memberCallResults(expression, type)
@@ -523,6 +610,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 			throw SemanticErrors.receiverProofLost(declared, part.span)
 		}
 		val instance = instancePlace(expression.receiver)
+		checkValidatorWrite(instance?.receiver, expression.receiver.span)
 		if (instance != null && expression in facts.declarations.fieldInitializerCalls && instance.receiver.isSelf()) throw SemanticErrors.partialClassInstance("A stored field receiver requires a fully initialized instance", expression.receiver.span)
 		val place = if (instance == null) storedPlace(expression.receiver) else null
 		val source = when {
@@ -537,7 +625,7 @@ internal class BodyTyping(private val facts: FunctionSemanticModel, private val 
 
 	private fun ObjectReceiver.isSelf(): Boolean = when (this) {
 		is ObjectReceiver.Self     -> true
-		is ObjectReceiver.Explicit -> (expression as? NameExpression)?.let { facts.declarations.names[it] } is ReceiverSymbol
+		is ObjectReceiver.Explicit -> facts.declarations.directReceiverOf(expression) != null
 	}
 
 }

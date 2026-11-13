@@ -42,7 +42,7 @@ class StandardListTest {
 			val base = CompilationRequest(example.resolve("Main.co"), root.resolve("example_${abi.layout.sizeBits}"), listOf(SourceModule("App", example)), targetTriple = abi.targetTriple)
 			val request = StandardLibrary.fromContext(Path.of("").toAbsolutePath().toString(), "development").attachTo(base)
 			val graph = SourceGraphLoader.load(request)
-			assertEquals(setOf(example.resolve("Main.co").toRealPath(), standardListFile.toRealPath()), graph.sources.map { it.path.toRealPath() }.toSet())
+			assertEquals(setOf(example.resolve("Main.co").toRealPath(), standardListFile.toRealPath(), standardSnapshotFile.toRealPath()), graph.sources.map { it.path.toRealPath() }.toSet())
 			assertEquals("1\n[2, 9]\n2\n[1, 9]\n[2, 3]\n[1]\n[2, 3]\n" + processCompletion().replace("\r\n", "\n"), runExecutable(ClothCompiler.compile(request).artifact).replace("\r\n", "\n"))
 		}
 	}

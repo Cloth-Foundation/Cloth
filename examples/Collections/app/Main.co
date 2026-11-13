@@ -27,7 +27,6 @@ fn main() {
     first.append(9)
     println(first)
     println(last)
-    println(rowCopy.get(0))
-    println(rowCopy.get(1))
+    for (def row <- rowCopy) println(row)
     rowCopy::delete
 }

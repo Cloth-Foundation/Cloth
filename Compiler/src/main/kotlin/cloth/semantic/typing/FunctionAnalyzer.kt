@@ -51,6 +51,9 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 			}
 			val operator = (function.declaration as? MethodDeclaration)?.takeIf { it.operator != null }
 			val comparison = operator?.let { Operators.fromCharacter(it.name.lexeme) }
+			if (operator != null && OperatorRules.isForeach(operator) && SnapshotLayout.of(results.single(), declarations.files) == null) {
+				throw SemanticErrors.operatorDeclaration("Operator 'foreach' must return the standard-library 'Snapshot<T>' value", operator.returnTypes.single().span)
+			}
 			if (operator?.name?.lexeme == Keywords.IS.toString() && parameters.single() !is CClass) {
 				throw SemanticErrors.operatorDeclaration("Value-target '${Keywords.IS}' requires a non-nullable class operand", function.parameters.single().name.span)
 			}
@@ -65,7 +68,7 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 				}
 			}
 			val fixed = operator?.let(OperatorRules::fixedResult)
-			if (operator != null && (ValueType.VOID in results || fixed != null && results.isNotEmpty() && results.single() != fixed)) {
+			if (operator != null && results.isNotEmpty() && (if (fixed != null) results.single() != fixed else ValueType.VOID in results)) {
 				val message = fixed?.let { "This operator must return '${it.spelling}'" } ?: "An operator must produce a value"
 				throw SemanticErrors.operatorDeclaration(message, operator.returnTypes.single().span)
 			}
@@ -87,6 +90,12 @@ class FunctionAnalyzer(private val target: TargetLayout) {
 		}
 		declarations.states.checkResults(signatures)
 		val model = FunctionSemanticModel(declarations, CallableContracts(signatures, selectors, bindIntrinsics(declarations, signatures)))
+		for (method in declarations.methods) if (OperatorRules.isIndexSetter(method.declaration)) {
+			val index = model.declaredTypeOf(method).parameters.first()
+			if (model.indexValidator(method, index) == null) {
+				throw SemanticErrors.operatorDeclaration("Operator '[]=' requires a '[]?' validator for '${index.spelling}' on its declaring class", method.name.span)
+			}
+		}
 		model.initializeBindings()
 		val presence = NullFlowAnalysis(model)
 		fun checkPresence(callables: List<CallableContractSymbol>) {

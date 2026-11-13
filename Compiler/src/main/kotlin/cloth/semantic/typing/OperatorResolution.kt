@@ -4,14 +4,12 @@ import cloth.data.*
 import cloth.diagnostics.SemanticErrors
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
+import cloth.parser.expression.IndexExpression
 import cloth.parser.expression.NameExpression
 import cloth.semantic.OperatorRules
 import cloth.semantic.SemanticException
 import cloth.semantic.symbols.MethodSymbol
-import cloth.token.Keywords
-import cloth.token.Operators
-import cloth.token.Token
-import cloth.token.TokenType
+import cloth.token.*
 
 /** Resolves full operators before applying one context per original operand. */
 internal class OperatorResolution(
@@ -19,6 +17,7 @@ internal class OperatorResolution(
 	private val typingIn: (FunctionSemanticModel, Boolean) -> ExpressionTyping,
 	private val reject: (() -> SemanticException) -> Nothing,
 	private val probe: Boolean,
+	private val classOwner: CClass?,
 ) {
 
 	private enum class FullRank { EXACT,
@@ -32,8 +31,22 @@ internal class OperatorResolution(
 	}
 
 	private data class Candidate(val method: MethodSymbol, val receiver: Int, val types: List<ValueType>)
+	private data class OperandProbe(val types: List<ValueType?>, val trial: FunctionSemanticModel.Trial)
+	private data class Match(val candidate: Candidate, val rank: FullRank, val trial: FunctionSemanticModel.Trial)
 
 	private val model = facts.types
+
+	fun foreach(source: Expression, type: ValueType): CollectionForeachPlan? {
+		val owner = type as? CMemberType ?: return null
+		val name = Operators.FOREACH.toString()
+		val method = facts.declarations.operators(owner, name, right = false, arity = 0).firstOrNull() ?: return null
+		val operator = Token(TokenType.Operator, source.span, name)
+		if (!methodVisible(method.owner, classOwner, method.declaration.visibility != null)) throw SemanticErrors.privateClassMember(operator, method.name)
+		checkOperatorReceiver(source, operator)
+		val signature = facts.declaredTypeOf(method)
+		val snapshot = checkNotNull(SnapshotLayout.of(signature.returns, facts.declarations.files))
+		return CollectionForeachPlan(ResolvedCall.Source(method, signature, ArgumentBinding(emptyList(), emptyList())), snapshot)
+	}
 
 	private fun candidates(operator: String, operands: List<ValueType?>): List<Candidate> = operands.flatMapIndexed { index, type ->
 		val owner = type as? CMemberType ?: return@flatMapIndexed emptyList()
@@ -44,64 +57,100 @@ internal class OperatorResolution(
 		}
 	}
 
-	fun resolve(expression: Expression, operator: Token, operands: List<Expression>): ValueType? {
+	fun index(expression: IndexExpression, receiver: CClass): ValueType {
+		val operator = Token(TokenType.Operator, expression.span, Operators.INDEX_READ.toString())
+		return resolve(expression, operator, listOf(expression.array, expression.index), indexReceiver = receiver) ?: reject { SemanticErrors.index("Type '${receiver.spelling}' has no bracket read operator", expression.span) }
+	}
+
+	fun indexWrite(target: IndexExpression, receiver: CClass, value: Expression, updateTypes: List<ValueType> = emptyList()): ResolvedIndexWrite {
+		val operator = Token(TokenType.Operator, target.span, Operators.INDEX_WRITE.toString())
+		val candidates = indexCandidates(receiver, operator, arity = 2)
+		if (candidates.isEmpty()) reject { SemanticErrors.index("Type '${receiver.spelling}' has no bracket write operator", target.span) }
+		val operands = listOf(target.array, target.index, value)
+		val knownTypes = listOf(receiver) + updateTypes
+		val match = select(operator, target.span, operands, knownTypes, probeOperands(operands, knownTypes), candidates) ?: reject { SemanticErrors.operatorMatch(operator, target.span.through(value.span), candidates.map { it.method }, ambiguous = false) }
+		checkOperatorReceiver(target.array, operator)
+		val call = sourceCall(match)
+		val validator = checkNotNull(facts.indexValidator(match.candidate.method, call.type.parameters.first()))
+		match.trial.commit()
+		return ResolvedIndexWrite(call, validator)
+	}
+
+	private fun indexCandidates(receiver: CClass, operator: Token, arity: Int): List<Candidate> {
+		val available = facts.declarations.operators(receiver, operator.lexeme, right = false, arity = arity)
+		val visible = available.filter { methodVisible(it.owner, classOwner, it.declaration.visibility != null) }
+		if (visible.isEmpty() && available.isNotEmpty()) throw SemanticErrors.privateClassMember(operator, available.first().name)
+		return visible.map { method -> Candidate(method, 0, listOf(method.owner) + facts.declaredTypeOf(method).parameters) }
+	}
+
+	fun resolve(expression: Expression, operator: Token, operands: List<Expression>, indexReceiver: CClass? = null): ValueType? {
 		val operation = Operators.fromCharacter(operator.lexeme)
 		if (operation in OperatorRules.classComparisons) return null
 		if (!facts.declarations.hasOperator(operator.lexeme)) return null
 		model.operatorCalls[expression]?.let { return it.call.type.returns }
 		model.operatorContexts[expression]?.let { return model.typeOf(it.application) }
-		val ordinaryTrial = facts.trial()
-		val ordinaryChecker = typingIn(ordinaryTrial.model, true)
-		val ordinary = operands.map { operand ->
-			probeCandidate { ordinaryChecker.typeOf(operand) }
-		}
-		if (operator.lexeme == Keywords.IS.toString() && ordinary.any { it !is CClass && it != ValueType.NEVER }) {
+		val knownTypes = listOfNotNull(indexReceiver)
+		val ordinary = probeOperands(operands, knownTypes)
+		if (operator.lexeme == Keywords.IS.toString() && ordinary.types.any { it !is CClass && it != ValueType.NEVER }) {
 			reject { SemanticErrors.operatorMatch(operator, expression.span, emptyList(), ambiguous = false) }
 		}
-		val candidates = candidates(operator.lexeme, ordinary)
+		val candidates = if (indexReceiver == null) candidates(operator.lexeme, ordinary.types) else indexCandidates(indexReceiver, operator, arity = 1)
+		val selected = select(operator, expression.span, operands, knownTypes, ordinary, candidates)
+		if (selected == null) {
+			if (expression is BinaryExpression && OperatorRules.supportsContext(operation) && operands.none { it in model.projectedOperands }) {
+				resolveOperandContexts(expression, operands, ordinary.types, ordinary.trial)?.let { return it }
+			}
+			if (candidates.isEmpty()) return null
+			reject { SemanticErrors.operatorMatch(operator, expression.span, candidates.map { it.method }, ambiguous = false) }
+		}
+		val candidate = selected.candidate
+		checkOperatorReceiver(operands[candidate.receiver], operator)
+		val call = sourceCall(selected)
+		val validator = if (indexReceiver != null) facts.indexValidator(candidate.method, call.type.parameters.single()) else null
+		selected.trial.model.types.operatorCalls[expression] = ResolvedOperator(call, candidate.receiver, validator)
+		selected.trial.commit()
+		return call.type.returns
+	}
 
-		data class Match(val candidate: Candidate, val rank: FullRank, val trial: FunctionSemanticModel.Trial)
+	private fun sourceCall(match: Match): ResolvedCall.Source {
+		val method = match.candidate.method
+		return ResolvedCall.Source(method, match.trial.model.typeOf(method), ArgumentBinding(method.parameters.indices.toList(), emptyList()))
+	}
 
+	private fun probeOperands(operands: List<Expression>, knownTypes: List<ValueType>): OperandProbe {
+		val trial = facts.trial()
+		val checker = typingIn(trial.model, true)
+		val types = operands.mapIndexed { index, operand -> knownTypes.getOrNull(index) ?: probeCandidate { checker.typeOf(operand) } }
+		return OperandProbe(types, trial)
+	}
+
+	private fun select(operator: Token, span: TokenSpan, operands: List<Expression>, knownTypes: List<ValueType>, ordinary: OperandProbe, candidates: List<Candidate>): Match? {
 		val matches = candidates.mapNotNull { candidate ->
-			val rank = candidate.types.zip(ordinary).maxOf { (expected, actual) ->
+			val rank = candidate.types.zip(ordinary.types).maxOf { (expected, actual) ->
 				when {
 					expected == actual                         -> FullRank.EXACT
 					actual != null && expected.accepts(actual) -> FullRank.COMPATIBLE
 					else                                       -> FullRank.CONTEXTUAL
 				}
 			}
-			if (rank != FullRank.CONTEXTUAL) return@mapNotNull Match(candidate, rank, ordinaryTrial)
+			if (rank != FullRank.CONTEXTUAL) return@mapNotNull Match(candidate, rank, ordinary.trial)
 			val trial = facts.trial()
 			val checker = typingIn(trial.model, true)
 			val accepted = probeCandidate {
 				operands.indices.all { index ->
 					val expected = candidate.types[index]
-					val actual = checker.typeOf(operands[index], expected.takeUnless { index == candidate.receiver })
+					val actual = knownTypes.getOrNull(index) ?: checker.typeOf(operands[index], expected.takeUnless { index == candidate.receiver })
 					expected.accepts(actual)
 				}
 			} == true
 			if (!accepted) return@mapNotNull null
 			Match(candidate, rank, trial)
 		}
-		if (matches.isEmpty()) {
-			if (expression is BinaryExpression && OperatorRules.supportsContext(operation) && operands.none { it in model.projectedOperands }) {
-				resolveOperandContexts(expression, operands, ordinary, ordinaryTrial)?.let { return it }
-			}
-			if (candidates.isEmpty()) return null
-			reject { SemanticErrors.operatorMatch(operator, expression.span, candidates.map { it.method }, ambiguous = false) }
-		}
+		if (matches.isEmpty()) return null
 		val rank = matches.minOf(Match::rank)
 		val best = mostSpecific(matches.filter { it.rank == rank }) { it.candidate.types }
-		if (best.size != 1) throw SemanticErrors.operatorMatch(operator, expression.span, best.map { it.candidate.method }, ambiguous = true)
-		val selected = best.single()
-		val candidate = selected.candidate
-		checkOperatorReceiver(operands[candidate.receiver], operator)
-		val resolved = selected.trial.model
-		val type = resolved.typeOf(candidate.method)
-		val arguments = ArgumentBinding(candidate.method.parameters.indices.toList(), emptyList())
-		resolved.types.operatorCalls[expression] = ResolvedOperator(ResolvedCall.Source(candidate.method, type, arguments), candidate.receiver)
-		selected.trial.commit()
-		return type.returns
+		if (best.size != 1) throw SemanticErrors.operatorMatch(operator, span, best.map { it.candidate.method }, ambiguous = true)
+		return best.single()
 	}
 
 	private fun checkOperatorReceiver(operand: Expression, operator: Token) {

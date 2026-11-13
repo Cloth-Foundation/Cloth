@@ -378,6 +378,12 @@ operator context ranking, captured numeric widths, and narrowing boundaries.
 and target verification.
 The [array equality contract](../../cloth-arrays/references/semantics.md#array-equality)
 defines element compatibility, operand snapshots, and shape comparison.
+[Collection indexing](../../cloth-collections/references/indexing.md) defines
+opt-in class bracket reads, writes, updates, and read-only index validation.
+[Collection foreach](../../cloth-collections/references/traversal.md) defines
+opt-in snapshot traversal and the `Snapshot<T>` source library contract.
+[Struct visibility](../../cloth-structs/references/semantics.md#established-syntax-and-visibility)
+defines `priv` fields and construction in their defining file.
 
 ## Conditional expressions and statements
 

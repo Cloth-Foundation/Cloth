@@ -17,10 +17,8 @@ import cloth.emitter.types.EmitPower
 import cloth.emitter.types.EmitRuntimeError
 import cloth.parser.declaration.*
 import cloth.parser.expression.Expression
-import cloth.semantic.ClassDeletionPlan
-import cloth.semantic.MethodReceiver
-import cloth.semantic.ObjectReceiver
-import cloth.semantic.ResultShape
+import cloth.parser.expression.IndexExpression
+import cloth.semantic.*
 import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.*
@@ -43,7 +41,8 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 	internal val metadataTypes = EmitTypeInfo.Types()
 	private val stateDefinitions = semantics.declarations.states.definitions
 	private val tracksStates = stateDefinitions.isNotEmpty() || semantics.declarations.states.callables.any { it is StateMethodContractSymbol }
-	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates) }
+	private val tracksIndexValidation = semantics.declarations.methods.any { OperatorRules.isIndexValidator(it.declaration) }
+	internal val classes by lazy { EmitClassRuntime(context, module, abi, tracksStates, tracksIndexValidation) }
 	private val intrinsics by lazy { EmitLibraryIntrinsics(context, module, abi, semantics.intrinsics, stringStorage, results) { classes } }
 	internal val states by lazy { EmitStateRuntime(context, module, abi, classes, stringStorage, stateDefinitions) }
 	private val initialStates = mutableMapOf<StateDefinition, LLVMValueRef>()
@@ -203,7 +202,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			}
 			semantics.declarations.states.payloadOf(function.declaration)?.let { payload ->
 				val activation = callable.activation()
-				bindings.bindStatePayload(payload, states.payload(builder, activation, payload.type), states.arena(builder, activation))
+				bindings.bindStatePayload(payload, states.payload(builder, activation, payload.type), states.arena(builder, activation), states.payloadValidationAddress(builder, activation))
 			}
 			val expressions = expressions(builder, bindings, semantics, signature.results, frame)
 			val arguments = bindParameters(function, callable, builder, bindings, expressions)
@@ -610,12 +609,42 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 
 	private fun constructorAllocation(builder: LLVMBuilderRef, owner: CClass) = ConstructorAllocation(classes.instanceBytes(builder, intrinsics.instanceStorage(owner)), classTag(owner))
 
-	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef, allocation: ConstructorAllocation? = null, operatorReceiver: Int? = null): LLVMValueRef? {
+	internal data class CapturedIndex(val receiver: ObjectAccess, val value: LLVMValueRef, val type: ValueType)
+
+	fun captureIndex(expression: IndexExpression, type: ValueType, expressions: EmitExpression, builder: LLVMBuilderRef): CapturedIndex {
+		val receiver = expressions.emitObjectAccess(ObjectReceiver.Explicit(expression.array))
+		classes.check(builder, receiver)
+		return CapturedIndex(receiver, evaluateArgument(expressions, expression.index, type, transfer = false), type)
+	}
+
+	fun validateIndex(index: CapturedIndex, validator: MethodSymbol, expressions: EmitExpression, builder: LLVMBuilderRef) {
+		val receiver = index.receiver
+		val previous = classes.setIndexValidation(builder, receiver, classes.permission(true))
+		val activation = if (tracksStates) states.current(builder, receiver) else null
+		val previousPayload = activation?.let { states.setIndexValidation(builder, it, classes.permission(true)) }
+		val accepted = checkNotNull(callable(validator).call(builder) {
+			setReceiver(receiver)
+			argument(0, expressions.valueTransfer.snapshot(index.value, index.type))
+		})
+		if (previousPayload != null) states.setIndexValidation(builder, checkNotNull(activation), previousPayload)
+		classes.setIndexValidation(builder, receiver, previous)
+		EmitMemory(context, builder, abi).guard(accepted, "Index out of bounds")
+	}
+
+	fun callIndex(plan: ResolvedCall.Source, index: CapturedIndex, expressions: EmitExpression, builder: LLVMBuilderRef, value: LLVMValueRef? = null, keepIndex: Boolean = false): LLVMValueRef? {
+		return callable(plan.callable).call(builder, returnArena = expressions::stringReturnArena) {
+			setReceiver(index.receiver)
+			argument(0, if (keepIndex) expressions.valueTransfer.snapshot(index.value, index.type) else index.value)
+			value?.let { argument(1, it) }
+		}?.let { expressions.valueTransfer.freshResults(it, plan.type.results) }
+	}
+
+	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef, allocation: ConstructorAllocation? = null, operatorReceiver: Int? = null, returnArena: () -> LLVMValueRef = expressions::stringReturnArena): LLVMValueRef? {
 		val selected = plan.callable
 		val type = plan.type
 		val target = (selected as? MethodSymbol)?.let(::virtualEntry) ?: callable(selected)
 		if (target.type != type) throw InternalErrors.invariant("Resolved call type differs from emitted signature")
-		fun invoke(structReceiver: (() -> ReceiverAccess)?): LLVMValueRef? = target.call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = expressions::stringReturnArena) {
+		fun invoke(structReceiver: (() -> ReceiverAccess)?): LLVMValueRef? = target.call(builder, omittedParameters = plan.binding.omittedParameters, returnArena = returnArena) {
 			fun putReceiver(receiver: MethodReceiver) {
 				if (receiver is MethodReceiver.Instance) {
 					val access = expressions.emitObjectAccess(receiver.receiver)

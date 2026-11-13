@@ -224,7 +224,7 @@ internal class GenericSemanticAnalysis(private val target: TargetLayout) {
 				}
 
 				is StructDeclaration    -> {
-					if (genericOwner) declaration.fields.forEach { surface(it.type) }
+					if (genericOwner) declaration.fields.filter { it.privateKeyword == null }.forEach { surface(it.type) }
 					declaration.methods.filter { genericOwner || it.typeParameters != null }.forEach(::callable)
 				}
 

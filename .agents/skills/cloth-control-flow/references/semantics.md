@@ -273,6 +273,9 @@ for (def<int[]> row <- matrix) {
   compiler may avoid physical copies only when it proves the same observable
   value independence and lifetime behavior. Re-entering the loop captures anew.
   Stage 4 implements this traversal for currently supported array elements.
+- Collection foreach evaluates the source and its `operator foreach` once per
+  entry and visits the returned `Snapshot<T>` slots in order. Each iteration
+  uses ordinary foreach reception. [Collection foreach](../../cloth-collections/references/traversal.md)
 - Foreach variables are ordinary mutable value bindings, initialized anew from
   each element. Rebinding a scalar/row variable or modifying an array-valued row
   affects neither the traversal snapshot nor the original source. Preserve

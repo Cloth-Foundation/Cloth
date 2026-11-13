@@ -3,7 +3,7 @@ package cloth.token
 import cloth.diagnostics.InternalErrors
 import kotlin.enums.enumEntries
 
-enum class Operators(private val character: String) { // This comment has to exist so PLUS does not get put in line with the brace.
+enum class Operators(private val character: String, internal val tokenized: Boolean = true) { // This comment has to exist so PLUS does not get put in line with the brace.
 	PLUS("+"),
 	PLUS_PLUS("++"),
 	PLUS_EQUAL("+="),
@@ -51,6 +51,10 @@ enum class Operators(private val character: String) { // This comment has to exi
 	BRACE_CLOSE("}"),
 	BRACKET_OPEN("["),
 	BRACKET_CLOSE("]"),
+	INDEX_READ("[]", tokenized = false),
+	INDEX_VALIDATE("[]?", tokenized = false),
+	INDEX_WRITE("[]=", tokenized = false),
+	FOREACH("foreach", tokenized = false),
 
 	COMMA(","),
 	DOT("."),

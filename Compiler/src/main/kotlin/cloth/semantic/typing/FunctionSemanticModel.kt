@@ -6,6 +6,7 @@ import cloth.parser.expression.*
 import cloth.parser.statement.Statement
 import cloth.parser.type.TypeArgumentList
 import cloth.semantic.ClassDeletionPlan
+import cloth.semantic.OperatorRules
 import cloth.semantic.ResultShape
 import cloth.semantic.declarations.DeclarationModel
 import cloth.semantic.declarations.StateDefinition
@@ -17,6 +18,7 @@ import cloth.semantic.generics.TypeArgumentSpans
 import cloth.semantic.generics.sourceSpans
 import cloth.semantic.scalar
 import cloth.semantic.symbols.*
+import cloth.token.Operators
 
 data class FunctionType(val parameters: List<ValueType>, val results: ResultShape) { constructor(parameters: List<ValueType>, returns: ValueType) : this(parameters, ResultShape.of(returns))
 
@@ -79,12 +81,13 @@ class FunctionSemanticModel internal constructor(
 	internal fun declaredTypeOf(callable: CallableContractSymbol): FunctionType = contracts.signatures[callable] ?: declarations.genericViews?.candidateType(callable) ?: contracts.signatures.getValue(callable)
 	internal val intrinsics get() = contracts.intrinsics
 	internal fun contextSelectorType(method: MethodSymbol): ValueType? = contracts.contextSelectors[method]
+	internal fun indexValidator(method: MethodSymbol, indexType: ValueType): MethodSymbol? = declarations.operators(method.owner, Operators.INDEX_VALIDATE.toString(), right = false, arity = 1).firstOrNull { it.owner == method.owner && declaredTypeOf(it).parameters.single() == indexType }
 
 	internal fun typeOf(callable: CallableContractSymbol): FunctionType {
 		if (callable !is MethodSymbol) return declaredTypeOf(callable)
 		callables.signature(callable)?.let { return it }
 		val declared = declaredTypeOf(callable)
-		if (declared.results != ResultShape.Empty || callable.declaration.operator == null) return declared
+		if (declared.results != ResultShape.Empty || callable.declaration.operator == null || OperatorRules.isIndexSetter(callable.declaration)) return declared
 		return operatorBodies.infer(this, callable, declared).also { callables.recordInferred(callable, it) }
 	}
 

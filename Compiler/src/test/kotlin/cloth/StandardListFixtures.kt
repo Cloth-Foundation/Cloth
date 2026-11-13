@@ -9,6 +9,7 @@ import java.nio.file.Path
 
 internal val standardListRoot: Path = Path.of("Standard-Library").toAbsolutePath().normalize()
 internal val standardListFile: Path = standardListRoot.resolve("cloth/collections/List.co")
+internal val standardSnapshotFile: Path = standardListRoot.resolve("cloth/collections/Snapshot.co")
 internal const val standardListImport = "using cloth.collections.List : List\n"
 
 /** The actual source module is always a separate root; no library body is pasted here. */

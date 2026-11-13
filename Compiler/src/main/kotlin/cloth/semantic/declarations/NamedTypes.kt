@@ -69,7 +69,7 @@ internal class NamedTypes(private val bindings: FileBindings, target: TargetLayo
 			active[owner] = field
 			val type = resolver.resolve(field.type)
 			if (type == ValueType.VOID) throw SemanticErrors.voidType(field.type.span)
-			StructField(field, index, type)
+			StructField(owner, field, index, type)
 		}
 		active.remove(owner)
 		owner.defineFields(fields)

@@ -121,11 +121,7 @@ class FunctionParser(private val parser: Parser) {
 			val name = if (provider) {
 				parser.advance()
 				parser.expect(TokenType.Identifier, "an operator provider name")
-			} else {
-				val token = parser.peek()
-				if (token.type != TokenType.Operator && !parser.atKeyword(Keywords.IS)) throw SyntaxErrors.expected("an operator", token)
-				parser.advance()
-			}
+			} else parseOperatorName()
 			var rightReceiver = false
 			val parameters = parser.delimited.parentheses {
 				parser.delimited.commaSeparated(Operators.PAREN_CLOSE) {
@@ -142,10 +138,30 @@ class FunctionParser(private val parser: Parser) {
 				parser.advance()
 				listOf(parser.typeParser.parse(allowArrays = true))
 			} else emptyList()
-			return MethodDeclaration(keyword, name, result, parameters, parseBody("operator"), visibility, OperatorMember(selector, rightReceiver, provider))
+			val body = parseBody("operator", allowStatement = name.lexeme == Operators.INDEX_WRITE.toString())
+			return MethodDeclaration(keyword, name, result, parameters, body, visibility, OperatorMember(selector, rightReceiver, provider))
 		} finally {
 			parser.allowInferredOperatorWidth = false
 		}
+	}
+
+	private fun parseOperatorName(): Token {
+		val token = parser.peek()
+		if (token.type == TokenType.Identifier && token.lexeme == Operators.FOREACH.toString()) {
+			parser.advance()
+			return Token(TokenType.Operator, token.span, token.lexeme)
+		}
+		if (token.type != TokenType.Operator && !parser.atKeyword(Keywords.IS)) throw SyntaxErrors.expected("an operator", token)
+		parser.advance()
+		if (token.lexeme != Operators.BRACKET_OPEN.toString()) return token
+		var end = parser.expect(Operators.BRACKET_CLOSE)
+		val operation = when (parser.peek().lexeme) {
+			Operators.QUESTION.toString() -> Operators.INDEX_VALIDATE
+			Operators.ASSIGN.toString()   -> Operators.INDEX_WRITE
+			else                          -> Operators.INDEX_READ
+		}
+		if (operation != Operators.INDEX_READ) end = parser.advance()
+		return Token(TokenType.Operator, token.span.through(end.span), operation.toString())
 	}
 
 	internal fun <T> inBody(parseContents: () -> T): T {

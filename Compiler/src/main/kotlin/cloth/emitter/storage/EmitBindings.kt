@@ -24,6 +24,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 	private val bindings = mutableMapOf<BindingSymbol, Storage>()
 	private val objects = mutableMapOf<ReceiverSymbol, ObjectAccess>()
 	private val structReceivers = mutableMapOf<ReceiverSymbol, ReceiverAccess>()
+	private val stateValidation = mutableMapOf<BindingSymbol, LLVMValueRef>()
 
 	internal open class ArrayView(val type: ValueType, val address: LLVMValueRef, val arena: LLVMValueRef)
 	internal class ArraySelection(val root: BindingSymbol, type: ValueType, address: LLVMValueRef, arena: LLVMValueRef, val followsBinding: LLVMValueRef) : ArrayView(type, address, arena)
@@ -66,8 +67,14 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		objects[receiver] = access
 	}
 
-	fun bindStatePayload(binding: StatePayloadSymbol, address: LLVMValueRef, arena: LLVMValueRef) {
+	fun bindStatePayload(binding: StatePayloadSymbol, address: LLVMValueRef, arena: LLVMValueRef, validation: LLVMValueRef?) {
 		bindings[binding] = Storage(binding.name.lexeme, binding.type, address, null, ownerArena = arena)
+		if (validation != null) stateValidation[binding] = validation
+	}
+
+	fun validationOf(binding: BindingSymbol): LLVMValueRef? = stateValidation[binding]
+	fun checkWritablePayload(binding: BindingSymbol) {
+		validationOf(binding)?.let { checkNotNull(classes).runtime.checkValidationFlag(builder, it) }
 	}
 
 	fun objectAccess(receiver: ReceiverSymbol): ObjectAccess? = objects[receiver]
@@ -193,6 +200,7 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		}
 		val storage = storage(key)
 		val receiver = storage.receiver
+		if (receiver != null) checkNotNull(receivers).checkWritable(builder, receiver)
 		val fields = storage.struct?.let { EmitStructFields(context, builder, abi) }
 		val prepared = storage.struct?.let { checkNotNull(fields).prepare(it, value) } ?: value
 		if (storage.stringArena != null) {

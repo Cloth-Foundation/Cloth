@@ -322,11 +322,13 @@ interface's labels and omitted-argument defaults.
 
 ## Follow-up scope
 
-Follow-ups cover generic dispatch contracts,
-variance, generic enums and states,
-and higher-kinded types. Direct collection
-indexing, indexed assignment and foreach require their own protocol. Keep the
-intended constrained forms in [Test.co](../examples/Test.co).
+Follow-ups cover generic dispatch contracts, variance, generic enums and states,
+and higher-kinded types. Keep the intended constrained forms in
+[Test.co](../examples/Test.co).
+
+`List<T>` declares explicit operators for bracket access and snapshot foreach.
+The [collection guide](../Standard-Library/cloth/collections/README.md) describes
+the operators and the source `Snapshot<T>` value.
 
 Bootstrap's `TokenList` owns the tokens in a private `List<Token>` and returns
 borrowed tokens through `get()`. [Bootstrap lexer skill](../.agents/skills/cloth-bootstrap-lexer/SKILL.md)

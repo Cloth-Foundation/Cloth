@@ -34,8 +34,17 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	protected open fun enumCase(expression: FieldAccessExpression): EnumCase? = null
 	protected open fun valueCheck(expression: TypeCheckExpression): BinaryExpression? = null
 	protected open fun fieldPresent(expression: FieldAccessExpression): Boolean = false
+	protected open fun indexType(expression: IndexExpression, receiver: ValueType): ValueType {
+		val index = typeOf(expression.index)
+		if (receiver !is CArray && receiver != ValueType.NEVER) reject { SemanticErrors.index("Indexing requires an array", expression.array.span) }
+		if (!index.integer && index != ValueType.NEVER) reject { SemanticErrors.index("Array index must be an integer", expression.index.span) }
+		return (receiver as? CArray)?.element ?: ValueType.NEVER
+	}
+
 	protected open fun boundViews(expression: Expression, actual: ValueType): List<CMemberType> = emptyList()
+	protected open fun collectionForeach(source: Expression, type: ValueType): CollectionForeachPlan? = null
 	protected open fun validateFieldAccess(field: InstanceField, name: Token) = Unit
+	protected open fun validateStructConstruction(type: CStruct, expression: StructLiteral) = Unit
 	protected open fun validateFormatter(receiver: Expression, result: ProviderResult<*>) = Unit
 	protected open fun creationType(expression: ClassCreationExpression): ValueType = throw InternalErrors.invariant("Class creation requires function semantics")
 	protected open fun deletionType(expression: ClassDeletionExpression): ValueType = throw InternalErrors.invariant("Class deletion requires function semantics")
@@ -233,8 +242,11 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				if (actual == ValueType.NEVER) {
 					annotation ?: invalid("A non-continuing foreach source needs an explicit element type", statement.binding.span)
 				} else {
-					array = actual as? CArray ?: invalid("Foreach requires an array source, got '${actual.spelling}'", source.span)
-					val element = array.element
+					array = actual as? CArray
+					val element = array?.element ?: collectionForeach(source.expression, actual)?.let {
+						model.collectionLoops[statement] = it
+						it.snapshot.element.type
+					} ?: invalid("Foreach requires an array or an accessible 'foreach' operator, got '${actual.spelling}'", source.span)
 					if (annotation == null && element.containsNullability) throw SemanticErrors.nullableContext(source.span)
 					if (annotation != null && !annotation.accepts(element)) invalid("Foreach element requires '${annotation.spelling}', got '${element.spelling}'", source.span)
 					annotation?.inferArraySizes(element) ?: element
@@ -570,13 +582,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				else CArray(element ?: elementContext ?: reject { SemanticErrors.array("An empty array needs an explicit element type", expression.span) }, expression.elements.size)
 			}
 
-			is IndexExpression           -> {
-				val array = typeOf(expression.array, preserveResultOnExit = preserveResultOnExit)
-				val index = typeOf(expression.index)
-				if (array !is CArray && array != ValueType.NEVER) reject { SemanticErrors.index("Indexing requires an array", expression.array.span) }
-				if (!index.integer && index != ValueType.NEVER) reject { SemanticErrors.index("Array index must be an integer", expression.index.span) }
-				(array as? CArray)?.element ?: ValueType.NEVER
-			}
+			is IndexExpression           -> indexType(expression, typeOf(expression.array, preserveResultOnExit = preserveResultOnExit))
 
 			is IntegerLiteral            -> integer(expression, expected)
 			is FloatingPointLiteral      -> {
@@ -719,6 +725,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	private fun structLiteralType(expression: StructLiteral, expected: ValueType?): CStruct {
 		val type = ((expected as? CNullable)?.payload ?: expected) as? CStruct ?: reject { SemanticErrors.structLiteral("A struct literal requires an expected struct type", expression.span) }
+		validateStructConstruction(type, expression)
 		if (expression.fields.size != type.fields.size) reject {
 			SemanticErrors.structLiteral("Struct '${type.spelling}' requires ${type.fields.size} field values, got ${expression.fields.size}", expression.span, type.declaration.name.span)
 		}

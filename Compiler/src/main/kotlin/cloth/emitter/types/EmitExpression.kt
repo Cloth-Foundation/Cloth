@@ -57,13 +57,16 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private var constructorResult: LLVMValueRef? = null
 
 	private class Terminated : RuntimeException(null, null, false, false)
-	private class BlockExit(val type: ValueType, val exit: LLVMBasicBlockRef) {
+	private class BlockExit(val type: ValueType, val exit: LLVMBasicBlockRef, val cleanupDepth: Int) {
 
 		val predecessors = mutableListOf<Pair<LLVMBasicBlockRef, LLVMValueRef?>>()
 	}
 
 	private val blockReturns = mutableListOf<BlockExit>()
-	private val cleanupRegions = mutableListOf<() -> Unit>()
+
+	private class CleanupRegion(val release: () -> Unit, val onBlockReturn: Boolean = false)
+
+	private val cleanupRegions = mutableListOf<CleanupRegion>()
 
 	private class LoopExit(val target: LoopTarget, val exit: LLVMBasicBlockRef, val next: LLVMBasicBlockRef, val cleanupDepth: Int) {
 
@@ -87,7 +90,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun emitLoopJump(statement: LoopJumpStatement) {
 		val target = semantics.targetOf(statement)
 		val loop = loopExits.last { it.target === target }
-		for (index in cleanupRegions.lastIndex downTo loop.cleanupDepth) cleanupRegions[index]()
+		for (index in cleanupRegions.lastIndex downTo loop.cleanupDepth) cleanupRegions[index].release()
 		if (statement.isContinue) loop.continued = true
 		LLVMBuildBr(builder, if (statement.isContinue) loop.next else loop.exit)
 	}
@@ -151,6 +154,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		if (terminated()) return
 		blockReturns.lastOrNull()?.let { target ->
 			val result = if (target.type == ValueType.VOID) null else valueTransfer.transfer(adaptValue(checkNotNull(value), semantics.typeOf(checkNotNull(statement.value)), target.type), target.type)
+			for (index in cleanupRegions.lastIndex downTo target.cleanupDepth) {
+				val region = cleanupRegions[index]
+				if (region.onBlockReturn) region.release()
+			}
 			target.predecessors.add(LLVMGetInsertBlock(builder) to result)
 			LLVMBuildBr(builder, target.exit)
 			return
@@ -311,19 +318,25 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
+		val indexWrite = semantics.indexWrites[statement]
+		if (indexWrite != null) emitIndexWrite(indexWrite, statement.target, statement.operator, statement.value, statement.compound)
+		else emitArrayAssignment(statement)
+	} catch (_: Terminated) {
+		null
+	}
+
+	private fun emitArrayAssignment(statement: ElementAssignmentStatement): LLVMValueRef {
 		val instance = semantics.instanceWrites[statement]
 		val receiver = semantics.storedElementWrites[statement]
 		val compound = statement.compound
 		val value = statement.value
 		val mayMove = (compound ?: value)?.let { !temporaryAnalysis.hasNoPublication(it) } == true
-		if (instance != null || receiver != null && (bindings.relocatableArrays || bindings.structAccess(receiver.root) != null)) {
+		return if (instance != null || receiver != null && (bindings.relocatableArrays || bindings.structAccess(receiver.root) != null)) {
 			places.withWrite(instance, receiver, mayMove = mayMove) { target ->
 				val stored = emitPlaceValue(statement.target, statement.operator, value, compound, target.initial)
 				places.commit(target, stored, target.initial.type)
 			}
 		} else emitOrdinaryElementAssignment(statement, mayMove)
-	} catch (_: Terminated) {
-		null
 	}
 
 	private fun emitOrdinaryElementAssignment(statement: ElementAssignmentStatement, mayMove: Boolean): LLVMValueRef {
@@ -348,7 +361,9 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			val initial = resolve()
 			val value = emitPlaceValue(target, statement.operator, statement.value, statement.compound, initial)
 			val destination = if (selection != null && mayMove) resolve() else initial
-			val ownerArena = functionSemantics.declarations.storedRoot(target)?.let(bindings::ownerArena)
+			val root = functionSemantics.declarations.storedRoot(target)
+			root?.let(bindings::checkWritablePayload)
+			val ownerArena = root?.let(bindings::ownerArena)
 			return valueTransfer.storeElement(destination.address, checkNotNull(destination.parent), value, ownerArena)
 		} finally {
 			bindings.endSelection(selection)
@@ -397,6 +412,14 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	fun <T> withReceiver(receiver: MethodReceiver, type: CStruct, action: (() -> ReceiverAccess) -> T): T = places.withReceiver(receiver, type, action)
 
 	fun emitFieldWrite(statement: FieldWriteStatement): LLVMValueRef? = try {
+		val indexWrite = semantics.indexWrites[statement]
+		if (indexWrite != null) emitIndexWrite(indexWrite, statement.target as IndexExpression, statement.operator, statement.value, statement.compound)
+		else emitStoredFieldWrite(statement)
+	} catch (_: Terminated) {
+		null
+	}
+
+	private fun emitStoredFieldWrite(statement: FieldWriteStatement): LLVMValueRef {
 		val plan = semantics.fieldWrites[statement]
 		val instance = semantics.instanceWrites[statement]
 		if (plan == null && instance == null) {
@@ -405,29 +428,44 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			throw InternalErrors.invariant("Continuing field write has no stored place")
 		}
 		val mayMove = (statement.compound ?: statement.value)?.let { !temporaryAnalysis.hasNoPublication(it) } == true
-		places.withWrite(instance, plan?.place, mayMove = mayMove) { target ->
+		return places.withWrite(instance, plan?.place, mayMove = mayMove) { target ->
 			val value = emitPlaceValue(statement.target, statement.operator, statement.value, statement.compound, target.initial)
 			places.commit(target, value, target.initial.type)
 		}
-	} catch (_: Terminated) {
-		null
 	}
 
-	private fun emitPlaceValue(target: Expression, operator: Token, value: Expression?, compound: BinaryExpression?, location: EmitPlaces.PlaceAddress): LLVMValueRef {
-		if (value != null && compound == null) return adaptValue(emitValue(value), semantics.typeOf(value), location.type)
+	private fun emitIndexWrite(plan: ResolvedIndexWrite, target: IndexExpression, operator: Token, value: Expression?, compound: BinaryExpression?): LLVMValueRef? {
+		val (indexType, valueType) = plan.setter.type.parameters
+		val index = functions.captureIndex(target, indexType, this, builder)
+		functions.classes.checkWritable(builder, index.receiver)
+		functions.validateIndex(index, plan.validator, this, builder)
+		val result = emitAssignmentValue(target, operator, value, compound, valueType) {
+			val getter = checkNotNull(semantics.operatorOf(target))
+			checkNotNull(functions.callIndex(getter.call, index, this, builder, keepIndex = true))
+		}
+		// The second validator may execute source code. Preserve the produced value across it.
+		val saved = valueTransfer.snapshot(result, valueType)
+		functions.validateIndex(index, plan.validator, this, builder)
+		return functions.callIndex(plan.setter, index, this, builder, saved)
+	}
+
+	private fun emitPlaceValue(target: Expression, operator: Token, value: Expression?, compound: BinaryExpression?, location: EmitPlaces.PlaceAddress): LLVMValueRef = emitAssignmentValue(target, operator, value, compound, location.type) { readPayload(target, places.load(location)) }
+
+	private inline fun emitAssignmentValue(target: Expression, operator: Token, value: Expression?, compound: BinaryExpression?, destination: ValueType, read: () -> LLVMValueRef): LLVMValueRef {
+		if (value != null && compound == null) return adaptValue(emitValue(value), semantics.typeOf(value), destination)
 
 		val readType = semantics.typeOf(target)
-		val old = readPayload(target, places.load(location))
+		val old = read()
 		if (compound == null) {
 			val updated = emitNumericUpdate(old, readType, operator.lexeme == Operators.PLUS_PLUS.toString())
-			return adaptValue(updated, readType, location.type)
+			return adaptValue(updated, readType, destination)
 		}
 
 		// The checked binary expression can call an overload. Its left operand
 		// reads the saved value even when the RHS replaces the original storage.
 		capturedOperands[target] = valueTransfer.snapshot(old, readType)
 		return try {
-			adaptValue(emitValue(compound), semantics.typeOf(compound), location.type)
+			adaptValue(emitValue(compound), semantics.typeOf(compound), destination)
 		} finally {
 			capturedOperands.remove(target)
 		}
@@ -440,7 +478,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private fun emitBlock(block: FunctionBlockExpression): LLVMValueRef? {
 		val type = semantics.typeOf(block)
 		val exit = LLVMAppendBasicBlockInContext(context, LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)), "block_end")
-		val target = BlockExit(type, exit)
+		val target = BlockExit(type, exit, cleanupRegions.size)
 		blockReturns.add(target)
 		try {
 			bindings.withScope {
@@ -504,6 +542,24 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
+	/** The operator returns into loop-owned storage. Iteration bindings take their
+	 * own copies, so exiting this region cannot invalidate a published value.
+	 */
+	fun withCollectionSnapshot(source: Expression, plan: CollectionForeachPlan, action: (LLVMValueRef) -> Unit) {
+		val arena = frame.storedArena()
+		val release = { frame.releaseStored(arena) }
+		cleanupRegions.add(CleanupRegion(release, onBlockReturn = true))
+		try {
+			val snapshot = functions.emitCall(plan.call, listOf(source), this, builder, operatorReceiver = 0, returnArena = { arena })
+			action(checkNotNull(snapshot))
+		} catch (_: Terminated) {
+			return
+		} finally {
+			cleanupRegions.removeAt(cleanupRegions.lastIndex)
+			if (!terminated()) release()
+		}
+	}
+
 	fun emitIteration(statement: ForStatement, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimIteration(statement.body.statements), action)
 	fun emitIteration(body: List<Statement>, action: () -> Unit) = temporaryRegion(temporaryAnalysis.canReclaimIteration(body), action)
 
@@ -543,7 +599,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val stackCheckpoint = stack.save()
 		val release = { frame.releaseTemporaries(checkpoint); stack.restore(stackCheckpoint) }
 		return valueTransfer.withFreshnessScope {
-			cleanupRegions.add(release)
+			cleanupRegions.add(CleanupRegion(release))
 			try {
 				action().also { if (!terminated()) release() }
 			} finally {
@@ -761,6 +817,13 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitIndex(expression: IndexExpression, borrowString: Boolean = false): LLVMValueRef {
+		semantics.operatorOf(expression)?.let { plan ->
+			val index = functions.captureIndex(expression, plan.call.type.parameters.single(), this, builder)
+			val validator = plan.indexValidator
+			if (validator == null) functions.classes.check(builder, index.receiver)
+			else functions.validateIndex(index, validator, this, builder)
+			return checkNotNull(functions.callIndex(plan.call, index, this, builder))
+		}
 		emitImmediateClassProjection(expression)?.let { return valueTransfer.snapshot(it, semantics.typeOf(expression)) }
 		val root = functionSemantics.declarations.storedRoot(expression.array)
 		val effectful = !temporaryAnalysis.hasNoPublication(expression.index)
@@ -817,7 +880,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 			}
 
 			is IndexExpression       -> {
-				if (!isImmediateIndex(expression.index)) return null
+				if (semantics.operatorOf(expression) != null || !isImmediateIndex(expression.index)) return null
 				val array = emitImmediateClassProjection(expression.array) ?: return null
 				arrays.index(array, semantics.typeOf(expression), emitValue(expression.index), semantics.typeOf(expression.index))
 			}
@@ -1024,7 +1087,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		val release = { frame.releaseStored(operands) }
 		// A deferred return can leave a capture behind until this site runs again.
 		release()
-		cleanupRegions.add(release)
+		cleanupRegions.add(CleanupRegion(release))
 		try {
 			val equal = emitPresenceComparison(expression, unequal = false, capture = { operand ->
 				temporaryRegion(temporaryAnalysis.hasNoPublication(operand)) {

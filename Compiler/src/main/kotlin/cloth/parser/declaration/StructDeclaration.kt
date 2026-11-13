@@ -16,9 +16,9 @@ data class StructDeclaration(
 	override val nestedTypes: List<TypeDeclaration> = emptyList(),
 ) : TypeDeclaration
 
-data class StructFieldDeclaration(val type: TypeReference, val name: Token) {
+data class StructFieldDeclaration(val type: TypeReference, val name: Token, val privateKeyword: Token? = null) {
 
-	val span get() = type.span.through(name.span)
+	val span get() = (privateKeyword?.span ?: type.span).through(name.span)
 }
 
 data class MethodDeclaration(

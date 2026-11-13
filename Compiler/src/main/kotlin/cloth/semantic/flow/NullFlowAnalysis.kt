@@ -62,7 +62,7 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 	private fun place(value: Expression): Place? = when (value) {
 		is NameExpression        -> binding(value)?.takeIf { block(it) == null }?.let(::bindingPlace)
 		is FieldAccessExpression -> place(value.receiver)?.let { it.copy(path = it.path + Segment.Field(value.name.lexeme)) }
-		is IndexExpression       -> place(value.array)?.let { it.copy(path = it.path + Segment.Index((value.index as? IntegerLiteral)?.value)) }
+		is IndexExpression       -> place(value.array)?.takeUnless { indexMayCall(value) }?.let { it.copy(path = it.path + Segment.Index((value.index as? IntegerLiteral)?.value)) }
 		else                     -> null
 	}
 
@@ -266,7 +266,16 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		listOfNotNull(place(call.receiver)?.let { it.copy(path = it.path + Segment.Index(null)) })
 	} else emptyList()
 
+	private fun indexMayCall(value: IndexExpression, operation: Operators = Operators.INDEX_READ): Boolean {
+		val name = operation.toString()
+		if (!model.declarations.hasOperator(name) || value.array is ArrayLiteral) return false
+		val receiver = receiverHint(value.array)
+		val arity = if (operation == Operators.INDEX_WRITE) 2 else 1
+		return receiver == null || receiver is CClass && model.declarations.operators(receiver, name, right = false, arity).isNotEmpty()
+	}
+
 	private fun operatorMayCall(value: Expression): Boolean {
+		if (value is IndexExpression) return indexMayCall(value)
 		val (operator, operands) = when (value) {
 			is UnaryExpression  -> value.operator to listOf(value.operand)
 			is BinaryExpression -> value.operator to listOf(value.left, value.right)
@@ -483,9 +492,11 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun write(target: Expression, compound: BinaryExpression?, value: Expression?, facts: Set<Place>): Set<Place> {
 		val afterTarget = expression(target, facts).after
-		val afterValue = value?.let { expression(it, afterTarget).after } ?: afterTarget
+		val mayCallSetter = target is IndexExpression && indexMayCall(target, Operators.INDEX_WRITE)
+		val beforeValue = if (mayCallSetter) forgetAliases(afterTarget) else afterTarget
+		val afterValue = value?.let { expression(it, beforeValue).after } ?: beforeValue
 		val afterOperation = if (compound != null && operatorMayCall(compound)) forgetAliases(afterValue) else afterValue
-		return forgetWrite(afterOperation, place(target))
+		return if (mayCallSetter) forgetAliases(afterOperation) else forgetWrite(afterOperation, place(target))
 	}
 
 	private fun loop(item: ForStatement, initial: Set<Place>): Set<Place> {

@@ -41,6 +41,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	private val effects = StateEffects(model)
 	private val jumpStates = IdentityHashMap<LoopJumpStatement, State>()
 	private val observed = IdentityHashMap<Expression, Handle?>()
+	private val capturedIndexValues = IdentityHashMap<Expression, Handle?>()
 	private var destroying: Identity? = null
 
 	fun analyze(callables: List<CallableContractSymbol> = declarations.concreteContracts) {
@@ -206,6 +207,12 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 					is ForSource.Elements -> listOf(source.expression)
 				}
 				arguments(inputs, state)
+				val collection = model.types.collectionLoops[item]
+				if (collection != null && continues(inputs.single(), state)) {
+					val receiver = inputs.single()
+					if ((collection.call.callable as MethodSymbol).owner is CClass) check(observed[receiver], state, receiver.span, directSelf(receiver))
+					state.active.clear()
+				}
 				val changes = state.active.isNotEmpty() && (effects.mayChange(item.body.statements) || item.stepper?.value?.let(effects::mayChange) == true)
 				if (state.reachable && inputs.all { flow.of(it).canFallThrough }) loop(state, changes) { loop ->
 					statements(item.body.statements, loop)
@@ -327,6 +334,10 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun write(statement: Statement, target: Expression, compound: BinaryExpression?, value: Expression?, state: State) {
+		if (statement in model.types.indexWrites) {
+			indexWrite(target as IndexExpression, compound, value, state)
+			return
+		}
 		val owner = model.types.instanceWrites[statement]?.receiver
 		val read = compound ?: target
 		expression(read, state)
@@ -344,8 +355,33 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		check(selected, state, target.span, self)
 	}
 
+	private fun indexWrite(target: IndexExpression, compound: BinaryExpression?, value: Expression?, state: State) {
+		val source = target.array
+		val receiver = expression(source, state)
+		if (!continues(source, state)) return
+		val self = directSelf(source)
+		check(receiver, state, source.span, self)
+		expression(target.index, state)
+		if (!continues(target.index, state)) return
+		check(receiver, state, source.span, self)
+		// The validator and getter may affect other reachable objects before the RHS.
+		state.active.clear()
+		if (compound != null) {
+			capturedIndexValues[target] = newHandle(model.types.scalarTypeOrNull(target))
+			try {
+				expression(compound, state)
+			} finally {
+				capturedIndexValues.remove(target)
+			}
+		} else value?.let { expression(it, state) }
+		if (!continues(compound ?: value ?: target, state)) return
+		check(receiver, state, source.span, self)
+		state.active.clear()
+	}
+
 	private fun expression(value: Expression, state: State): Handle? {
 		if (!state.reachable) return null
+		if (value in capturedIndexValues) return capturedIndexValues[value]
 		val result = expressionValue(value, state)
 		if (state.active.isNotEmpty() && value !is ClassCreationExpression && value !in model.stateTransitions && effects.changesAt(value)) {
 			state.active.clear()

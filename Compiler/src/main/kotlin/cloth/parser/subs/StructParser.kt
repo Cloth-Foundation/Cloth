@@ -48,8 +48,9 @@ internal class StructParser(private val parser: Parser) {
 		endAfterItem = { parser.isSemicolon(parser.peek()) || atMember() || parser.startsTypeDeclaration() || parser.atKeyword(Keywords.FUNCTION, memberOffset()) },
 	) {
 		rejectFunction()
+		val privateKeyword = if (parser.atKeyword(Keywords.PRIVATE)) parser.advance() else null
 		val type = parser.typeParser.parse(allowArrays = true)
-		StructFieldDeclaration(type, parser.expect(TokenType.Identifier, "a struct field name"))
+		StructFieldDeclaration(type, parser.expect(TokenType.Identifier, "a struct field name"), privateKeyword)
 	}
 
 	private fun parseMembers(nestedTypes: MutableList<TypeDeclaration>): List<MethodDeclaration> = buildList {

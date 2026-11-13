@@ -1,9 +1,12 @@
 package cloth.emitter.types.loops
 
+import cloth.data.CArray
 import cloth.data.CUSize
+import cloth.data.StructField
 import cloth.emitter.NativeCABI
 import cloth.emitter.storage.EmitArray
 import cloth.emitter.storage.EmitBindings
+import cloth.emitter.storage.EmitStoredValue
 import cloth.emitter.types.EmitExpression
 import cloth.parser.statement.ForSource
 import cloth.parser.statement.ForStatement
@@ -26,14 +29,30 @@ internal class EmitForEach(
 	private val expressions: EmitExpression,
 ) {
 
+	private val stored = EmitStoredValue(context, builder, abi.layout)
+
 	fun emit(statement: ForStatement, key: LoopBindingSymbol) {
 		val source = (statement.source as ForSource.Elements).expression
+		val collection = semantics.collectionLoops[statement]
+		if (collection != null) {
+			val slots = collection.snapshot.slots
+			expressions.withCollectionSnapshot(source, collection) { snapshot ->
+				val array = stored.load(stored.fieldAddress(snapshot, slots.owner, slots), slots.type)
+				traverse(statement, key, array, collection.snapshot.arrayType, collection.snapshot.element)
+			}
+			return
+		}
 		val raw = expressions.emit(source)
 		if (expressions.terminated()) return
-		val plan = semantics.loopOf(statement)
-		val arrayType = checkNotNull(plan.arraySourceType)
+		val arrayType = checkNotNull(semantics.loopOf(statement).arraySourceType)
 		val snapshot = expressions.valueTransfer.transfer(checkNotNull(raw), arrayType)
+		traverse(statement, key, snapshot, arrayType)
+	}
+
+	private fun traverse(statement: ForStatement, key: LoopBindingSymbol, snapshot: LLVMValueRef, arrayType: CArray, slot: StructField? = null) {
+		val bindingType = semantics.loopOf(statement).bindingType
 		val arrays = EmitArray(context, builder, abi)
+		val elementType = slot?.type ?: arrayType.element
 		val size = CUSize(abi.layout.sizeBits)
 		val length = LLVMBuildExtractValue(builder, snapshot, 1, "foreach_count")
 		val function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder))
@@ -59,9 +78,10 @@ internal class EmitForEach(
 		val reachesUpdate = expressions.emitLoopBody(statement.loopTarget, exit, update) {
 			expressions.emitIteration(statement) {
 				bindings.withScope {
-					val element = arrays.index(snapshot, arrayType.element, index, size)
-					val received = expressions.valueTransfer.snapshot(expressions.adaptValue(element, arrayType.element, plan.bindingType), plan.bindingType)
-					bindings.declare(key, plan.bindingType, received)
+					val value = arrays.index(snapshot, arrayType.element, index, size)
+					val element = if (slot == null) value else stored.load(stored.fieldAddress(value, slot.owner, slot), slot.type)
+					val received = expressions.valueTransfer.snapshot(expressions.adaptValue(element, elementType, bindingType), bindingType)
+					bindings.declare(key, bindingType, received)
 					bindings.withScope { expressions.emitStatements(statement.body.statements) }
 				}
 			}

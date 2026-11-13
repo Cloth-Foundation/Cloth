@@ -27,10 +27,19 @@ pub typedef<struct> DeathInfo {
 
 The `DeathInfo` in `Test.co` uses a `DamageType` enum for `cause`.
 
-Fields and methods inherit the enclosing struct's visibility. The field list
-comes first and ends with a semicolon when followed by another member. Read
-the [shared method contract](../../cloth-functions/references/semantics.md#user-defined-methods)
-for `mt`, its implicit receiver and the current design boundary.
+Unmarked fields and methods inherit the enclosing struct's visibility. The
+field list comes first and ends with a semicolon when followed by another
+member. See the [shared method contract](../../cloth-functions/references/semantics.md#user-defined-methods)
+for `mt` and its implicit receiver.
+
+Write `priv` before a field's type, as in `priv int count`. Methods of the
+declaring struct can read and write the field, including through deferred blocks
+inside those methods. Other code receives C3079 on field access, including
+helpers in the same file. A positional brace literal can initialize a struct
+with `priv` fields in its defining file. A brace literal in another file receives
+C3081. Private field types are excluded from the public generic signature.
+The standard library uses these rules in `Snapshot<T>` and its factory.
+[Collection foreach](../../cloth-collections/references/traversal.md)
 
 Contextual positional aggregate construction is established by `Test.co`:
 

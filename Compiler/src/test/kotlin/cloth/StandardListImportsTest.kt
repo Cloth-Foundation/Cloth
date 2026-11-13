@@ -39,7 +39,7 @@ class StandardListImportsTest {
 		assertSame(list.typeArguments.single(), slot.fields.single().type)
 		assertEquals(list.name.span.source, slot.name.span.source)
 		assertNull(list.fields.single().visibility)
-		assertEquals(setOf("append", "get", "insert", "removeAt", "size", "clear", "reserve", "toArray", "copy"), model.declarations.methods.filter { it.owner === list }.map { it.name.lexeme }.toSet())
+		assertEquals(setOf("append", "get", "set", "[]", "[]?", "[]=", "insert", "removeAt", "size", "clear", "reserve", "foreach", "toArray", "copy"), model.declarations.methods.filter { it.owner === list }.map { it.name.lexeme }.toSet())
 	}
 
 	@Test
@@ -57,10 +57,10 @@ class StandardListImportsTest {
 				pub fn<typeinfo> info() = List<int<32>>::type
 			"""))
 		val graph = SourceGraphLoader.load(request)
-		assertEquals(3, graph.sources.size)
+		assertEquals(4, graph.sources.size)
 		assertTrue(graph.edges.any { it.backEdge })
 		val instances = FunctionAnalyzer(genericTarget()).analyze(graph).declarations.genericViews!!.types.instances
-		assertEquals(2, instances.size)
+		assertEquals(setOf("List", "ListSlot", "Snapshot", "SnapshotSlot"), instances.map { it.type.name.lexeme }.toSet())
 		assertEquals(1, instances.map { it.type }.filterIsInstance<CClass>().count { it.name.lexeme == "List" })
 	}
 
@@ -109,11 +109,21 @@ class StandardListImportsTest {
 	}
 
 	@Test
-	fun `List imports add no class indexing or foreach intrinsics`(@TempDir root: Path) {
-		for ((i, expression) in listOf("values[0]", "for (def item <- values) {}", "values::size").withIndex()) {
-			val request = standardListRequest(root.resolve("operation_$i"), "fn main() { def values = List<int>::new; $expression }")
-			assertLocated(assertFailsWith<ClothDiagnostic> { analyze(request) })
-		}
+	fun `List exposes bracket access and traversal and retains its size method`(@TempDir root: Path) {
+		analyze(standardListRequest(root.resolve("indexing"), """
+			fn main() {
+			    def values = List<int>::new
+			    values.append(1)
+			    values[0] = 2
+			    values[0]++
+			    values.set(0, values[0])
+			    for (def item <- values) println(item)
+			    println(values.size())
+			    values::delete
+			}
+		"""))
+		val request = standardListRequest(root.resolve("size_provider"), "fn main() { def values = List<int>::new; values::size }")
+		assertLocated(assertFailsWith<ClothDiagnostic> { analyze(request) })
 	}
 
 	@Test
@@ -147,7 +157,7 @@ class StandardListImportsTest {
 	@Test
 	fun `a development override copies the real List without requiring its Git pin`(@TempDir root: Path) {
 		val override = root.resolve("alternate library")
-		for (relative in listOf("module.toml", "cloth/Library.co", "cloth/collections/List.co")) {
+		for (relative in listOf("module.toml", "cloth/Library.co", "cloth/collections/List.co", "cloth/collections/Snapshot.co")) {
 			val target = override.resolve(relative)
 			Files.createDirectories(target.parent)
 			Files.copy(standardListRoot.resolve(relative), target)

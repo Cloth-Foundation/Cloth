@@ -52,7 +52,10 @@ for stage boundaries, source routing and verification targets.
   temporary struct results are compile-time errors, including evaluated deferred
   results. Store the result first; a deferred name is not stored struct data.
 - Write public declarations as `pub typedef<struct> Name { ... }`. Omit `pub`
-  for private visibility. Fields inherit the enclosing struct's visibility.
+  for private visibility. Unmarked fields inherit the enclosing struct's
+  visibility. Mark a field `priv` to limit reads and writes to methods on the
+  declaring struct. A brace literal can initialize it in the defining file.
+  [Struct visibility](references/semantics.md#established-syntax-and-visibility)
   Type members use `mt`. A `fn` declaration in a type body is a syntax error
   (C2007 in a struct). See [method syntax and scope](../cloth-functions/references/method-syntax.md)
   for struct methods and receiver lookup.

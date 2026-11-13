@@ -24,6 +24,7 @@ pub typedef<enum> Keywords (pub def<string> spelling) {
     FUNCTION("fn"),
     CONSTRUCTOR("ctor"),
     PUBLIC("pub"),
+    PRIVATE("priv"),
     BOOLEAN("bool"),
     STRING("string"),
     FLOAT("float"),

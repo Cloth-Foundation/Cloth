@@ -71,9 +71,10 @@ its original rows/count; each received growable row can mutate independently.
 Conditional, Elvis and deferred captures retain ordinary independent reception.
 [Stage 7](../cloth-arrays/references/growable-arrays-stage-7.md) verifies foreach
 over a collection's independent array export while class aliases edit its source.
-Ordinary classes do not gain direct foreach through private array storage;
-get/size traversal works for independently sized rows. Generic types and a future
-collection traversal protocol remain separate requirements.
+[COLL-1 Stage 3](../cloth-collections/references/traversal.md) adds direct foreach
+for `List<T>` and other types with an explicit `operator foreach`. The loop
+evaluates that operator once and traverses its `Snapshot<T>` in order, with
+independent value reception and loop-owned snapshot storage.
 
 Read [stage scope, source ownership and verification](references/for-implementation.md)
 before extending loops. Stages 1-4 implement syntax, scopes/types/repeated flow,

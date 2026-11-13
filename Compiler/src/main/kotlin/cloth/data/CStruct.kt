@@ -70,7 +70,7 @@ class CStruct internal constructor(
 	}
 }
 
-data class StructField(val declaration: StructFieldDeclaration, override val index: Int, override val type: ValueType) : InstanceField {
+data class StructField(val owner: CStruct, val declaration: StructFieldDeclaration, override val index: Int, override val type: ValueType) : InstanceField {
 
 	override val name get() = declaration.name
 	override val annotation get() = declaration.type

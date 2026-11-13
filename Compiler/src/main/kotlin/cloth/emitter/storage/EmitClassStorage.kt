@@ -30,6 +30,7 @@ internal class EmitClassStorage(private val context: LLVMContextRef, private val
 	}
 
 	fun replace(builder: LLVMBuilderRef, access: ObjectAccess, field: ClassField, value: LLVMValueRef, initializing: Boolean = false) {
+		if (!initializing) runtime.checkWritable(builder, access)
 		val location = locate(builder, access, field)
 		val stored = EmitStoredValue(context, builder, abi.layout)
 		val arrays = EmitArray(context, builder, abi)

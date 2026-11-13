@@ -165,6 +165,7 @@ captures implementation scope and regression evidence.
 | Array bounds, exact elements, and nullable suffix composition | [GEN-5 Stage 4](../cloth-generics/references/array-bounds-stage-4.md) |
 | Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
 | Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
+| Checked class bracket access, snapshot foreach and `priv` snapshot fields | [COLL-1 indexing](../cloth-collections/references/indexing.md), [COLL-1 foreach](../cloth-collections/references/traversal.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Concatenation arenas, replaceable string owners, safe reads/stores and bounded prefix storage | [string storage](../cloth-buffer-lifetimes/references/string-concatenation-storage.md) |
 | String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |

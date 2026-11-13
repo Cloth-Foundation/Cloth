@@ -744,7 +744,7 @@ class ClosedTypeAnalyzer(private val target: TargetLayout) {
 				seen.putIfAbsent(field.name.lexeme, field.name)?.let { throw SemanticErrors.duplicate(field.name, it) }
 				val type = resolve(field.type)
 				if (type == ValueType.VOID) throw SemanticErrors.voidType(field.type.span)
-				StructField(field, index, type)
+				StructField(owner, field, index, type)
 			})
 		}
 

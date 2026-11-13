@@ -54,14 +54,14 @@ internal class StateEffects(private val model: FunctionSemanticModel) {
 			is BindingGroupDeclaration    -> mayChange(item.initializer)
 			is AssignmentStatement        -> mayChange(item.value)
 			is MultiAssignmentStatement   -> mayChange(item.value)
-			is FieldWriteStatement        -> mayChangeWrite(item.target, item.compound, item.value)
-			is ElementAssignmentStatement -> mayChangeWrite(item.target, item.compound, item.value)
+			is FieldWriteStatement        -> item in types.indexWrites || mayChangeWrite(item.target, item.compound, item.value)
+			is ElementAssignmentStatement -> item in types.indexWrites || mayChangeWrite(item.target, item.compound, item.value)
 			is ReturnStatement            -> item.value?.let(::mayChange) == true
 			is WhileStatement             -> mayChange(item.condition) || mayChange(item.body.statements)
 			is DoWhileStatement           -> mayChange(item.body.statements) || mayChange(item.condition)
 			is ForStatement               -> {
 				val source = when (val input = item.source) {
-					is ForSource.Elements -> mayChange(input.expression)
+					is ForSource.Elements -> item in types.collectionLoops || mayChange(input.expression)
 					is ForSource.Range    -> mayChange(input.start) || mayChange(input.end)
 				}
 				source || mayChange(item.body.statements) || declarations.loopSteppers[item]?.let(::mayChange) == true

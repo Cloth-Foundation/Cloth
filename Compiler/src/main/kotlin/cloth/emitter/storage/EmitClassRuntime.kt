@@ -8,15 +8,16 @@ import org.bytedeco.llvm.global.LLVM.*
 internal data class ObjectAccess(val identity: LLVMValueRef, val duringDestruction: LLVMValueRef)
 
 /** The table outlives individual instances. Its addresses never cross a source call. */
-internal class EmitClassRuntime(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val tracksStates: Boolean) {
+internal class EmitClassRuntime(private val context: LLVMContextRef, private val module: LLVMModuleRef, private val abi: NativeCABI, private val tracksStates: Boolean, val tracksIndexValidation: Boolean) {
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val flag = LLVMInt1TypeInContext(context)
 	internal val indexType = LLVMInt32TypeInContext(context)
 	private val identityType = LLVMInt64TypeInContext(context)
 	internal val size = LLVMIntTypeInContext(context, abi.layout.sizeBits)
+	private val indexValidationField = if (tracksStates) activeStateField + 1 else activeStateField
 	private val slotType = run {
-		val layout = listOf(pointer, indexType, indexType, flag, indexType, indexType) + listOfNotNull(pointer.takeIf { tracksStates })
+		val layout = listOf(pointer, indexType, indexType, flag, indexType, indexType) + listOfNotNull(pointer.takeIf { tracksStates }, flag.takeIf { tracksIndexValidation })
 		PointerPointer<LLVMTypeRef>(layout.size.toLong()).use { fields ->
 			layout.forEachIndexed { index, type -> fields.put(index.toLong(), type) }
 			LLVMStructTypeInContext(context, fields, layout.size, 0)
@@ -162,6 +163,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		LLVMBuildStore(builder, LLVMGetParam(function, 1), address(builder, slot, concreteOrDestructorClassField))
 		LLVMBuildStore(builder, integer(-1), address(builder, slot, initializedClassField))
 		if (tracksStates) LLVMBuildStore(builder, LLVMConstNull(pointer), address(builder, slot, activeStateField))
+		if (tracksIndexValidation) LLVMBuildStore(builder, permission(false), address(builder, slot, indexValidationField))
 		val generation = LLVMBuildLoad2(builder, indexType, address(builder, slot, 1), "instance_generation")
 		val upper = LLVMBuildShl(builder, memory.resize(generation, identityType), LLVMConstInt(identityType, 32, 0), "upper_generation")
 		LLVMBuildRet(builder, LLVMBuildOr(builder, upper, memory.resize(index, identityType), "instance_identity"))
@@ -236,6 +238,25 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 		checkedSlot(builder, access)
 	}
 
+	fun setIndexValidation(builder: LLVMBuilderRef, access: ObjectAccess, active: LLVMValueRef): LLVMValueRef {
+		// Re-resolve the slot after each call. The validator can grow the object table.
+		val address = checkNotNull(indexValidationAddress(builder, access))
+		val previous = LLVMBuildLoad2(builder, flag, address, "previous_index_validation")
+		LLVMBuildStore(builder, active, address)
+		return previous
+	}
+
+	fun indexValidationAddress(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef? = if (tracksIndexValidation) address(builder, checkedSlot(builder, access), indexValidationField) else null
+
+	fun checkWritable(builder: LLVMBuilderRef, access: ObjectAccess) {
+		indexValidationAddress(builder, access)?.let { checkValidationFlag(builder, it) }
+	}
+
+	fun checkValidationFlag(builder: LLVMBuilderRef, address: LLVMValueRef) {
+		val active = LLVMBuildLoad2(builder, flag, address, "validating_index")
+		EmitMemory(context, builder, abi).guard(LLVMBuildNot(builder, active, "writable_object"), "Index validation receiver is read-only")
+	}
+
 	fun instance(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef {
 		val slot = checkedSlot(builder, access)
 		return LLVMBuildLoad2(builder, pointer, address(builder, slot, 0), "object_storage")
@@ -243,6 +264,7 @@ internal class EmitClassRuntime(private val context: LLVMContextRef, private val
 
 	fun beginDelete(builder: LLVMBuilderRef, identity: LLVMValueRef): ObjectAccess {
 		val slot = checkedSlot(builder, ObjectAccess(identity, permission(false)))
+		if (tracksIndexValidation) checkValidationFlag(builder, address(builder, slot, indexValidationField))
 		val concrete = LLVMBuildLoad2(builder, indexType, address(builder, slot, concreteOrDestructorClassField), "concrete_class")
 		val initialized = LLVMBuildLoad2(builder, indexType, address(builder, slot, initializedClassField), "initialized_class")
 		val complete = LLVMBuildICmp(builder, LLVMIntEQ, initialized, concrete, "construction_complete")

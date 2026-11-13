@@ -20,7 +20,8 @@ internal class EmitStateRuntime(
 
 	private val pointer = LLVMPointerTypeInContext(context, 0)
 	private val index = classes.indexType
-	private val header = struct(index, index, pointer)
+	private val validationFlag = LLVMInt1TypeInContext(context)
+	private val header = if (classes.tracksIndexValidation) struct(index, index, pointer, validationFlag) else struct(index, index, pointer)
 	private val layouts = mutableMapOf<ValueType, LLVMTypeRef>()
 	private val tags = definitions.withIndex().associate { (index, state) -> state to integer(index.toLong() + 1) }
 	private val releaseType = PointerPointer<LLVMTypeRef>(1L).use { parameter ->
@@ -46,6 +47,19 @@ internal class EmitStateRuntime(
 
 	fun current(builder: LLVMBuilderRef, access: ObjectAccess): LLVMValueRef = LLVMBuildLoad2(builder, pointer, classes.stateSlot(builder, access), "active_state")
 
+	fun setIndexValidation(builder: LLVMBuilderRef, activation: LLVMValueRef, active: LLVMValueRef): LLVMValueRef? {
+		if (!classes.tracksIndexValidation) return null
+		// Mutations of a payload use its activation, including across state-method calls.
+		return EmitNullable(context, builder, abi.layout).choose(LLVMBuildIsNotNull(builder, activation, "has_active_state"), validationFlag, {
+			val address = checkNotNull(payloadValidationAddress(builder, activation))
+			val previous = LLVMBuildLoad2(builder, validationFlag, address, "previous_payload_validation")
+			LLVMBuildStore(builder, active, address)
+			previous
+		}, { classes.permission(false) })
+	}
+
+	fun payloadValidationAddress(builder: LLVMBuilderRef, activation: LLVMValueRef): LLVMValueRef? = if (classes.tracksIndexValidation) LLVMBuildStructGEP2(builder, header, activation, 3, "state_validation") else null
+
 	fun tagOf(state: StateDefinition): LLVMValueRef = tags.getValue(state)
 	fun tagOf(builder: LLVMBuilderRef, activation: LLVMValueRef): LLVMValueRef = LLVMBuildLoad2(builder, index, tagAddress(builder, activation), "active_state_tag")
 
@@ -63,7 +77,9 @@ internal class EmitStateRuntime(
 		val type = state.payloadType
 		check((type == ValueType.VOID) == (value == null))
 		// Operand evaluation is complete. Only storage work happens before the slot write.
-		val slot = classes.stateSlot(builder, ObjectAccess(identity, classes.permission(false)))
+		val access = ObjectAccess(identity, classes.permission(false))
+		if (!initial) classes.checkWritable(builder, access)
+		val slot = classes.stateSlot(builder, access)
 		val memory = EmitMemory(context, builder, abi)
 		val previous = if (initial) null else LLVMBuildLoad2(builder, pointer, slot, "previous_activation").also {
 			memory.guard(LLVMBuildIsNotNull(builder, it, "has_active_state"), "Class object has no active state")
@@ -74,6 +90,7 @@ internal class EmitStateRuntime(
 		LLVMBuildStore(builder, integer(1), references(builder, activation))
 		LLVMBuildStore(builder, tagOf(state), tagAddress(builder, activation))
 		LLVMBuildStore(builder, LLVMConstNull(pointer), arena)
+		payloadValidationAddress(builder, activation)?.let { LLVMBuildStore(builder, classes.permission(false), it) }
 		if (value != null) {
 			val address = payload(builder, activation, type)
 			val prepared = if (type.buffered && !type.isStructValue) buffers.copyValue(builder, arena, value, type) else value

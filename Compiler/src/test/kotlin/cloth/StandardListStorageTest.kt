@@ -76,6 +76,43 @@ class StandardListStorageTest {
 	}
 
 	@Test
+	fun `foreach releases snapshots after exhaustion break deferred return and function return`(@TempDir root: Path) {
+		native(root, """
+		    fn<int[]> first(List<int[]> rows) {
+		        for (def row <- rows) return row
+		        return []
+		    }
+		    fn<bool> sample() {
+		        def rows = List<int[]>::new
+		        rows.append([1]); rows.append([2, 3])
+		        def values = List<int>::new
+		        values.append(10); values.append(20)
+		        def before = liveBytes()
+		        def<int> deferred = {
+		            for (def value <- values) return value
+		            return 0
+		        }
+		        for (def i <- 0..500) {
+		            for (def row <- rows) if (row[0] > 0) continue
+		            for (def row <- rows) if (row[0] == 1) break
+		            for (def value <- if (i < 500) { continue } else { values }) return false
+		        }
+		        for (def i <- 0..500) {
+		            if (deferred != 10 || liveBytes() != before) return false
+		        }
+		        def saved = first(rows)
+		        def<int[]> deferredRow = {
+		            for (def row <- rows) return row
+		            return []
+		        }
+		        def savedDeferred = deferredRow
+		        rows::delete; values::delete
+		        return saved[0] == 1 && savedDeferred[0] == 1
+		    }
+		""")
+	}
+
+	@Test
 	fun `actual imported List reserved append cost does not grow with old payload count`(@TempDir root: Path) {
 		val source = """
 		    fn<bool> sample() {

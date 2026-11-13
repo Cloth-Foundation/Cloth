@@ -64,13 +64,13 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 			owner to (owner.declaration.operators + owner.fields.map { it.reader } + enumNames.getValue(owner))
 		}
 		val methods = (structs.map { it to ((views?.declarationOf(it) as? StructDeclaration) ?: it.declaration).methods } + classTypes.map { it to ((views?.declarationOf(it) as? ClassDeclaration) ?: it.declaration).members.filterIsInstance<MethodDeclaration>() } + enumMembers).flatMap { (owner, members) ->
-			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean, Pair<SignatureType, Boolean>?>, MethodSymbol>()
+			val methodSignatures = mutableMapOf<Triple<FunctionSignature, Boolean?, Pair<SignatureType, Boolean>?>, MethodSymbol>()
 			members.filter { it.typeParameters == null }.map { declaration ->
 				OperatorRules.validate(declaration, owner)
 				val method = MethodSymbol(declaration, owner, nominal = nominal)
 				if (views != null) method.signatureResolver = views::signatureType
 				val selector = declaration.operator?.selector?.let { (views?.signatureType(it) ?: SignatureType.of(it, nominal(it))) to it.capturesWidth }
-				val key = Triple(method.signature, declaration.operator?.rightReceiver == true, selector)
+				val key = Triple(method.signature, declaration.operator?.rightReceiver, selector)
 				methodSignatures.putIfAbsent(key, method)?.let {
 					throw SemanticErrors.duplicateMethod(owner.name, method.signature.spelling, it.name, method.name)
 				}
@@ -333,7 +333,7 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 							expression(source.start, scope); expression(source.end, scope)
 						}
 
-						is ForSource.Elements -> expression(source.expression, scope)
+						is ForSource.Elements -> receiverValue(source.expression, scope)
 					}
 					val loopScope = LexicalScope(scope)
 					val symbol = LoopBindingSymbol(statement)
@@ -498,12 +498,14 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					model.blockScopes[body] = child
 					classOwner?.let { model.classOwners[expression.declaration] = it }
 					(receiver?.owner as? CEnum)?.let { model.enumOwners[expression.declaration] = it }
+					(receiver?.owner as? CStruct)?.let { model.structOwners[expression.declaration] = it }
 					BodyResolver(model, receiver, defaultContext, unavailable, allowNestedReturn = true, preInitialization = preInitialization, initializingField = initializingField, initializingStatePayload = initializingStatePayload, classOwner = classOwner).statements(body.statements, child)
 				}
 
 				is ArrayLiteral                                                                                                      -> expression.elements.forEach { expression(it, scope) }
 				is IndexExpression                                                                                                   -> {
-					expression(expression.array, scope); expression(expression.index, scope)
+					receiverValue(expression.array, scope)
+					expression(expression.index, scope)
 				}
 
 				is NameExpression                                                                                                    -> {

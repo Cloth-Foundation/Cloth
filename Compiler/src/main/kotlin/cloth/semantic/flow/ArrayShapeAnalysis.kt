@@ -15,6 +15,7 @@ import cloth.semantic.symbols.ReceiverFieldSymbol
 import cloth.semantic.typing.ArgumentBinding
 import cloth.semantic.typing.FunctionSemanticModel
 import cloth.semantic.typing.ResolvedCall
+import cloth.semantic.typing.ResolvedIndexWrite
 import cloth.token.Operators
 import java.math.BigInteger
 import java.util.*
@@ -121,6 +122,15 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 		bindings[binding] = state.copy(current = state.current.mapIndexed { index, count -> count ?: retained[index] }, retained = retained)
 	}
 
+	private fun indexWrite(target: IndexExpression, write: ResolvedIndexWrite, value: Expression?, compound: BinaryExpression?) {
+		expression(target.array)
+		val indexShape = expression(target.index).singleOrNull()
+		val arguments = listOfNotNull(target.index, value)
+		val valueShape = value?.let { expression(it).singleOrNull() }
+		val shapes = if (value == null) listOf(indexShape) else listOf(indexShape, if (compound == null) valueShape else typeShape(compound))
+		call(write.setter, arguments, shapes)
+	}
+
 	fun statements(body: List<Statement>): List<List<BigInteger?>?>? {
 		var tail: List<List<BigInteger?>?>? = null
 		for (item in body) {
@@ -161,6 +171,10 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 				}
 
 				is ElementAssignmentStatement            -> {
+					model.indexWrites[item]?.let {
+						indexWrite(item.target, it, item.value, item.compound)
+						continue
+					}
 					expression(item.target)
 					item.value?.let { value ->
 						expression(value)
@@ -171,6 +185,10 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 				}
 
 				is FieldWriteStatement                   -> {
+					model.indexWrites[item]?.let {
+						indexWrite(item.target as IndexExpression, it, item.value, item.compound)
+						continue
+					}
 					expression(item.target)
 					item.value?.let { expression(it); check(typeShape(item.target).orEmpty(), source(item.compound ?: it), it) }
 				}
@@ -225,7 +243,11 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 			}
 
 			is IndexExpression           -> {
-				expression(value.array); expression(value.index); shape = source(value.array)?.drop(1)?.takeIf { it.isNotEmpty() } ?: shape
+				expression(value.array)
+				val indexShape = expression(value.index).singleOrNull()
+				val operator = model.operatorOf(value)
+				if (operator == null) shape = source(value.array)?.drop(1)?.takeIf { it.isNotEmpty() } ?: shape
+				else call(operator.call, listOf(value.index), listOf(indexShape))
 			}
 
 			is ResultListExpression      -> multiple = value.values.map { expression(it).singleOrNull() }
