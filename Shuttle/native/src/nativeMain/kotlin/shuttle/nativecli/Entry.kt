@@ -65,11 +65,20 @@ private fun compileWithWorker(home: String, exchange: String): Int {
 	val context = development ?: home
 	val layout = if (development == null) "installed" else "development"
 	val options = listOf("JAVA_OPTS", "SHUTTLE_OPTS").flatMap { name -> environment(name)?.let(::launcherOptions).orEmpty() }
+	val workerEntry = if (development == null && pathSeparator == '/') {
+		listOf(
+			"--class-path", "",
+			"--module-path", "$home/launcher/cloth-launcher.jar",
+			"--module", "cloth.launcher/cloth.launcher.Bootstrap", worker, "$home/lib",
+		)
+	} else {
+		listOf("-cp", home + pathSeparator + "lib" + pathSeparator + "*", worker)
+	}
 	return runProcess(javaExecutable(home), listOf(
 		"-Dcloth.toolchain.home=$context",
 		"-Dcloth.toolchain.layout=$layout",
 		"--enable-native-access=ALL-UNNAMED",
-	) + options + listOf("-cp", home + pathSeparator + "lib" + pathSeparator + "*", worker, exchange))
+	) + options + workerEntry + exchange)
 }
 
 private fun report(code: String, message: String, status: Int = 1): Int {

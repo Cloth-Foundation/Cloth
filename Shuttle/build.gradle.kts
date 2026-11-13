@@ -11,13 +11,37 @@ plugins {
 group = "cloth"
 version = "1.0-SNAPSHOT"
 
+repositories {
+	mavenCentral()
+}
+
 val jdk = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) }
 val nativeShuttle = evaluationDependsOn(":Shuttle:native")
 val jvm = nativeShuttle.extensions.getByType<KotlinMultiplatformExtension>()
 	.targets.named<KotlinJvmTarget>("jvm").get()
-val worker = jvm.compilations.getByName("main")
 val workerTests = jvm.compilations.getByName("test")
 val workerJar = nativeShuttle.tasks.named<Jar>("jvmJar")
+
+val workerRuntime = configurations.dependencyScope("workerRuntime")
+val workerTestRuntime = configurations.dependencyScope("workerTestRuntime")
+val workerRuntimeClasspath = configurations.resolvable("workerRuntimeClasspath") {
+	extendsFrom(workerRuntime.get())
+}
+val workerTestRuntimeClasspath = configurations.resolvable("workerTestRuntimeClasspath") {
+	extendsFrom(workerTestRuntime.get())
+}
+listOf(workerRuntimeClasspath, workerTestRuntimeClasspath).forEach { classpath ->
+	classpath.configure {
+		attributes {
+			attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
+			attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements.JAR))
+		}
+	}
+}
+dependencies {
+	add(workerRuntime.name, project(path = nativeShuttle.path, configuration = "jvmRuntimeElements"))
+	add(workerTestRuntime.name, project(path = nativeShuttle.path, configuration = "workerTestRuntimeElements"))
+}
 
 tasks.register("jar") {
 	group = "build"
@@ -46,7 +70,7 @@ val stageNativeShuttle = tasks.register<Sync>("stageNativeShuttle") {
 		filePermissions { unix("rwxr-xr-x") }
 	}
 	into("lib") {
-		from(workerJar, worker.runtimeDependencyFiles)
+		from(workerRuntimeClasspath)
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	}
 	from("native/licenses") { into("licenses") }
@@ -95,7 +119,7 @@ fun Test.configureIntegrationTest() {
 	doFirst { systemProperty("shuttle.test.runtimeClasspath", classpath.asPath) }
 }
 
-val testClasspath = files(workerTests.output.allOutputs, worker.output.allOutputs, workerTests.runtimeDependencyFiles)
+val testClasspath = files(workerTests.output.allOutputs, workerTestRuntimeClasspath)
 val test = tasks.register<Test>("test") {
 	group = "verification"
 	testClassesDirs = workerTests.output.classesDirs

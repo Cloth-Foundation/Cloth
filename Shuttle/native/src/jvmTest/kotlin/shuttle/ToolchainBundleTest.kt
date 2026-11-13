@@ -11,6 +11,7 @@ import shuttle.packaging.prepareToolchainBundle
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class ToolchainBundleTest {
@@ -77,7 +78,7 @@ class ToolchainBundleTest {
 	@Test fun `exporter packages the public collections and their pinned snapshot compiles through the public API`() {
 		val (root, library) = fixture()
 		val actual = Path.of("Standard-Library").toAbsolutePath()
-		val collections = listOf("List", "Deque", "Queue", "Stack").map { "cloth/collections/$it.co" }
+		val collections = listOf("List", "OwningList", "Snapshot", "Deque", "Queue", "Stack").map { "cloth/collections/$it.co" }
 		for (relative in listOf("module.toml", "cloth/Library.co") + collections) {
 			Files.copy(actual.resolve(relative), library.resolve(relative), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 		}
@@ -92,14 +93,22 @@ class ToolchainBundleTest {
 		val app = Files.createDirectory(root.resolve("app"))
 		val source = Files.writeString(app.resolve("Main.co"), """
 		    using cloth.collections.List : List
+		    using cloth.collections.OwningList : OwningList
 		    using cloth.collections.Deque : Deque
 		    using cloth.collections.Queue : Queue
 		    using cloth.collections.Stack : Stack
+		    typedef<class> Item (pub def<int> value)
 		    fn main() {
 		        def values = List<int[]>::new
 		        values.append([1]); values.append([2, 3])
 		        def copied = values.copy()
 		        values::delete; copied::delete
+
+		        def owned = OwningList<Item>::new
+		        owned.append(Item::new(4))
+		        println(owned[0].value)
+		        for (def item <- owned) println(item.value)
+		        owned::delete
 
 		        def ends = Deque<int>::new
 		        ends.pushFront(1); ends.pushBack(2)
@@ -120,6 +129,51 @@ class ToolchainBundleTest {
 		val bytes = Files.readAllBytes(ClothCompiler.compile(request).artifact)
 		assertEquals(listOf(0x7f, 0x45, 0x4c, 0x46), bytes.take(4).map { it.toInt() and 255 })
 		assertEquals(0xb7, bytes[18].toInt() and 255)
+	}
+
+	@Test fun `installed snapshot binds File and decodes bytes at runtime`() {
+		val (root, library) = fixture()
+		val actual = Path.of("Standard-Library").toAbsolutePath()
+		val sources = listOf("cloth/io/Path.co", "cloth/io/File.co", "cloth/text/Utf8.co")
+		for (relative in sources) {
+			val destination = library.resolve(relative)
+			Files.createDirectories(destination.parent)
+			Files.copy(actual.resolve(relative), destination)
+		}
+		pin(root, commit(library))
+		val output = root.resolve("build/file-bundle")
+		prepareToolchainBundle(root, output, "file-io-test")
+		for (relative in sources) {
+			assertContentEquals(Files.readAllBytes(actual.resolve(relative)), Files.readAllBytes(output.resolve("stdlib").resolve(relative)))
+		}
+		val app = Files.createDirectory(root.resolve("app"))
+		Files.writeString(app.resolve("source.bin"), "packaged")
+		val source = Files.writeString(app.resolve("Main.co"), """
+		    using cloth.io.File: File, FileError
+		    using cloth.text.Utf8: decodeUtf8
+
+		    fn<isize> main() {
+		        def file = File::new("source.bin")
+		        if (file.open() != null) return 1
+		        def<unsigned int<8>[]?, FileError?> bytes, error = file.read(32)
+		        file::delete
+		        if (bytes == null || error != null) return 2
+		        if (decodeUtf8(bytes) != "packaged") return 3
+		        println("packaged")
+		        return 0
+		    }
+		""".trimIndent())
+		val selected = StandardLibrary.fromContext(output.toString(), "installed")
+		val executable = ClothCompiler.compile(selected.attachTo(CompilationRequest(source, app.resolve("FileCheck")))).artifact
+		val process = ProcessBuilder(executable.toString()).directory(app.toFile()).redirectErrorStream(true).start()
+		try {
+			assertTrue(process.waitFor(30, TimeUnit.SECONDS))
+			val text = process.inputStream.readBytes().decodeToString().replace("\r\n", "\n")
+			assertEquals(0, process.exitValue(), text)
+			assertEquals("packaged\n\nPEC: 0\n", text)
+		} finally {
+			if (process.isAlive) process.destroyForcibly()
+		}
 	}
 
 	private data class Fixture(val root: Path, val library: Path, val revision: String)

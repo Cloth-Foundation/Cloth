@@ -40,7 +40,8 @@ val prepareTomlParser = tasks.register<Sync>("prepareTomlParser") {
 			}
 			file.writeText(source.replace(original, corrected))
 		}
-		val directory = destinationDir.resolve("commonMain/dev/eav/tomlkt/internal/parser")
+		val tomlSources = destinationDir.resolve("commonMain/dev/eav/tomlkt")
+		val directory = tomlSources.resolve("internal/parser")
 		val parser = directory.resolve("TomlElementParser.kt")
 		replace(parser, "        val code = reader.read()", listOf(
 			"        val code = reader.read()",
@@ -66,6 +67,10 @@ val prepareTomlParser = tasks.register<Sync>("prepareTomlParser") {
 		val tree = directory.resolve("TreeNode.kt")
 		replace(tree, "val isLast: Boolean", "var isLast: Boolean")
 		replace(tree, "child.isLast.not()", "if (child.isLast) false else { child.isLast = true; true }")
+		// Native metadata uses the value class without the JVM annotation.
+		val config = tomlSources.resolve("TomlConfig.kt")
+		replace(config, "import kotlin.jvm.JvmInline\n", "")
+		replace(config, "@JvmInline\n", "")
 	}
 }
 
@@ -79,12 +84,6 @@ kotlin {
 	macosX64()
 	applyDefaultHierarchyTemplate()
 	targets.withType<KotlinNativeTarget>().configureEach {
-		compilerOptions.optIn.addAll(
-			"kotlin.contracts.ExperimentalContracts",
-			"kotlinx.serialization.ExperimentalSerializationApi",
-			"kotlinx.serialization.InternalSerializationApi",
-			"dev.eav.tomlkt.TomlSpecific",
-		)
 		binaries.executable(listOf(NativeBuildType.RELEASE)) {
 			baseName = "shuttle"
 			entryPoint = "shuttle.nativecli.main"
@@ -116,8 +115,19 @@ kotlin {
 	val posixMain = sourceSets.create("posixMain") { dependsOn(sourceSets.nativeMain.get()) }
 	sourceSets.getByName("linuxMain").dependsOn(posixMain)
 	sourceSets.getByName("macosMain").dependsOn(posixMain)
+	sourceSets.matching { it.name.endsWith("Main") && it.name !in setOf("commonMain", "jvmMain") }.configureEach {
+		languageSettings.optIn("kotlin.contracts.ExperimentalContracts")
+		languageSettings.optIn("kotlinx.serialization.ExperimentalSerializationApi")
+		languageSettings.optIn("kotlinx.serialization.InternalSerializationApi")
+		languageSettings.optIn("dev.eav.tomlkt.TomlSpecific")
+	}
 }
 
-tasks.named<Jar>("jvmJar") {
+val workerJar = tasks.named<Jar>("jvmJar") {
 	archiveFileName.set("cloth-compiler-worker-${project.version}.jar")
+}
+
+configurations.consumable("workerTestRuntimeElements") {
+	extendsFrom(configurations.getByName("jvmTestRuntimeClasspath"))
+	outgoing.artifact(workerJar)
 }

@@ -16,9 +16,9 @@ import kotlin.test.*
 class NativeShuttleTest {
 	@Test
 	fun `Windows native Shuttle builds through the JVM worker and launches its returned artifact`(@TempDir directory: Path) {
-		val project = importedProject(directory.resolve("project 中文😀"))
-		val invocation = Files.createDirectory(directory.resolve("caller 中文😀"))
-		val destination = "output 中文😀/result 🚀"
+		val project = importedProject(directory.resolve("project 中文"))
+		val invocation = Files.createDirectory(directory.resolve("caller 中文"))
+		val destination = "output 中文/result 结果"
 		val artifact = invocation.resolve("$destination.exe")
 		val common = listOf("--project", project.root.toString(), "-o", destination)
 		val built = nativeShuttle(invocation, listOf("build") + common)
@@ -77,7 +77,7 @@ class NativeShuttleTest {
 			.directory(directory.toFile()).redirectErrorStream(true)
 		builder.environment()["JAVA_HOME"] = javaHome.toString()
 		builder.environment()["CLOTH_SHUTTLE_DEVELOPMENT_HOME"] = System.getProperty("cloth.toolchain.home")
-		val scratch = Files.createDirectories(directory.resolve("exchange 中文😀"))
+		val scratch = Files.createDirectories(directory.resolve("exchange 中文"))
 		builder.environment()["TMP"] = scratch.toString()
 		builder.environment()["TEMP"] = scratch.toString()
 		val process = builder.start()

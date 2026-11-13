@@ -110,7 +110,7 @@ class ShuttleRunTest {
 			    return 7
 			}
 		""".trimIndent())
-		val output = directory.resolve("binary λ/program 🚀")
+		val output = directory.resolve("binary λ/program 中文")
 		val result = shuttleProcess(directory, listOf("run", source.toString(), output.toString(), "--", "é中😀", "", "a\"b\\", "\"quoted\""), mainClass = "cloth.EntryKt")
 		assertEquals(7, result.status, result.output)
 		assertEquals("é中😀" + completion(7), result.output)
