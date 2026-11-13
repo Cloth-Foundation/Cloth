@@ -166,7 +166,7 @@ captures implementation scope and regression evidence.
 | Implemented generic syntax, runnable example and first-slice publication | [generic guide](../../../docs/generics.md), [Stage 6](../cloth-generics/references/stage-6.md) |
 | Public standard-library List, Deque, Queue, and Stack, independent elements and explicit lifetime | [cloth-collections](../cloth-collections/SKILL.md) |
 | Checked class bracket access, snapshot foreach and `priv` snapshot fields | [COLL-1 indexing](../cloth-collections/references/indexing.md), [COLL-1 foreach](../cloth-collections/references/traversal.md) |
-| Owning collections, deletion authority, and class or interface aliases | [COLL-2 contract](../cloth-collections/SKILL.md#owning-collections), [Runtime checks](../cloth-collections/references/ownership-runtime.md), [OwningList source integration](../cloth-collections/references/owning-list.md) |
+| Owning collections, deletion authority, and class or interface aliases | [COLL-2 contract](../cloth-collections/SKILL.md#owning-collections), [Runtime checks](../cloth-collections/references/ownership-runtime.md), [OwningList source integration](../cloth-collections/references/owning-list.md), [Compile-time checks](../cloth-collections/references/ownership-checking.md) |
 | Buffered copies, snapshots, fresh storage, cleanup | [cloth-buffer-lifetimes](../cloth-buffer-lifetimes/SKILL.md) |
 | Concatenation arenas, replaceable string owners, safe reads/stores and bounded prefix storage | [string storage](../cloth-buffer-lifetimes/references/string-concatenation-storage.md) |
 | String member operand copy elision and proven temporary reclamation | [member storage cleanup](../cloth-buffer-lifetimes/references/string-member-storage.md) |

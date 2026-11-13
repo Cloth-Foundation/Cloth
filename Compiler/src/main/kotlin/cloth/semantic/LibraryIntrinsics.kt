@@ -12,8 +12,7 @@ import cloth.token.Keywords
 private const val owningList = "OwningList"
 private const val owningListSource = "cloth/collections/$owningList.co"
 
-internal enum class LibraryIntrinsic(val id: String, val source: String, val owner: String? = null, val usesOwnership: Boolean = false) {
-	DECODE_UTF8("text.utf8.decode", "cloth/text/Utf8.co"),
+internal enum class LibraryIntrinsic(val id: String, val source: String, val owner: String? = null, val usesOwnership: Boolean = false) { DECODE_UTF8("text.utf8.decode", "cloth/text/Utf8.co"),
 	FILE_OPEN("io.file.open", "cloth/io/fs/File.co", "File"),
 	FILE_READ("io.file.read", "cloth/io/fs/File.co", "File"),
 	OWNERSHIP_ACQUIRE("collections.ownership.acquire", owningListSource, owningList, usesOwnership = true),
@@ -76,11 +75,11 @@ internal fun bindIntrinsics(declarations: DeclarationModel, signatures: Map<Call
 		val body = callable.declaration.executableBody as? IntrinsicBody ?: continue
 		val operation = declarations.files.intrinsicBodies.getValue(body)
 		val expected = when (operation) {
-			LibraryIntrinsic.DECODE_UTF8                           -> FunctionType(listOf(LibraryIntrinsic.bytes), CNullable(ValueType.STRING))
+			LibraryIntrinsic.DECODE_UTF8                                                                              -> FunctionType(listOf(LibraryIntrinsic.bytes), CNullable(ValueType.STRING))
 			LibraryIntrinsic.OWNERSHIP_ACQUIRE, LibraryIntrinsic.OWNERSHIP_RELEASE, LibraryIntrinsic.OWNERSHIP_DELETE -> FunctionType(listOf(declarations.objectRoot), ResultShape.Empty)
-			LibraryIntrinsic.OWNERSHIP_CHECK_MUTATION              -> FunctionType(emptyList(), ResultShape.Empty)
-			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP                 -> FunctionType(listOf(ValueType.BOOL), ResultShape.Empty)
-			LibraryIntrinsic.FILE_OPEN, LibraryIntrinsic.FILE_READ -> {
+			LibraryIntrinsic.OWNERSHIP_CHECK_MUTATION                                                                 -> FunctionType(emptyList(), ResultShape.Empty)
+			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP                                                                    -> FunctionType(listOf(ValueType.BOOL), ResultShape.Empty)
+			LibraryIntrinsic.FILE_OPEN, LibraryIntrinsic.FILE_READ                                                    -> {
 				val errors = declarations.files.context(callable.name).localTypes["FileError"] as? CEnum
 				if (errors == null || FileIoError.entries.any { it.spelling !in errors.cases }) {
 					throw IntrinsicErrors.invalid(body, "requires the library FileError enum with its registered cases")

@@ -106,6 +106,7 @@ detached entries until it deletes them.
 Bootstrap's `TokenList` is the concrete example for this design.
 [Stage 1 runtime and verification](references/ownership-runtime.md) ·
 [Stage 2 source integration](references/owning-list.md) ·
+[Stage 3 compile-time checks](references/ownership-checking.md) ·
 [Design decisions](../../../todo/open-questions-plan.md#collections-operators-and-control-flow) ·
 [Implementation stages](../../../todo/open-questions-plan.md#coll-2-implementation-stages)
 

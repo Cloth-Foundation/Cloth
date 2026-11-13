@@ -137,14 +137,18 @@ class StandardOwningListTest {
 	fun `foreach retains membership but does not extend the lifetime of an owned object`(@TempDir root: Path) {
 		native(root, """
 			typedef<class> Item (pub def<int> value) { ~Item { println(value) } }
+			fn close(OwningList<Item> list) { list::delete }
+			fn visit(OwningList<Item> list) {
+			    for (def item <- list) {
+			        println("visit")
+			        close(list)
+			        println(item.value)
+			    }
+			}
 			fn main() {
 			    def list = OwningList<Item>::new
 			    list.append(Item::new(1)); list.append(Item::new(2))
-			    for (def item <- list) {
-			        println("visit")
-			        list::delete
-			        println(item.value)
-			    }
+			    visit(list)
 			}
 		""", "visit\n1\n2\nClass object is no longer live\n", status = 1)
 	}
@@ -155,22 +159,247 @@ class StandardOwningListTest {
 			"list.append(item)" to "Class object already has an owner",
 			"another.append(item)" to "Class object already has an owner",
 			"item::delete" to "Class object deletion requires ownership authority",
-			"list.append(another); another.append(list)" to "Collection insertion would create an ownership cycle",
+			"claim(list, another); another.append(list)" to "Collection insertion would create an ownership cycle",
 		)
 		for ((index, test) in cases.withIndex()) {
 			val (action, message) = test
 			native(root.resolve("ownership_$index"), """
 				typedef<class> Item { ~Item { println("unexpected destructor") } }
+				fn claim(OwningList<Object> list, Object item) = list.append(item)
 				fn main() {
 				    def list = OwningList<Object>::new
 				    def another = OwningList<Object>::new
 				    def item = Item::new
-				    list.append(item)
+				    claim(list, item)
 				    $action
 				    println("unreachable")
 				}
 			""", "$message\n", status = 1)
 		}
+	}
+
+	@Test
+	fun `proven ownership violations report the operation and the acquisition site`(@TempDir root: Path) {
+		val cases = listOf(
+			"list.append(item); alias::delete" to "Only the owning list",
+			"list.append(item); list.append(alias)" to "already belongs",
+			"list.append(item); def other = OwningList<Object>::new; other.append(alias)" to "already belongs",
+			"list.append(item); list.get(0)::delete" to "Only the owning list",
+			"list.append(item); list[0]::delete" to "Only the owning list",
+			"list.append(item); for (def held <- list) held::delete" to "Only the owning list",
+			"list.append(item); def held = list.removeAt(0); list.append(held); item::delete" to "Only the owning list",
+			"""
+			    def other = OwningList<Object>::new
+			    def last = OwningList<Object>::new
+			    list.append(other); other.append(last)
+			    last.append(list)
+			""".trimIndent() to "ownership cycle",
+		)
+		for ((index, test) in cases.withIndex()) {
+			val (operation, message) = test
+			val error = failure(root.resolve("static_$index"), """
+				typedef<interface> Readable { mt<int> read() }
+				typedef<class> Item : Readable { override: mt<int> read() = 1 }
+				fn main() {
+				    def list = OwningList<Object>::new
+				    def item = Item::new
+				    def<Readable> view = item
+				    def alias = view -> Object
+				    $operation
+				}
+			""")
+			assertEquals(DiagnosticCode.INVALID_COLLECTION_OWNERSHIP, error.diagnosticCode, operation)
+			assertContains(error.summary, message)
+			assertEquals(listOf("invalid ownership operation", "ownership acquired here"), error.sourceLabels.map { it.text })
+			assertTrue(error.sourceLabels.first().span.startColumn > 0)
+		}
+		val cycle = failure(root.resolve("self_cycle"), """
+			fn main() {
+			    def list = OwningList<Object>::new
+			    list.append(list)
+			}
+		""")
+		assertEquals(DiagnosticCode.INVALID_COLLECTION_OWNERSHIP, cycle.diagnosticCode)
+		assertContains(cycle.summary, "ownership cycle")
+		assertEquals(1, cycle.sourceLabels.size)
+	}
+
+	@Test
+	fun `a join can prove that an alias has an owner on every path`(@TempDir root: Path) {
+		val error = failure(root, """
+			typedef<class> Item {}
+			fn check(bool flag) {
+			    def first = OwningList<Item>::new
+			    def second = OwningList<Item>::new
+			    def item = Item::new
+			    if (flag) first.append(item) else second.append(item)
+			    item::delete
+			}
+		""")
+		assertEquals(DiagnosticCode.INVALID_COLLECTION_OWNERSHIP, error.diagnosticCode)
+		assertEquals(1, error.sourceLabels.size)
+	}
+
+	@Test
+	fun `successful reads prove ownership without knowing the entry identity`(@TempDir root: Path) {
+		val cases = listOf("list.get(index)::delete", "list[index]::delete", "for (def item <- list) item::delete")
+		for ((index, operation) in cases.withIndex()) {
+			val error = failure(root.resolve("read_$index"), """
+				typedef<class> Item {}
+				fn check(OwningList<Item> list, usize index) { $operation }
+			""")
+			assertEquals(DiagnosticCode.INVALID_COLLECTION_OWNERSHIP, error.diagnosticCode)
+			assertEquals(1, error.sourceLabels.size)
+		}
+	}
+
+	@Test
+	fun `release restores deletion for existing and conditionally joined aliases`(@TempDir root: Path) {
+		native(root, """
+			typedef<class> Item (def<int> id) { ~Item { println(id) } }
+			fn release(bool flag) {
+			    def list = OwningList<Item>::new
+			    def first = Item::new(1)
+			    def second = Item::new(2)
+			    list.append(first); list.append(second)
+			    def alias = if (flag) first else second
+			    list.removeAt(0)
+			    alias::delete
+			    list::delete
+			}
+			fn main() { release(true) }
+		""", "1\n2\n" + completion)
+	}
+
+	@Test
+	fun `uncertain ownership and aliasing indices keep the runtime checks`(@TempDir root: Path) {
+		val types = "typedef<class> Item (def<int> id) { ~Item { println(id) } }"
+		native(root.resolve("branch"), """
+			$types
+			fn dispose(bool keep) {
+			    def list = OwningList<Item>::new
+			    def item = Item::new(1)
+			    list.append(item)
+			    if (!keep) list.removeAt(0)
+			    item::delete
+			    list::delete
+			}
+			fn main() { dispose(false); dispose(true) }
+		""", "1\nClass object deletion requires ownership authority\n", status = 1)
+		native(root.resolve("receiver_alias"), """
+			$types
+			fn release(OwningList<Item> first, OwningList<Item> second) {
+			    first.clear()
+			    def old = Item::new(1)
+			    second.append(old)
+			    def fresh = Item::new(2)
+			    first.append(fresh)
+			    first.removeAt(0)
+			    old::delete
+			}
+			fn main() {
+			    def list = OwningList<Item>::new
+			    release(list, list)
+			    list::delete
+			}
+		""", "1\n2\n" + completion)
+		native(root.resolve("dynamic_index"), """
+			$types
+			fn release(usize index) {
+			    def list = OwningList<Item>::new
+			    def first = Item::new(1)
+			    def second = Item::new(2)
+			    list.append(first); list.append(second)
+			    def alias = list[index]
+			    list.removeAt(0)
+			    alias::delete
+			    list::delete
+			}
+			fn main() { release(0) }
+		""", "1\n2\n" + completion)
+	}
+
+	@Test
+	fun `cleanup proves stale aliases until a destructor can change nested ownership`(@TempDir root: Path) {
+		val error = failure(root.resolve("stale"), """
+			typedef<class> Item {}
+			fn main() {
+			    def outer = OwningList<Object>::new
+			    def inner = OwningList<Item>::new
+			    def item = Item::new
+			    outer.append(inner)
+			    inner.append(item)
+			    outer.clear()
+			    item::delete
+			}
+		""")
+		assertEquals(DiagnosticCode.DELETED_CLASS_ACCESS, error.diagnosticCode)
+		native(root.resolve("nested_release"), """
+			typedef<class> Item { ~Item { println("item") } }
+			typedef<class> Releaser (def<OwningList<Item>> nested) {
+			    ~Releaser { nested.removeAt(0); println("released") }
+			}
+			fn main() {
+			    def outer = OwningList<Object>::new
+			    def inner = OwningList<Item>::new
+			    def item = Item::new
+			    outer.append(Releaser::new(inner))
+			    outer.append(inner)
+			    inner.append(item)
+			    outer::delete
+			    item::delete
+			}
+		""", "released\nitem\n" + completion)
+	}
+
+	@Test
+	fun `an effectful formatter can release a tracked item`(@TempDir root: Path) {
+		native(root, """
+			typedef<class> Item { ~Item { println("item") } }
+			typedef<class> Releaser (def<OwningList<Item>> owner) {
+			    operator ::str() {
+			        owner.removeAt(0)
+			        return "released"
+			    }
+			}
+			fn main() {
+			    def owner = OwningList<Item>::new
+			    def releaser = Releaser::new(owner)
+			    def item = Item::new
+			    owner.append(item)
+			    println(releaser)
+			    item::delete
+			    releaser::delete
+			    owner::delete
+			}
+		""", "released\nitem\n" + completion)
+	}
+
+	@Test
+	fun `a user declaration named OwningList keeps ordinary method behavior`(@TempDir root: Path) {
+		val input = standardListRequest(root, mapOf(
+			"Main.co" to """
+				using cloth.collections.OwningList : OwningList
+				using UserList : useList
+				fn main() {
+				    def standard = OwningList<Object>::new
+				    useList()
+				    standard::delete
+				}
+			""",
+			"UserList.co" to """
+				typedef<class> OwningList { pub mt append(Object item) {} }
+				typedef<class> Item {}
+				pub fn useList() {
+				    def ordinary = OwningList::new
+				    def item = Item::new
+				    ordinary.append(item)
+				    item::delete
+				    ordinary::delete
+				}
+			""",
+		))
+		FunctionAnalyzer(nativeTestLayout).analyze(SourceGraphLoader.load(input))
 	}
 
 	@Test
@@ -214,6 +443,11 @@ class StandardOwningListTest {
 			val output = runExecutable(ClothCompiler.compile(input).artifact, status).replace("\r\n", "\n")
 			assertEquals(expected, output, abi.targetTriple)
 		}
+	}
+
+	private fun failure(root: Path, source: String): ClothDiagnostic {
+		val input = request(root, source)
+		return assertFailsWith<ClothDiagnostic> { FunctionAnalyzer(nativeTestLayout).analyze(SourceGraphLoader.load(input)) }.also(::assertLocated)
 	}
 
 	private fun request(root: Path, source: String, target: String? = null): CompilationRequest = standardListRequest(

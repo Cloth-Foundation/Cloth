@@ -684,6 +684,9 @@ defines transfer and exclusive deletion authority for `OwningList<T>`.
 adds private authority checks to ordinary class lifetime handling.
 [COLL-2 Stage 2](../../cloth-collections/references/owning-list.md) supplies the
 public list, snapshot iteration, and ordered cleanup.
+[COLL-2 Stage 3](../../cloth-collections/references/ownership-checking.md)
+rejects proven duplicate insertion, ownership cycles, and unauthorized deletion
+with a source diagnostic. Runtime checks handle uncertain cases.
 
 ## States and method dispatch
 

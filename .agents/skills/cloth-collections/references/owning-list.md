@@ -33,7 +33,8 @@ the [Stage 1 bindings](ownership-runtime.md#private-bindings). `clear()` permits
 reads of the empty list through a live alias. During `::delete`, the existing
 destruction rule rejects ordinary aliases of the list at liveness checking.
 
-Stage 3 adds compile-time diagnostics for provable ownership violations.
+[Stage 3](ownership-checking.md) documents compile-time diagnostics for
+provable ownership violations.
 
 ## Verification
 

@@ -31,6 +31,11 @@ object SemanticErrors {
 	fun classLifecycle(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_CLASS_LIFECYCLE, message, span)
 	fun partialClassInstance(message: String, span: TokenSpan) = issue(DiagnosticCode.PARTIAL_CLASS_INSTANCE, message, span)
 	fun deletedClassAccess(span: TokenSpan) = issue(DiagnosticCode.DELETED_CLASS_ACCESS, "This class object is no longer live for this access", span)
+	internal fun collectionOwnership(message: String, span: TokenSpan, acquiredAt: TokenSpan? = null) = SemanticException(
+		DiagnosticCode.INVALID_COLLECTION_OWNERSHIP, message,
+		listOfNotNull(SourceLabel(span, "invalid ownership operation"), acquiredAt?.let { SourceLabel(it, "ownership acquired here") }),
+	)
+
 	fun operatorDeclaration(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_OPERATOR_DECLARATION, message, span)
 	fun enumMember(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_ENUM_MEMBER, message, span)
 	private fun enumPayloadSubject(field: EnumField, caseName: Token?): String {

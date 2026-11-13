@@ -6,12 +6,14 @@ import cloth.diagnostics.StateErrors
 import cloth.parser.declaration.*
 import cloth.parser.expression.*
 import cloth.parser.statement.*
+import cloth.semantic.LibraryIntrinsic
 import cloth.semantic.MethodReceiver
 import cloth.semantic.ObjectReceiver
 import cloth.semantic.ReceptionPlan
 import cloth.semantic.declarations.StateDefinition
 import cloth.semantic.symbols.*
 import cloth.semantic.typing.FunctionSemanticModel
+import cloth.semantic.typing.RangeConstants
 import cloth.semantic.typing.ResolvedCall
 import cloth.semantic.typing.ResolvedOperator
 import cloth.token.Operators
@@ -21,23 +23,47 @@ import java.util.*
 /** Prove invalid local accesses. Unknown identity and effects remain runtime checks. */
 internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
-	private class Identity
+	private class Identity(val allocation: CClass? = null)
 	private data class Handle(val identity: Identity, val present: Boolean)
 	private data class Activation(val state: StateDefinition?, val ordinaryAccess: Boolean)
 	private data class Branches(val yes: State? = null, val no: State? = null)
+	private data class Ownership(val list: Identity?, val acquiredAt: TokenSpan?)
 	private class State(
 		val bindings: MutableMap<BindingSymbol, Handle> = mutableMapOf(),
 		val dead: MutableSet<Identity> = mutableSetOf(),
 		val active: MutableMap<Identity, Activation> = mutableMapOf(),
+		val ownership: MutableMap<Identity, Ownership> = mutableMapOf(),
+		val entries: MutableMap<Identity, List<Identity>> = mutableMapOf(),
 		var reachable: Boolean = true,
 	) {
 
-		fun fork() = State(bindings.toMutableMap(), dead.toMutableSet(), active.toMutableMap(), reachable)
+		fun fork() = State(
+			bindings.toMutableMap(), dead.toMutableSet(), active.toMutableMap(),
+			ownership.toMutableMap(), entries.toMutableMap(), reachable,
+		)
+
+		fun forgetOwnership() {
+			ownership.clear()
+			entries.clear()
+		}
+	}
+
+	private enum class ListOperation { APPEND,
+		GET,
+		SIZE,
+		REMOVE,
+		CLEAR,
+		FOREACH
 	}
 
 	private val declarations = model.declarations
 	private val flow = model.controlFlow
 	private val checksStates = model.stateCalls.isNotEmpty()
+
+	// The intrinsic binding validates the selected library, declaration, and class.
+	private val owningLists = model.intrinsics.asSequence().filter { it.value == LibraryIntrinsic.OWNERSHIP_SET_CLEANUP }.map { (it.key as MethodSymbol).owner as CClass }.toSet()
+	private val checksOwnership get() = owningLists.isNotEmpty()
+	private val indices = RangeConstants(model.types)
 	private val effects = StateEffects(model)
 	private val jumpStates = IdentityHashMap<LoopJumpStatement, State>()
 	private val observed = IdentityHashMap<Expression, Handle?>()
@@ -83,7 +109,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		}
 	}
 
-	private fun newHandle(type: ValueType?): Handle? = type?.classBackedType()?.let { Handle(Identity(), type !is CNullable) }
+	private fun newHandle(type: ValueType?, allocation: CClass? = null): Handle? = type?.classBackedType()?.let { Handle(Identity(allocation), type !is CNullable) }
 
 	private fun track(state: State, binding: BindingSymbol, source: Handle?) {
 		if (binding is ReceiverFieldSymbol) return
@@ -97,6 +123,153 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			throw SemanticErrors.deletedClassAccess(span)
 		}
 	}
+
+	private fun owningListOperation(call: ResolvedCall?): ListOperation? {
+		val method = (call as? ResolvedCall.Source)?.callable as? MethodSymbol ?: return null
+		if (method.owner !in owningLists) return null
+		val arity = method.parameters.size
+		return when (method.declaration.operator?.let { Operators.fromCharacter(method.name.lexeme) }) {
+			Operators.INDEX_READ -> ListOperation.GET.takeIf { arity == 1 }
+			Operators.FOREACH    -> ListOperation.FOREACH.takeIf { arity == 0 }
+			null                 -> when {
+				method.name.lexeme == "append" && arity == 1   -> ListOperation.APPEND
+				method.name.lexeme == "get" && arity == 1      -> ListOperation.GET
+				method.name.lexeme == "size" && arity == 0     -> ListOperation.SIZE
+				method.name.lexeme == "removeAt" && arity == 1 -> ListOperation.REMOVE
+				method.name.lexeme == "clear" && arity == 0    -> ListOperation.CLEAR
+				else                                           -> null
+			}
+
+			else                 -> null
+		}
+	}
+
+	private fun distinctAllocations(left: Identity?, right: Identity?) = left !== right && left?.allocation != null && right?.allocation != null
+
+	private fun forgetOtherOrders(list: Identity?, state: State) {
+		// Different local handles can refer to the same list. Independent allocations cannot.
+		state.entries.keys.removeIf { it !== list && !distinctAllocations(it, list) }
+	}
+
+	private fun append(list: Identity?, item: Handle?, span: TokenSpan, state: State) {
+		check(item, state, span)
+		val identity = item?.identity
+		if (identity != null) {
+			state.ownership[identity]?.let {
+				throw SemanticErrors.collectionOwnership("This object already belongs to an owning list", span, it.acquiredAt)
+			}
+			if (generateSequence(list) { state.ownership[it]?.list }.any { it === identity }) {
+				throw SemanticErrors.collectionOwnership(
+					"This insertion would create an ownership cycle", span, state.ownership[list]?.acquiredAt,
+				)
+			}
+			state.ownership[identity] = Ownership(list, span)
+		}
+		forgetOtherOrders(list, state)
+		if (list == null) return
+		val entries = state.entries[list] ?: return
+		if (identity == null) state.entries.remove(list)
+		else state.entries[list] = entries + identity
+	}
+
+	private fun remove(list: Identity?, index: Int?, state: State): Handle? {
+		forgetOtherOrders(list, state)
+		val entries = state.entries[list]
+		if (list != null && entries != null && index != null && index in entries.indices) {
+			val removed = entries[index]
+			val remaining = entries.toMutableList().apply { removeAt(index) }
+			// A joined or opaque alias can still name the removed entry.
+			state.ownership.entries.removeIf { (identity, owner) ->
+				identity !in remaining && !distinctAllocations(identity, removed) && !distinctAllocations(owner.list, list)
+			}
+			state.entries[list] = remaining
+			return Handle(removed, present = true)
+		}
+		state.ownership.values.removeIf { !distinctAllocations(it.list, list) }
+		state.entries.remove(list)
+		return null
+	}
+
+	private fun destroyOwned(list: Identity, state: State) {
+		if (state.ownership.isEmpty()) return
+		val children = state.ownership.entries.groupBy({ it.value.list }, { it.key })
+		val pending = ArrayDeque<Identity>()
+		pending.add(list)
+		while (pending.isNotEmpty()) {
+			val item = pending.removeFirst()
+			val owned = children[item].orEmpty()
+			if (item === list || item.allocation in owningLists || owned.isNotEmpty() || item in state.entries) {
+				// Cleanup detaches the direct entries and blocks their removal.
+				state.dead.addAll(owned)
+				val order = state.entries[item] ?: break
+				for (child in order.asReversed()) pending.addFirst(child)
+			} else if (mayRunDestructor(item.allocation)) {
+				// A destructor can transfer elements out of other lists before their cleanup.
+				break
+			}
+		}
+	}
+
+	private fun constantIndex(expression: Expression?): Int? = expression?.takeIf { model.types.scalarTypeOrNull(it) is CInteger }?.let(indices::integer)?.takeIf { it.signum() >= 0 && it.bitLength() <= 31 }?.toInt()
+
+	private fun readOwned(list: Identity?, item: Identity?, type: ValueType?, state: State): Handle? {
+		if (item != null) return Handle(item, present = true)
+		val handle = newHandle(type) ?: return null
+		state.ownership[handle.identity] = Ownership(list, acquiredAt = null)
+		return handle
+	}
+
+	private fun listCall(operation: ListOperation, receiver: Handle?, argument: Expression?, site: Expression, state: State): Handle? {
+		val list = receiver?.identity
+		return when (operation) {
+			ListOperation.APPEND                      -> {
+				append(list, observed[argument], site.span, state)
+				null
+			}
+
+			ListOperation.GET                         -> {
+				val order = state.entries[list]
+				val index = constantIndex(argument)
+				val item = index?.let { order?.getOrNull(it) }
+				if (order?.isEmpty() == true || order != null && index != null && item == null) return null
+				readOwned(list, item, model.types.scalarTypeOrNull(site), state)
+			}
+
+			ListOperation.REMOVE                      -> remove(list, constantIndex(argument), state)
+			ListOperation.CLEAR                       -> {
+				if (list != null) destroyOwned(list, state)
+				if (state.entries[list]?.isEmpty() != true) state.forgetOwnership()
+				if (list != null) state.entries[list] = emptyList()
+				null
+			}
+
+			ListOperation.SIZE, ListOperation.FOREACH -> null
+		}
+	}
+
+	private fun unknownOwnershipEffect(state: State) {
+		if (checksOwnership) state.forgetOwnership()
+	}
+
+	private fun constructionMayChangeOwnership(call: ClassCreationExpression, type: ValueType?): Boolean {
+		val constructor = model.constructorCalls[call]?.callable as? ConstructorSymbol ?: return true
+		val owner = type as? CClass ?: return true
+		val definition = declarations.classDefinitions[owner] ?: return true
+		if (constructor !== definition.primary || definition.baseCall != null) return true
+		val omitted = model.constructorCalls.getValue(call).binding.omittedParameters
+		if (omitted.isNotEmpty()) return true
+		if (definition.fieldInitializers.any { model.types.checkedResultOf(it.expression) == null || effects.mayChange(it.expression) }) return true
+		val initial = declarations.states[owner]?.initial
+		return initial?.activation != null || initial?.initialPayload != null
+	}
+
+	private fun destructionMayChangeOwnership(identity: Identity?, state: State): Boolean {
+		val type = identity?.allocation ?: return true
+		if (type in owningLists) return state.entries[identity]?.isEmpty() != true
+		return mayRunDestructor(type)
+	}
+
+	private fun mayRunDestructor(type: CClass?): Boolean = type == null || type.ancestry().any { declarations.classDefinitions[it]?.destructor != null }
 
 	private fun format(value: Expression, state: State) {
 		val handle = expression(value, state)
@@ -117,6 +290,15 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		}
 		val joined = paths.first().fork()
 		for (path in paths.drop(1)) joined.dead.retainAll(path.dead)
+		val ownership = joined.ownership.toMap()
+		val entries = joined.entries.toMap()
+		joined.forgetOwnership()
+		for (identity in ownership.keys) {
+			commonOwnership(paths.map { it.ownership[identity] })?.let { joined.ownership[identity] = it }
+		}
+		for ((list, items) in entries) {
+			if (paths.all { it.entries[list] == items }) joined.entries[list] = items
+		}
 		for (identity in joined.active.keys.toList()) {
 			val fact = commonActivation(paths.map { it.active[identity] })
 			if (fact != null) joined.active[identity] = fact else joined.active.remove(identity)
@@ -129,9 +311,10 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				continue
 			}
 			val identities = handles.map { it.identity }
-			val identity = if (identities.all { it == identities.first() }) identities.first() else merged.getOrPut(identities, ::Identity)
+			val identity = if (identities.all { it == identities.first() }) identities.first() else merged.getOrPut(identities) { Identity() }
 			joined.bindings[binding] = Handle(identity, handles.all { it.present })
 			if (paths.zip(handles).all { (path, handle) -> handle.identity in path.dead }) joined.dead.add(identity)
+			commonOwnership(paths.zip(handles) { path, handle -> path.ownership[handle.identity] })?.let { joined.ownership[identity] = it }
 			if (checksStates) commonActivation(paths.zip(handles) { path, handle -> path.active[handle.identity] })?.let {
 				joined.active[identity] = it
 			}
@@ -139,7 +322,15 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		state.bindings.clear(); state.bindings.putAll(joined.bindings)
 		state.dead.clear(); state.dead.addAll(joined.dead)
 		state.active.clear(); state.active.putAll(joined.active)
+		state.ownership.clear(); state.ownership.putAll(joined.ownership)
+		state.entries.clear(); state.entries.putAll(joined.entries)
 		state.reachable = true
+	}
+
+	private fun commonOwnership(facts: List<Ownership?>): Ownership? {
+		val first = facts.firstOrNull() ?: return null
+		if (facts.any { it == null }) return null
+		return Ownership(first.list.takeIf { list -> facts.all { it?.list === list } }, first.acquiredAt.takeIf { span -> facts.all { it?.acquiredAt == span } })
 	}
 
 	private fun continues(value: Expression, state: State) = state.reachable && flow.of(value).canFallThrough
@@ -192,13 +383,13 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is LoopJumpStatement          -> jumpStates[item] = state.fork()
 			is WhileStatement             -> {
 				if (flow.booleanValue(item.condition) == false) expression(item.condition, state)
-				else loop(state, state.active.isNotEmpty() && (effects.mayChange(item.condition) || effects.mayChange(item.body.statements))) { loop ->
+				else loop(state, loopEffects(state) { effects.mayChange(item.condition) || effects.mayChange(item.body.statements) }) { loop ->
 					condition(item.condition, loop).yes?.let { statements(item.body.statements, it) }
 				}
 			}
 
 			is DoWhileStatement           -> if (flow.canRepeat(item)) {
-				loop(state, state.active.isNotEmpty() && (effects.mayChange(item.condition) || effects.mayChange(item.body.statements))) { doWhile(item, it) }
+				loop(state, loopEffects(state) { effects.mayChange(item.condition) || effects.mayChange(item.body.statements) }) { doWhile(item, it) }
 			} else doWhile(item, state)
 
 			is ForStatement               -> {
@@ -208,15 +399,29 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				}
 				arguments(inputs, state)
 				val collection = model.types.collectionLoops[item]
+				var firstIteration: State? = null
 				if (collection != null && continues(inputs.single(), state)) {
 					val receiver = inputs.single()
-					if ((collection.call.callable as MethodSymbol).owner is CClass) check(observed[receiver], state, receiver.span, directSelf(receiver))
+					val handle = observed[receiver]
+					if ((collection.call.callable as MethodSymbol).owner is CClass) check(handle, state, receiver.span, directSelf(receiver))
 					state.active.clear()
+					if (owningListOperation(collection.call) == ListOperation.FOREACH) {
+						val list = handle?.identity
+						val order = state.entries[list]
+						if (order?.isEmpty() != true) firstIteration = state.fork().also {
+							// The first snapshot element still belongs to the list at entry.
+							val element = readOwned(list, order?.first(), collection.snapshot.element.type, it)
+							track(it, declarations.symbolOf(item), element)
+						}
+					} else unknownOwnershipEffect(state)
 				}
-				val changes = state.active.isNotEmpty() && (effects.mayChange(item.body.statements) || item.stepper?.value?.let(effects::mayChange) == true)
-				if (state.reachable && inputs.all { flow.of(it).canFallThrough }) loop(state, changes) { loop ->
-					statements(item.body.statements, loop)
-					if (flow.of(item.body.statements).canFallThrough) item.stepper?.value?.let { expression(it, loop) }
+				val changes = loopEffects(state) { effects.mayChange(item.body.statements) || item.stepper?.value?.let(effects::mayChange) == true }
+				if (state.reachable && inputs.all { flow.of(it).canFallThrough }) loop(state, changes) { repeated ->
+					// Use entry facts for an owning-list snapshot. Earlier iterations
+					// can release its remaining elements, so keep their checks at runtime.
+					val body = firstIteration ?: repeated
+					statements(item.body.statements, body)
+					if (flow.of(item.body.statements).canFallThrough) item.stepper?.value?.let { expression(it, body) }
 				}
 			}
 		}
@@ -254,10 +459,15 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		merge(state, exits)
 	}
 
+	private inline fun loopEffects(state: State, effects: () -> Boolean) = (state.active.isNotEmpty() || state.ownership.isNotEmpty() || state.entries.isNotEmpty()) && effects()
+
 	private fun loop(state: State, changesState: Boolean = false, analyze: (State) -> Unit) {
 		// A mutable binding may point to a different allocation on a back edge.
 		state.bindings.keys.removeIf { it.mutable }
-		if (changesState) state.active.clear()
+		if (changesState) {
+			state.active.clear()
+			unknownOwnershipEffect(state)
+		}
 		analyze(state.fork())
 	}
 
@@ -266,6 +476,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	private fun enterState(handle: Handle?, target: StateDefinition, state: State) {
 		// A different binding may still name this object. An entry hook may make further changes.
 		state.active.clear()
+		if (target.activation != null) unknownOwnershipEffect(state)
 		if (checksStates && handle != null && target.activation == null) {
 			state.active[handle.identity] = Activation(target, ordinaryAccess = true)
 		}
@@ -278,7 +489,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
 	private fun condition(value: Expression, state: State): Branches {
 		if (!state.reachable) return Branches()
-		if (checksStates && model.types.operatorOf(value) == null && model.types.operatorContextOf(value) == null) {
+		if ((checksStates || checksOwnership) && model.types.operatorOf(value) == null && model.types.operatorContextOf(value) == null) {
 			if (value is UnaryExpression && value.operator.lexeme == Operators.NOT.toString()) {
 				val inner = condition(value.operand, state)
 				return Branches(inner.no, inner.yes)
@@ -330,6 +541,11 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			}
 		}
 		if (instance) check(receiver, state, source.span, directSelf(source))
+		owningListOperation(operator.call)?.let { operation ->
+			val argument = operands.getOrNull(1 - operator.receiverIndex)
+			return listCall(operation, receiver, argument, value, state) ?: newHandle(model.types.scalarTypeOrNull(value))
+		}
+		unknownOwnershipEffect(state)
 		return newHandle(model.types.scalarTypeOrNull(value))
 	}
 
@@ -366,6 +582,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		check(receiver, state, source.span, self)
 		// The validator and getter may affect other reachable objects before the RHS.
 		state.active.clear()
+		unknownOwnershipEffect(state)
 		if (compound != null) {
 			capturedIndexValues[target] = newHandle(model.types.scalarTypeOrNull(target))
 			try {
@@ -377,6 +594,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		if (!continues(compound ?: value ?: target, state)) return
 		check(receiver, state, source.span, self)
 		state.active.clear()
+		unknownOwnershipEffect(state)
 	}
 
 	private fun expression(value: Expression, state: State): Handle? {
@@ -386,6 +604,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		if (state.active.isNotEmpty() && value !is ClassCreationExpression && value !in model.stateTransitions && effects.changesAt(value)) {
 			state.active.clear()
 		}
+		if (checksOwnership && value is BinaryExpression && effects.changesAt(value) && model.types.operatorOf(value) == null && model.types.operatorContextOf(value) == null) unknownOwnershipEffect(state)
 		observed[value] = result
 		return result
 	}
@@ -407,7 +626,10 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				val handle = expression(operand, state)
 				if (!flow.of(operand).canFallThrough) return null
 				if ((plan.projections[index]?.call?.callable as? MethodSymbol)?.owner is CClass) check(handle, state, operand.span, directSelf(operand))
-				if (plan.projections[index] != null) state.active.clear()
+				if (plan.projections[index] != null) {
+					state.active.clear()
+					unknownOwnershipEffect(state)
+				}
 				handle
 			}
 			model.types.operatorOf(plan.application)?.let { operator ->
@@ -415,6 +637,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				val operand = operands[index]
 				if (plan.projections[index] == null && (operator.call.callable as? MethodSymbol)?.owner is CClass) check(handles[index], state, operand.span, directSelf(operand))
 			}
+			unknownOwnershipEffect(state)
 			return newHandle(model.types.scalarTypeOrNull(value))
 		}
 		model.types.operatorOf(value)?.let { return operatorCall(value, it, value.eagerOperands(), state) }
@@ -423,8 +646,11 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				val binding = declarations.names[value] as? BindingSymbol ?: return null
 				fieldBinding(binding, state, value.span)
 				val block = (binding as? LocalSymbol)?.declaration?.initializer as? FunctionBlockExpression
-				if (block != null) loop(state) { statements((block.declaration.body as BlockBody).statements, it) }
-				else if (binding !in state.bindings) track(state, binding, null)
+				if (block != null) {
+					val body = (block.declaration.body as BlockBody).statements
+					loop(state) { statements(body, it) }
+					if (checksOwnership && effects.mayChange(body)) unknownOwnershipEffect(state)
+				} else if (binding !in state.bindings) track(state, binding, null)
 				val handle = state.bindings[binding]
 				if (handle != null) {
 					val type = model.types.scalarTypeOrNull(value)
@@ -439,8 +665,17 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 
 			is ClassDeletionExpression                                                                         -> {
 				val handle = expression(value.receiver, state)
+				if (!continues(value.receiver, state)) return null
 				check(handle, state, value.span)
-				if (handle?.present == true) state.dead.add(handle.identity)
+				if (handle?.present == true) {
+					state.ownership[handle.identity]?.let {
+						throw SemanticErrors.collectionOwnership("Only the owning list can delete this object", value.span, it.acquiredAt)
+					}
+					destroyOwned(handle.identity, state)
+					state.dead.add(handle.identity)
+				}
+				if (checksOwnership && destructionMayChangeOwnership(handle?.identity, state)) state.forgetOwnership()
+				else state.entries.remove(handle?.identity)
 			}
 
 			is MemberCallExpression                                                                            -> {
@@ -463,6 +698,11 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (flow.of(value.receiver).canFallThrough) arguments(value.arguments, state)
 				if (instance && value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.receiver.span, self)
 				if (owner != null && value.arguments.all { flow.of(it).canFallThrough }) check(ownerHandle, state, value.receiver.span, ownerSelf)
+				if (!continues(value, state)) return null
+				owningListOperation(call)?.let { operation ->
+					return listCall(operation, handle, value.arguments.singleOrNull(), value, state) ?: newHandle(model.types.scalarTypeOrNull(value))
+				}
+				if (checksOwnership && effects.changesAt(value)) state.forgetOwnership()
 			}
 
 			is CallExpression                                                                                  -> {
@@ -473,6 +713,11 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (builtin?.call?.arguments?.singleOrNull()?.text?.callsFormatter == true) format(value.arguments.single(), state)
 				else arguments(value.arguments, state)
 				if (value.arguments.all { flow.of(it).canFallThrough }) check(handle, state, value.name.span, permitDestruction = true)
+				if (!continues(value, state)) return null
+				owningListOperation(model.calls[value])?.let { operation ->
+					return listCall(operation, handle, value.arguments.singleOrNull(), value, state) ?: newHandle(model.types.scalarTypeOrNull(value))
+				}
+				if (checksOwnership && effects.changesAt(value)) state.forgetOwnership()
 			}
 
 			is StateCallExpression                                                                             -> {
@@ -499,6 +744,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				if (target != null && (active.ordinaryAccess || permitted) && !target.implements(plan)) {
 					throw StateErrors.dispatch(value.name, plan.contract.signature.spelling, target.name)
 				}
+				unknownOwnershipEffect(state)
 			}
 
 			is StateTransitionExpression                                                                       -> {
@@ -515,10 +761,12 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				arguments(value.arguments, state)
 				if (!continues(value, state)) return null
 				val type = model.types.scalarTypeOrNull(value)
-				val handle = newHandle(type)
+				val handle = newHandle(type, allocation = type as? CClass)
 				val initial = (type as? CClass)?.let { declarations.states[it]?.initial }
 				state.active.clear()
 				if (initial != null) enterState(handle, initial, state)
+				if (checksOwnership && type in owningLists && handle != null) state.entries[handle.identity] = emptyList()
+				else if (checksOwnership && constructionMayChangeOwnership(value, type)) unknownOwnershipEffect(state)
 				return handle
 			}
 
@@ -527,12 +775,13 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 				val provider = model.types.providers[value]
 				if (provider?.result is ProviderResult.ClassText) format(value.receiver, state)
 				else if (provider?.receiverForm != cloth.data.ProviderReceiverForm.TYPE) expression(value.receiver, state)
+				if (effects.changesAt(value)) unknownOwnershipEffect(state)
 			}
 
 			is IfExpression                                                                                    -> return conditional(value, state)
 			is BinaryExpression                                                                                -> {
 				val operator = Operators.fromCharacterRequired(value.operator.lexeme)
-				if (checksStates && (operator == Operators.AND || operator == Operators.OR)) {
+				if ((checksStates || checksOwnership) && (operator == Operators.AND || operator == Operators.OR)) {
 					val branches = condition(value, state)
 					merge(state, listOfNotNull(branches.yes, branches.no))
 					return null
@@ -586,6 +835,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 			is InterpolatedString                                                                              -> for (part in value.parts) {
 				format(part, state)
 				if (state.active.isNotEmpty() && effects.mayFormat(model.types.interpolationTextOf(part))) state.active.clear()
+				if (effects.mayFormat(model.types.interpolationTextOf(part))) unknownOwnershipEffect(state)
 				if (!flow.of(part).canFallThrough) break
 			}
 		}
@@ -624,6 +874,7 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 		if (first != null && results.all { it?.identity == first.identity }) return first.copy(present = results.all { it?.present == true })
 		val result = newHandle(model.types.scalarTypeOrNull(value)) ?: return null
 		if (paths.isNotEmpty() && paths.zip(results).all { (path, handle) -> handle != null && handle.identity in path.dead }) state.dead.add(result.identity)
+		commonOwnership(paths.zip(results) { path, handle -> path.ownership[handle?.identity] })?.let { state.ownership[result.identity] = it }
 		return result
 	}
 }

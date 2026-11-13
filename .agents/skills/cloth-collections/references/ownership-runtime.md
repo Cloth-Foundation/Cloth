@@ -2,7 +2,8 @@
 
 The [owning collections contract](../SKILL.md#owning-collections) defines the
 public behavior. Stage 1 implements the private runtime operations used by the
-source list in Stage 2. Stage 3 adds diagnostics for provable violations.
+source list in Stage 2. [Stage 3](ownership-checking.md) documents diagnostics
+for provable violations.
 
 ## Private bindings
 

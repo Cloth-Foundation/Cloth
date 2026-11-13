@@ -6,7 +6,10 @@ import cloth.emitter.NativeCABI
 import cloth.emitter.callables.EmitFunctionFrame
 import cloth.emitter.callables.EmitFunctions
 import cloth.emitter.callables.EmitResults
-import cloth.emitter.storage.*
+import cloth.emitter.storage.EmitMemory
+import cloth.emitter.storage.EmitNullable
+import cloth.emitter.storage.EmitStringArena
+import cloth.emitter.storage.ObjectAccess
 import cloth.emitter.text.EmitUtf8Validation
 import cloth.semantic.LibraryIntrinsic
 import cloth.semantic.ResultShape
@@ -37,20 +40,20 @@ internal class EmitLibraryIntrinsics(
 		arguments: List<LLVMValueRef>, receiver: ObjectAccess?, frame: EmitFunctionFrame,
 	) {
 		when (bindings.getValue(callable)) {
-			LibraryIntrinsic.DECODE_UTF8 -> decode(builder, arguments.single(), result.values.single() as CNullable, frame)
-			LibraryIntrinsic.FILE_OPEN   -> file.open(builder, checkNotNull(receiver), arguments.single(), result.values.single() as CNullable, frame)
-			LibraryIntrinsic.FILE_READ   -> file.read(builder, checkNotNull(receiver), arguments.single(), result, frame)
-			LibraryIntrinsic.OWNERSHIP_ACQUIRE -> {
+			LibraryIntrinsic.DECODE_UTF8              -> decode(builder, arguments.single(), result.values.single() as CNullable, frame)
+			LibraryIntrinsic.FILE_OPEN                -> file.open(builder, checkNotNull(receiver), arguments.single(), result.values.single() as CNullable, frame)
+			LibraryIntrinsic.FILE_READ                -> file.read(builder, checkNotNull(receiver), arguments.single(), result, frame)
+			LibraryIntrinsic.OWNERSHIP_ACQUIRE        -> {
 				functions.classes.acquireOwnership(builder, checkNotNull(receiver).identity, arguments.single())
 				frame.emitReturn(null)
 			}
 
-			LibraryIntrinsic.OWNERSHIP_RELEASE -> {
+			LibraryIntrinsic.OWNERSHIP_RELEASE        -> {
 				functions.classes.releaseOwnership(builder, checkNotNull(receiver).identity, arguments.single())
 				frame.emitReturn(null)
 			}
 
-			LibraryIntrinsic.OWNERSHIP_DELETE -> {
+			LibraryIntrinsic.OWNERSHIP_DELETE         -> {
 				functions.deleteOwned(builder, checkNotNull(receiver), arguments.single())
 				frame.emitReturn(null)
 			}
@@ -60,7 +63,7 @@ internal class EmitLibraryIntrinsics(
 				frame.emitReturn(null)
 			}
 
-			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP -> {
+			LibraryIntrinsic.OWNERSHIP_SET_CLEANUP    -> {
 				functions.classes.setOwnershipCleanup(builder, checkNotNull(receiver), arguments.single())
 				frame.emitReturn(null)
 			}
