@@ -648,6 +648,19 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 		}?.let { expressions.valueTransfer.freshResults(it, plan.type.results) }
 	}
 
+	fun emitUpdateCall(plan: ResolvedCall.Source, identity: LLVMValueRef, rhs: Expression?, expressions: EmitExpression, builder: LLVMBuilderRef) {
+		val receiver = ObjectAccess(identity, classes.permission(false))
+		classes.check(builder, receiver)
+		callable(plan.callable).call(builder) {
+			setReceiver(receiver)
+			if (rhs != null) {
+				argument(0, evaluateArgument(expressions, rhs, plan.type.parameters.single(), transfer = false))
+				classes.check(builder, receiver)
+			}
+			classes.checkWritable(builder, receiver)
+		}
+	}
+
 	fun emitCall(plan: ResolvedCall.Source, supplied: List<Expression>, expressions: EmitExpression, builder: LLVMBuilderRef, allocation: ConstructorAllocation? = null, operatorReceiver: Int? = null, returnArena: () -> LLVMValueRef = expressions::stringReturnArena): LLVMValueRef? {
 		val selected = plan.callable
 		val type = plan.type
@@ -707,6 +720,7 @@ internal class EmitFunctions(private val context: LLVMContextRef, private val mo
 			fun supported(type: ValueType): Boolean = when (type) {
 				is CArray     -> type.element != ValueType.VOID && supported(type.element)
 				is CNullable  -> supported(type.payload)
+				is CRange     -> type.endpoint.numeric
 				is CStruct    -> true // Field types and layouts are validated at their declarations.
 				is CClass     -> true
 				is CInterface -> true

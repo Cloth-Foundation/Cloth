@@ -13,6 +13,7 @@ import cloth.parser.expression.*
 import cloth.parser.statement.*
 import cloth.parser.type.*
 import cloth.semantic.declarations.FileBindings
+import cloth.semantic.declarations.rangeEndpointReference
 import cloth.semantic.flow.eagerOperands
 import cloth.source.SourceGraph
 import cloth.target.TargetLayout
@@ -237,7 +238,9 @@ class GenericAnalyzer(private val target: TargetLayout) {
 			if (parameter != null && defaultFor != null && parameter.owner === defaultFor.owner && parameter.index >= defaultFor.index) {
 				throw GenericErrors.argument("The default for '${defaultFor.name.lexeme}' can only use earlier type parameters", type.span)
 			}
-			val identity = parameter ?: builtinTypes.firstOrNull { it.toString() == type.name.lexeme }?.let(::BuiltinTypeName) ?: files.nominal(type.name)?.let(::NominalTypeName) ?: throw SemanticErrors.type(type)
+			val builtin = builtinTypes.firstOrNull { it.toString() == type.name.lexeme }
+			if (builtin == Keywords.RANGE) type.rangeEndpointReference()
+			val identity = parameter ?: builtin?.let(::BuiltinTypeName) ?: files.nominal(type.name)?.let(::NominalTypeName) ?: throw SemanticErrors.type(type)
 			if (identity is TypeParameterSymbol && type.application != null) throw GenericErrors.argument("Type parameter '${type.name.lexeme}' is not a generic declaration", type.span)
 			if (identity is NominalTypeName) {
 				val typeParameters = identity.type.declaration.typeParameters?.parameters.orEmpty()
@@ -513,7 +516,7 @@ class GenericAnalyzer(private val target: TargetLayout) {
 
 		companion object {
 
-			private val builtinTypes = setOf(Keywords.INTEGER, Keywords.FLOAT, Keywords.BOOLEAN, Keywords.STRING, Keywords.CHARACTER, Keywords.VOID, Keywords.TYPEINFO, Keywords.USIZE, Keywords.ISIZE)
+			private val builtinTypes = setOf(Keywords.INTEGER, Keywords.FLOAT, Keywords.BOOLEAN, Keywords.STRING, Keywords.CHARACTER, Keywords.VOID, Keywords.TYPEINFO, Keywords.USIZE, Keywords.ISIZE, Keywords.RANGE)
 		}
 	}
 }

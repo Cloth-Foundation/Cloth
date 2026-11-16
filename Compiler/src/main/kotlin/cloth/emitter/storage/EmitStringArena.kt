@@ -27,7 +27,7 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 	/** Copy an escaping value recursively before releasing its creating invocation. */
 	fun copyValue(builder: LLVMBuilderRef, destination: LLVMValueRef, value: LLVMValueRef, valueType: ValueType): LLVMValueRef {
 		if (valueType is CNullable) return EmitNullable(context, builder, target).map(value, types.value(valueType)) { copyValue(builder, destination, it, valueType.payload) }
-		if (valueType is CStruct || valueType is CInteger && valueType.bits > 64) {
+		if (valueType is CStruct || valueType.hasInlineSnapshot) {
 			val storage = types.storage(valueType)
 			val layout = LLVMGetModuleDataLayout(module)
 			val bytes = if (valueType is CStruct) {
@@ -35,7 +35,12 @@ internal class EmitStringArena(private val context: LLVMContextRef, private val 
 				memory.elementBytes(memory.count(1), storage, "Unable to allocate struct storage")
 			} else LLVMConstInt(size, LLVMABISizeOfType(layout, storage), 0)
 			val raw = EmitMemory(context, builder, abi, target).bytes(value, bytes)
-			val copied = LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, if (valueType is CStruct) "copied_struct" else "returned_integer")
+			val name = when (valueType) {
+				is CStruct -> "copied_struct"
+				is CRange  -> "copied_range"
+				else       -> "returned_integer"
+			}
+			val copied = LLVMBuildExtractValue(builder, copyAligned(builder, destination, raw, LLVMABIAlignmentOfType(layout, storage)), 0, name)
 			if (valueType is CStruct) copyStructBuffers(builder, destination, copied, valueType)
 			return copied
 		}

@@ -141,12 +141,13 @@ internal class GenericSignatureKeys(private val names: GenericNameModel) {
 
 			else                   -> null
 		}
-	}).resolve(reference)
+	}, checkRangeEndpoint = false).resolve(reference)
 
 	private fun normalize(type: ValueType): ValueType = normalized.getOrPut(type) {
 		when (type) {
 			is CArray      -> type.copy(element = normalize(type.element))
 			is CNullable   -> CNullable(normalize(type.payload))
+			is CRange      -> type.copy(endpoint = normalize(type.endpoint))
 			is CMemberType -> if (type.typeArguments.isEmpty()) type
 			else application(type.genericDefinition(), type.typeArguments.map(::normalize))
 

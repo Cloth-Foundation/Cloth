@@ -63,6 +63,7 @@ internal fun ValueType.hasTypeParameters(): Boolean {
 			is CTypeParameter -> return true
 			is CArray         -> pending.add(type.element)
 			is CNullable      -> pending.add(type.payload)
+			is CRange         -> pending.add(type.endpoint)
 			is CMemberType    -> pending.addAll(type.typeArguments)
 			else              -> Unit
 		}

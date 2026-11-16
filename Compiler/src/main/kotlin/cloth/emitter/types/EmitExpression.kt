@@ -50,6 +50,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	private val stored = EmitStoredValue(context, builder, abi.layout)
 	private val nullable = EmitNullable(context, builder, abi.layout)
 	private val boolType = types.value(ValueType.BOOL)
+	private val rangeValues = EmitRangeValues(context, builder, casts, abi)
 	private val places by lazy { EmitPlaces(context, builder, abi, bindings, functions, functionSemantics, this) }
 	private val statements by lazy { EmitStatement(this, bindings, functionSemantics) }
 	private val temporaryAnalysis = ArrayTemporaryAnalysis(functionSemantics, bindings.managedStrings)
@@ -315,6 +316,45 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				temporaryDepth--
 			}
 		}
+	}
+
+	fun emitDedicatedUpdate(statement: Statement, call: ResolvedCall.Source): LLVMValueRef? {
+		try {
+			val (target, rhs) = statement.updateOperands()
+			val identity = captureUpdateTarget(statement, target)
+			functions.emitUpdateCall(call, identity, rhs, this, builder)
+		} catch (_: Terminated) {
+			// The target or RHS completed without reaching the operator call.
+		}
+		return null
+	}
+
+	private fun captureUpdateTarget(statement: Statement, target: Expression): LLVMValueRef {
+		semantics.indexWrites[statement]?.let { write ->
+			val bracket = target as IndexExpression
+			val index = functions.captureIndex(bracket, write.setter.type.parameters.first(), this, builder)
+			functions.classes.checkWritable(builder, index.receiver)
+			functions.validateIndex(index, write.validator, this, builder)
+			val getter = checkNotNull(semantics.operatorOf(bracket))
+			return checkNotNull(functions.callIndex(getter.call, index, this, builder))
+		}
+		val place = when (statement) {
+			is FieldWriteStatement        -> semantics.fieldWrites[statement]?.place
+			is ElementAssignmentStatement -> semantics.storedElementWrites[statement]
+			else                          -> null
+		}
+		val instance = semantics.instanceWrites[statement]
+		if (instance != null || place != null) {
+			return places.withWrite(instance, place, mayMove = false) { selected ->
+				places.checkWritable(selected)
+				readPayload(target, places.load(selected.initial))
+			}
+		}
+		val declarations = functionSemantics.declarations
+		if (target is NameExpression) {
+			bindings.checkWritableDestination(declarations.symbolOf(target) as BindingSymbol)
+		} else declarations.storedRoot(target)?.let(bindings::checkWritablePayload)
+		return emitValue(target)
 	}
 
 	fun emitElementAssignment(statement: ElementAssignmentStatement): LLVMValueRef? = try {
@@ -780,7 +820,8 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 				semantics.classComparisons[expression]?.let { return emitClassComparison(expression, it) }
 				semantics.valueComparisons[expression]?.let { return emitValueComparison(expression, it) }
 				semantics.arrayEqualities[expression]?.let { return emitArrayEquality(expression, it) }
-				if (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null) return emitRangeMembership(expression)
+				if (expression.rangeOrNull() != null) return emitRangeValue(expression)
+				semantics.rangeMemberships[expression]?.let { return emitRangeMembership(expression, it) }
 				semantics.nullableComparisons[expression]?.let { return emitNullableEquality(expression, it) }
 				if (expression.operator.lexeme in setOf(Operators.AND.toString(), Operators.OR.toString())) {
 					return emitLogical(expression)
@@ -918,6 +959,10 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitBinaryOperands(operator: Token, leftOperand: LLVMValueRef, rightOperand: LLVMValueRef, leftType: ValueType, rightType: ValueType): LLVMValueRef {
+		if (leftType is CRange) {
+			val equal = rangeValues.equal(leftOperand, rightOperand, leftType)
+			return if (operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, equal, "range_not_equal") else equal
+		}
 		var left = leftOperand
 		var right = rightOperand
 		if (leftType == ValueType.TYPEINFO && rightType == ValueType.TYPEINFO) {
@@ -992,23 +1037,34 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 		}
 	}
 
-	private fun emitRangeMembership(expression: BinaryExpression): LLVMValueRef {
-		val range = expression.left.rangeOrNull() ?: checkNotNull(expression.right.rangeOrNull())
-		val valueExpression = if (range === expression.left) expression.right else expression.left
-		val rangeValues = EmitRangeValues(context, builder, casts, abi)
-		var value: LLVMValueRef? = null
-		// Preserve written order, capturing each value before a later operand can
-		// mutate its binding. Endpoint guards also precede subsequent evaluation.
-		if (range !== expression.left) value = emitValue(valueExpression)
-		val start = emitValue(range.left)
-		val type = semantics.typeOf(range.left)
-		rangeValues.finite(start, type, range.left.span)
-		val end = emitValue(range.right)
-		rangeValues.finite(end, type, range.right.span)
-		if (range === expression.left) value = emitValue(valueExpression)
-		val lower = rangeValues.compare(start, checkNotNull(value), type, Operators.LESS_EQUAL)
-		val upper = rangeValues.compare(value, end, type, if (range.operator.lexeme == Operators.RANGE_INCLUSIVE.toString()) Operators.LESS_EQUAL else Operators.LESS)
-		val member = LLVMBuildAnd(builder, lower, upper, "range_member")
+	private fun emitRangeEndpoint(expression: Expression): LLVMValueRef = emitValue(expression).also {
+		rangeValues.finite(it, semantics.typeOf(expression), expression.span)
+	}
+
+	private fun emitRangeValue(expression: BinaryExpression): LLVMValueRef {
+		val start = emitRangeEndpoint(expression.left)
+		val end = emitRangeEndpoint(expression.right)
+		val type = semantics.typeOf(expression) as CRange
+		return rangeValues.capture(type, start, end, expression.operator.lexeme == Operators.RANGE_INCLUSIVE.toString())
+	}
+
+	private fun emitRangeMembership(expression: BinaryExpression, range: Expression): LLVMValueRef {
+		val rangeOnLeft = range === expression.left
+		val member = if (semantics.resultOf(range) == ResultShape.Empty) {
+			val inline = checkNotNull(range.rangeOrNull())
+			// Evaluate the written operands in order. Each endpoint guards the
+			// evaluation of everything that follows it.
+			val firstValue = if (rangeOnLeft) null else emitValue(expression.left)
+			val start = emitRangeEndpoint(inline.left)
+			val end = emitRangeEndpoint(inline.right)
+			val value = firstValue ?: emitValue(expression.right)
+			rangeValues.member(value, start, end, semantics.typeOf(inline.left), inline.operator.lexeme == Operators.RANGE_INCLUSIVE.toString())
+		} else {
+			val left = emitValue(expression.left)
+			val right = emitValue(expression.right)
+			val type = semantics.typeOf(range) as CRange
+			if (rangeOnLeft) rangeValues.member(right, left, type) else rangeValues.member(left, right, type)
+		}
 		return if (expression.operator.lexeme == Operators.NOT_EQUAL.toString()) LLVMBuildNot(builder, member, "range_not_member") else member
 	}
 
@@ -1150,6 +1206,7 @@ internal class EmitExpression(private val context: LLVMContextRef, private val b
 	}
 
 	private fun emitScalarEquality(a: LLVMValueRef, b: LLVMValueRef, type: ValueType): LLVMValueRef = when (type) {
+		is CRange          -> rangeValues.equal(a, b, type)
 		is CFloat          -> {
 			val working = EmitHalf.arithmeticType(type)
 			LLVMBuildFCmp(builder, LLVMRealOEQ, casts.toFloating(a, type, working), casts.toFloating(b, type, working), "scalar_float_equal")

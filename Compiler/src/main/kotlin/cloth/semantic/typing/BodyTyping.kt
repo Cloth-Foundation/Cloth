@@ -180,6 +180,11 @@ internal class BodyTyping(
 				val symbol = facts.declarations.targetOf(statement)
 				checkValidatorFieldWrite(symbol, statement.name.span)
 				val type = facts.typeOf(symbol)
+				val compound = statement.compound
+				if (compound != null && ((type as? CNullable)?.payload ?: type) is CClass) {
+					val operator = checkNotNull(statement.compoundOperator)
+					if (bindUpdate(statement, compound.left, operator, compound.right, typeOf(compound.left))) return
+				}
 				val actual = typeOf(statement.value, type)
 				if (!compatible(actual, type)) reject { SemanticErrors.typeMismatch(type, actual, statement.name, statement.value, symbol.name) }
 				model.recordType(statement, type)
@@ -195,6 +200,8 @@ internal class BodyTyping(
 				val target = facts.declarations.targetOf(statement)
 				checkValidatorFieldWrite(target, statement.span)
 				val declared = facts.typeOf(target)
+				if (((declared as? CNullable)?.payload ?: declared) is CClass &&
+					bindUpdate(statement, statement.target, statement.operator, null, typeOf(statement.target))) return
 				val type = if (declared is CNullable) {
 					if (statement !in facts.presence.updates) throw SemanticErrors.nullablePayload(declared, statement.span)
 					model.updatePayloads[statement] = declared
@@ -215,6 +222,7 @@ internal class BodyTyping(
 					checkIndexedValueWrite(statement.target.array)
 					storedPlace(statement.target)?.let { model.storedElementWrites[statement] = it }
 				}
+				if (bindUpdate(statement, statement.target, statement.operator, statement.value, type)) return
 				val value = statement.compound ?: statement.value
 				val actual = value?.let { typeOf(it, type) } ?: postfixType(statement.target, statement.operator, type)
 				if (type != ValueType.NEVER && !compatible(actual, type)) reject {
@@ -253,7 +261,10 @@ internal class BodyTyping(
 		checkValidatorWrite(instance?.receiver, target.span)
 		if (instance == null) checkIndexedValueWrite(target)
 		val stored = if (instance == null && declared != ValueType.NEVER) storedPlace(target) ?: throw SemanticErrors.fieldTarget(target.span) else null
+		if (instance != null) model.instanceWrites[statement] = instance
+		if (stored != null) model.fieldWrites[statement] = FieldWritePlan(stored, declared)
 		val value = statement.value
+		if (bindUpdate(statement, target, statement.operator, value, readType)) return
 		val actual = when {
 			value == null              -> postfixType(target, statement.operator, readType)
 			statement.compound == null -> {
@@ -268,8 +279,6 @@ internal class BodyTyping(
 			SemanticErrors.structField("Field assignment requires '${declared.spelling}', got '${actual.spelling}'", value?.span ?: target.span)
 		}
 		model.recordResult(statement, ResultShape.of(declared))
-		if (instance != null) model.instanceWrites[statement] = instance
-		if (stored != null) model.fieldWrites[statement] = FieldWritePlan(stored, declared)
 	}
 
 	private fun checkIndexWrite(statement: Statement, target: IndexExpression, operator: Token, value: Expression?, compound: BinaryExpression?): Boolean {
@@ -282,15 +291,31 @@ internal class BodyTyping(
 		} else {
 			val readType = typeOf(target, preserveResultOnExit = true)
 			val getter = checkNotNull(model.operatorOf(target))
-			val updated = if (compound == null) postfixType(target, operator, readType) else typeOf(compound, readType, preserveResultOnExit = true)
-			val write = operators.indexWrite(target, receiver, compound ?: target, listOf(getter.call.type.parameters.single(), updated))
+			val dedicated = bindUpdate(statement, target, operator, value, readType)
+			val updated = when {
+				dedicated        -> readType
+				compound == null -> postfixType(target, operator, readType)
+				else             -> typeOf(compound, readType, preserveResultOnExit = true)
+			}
+			val writeValue = if (dedicated) target else compound ?: target
+			val write = operators.indexWrite(target, receiver, writeValue, listOf(getter.call.type.parameters.single(), updated))
 			if (getter.indexValidator !== write.validator) {
 				throw SemanticErrors.index("An indexed update requires the getter and setter to share one '[]?' validator. Use a separate read and write", target.span)
 			}
 			write
 		}
 		model.indexWrites[statement] = write
-		model.recordType(statement, write.setter.type.parameters.last())
+		if (statement !in model.updateCalls) model.recordType(statement, write.setter.type.parameters.last())
+		return true
+	}
+
+	private fun bindUpdate(statement: Statement, target: Expression, operator: Token, value: Expression?, type: ValueType): Boolean {
+		if (type !is CClass || !Operators.fromCharacterRequired(operator.lexeme).isUpdate) return false
+		val call = operators.update(target, type, operator, value) ?: return false
+		if (target is IndexExpression) checkValidatorWrite(target.array, target.span)
+		checkValidatorWrite(target, target.span)
+		model.updateCalls[statement] = call
+		model.recordResult(statement, ResultShape.Empty)
 		return true
 	}
 

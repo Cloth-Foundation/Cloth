@@ -20,6 +20,9 @@ internal class EmitStatement(private val expressionEmitter: EmitExpression, priv
 
 	fun emit(statement: Statement, discardResult: Boolean = false): LLVMValueRef? {
 		if (expressionEmitter.terminated()) return null
+		semantics.updateCalls[statement]?.let { call ->
+			return expressionEmitter.emitDedicatedUpdate(statement, call)
+		}
 		return when (statement) {
 			is DoWhileStatement           -> {
 				expressionEmitter.emitDoWhile(statement); null

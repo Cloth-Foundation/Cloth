@@ -149,6 +149,11 @@ selected element, and discard the temporary value after the statement.
 Postfix updates select and read once, apply the ordinary numeric update,
 and store through that selection.
 
+When an element has a matching dedicated class update overload, the operator
+acts on the captured object. A later slot removal or replacement leaves the
+captured identity available as long as the object stays live.
+[Dedicated indexed updates](../../cloth-bindings/references/class-update-operators.md#stage-2-indexed-targets)
+
 [Existing indexed-place rules](growable-arrays-stage-5.md#selections-and-scratch-across-destructive-effects) ·
 [Compound and postfix operators](../../cloth-bindings/references/semantics.md#compound-assignments-and-update-operators)
 

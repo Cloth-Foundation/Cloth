@@ -74,6 +74,9 @@ enum class Operators(private val character: String, internal val tokenized: Bool
 
 	fun toChar(): Char = character.first()
 
+	internal val isPostfixUpdate get() = this == PLUS_PLUS || this == MINUS_MINUS
+	internal val isUpdate get() = isPostfixUpdate || this in compoundAssignments
+
 	/** The binary operation used when lowering a compound assignment. */
 	fun compoundAssignmentBase(): Operators = when (this) {
 		PLUS_EQUAL  -> PLUS
@@ -87,6 +90,7 @@ enum class Operators(private val character: String, internal val tokenized: Bool
 	companion object {
 
 		private val map = enumEntries<Operators>().associateBy(Operators::character)
+		private val compoundAssignments = setOf(PLUS_EQUAL, MINUS_EQUAL, MUL_EQUAL, DIV_EQUAL, MOD_EQUAL)
 
 		fun fromCharacter(character: String): Operators? = map[character]
 

@@ -230,15 +230,13 @@ class ForParsingTest {
 	}
 
 	@Test
-	fun `range syntax parses in nested positions but standalone values fail semantic checking`() {
+	fun `range values cannot serve as numeric loop endpoints`() {
 		for (source in listOf(
-			"fn main() { def value = 0..10 }",
-			"fn main() { for (def i <- println(0..2)..10) {} }",
 			"fn main() { for (def i <- [0..2][0]..10) {} }",
 			"fn main() { for (def i <- (0..2)..10) {} }",
 		)) {
 			val failure = assertFailsWith<cloth.diagnostics.ClothDiagnostic> { cloth.emitter.LLVMEmitter().emit(parse(source)) }
-			assertEquals(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, failure.diagnosticCode)
+			assertEquals(DiagnosticCode.INVALID_FOR_LOOP, failure.diagnosticCode)
 			assertLocated(failure)
 		}
 	}

@@ -155,8 +155,8 @@ private class MetadataAnalysis(semantics: FunctionSemanticModel, parameters: Lis
 			}
 
 			is AssignmentStatement        -> {
-				val represented = expression(item.value)
-				slots[declarations.targetOf(item)]?.represented = represented
+				if (item in model.updateCalls) expression(checkNotNull(item.compound).right)
+				else slots[declarations.targetOf(item)]?.represented = expression(item.value)
 				null
 			}
 

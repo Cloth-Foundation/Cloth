@@ -98,6 +98,12 @@ The [final integer integration record](../cloth-numerics/references/arbitrary-wi
 publishes measured production cap programs, helper dependencies and native
 execution scope without widening the closed source-loop cleanup proof.
 
+[FLOW-2 stored ranges](../cloth-control-flow/references/stored-ranges-stage-2.md)
+carry both endpoints as inline bytes, including wide integer limbs. Reads
+produce independent snapshots, and returns copy into the caller's arena.
+Range storage needs no per-element arena for its own bounds. Reclaim scratch
+through the existing closed proof after the last consumer.
+
 Use this skill for the compiler's internal string/array storage. Read the
 [array contract](../cloth-arrays/references/semantics.md) for confirmed copy and
 optimization decisions. Ordinary class construction/destruction remains governed

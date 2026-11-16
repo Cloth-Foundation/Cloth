@@ -175,6 +175,7 @@ internal class GenericCallInference(
 
 				is CNullable      -> match(pattern.payload, argument.copy(type = (actual as? CNullable)?.payload ?: actual))
 				is CArray         -> if (actual is CArray) match(pattern.element, argument.copy(type = actual.element))
+				is CRange         -> if (actual is CRange) match(pattern.endpoint, argument.copy(type = actual.endpoint))
 				is CMemberType    -> if (pattern.typeArguments.isNotEmpty()) for (application in actual.applicationsOf(pattern)) {
 					if (!matchedApplications.add(pattern to application)) continue
 					for ((parameter, type) in pattern.typeArguments.zip(application.typeArguments)) {

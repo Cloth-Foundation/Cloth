@@ -135,6 +135,13 @@ private class ArrayShapeAnalysis(private val semantics: FunctionSemanticModel, p
 		var tail: List<List<BigInteger?>?>? = null
 		for (item in body) {
 			tail = null
+			val update = model.updateCalls[item]
+			if (update != null) {
+				val (target, rhs) = item.updateOperands()
+				expression(target)
+				if (rhs != null) call(update, listOf(rhs), listOf(expression(rhs).singleOrNull()))
+				continue
+			}
 			when (item) {
 				is BindingDeclaration                    -> {
 					val block = item.initializer as? FunctionBlockExpression

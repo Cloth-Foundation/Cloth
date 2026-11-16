@@ -37,7 +37,7 @@ internal object OperatorRules {
 		if (member.name.lexeme == Keywords.IS.toString()) return ValueType.BOOL
 		if (member.operator?.provider == true && member.name.lexeme == CompilerDataProviders.STR.toString()) return ValueType.STRING
 		val operator = Operators.fromCharacter(member.name.lexeme)
-		if (operator == Operators.INDEX_WRITE) return ValueType.VOID
+		if (operator == Operators.INDEX_WRITE || operator?.isUpdate == true) return ValueType.VOID
 		return if (operator == Operators.NOT || operator == Operators.INDEX_VALIDATE || operator in ordering || operator in classComparisons) ValueType.BOOL else null
 	}
 
@@ -47,6 +47,15 @@ internal object OperatorRules {
 		val parameters = member.parameters
 		fun invalid(message: String): Nothing = throw SemanticErrors.operatorDeclaration(message, member.span)
 		if (parameters.any { it.optional }) invalid("Operator operands require explicit parameters")
+		if (operator?.isUpdate == true) {
+			if (owner !is CClass) invalid("Operator '${member.name.lexeme}' requires a class receiver")
+			val arity = if (operator.isPostfixUpdate) 0 else 1
+			if (form.provider || form.selector != null || form.rightReceiver || parameters.size != arity) {
+				val required = if (arity == 0) "no parameters" else "one right-hand operand"
+				invalid("Operator '${member.name.lexeme}' requires $required and an implicit receiver")
+			}
+			return
+		}
 		if (operator == Operators.FOREACH) {
 			if (owner !is CClass && owner !is CStruct) invalid("Operator 'foreach' requires a class or struct receiver")
 			if (form.provider || form.selector != null || form.rightReceiver || parameters.isNotEmpty() || member.returnTypes.size != 1) {

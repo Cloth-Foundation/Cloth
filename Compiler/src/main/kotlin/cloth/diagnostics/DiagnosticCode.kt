@@ -97,6 +97,7 @@ enum class DiagnosticCode(val id: String) {
 	INVALID_INTRINSIC_BINDING("C3136"),
 	GENERIC_INFERENCE_FAILED("C3137"),
 	INVALID_COLLECTION_OWNERSHIP("C3138"),
+	INVALID_RANGE_VALUE("C3139"),
 
 	INVALID_ARRAY("C3038"),
 	INVALID_INDEX("C3039"),
@@ -140,6 +141,7 @@ enum class DiagnosticCode(val id: String) {
 	// C4036 retired after state-method dispatch integration.
 	// C4037 retired after generic bound satisfaction checking.
 	// C4038 retired after ordinary generic method specialization.
+	// C4039 retired after native stored range storage and comparisons.
 
 	UNKNOWN_OPTION("C0001"),
 	MISSING_OPTION_VALUE("C0002"),

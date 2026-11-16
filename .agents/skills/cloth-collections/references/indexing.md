@@ -52,15 +52,19 @@ Writing into an array value returned by `[]` requires explicit write-back.
 For `List<int[]>`, `list[0][1] = 9` is a compile-time error. Bind the result
 with `def row = list[0]`, edit `row[1]`, then assign `list[0] = row`.
 
-An indexed target with both `[]` and `[]=` supports compound assignment and
-standalone postfix updates under the ordinary operator type rules. The getter
-and setter must share one validator. If they select different validators, use
-an explicit read and write. Capture the receiver and index once, check
-liveness and `[]?`, and read `[]` once before
-the right-hand side. Apply the operator to that saved value, then recheck
-liveness and `[]?` before calling `[]=` with the result. Postfix `++` and `--`
-use the same order with their ordinary increment or decrement and no explicit
-right-hand side.
+An indexed compound assignment or standalone postfix update requires a getter
+and a matching setter with one shared validator. Capture the collection and
+index once, check liveness and `[]?`, and read the element once before the
+right-hand side. For an update that writes back, apply the operator to the
+saved value, recheck collection liveness and `[]?`, and call `[]=` with the
+result. Postfix uses the same sequence without an explicit right-hand side.
+
+The [dedicated update overloads](../../cloth-bindings/references/class-update-operators.md#stage-2-indexed-targets)
+use the same initial capture and validation. After the right-hand side,
+recheck the captured element's liveness before calling its `void` overload.
+That path skips the second index check and the setter. If the right-hand side
+removes the slot while the captured object stays live, the overload still
+runs on that object.
 
 ## Stage 1 implementation
 

@@ -104,6 +104,8 @@ nullable-value behavior is unchanged.
   use the fallback once. This selects on value absence, separately from `opt`
   parameter fallbacks, which select only on argument omission. Remaining Elvis
   typing and initial implementation boundaries are tracked in Stage 0.
+- Expression-level `?:` is a built-in operator reserved for nullable fallback.
+  User-defined types can expose their own recovery methods.
 - The user confirmed right associativity and low precedence for expression
   Elvis: `a ?: b ?: c` means `a ?: (b ?: c)`; comparisons and logical operators
   bind more tightly. Thus `count ?: 0 == 1` means `count ?: (0 == 1)`, while

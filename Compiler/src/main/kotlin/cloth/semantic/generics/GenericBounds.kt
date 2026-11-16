@@ -185,6 +185,7 @@ private fun knownDifferent(first: ValueType, second: ValueType): Boolean {
 		when {
 			left is CTypeParameter || right is CTypeParameter -> Unit
 			left is CNullable && right is CNullable           -> pending.add(left.payload to right.payload)
+			left is CRange && right is CRange                 -> pending.add(left.endpoint to right.endpoint)
 			left is CArray && right is CArray                 -> {
 				if (left.size != right.size) return true
 				pending.add(left.element to right.element)

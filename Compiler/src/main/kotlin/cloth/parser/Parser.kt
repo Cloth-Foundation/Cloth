@@ -240,13 +240,11 @@ class Parser(private val tokens: List<Token>) {
 			val operator = advance()
 			val update = operator.lexeme in updateOperators
 			if (update) return UpdateStatement(name, operator)
-			val right = if (operator.lexeme == Operators.ASSIGN.toString()) parseResults(allowWhileTrailer = allowWhileTrailer) else expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer)
-			// Local binding targets have no evaluation side effects. Reuse ordinary
-			// arithmetic and assignment checks, including exact result-type matching.
-			val value = if (operator.lexeme == Operators.ASSIGN.toString()) right else {
-				BinaryExpression(NameExpression(name), Token(TokenType.Operator, operator.span, Operators.fromCharacterRequired(operator.lexeme).compoundAssignmentBase().toString()), right)
-			}
-			return AssignmentStatement(name, value)
+			if (operator.lexeme == Operators.ASSIGN.toString()) return AssignmentStatement(name, parseResults(allowWhileTrailer = allowWhileTrailer))
+			val right = expressionParser.parseExpression(allowWhileTrailer = allowWhileTrailer)
+			val base = Operators.fromCharacterRequired(operator.lexeme).compoundAssignmentBase()
+			val value = BinaryExpression(NameExpression(name), Token(TokenType.Operator, operator.span, base.toString()), right)
+			return AssignmentStatement(name, value, operator)
 		}
 		val expressionStart = peek().span
 		val expression = expressionParser.parseExpression(stopAtAssignment = true, allowWhileTrailer = allowWhileTrailer)

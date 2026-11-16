@@ -13,6 +13,8 @@ import cloth.semantic.symbols.*
 import cloth.semantic.typing.*
 import cloth.token.Keywords
 import cloth.token.Operators
+import cloth.token.Token
+import cloth.token.TokenType
 import java.math.BigInteger
 import java.util.*
 
@@ -274,6 +276,16 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return receiver == null || receiver is CClass && model.declarations.operators(receiver, name, right = false, arity).isNotEmpty()
 	}
 
+	private fun updateMayCall(target: Expression, operator: Token, arity: Int): Boolean {
+		val declarations = model.declarations
+		if (!declarations.hasOperator(operator.lexeme)) return false
+		val annotation = binding(target)?.declaredType
+		if (annotation?.arraySuffixes?.isNotEmpty() == true || annotation?.name?.type == TokenType.Keyword) return false
+		val receiver = receiverHint(target)
+		return receiver == null || receiver is CClass &&
+			declarations.operators(receiver, operator.lexeme, right = false, arity).isNotEmpty()
+	}
+
 	private fun operatorMayCall(value: Expression): Boolean {
 		if (value is IndexExpression) return indexMayCall(value)
 		val (operator, operands) = when (value) {
@@ -453,11 +465,14 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 			}
 
 			is AssignmentStatement        -> {
-				val after = expression(item.value, facts).after
 				val binding = model.declarations.targetOf(item)
+				val compound = item.compound
+				val operator = item.compoundOperator
+				val after = expression(item.value, facts).after
+				val mayUpdate = compound != null && operator != null && updateMayCall(compound.left, operator, arity = 1)
 				val target = bindingPlace(binding)
-				val remaining = forgetWrite(after, target)
-				if (binding !is ReceiverFieldSymbol && knownPresent(item.value, needsResult = nullable(binding))) remaining + target else remaining
+				val remaining = forgetWrite(if (mayUpdate) forgetAliases(after) else after, target)
+				if (!mayUpdate && binding !is ReceiverFieldSymbol && knownPresent(item.value, needsResult = nullable(binding))) remaining + target else remaining
 			}
 
 			is MultiAssignmentStatement   -> {
@@ -473,14 +488,16 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 				after
 			}
 
-			is ElementAssignmentStatement -> write(item.target, item.compound, item.value, facts)
-			is FieldWriteStatement        -> write(item.target, item.compound, item.value, facts)
+			is ElementAssignmentStatement -> write(item.target, item.operator, item.compound, item.value, facts)
+			is FieldWriteStatement        -> write(item.target, item.operator, item.compound, item.value, facts)
 
 			is UpdateStatement            -> {
 				val binding = model.declarations.targetOf(item)
 				val target = bindingPlace(binding)
 				if (target in facts) model.presence.updates.add(item)
-				if (binding is ReceiverFieldSymbol) forgetWrite(facts, target) else facts
+				val after = expression(item.target, facts).after
+				val updated = if (updateMayCall(item.target, item.operator, arity = 0)) forgetAliases(after) else after
+				if (binding is ReceiverFieldSymbol) forgetWrite(updated, target) else updated
 			}
 
 			is ExpressionStatement        -> expression(item.expression, facts).after
@@ -490,12 +507,13 @@ internal class NullFlowAnalysis(private val model: FunctionSemanticModel) {
 		return facts
 	}
 
-	private fun write(target: Expression, compound: BinaryExpression?, value: Expression?, facts: Set<Place>): Set<Place> {
+	private fun write(target: Expression, operator: Token, compound: BinaryExpression?, value: Expression?, facts: Set<Place>): Set<Place> {
 		val afterTarget = expression(target, facts).after
 		val mayCallSetter = target is IndexExpression && indexMayCall(target, Operators.INDEX_WRITE)
 		val beforeValue = if (mayCallSetter) forgetAliases(afterTarget) else afterTarget
 		val afterValue = value?.let { expression(it, beforeValue).after } ?: beforeValue
-		val afterOperation = if (compound != null && operatorMayCall(compound)) forgetAliases(afterValue) else afterValue
+		val mayUpdate = (compound != null || value == null) && updateMayCall(target, operator, if (value == null) 0 else 1)
+		val afterOperation = if (mayUpdate || compound?.let(::operatorMayCall) == true) forgetAliases(afterValue) else afterValue
 		return if (mayCallSetter) forgetAliases(afterOperation) else forgetWrite(afterOperation, place(target))
 	}
 

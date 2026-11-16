@@ -23,6 +23,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val instanceWrites: MutableMap<Statement, InstancePlace> = facts.identityMap { it.instanceWrites }
 	internal val storedElementWrites: MutableMap<ElementAssignmentStatement, StoredPlace> = facts.identityMap { it.storedElementWrites }
 	internal val indexWrites: MutableMap<Statement, ResolvedIndexWrite> = facts.identityMap { it.indexWrites }
+	internal val updateCalls: MutableMap<Statement, ResolvedCall.Source> = facts.identityMap { it.updateCalls }
 
 	private val expressionResults: MutableMap<Expression, ResultShape> = facts.identityMap { it.expressionResults }
 	private val statementResults: MutableMap<Statement, ResultShape> = facts.identityMap { it.statementResults }
@@ -42,6 +43,7 @@ class SemanticModel internal constructor(internal val typeResolver: TypeResolver
 	internal val classComparisons: MutableMap<BinaryExpression, ClassComparisonPlan> = facts.identityMap { it.classComparisons }
 	internal val valueComparisons: MutableMap<BinaryExpression, ValueComparisonPlan> = facts.identityMap { it.valueComparisons }
 	internal val arrayEqualities: MutableMap<BinaryExpression, ArrayEqualityPlan> = facts.identityMap { it.arrayEqualities }
+	internal val rangeMemberships: MutableMap<BinaryExpression, Expression> = facts.identityMap { it.rangeMemberships }
 	internal val payloadReads: MutableMap<Expression, CNullable> = facts.identityMap { it.payloadReads }
 	internal val nullableComparisons: MutableMap<BinaryExpression, ValueType> = facts.identityMap { it.nullableComparisons }
 	internal val updatePayloads: MutableMap<UpdateStatement, CNullable> = facts.identityMap { it.updatePayloads }

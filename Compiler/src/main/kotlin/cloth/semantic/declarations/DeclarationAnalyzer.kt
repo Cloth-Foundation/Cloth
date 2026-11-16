@@ -397,7 +397,10 @@ class DeclarationAnalyzer(private val target: TargetLayout) {
 					statement.value?.let { if (statement.compound != null) receiverValue(it, scope) else expression(it, scope) }
 				}
 
-				is UpdateStatement            -> model.updates[statement] = assignmentTarget(statement.name, scope)
+				is UpdateStatement            -> {
+					model.updates[statement] = assignmentTarget(statement.name, scope)
+					receiverValue(statement.target, scope)
+				}
 				is ExpressionStatement        -> expression(statement.expression, scope)
 				is ReturnStatement            -> {
 					if (defaultContext && !allowNestedReturn) throw SemanticErrors.parameterDefault("A return cannot escape from a parameter default", statement.span)

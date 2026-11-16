@@ -3,6 +3,7 @@ package cloth.parser.statement
 import cloth.parser.expression.BinaryExpression
 import cloth.parser.expression.Expression
 import cloth.parser.expression.IndexExpression
+import cloth.parser.expression.NameExpression
 import cloth.parser.type.TypeReference
 import cloth.token.Operators
 import cloth.token.Token
@@ -32,7 +33,9 @@ sealed interface ReceivingTarget {
 /** Retained until RHS typing can distinguish broadcast from positional reception. */
 data class BindingGroupDeclaration(val types: List<TypeReference>, val targets: List<ReceivingTarget>, val initializer: Expression, val mutable: Boolean, override val span: TokenSpan) : Statement
 
-data class AssignmentStatement(val name: Token, val value: Expression) : Statement {
+data class AssignmentStatement(val name: Token, val value: Expression, internal val compoundOperator: Token? = null) : Statement {
+
+	internal val compound get() = if (compoundOperator == null) null else value as BinaryExpression
 
 	override val span get() = name.span.through(value.span)
 }
@@ -66,7 +69,17 @@ private fun compoundExpression(target: Expression, operator: Token, value: Expre
 
 data class UpdateStatement(val name: Token, val operator: Token) : Statement {
 
+	internal val target = NameExpression(name)
 	override val span get() = name.span.through(operator.span)
+}
+
+/** Original update operands, without the synthetic binary expression used for fallback. */
+internal fun Statement.updateOperands(): Pair<Expression, Expression?> = when (this) {
+	is AssignmentStatement        -> checkNotNull(compound).let { it.left to it.right }
+	is UpdateStatement            -> target to null
+	is FieldWriteStatement        -> target to value
+	is ElementAssignmentStatement -> target to value
+	else                          -> error("Expected an update statement")
 }
 
 data class ReturnStatement(val keyword: Token, val value: Expression?, override val span: TokenSpan = value?.let { keyword.span.through(it.span) } ?: keyword.span) : Statement

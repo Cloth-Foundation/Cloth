@@ -68,6 +68,7 @@ object SemanticErrors {
 	fun receiverProofLost(type: ValueType, span: TokenSpan) = issue(DiagnosticCode.NULLABLE_PAYLOAD_ACCESS, "Arguments can invalidate the presence proof for receiver storage of type '${type.spelling}'", span)
 
 	fun rangeMembership(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_RANGE_MEMBERSHIP, message, span)
+	fun rangeValue(message: String, span: TokenSpan) = issue(DiagnosticCode.INVALID_RANGE_VALUE, message, span)
 
 	fun forLoop(message: String, span: TokenSpan, binding: TokenSpan) = SemanticException(DiagnosticCode.INVALID_FOR_LOOP, message, listOf(SourceLabel(span, "invalid loop value here"), SourceLabel(binding, "loop binding declared here")))
 

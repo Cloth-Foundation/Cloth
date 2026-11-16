@@ -138,7 +138,8 @@ class FunctionParser(private val parser: Parser) {
 				parser.advance()
 				listOf(parser.typeParser.parse(allowArrays = true))
 			} else emptyList()
-			val body = parseBody("operator", allowStatement = name.lexeme == Operators.INDEX_WRITE.toString())
+			val operation = Operators.fromCharacter(name.lexeme)
+			val body = parseBody("operator", allowStatement = operation == Operators.INDEX_WRITE || operation?.isUpdate == true)
 			return MethodDeclaration(keyword, name, result, parameters, body, visibility, OperatorMember(selector, rightReceiver, provider))
 		} finally {
 			parser.allowInferredOperatorWidth = false

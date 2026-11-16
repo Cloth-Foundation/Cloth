@@ -48,7 +48,7 @@ internal class StateEffects(private val model: FunctionSemanticModel) {
 	}
 
 	fun mayChange(items: List<Statement>): Boolean = items.any { item ->
-		when (item) {
+		item in types.updateCalls || when (item) {
 			is ExpressionStatement        -> mayChange(item.expression)
 			is BindingDeclaration         -> mayChange(item.initializer)
 			is BindingGroupDeclaration    -> mayChange(item.initializer)

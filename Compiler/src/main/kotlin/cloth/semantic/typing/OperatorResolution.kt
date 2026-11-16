@@ -62,6 +62,20 @@ internal class OperatorResolution(
 		return resolve(expression, operator, listOf(expression.array, expression.index), indexReceiver = receiver) ?: reject { SemanticErrors.index("Type '${receiver.spelling}' has no bracket read operator", expression.span) }
 	}
 
+	fun update(target: Expression, receiver: CClass, operator: Token, value: Expression?): ResolvedCall.Source? {
+		if (!facts.declarations.hasOperator(operator.lexeme)) return null
+		val operands = listOfNotNull(target, value)
+		val candidates = candidates(operator.lexeme, if (value == null) listOf(receiver) else listOf(receiver, null))
+		if (candidates.isEmpty()) return null
+		val knownTypes = listOf(receiver)
+		val span = target.span.through(value?.span ?: operator.span)
+		val selected = select(operator, span, operands, knownTypes, probeOperands(operands, knownTypes), candidates) ?: return null
+		checkOperatorReceiver(target, operator)
+		val call = sourceCall(selected)
+		selected.trial.commit()
+		return call
+	}
+
 	fun indexWrite(target: IndexExpression, receiver: CClass, value: Expression, updateTypes: List<ValueType> = emptyList()): ResolvedIndexWrite {
 		val operator = Token(TokenType.Operator, target.span, Operators.INDEX_WRITE.toString())
 		val candidates = indexCandidates(receiver, operator, arity = 2)

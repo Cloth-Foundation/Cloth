@@ -164,6 +164,10 @@ the selected destination before storing when its storage can move.
 [Indexed update contract](references/semantics.md#indexed-compound-assignment) ·
 [Stage 1 implementation and verification](references/indexed-updates-stage-1.md)
 
+[OP-1 Stage 2](../cloth-bindings/references/class-update-operators.md#stage-2-indexed-targets)
+lets class-valued array elements use dedicated update overloads. The call uses
+the identity captured before the RHS and checks that it is still live.
+
 ARRAY-1 Stage 2 executes `==` and `!=` with exact leaf types, nullable
 presence, retained shape, and ordinary element equality. Capture both values
 in source order and compare shape before visiting elements. Use the same

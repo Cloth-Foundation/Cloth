@@ -65,7 +65,7 @@ data class BinaryExpression(val left: Expression, val operator: Token, val right
 	override val span get() = left.span.through(right.span)
 }
 
-/** Ranges are syntax operands of membership, not independently stored values. */
+/** A range expression can be used as a value or as an inline membership operand. */
 internal fun Expression.rangeOrNull(): BinaryExpression? = (this as? BinaryExpression)?.takeIf {
 	it.operator.lexeme in setOf(Operators.RANGE.toString(), Operators.RANGE_INCLUSIVE.toString())
 }

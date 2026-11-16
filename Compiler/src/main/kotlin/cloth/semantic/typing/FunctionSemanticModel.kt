@@ -87,7 +87,7 @@ class FunctionSemanticModel internal constructor(
 		if (callable !is MethodSymbol) return declaredTypeOf(callable)
 		callables.signature(callable)?.let { return it }
 		val declared = declaredTypeOf(callable)
-		if (declared.results != ResultShape.Empty || callable.declaration.operator == null || OperatorRules.isIndexSetter(callable.declaration)) return declared
+		if (declared.results != ResultShape.Empty || callable.declaration.operator == null || OperatorRules.fixedResult(callable.declaration) == ValueType.VOID) return declared
 		return operatorBodies.infer(this, callable, declared).also { callables.recordInferred(callable, it) }
 	}
 

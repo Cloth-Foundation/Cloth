@@ -1022,6 +1022,25 @@ class ArrayTemporaryCleanupTest {
 	}
 
 	@Test
+	fun `stored range returns survive poisoned arenas and repeated comparisons release scratch`(@TempDir directory: Path) {
+		probe(directory, "stored_range_temporaries", """
+			fn<range<int<65536>>> make(int<65536> bound) = 0..=bound
+			fn<int> sample() {
+			    def saved = make(7)
+			    def baseline = liveBytes()
+			    if (baseline <= 0 || saved != 7) return 1
+			    for (def i <- 0..2000) {
+			        if (make(7) != saved) return 2
+			        if (8 == make(7)) return 3
+			        if (liveBytes() != baseline) return 4
+			    }
+			    if (saved != 0..=7 || liveBytes() != baseline) return 5
+			    return 0
+			}
+		""", allocations = 4001)
+	}
+
+	@Test
 	fun `wide inline stores permit bounded safe loop cleanup without arithmetic heap allocations`(@TempDir directory: Path) {
 		probe(directory, "wide_iteration", """
 			fn<int<129>> next(int<129> n) = n + 1

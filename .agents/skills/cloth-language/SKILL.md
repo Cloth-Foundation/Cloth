@@ -190,6 +190,7 @@ captures implementation scope and regression evidence.
 | `opt<T>` parameters, defaults, named calls and placement | [cloth-optional-arguments](../cloth-optional-arguments/SKILL.md) |
 | Ordered results, forwarding, destructuring, discards | [cloth-multiple-results](../cloth-multiple-results/SKILL.md) |
 | Conditionals, is checks, short circuits, branch merges, range/foreach/while/do-while, break/continue and loop cleanup | [cloth-control-flow](../cloth-control-flow/SKILL.md) |
+| Stored numeric ranges, contextual endpoints, value storage and comparisons | [FLOW-2 Stage 1](../cloth-control-flow/references/stored-ranges-stage-1.md) · [Stage 2](../cloth-control-flow/references/stored-ranges-stage-2.md) |
 | Compiler data access, providers, typeinfo | [cloth-compiler-data](../cloth-compiler-data/SKILL.md) |
 | Nullable type providers, payload bounds and fixed array type counts | [nullable provider integration](../cloth-compiler-data/references/nullable-providers.md) |
 | print, println, input, recursive array text, built-in registration and lookup | [cloth-output](../cloth-output/SKILL.md) |
@@ -349,6 +350,9 @@ captures implementation scope and regression evidence.
   [Operand contexts and value-target checks](references/operand-contexts.md)
   covers eager binary contexts, `int<auto>` and `float<auto>`, and
   overloads for value-target `is`.
+  [Class update operators](../cloth-bindings/references/class-update-operators.md)
+  covers dedicated compound-assignment and postfix overloads on writable
+  bindings, fields, array elements, and class brackets.
   [Operator publication](references/operator-publication.md) links the runnable
   examples, supported feature records, and release verification.
 

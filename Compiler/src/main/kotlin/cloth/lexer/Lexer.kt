@@ -386,7 +386,7 @@ class Lexer(private val sourceFile: SourceFile) { constructor(source: String) : 
 		private val RAW_STRING_DELIMITER = Operators.DOUBLE_QUOTATION.toString().repeat(3)
 
 		private val OPERATORS = Operators.entries.filter(Operators::tokenized).sortedByDescending { it.toString().length }
-		private val KEYWORDS = Keywords.entries.filter { it != Keywords.AUTO }.sortedByDescending { it.toString().length }
+		private val KEYWORDS = Keywords.entries.filter { it != Keywords.AUTO && it != Keywords.RANGE }.sortedByDescending { it.toString().length }
 	}
 
 }

@@ -358,6 +358,20 @@ internal class ClassLifetimeAnalysis(private val model: FunctionSemanticModel) {
 	}
 
 	private fun statement(item: Statement, state: State): Handle? {
+		if (item in model.types.updateCalls) {
+			val (target, rhs) = item.updateOperands()
+			val receiver = expression(target, state)
+			if (!continues(target, state)) return null
+			check(receiver, state, target.span)
+			if (rhs != null) {
+				expression(rhs, state)
+				if (!continues(rhs, state)) return null
+				check(receiver, state, target.span)
+			}
+			state.active.clear()
+			unknownOwnershipEffect(state)
+			return null
+		}
 		when (item) {
 			is ExpressionStatement        -> return expression(item.expression, state)
 			is BindingDeclaration         -> if (item.initializer !is FunctionBlockExpression) {

@@ -47,6 +47,14 @@ finite-float, integer header-overflow and independent foreach-value contracts
 when extending execution. The [implementation plan](../../../todo/for-loops-plan.md)
 maps the accepted contract to compiler stages and verification requirements.
 
+[FLOW-2 stored ranges](references/semantics.md#stored-numeric-ranges-flow-2-design)
+capture endpoints at creation and can start a fresh traversal on each use.
+[Stage 1](references/stored-ranges-stage-1.md) parses and checks `range<T>` and
+both range expression forms. [Stage 2](references/stored-ranges-stage-2.md)
+executes range creation, independent copies, membership, and equality.
+Stored-range traversal is Stage 3 in the
+[open questions plan](../../../todo/open-questions-plan.md#flow-2-stored-range-implementation-stages).
+
 ## For loops: integrated range and foreach execution
 
 [Growable arrays Stage 3](../cloth-arrays/references/growable-arrays-stage-3.md)

@@ -310,6 +310,7 @@ class GenericBodyViews internal constructor(
 
 				is CArray         -> type.copy(element = rebind(type.element))
 				is CNullable      -> rebind(type.payload).let { it as? CNullable ?: CNullable(it) }
+				is CRange         -> type.copy(endpoint = rebind(type.endpoint))
 				is CMemberType    -> {
 					val definition = if (type === canonical.types.objectRoot) types.objectRoot else types.definitions.getValue(type.declaration)
 					if (type.typeArguments.isEmpty()) definition else {

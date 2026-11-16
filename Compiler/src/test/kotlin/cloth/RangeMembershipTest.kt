@@ -163,10 +163,10 @@ class RangeMembershipTest {
 	}
 
 	@Test
-	fun `invalid type contracts standalone ranges and literal overflow fail before output`(@TempDir dir: Path) {
+	fun `invalid membership contracts and literal overflow fail before output`(@TempDir dir: Path) {
 		val cases = listOf(
-			"println(true == 0..1)", "println(1 == false..true)", "println(1..2 == 1..2)",
-			"def r = 1..2", "println(1 < 0..2)", "println(1 == 0..1..2)",
+			"println(true == 0..1)", "println(1 == false..true)",
+			"println(1 == 0..1..2)",
 			"def<int<8>> x = 1; def<int<16>> end = 2; println(x == 0..end)",
 			"def<unsigned int> x = 1; def end = 2; println(0..end == x)",
 			"def<float<16>> x = 1.0; def<float<64>> end = 2.0; println(x == 0.0..end)",

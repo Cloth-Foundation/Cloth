@@ -91,6 +91,15 @@ internal class EmitBindings(private val context: LLVMContextRef, private val bui
 		else if (mayBorrowInstance(key)) storage(key)
 	}
 
+	fun checkWritableDestination(key: BindingSymbol) {
+		if (key is ReceiverFieldSymbol && key.field is ClassField) {
+			checkNotNull(classes).runtime.checkWritable(builder, objects.getValue(key.receiver))
+		} else {
+			checkWritablePayload(key)
+			if (mayBorrowInstance(key)) storage(key).receiver?.let { checkNotNull(receivers).checkWritable(builder, it) }
+		}
+	}
+
 	private fun storage(key: BindingSymbol): Storage {
 		if (key !is ReceiverFieldSymbol) {
 			val fixed = bindings.getValue(key)

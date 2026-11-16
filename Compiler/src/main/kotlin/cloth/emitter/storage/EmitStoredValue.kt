@@ -16,7 +16,7 @@ internal class EmitStoredValue(private val context: LLVMContextRef, private val 
 	private val module get() = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)))
 	private fun bytes(type: ValueType) = LLVMConstInt(LLVMIntTypeInContext(context, target.sizeBits), LLVMABISizeOfType(LLVMGetModuleDataLayout(module), type.llvmStorage(context, target)), 0)
 
-	fun copy(destination: LLVMValueRef, source: LLVMValueRef, type: CInteger) {
+	private fun copy(destination: LLVMValueRef, source: LLVMValueRef, type: ValueType) {
 		// The conservative alignment supports packed i32 chunk globals and native limbs alike.
 		LLVMBuildMemCpy(builder, destination, 1, source, 1, bytes(type))
 	}
@@ -32,12 +32,12 @@ internal class EmitStoredValue(private val context: LLVMContextRef, private val 
 		return LLVMBuildICmp(builder, LLVMIntNE, flag, LLVMConstNull(LLVMTypeOf(flag)), "stored_present")
 	}
 
-	private fun hasInlinePayload(type: CNullable): Boolean = type.payload is CStruct || type.payload is CInteger && type.payload.bits > 64
+	private fun hasInlinePayload(type: CNullable): Boolean = type.payload is CStruct || type.payload.hasInlineSnapshot
 
 	fun load(address: LLVMValueRef, type: ValueType, name: String = "stored_value", booleanName: String = "stored_bool"): LLVMValueRef {
 		if (type is CStruct) return address
-		if (type is CInteger && type.bits > 64) {
-			val snapshot = LLVMBuildAlloca(builder, type.llvmStorage(context, target), "integer_snapshot")
+		if (type.hasInlineSnapshot) {
+			val snapshot = LLVMBuildAlloca(builder, type.llvmStorage(context, target), if (type is CRange) "range_snapshot" else "integer_snapshot")
 			copy(snapshot, address, type)
 			return snapshot
 		}
@@ -56,7 +56,7 @@ internal class EmitStoredValue(private val context: LLVMContextRef, private val 
 			LLVMBuildMemMove(builder, address, 1, value, 1, bytes(type))
 			return
 		}
-		if (type is CInteger && type.bits > 64) {
+		if (type.hasInlineSnapshot) {
 			copy(address, value, type); return
 		}
 		if (type is CNullable && hasInlinePayload(type)) {

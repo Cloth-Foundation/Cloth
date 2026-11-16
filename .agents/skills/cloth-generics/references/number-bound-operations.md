@@ -22,6 +22,10 @@ contract. A bare bounded `T` is non-nullable. An explicit `T?` uses ordinary
 presence proofs, casts and equality. `value::str`, output and interpolation use
 the actual type's formatter. [Confirmed Number design](semantics.md#number-constraint-design)
 
+[FLOW-2 Stage 1](../../cloth-control-flow/references/stored-ranges-stage-1.md)
+checks `range<T>` with `T: Number` and preserves the exact endpoint type at
+specialization. Inferred calls can match the endpoint type inside `range<T>`.
+
 ## Compiler ownership
 
 - [ClosedTypeAnalyzer](../../../../Compiler/src/main/kotlin/cloth/semantic/generics/ClosedTypeAnalyzer.kt)

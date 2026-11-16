@@ -33,8 +33,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	private val unknown = Effects(buffers = true, safe = false)
 	fun canReclaim(expression: Expression): Boolean = effects(expression).let { it.buffers && it.safe }
 	fun hasNoPublication(expression: Expression): Boolean = effects(expression).safe
-	private fun inlineInteger(type: ValueType) = type is CInteger || type is CNullable && type.payload is CInteger
-	private fun publishes(type: ValueType) = type.buffered && !inlineInteger(type)
+	private fun publishes(type: ValueType) = type.buffered
 	private fun transfersAggregate(type: ValueType) = type is CArray || type.containsStruct
 	private val hasClasses = functions.declarations.classDefinitions.isNotEmpty()
 	private fun ownsField(key: BindingSymbol) = (key as? ReceiverFieldSymbol)?.field is ClassField
@@ -49,7 +48,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 	 * unrecognized/captured effects conservatively retain the owning frame.
 	 */
 	fun canReclaimIteration(body: List<Statement>): Boolean = body.all { statement ->
-		when (statement) {
+		statement !in types.updateCalls && when (statement) {
 			is DoWhileStatement           -> canReclaimLoop(statement)
 			is WhileStatement             -> canReclaimLoop(statement)
 			is LoopJumpStatement          -> true
@@ -171,7 +170,7 @@ internal class ArrayTemporaryAnalysis(private val functions: FunctionSemanticMod
 			else                                                                                                 -> unknown
 		}
 		active.remove(expression)
-		val allocating = result + Effects(types.resultOf(expression).values.any { it.indirect && inlineInteger(it) })
+		val allocating = result + Effects(types.resultOf(expression).values.any { ((it as? CNullable)?.payload ?: it).hasInlineSnapshot })
 		memo[expression] = allocating
 		return allocating
 	}

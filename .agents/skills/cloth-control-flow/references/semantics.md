@@ -116,6 +116,54 @@ link the maintained example, full-suite evidence and native/IR target limits.
 
 ## For loops and ranges (design confirmed; implementation deferred)
 
+### Stored numeric ranges (FLOW-2 design)
+
+- `def span = start()..end()` creates a reusable numeric range. The range
+  captures both endpoint values once during creation. It can be passed to
+  a function or used in `for (def i <- span)`. Each loop starts a fresh
+  traversal using the captured bounds.
+- Range creation evaluates and validates the start before evaluating the
+  end, then validates the end. Known non-finite endpoints fail during
+  compilation. A dynamically produced NaN or infinity fails at creation,
+  even if the range value would never be used.
+- Spell the built-in range type `range<T>`, where `T` is the endpoint
+  type. For example, a function can take `range<int> span`. For the same
+  endpoint type, `..` and `..=` both produce `range<T>`. Each value
+  carries its own end-inclusion rule. `range` remains available for bindings,
+  fields, and functions.
+- An expected `range<T>` supplies `T` as the context for both endpoint
+  expressions. In `def<range<int<8>>> span = 0..10`, both literals are
+  checked as `int<8>`. Apply ordinary literal range checks and require
+  already-typed endpoints to match `T` exactly.
+- The first implementation supports `range<T>` with a `T: Number` bound,
+  as in `fn<range<T>> span<T: Number>(T start, T end) = start..end`.
+  The bound proves the endpoint type is numeric. Specialization keeps
+  the exact endpoint type.
+- A stored-range loop accepts the same optional header stepper as an inline
+  range loop. Each traversal supplies its own stepper and defaults to `+1`.
+  If `span` holds `10..0`, `for (def i <- span; i--)` visits 10 through 1.
+- A numeric value and a stored range use the ordinary membership rules
+  with `==` and `!=` in either operand order. If `span` holds `0..10`,
+  `5 == span` is true and `span != 5` is false.
+  [Numeric range membership](../../cloth-numerics/references/range-membership.md#confirmed-design)
+- Two ranges with the same endpoint type compare equal when their saved
+  start, saved end, and end-inclusion rule all match. `!=` negates that
+  comparison. For example, `0..3` and `0..=2` compare unequal.
+  A typed range supplies the endpoint type to a range literal in either
+  operand order. Apply ordinary literal checks and require exact typed endpoints.
+- The first release uses the saved parts internally for traversal and
+  comparisons. Defer accessors for the start, end, and end-inclusion rule
+  until a caller needs to read them.
+- Fields and arrays can store independent copies of range values under the
+  ordinary value rules. For example, a struct can have a `range<int> window`
+  field, and a `range<int>[]` can hold ranges with different saved bounds.
+
+[Stage 1 syntax and type checking](stored-ranges-stage-1.md) and
+[Stage 2 storage and comparisons](stored-ranges-stage-2.md) are implemented.
+Stage 3 adds traversal over a stored range.
+
+### Inline ranges and foreach
+
 The integrated range/foreach contract below is extended by
 [break/continue and reusable loop control](loop-control.md), approved on
 2026-11-02. That record owns jump behavior, header placement and future reuse.

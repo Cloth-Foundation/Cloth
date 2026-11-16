@@ -11,6 +11,11 @@ Read the relevant feature skill for current implementation rules and tests.
 Numeric range membership with `==` / `!=`, either operand order and contextual
 literal widths is owned by the [membership contract](../../cloth-numerics/references/range-membership.md)
 and [numeric skill](../../cloth-numerics/SKILL.md).
+The [stored range contract](../../cloth-control-flow/references/semantics.md#stored-numeric-ranges-flow-2-design)
+defines `range<T>` values. [FLOW-2 Stage 1](../../cloth-control-flow/references/stored-ranges-stage-1.md)
+covers their syntax, endpoint types and generic specialization.
+[Stage 2](../../cloth-control-flow/references/stored-ranges-stage-2.md) covers
+native value storage and comparisons.
 Shared portability and class/state design remain here; nullable decisions live in
 their feature-owned reference.
 
@@ -435,6 +440,8 @@ Read [Cloth bindings and assignments](../../cloth-bindings/references/semantics.
 [feature skill](../../cloth-bindings/SKILL.md).
 The [indexed update contract](../../cloth-arrays/references/semantics.md#indexed-compound-assignment)
 defines target selection, old-value capture, and stores for array elements.
+[OP-1 class update operators](../../cloth-bindings/references/class-update-operators.md)
+define dedicated `void` overloads that act on the captured class identity.
 
 ## Target-sized unsigned integer (usize)
 

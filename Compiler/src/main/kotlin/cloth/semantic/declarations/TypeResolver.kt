@@ -7,15 +7,16 @@ import cloth.parser.type.TypeReference
 import cloth.semantic.OperatorRules
 import cloth.target.TargetLayout
 import cloth.token.Keywords
+import cloth.token.Operators
 import cloth.token.Token
 import cloth.token.integerLiteralValue
 
-internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }, private val contextualNamedType: ((Token) -> CMemberType?)? = null, private val substitutedType: ((TypeReference) -> ValueType?)? = null, private val resolvedType: ((TypeReference) -> ValueType?)? = null) {
+internal class TypeResolver(val target: TargetLayout, private val operatorWidth: Int? = null, private val namedType: (String) -> CMemberType? = { null }, private val contextualNamedType: ((Token) -> CMemberType?)? = null, private val substitutedType: ((TypeReference) -> ValueType?)? = null, private val resolvedType: ((TypeReference) -> ValueType?)? = null, private val checkRangeEndpoint: Boolean = true) {
 
 	fun resolve(annotation: TypeReference): ValueType {
 		resolvedType?.invoke(annotation)?.let { return it }
-		if (substitutedType == null) annotation.application?.let { throw GenericErrors.compilation(it.span) }
 		val name = annotation.name.lexeme
+		if (substitutedType == null && name != Keywords.RANGE.toString()) annotation.application?.let { throw GenericErrors.compilation(it.span) }
 		if (name == Keywords.VOID.toString() && annotation.hasNullability) throw SemanticErrors.nullableType("'${Keywords.VOID}' has no value and cannot be nullable", annotation.span)
 		if (annotation.unsigned && name != Keywords.INTEGER.toString()) throw SemanticErrors.unsigned(annotation)
 		val base = if (name == Keywords.INTEGER.toString() || name == Keywords.FLOAT.toString()) {
@@ -42,10 +43,23 @@ internal class TypeResolver(val target: TargetLayout, private val operatorWidth:
 				Keywords.STRING.toString()    -> ValueType.STRING
 				Keywords.TYPEINFO.toString()  -> ValueType.TYPEINFO
 				Keywords.VOID.toString()      -> ValueType.VOID
+				Keywords.RANGE.toString()     -> rangeType(annotation)
 				else                          -> (if (substitutedType != null) substitutedType.invoke(annotation) else if (contextualNamedType != null) contextualNamedType.invoke(annotation.name) else namedType(name)) ?: throw SemanticErrors.type(annotation)
 			}
 		}
 		return withSuffixes(annotation, base)
+	}
+
+	private fun rangeType(annotation: TypeReference): CRange {
+		val argument = annotation.rangeEndpointReference()
+		if (argument.isPlaceholder) throw GenericErrors.argument("'${Operators.UNDERSCORE}' requires a direct call type argument slot", argument.span)
+		val endpoint = resolve(argument)
+		// Signature keys compare symbolic slots by position. The bound is checked
+		// independently when the declaration and its specializations are resolved.
+		if (!endpoint.supportsNumericOperations && (checkRangeEndpoint || endpoint !is CTypeParameter)) {
+			throw SemanticErrors.rangeValue("'${Keywords.RANGE}' requires a non-nullable numeric endpoint type, got '${endpoint.spelling}'", argument.span)
+		}
+		return CRange(endpoint)
 	}
 
 	internal fun withSuffixes(annotation: TypeReference, base: ValueType): ValueType {
@@ -64,3 +78,6 @@ internal class TypeResolver(val target: TargetLayout, private val operatorWidth:
 		}
 	}
 }
+
+internal fun TypeReference.rangeEndpointReference(): TypeReference = typeArguments.singleOrNull()
+	?: throw SemanticErrors.rangeValue("'${Keywords.RANGE}' requires exactly one endpoint type", application?.span ?: name.span)

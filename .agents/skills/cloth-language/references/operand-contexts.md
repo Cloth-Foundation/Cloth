@@ -71,8 +71,11 @@ typedef<class> Player (pub def<int> points, def<string> name) {
 | `::str()` | [Class](class-formatting.md) and [enum](value-operators.md#enum-values-and-formatting) formatters. |
 | Value-target `is` | Full class overloads with ordinary receiver positions. |
 | Type and state targets of `is` | Type targets use built-in checks. State targets depend on the class state runtime. User-defined narrowing requires a verified proof contract. |
-| `&&`, `\|\|`, `?:` | Built-in conditional evaluation. Overloads need rules for when each operand and body run. |
-| Assignment, compound assignment, postfix updates, indexing | Built-in stored-place behavior. Overloads need a contract for writable operands, receiver capture, and results. |
+| `&&`, `\|\|` | Built-in short-circuit operators on `bool` operands. User types can supply explicit predicates such as `gate.isReady()`. |
+| `?:` | Built-in nullable fallback. The right operand runs only when the left value is absent. [Nullable semantics](../../cloth-nullability/references/semantics.md#nullable-values-and-optional-parameters) |
+| Assignment | Plain `=` uses ordinary assignment. A class binding receives the replacement object's identity. [Binding semantics](../../cloth-bindings/references/semantics.md#bindings) |
+| Compound assignments and postfix updates | Dedicated class overloads for `+=`, `-=`, `*=`, `/=`, `%=`, `++`, and `--` use writable targets. [Class update operators](../../cloth-bindings/references/class-update-operators.md) |
+| Indexing | Classes can declare checked read and write operators. [Collection indexing](../../cloth-collections/references/indexing.md) |
 | Ranges, call syntax, conversions, other providers | Separate syntax or evaluation contracts remain to be designed before adding overloads. |
 
 ## Implementation ownership

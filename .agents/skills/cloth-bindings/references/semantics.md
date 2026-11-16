@@ -32,6 +32,9 @@ the parent skill for current implementation boundaries and source/test routing.
   static/runtime checks rather than demanding identical extent annotations.
 - A binding's declared or inferred type stays fixed. Reassignment must satisfy
   that type; assigning a different type does not change the binding's type.
+- Plain `=` uses ordinary assignment. For a class binding, it stores the
+  replacement object's identity. Aliases to the original object continue to
+  refer to that object.
 - `=` creates a mutable binding.
 - `:=` creates an immutable binding. It prevents reassignment of that binding;
   it does not freeze the object or its fields.
@@ -59,3 +62,34 @@ the parent skill for current implementation boundaries and source/test routing.
   expressions are not supported by the language design; there is no old/new
   expression-result distinction. The user confirmed this on 2026-10-30.
 - See development status for current support and initial exponentiation choices.
+
+### Compound-assignment overloads
+
+Cloth supports dedicated class overloads for `+=`,
+`-=`, `*=`, `/=`, and `%=` under the same contract. A dedicated overload
+returns `void` and can mutate the captured object in place. Aliases observe
+the mutation because they hold the same object identity. The operator
+statement preserves the target's identity.
+
+Compound assignment requires a writable target even when the selected
+overload mutates the instance in place. With `def locked := Meter::new`,
+`locked += delta` is a compile-time error. An ordinary method can still
+mutate the object through that binding.
+[Bracket targets](../../cloth-collections/references/indexing.md#confirmed-design)
+still require both a getter and a matching setter.
+
+Resolve applicable overloads for the compound operator first using ordinary
+overload ranking. An ambiguous best match is a compile-time error. When no
+dedicated overload matches, apply the corresponding ordinary binary operator
+and write its result back under the target's assignment rules. With
+`operator +=(string label)` and `operator +(int delta) -> Meter`,
+`meter += 1` selects `+` and stores its result.
+
+### Postfix update overloads
+
+Classes can declare dedicated `operator ++()` and `operator --()` overloads.
+Each takes zero arguments, returns `void`, and acts on the captured object
+through a writable target. `meter++` and `meter--` remain standalone
+statements. When no dedicated overload applies, use the existing numeric
+increment or decrement rules.
+[Class update implementation](class-update-operators.md)

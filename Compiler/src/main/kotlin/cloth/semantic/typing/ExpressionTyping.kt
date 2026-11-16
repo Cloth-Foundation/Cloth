@@ -83,6 +83,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 	private fun ValueType?.suppliesFloatingContext(): Boolean = when (this) {
 		is CNullable -> payload.suppliesFloatingContext()
 		is CArray    -> element.suppliesFloatingContext()
+		is CRange    -> endpoint.suppliesFloatingContext()
 		is CFloat    -> true
 		else         -> false
 	}
@@ -148,11 +149,12 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 
 	/** Use default literal types as evidence. Call matching checks their ranges. */
 	internal fun inferenceDefaultType(expression: Expression): ValueType {
+		val previous = inferenceDefaults
 		inferenceDefaults = true
 		return try {
 			typeOf(expression)
 		} finally {
-			inferenceDefaults = false
+			inferenceDefaults = previous
 		}
 	}
 
@@ -165,11 +167,16 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 			arrayElementHint(expression.operand, contextualFloat)?.let { typeOf(expression, it, contextualFloat = contextualFloat) }
 		} else typeOf(expression)
 
-		is BinaryExpression     -> if (expression.operator.lexeme in arithmeticOperators) {
-			val left = arrayElementHint(expression.left, contextualFloat)
-			val right = arrayElementHint(expression.right, contextualFloat)
-			if (left == null && right == null) null else typeOf(expression, left ?: right, contextualFloat = contextualFloat)
-		} else typeOf(expression)
+		is BinaryExpression     -> when {
+			expression.rangeOrNull() != null                   -> rangeEndpointHint(expression)?.let { typeOf(expression, CRange(it)) }
+			expression.operator.lexeme in arithmeticOperators -> {
+				val left = arrayElementHint(expression.left, contextualFloat)
+				val right = arrayElementHint(expression.right, contextualFloat)
+				if (left == null && right == null) null else typeOf(expression, left ?: right, contextualFloat = contextualFloat)
+			}
+
+			else                                               -> typeOf(expression)
+		}
 
 		is IfExpression         -> {
 			var hint: ValueType? = null
@@ -652,18 +659,14 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				operand
 			}
 
+			is BinaryExpression if expression.rangeOrNull() != null -> rangeValue(expression, expected)
 			is BinaryExpression          -> overloadedType(expression) ?: run {
 				if (expression.operator.lexeme == Keywords.IS.toString()) reject {
 					SemanticErrors.operatorMatch(expression.operator, expression.span, emptyList(), ambiguous = false)
 				}
-				if (expression.rangeOrNull() != null) throw SemanticErrors.rangeMembership("A range requires a numeric operand and '${Operators.EQUAL}' or '${Operators.NOT_EQUAL}'", expression.span)
 				val operation = Operators.fromCharacterRequired(expression.operator.lexeme)
 				if (operation in OperatorRules.classComparisons) {
-					if (operation != Operators.IDENTITY && (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null)) {
-						return intrinsic { rangeMembership(expression) }
-					}
-					val nullable = nullableEquality(expression, operation, contextualFloat)
-					if (nullable != null) return nullable
+					contextualEquality(expression, operation, contextualFloat)?.let { return it }
 				}
 				val numeric = expression.operator.lexeme in arithmeticOperators || expression.operator.lexeme in comparisonOperators
 				val payloadContext = (expected as? CNullable)?.payload ?: expected
@@ -676,6 +679,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 				} else null
 				val left = typeOf(expression.left, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
 				val right = typeOf(expression.right, intContext ?: floatContext, contextualFloat = contextualFloat, floatingLiteralType = floatContext)
+				if (operation in OperatorRules.equality) rangeComparison(expression, left, right)?.let { return it }
 				arrayEquality(expression, operation, left, right)?.let { return it }
 				equalityContextType(expression, operation, left, right)?.let { return it }
 				classComparison(expression, operation, left, right)?.let { return it }
@@ -768,23 +772,47 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		}
 	}
 
-	private fun rangeMembership(expression: BinaryExpression): ValueType {
-		val range = expression.left.rangeOrNull() ?: checkNotNull(expression.right.rangeOrNull())
-		val value = if (range === expression.left) expression.right else expression.left
+	/** Only continuing values can supply an exact numeric contract. */
+	private fun rangeOperandHint(expression: Expression): ValueType? =
+		if (completion(expression).canFallThrough) arrayElementHint(expression, contextualFloat = true)?.takeUnless { it == ValueType.NEVER } else null
+
+	private fun rangeEndpointHint(range: BinaryExpression): ValueType? = listOf(range.left, range.right).firstNotNullOfOrNull {
+		rangeOperandHint(it)?.takeIf { type -> type.supportsNumericOperations }
+	}
+
+	private fun rangeValue(range: BinaryExpression, expected: ValueType?): CRange {
+		val context = ((expected as? CNullable)?.payload ?: expected) as? CRange
+		val endpoints = listOf(range.left, range.right)
+		val required = context?.endpoint ?: rangeEndpointHint(range)
+			?: endpoints.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
+			?: ValueType.INT // Both endpoints exit. Check their syntax even though no range value is produced.
+		val constants = RangeConstants(model)
+		for (endpoint in endpoints) {
+			val actual = typeOf(endpoint, required, contextualFloat = true)
+			if (!actual.supportsNumericOperations && actual != ValueType.NEVER) reject {
+				SemanticErrors.rangeValue("Range endpoints require a non-nullable numeric type, got '${actual.spelling}'", endpoint.span)
+			}
+			if (actual != ValueType.NEVER && actual != required) reject {
+				SemanticErrors.rangeValue("Range endpoint requires '${required.spelling}', got '${actual.spelling}'; use an explicit cast", endpoint.span)
+			}
+			if (!inferenceDefaults && required is CFloat && constants.floating(endpoint)?.isFinite() == false) reject {
+				SemanticErrors.rangeValue("Float range endpoints must be finite", endpoint.span)
+			}
+		}
+		return CRange(required)
+	}
+
+	private fun inlineRangeMembership(expression: BinaryExpression, range: BinaryExpression, value: Expression, valueHint: ValueType?): ValueType {
 		fun invalid(message: String, source: Expression): Nothing = reject { SemanticErrors.rangeMembership(message, source.span) }
-		if (value.rangeOrNull() != null) invalid("Range membership requires one numeric value and one range", expression)
 		val operands = listOf(value, range.left, range.right)
 		// Discover fixed contracts before assigning literal widths, including when the
 		// range is written first. This is type discovery, never runtime evaluation.
-		val required = operands.firstNotNullOfOrNull {
-			// An exiting expression has no value contract to contribute, even if
-			// its unreachable alternative happens to end with a typed value.
-			if (completion(it).canFallThrough) arrayElementHint(it, contextualFloat = true)?.takeUnless { type -> type == ValueType.NEVER } else null
-		} ?: operands.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
+		val required = valueHint ?: rangeOperandHint(range.left) ?: rangeOperandHint(range.right)
+			?: operands.firstNotNullOfOrNull { typeOf(it, contextualFloat = true).takeUnless { type -> type == ValueType.NEVER } }
 		// When every operand exits, no numeric value reaches a comparison. A
 		// literal context still lets us check all syntax without rejecting never.
 		?: ValueType.INT
-		if (!required.numeric) invalid("Range membership requires a non-nullable numeric type, got '${required.spelling}'", value)
+		if (!required.supportsNumericOperations) invalid("Range membership requires a non-nullable numeric type, got '${required.spelling}'", value)
 		for (operand in operands) {
 			val actual = typeOf(operand, required, contextualFloat = true)
 			if (actual != ValueType.NEVER && actual != required) invalid("Range membership requires '${required.spelling}', got '${actual.spelling}'; use an explicit cast", operand)
@@ -792,7 +820,56 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		}
 		// Traversal passes visit the range syntax, but it supplies no stored value.
 		model.recordResult(range, ResultShape.Empty)
-		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
+		model.rangeMemberships[expression] = range
+		return ValueType.BOOL
+	}
+
+	private fun ValueType?.rangePayload(): CRange? = ((this as? CNullable)?.payload ?: this) as? CRange
+
+	/** Literal-only conditional branches still reveal whether the result is a range. */
+	private fun conditionalRangeHint(expression: Expression): CRange? =
+		if (expression is IfExpression && completion(expression).canFallThrough) inferenceDefaultType(expression).rangePayload() else null
+
+	private fun rangeLiteralComparison(expression: BinaryExpression): ValueType {
+		val left = expression.left.rangeOrNull()
+		val right = expression.right.rangeOrNull()
+		if (left != null && right != null) {
+			val context = (rangeEndpointHint(left) ?: rangeEndpointHint(right))?.let(::CRange)
+			val leftType = typeOf(left, context)
+			val rightType = typeOf(right, leftType.rangePayload() ?: context)
+			return rangeComparison(expression, leftType, rightType) ?: ValueType.NEVER
+		}
+		val literal = left ?: checkNotNull(right)
+		val peer = if (left != null) expression.right else expression.left
+		val hint = rangeOperandHint(peer)
+		val context = hint.rangePayload() ?: conditionalRangeHint(peer)
+			?: return inlineRangeMembership(expression, literal, peer, hint)
+		val literalType = typeOf(literal, context)
+		val peerType = typeOf(peer, context)
+		return (if (left != null) rangeComparison(expression, literalType, peerType) else rangeComparison(expression, peerType, literalType)) ?: ValueType.NEVER
+	}
+
+	private fun rangeComparison(expression: BinaryExpression, left: ValueType, right: ValueType): ValueType? {
+		val leftRange = left.rangePayload()
+		val rightRange = right.rangePayload()
+		val range = leftRange ?: rightRange ?: return null
+		if (left == ValueType.NEVER || right == ValueType.NEVER) return ValueType.NEVER
+		if (leftRange != null && rightRange != null) {
+			if (leftRange != rightRange) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
+			if (left is CNullable || right is CNullable) model.nullableComparisons[expression] = range
+		} else {
+			val rangeOnLeft = leftRange != null
+			val rangeExpression = if (rangeOnLeft) expression.left else expression.right
+			val valueExpression = if (rangeOnLeft) expression.right else expression.left
+			val rangeType = if (rangeOnLeft) left else right
+			val valueType = if (rangeOnLeft) right else left
+			if (rangeType is CNullable) throw SemanticErrors.nullablePayload(rangeType, rangeExpression.span)
+			if (valueType != range.endpoint) reject {
+				SemanticErrors.rangeMembership("Range membership requires '${range.endpoint.spelling}', got '${valueType.spelling}'; use an explicit cast", valueExpression.span)
+			}
+			model.rangeMemberships[expression] = rangeExpression
+		}
+		return ValueType.BOOL
 	}
 
 	private fun elvisType(expression: ElvisExpression, expected: ValueType?, contextualFloat: Boolean, floatingLiteralType: CFloat?): ValueType {
@@ -831,11 +908,23 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		else                                                                                                                      -> null
 	}
 
-	private fun nullableEquality(expression: BinaryExpression, operation: Operators, contextualFloat: Boolean): ValueType? {
+	private fun contextualEquality(expression: BinaryExpression, operation: Operators, contextualFloat: Boolean): ValueType? {
+		val equality = operation in OperatorRules.equality
+		if (equality && (expression.left.rangeOrNull() != null || expression.right.rangeOrNull() != null)) {
+			return intrinsic { rangeLiteralComparison(expression) }
+		}
 		val leftHint = equalityHint(expression.left)
 		val rightHint = equalityHint(expression.right)
 		val comparesNull = expression.left is NullLiteral || expression.right is NullLiteral
-		if (!comparesNull && operation in OperatorRules.equality) {
+		if (!comparesNull && equality) {
+			val range = leftHint.rangePayload() ?: rightHint.rangePayload()
+			if (range != null) return intrinsic {
+				fun operand(value: Expression, hint: ValueType?): ValueType {
+					val peerRange = (hint ?: rangeOperandHint(value)).rangePayload() ?: conditionalRangeHint(value)
+					return typeOf(value, if (peerRange != null) range else range.endpoint, contextualFloat = true)
+				}
+				rangeComparison(expression, operand(expression.left, leftHint), operand(expression.right, rightHint))
+			}
 			arrayLiteralEquality(expression, operation, leftHint, rightHint)?.let { return it }
 		}
 		val context = (leftHint as? CNullable) ?: (rightHint as? CNullable)
@@ -843,13 +932,14 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val payloadContext = context?.payload?.takeUnless { it is CArray && operation in OperatorRules.equality }
 		val left = typeOf(expression.left, if (expression.left is NullLiteral) context else payloadContext, contextualFloat = contextualFloat)
 		val right = typeOf(expression.right, if (expression.right is NullLiteral) context else payloadContext, contextualFloat = contextualFloat)
+		if (!comparesNull && equality) rangeComparison(expression, left, right)?.let { return it }
 		arrayEquality(expression, operation, left, right)?.let { return it }
 		classComparison(expression, operation, left, right)?.let { return it }
 		valueComparison(expression, operation, left, right)?.let { return it }
 		val wrapper = left as? CNullable ?: right as? CNullable
 		if (wrapper == null) throw SemanticErrors.nullComparison("A ${Keywords.NULL} comparison requires a typed nullable operand", expression.span)
 		val payload = wrapper.payload
-		val unsupportedPayload = (payload is CTypeParameter && !payload.numberBound) || payload is CArray || payload is CMemberType
+		val unsupportedPayload = (payload is CTypeParameter && !payload.numberBound) || payload is CArray || payload is CRange || payload is CMemberType
 		if (!wrapper.accepts(left) || !wrapper.accepts(right) || unsupportedPayload && !comparesNull) reject { SemanticErrors.binary(expression.operator, expression.left, expression.right, left, right, comparison = true) }
 		model.nullableComparisons[expression] = payload
 		return if (completion(expression).canFallThrough) ValueType.BOOL else ValueType.NEVER
@@ -921,7 +1011,7 @@ internal abstract class ExpressionTyping(val model: SemanticModel, private val p
 		val overload = when {
 			classView != null                                                                                                     -> classComparisonOverride(expression, Operators.EQUAL, classView, classView)
 			leaf is CMemberType                                                                                                   -> valueComparisonOverride(expression, Operators.EQUAL, leaf) ?: if (leaf is CEnum) null else incomparable()
-			leaf.supportsNumericOperations || leaf in setOf(ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO) -> null
+			leaf is CRange || leaf.supportsNumericOperations || leaf in setOf(ValueType.BOOL, ValueType.CHAR, ValueType.STRING, ValueType.TYPEINFO) -> null
 			else                                                                                                                  -> incomparable()
 		}
 		model.arrayEqualities[expression] = ArrayEqualityPlan(leftArray, rightArray, overload)

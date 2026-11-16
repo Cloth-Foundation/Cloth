@@ -298,6 +298,23 @@ internal class EmitPlaces(
 		return action(captureWrite(instance, place))
 	}
 
+	fun checkWritable(target: CapturedWrite) {
+		fun checkReceiver(access: ReceiverAccess) {
+			val receiver = functions.receivers.resolve(builder, access)
+			functions.receivers.checkWritable(builder, receiver)
+		}
+
+		when (target) {
+			is InstanceWrite -> functions.classes.checkWritable(builder, target.instance.access)
+			is ReceiverWrite -> checkReceiver(target.access)
+			is StoredWrite   -> bindings.checkWritablePayload(target.root)
+			is LocalWrite    -> {
+				bindings.checkWritablePayload(target.root)
+				target.receiver?.let(::checkReceiver)
+			}
+		}
+	}
+
 	private fun captureWrite(instance: InstancePlace?, place: StoredPlace?): CapturedWrite {
 		if (instance != null) return InstanceWrite(captureInstance(instance))
 		val root = checkNotNull(place)

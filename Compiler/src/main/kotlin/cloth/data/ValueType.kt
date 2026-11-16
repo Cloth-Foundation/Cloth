@@ -21,8 +21,7 @@ sealed class ValueType(val keyword: Keywords) {
 	val numeric: Boolean get() = integer || floating
 	open val buffered: Boolean get() = false
 
-	/** Internal transport: some fixed scalars use stable byte snapshots, without
-	 * becoming source arrays/strings or requiring heap storage for arithmetic. */
+	/** Internal transport: a value can use a stable snapshot of its inline storage. */
 	open val indirect: Boolean get() = buffered
 	open val containsNullability: Boolean get() = false
 	open val arrayDimensions: List<BigInteger?> get() = emptyList()
@@ -125,3 +124,6 @@ sealed class ValueType(val keyword: Keywords) {
 		}
 	}
 }
+
+/** Pointer transport for numeric values whose entire storage is copied as bytes. */
+internal val ValueType.hasInlineSnapshot get() = this is CRange || this is CInteger && indirect

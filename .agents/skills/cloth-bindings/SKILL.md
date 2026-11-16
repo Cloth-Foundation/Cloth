@@ -28,6 +28,10 @@ result list; use [arrays](../cloth-arrays/SKILL.md) for shape and copy rules.
   paths, and indexed array targets support compound assignments and updates.
   [Indexed update contract](../cloth-arrays/references/semantics.md#indexed-compound-assignment) ·
   [Stage 1 implementation](../cloth-arrays/references/indexed-updates-stage-1.md)
+- [Dedicated class update overloads](references/class-update-operators.md)
+  return `void` and act on the checked identity captured from a writable
+  binding, field, array element, or class bracket.
+  [Implementation stages](../../../todo/open-questions-plan.md#op-1-implementation-stages)
 - Binding-only immutability permits array element writes and does not imply future
   class objects are frozen. A deferred function-block binding is not an ordinary
   stored result; use the [function skill](../cloth-functions/SKILL.md).
